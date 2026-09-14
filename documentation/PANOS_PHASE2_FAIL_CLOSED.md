@@ -127,11 +127,15 @@ covers:
 Phase 2 tests are not expected-failure placeholders. Any failure represents a
 regression in the fail-closed contract.
 
-## Schema 1.50 update
+## Historical schema 1.50 note (current schema 1.65)
 
 The earlier fail-closed treatment of PAN-OS `drop` and `reset-*` as lossy
-`DENY` projections is superseded by schema 1.50.  These actions are now
+`DENY` projections was superseded when schema 1.50 introduced exact source
+action preservation. These actions remain
 represented exactly in canonical IR.  Fail-closed behavior remains mandatory,
 but is applied by target capability checks when a target cannot reproduce the
 exact action.  The same parser/target boundary applies to canonical URL
 category matches and list-valued security-profile assignments.
+
+The current executable IR schema is 1.65; schema 1.50 is retained here only as
+the historical release where this behavior changed.

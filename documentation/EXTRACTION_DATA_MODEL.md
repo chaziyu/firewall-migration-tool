@@ -1,9 +1,17 @@
 # Firewall Configuration Extraction Data Model
 
-**Document status:** Proposed authoritative extraction specification
+**Document status:** Current extraction model plus explicitly marked proposed/future extensions
 **Project:** Firewall Migration Tool
 **Applies to:** Config-file ingestion for all supported vendors
 **Related document:** `documentation/IR_DATA_STRUCTURE.md`
+
+**Executable authority:** `src/fwmigrate/extraction/models.py` (`ExtractionResult`
+and its source-accounting models). The current result shape is
+`canonical_ir`, `source_sections`, `coverage`, `inventory_items`,
+`unsupported_items`, `dependencies`, `requires_manual_review`,
+`migration_complete`, `generation_safe`, and `blocking_reasons`. The metadata,
+source-document, and object-result structures described below are proposed
+extensions unless explicitly marked as executable.
 
 ---
 
@@ -115,8 +123,8 @@ or `PARSE_ERROR` extraction status. The FortiGate `secondary-IP` parent state is
 preserved separately: explicitly disabled or parent-state-ambiguous entries are
 retained as inactive source data, marked for manual review, and never counted as
 active normalized interface addresses. This prevents known interface keys and
-secondary IPs from disappearing while the broader `ExtractionResult.inventory`
-model is being implemented.
+secondary IPs from disappearing while the executable
+`ExtractionResult.inventory_items` collection carries source inventory.
 Aggregate and redundant `system interface` objects preserve the ordered `member`
 values in typed canonical topology. Their member relationships are validated
 within the same VDOM/context, self-references are unresolved, and the topology
@@ -164,7 +172,7 @@ Target generators must not consume `source_attributes`.
 
 # 4. Top-level `ExtractionResult`
 
-Recommended conceptual schema:
+Proposed conceptual schema (not the current serialized `ExtractionResult`):
 
 ```python
 ExtractionResult
@@ -203,7 +211,9 @@ ExtractionResult
     coverage
 ```
 
-The exact Python package structure may evolve, but these responsibilities should remain separate.
+The exact Python package structure may evolve, but these responsibilities should
+remain separate. Use the executable model listed at the top of this document
+when documenting or consuming the current result shape.
 
 **Command-Level Extraction Accounting:**
 In addition to section-level and object-level tracking, `SourceCommand` carries granular command accounting fields:
@@ -298,9 +308,9 @@ Security-relevant parse errors should usually block live migration.
 
 ---
 
-# 6. Extraction metadata
+# 6. Proposed extraction metadata
 
-## 6.1 `ExtractionMetadata`
+## 6.1 Proposed `ExtractionMetadata`
 
 Recommended fields:
 
@@ -323,11 +333,11 @@ Recommended fields:
 
 ---
 
-# 7. Source document model
+# 7. Proposed source document model
 
 For config-file ingestion, retain non-secret document metadata.
 
-## 7.1 `SourceDocument`
+## 7.1 Proposed `SourceDocument`
 
 Recommended fields:
 
@@ -364,15 +374,14 @@ Preferred behavior:
 
 A section scanner should inventory source configuration before or during detailed parsing.
 
-## 8.1 `SourceSectionResult`
+## 8.1 Current `SourceSectionResult` and proposed extensions
 
-Recommended fields:
+The executable model uses the following fields:
 
 | Field | Description |
 |---|---|
-| `id` | Stable extraction ID for the section. |
 | `path` | Vendor hierarchy path, e.g. `firewall policy`. |
-| `scope_id` | VDOM/vsys/domain/etc. |
+| `source_context` | VDOM/vsys/domain/etc. when the parser supplies scope. |
 | `present` | Whether found. |
 | `object_count_source` | Number of source objects/entries if known. |
 | `object_count_parsed` | Number parsed. |
@@ -380,9 +389,14 @@ Recommended fields:
 | `status` | Extraction status. |
 | `parser_handler` | Parser function/class responsible. |
 | `line_start` / `line_end` | Source range when file-based. |
-| `warnings` | Associated warnings. |
-| `errors` | Associated errors. |
+| `coverage_section`, domain fields, and additive counters | Coverage grouping and counts for partial, extract-only, unsupported, and parse-error items. |
+| `supported_empty`, `operational` | Empty-result and operational-collection state. |
+| `collection_errors`, `review_reasons`, `source_commands` | Collection and review evidence. |
+| `semantic_unknowns`, `unresolved_dependencies` | Semantic and dependency evidence counted separately from object totals. |
 | `notes` | Human-readable notes. |
+
+Stable `id`, `scope_id`, `warnings`, and `errors` fields remain proposed
+extensions; current implementations use the fields above.
 
 Example:
 
@@ -404,7 +418,10 @@ Example:
 
 Section-level coverage is not enough. Important objects should have individual results.
 
-## 9.1 `ExtractionObjectResult`
+## 9.1 Proposed `ExtractionObjectResult`
+
+The current executable model does not define a separate object-result class.
+Per-object evidence is carried by `inventory_items` and `unsupported_items`.
 
 Recommended fields:
 
@@ -1856,7 +1873,7 @@ whether a value was configured.
 
 ---
 
-### PAN-OS security policy completeness (schema 1.50)
+### PAN-OS security policy completeness (historical schema 1.50 behavior; current schema 1.65)
 
 Valid PAN-OS security rules with multiple security profile groups, multiple
 direct profile references, exact drop/reset actions, or URL-category matches

@@ -162,7 +162,7 @@ def _source_translation_fallback(node: ET.Element) -> IRNATSourceTranslationFall
     interface_ips = _translation_members(interface_node, "./ip") if interface_node is not None else []
     modes = []
     if translated:
-        modes.append(NATTranslationMode.STATIC)
+        modes.append(NATTranslationMode.DYNAMIC_IP_AND_PORT)
     if interface_node is not None:
         modes.append(NATTranslationMode.INTERFACE_ADDRESS)
     return IRNATSourceTranslationFallback(

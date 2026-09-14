@@ -1,361 +1,183 @@
-# Firewall Migration Tool — User Manual & Operations Guide
+# Firewall Migration Tool — User Manual
 
-Welcome to the **Firewall Migration Tool** user manual. This guide provides comprehensive, step-by-step instructions for network administrators, security architects, and migration engineers performing firewall policy and configuration migrations across multi-vendor environments.
+This guide describes the current file-conversion, source-inventory, CLI, and
+reviewed Terraform deployment workflows. Parser support is source-accounted:
+individual objects can be `NORMALIZED`, `PARTIALLY_NORMALIZED`, `EXTRACT_ONLY`,
+`UNSUPPORTED`, or `PARSE_ERROR`. A supported vendor does not mean every
+vendor-specific setting is safe to generate.
 
-> **Acknowledgments / Credits**
-> This project is a derivative work adapted from the [gswsystems/fortigate-palo-migration](https://github.com/gswsystems/fortigate-palo-migration) repository by GSW Systems. We thank the original authors for their foundational work. This project is distributed under the AGPL-3.0 license.
+## Contents
 
----
+1. [Supported platforms](#1-supported-platforms)
+2. [Launch](#2-launch)
+3. [Prepare a source export](#3-prepare-a-source-export)
+4. [Offline file conversion](#4-offline-file-conversion)
+5. [Live source extraction](#5-live-source-extraction)
+6. [Live deployment](#6-live-deployment)
+7. [CLI](#7-cli)
+8. [Output and review](#8-output-and-review)
+9. [Troubleshooting](#9-troubleshooting)
 
-## 📑 Table of Contents
-1. [Overview & Supported Platforms](#1-overview--supported-platforms)
-2. [Launching the Application](#2-launching-the-application)
-3. [Pre-Migration: Source Firewall Configuration Export](#3-pre-migration-source-firewall-configuration-export)
-4. [Migration Mode A: File Conversion (Offline ZIP)](#4-migration-mode-a-file-conversion-offline-zip)
-5. [Migration Mode B: Direct Live Migration (Terraform)](#5-migration-mode-b-direct-live-migration-terraform)
-6. [Command Line Interface (CLI) Guide](#6-command-line-interface-cli-guide)
-7. [Understanding Generated Output Deliverables](#7-understanding-generated-output-deliverables)
-8. [Target Firewall Import & Provisioning Instructions](#8-target-firewall-import--provisioning-instructions)
-9. [Interpreting the Migration Audit Report](#9-interpreting-the-migration-audit-report)
-10. [Post-Migration Verification & Rollback](#10-post-migration-verification--rollback)
-11. [Troubleshooting & Frequently Asked Questions](#11-troubleshooting--frequently-asked-questions)
+## 1. Supported platforms
 
----
+| Source capability | Input extensions / bundle | Target formats |
+|---|---|---|
+| Fortinet FortiGate | `.conf`, `.cfg`, `.txt` | `cli`, `terraform` |
+| Palo Alto PAN-OS / Panorama | `.xml` | `xml`, `terraform` |
+| Cisco ASA | `.cfg`, `.txt`, `.conf` | `cli`, `terraform` |
+| Cisco FTD / FMC export | `.json` FMC REST bundle, plus supported text forms | `cli`, `terraform` through the Cisco target |
+| Check Point R80/R81 | `.json`, `.txt`, `.cfg` | `cli`, `terraform` |
+| Juniper SRX / Junos | `.set`, `.txt`, `.conf` | `set`, `cli`, `terraform` |
 
-## 1. Overview & Supported Platforms
+Run `fwmigrate vendors` for the registered list. The vendor reference documents
+describe the semantic limits for [FortiGate](FORTIGATE_CONFIG_EXTRACTION_REFERENCE.md),
+[PAN-OS](PALO_ALTO_EXTRACTION_REFERENCE.md),
+[Cisco FMC](CISCO_FMC_EXTRACTION.md),
+[Check Point](CHECKPOINT_SUPPORT_MATRIX.md), and
+[Juniper SRX](JUNIPER_SRX_CONFIG_EXTRACTION_REFERENCE.md).
 
-# Firewall Migration Tool — User Manual & Operations Guide
+## 2. Launch
 
-Welcome to the **Firewall Migration Tool** user manual. This guide provides comprehensive, step-by-step instructions for network administrators, security architects, and migration engineers performing firewall policy and configuration migrations across multi-vendor environments.
+Install the project and development/report dependencies:
 
-> **Acknowledgments / Credits**
-> This project is a derivative work adapted from the [gswsystems/fortigate-palo-migration](https://github.com/gswsystems/fortigate-palo-migration) repository by GSW Systems. We thank the original authors for their foundational work. This project is distributed under the AGPL-3.0 license.
-
----
-
-## 📑 Table of Contents
-1. [Overview & Supported Platforms](#1-overview--supported-platforms)
-2. [Launching the Application](#2-launching-the-application)
-3. [Pre-Migration: Source Firewall Configuration Export](#3-pre-migration-source-firewall-configuration-export)
-4. [Migration Mode A: File Conversion (Offline ZIP)](#4-migration-mode-a-file-conversion-offline-zip)
-5. [Command Line Interface (CLI) Guide](#6-command-line-interface-cli-guide)
-6. [Understanding Generated Output Deliverables](#7-understanding-generated-output-deliverables)
-7. [Target Firewall Import & Provisioning Instructions](#8-target-firewall-import--provisioning-instructions)
-8. [Interpreting the Migration Audit Report](#9-interpreting-the-migration-audit-report)
-9. [Post-Migration Verification & Rollback](#10-post-migration-verification--rollback)
-10. [Troubleshooting & Frequently Asked Questions](#11-troubleshooting--frequently-asked-questions)
-
----
-
-## 1. Overview & Supported Platforms
-
-The Firewall Migration Tool normalizes security policies, network objects, NAT rules, interfaces, zones, and static routes into a canonical **Intermediate Representation (`IRConfig`)**.
-
-### Supported Multi-Vendor Matrix
-
-| Vendor | Supported as Source ($M$) | Supported as Target ($N$) | Supported Formats |
-|---|:---:|:---:|---|
-| **Fortinet FortiGate** | ✅ | ✅ | `.conf`, `.txt`, Terraform (`fortinetdev/fortios`) |
-| **Palo Alto Networks** | ✅ | ✅ | `.xml`, Terraform (`PaloAltoNetworks/panos`) |
-| **Cisco ASA / FTD** | ✅ | ✅ | `.cfg`, `.txt`, FMC API, Terraform (`CiscoDevNet/ciscoasa`) |
-| **Check Point R80/R81** | ✅ | ✅ | `mgmt_cli` JSON dump, Management API, `.sh` scripts, Terraform (`CheckPointSW/checkpoint`) |
-| **Juniper SRX / JunOS** | ✅ | ✅ | Flat `set` commands, hierarchical curly syntax, Terraform (`juniper/junos`) |
-
-### 1.1 Multi-Vendor Configuration Scope: Supported vs. Omitted Features
-
-When migrating across firewall architectures, the migration engine extracts all **active security, routing, NAT, and object policies**, while safely bypassing **appliance-specific, chassis-bound, and local GUI settings** that must be provisioned independently:
-
-#### 1. Fortinet FortiGate (FortiOS)
-* 🟢 **Converted (Supported):**
-  - `config firewall policy` $\to$ Security Access Rulebase + Synthesized UTM Security Profile Groups
-  - `config firewall address` / `addrgrp` $\to$ Host (/32), Subnet (/24), Range, FQDN address objects & groups
-  - `config firewall service custom` / `group` $\to$ Custom TCP/UDP/ICMP services & grouped definitions
-  - `config firewall ippool` $\to$ Source NAT / Dynamic PAT address pools
-  - `config firewall vip` / `vipgrp` $\to$ Destination NAT / Inbound Virtual IPs
-  - `config system interface` / `zone` $\to$ Physical & VLAN interfaces, IP subnets, Security Zones
-  - `config router static` $\to$ Virtual Router static routes, next-hop gateways, metrics
-  - `config vpn ipsec phase1/phase2-interface` $\to$ IKE Gateways, IPsec Crypto Proposals, Tunnels
-  - `config firewall schedule recurring` $\to$ Security policy time schedules
-  - FortiGate UTM (Antivirus, IPS, Webfilter, Application, SSL-SSH) $\to$ Synthesized Threat Profile Groups
-* 🔴 **Omitted & Technical Rationale:**
-  - *Hardware ASICs (`np6xlite`, `physical-switch`):* Proprietary hardware silicon unique to Fortinet chassis.
-  - *Replacement Messages (`replacemsg-*`, 16 types):* Vendor-proprietary HTML web proxy block pages.
-  - *Appliance Local Users & Dashboards (`system admin`, `gui-dashboard`, `widget`):* Target firewalls configure administrative RBAC independently or via enterprise TACACS+/SAML.
-  - *High Availability (`system ha`, `standalone-cluster`):* FGCP/FGSP clustering protocols; target firewalls pair HA based on new hardware serials and dedicated HA links.
-  - *Edge DHCP Server (`system dhcp server`):* Enterprise networks centralize DHCP on Windows Server / Infoblox; local branch pools are enabled directly on target interfaces if required.
-  - *Telemetry & Fabric (`automation-*`, `endpoint-control`):* Fortinet Security Fabric workflows not portable to non-Fortinet firewalls.
-
-#### 2. Palo Alto Networks (PAN-OS / Panorama)
-* 🟢 **Converted (Supported):**
-  - `<security><rules>` $\to$ Security access policies with action, status, and log forwarding
-  - `<nat><rules>` $\to$ Source NAT, Destination NAT, Static 1:1 NAT
-  - `<address>` / `<address-group>` $\to$ IP Netmask, IP Range, FQDN objects and static/dynamic groups
-  - `<service>` / `<service-group>` $\to$ TCP/UDP port ranges and service bundles
-  - `<profile-group>` $\to$ Antivirus, Vulnerability (IPS), Anti-Spyware, URL, File Blocking, WildFire, Decryption
-  - `<network><interface>` / `<zone>` $\to$ Layer 3 interfaces, subinterfaces, 802.1Q tags, Security Zones
-  - `<virtual-router><routing-table>` $\to$ Static routes, default gateways, interface bindings, metrics
-  - `<network><ike><gateway>` & `<network><tunnel><ipsec>` $\to$ IKE gateways, IPsec crypto profiles, tunnels
-* 🔴 **Omitted & Technical Rationale:**
-  - *Panorama Device-Group Tree:* Flattened into target firewall configuration or vsys.
-  - *Admin RBAC & Authentication Profiles (`<mgt-config>`, `<authentication-profile>`):* Appliance-specific administrator credentials.
-  - *Physical HA Link MACs (`<high-availability>`):* Hardware-specific HA1/HA2 cabling.
-  - *GlobalProtect Portal/Gateway:* Client SSL VPN portals require target vendor-specific certificate and client pool setup.
-
-#### 3. Cisco ASA / Firepower (FTD)
-* 🟢 **Converted (Supported):**
-  - `access-list ... extended permit/deny` $\to$ Security access policies
-  - `object network` / `object-group network` $\to$ Host, subnet, range, and FQDN objects & groups
-  - `object service` / `object-group service` $\to$ TCP/UDP/ICMP custom service definitions & groups
-  - `nat (inside,outside) source/destination` $\to$ Twice NAT, Object NAT, PAT pools, Static 1:1 NAT
-  - `interface`, `nameif`, `ip address` $\to$ Named interfaces, IP assignments, Security Zones
-  - `route [interface] [subnet] [gateway]` $\to$ Static routes and default gateways
-  - `crypto ikev2`, `crypto ipsec`, `tunnel-group` $\to$ IKEv2 gateways and Site-to-Site IPsec tunnels
-* 🔴 **Omitted & Technical Rationale:**
-  - *Interface Security Levels (`security-level 0-100`):* Replaced by explicit zone-to-zone firewall policies.
-  - *Hardware Failover (`failover`, `failover lan`):* Physical ASA Active/Standby heartbeat cabling.
-  - *ASDM GUI & History (`asdm history`, `logging asdm`):* Cisco ASDM Java management tool preferences.
-  - *Legacy Inspection Engines (`class-map`, `policy-map inspect`):* Replaced by target Layer 7 App-ID / Threat Prevention.
-
-#### 4. Check Point (Gaia R80.x / R81.x)
-* 🟢 **Converted (Supported):**
-  - Access Rulebases (`show-access-rulebase`) $\to$ Security policies with source, destination, service, and action
-  - Host/Network/Range/Group Objects (`show-objects`) $\to$ Normalized address objects & address groups
-  - Service TCP/UDP/ICMP/Group definitions $\to$ Custom service objects and bundles
-  - Automatic & Manual NAT Rulebases $\to$ Source, Destination, and Static NAT translations
-  - Network Interfaces & Topology $\to$ Physical interfaces, subnets, and zone boundaries
-  - Static Routes $\to$ Destination subnets, next hops, and outgoing interfaces
-  - Threat Prevention Layers $\to$ Antivirus, IPS, and Threat Emulation engine profiles
-* 🔴 **Omitted & Technical Rationale:**
-  - *SmartConsole GUI Metadata (`color`, `icon`, `comments`):* Check Point management client GUI display properties.
-  - *ClusterXL & Sync Interfaces (`cphaconf`):* Check Point proprietary state-sync clustering protocols.
-  - *Security Management Server (SMS) Database IDs (`uid`, `domain`):* Internal Check Point PostgreSQL schema UUIDs.
-
-#### 5. Juniper SRX (JunOS)
-* 🟢 **Converted (Supported):**
-  - `set security policies from-zone ... to-zone ...` $\to$ Security access policies
-  - `set security address-book` / `address-set` $\to$ Host, subnet, range, and DNS address objects & sets
-  - `set applications application` / `application-set` $\to$ Custom protocol & port definitions
-  - `set security nat source/destination/static` $\to$ NAT rule sets and translation pools
-  - `set security zones security-zone` & `set interfaces` $\to$ Zones, physical interfaces, units, VLAN tags
-  - `set routing-options static route` $\to$ Static routing table and next-hop forwarding
-  - `set security ike` & `set security ipsec` $\to$ IKE proposals, policies, gateways, and IPsec VPNs
-  - `set security utm utm-policy` $\to$ Antivirus, Web filtering, and IPS sensor policies
-* 🔴 **Omitted & Technical Rationale:**
-  - *Chassis Cluster (`set chassis cluster`):* Hardware reth (redundant Ethernet) interfaces and control link cabling.
-  - *JunOS Dynamic Routing Daemons (OSPF/BGP process options):* Converted via static routes; dynamic BGP peers configured on target routing instances.
-  - *System Login & User Classes (`set system login`):* Local JunOS administrator accounts.
-
----
-
-## 2. Launching the Application
-
-### Method 1: Standalone Native Desktop App (Windows)
-No Python, Node.js, or external browser installation is required.
-1. Open the project folder in Windows Explorer.
-2. Navigate to `dist/` and double-click **`Firewall Migration Tool.exe`**.
-3. A dedicated desktop application window will open automatically.
-
-### Method 2: One-Click Web Server (`run_migration.bat`)
-1. Double-click **`run_migration.bat`** in the root folder.
-2. Open your web browser and navigate to:
-   ```
-   http://localhost:5000
-   ```
-
-### Method 3: Command Line (CLI / Python)
-```bash
-# Start Web Server on custom port
-python -m fwmigrate.main serve --port 8080
-
-# Or launch Desktop window from source
-python -m fwmigrate.main app
+```powershell
+python -m pip install -e ".[dev]"
 ```
 
----
+Then use one of these entry points:
 
-## 3. Pre-Migration: Source Firewall Configuration Export
-
-Before starting migration, export the configuration file from your source firewall:
-
-### Fortinet FortiGate
-* **Via WebGUI:** Navigate to **System > Administrators > (Top right admin menu) > Configuration > Backup > Local PC**.
-* **Via CLI:**
-  ```fortios
-  show full-configuration
-  ```
-  *(Save the entire output text to a `.conf` or `.txt` file)*
-
-### Palo Alto Networks (PAN-OS / Panorama)
-* **Via WebGUI:** Navigate to **Device > Setup > Operations > Export named configuration snapshot** $\rightarrow$ select `running-config.xml`.
-* **Via CLI:**
-  ```set
-  set cli pager off
-  show config running
-  ```
-
-### Cisco ASA / Firepower (FTD)
-* **Via CLI:**
-  ```cisco
-  terminal pager 0
-  show running-config
-  ```
-  *(Save the output as `.cfg` or `.txt`)*
-
-### Check Point R80.x / R81.x
-Export objects and rulebases using the Check Point Management CLI (`mgmt_cli`):
-```bash
-# Export objects and rulebase in JSON format
-mgmt_cli -r true show-objects limit 500 --format json > checkpoint_objects.json
-mgmt_cli -r true show-access-rulebase name "Network" limit 500 --format json > checkpoint_rules.json
-```
-*(Combine into a single `.json` file or use the bundled export utility)*
-
-### Juniper SRX / JunOS
-* **Flat set syntax (Recommended):**
-  ```junos
-  show configuration | display set | no-more
-  ```
-* **Hierarchical syntax:**
-  ```junos
-  show configuration | no-more
-  ```
-  *(Save output as `.set` or `.txt`)*
-
----
-
-## 4. Migration Mode A: File Conversion (Offline ZIP)
-
-Use this mode when you want to convert an offline backup file into target firewall configuration scripts, Terraform suites, and audit reports without directly touching a live network device.
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│ [Mode A: Convert Config File]                                          │
-├────────────────────────────────────────────────────────────────────────┤
-│ 1. Select Source Vendor: [ Fortinet FortiGate ▼ ]                      │
-│ 2. Select Target Vendor: [ Palo Alto Networks ▼ ]                      │
-│ 3. Upload File:          [ Drag & Drop .conf / .xml / .cfg / .json ]   │
-│ 4. Optimization Options: [x] Prune Unreferenced Objects                │
-│                          [x] Deduplicate Equivalent Address Objects    │
-│ 5. Click [ Start Conversion & Download Package ]                       │
-└────────────────────────────────────────────────────────────────────────┘
+```powershell
+fwmigrate serve --port 5000   # web UI, including FortiGate live extraction
+fwmigrate app                 # native desktop UI
 ```
 
-### Steps:
-1. Click the **Convert Config File** tab at the top.
-2. Select your **Source Vendor** and **Target Platform**.
-3. Drag & drop your configuration backup file into the drop zone.
-4. *(Optional)* Toggle **Rule Optimizer**:
-   - **Prune Unused Objects**: Removes address and service objects not referenced in any active security policy.
-   - **Deduplicate Objects**: Merges identical IP definitions.
-5. Click **Convert & Generate Deliverables**.
-6. Download the generated **`migration_package_<timestamp>.zip`**.
+On Windows, `run_migration.bat` starts the web UI. The built executable, when
+present, is under `dist/`.
 
-### Standalone Excel extraction
+## 3. Prepare a source export
 
-Use **Extract Data to Excel** when you need a source inventory without choosing or generating a target configuration. Select the source vendor, upload a configuration file, and click **Download Source Inventory (.xlsx)**.
+- **FortiGate:** `show full-configuration`.
+- **PAN-OS / Panorama:** export the XML running configuration.
+- **Cisco ASA:** `show running-config` with paging disabled.
+- **Cisco FTD / FMC:** assemble the offline bundle documented in
+  [CISCO_FMC_EXTRACTION.md](CISCO_FMC_EXTRACTION.md), using
+  `format: "cisco-fmc-rest-export-v1"` and `source: "fmc-rest-api"`.
+- **Check Point:** provide the JSON management export/bundle; Gaia command
+  collection is separate source evidence.
+- **Juniper SRX:** `show configuration | display set | no-more`, or provide
+  hierarchical configuration. Both forms are normalized by the parser.
 
-The workbook is generated directly from the source `IRConfig` before optimizer fixes or unused-object pruning. It includes inventory sheets, warnings, explicitly unsupported audit entries, and an extraction-coverage sheet. Until Phase 2 supplies source-section evidence, coverage is explicitly marked as not reported rather than inferred as complete. VPN pre-shared keys and credential-like values are redacted.
+Keep the original export unchanged. The upload API accepts UTF-8 and rejects a
+decode failure instead of silently dropping bytes.
 
-The same workbook is automatically included in every migration ZIP as `source_inventory_<vendor>.xlsx`.
+## 4. Offline file conversion
 
----
+1. Open **Convert Config File**.
+2. Select the source and target vendors.
+3. Upload the source export.
+4. Optionally enable **Optimize** for unused-object pruning and rule/object
+   analysis.
+5. Download the migration package.
 
-### 4.1 IPsec VPN Secret Retrieval & Pre-Shared Key (PSK) Configuration
+The source is parsed into `ExtractionResult` and canonical `IRConfig` before
+optimization. Source inventory is generated from the pre-optimization result;
+target generation consumes canonical IR and applies fail-closed safety checks.
 
-When performing an **Offline File Conversion** (uploading `.conf` and downloading configuration files), FortiOS protects your credentials by exporting the Pre-Shared Key as an encrypted ciphertext string (`set psksecret ENC AQAAAA...`). 
+Use **Extract to Excel** when you only need the source inventory. It does not
+require a target vendor and does not run target conversion or optimizer pruning.
 
-Because this encryption is bound to the source hardware's private master key, follow this procedure to retrieve and apply your PSKs:
+## 5. Live source extraction
 
-#### Step 1: Retrieve (GET) the PSK from Source / Cloud Provider
+Live source extraction is currently **FortiGate-only** and is available under
+**Extract to Excel → Input Method: Live Firewall**.
 
-* **From FortiGate WebGUI:**
-  1. Log in to the source FortiGate WebGUI.
-  2. Navigate to **VPN > IPsec Tunnels**.
-  3. Select the tunnel (e.g. `AzVPN-JPNEast1`) $\rightarrow$ Click **Edit**.
-  4. In the **Network / Authentication** section, click the **eye icon** (👁️) next to **Pre-shared Key** to reveal the plain-text string.
+1. Enter the FortiGate host, SSH port, username, and password.
+2. Optionally enable known-host verification.
+3. Run **Test Connection**, then **Pull Configuration**.
+4. After a complete snapshot, download the source inventory workbook.
 
-* **From Microsoft Azure Portal (for `AzVPN-...` connections):**
-  1. Go to **Azure Portal** $\rightarrow$ Search for **Virtual Network Gateways**.
-  2. Select your Gateway $\rightarrow$ Click **Connections** (left navigation).
-  3. Select the tunnel connection $\rightarrow$ Click **Authentication / Shared key (PSK)** $\rightarrow$ Click **Show Key** (👁️).
-  4. *Or via Azure CLI:*
-     ```bash
-     az network vpn-connection shared-key show \
-       --resource-group <YourResourceGroup> \
-       --connection-name AzVPN-JPNEast1 \
-       --query value -o tsv
-     ```
+The collector runs `get system status` and `show full-configuration` over a
+non-PTY SSH channel. The raw snapshot is held temporarily in server memory;
+credentials are not stored in the snapshot. Collection completeness does not
+mean that every source semantic is migration-ready.
 
-#### Step 2: Set (APPLY) the PSK in the Downloaded Target Configuration
+See [LIVE_SOURCE_EXTRACTION.md](LIVE_SOURCE_EXTRACTION.md) for the collection
+contract and CLI collector.
 
-* **In Palo Alto Networks (PAN-OS WebGUI):**
-  1. Log in to PAN-OS WebGUI $\rightarrow$ Navigate to **Network > IKE Gateways**.
-  2. Click on the migrated IKE Gateway (e.g., `GW-AzVPN-JPNEast1`).
-  3. Under **General > Pre-Shared Key**, enter and confirm the plain-text key.
-  4. Click **OK** $\rightarrow$ **Commit**.
+## 6. Live deployment
 
-* **In Palo Alto Networks (PAN-OS CLI):**
-  ```text
-  admin@PA-5220# set network ike gateway GW-AzVPN-JPNEast1 authentication pre-shared-key key "YourPlainPSKSecret123!"
-  admin@PA-5220# commit
-  ```
+The **Live migration** tab currently supports **PAN-OS targets**.
 
-* **In Downloaded Terraform Suite (`terraform/terraform.tfvars`):**
-  ```hcl
-  vpn_psk_AzVPN_JPNEast1 = "YourPlainPSKSecret123!"
-  vpn_psk_AzVPN_JPNEast2 = "YourPlainPSKSecret123!"
-  ```
+1. Upload the source configuration in the file workflow.
+2. Enter the PAN-OS management host, HTTPS port, and API key or credentials.
+3. Run the connection diagnostics.
+4. Prepare the Terraform session and run a dry-run plan.
+5. Review the plan and audit output, then explicitly approve the session.
+6. Start the apply only after review.
 
----
+Rollback runs Terraform destroy for resources tracked by that session. It is not
+a full device snapshot restore. Treat apply and rollback as high-impact
+operations and keep the target firewall's own backup/recovery process in place.
 
-## 6. Command Line Interface (CLI) Guide
+## 7. CLI
 
-The CLI is available as `fwmigrate`, `fwmigrate`, or `python -m fwmigrate.main`.
+List the current plugin registry:
 
-### Check Available Plugins
-```bash
+```powershell
 fwmigrate vendors
 ```
 
-### Convert Cisco ASA to Palo Alto Networks Terraform
-```bash
-fwmigrate migrate \
-  --input backup/cisco_asa.cfg \
-  --source-vendor cisco_asa \
-  --target-vendor palo_alto \
-  --optimize \
-  --output ./output_palo_alto \
-  --format terraform \
-  --report ./output_palo_alto/migration_report.md
+Convert a Cisco ASA export to PAN-OS Terraform:
+
+```powershell
+fwmigrate migrate `
+  --input backup/cisco_asa.cfg `
+  --source-vendor cisco_asa `
+  --target-vendor palo_alto `
+  --format terraform `
+  --output .\output_palo_alto `
+  --report .\output_palo_alto\migration_report.md
 ```
 
-### Convert Check Point JSON to FortiGate Native CLI
-```bash
-fwmigrate migrate \
-  --input backup/checkpoint_rules.json \
-  --source-vendor checkpoint \
-  --target-vendor fortigate \
-  --output ./output_fortigate \
-  --format cli \
-  --report ./output_fortigate/migration_report.md
+The `migrate` command also accepts `--zone-map` and `--optimize`. Its format
+choices are `xml`, `set`, `terraform`, and `cli`. `serve` and `app` accept
+`--port`.
+
+## 8. Output and review
+
+The web conversion package contains:
+
+```text
+migration_<source>_to_<target>.zip
+├── migration_report.md
+├── migration_report.html
+├── source_inventory_<vendor>.xlsx
+├── target native artifacts
+└── terraform/                 # when Terraform artifacts are generated
 ```
 
----
+The CLI writes artifacts to the requested output directory and writes both
+Markdown and HTML reports when `--report` is supplied.
 
-## 7. Understanding Generated Output Deliverables
+Before using generated configuration:
 
-The generated migration package contains the following structured files:
+- review the migration report and source-inventory workbook;
+- resolve all `requires_manual_review` and blocking findings;
+- confirm that unsupported or extract-only source data has an approved manual
+  treatment;
+- run the target platform's validation/commit checks in a controlled window.
 
-```
-migration_package/
-|-- source_inventory_<vendor>.xlsx   # Pre-optimization vendor-neutral source inventory
-### Q3: Forward-Reference Errors During Provisioning
-* **Resolution**: The tool automatically applies **Kahn's Topological Sorting Algorithm** to ensure address and service objects are declared before security policies that reference them. If manual editing was performed, re-run the optimizer.
+Credentials, PSKs, private keys, and similar secrets are redacted from source
+inventory and audit output. Do not add real secrets to examples, tickets, or
+generated documentation.
 
-### Q4: "ModuleNotFoundError: No module named 'fwmigrate'"
-* **Fix**: Run `run_migration.bat` (which sets `PYTHONPATH` automatically) or install the package in editable mode via `pip install -e .`.
+## 9. Troubleshooting
 
----
-
-**Copyright © 2025 GSW Systems. All rights reserved.**  
-**Modified in 2026 by Cha Zi Yu (23120943@siswa.um.edu.my)**
+| Symptom | Check |
+|---|---|
+| `No module named fwmigrate` | Run `python -m pip install -e ".[dev]"`. |
+| Upload stops at decode | Save the source export as valid UTF-8 and upload again. |
+| Vendor is unavailable | Run `fwmigrate vendors`; check the source extension/bundle. |
+| Objects are withheld | Read the report’s blocking reasons and source review evidence; do not broaden missing values manually. |
+| Live deployment cannot plan | Run diagnostics, verify Terraform/provider access, and check PAN-OS connectivity/authentication. |
+| Live collection is incomplete | Review SSH errors, permissions, pager markers, and collector warnings. |

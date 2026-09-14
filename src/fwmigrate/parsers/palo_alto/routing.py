@@ -105,6 +105,93 @@ class PANRouteExtractor:
             return str(network), reference, "destination-address-reference", evidence
 
     @staticmethod
+    def _resolve_ip_next_hop(
+        value: str,
+        variant: str,
+        scope: PANScope,
+        resolver: PANResolver,
+    ) -> Tuple[str, Optional[str], Dict[str, Any]]:
+        """Resolve a literal or IP-Netmask address-object static-route next hop."""
+        expected_version = 6 if variant == "ipv6-address" else 4
+        try:
+            address = ipaddress.ip_address(value)
+            if address.version != expected_version:
+                return value, "next-hop-address-family-mismatch", {
+                    "pan_next_hop_reference": value,
+                    "pan_next_hop_resolution": "literal-family-mismatch",
+                }
+            return str(address), None, {}
+        except ValueError:
+            pass
+
+        resolved = resolver.resolve(value, "address-reference", scope)
+        if resolved is None:
+            return value, "unresolved-next-hop-address-reference", {
+                "pan_next_hop_reference": value,
+                "pan_next_hop_reference_canonical": value,
+                "pan_next_hop_resolution": "unresolved-reference",
+            }
+
+        reference = resolved.canonical_name or value
+        evidence = {
+            "pan_next_hop_reference": value,
+            "pan_next_hop_reference_canonical": reference,
+            "pan_next_hop_reference_kind": resolved.kind,
+            "pan_next_hop_reference_source_path": resolved.source_path,
+            "pan_next_hop_reference_scope": (
+                f"{resolved.scope.kind}:{resolved.scope.name}"
+                if resolved.scope else None
+            ),
+        }
+        if resolved.kind == "address-group":
+            evidence["pan_next_hop_resolution"] = "address-group"
+            return reference, "next-hop-address-group-reference", evidence
+
+        source_type = resolved.attributes.get("pan_source_type")
+        source_value = resolved.attributes.get("pan_source_value")
+        evidence.update({
+            "pan_next_hop_source_type": source_type,
+            "pan_next_hop_source_value": source_value,
+        })
+        if source_type != "ip-netmask" or not source_value:
+            evidence["pan_next_hop_resolution"] = "unsupported-address-object"
+            return reference, "unsupported-next-hop-reference-type", evidence
+
+        try:
+            network = ipaddress.ip_network(source_value, strict=False)
+        except ValueError:
+            evidence["pan_next_hop_resolution"] = "invalid-address-object"
+            return reference, "invalid-next-hop-address-object-value", evidence
+        evidence["pan_resolved_next_hop"] = str(network.network_address)
+        if network.version != expected_version:
+            evidence["pan_next_hop_resolution"] = "address-family-mismatch"
+            return reference, "next-hop-address-family-mismatch", evidence
+        if network.prefixlen != network.max_prefixlen:
+            evidence["pan_next_hop_resolution"] = "non-host-address-object"
+            return reference, "next-hop-address-object-not-host", evidence
+        evidence["pan_next_hop_resolution"] = "address-object"
+        return reference, "next-hop-address-reference", evidence
+
+    @staticmethod
+    def _route_table_installation(
+        route_table: ET.Element,
+        family: str,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Normalize PAN-OS route-table installation mode without guessing defaults."""
+        known = {"unicast", "multicast", "both", "no-install"}
+        candidates = [child.tag for child in route_table if child.tag in known]
+        scalar = (route_table.text or "").strip()
+        if scalar in known and not candidates:
+            candidates.append(scalar)
+        if len(candidates) != 1:
+            return None, "route-table-installation"
+        installation = candidates[0]
+        allowed = {"unicast", "no-install"} if family == "ipv6" else known
+        if installation not in allowed:
+            return None, "route-table-installation"
+        return installation, None
+
+    @staticmethod
     def _path_monitor_bool(node: Optional[ET.Element], path: str, reasons: list[str]) -> Optional[bool]:
         raw = text_or_none(node, path)
         if raw is None:
@@ -328,7 +415,19 @@ class PANRouteExtractor:
                 next_hop = None
             else:
                 next_hop = value if isinstance(value, str) else None
-            if variant in {"fqdn"}:
+            if variant in {"ip-address", "ipv6-address"}:
+                if isinstance(value, str) and value:
+                    next_hop, next_hop_reason, next_hop_evidence = PANRouteExtractor._resolve_ip_next_hop(
+                        value, variant, resolution_scope or scope, resolver
+                    )
+                    evidence.update({
+                        key: item for key, item in next_hop_evidence.items() if item is not None
+                    })
+                    if next_hop_reason:
+                        partial_reasons.append(next_hop_reason)
+                else:
+                    partial_reasons.append("missing-ip-next-hop")
+            elif variant in {"fqdn"}:
                 partial_reasons.append(f"next-hop-{variant}")
             elif variant in {"next-vr", "next-lr"}:
                 expected_type = "virtual-router" if variant == "next-vr" else "logical-router"
@@ -399,6 +498,7 @@ class PANRouteExtractor:
         bfd_profile = text_or_none(bfd, "./profile") if bfd is not None else None
         path_monitor = entry.find("./path-monitor")
         route_table = entry.find("./route-table")
+        installation = None
         if bfd is not None:
             evidence["pan_bfd"] = structured_xml_capture(bfd)
             evidence["pan_bfd_profile"] = bfd_profile
@@ -426,7 +526,13 @@ class PANRouteExtractor:
             path_monitor_model = None
         if route_table is not None:
             evidence["pan_route_table"] = structured_xml_capture(route_table)
-            partial_reasons.append("route-table-installation")
+            installation, installation_reason = PANRouteExtractor._route_table_installation(
+                route_table, family
+            )
+            if installation is not None:
+                evidence["pan_route_table_installation"] = installation
+            if installation_reason:
+                partial_reasons.append(installation_reason)
 
         known = ["destination", "nexthop", "interface", "metric", "admin-dist",
                  "bfd", "path-monitor", "route-table"]
@@ -459,6 +565,7 @@ class PANRouteExtractor:
             administrative_distance=admin_distance,
             metric=metric,
             blackhole=blackhole,
+            installation=installation,
             bfd=bfd_profile,
             path_monitor=path_monitor_model,
             migration_status="PARTIALLY_NORMALIZED" if partial_reasons else "NORMALIZED",

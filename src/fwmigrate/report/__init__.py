@@ -13,7 +13,7 @@ if _PREMATCH_SHEET not in _base_order:
     _base_order.insert(insert_at, _PREMATCH_SHEET)
     _excel_exporter.IRExcelExporter.SHEET_ORDER = tuple(_base_order)
 
-from fwmigrate.report.excel_vendor_visibility import VendorAwareIRExcelExporter
+from fwmigrate.report.excel_effective_order import EffectiveOrderIRExcelExporter
 from fwmigrate.report.fortigate_semantics_excel import (
     FortiGateSemanticsExcelExporter,
 )
@@ -21,10 +21,14 @@ from fwmigrate.report.fortigate_semantics_excel import (
 ExcelExportUnavailableError = _excel_exporter.ExcelExportUnavailableError
 XLSX_MIMETYPE = _excel_exporter.XLSX_MIMETYPE
 
+
+class IRExcelExporter(FortiGateSemanticsExcelExporter, EffectiveOrderIRExcelExporter):
+    """Compose FortiGate semantic corrections with effective-order reporting."""
+
+
 # Preserve the existing import surface. Callers that import IRExcelExporter from
 # either fwmigrate.report or fwmigrate.report.excel_exporter receive the same
-# vendor-aware implementation with FortiGate semantic corrections.
-_excel_exporter.IRExcelExporter = FortiGateSemanticsExcelExporter
-IRExcelExporter = FortiGateSemanticsExcelExporter
+# composed implementation.
+_excel_exporter.IRExcelExporter = IRExcelExporter
 
 __all__ = ["ExcelExportUnavailableError", "IRExcelExporter", "XLSX_MIMETYPE"]
