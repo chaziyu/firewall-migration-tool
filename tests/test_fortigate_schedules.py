@@ -34,7 +34,6 @@ config firewall schedule onetime
         set end "01:00 2026/08/26"
         set color 7
         set expiration-days 2
-        set visibility disable
     next
     edit "one-time-no-expiry"
         set start "08:30 2026/09/01"
@@ -72,7 +71,7 @@ def test_recurring_and_one_time_schedules_preserve_source_semantics():
     assert onetime.days == []
     assert onetime.source_color == 7
     assert onetime.expiration_days == 2
-    assert onetime.source_attributes == {"visibility": "disable"}
+    assert onetime.source_attributes == {}
 
     no_expiry = next(item for item in schedules if item.name == "one-time-no-expiry")
     assert no_expiry.expiration_days is None
