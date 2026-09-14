@@ -1,4 +1,4 @@
-"""Compatibility fixes for FortiOS 7.4.6 address IR regressions."""
+"""Compatibility fixes for audited FortiOS 7.4.6 address IR regressions."""
 
 from __future__ import annotations
 
