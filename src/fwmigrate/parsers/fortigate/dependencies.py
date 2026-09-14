@@ -196,6 +196,12 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("system sdwan service sla", "edit"): "system sdwan health-check",
     ("system interface", "aggregate"): "system interface",
     ("system interface", "redundant-interface"): "system interface",
+    ("system interface", "interface"): "system interface",
+    ("system interface ipv6", "ip6-upstream-interface"): "system interface",
+    (
+        "system interface ipv6 ip6-delegated-prefix-list",
+        "upstream-interface",
+    ): "system interface",
 }
 
 # These are deliberately rule-specific.  ``REFERENCE_RULES`` retains the
@@ -472,6 +478,12 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     ("system interface", "member"): {
         "system interface",
     },
+    ("system interface", "interface"): {"system interface"},
+    ("system interface ipv6", "ip6-upstream-interface"): {"system interface"},
+    (
+        "system interface ipv6 ip6-delegated-prefix-list",
+        "upstream-interface",
+    ): {"system interface"},
     ("system interface", "aggregate"): {
         "system interface",
     },

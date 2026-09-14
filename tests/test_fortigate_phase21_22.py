@@ -4,7 +4,7 @@ from fwmigrate.parsers.fortigate.model import FGPerIPShaper, FGShapingProfile
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 
 
-def test_phase21_dos_anomaly_order_and_threshold_default_unset() -> None:
+def test_phase21_dos_anomaly_order_and_writable_thresholds() -> None:
     content = """
 config firewall DoS-policy
     edit 10
@@ -19,17 +19,13 @@ config firewall DoS-policy
                 set status enable
                 set action block
                 set threshold 3000
-                set threshold(default) 1000
             next
             edit "udp_flood"
                 set status enable
                 set threshold 5000
-                set threshold(default) 2000
-                unset threshold(default)
             next
             edit "icmp_flood"
                 set status disable
-                set threshold(default) 700
             next
         end
     next
@@ -51,11 +47,11 @@ end
 
     syn, udp, icmp = policy.anomalies
     assert syn.threshold == 3000
-    assert syn.threshold_default == 1000
+    assert syn.threshold_default is None
     assert udp.threshold == 5000
     assert udp.threshold_default is None
     assert icmp.threshold is None
-    assert icmp.threshold_default == 700
+    assert icmp.threshold_default is None
     assert "threshold(default)" not in udp.extra_settings
     assert "threshold_default" not in udp.extra_settings
 

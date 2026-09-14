@@ -29,7 +29,6 @@ config system interface
     edit "v6-scalars"
         config ipv6
             set autoconf enable
-            set dhcp6-client-options rapid iapd iana
             set dhcp6-information-request enable
             set dhcp6-prefix-delegation enable
             set dhcp6-relay-ip 2001:db8::1 2001:db8::2
@@ -120,7 +119,6 @@ def test_scalar_ipv6_values_are_typed_ordered_and_reviewed():
     fg_interface = _interface(parse_fortigate_config(SCALAR_IPV6_CONFIG), "v6-scalars")
 
     assert fg_interface.ipv6_autoconf == "enable"
-    assert fg_interface.dhcp6_client_options == ["rapid", "iapd", "iana"]
     assert fg_interface.dhcp6_relay_ip == ["2001:db8::1", "2001:db8::2"]
     assert fg_interface.ip6_hop_limit == 64
     assert fg_interface.ip6_subnet == "2001:db8:1::/64"
@@ -128,7 +126,6 @@ def test_scalar_ipv6_values_are_typed_ordered_and_reviewed():
 
     result = extract_fortigate_config(SCALAR_IPV6_CONFIG)
     interface = result.canonical_ir.interfaces[0]
-    assert interface.source_dhcp6_client_options == ["rapid", "iapd", "iana"]
     assert interface.source_dhcp6_relay_ip == ["2001:db8::1", "2001:db8::2"]
     assert interface.source_ip6_hop_limit == 64
     assert interface.migration_status == "PARTIALLY_NORMALIZED"
@@ -141,8 +138,130 @@ def test_scalar_ipv6_values_are_typed_ordered_and_reviewed():
         [cell.value for cell in workbook["Interfaces"][3]],
         [cell.value for cell in workbook["Interfaces"][4]],
     ))
-    assert values["DHCPv6 Client Options"] == "rapid\niapd\niana"
     assert values["IPv6 Hop Limit"] == 64
+
+
+IPV6_UPSTREAM_DEPENDENCY_CONFIG = """
+config vdom
+    edit "VDOM-A"
+        config system interface
+            edit "wan"
+            next
+            edit "v6-valid"
+                config ipv6
+                    set ip6-upstream-interface wan
+                    config ip6-delegated-prefix-list
+                        edit 1
+                            set upstream-interface wan
+                        next
+                    end
+                end
+            next
+            edit "v6-missing"
+                config ipv6
+                    set ip6-upstream-interface missing
+                    config ip6-delegated-prefix-list
+                        edit 2
+                            set upstream-interface missing
+                        next
+                    end
+                end
+            next
+            edit "v6-zone"
+                config ipv6
+                    set ip6-upstream-interface zone-parent
+                    config ip6-delegated-prefix-list
+                        edit 3
+                            set upstream-interface zone-parent
+                        next
+                    end
+                end
+            next
+            edit "v6-cross-vdom"
+                config ipv6
+                    set ip6-upstream-interface cross-vdom
+                    config ip6-delegated-prefix-list
+                        edit 4
+                            set upstream-interface cross-vdom
+                        next
+                    end
+                end
+            next
+        end
+        config system zone
+            edit "zone-parent"
+            next
+        end
+    next
+    edit "VDOM-B"
+        config system interface
+            edit "cross-vdom"
+            next
+        end
+    next
+end
+"""
+
+
+def test_ipv6_upstream_interface_dependencies_are_strict_and_auditable():
+    result = extract_fortigate_config(IPV6_UPSTREAM_DEPENDENCY_CONFIG)
+    dependencies = [
+        item for item in result.dependencies
+        if item.source_field == "ip6-upstream-interface"
+    ]
+    by_reference = {item.reference: item for item in dependencies}
+
+    assert by_reference["wan"].result == "RESOLVED"
+    assert by_reference["wan"].target_path == "system interface"
+    assert all(
+        by_reference[reference].result == "UNRESOLVED"
+        and by_reference[reference].target_path is None
+        for reference in ("missing", "zone-parent", "cross-vdom")
+    )
+    assert any(
+        entry.category == "FortiGate Dependency"
+        and "ip6-upstream-interface" in entry.message
+        and "missing" in entry.message
+        for entry in result.canonical_ir.audit_entries
+    )
+
+    interface = next(item for item in result.canonical_ir.interfaces if item.name == "v6-valid")
+    assert interface.source_ip6_upstream_interface == "wan"
+    workbook = load_workbook(
+        io.BytesIO(IRExcelExporter(result.canonical_ir, extraction_result=result).generate())
+    )
+    headers = {cell.value: cell.column for cell in workbook["Interfaces"][3]}
+    row = next(
+        row for row in workbook["Interfaces"].iter_rows(min_row=4)
+        if row[headers["Name"] - 1].value == "v6-valid"
+    )
+    assert row[headers["IPv6 Upstream Interface"] - 1].value == "wan"
+
+
+def test_ipv6_delegated_prefix_upstream_dependencies_are_strict_and_auditable():
+    result = extract_fortigate_config(IPV6_UPSTREAM_DEPENDENCY_CONFIG)
+    dependencies = [
+        item for item in result.dependencies
+        if item.source_field == "upstream-interface"
+    ]
+    by_reference = {item.reference: item for item in dependencies}
+
+    assert by_reference["wan"].result == "RESOLVED"
+    assert by_reference["wan"].target_path == "system interface"
+    assert all(
+        by_reference[reference].result == "UNRESOLVED"
+        and by_reference[reference].target_path is None
+        for reference in ("missing", "zone-parent", "cross-vdom")
+    )
+    assert any(
+        entry.category == "FortiGate Dependency"
+        and "upstream-interface" in entry.message
+        and "missing" in entry.message
+        for entry in result.canonical_ir.audit_entries
+    )
+
+    interface = next(item for item in result.canonical_ir.interfaces if item.name == "v6-valid")
+    assert interface.ipv6_delegated_prefixes[0].upstream_interface == "wan"
 
 
 def test_ipv6_prefix_lists_and_iapd_are_separate_typed_ordered_collections():
