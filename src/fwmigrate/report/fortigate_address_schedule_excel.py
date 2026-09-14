@@ -49,22 +49,32 @@ class FortiGateAddressScheduleExcelExporter(ReadableFortiGateExcelExporter):
 
         if "Addresses" in workbook.sheetnames:
             sheet = workbook["Addresses"]
-            template_column = sheet.max_column + 1
-            resolved_column = sheet.max_column + 2
+            defaults_column = sheet.max_column + 1
+            template_column = sheet.max_column + 2
+            resolved_column = sheet.max_column + 3
+            defaults_header = sheet.cell(3, defaults_column, "Effective Defaults")
             template_header = sheet.cell(3, template_column, "IPv6 Template Reference")
             resolved_header = sheet.cell(
                 3,
                 resolved_column,
                 "Template Reference Resolved",
             )
-            if template_column > 1:
+            if defaults_column > 1:
                 self._copy_cell_style(
-                    sheet.cell(3, template_column - 1),
-                    template_header,
+                    sheet.cell(3, defaults_column - 1),
+                    defaults_header,
                 )
+                self._copy_cell_style(defaults_header, template_header)
                 self._copy_cell_style(template_header, resolved_header)
 
             for row_number, address in enumerate(self.ir.addresses, start=4):
+                defaults_cell = sheet.cell(
+                    row_number,
+                    defaults_column,
+                    self._format_settings(
+                        getattr(address, "source_effective_defaults", {}) or {}
+                    ),
+                )
                 template_cell = sheet.cell(
                     row_number,
                     template_column,
@@ -80,13 +90,17 @@ class FortiGateAddressScheduleExcelExporter(ReadableFortiGateExcelExporter):
                     resolved_column,
                     self._optional_bool_literal(resolved),
                 )
-                if template_column > 1:
+                if defaults_column > 1:
                     self._copy_cell_style(
-                        sheet.cell(row_number, template_column - 1),
-                        template_cell,
+                        sheet.cell(row_number, defaults_column - 1),
+                        defaults_cell,
                     )
+                    self._copy_cell_style(defaults_cell, template_cell)
                     self._copy_cell_style(template_cell, resolved_cell)
 
+            sheet.column_dimensions[
+                get_column_letter(defaults_column)
+            ].width = 28
             sheet.column_dimensions[
                 get_column_letter(template_column)
             ].width = 24
@@ -171,6 +185,7 @@ class FortiGateAddressScheduleExcelExporter(ReadableFortiGateExcelExporter):
                 for cell in sheet[3]
             }
             for header in (
+                "Effective Defaults",
                 "IPv6 Template Reference",
                 "Template Reference Resolved",
             ):
