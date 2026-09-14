@@ -390,7 +390,15 @@ _FORTIGATE_POLICY_EFFECTIVE_DEFAULTS = {
     "auto_asic_offload": "enable",
     "np_acceleration": "enable",
     "port_preserve": "enable",
+    "policy_expiry": "disable",
+    "schedule_timeout": "disable",
+    "reputation_direction": "destination",
+    "reputation_direction6": "destination",
+    "match_vip": "enable",
+    "match_vip_only": "disable",
 }
+
+_FORTIGATE_POLICY_EFFECTIVE_INT_DEFAULTS = {"reputation_minimum": 0, "reputation_minimum6": 0}
 
 
 def _effective_policy_setting(
@@ -400,6 +408,10 @@ def _effective_policy_setting(
     if configured_value is not None:
         return configured_value
     return _FORTIGATE_POLICY_EFFECTIVE_DEFAULTS.get(field_name)
+
+
+def _effective_policy_int(configured_value: Optional[int], field_name: str) -> Optional[int]:
+    return configured_value if configured_value is not None else _FORTIGATE_POLICY_EFFECTIVE_INT_DEFAULTS.get(field_name)
 
 
 def _policy_nat_source_port_behavior(
@@ -6565,6 +6577,26 @@ class FGToIRTransformer:
                 "enable",
                 "FortiGate port-preserve behavior is explicitly disabled and requires target-platform review",
             ),
+            (
+                "policy_expiry",
+                "disable",
+                "FortiGate policy-expiry behavior requires target-platform review",
+            ),
+            (
+                "schedule_timeout",
+                "disable",
+                "FortiGate schedule-timeout behavior requires target-platform review",
+            ),
+            (
+                "reputation_direction",
+                "destination",
+                "FortiGate IPv4 reputation direction requires target-platform review",
+            ),
+            (
+                "reputation_direction6",
+                "destination",
+                "FortiGate IPv6 reputation direction requires target-platform review",
+            ),
         )
         for field_name, default, review_reason in source_setting_reviews:
             value = getattr(policy, field_name)
@@ -6575,6 +6607,17 @@ class FGToIRTransformer:
             else:
                 review_reasons.append(
                     f"Unknown FortiGate {field_name.replace('_', '-')} value '{value}' requires manual review"
+                )
+
+        for field_name in ("reputation_minimum", "reputation_minimum6"):
+            value = getattr(policy, field_name)
+            if value not in (None, 0):
+                review_reasons.append(
+                    f"FortiGate {field_name.replace('_', '-')} requires target-platform review"
+                )
+            if f"unparsed_{field_name}" in policy.extra_settings:
+                review_reasons.append(
+                    f"FortiGate {field_name.replace('_', '-')} could not be parsed"
                 )
 
         # NAT semantics.
@@ -6994,6 +7037,24 @@ class FGToIRTransformer:
                     policy.port_preserve,
                     "port_preserve",
                 ),
+                source_policy_expiry=policy.policy_expiry,
+                source_effective_policy_expiry=_effective_policy_setting(policy.policy_expiry, "policy_expiry"),
+                source_policy_expiry_date=policy.policy_expiry_date,
+                source_policy_expiry_date_utc=policy.policy_expiry_date_utc,
+                source_schedule_timeout=policy.schedule_timeout,
+                source_effective_schedule_timeout=_effective_policy_setting(policy.schedule_timeout, "schedule_timeout"),
+                source_reputation_direction=policy.reputation_direction,
+                source_effective_reputation_direction=_effective_policy_setting(policy.reputation_direction, "reputation_direction"),
+                source_reputation_direction6=policy.reputation_direction6,
+                source_effective_reputation_direction6=_effective_policy_setting(policy.reputation_direction6, "reputation_direction6"),
+                source_reputation_minimum=policy.reputation_minimum,
+                source_effective_reputation_minimum=_effective_policy_int(policy.reputation_minimum, "reputation_minimum"),
+                source_reputation_minimum6=policy.reputation_minimum6,
+                source_effective_reputation_minimum6=_effective_policy_int(policy.reputation_minimum6, "reputation_minimum6"),
+                source_match_vip=policy.match_vip,
+                source_effective_match_vip=_effective_policy_setting(policy.match_vip, "match_vip"),
+                source_match_vip_only=policy.match_vip_only,
+                source_effective_match_vip_only=_effective_policy_setting(policy.match_vip_only, "match_vip_only"),
                 source_profile_type=policy.profile_type,
                 source_profile_group=policy.profile_group,
                 source_profile_protocol_options=policy.profile_protocol_options,
@@ -8803,6 +8864,8 @@ class FGToIRTransformer:
                 source_policy_nat_ip=policy.natip,
                 source_policy_match_vip=policy.match_vip,
                 source_policy_match_vip_only=policy.match_vip_only,
+                source_policy_effective_match_vip=_effective_policy_setting(policy.match_vip, "match_vip"),
+                source_policy_effective_match_vip_only=_effective_policy_setting(policy.match_vip_only, "match_vip_only"),
                 source_attributes=(
                     {
                         "source_policy_port_preserve": policy.port_preserve,

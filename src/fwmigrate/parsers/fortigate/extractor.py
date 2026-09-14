@@ -25,7 +25,7 @@ from fwmigrate.parsers.fortigate.parser import (
 from fwmigrate.parsers.fortigate.section_scanner import scan_fortigate_sections
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
-from fwmigrate.ir.core import IRAuditEntry, MigrationConfidence
+from fwmigrate.ir.core import IRAuditEntry, IRSourceConfigCommand, MigrationConfidence
 
 
 # These sections are preserved as typed/source-only objects because their
@@ -96,6 +96,31 @@ def extract_fortigate_config(
     parser = FortiGateParser(FortiGateTokenizer(text))
     fg_config = parser.parse()
     ir_config = FGToIRTransformer(fg_config, zone_mapping=zone_mapping or {}).transform()
+    for policy in ir_config.policies:
+        matches = [
+            item for item in parser.source_inventory_items
+            if item.source_path == "firewall policy"
+            and (item.source_context or "root") == (policy.source_context or "root")
+            and str(item.source_id) == str(policy.source_rule_id)
+        ]
+        extra_keys = {
+            str(key).replace("-", "_")
+            for key in policy.source_extra_settings
+        }
+        extra_keys.update(
+            str(key).replace("-", "_")
+            for key in policy.source_extra_settings.get("source_unset_settings", [])
+        )
+        policy.source_extra_setting_commands = [
+            IRSourceConfigCommand(
+                operation=command.operation,
+                key=command.key,
+                values=list(command.values),
+            )
+            for item in matches
+            for command in item.commands
+            if command.key.replace("-", "_") in extra_keys
+        ]
 
     classify_section_coverage(source_sections, fg_config, ir_config)
     dependencies = build_dependency_registry(parser.source_inventory_items)

@@ -443,8 +443,15 @@ def test_excel_exporter_exposes_source_policy_audit_fields():
         "Effective Inspection Mode", "ZTNA Status", "Effective ZTNA Status", "ZTNA EMS Tags",
         "Timeout Send RST", "Effective Timeout Send RST", "Auto ASIC Offload",
         "Effective Auto ASIC Offload", "NP Acceleration", "Effective NP Acceleration",
-        "Port Preserve", "Effective Port Preserve", "Additional Settings", "Extraction Status",
-        "Manual Review", "Review Reasons", "Description",
+            "Port Preserve", "Effective Port Preserve", "Additional Settings", "Extraction Status",
+            "Policy Expiry", "Effective Policy Expiry", "Policy Expiry Date", "Policy Expiry Date UTC",
+            "Schedule Timeout", "Effective Schedule Timeout", "IPv4 Reputation Direction",
+            "Effective IPv4 Reputation Direction", "IPv6 Reputation Direction",
+            "Effective IPv6 Reputation Direction", "IPv4 Reputation Minimum",
+            "Effective IPv4 Reputation Minimum", "IPv6 Reputation Minimum",
+            "Effective IPv6 Reputation Minimum", "Match VIP", "Effective Match VIP",
+            "Match VIP Only", "Effective Match VIP Only",
+            "Manual Review", "Review Reasons", "Description",
     }
     headers = {cell.value: cell.column for cell in policies[3]}
     assert policies.cell(4, headers["Rule #"]).value == 1

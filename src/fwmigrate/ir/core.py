@@ -1285,6 +1285,25 @@ class IRPolicy(BaseModel):
     source_effective_auto_asic_offload: Optional[str] = None
     source_effective_np_acceleration: Optional[str] = None
     source_effective_port_preserve: Optional[str] = None
+    source_policy_expiry: Optional[str] = None
+    source_effective_policy_expiry: Optional[str] = None
+    source_policy_expiry_date: Optional[str] = None
+    source_policy_expiry_date_utc: Optional[str] = None
+    source_schedule_timeout: Optional[str] = None
+    source_effective_schedule_timeout: Optional[str] = None
+    source_reputation_direction: Optional[str] = None
+    source_effective_reputation_direction: Optional[str] = None
+    source_reputation_direction6: Optional[str] = None
+    source_effective_reputation_direction6: Optional[str] = None
+    source_reputation_minimum: Optional[int] = None
+    source_effective_reputation_minimum: Optional[int] = None
+    source_reputation_minimum6: Optional[int] = None
+    source_effective_reputation_minimum6: Optional[int] = None
+    source_match_vip: Optional[str] = None
+    source_effective_match_vip: Optional[str] = None
+    source_match_vip_only: Optional[str] = None
+    source_effective_match_vip_only: Optional[str] = None
+    source_extra_setting_commands: List[IRSourceConfigCommand] = Field(default_factory=list)
     source_profile_type: Optional[str] = None
     source_profile_group: Optional[str] = None
     source_profile_protocol_options: Optional[str] = None
@@ -1716,6 +1735,8 @@ class IRNATRule(BaseModel):
     source_policy_nat_ip: Optional[str] = None
     source_policy_match_vip: Optional[str] = None
     source_policy_match_vip_only: Optional[str] = None
+    source_policy_effective_match_vip: Optional[str] = None
+    source_policy_effective_match_vip_only: Optional[str] = None
     migration_status: str = "NORMALIZED"
     review_reasons: List[str] = Field(default_factory=list)
     requires_manual_review: bool = False

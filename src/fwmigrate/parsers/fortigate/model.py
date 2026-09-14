@@ -924,6 +924,13 @@ class FGPolicy(FGContextualModel):
     fixedport: Optional[str] = None
     match_vip: Optional[str] = None
     match_vip_only: Optional[str] = None
+    policy_expiry: Optional[str] = None
+    policy_expiry_date: Optional[str] = None
+    policy_expiry_date_utc: Optional[str] = None
+    schedule_timeout: Optional[str] = None
+    reputation_direction: Optional[str] = None
+    reputation_direction6: Optional[str] = None
+    reputation_minimum6: Optional[int] = None
     nat46: Optional[str] = None
     nat64: Optional[str] = None
     natinbound: Optional[str] = None

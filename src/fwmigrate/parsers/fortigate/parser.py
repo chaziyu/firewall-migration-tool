@@ -4285,7 +4285,7 @@ class FortiGateParser:
             attributes["central_nat"] = exec_ctx.central_nat
             for int_key in (
                 "tcp_mss_sender", "tcp_mss_receiver", "session_ttl",
-                "vlan_cos_fwd", "vlan_cos_rev", "reputation_minimum",
+                "vlan_cos_fwd", "vlan_cos_rev", "reputation_minimum", "reputation_minimum6",
             ):
                 self._normalize_optional_int(attributes, int_key)
             for list_int_key in (
