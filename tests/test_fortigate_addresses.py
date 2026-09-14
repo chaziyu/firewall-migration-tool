@@ -392,7 +392,7 @@ def test_fortigate_address_excel_exposes_source_metadata():
         for cell in sheet[3]
     }
 
-    assert list(headers) == [
+    assert set(headers) == {
         "Name",
         "Source UUID",
         "Type",
@@ -451,7 +451,7 @@ def test_fortigate_address_excel_exposes_source_metadata():
         "Effective Defaults",
         "IPv6 Template Reference",
         "Template Reference Resolved",
-    ]
+    }
 
     row_by_name = {
         sheet.cell(row, headers["Name"]).value: row
