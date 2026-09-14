@@ -1,5 +1,6 @@
 from textwrap import dedent
 
+from fwmigrate.ir import IR_SCHEMA_VERSION
 from fwmigrate.ir.migrations import migrate_ir_payload
 from fwmigrate.parsers.palo_alto.parser import PANOSSourceParser
 
@@ -167,4 +168,4 @@ def test_pan_os_does_not_fabricate_fortigate_alg_nat_or_ngfw_state():
 
 
 def test_schema_1_53_migrates_to_current_after_phase6_11_fields():
-    assert migrate_ir_payload({"schema_version": "1.53"})["schema_version"] == "1.65"
+    assert migrate_ir_payload({"schema_version": "1.53"})["schema_version"] == IR_SCHEMA_VERSION
