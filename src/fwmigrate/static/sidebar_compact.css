@@ -1,0 +1,85 @@
+/* Compact desktop sidebar spacing.
+ * Keep navigation controls comfortably sized while avoiding unnecessary
+ * vertical overflow on common laptop-height viewports.
+ */
+@media (min-width: 761px) {
+  .workspace-switch {
+    margin: 28px 0 24px;
+  }
+
+  .sidebar-bottom {
+    margin-top: 28px;
+    padding-top: 0;
+  }
+
+  .sidebar-note {
+    padding: 18px 16px 17px;
+  }
+
+  .sidebar-note > .icon {
+    margin-bottom: 13px;
+  }
+
+  .sidebar-note p {
+    margin-top: 8px;
+    line-height: 1.6;
+  }
+
+  .vendor-dots {
+    margin-top: 15px;
+  }
+
+  .sidebar-link {
+    padding: 16px 7px;
+  }
+
+  .sidebar-status {
+    padding-top: 12px;
+  }
+}
+
+/* Extra compaction for short desktop/laptop windows. Scrolling remains as a
+ * fallback when the viewport is genuinely too short for all sidebar content.
+ */
+@media (min-width: 761px) and (max-height: 760px) {
+  .sidebar {
+    padding-top: 24px;
+    padding-bottom: 14px;
+  }
+
+  .workspace-switch {
+    margin: 24px 0 20px;
+  }
+
+  .sidebar-bottom {
+    margin-top: 20px;
+  }
+
+  .sidebar-note {
+    padding: 16px 15px;
+  }
+
+  .sidebar-note > .icon {
+    margin-bottom: 10px;
+  }
+
+  .sidebar-note strong {
+    font-size: 17px;
+  }
+
+  .sidebar-note p {
+    line-height: 1.5;
+  }
+
+  .vendor-dots {
+    margin-top: 12px;
+  }
+
+  .sidebar-link {
+    padding: 13px 7px;
+  }
+
+  .sidebar-status {
+    padding-top: 10px;
+  }
+}
