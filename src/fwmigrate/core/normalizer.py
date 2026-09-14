@@ -8,12 +8,6 @@ class RuleNormalizer:
     def __init__(self, ir: IRConfig):
         self.ir = ir
 
-    def normalize(self) -> IRConfig:
-        """Return a normalized ``IRConfig`` copy without changing the input."""
-        normalized = self.ir.model_copy(deep=True)
-        RuleNormalizer(normalized).normalize_outbound_threat_source_anomalies()
-        return normalized
-
     def normalize_outbound_threat_source_anomalies(self) -> None:
         for pol in self.ir.policies:
             if (

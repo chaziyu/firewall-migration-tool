@@ -60,7 +60,10 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
         with open(input, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        request = MigrationRequest(
+        if optimize:
+            click.echo("Running rule & object optimizer...")
+
+        result = MigrationPipeline().run(MigrationRequest(
             source_vendor=source_vendor,
             target_vendor=target_vendor,
             source_content=content,
@@ -68,32 +71,27 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
             optimize=optimize,
             source_name=Path(input).name,
             zone_mapping=migration_config.zone_mapping,
-        )
-        if optimize:
-            click.echo("Running rule & object optimizer...")
+        ))
 
-        result = MigrationPipeline().run(request)
         if not result.generation_allowed:
             click.echo("Migration blocked: generation safety checks failed.", err=True)
             for reason in result.blocking_reasons:
                 click.echo(f"  - {reason}", err=True)
             if result.requires_manual_review:
-                click.echo("Manual review is required.", err=True)
+                click.echo("Manual review is required before generation.", err=True)
             sys.exit(1)
 
         ir_config = result.final_ir
-        click.echo(
-            f"  Parsed {len(result.source_ir.interfaces)} interfaces, "
-            f"{len(result.source_ir.policies)} policies."
-        )
+        if ir_config is None:
+            raise RuntimeError("Migration pipeline returned no final IR")
+        click.echo(f"  Parsed {len(result.source_ir.interfaces)} interfaces, {len(result.source_ir.policies)} policies.")
+
+        # Optional Optimization
         if optimize:
             unused = result.unused_objects
-            click.echo(
-                f"  Found {len(unused['unused_addresses'])} unused addresses, "
-                f"{len(unused['unused_services'])} unused services. Pruning..."
-            )
+            click.echo(f"  Found {len(unused['unused_addresses'])} unused addresses, {len(unused['unused_services'])} unused services. Pruning...")
 
-        # Generate returned artifacts; filesystem output remains a CLI concern.
+        # Generate Target Artifacts
         click.echo(f"Generating {target_vendor.upper()} ({format.upper()}) configuration...")
         out_dir = Path(output)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -108,8 +106,7 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
         if report:
             click.echo(f"Generating unified migration reports: {report}")
             reporter = MigrationReporter(
-                ir_config,
-                target_vendor=result.target_display_name or target_vendor,
+                ir_config, target_vendor=result.target_display_name or target_vendor,
                 extraction_result=result.extraction,
             )
             report_content = reporter.generate_report()
