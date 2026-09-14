@@ -1677,6 +1677,7 @@ class FGPhase1Policy(FGPhase1Common, FGSourceOnlyRule):
 
 class FGPhase2Policy(FGSourceOnlyRule):
     phase1name: Optional[str] = None
+    use_natip: Optional[str] = None
     proposal: List[str] = Field(default_factory=list)
     src_addr_type: Optional[str] = None
     dst_addr_type: Optional[str] = None

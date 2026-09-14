@@ -309,6 +309,8 @@ def validate_ippool_746(pool: Any, source_version: str | None = None) -> list[st
 
 def validate_ippool6_746(pool: Any) -> list[str]:
     reasons: list[str] = []
+    if pool.nat46 == "enable":
+        reasons.append("NAT46 IP pool semantics require target-specific review.")
     for field in ("startip", "endip"):
         value = getattr(pool, field, None)
         if value and not _is_valid_ipv6(value):

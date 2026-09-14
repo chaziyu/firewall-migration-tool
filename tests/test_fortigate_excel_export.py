@@ -280,6 +280,60 @@ end
     assert "waf-profile=waf" in ngfw.cell(4, ngfw_headers["Additional Settings"]).value
 
 
+def test_fortigate_excel_export_preserves_central_zero_and_ipsec_nat_review_rows():
+    result = extract_fortigate_config("""
+config system settings
+    set central-nat enable
+end
+config firewall central-snat-map
+    edit 20
+        set srcintf "lan"
+        set dstintf "wan"
+        set orig-addr "all"
+        set dst-addr "all"
+        set orig-port 0
+        set dst-port 0
+        set nat-port 0
+    next
+end
+config firewall policy
+    edit 30
+        set srcintf "lan"
+        set dstintf "wan"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action ipsec
+        set vpntunnel "vpn-policy"
+        set natinbound enable
+    next
+end
+""")
+
+    workbook = load_workbook(BytesIO(IRExcelExporter(
+        result.canonical_ir,
+        extraction_result=result,
+    ).generate()))
+    sheet = workbook["NAT Rules"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    central_row = next(
+        row for row in range(4, sheet.max_row + 1)
+        if sheet.cell(row, headers["Name"]).value == "central-snat-20"
+    )
+    assert sheet.cell(central_row, headers["Original Source Port"]).value in (None, "")
+    assert sheet.cell(central_row, headers["Original Destination Port"]).value in (None, "")
+    assert sheet.cell(central_row, headers["Translated Source Port"]).value in (None, "")
+    assert "orig-port=0" in sheet.cell(central_row, headers["Additional Settings"]).value
+
+    ipsec_rows = {
+        sheet.cell(row, headers["Name"]).value: row
+        for row in range(4, sheet.max_row + 1)
+        if sheet.cell(row, headers["Name"]).value in {"IPSEC-DNAT-P30"}
+    }
+    assert sheet.cell(ipsec_rows["IPSEC-DNAT-P30"], headers["Migration Status"]).value == "PARTIALLY_NORMALIZED"
+    assert sheet.cell(ipsec_rows["IPSEC-DNAT-P30"], headers["Manual Review"]).value == "TRUE"
+
+
 def test_fortigate_excel_export_preserves_746_ip_pool_ir_and_review_values():
     result = extract_fortigate_config("""# config-version = 7.4.6
 config firewall ippool

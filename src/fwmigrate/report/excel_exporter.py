@@ -3337,6 +3337,7 @@ class IRExcelExporter:
                  if isinstance(item.source_attributes.get("checkpoint-provenance"), dict) else None,
                  self._format_settings(item.source_attributes.get("checkpoint-source-nat-method-resolution") or {}),
                  self._optional_bool_literal(item.source_attributes.get("checkpoint-ordering-barrier")),
+                self._format_settings(item.source_attributes),
             )
             for index, item in enumerate(self.ir.nat_rules, 1)
         )
@@ -3371,7 +3372,7 @@ class IRExcelExporter:
                  "Manual Review", "Review Reasons", "Description", "Identity", "Exemption",
                  "Source Rule Number", "Source Rule UID", "Original Service", "Translated Service",
                  "Install On", "Source Translation Method", "Check Point NAT Origin", "Check Point Section",
-                 "Check Point Source NAT Evidence", "Check Point Ordering Barrier",
+                 "Check Point Source NAT Evidence", "Check Point Ordering Barrier", "Additional Settings",
             ),
             rows,
         )

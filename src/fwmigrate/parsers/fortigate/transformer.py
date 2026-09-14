@@ -5940,6 +5940,171 @@ class FGToIRTransformer:
         )
 
     @staticmethod
+    def _policy_ipsec_nat_review_reason(policy: FGPolicy) -> Optional[str]:
+        if policy.action == "ipsec" or not any(
+            value is not None
+            for value in (policy.natinbound, policy.natoutbound, policy.natip)
+        ):
+            return None
+        return (
+            "FortiGate natinbound, natoutbound, and natip are only valid for "
+            "policy-based IPsec action"
+        )
+
+    @staticmethod
+    def _policy_ipsec_natip_translation(
+        value: Optional[str],
+    ) -> Tuple[List[str], Optional[str]]:
+        if value is None or not str(value).strip():
+            return [], None
+        raw = str(value).strip()
+        if raw.lower() in {"0", "0.0.0.0", "any", "default", "none"}:
+            return [], f"IPsec natip '{value}' is a default or broad selector"
+        values = [item for item in re.split(r"[,\s]+", raw) if item]
+        if len(values) != 1:
+            return [], "IPsec natip must resolve to one unambiguous IPv4 host"
+        try:
+            address = ip_address(values[0])
+        except ValueError:
+            return [], f"IPsec natip '{value}' is not a valid IPv4 host"
+        if address.version != 4:
+            return [], f"IPsec natip '{value}' is not a valid IPv4 host"
+        return [str(address)], None
+
+    def _policy_ipsec_phase2_nat_evidence(
+        self,
+        policy: FGPolicy,
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        source_attributes: Dict[str, Any] = {
+            "vpntunnel": policy.vpntunnel,
+            "ipsec_phase2": [],
+        }
+        reasons: List[str] = []
+        if not policy.vpntunnel:
+            reasons.append("policy-based IPsec NAT has no vpntunnel reference")
+            return source_attributes, reasons
+
+        phase1 = next(
+            (
+                item for item in self.fg.phase1_policies
+                if item.source_context == policy.source_context
+                and item.name == policy.vpntunnel
+            ),
+            None,
+        )
+        if phase1 is None:
+            reasons.append(
+                f"IPsec policy references missing Phase 1 '{policy.vpntunnel}'"
+            )
+
+        phase2_entries = [
+            item for item in self.fg.phase2_policies
+            if item.source_context == policy.source_context
+            and item.phase1name == policy.vpntunnel
+        ]
+        source_attributes["ipsec_phase2"] = [
+            {
+                "id": item.id,
+                "name": item.name,
+                "phase1name": item.phase1name,
+                "use_natip": item.use_natip,
+            }
+            for item in phase2_entries
+        ]
+        if not phase2_entries:
+            reasons.append(
+                f"IPsec policy has no matching Phase 2 for vpntunnel '{policy.vpntunnel}'"
+            )
+        else:
+            use_natip_values = {item.use_natip for item in phase2_entries}
+            if len(use_natip_values) > 1:
+                reasons.append(
+                    "matching IPsec Phase 2 entries disagree on use-natip"
+                )
+        return source_attributes, reasons
+
+    def _transform_policy_ipsec_nat(
+        self,
+        policy: FGPolicy,
+        ir_policy: IRPolicy,
+        policy_index: int,
+    ) -> None:
+        inbound_enabled = policy.natinbound == "enable"
+        outbound_enabled = policy.natoutbound == "enable"
+        if not inbound_enabled and not outbound_enabled:
+            return
+
+        nat_family, original_address_family, translated_address_family = (
+            self._policy_nat_family(
+                policy,
+                "ipv6" if policy.srcaddr6 or policy.dstaddr6 else "ipv4",
+            )
+        )
+        source_attributes, review_reasons = self._policy_ipsec_phase2_nat_evidence(policy)
+        source_attributes["natip"] = policy.natip
+        translated_sources, natip_reason = self._policy_ipsec_natip_translation(policy.natip)
+        if natip_reason:
+            review_reasons.append(natip_reason)
+        review_reasons.insert(
+            0,
+            "policy-based IPsec NAT semantics require manual review",
+        )
+        runtime_behavior = {
+            "nat_inbound": inbound_enabled,
+            "nat_outbound": outbound_enabled,
+            "nat_ip": policy.natip,
+        }
+        common = dict(
+            source_context=policy.source_context,
+            source_policy_reference=str(policy.id),
+            source_policy_uuid=policy.uuid,
+            source_policy_name=policy.name,
+            sequence=policy_index,
+            enabled=policy.status != "disable",
+            source_from_interfaces=list(policy.srcintf),
+            source_to_interfaces=list(policy.dstintf),
+            from_zone=list(ir_policy.from_zone),
+            to_zone=list(ir_policy.to_zone),
+            source=list(ir_policy.source),
+            destination=list(ir_policy.destination),
+            services=list(ir_policy.service),
+            nat_family=nat_family,
+            original_address_family=original_address_family,
+            translated_address_family=translated_address_family,
+            runtime_behavior=runtime_behavior,
+            source_origin="firewall-policy-ipsec",
+            source_policy_nat_inbound=policy.natinbound,
+            source_policy_nat_outbound=policy.natoutbound,
+            source_policy_nat_ip=policy.natip,
+            source_attributes=source_attributes,
+            migration_status="PARTIALLY_NORMALIZED",
+            review_reasons=review_reasons,
+            requires_manual_review=True,
+            description=policy.comments,
+        )
+
+        if outbound_enabled:
+            self.ir.nat_rules.append(
+                IRNATRule(
+                    name=f"IPSEC-SNAT-P{policy.id}",
+                    type=NATType.SOURCE,
+                    translated_sources=translated_sources,
+                    source_translation_mode=(
+                        NATTranslationMode.STATIC if translated_sources else None
+                    ),
+                    **common,
+                )
+            )
+        if inbound_enabled:
+            self.ir.nat_rules.append(
+                IRNATRule(
+                    name=f"IPSEC-DNAT-P{policy.id}",
+                    type=NATType.DESTINATION,
+                    **common,
+                )
+            )
+
+    @staticmethod
     def _policy_nat_pool_references(
         policy: FGPolicy,
         nat_family: str,
@@ -7719,6 +7884,14 @@ class FGToIRTransformer:
                 review_reasons.append("fixed-port-range pool semantics")
             if pool.type == "port-block-allocation":
                 review_reasons.append("port-block-allocation pool semantics")
+            if any(
+                field in pool.source_explicit_fields
+                for field in (
+                    "block_size", "num_blocks_per_user", "pba_timeout",
+                    "pba_interim_log", "port_per_user", "privileged_port_use_pba",
+                )
+            ):
+                review_reasons.append("IP pool PBA settings require exact target-specific handling")
             cgn_values = (
                 pool.cgn_block_size,
                 pool.cgn_client_startip,
@@ -8258,6 +8431,33 @@ class FGToIRTransformer:
             ranges.append(IRNATPortRange(start=start, end=end))
         return ranges, None
 
+    @staticmethod
+    def _central_snat_port_ranges(
+        value: Optional[str],
+    ) -> Tuple[List[IRNATPortRange], Optional[str]]:
+        if value is None:
+            return [], None
+        tokens = [token for token in re.split(r"[,\s]+", str(value).strip()) if token]
+        if not tokens:
+            return [], None
+        if tokens == ["0"]:
+            return [], None
+        if "0" in tokens or any(token.startswith("0-") for token in tokens):
+            return [], f"central SNAT port value '{value}' mixes the FortiOS any-port sentinel 0 with another value"
+
+        ranges: List[IRNATPortRange] = []
+        for raw in tokens:
+            try:
+                parts = raw.split("-", 1)
+                start = int(parts[0])
+                end = int(parts[1]) if len(parts) == 2 else None
+                if not 1 <= start <= 65535 or (end is not None and not start <= end <= 65535):
+                    raise ValueError
+            except ValueError:
+                return [], f"invalid central SNAT port range '{raw}'"
+            ranges.append(IRNATPortRange(start=start, end=end))
+        return ranges, None
+
     def _transform_central_snat(self) -> None:
         pools = {
             (pool.source_context, pool.name): pool for pool in self.ir.ip_pools
@@ -8318,13 +8518,19 @@ class FGToIRTransformer:
                     f"Central SNAT protocol is invalid: {unparsed_protocol}"
                 )
 
-            source_ports, source_port_error = self._nat_port_ranges(rule.orig_port)
-            destination_ports, destination_port_error = self._nat_port_ranges(rule.dst_port)
-            translated_ports, translated_port_error = self._nat_port_ranges(rule.nat_port)
+            source_ports, source_port_error = self._central_snat_port_ranges(rule.orig_port)
+            destination_ports, destination_port_error = self._central_snat_port_ranges(rule.dst_port)
+            translated_ports, translated_port_error = self._central_snat_port_ranges(rule.nat_port)
             review_reasons.extend(
                 error for error in (source_port_error, destination_port_error, translated_port_error)
                 if error
             )
+
+            source_attributes = dict(rule.extra_settings)
+            for field in ("orig_port", "dst_port", "nat_port"):
+                value = getattr(rule, field)
+                if value is not None:
+                    source_attributes[field] = value
 
             self.ir.nat_rules.append(IRNATRule(
                 name=f"central-snat-{rule.id}",
@@ -8362,7 +8568,7 @@ class FGToIRTransformer:
                 review_reasons=review_reasons,
                 requires_manual_review=bool(review_reasons),
                 description=rule.comments,
-                source_attributes=dict(rule.extra_settings),
+                source_attributes=source_attributes,
             ))
 
     def _transform_central_dnat_vips(self) -> None:
@@ -8585,6 +8791,9 @@ class FGToIRTransformer:
             ),
             1,
         ):
+            if policy.action == "ipsec":
+                self._transform_policy_ipsec_nat(policy, ir_policy, policy_index)
+                continue
             if (policy.srcaddr6 or policy.dstaddr6 or policy.poolname6) and not (
                 policy.srcaddr or policy.dstaddr or policy.poolname
             ):
@@ -8703,6 +8912,11 @@ class FGToIRTransformer:
                         nat_review_reasons,
                         f"policy NAT control '{control}' is configured as '{value}'",
                     )
+
+            ipsec_nat_review_reason = self._policy_ipsec_nat_review_reason(policy)
+            if ipsec_nat_review_reason:
+                source_requires_review = True
+                add_reason(nat_review_reasons, ipsec_nat_review_reason)
 
             if source_requires_review and (
                 snat_enabled or vip_matches
@@ -9443,6 +9657,8 @@ class FGToIRTransformer:
             if vip.address_family == "ipv6"
         }
         for index, (policy, ir_policy) in enumerate(zip(self.fg.policies, self.ir.policies), 1):
+            if policy.action == "ipsec":
+                continue
             if not (policy.srcaddr6 or policy.dstaddr6 or policy.poolname6):
                 continue
             if policy.nat46 == "enable" and (policy.srcaddr or policy.dstaddr or policy.poolname):
@@ -9452,6 +9668,9 @@ class FGToIRTransformer:
             )
             snat_enabled = self._policy_source_nat_enabled(policy, family)
             snat_reasons: List[str] = []
+            ipsec_nat_review_reason = self._policy_ipsec_nat_review_reason(policy)
+            if ipsec_nat_review_reason:
+                snat_reasons.append(ipsec_nat_review_reason)
             pool_names = self._policy_nat_pool_references(policy, family)
             pool_family = "ipv6" if family in {"nat46", "nat66"} else "ipv4"
             pools = pools_by_family[pool_family]
@@ -9528,7 +9747,7 @@ class FGToIRTransformer:
                     name=f"SNAT6-P{policy.id}", type=NATType.SOURCE,
                     enabled=policy.status != "disable",
                     destination=[normalize_to_ir("fortigate", value) for value in policy.dstaddr6],
-                    translated_sources=translated or ([policy.natip] if policy.natip else []),
+                    translated_sources=translated,
                     source_translation_mode=NATTranslationMode.POOL if pool_names else NATTranslationMode.INTERFACE_ADDRESS,
                     source_pool_references=pool_names,
                     migration_status="PARTIALLY_NORMALIZED" if snat_reasons else "NORMALIZED",
@@ -9582,7 +9801,7 @@ class FGToIRTransformer:
                     enabled=policy.status != "disable" and vip.status != "disable",
                     destination=external_destinations,
                     translated_destinations=translated_destinations,
-                    translated_sources=(translated or ([policy.natip] if policy.natip else [])) if snat_enabled else [],
+                    translated_sources=translated if snat_enabled else [],
                     source_translation_mode=(NATTranslationMode.POOL if pool_names else NATTranslationMode.INTERFACE_ADDRESS) if snat_enabled else None,
                     source_pool_references=pool_names if snat_enabled else [],
                     destination_protocol=self._vip_protocol(vip.protocol),

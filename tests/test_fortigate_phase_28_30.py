@@ -216,3 +216,26 @@ end
     assert policy.src_name6 == ["LOCAL_V6"]
     assert policy.dst_name6 == ["REMOTE_V6"]
     assert (policy.protocol, policy.src_port, policy.dst_port) == (17, 500, 500)
+
+
+def test_phase30_policy_phase2_exposes_use_natip_as_typed_source_evidence():
+    config = parse_fortigate_config('''
+config vpn ipsec phase2
+    edit 1
+        set name "policy-use-natip"
+        set phase1name "policy-tunnel"
+        set use-natip enable
+    next
+    edit 2
+        set name "policy-no-natip"
+        set phase1name "policy-tunnel"
+        set use-natip disable
+    next
+end
+''')
+
+    enabled, disabled = config.phase2_policies
+    assert isinstance(enabled, FGPhase2Policy746)
+    assert isinstance(disabled, FGPhase2Policy746)
+    assert enabled.use_natip == "enable"
+    assert disabled.use_natip == "disable"

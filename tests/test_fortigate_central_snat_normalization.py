@@ -166,6 +166,60 @@ end
     assert [rule.source_order for rule in extraction.canonical_ir.central_snat_rules] == [1, 2]
 
 
+def test_central_snat_port_zero_means_any_and_keeps_raw_source_values():
+    extraction = extract_fortigate_config("""
+config system settings
+    set central-nat enable
+end
+config firewall central-snat-map
+    edit 20
+        set srcintf "lan"
+        set dstintf "wan"
+        set orig-addr "all"
+        set dst-addr "all"
+        set orig-port 0
+        set dst-port 0
+        set nat-port 0
+    next
+end
+""")
+
+    rule = extraction.canonical_ir.nat_rules[0]
+    assert rule.original_source_ports == []
+    assert rule.original_destination_ports == []
+    assert rule.translated_source_ports == []
+    assert rule.source_attributes == {
+        "orig_port": "0",
+        "dst_port": "0",
+        "nat_port": "0",
+    }
+
+
+@pytest.mark.parametrize("field", ["orig-port", "dst-port", "nat-port"])
+def test_central_snat_zero_mixed_with_another_port_requires_review(field):
+    extraction = extract_fortigate_config(f"""
+config system settings
+    set central-nat enable
+end
+config firewall central-snat-map
+    edit 20
+        set srcintf "lan"
+        set dstintf "wan"
+        set orig-addr "all"
+        set dst-addr "all"
+        set {field} "0 443"
+    next
+end
+""")
+
+    rule = extraction.canonical_ir.nat_rules[0]
+    assert rule.original_source_ports == []
+    assert rule.original_destination_ports == []
+    assert rule.translated_source_ports == []
+    assert rule.requires_manual_review is True
+    assert rule.source_attributes[field.replace("-", "_")] == "0 443"
+
+
 def test_disabled_central_snat_preserves_match_and_port_fields_without_translation():
     extraction = extract_fortigate_config("""
 config system settings
