@@ -42,7 +42,7 @@ end
     assert not any("inline comment" in reason for reason in good.blocking_reasons)
 
 
-def test_complete_pba_pool_is_source_normalized_but_target_capability_gated():
+def test_pba_pool_keeps_source_review_status_and_is_capability_gated():
     result = extract_fortigate_config('''
 config firewall ippool
     edit "PBA_POOL"
@@ -61,21 +61,17 @@ end
 ''')
 
     pool = result.canonical_ir.ip_pools[0]
-    assert pool.migration_status == "NORMALIZED"
-    assert pool.requires_manual_review is False
+    assert pool.migration_status == "PARTIALLY_NORMALIZED"
+    assert pool.requires_manual_review is True
 
     palo_issues = CapabilityAnalyzer().analyze(result.canonical_ir, "palo_alto")
-    assert any(issue.feature in {"port-block-allocation", "pba-settings"} and issue.blocks_generation for issue in palo_issues)
+    assert any(issue.feature == "ip-pool-source-completeness" and issue.blocks_generation for issue in palo_issues)
 
     fortigate_issues = CapabilityAnalyzer().analyze(result.canonical_ir, "fortigate")
-    assert not any(issue.blocks_generation for issue in fortigate_issues)
+    assert any(issue.feature == "ip-pool-source-completeness" and issue.blocks_generation for issue in fortigate_issues)
 
     cli = FortiGateCLIGenerator().generate(result.canonical_ir)[0].content
-    assert 'edit "PBA_POOL"' in cli
-    assert "set type port-block-allocation" in cli
-    assert "set block-size 128" in cli
-    assert "set num-blocks-per-user 4" in cli
-    assert "set pba-timeout 60" in cli
+    assert "set type port-block-allocation" not in cli
 
 
 def test_complete_vip_group_is_normalized_and_emitted_for_fortigate():
@@ -103,7 +99,7 @@ end
     assert 'set member "WEB"' in cli
 
 
-def test_src_vip_filter_is_typed_source_evidence_and_target_gated():
+def test_src_vip_filter_is_typed_source_evidence_and_remains_fail_closed():
     result = extract_fortigate_config('''
 config firewall vip
     edit "WEB"
@@ -117,17 +113,16 @@ end
     vip = result.canonical_ir.virtual_ips[0]
     assert vip.extra_settings["src_vip_filter"] == "enable"
     assert vip.extra_settings["src_vip_filter_enabled"] is True
+    assert vip.requires_manual_review is True
+    assert "src-vip-filter" in (vip.audit_note or "")
 
     palo_issues = CapabilityAnalyzer().analyze(result.canonical_ir, "palo_alto")
     assert any(issue.feature == "src-vip-filter" and issue.blocks_generation for issue in palo_issues)
     fortigate_issues = CapabilityAnalyzer().analyze(result.canonical_ir, "fortigate")
     assert not any(issue.feature == "src-vip-filter" and issue.blocks_generation for issue in fortigate_issues)
 
-    cli = FortiGateCLIGenerator().generate(result.canonical_ir)[0].content
-    assert "set src-vip-filter enable" in cli
 
-
-def test_ipv6_pool_is_normalized_and_fortigate_cli_emits_nat46_fields():
+def test_ipv6_pool_keeps_extract_only_source_contract():
     result = extract_fortigate_config('''
 config firewall ippool6
     edit "POOL6"
@@ -141,12 +136,10 @@ end
 
     pool = result.canonical_ir.ip_pools[0]
     assert pool.address_family == "ipv6"
-    assert pool.migration_status == "NORMALIZED"
-    cli = FortiGateCLIGenerator().generate(result.canonical_ir)[0].content
-    assert "config firewall ippool6" in cli
-    assert 'edit "POOL6"' in cli
-    assert "set nat46 enable" in cli
-    assert "set add-nat46-route enable" in cli
+    assert pool.migration_status == "EXTRACT_ONLY"
+    assert pool.requires_manual_review is True
+    issues = CapabilityAnalyzer().analyze(result.canonical_ir, "fortigate")
+    assert any(issue.feature == "ip-pool-source-completeness" and issue.blocks_generation for issue in issues)
 
 
 def _two_vdom_config() -> str:
