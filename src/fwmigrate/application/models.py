@@ -6,6 +6,7 @@ from fwmigrate.core.normalizer import NormalizationResult
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
 from fwmigrate.capabilities.schema import CapabilityAnalysisResult
+from fwmigrate.application.metrics import PipelineMetrics
 
 
 @dataclass
@@ -19,6 +20,7 @@ class MigrationRequest:
     source_name: Optional[str] = None
     zone_mapping: Dict[str, str] = field(default_factory=dict)
     target_options: Dict[str, str] = field(default_factory=dict)
+    collect_metrics: bool = False
 
 
 @dataclass
@@ -34,3 +36,4 @@ class MigrationResult:
     requires_manual_review: bool = False
     normalization: Optional[NormalizationResult] = None
     capability_analysis: Optional[CapabilityAnalysisResult] = None
+    metrics: Optional[PipelineMetrics] = None

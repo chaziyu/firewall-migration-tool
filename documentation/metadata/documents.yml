@@ -48,6 +48,18 @@ documents:
       - src/fwmigrate/ir/
     last_verified: 2026-09-14
 
+  documentation/development/performance-baseline.md:
+    title: Performance Baseline
+    status: current
+    document_type: reference
+    source_of_truth:
+      - benchmarks/
+      - src/fwmigrate/application/metrics.py
+      - src/fwmigrate/application/pipeline.py
+      - src/fwmigrate/ir/index.py
+      - src/fwmigrate/ir/dependency.py
+    last_verified: 2026-09-15
+
   documentation/reference/ir/ir-schema.md:
     title: Canonical IR Schema Reference
     status: current
