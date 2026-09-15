@@ -5,7 +5,7 @@
 | Hosts, networks, ranges, ordinary groups | `NORMALIZED` / `PARTIALLY_NORMALIZED` | Yes | Conditional | Specialized object semantics remain source-only. |
 | Policy packages / layers | `NORMALIZED` / `PARTIALLY_NORMALIZED` | Metadata + policy context | Conditional | Ordered and Inline Layers are not flattened unsafely. |
 | Access rules | `PARTIALLY_NORMALIZED` | Yes where exact | Conditional | Unsupported dimensions/actions/dependencies withhold rules. |
-| NAT | `PARTIALLY_NORMALIZED` / `EXTRACT_ONLY` | Broad | Conditional | Automatic/manual ordering and identity barriers require fidelity evidence. |
+| NAT | `PARTIALLY_NORMALIZED` / `EXTRACT_ONLY` | Broad | Conditional | Only manual source NAT with proven method, ordering, and interface/pool evidence can become FortiGate central SNAT; automatic or ambiguous rules are withheld with a reason. |
 | Gaia interfaces/routes | `PARTIALLY_NORMALIZED` | Yes | Conditional | VS/platform/topology details can be nonportable. |
 | VPN | `PARTIALLY_NORMALIZED` / `EXTRACT_ONLY` | Limited | Conditional/withheld | Community/crypto/topology behavior requires review. |
 | Identity/authentication | `PARTIALLY_NORMALIZED` / `EXTRACT_ONLY` | Selected models | Conditional | Credentials excluded; vendor-specific identity behavior retained. |
