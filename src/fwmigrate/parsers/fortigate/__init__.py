@@ -10,9 +10,6 @@ from fwmigrate.parsers.fortigate import dependencies as _dependencies_module
 from fwmigrate.parsers.fortigate import source_tree as _source_tree_module
 from fwmigrate.parsers.fortigate import phase_46_50_extensions as _phase_46_50_module
 from fwmigrate.parsers.fortigate.shaping_models import install_phase22_parser_support
-from fwmigrate.parsers.fortigate.phase_23_25_extensions import (
-    install_phase_23_25_extensions,
-)
 from fwmigrate.parsers.fortigate.service_parser_extensions import (
     install_service_parser_extensions,
 )
@@ -128,7 +125,6 @@ _phase_46_50_module._effective_node_attributes = _phase_46_50_effective_node_att
 # Install FortiGate source-parser extensions in phase order so later wrappers
 # delegate through earlier behavior rather than replacing it.
 install_phase22_parser_support()
-install_phase_23_25_extensions(_parser_module)
 install_service_parser_extensions(_parser_module)
 install_session_ttl_extensions(_parser_module)
 install_ztna_relationship_support(_dependencies_module)

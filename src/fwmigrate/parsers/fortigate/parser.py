@@ -3918,6 +3918,15 @@ class FortiGateParser:
         attributes: Dict[str, Any],
         
     ):
+        if section_path in {
+            "firewall address", "firewall address6",
+            "firewall multicast-address", "firewall multicast-address6",
+            "firewall addrgrp", "firewall addrgrp6",
+        }:
+            self._normalize_optional_int(attributes, "color")
+        if section_path in {"firewall addrgrp", "firewall addrgrp6"}:
+            if "filter" in attributes:
+                attributes["dynamic_filter"] = attributes["filter"]
         if section_path in CONTEXTUAL_MODEL_SECTIONS:
             attributes.setdefault("source_context", self.current_context)
         if section_path in {
@@ -4688,6 +4697,13 @@ class FortiGateParser:
                 }
                 if rule_type is FGSecurityPolicy:
                     typed_attributes["ngfw_mode"] = self._execution_context().ngfw_mode
+                    for key in ("application", "app_category"):
+                        self._normalize_int_list(typed_attributes, key)
+                        if f"unparsed_{key}" in typed_attributes:
+                            typed_attributes["extra_settings"][f"unparsed_{key}"] = typed_attributes.pop(
+                                f"unparsed_{key}"
+                            )
+                if rule_type is FGShapingPolicy:
                     for key in ("application", "app_category"):
                         self._normalize_int_list(typed_attributes, key)
                         if f"unparsed_{key}" in typed_attributes:

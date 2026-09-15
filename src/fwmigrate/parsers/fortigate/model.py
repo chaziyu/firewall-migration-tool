@@ -38,6 +38,32 @@ def _preserve_malformed_int_fields(value: Any, fields: Set[str]) -> Any:
     return normalized
 
 
+def _preserve_malformed_int_lists(value: Any, fields: Set[str]) -> Any:
+    if not isinstance(value, dict):
+        return value
+    normalized = dict(value)
+    extra_settings = dict(normalized.get("extra_settings") or {})
+    for field in fields:
+        raw = normalized.get(field)
+        if raw is None:
+            continue
+        values = raw if isinstance(raw, list) else [raw]
+        parsed, unparsed = [], []
+        for item in values:
+            if isinstance(item, bool):
+                unparsed.append(item)
+                continue
+            try:
+                parsed.append(int(item))
+            except (TypeError, ValueError):
+                unparsed.append(item)
+        normalized[field] = parsed
+        if unparsed:
+            extra_settings[f"unparsed_{field}"] = unparsed
+    normalized["extra_settings"] = extra_settings
+    return normalized
+
+
 FORTIOS_VIP_GROUP_COLOR_MIN = 0
 FORTIOS_VIP_GROUP_COLOR_MAX = 32
 FORTIOS_VIP_GROUP_NAME_MAX_LENGTH = 79
@@ -552,6 +578,7 @@ class FGAddressGroupTaggingEntry(BaseModel):
 
 
 class FGAddressGroup(FGContextualModel):
+    model_config = ConfigDict(populate_by_name=True)
     name: str
     member: List[str] = Field(default_factory=list)
     exclude: Optional[str] = None
@@ -560,6 +587,7 @@ class FGAddressGroup(FGContextualModel):
     uuid: Optional[str] = None
     allow_routing: Optional[str] = None
     color: Optional[int] = None
+    dynamic_filter: Optional[str] = Field(default=None, alias="filter")
     category: Optional[str] = None
     type: Optional[str] = None
     fabric_object: Optional[str] = None
@@ -1663,12 +1691,18 @@ class FGShapingPolicy(FGSourceOnlyRule):
     traffic_shaper_reverse: Optional[str] = None
     per_ip_shaper: Optional[str] = None
     per_ip_shaper_reverse: Optional[str] = None
-    application: List[str] = Field(default_factory=list)
-    app_category: List[str] = Field(default_factory=list)
+    application: List[int] = Field(default_factory=list)
+    app_category: List[int] = Field(default_factory=list)
     app_group: List[str] = Field(default_factory=list)
     url_category: List[str] = Field(default_factory=list)
     comments: Optional[str] = None
+    comment: Optional[str] = None
     source_explicit_fields: Set[str] = Field(default_factory=set)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_application_ids(cls, value: Any) -> Any:
+        return _preserve_malformed_int_lists(value, {"application", "app_category"})
 
 
 class FGPhase1Policy(FGPhase1Common, FGSourceOnlyRule):
