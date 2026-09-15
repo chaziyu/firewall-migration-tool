@@ -198,3 +198,20 @@ end
     assert config.services[0].extra_settings["future_service_field"] == "kept"
     assert config.interfaces[0].source_attributes["future_interface_field"] == "kept"
     assert config.static_routes[0].extra_settings["future_route_field"] == "kept"
+
+
+@pytest.mark.parametrize("section_path", ["router static", "router static6"])
+def test_static_route_dstaddr_is_scalar(section_path):
+    spec = get_section_spec(section_path)
+    assert spec is not None
+    assert "dstaddr" not in spec.list_fields
+    assert "dstaddr" in spec.scalar_fields
+
+    config = FortiGateParser(FortiGateTokenizer(f'''config {section_path}
+edit 1
+set dstaddr YAPPK_remote
+next
+end
+''')).parse()
+
+    assert config.static_routes[0].dstaddr == "YAPPK_remote"

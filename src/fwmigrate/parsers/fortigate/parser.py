@@ -224,26 +224,31 @@ from fwmigrate.parsers.fortigate.session_ttl_extensions import (
     FGSystemGlobalSessionTimers,
 )
 from fwmigrate.parsers.fortigate.phase_42_antivirus import (
+    _build_antivirus_profiles,
     FGAntivirusProfile746,
     FGAntivirusProtocol746,
     FGAntivirusProfileConfig746,
 )
 from fwmigrate.parsers.fortigate.phase_43_webfilter import (
+    _build_webfilter_profiles,
     FGWebFilterProfile746,
     FGWebFilterCategory746,
     FGWebFilterOverride746,
 )
 from fwmigrate.parsers.fortigate.phase_44_dnsfilter import (
+    _build_dnsfilter_profiles,
     FGDNSFilterProfile746,
     FGDNSFilterCategory746,
 )
 from fwmigrate.parsers.fortigate.phase_45_application_control import (
+    _build_application_lists,
     FGApplicationList746,
     FGApplicationEntry746,
 )
 from fwmigrate.parsers.fortigate.firewall_vip_746 import FORTIOS_746_VIP_FIELDS
 from fwmigrate.parsers.fortigate.phase_46_50_extensions import (
     _build_ips_sensor,
+    _build_ssl_ssh_profile,
     _refresh_interface_ipv6_from_source,
     _refresh_policy_address_families,
 )
@@ -759,6 +764,7 @@ def _initialize_section_registry() -> None:
         "endpoint-control fctems": FGFCTEMS,
         "user adgrp": FGADGroup,
         "user local": FGLocalUser,
+        "user group": FGUserGroup,
         "user saml": FGUserSAML,
         "system dns-server": FGDnsServer,
         "firewall vip": FGVIP,
@@ -788,7 +794,7 @@ def _initialize_section_registry() -> None:
     }
     common_list_fields = {
         "allowaccess", "detectprotocol", "dhcp_relay_ip", "member", "day",
-        "srcintf", "dstintf", "srcaddr", "dstaddr", "dst", "dst6",
+        "srcintf", "dstintf", "srcaddr", "dst", "dst6",
         "ip_range", "ip6_range", "groups", "users", "service", "poolname",
         "proposal", "internet_service_name", "exclude_ip", "mappedip", "extaddr",
         "src_filter", "srcintf_filter", "monitor", "ztna_ems_tag",
@@ -1435,6 +1441,21 @@ class FortiGateParser:
         if source_path == "ips sensor":
             _build_ips_sensor(self, top_edits)
             return
+        if source_path == "antivirus profile":
+            _build_antivirus_profiles(self, "antivirus_profiles", top_edits)
+            return
+        if source_path == "webfilter profile":
+            _build_webfilter_profiles(self, "webfilter_profiles", top_edits)
+            return
+        if source_path == "dnsfilter profile":
+            _build_dnsfilter_profiles(self, "dnsfilter_profiles", top_edits)
+            return
+        if source_path in {"application list", "application custom"}:
+            _build_application_lists(self, "application_lists", top_edits)
+            return
+        if source_path == "firewall ssl-ssh-profile":
+            _build_ssl_ssh_profile(self, top_edits)
+            return
         models: Dict[str, tuple[str, Any]] = {
             "firewall network-service-dynamic": ("network_service_dynamics", FGNetworkServiceDynamic),
             "system sdn-connector": ("sdn_connectors", FGSDNConnector),
@@ -1640,250 +1661,6 @@ class FortiGateParser:
                     elif "exempt" in child_name:
                         bucket = profile.exemptions
                     bucket.append(typed)
-                getattr(self.config, collection_name).append(profile)
-                continue
-            if model in {FGAntivirusProfile, FGWebFilterProfile}:
-                def node_settings(source: FGSourceNode) -> Dict[str, Any]:
-                    settings: Dict[str, Any] = {}
-                    for command in source.commands:
-                        key = command.key.replace("-", "_")
-                        value: Any = list(command.values)
-                        if len(value) == 1:
-                            value = value[0]
-                        settings.update(sanitize_source_attributes({key: value}))
-                    return settings
-
-                def child_values(source: FGSourceNode, child_model: Any) -> Dict[str, Any]:
-                    values = node_settings(source)
-                    known = set(child_model.model_fields) - {"name", "settings", "extra_settings"}
-                    return {
-                        key: value for key, value in values.items() if key in known
-                    }
-
-                profile_values = node_settings(node)
-                profile = model(name=node.name, **{
-                    key: value for key, value in profile_values.items()
-                    if key in model.model_fields and key != "name"
-                })
-                profile.extra_settings = sanitize_source_attributes({
-                    key: value for key, value in profile_values.items()
-                    if key not in model.model_fields
-                })
-                for child in node.children:
-                    child_name = child.name.lower().replace("-", "_")
-                    child_entries = [entry for entry in child.children if entry.node_type == "edit"]
-                    if model is FGAntivirusProfile:
-                        if child_name in {"http", "ftp", "smtp", "imap", "pop3", "nntp", "ssh"}:
-                            protocol = FGAntivirusProtocol(
-                                name=child.name,
-                                settings=node_settings(child),
-                                **child_values(child, FGAntivirusProtocol),
-                                entries=[_typed_profile_node(entry) for entry in child_entries],
-                            )
-                            protocol.extra_settings = sanitize_source_attributes({
-                                key: value for key, value in node_settings(child).items()
-                                if key not in FGAntivirusProtocol.model_fields
-                            })
-                            for nested in child.children:
-                                if nested.node_type == "config":
-                                    for entry in nested.children:
-                                        if entry.node_type != "edit":
-                                            continue
-                                        settings = node_settings(entry)
-                                        config = FGAntivirusProfileConfig(
-                                            name=entry.name,
-                                            settings=settings,
-                                            **{key: value for key, value in settings.items()
-                                               if key in FGAntivirusProfileConfig.model_fields and key not in {"name", "settings", "extra_settings"}},
-                                        )
-                                        config.extra_settings = sanitize_source_attributes({
-                                            key: value for key, value in settings.items()
-                                            if key not in FGAntivirusProfileConfig.model_fields
-                                        })
-                                        protocol.configs.append(config)
-                            profile.protocols.append(protocol)
-                        else:
-                            settings = node_settings(child)
-                            profile.configs.append(FGAntivirusProfileConfig(
-                                name=child.name,
-                                settings=settings,
-                                **{key: value for key, value in settings.items()
-                                   if key in FGAntivirusProfileConfig.model_fields and key not in {"name", "settings", "extra_settings"}},
-                                extra_settings=sanitize_source_attributes({
-                                    key: value for key, value in settings.items()
-                                    if key not in FGAntivirusProfileConfig.model_fields
-                                }),
-                            ))
-                    else:
-                        def add_webfilter_nodes(source: FGSourceNode) -> None:
-                            source_name = source.name.lower().replace("-", "_")
-                            entries = [entry for entry in source.children if entry.node_type == "edit"]
-                            if entries:
-                                target_model = (
-                                    FGWebFilterOverride if "override" in source_name
-                                    else FGWebFilterURLFilter if "url" in source_name
-                                    else FGWebFilterCategory
-                                )
-                                target_bucket = (
-                                    profile.overrides if target_model is FGWebFilterOverride
-                                    else profile.url_filters if target_model is FGWebFilterURLFilter
-                                    else profile.categories
-                                )
-                                for entry in entries:
-                                    settings = node_settings(entry)
-                                    if "auth_users" in settings and not isinstance(settings["auth_users"], list):
-                                        settings["auth_users"] = [settings["auth_users"]]
-                                    values = {key: value for key, value in settings.items()
-                                              if key in target_model.model_fields and key not in {"name", "settings", "extra_settings"}}
-                                    target_bucket.append(target_model(
-                                        name=entry.name,
-                                        settings=settings,
-                                        **values,
-                                        extra_settings=sanitize_source_attributes({
-                                            key: value for key, value in settings.items()
-                                            if key not in target_model.model_fields
-                                        }),
-                                    ))
-                            for nested in source.children:
-                                if nested.node_type == "config":
-                                    add_webfilter_nodes(nested)
-
-                        add_webfilter_nodes(child)
-                getattr(self.config, collection_name).append(profile)
-                continue
-            if model in {FGDNSFilterProfile, FGApplicationList, FGSSLSSHProfile}:
-                def node_settings(source: FGSourceNode) -> Dict[str, Any]:
-                    settings: Dict[str, Any] = {}
-                    for command in source.commands:
-                        key = command.key.replace("-", "_")
-                        value: Any = list(command.values)
-                        if len(value) == 1:
-                            value = value[0]
-                        settings.update(sanitize_source_attributes({key: value}))
-                    return settings
-
-                profile_values = node_settings(node)
-                profile = model(name=node.name, **{
-                    key: value for key, value in profile_values.items()
-                    if key in model.model_fields and key != "name"
-                })
-                profile.extra_settings = sanitize_source_attributes({
-                    key: value for key, value in profile_values.items()
-                    if key not in model.model_fields
-                })
-
-                def add_nested(source: FGSourceNode) -> None:
-                    source_name = source.name.lower().replace("-", "_")
-                    entries = [entry for entry in source.children if entry.node_type == "edit"]
-                    if model is FGSSLSSHProfile and source.commands and source_name in {
-                        "http", "https", "ftp", "ftps", "smtp", "smtps", "imap", "pop3", "ssh",
-                    }:
-                        settings = node_settings(source)
-                        ports = settings.get("ports", [])
-                        if not isinstance(ports, list):
-                            ports = [ports]
-                        profile.protocols.append(FGSSLSSHProtocolInspection(
-                            name=source.name,
-                            status=settings.get("status"),
-                            action=settings.get("action"),
-                            ports=ports,
-                            settings=settings,
-                            extra_settings=sanitize_source_attributes({
-                                key: value for key, value in settings.items()
-                                if key not in FGSSLSSHProtocolInspection.model_fields
-                            }),
-                        ))
-                    for entry in entries:
-                        settings = node_settings(entry)
-                        if model is FGDNSFilterProfile:
-                            target_model = (
-                                FGDNSFilterBotnet if "botnet" in source_name
-                                else FGDNSFilterDomainFilter if "domain" in source_name
-                                else FGDNSFilterCategory if "categor" in source_name or "filter" in source_name or "ftgd" in source_name
-                                else FGDNSFilterAction
-                            )
-                            target_bucket = (
-                                profile.botnet if target_model is FGDNSFilterBotnet
-                                else profile.domain_filters if target_model is FGDNSFilterDomainFilter
-                                else profile.categories if target_model is FGDNSFilterCategory
-                                else profile.actions
-                            )
-                        elif model is FGApplicationList:
-                            target_model = (
-                                FGApplicationOverride if "override" in source_name
-                                else FGApplicationFilter if "filter" in source_name
-                                else FGApplicationEntry
-                            )
-                            target_bucket = (
-                                profile.overrides if target_model is FGApplicationOverride
-                                else profile.filters if target_model is FGApplicationFilter
-                                else profile.entries
-                            )
-                            if target_model is FGApplicationEntry:
-                                for field in ("application", "category", "risk"):
-                                    self._parse_and_record_application_control_ints(
-                                        source_path=source_path,
-                                        section_name=source_name,
-                                        profile_name=node.name,
-                                        entry_name=entry.name,
-                                        settings=settings,
-                                        field=field,
-                                    )
-                                if "application" in settings:
-                                    settings["application_id"] = (
-                                        settings["application"][0]
-                                        if settings["application"]
-                                        else None
-                                    )
-                            elif target_model is FGApplicationFilter:
-                                for field in ("category", "risk"):
-                                    self._parse_and_record_application_control_ints(
-                                        source_path=source_path,
-                                        section_name=source_name,
-                                        profile_name=node.name,
-                                        entry_name=entry.name,
-                                        settings=settings,
-                                        field=field,
-                                    )
-                            elif target_model is FGApplicationOverride:
-                                for field in ("application", "category"):
-                                    self._parse_and_record_application_control_ints(
-                                        source_path=source_path,
-                                        section_name=source_name,
-                                        profile_name=node.name,
-                                        entry_name=entry.name,
-                                        settings=settings,
-                                        field=field,
-                                    )
-                        else:
-                            target_model = (
-                                FGSSLSSHCertificate if "cert" in source_name
-                                else FGSSLSSHExemption if "exempt" in source_name
-                                else FGSSLSSHProtocolInspection
-                            )
-                            target_bucket = (
-                                profile.certificates if target_model is FGSSLSSHCertificate
-                                else profile.exemptions if target_model is FGSSLSSHExemption
-                                else profile.protocols
-                            )
-                        known = set(target_model.model_fields) - {"name", "settings", "extra_settings"}
-                        values = {key: value for key, value in settings.items() if key in known}
-                        if target_model is FGSSLSSHProtocolInspection and "ports" in values and not isinstance(values["ports"], list):
-                            values["ports"] = [values["ports"]]
-                        target_bucket.append(target_model(
-                            name=entry.name,
-                            **values,
-                            **({"settings": settings} if "settings" in target_model.model_fields else {}),
-                            extra_settings=sanitize_source_attributes({
-                                key: value for key, value in settings.items() if key not in target_model.model_fields
-                            }),
-                        ))
-                    for nested in source.children:
-                        if nested.node_type == "config":
-                            add_nested(nested)
-
-                for child in node.children:
-                    add_nested(child)
                 getattr(self.config, collection_name).append(profile)
                 continue
             attributes: Dict[str, Any] = {

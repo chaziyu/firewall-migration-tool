@@ -83,6 +83,7 @@ def test_local_user_passwd_time_uses_scalar_evaluation_and_reaches_ir():
     assert spec is not None
     assert spec.model.__name__ == "FGLocalUser"
     assert "passwd_time" in spec.scalar_fields
+    assert "passwd_time" not in spec.list_fields
 
     timestamp_source = """\
 config user local
@@ -121,3 +122,58 @@ end
 """
         config = FortiGateParser(FortiGateTokenizer(source)).parse()
         assert config.local_users[0].passwd_time == expected
+
+
+def test_user_group_member_uses_list_evaluation_and_ordered_operations():
+    spec = get_section_spec("user group")
+    assert spec is not None
+    assert "member" in spec.list_fields
+    assert "member" not in spec.scalar_fields
+
+    source = Path("tests/fixtures/fortigate/identity_authentication_full.conf").read_text(
+        encoding="utf-8"
+    )
+    config = FortiGateParser(FortiGateTokenizer(source)).parse()
+    groups = {group.name: group for group in config.user_groups}
+
+    assert groups["single-member"].member == ["itsec1"]
+    assert groups["multi-member"].member == ["itsec1", "itsec2"]
+    assert groups["append-member"].member == ["itsec1", "itsec2"]
+    assert groups["unset-member"].member == []
+
+
+def test_structured_profile_builders_preserve_declared_cardinality():
+    source = Path("tests/fixtures/fortigate/security_profiles_full.conf").read_text(
+        encoding="utf-8"
+    )
+    config = FortiGateParser(FortiGateTokenizer(source)).parse()
+
+    antivirus = config.antivirus_profiles[0]
+    assert antivirus.external_blocklist == ["av-one"]
+    assert antivirus.protocols[0].settings["archive_block"] == ["exe"]
+    assert antivirus.protocols[0].settings["archive_log"] == ["enable"]
+
+    webfilter = config.webfilter_profiles[0]
+    assert webfilter.options == ["block-invalid-url"]
+    assert webfilter.ftgd_wf.options == ["web-one"]
+    assert webfilter.categories[0].auth_usr_grp == ["itsec"]
+
+    dnsfilter = config.dnsfilter_profiles[0]
+    assert dnsfilter.external_ip_blocklist == ["dns-one"]
+    assert dnsfilter.ftgd_dns.options == ["dns-one"]
+
+    application = config.application_lists[0]
+    entry = application.entries[0]
+    assert application.options == ["app-one"]
+    assert entry.application == [16091]
+    assert entry.application_id == 16091
+    assert entry.category == [15, 16]
+    assert entry.exclusion == [21]
+    assert entry.risk == [3]
+    assert entry.popularity == [2]
+
+    ssl_profile = config.ssl_ssh_profiles[0]
+    assert ssl_profile.server_cert == ["cert-one"]
+    assert ssl_profile.protocols[0].ports == ["443"]
+
+    assert extract_fortigate_config(source).canonical_ir is not None

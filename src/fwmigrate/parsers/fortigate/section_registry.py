@@ -59,7 +59,6 @@ SECTION_LIST_FIELDS = {
         "dstaddr",
         "input_device",
         "internet_service_custom",
-        "internet_service_id",
         "src",
         "srcaddr",
     },
@@ -68,7 +67,6 @@ SECTION_LIST_FIELDS = {
         "dstaddr",
         "input_device",
         "internet_service_custom",
-        "internet_service_id",
         "src",
         "srcaddr",
     },
@@ -131,8 +129,6 @@ SECTION_LIST_FIELDS = {
         "ztna_ems_tag",
         "ztna_ems_tag_secondary",
         "ztna_geo_tag",
-        "application",
-        "app_category",
         "app_group",
         "url_category",
     },
@@ -247,11 +243,8 @@ SECTION_LIST_FIELDS = {
         "health_check",
         "input_device",
         "input_zone",
-        "priority_members",
         "priority_zone",
         "internet_service_name",
-        "internet_service_app_ctrl",
-        "internet_service_app_ctrl_category",
         "internet_service_app_ctrl_group",
         "internet_service_custom",
         "internet_service_custom_group",
@@ -296,7 +289,7 @@ SECTION_LIST_FIELDS = {
     },
     "firewall DoS-policy": {"srcaddr", "dstaddr", "service"},
     "firewall DoS-policy6": {"srcaddr", "dstaddr", "service"},
-    "authentication rule": {"srcintf", "srcaddr"},
+    "user group": {"member"},
     "user quarantine": {"firewall_groups"},
 }
 
@@ -382,6 +375,25 @@ SECTION_REGISTRY: dict[str, SectionSpec] = {}
 
 
 def register_section(spec: SectionSpec) -> None:
+    categories = {
+        "list_fields": spec.list_fields,
+        "integer_fields": spec.integer_fields,
+        "integer_list_fields": spec.integer_list_fields,
+        "scalar_fields": spec.scalar_fields,
+    }
+    for left, right in (
+        ("list_fields", "scalar_fields"),
+        ("integer_fields", "scalar_fields"),
+        ("integer_list_fields", "list_fields"),
+        ("integer_list_fields", "scalar_fields"),
+        ("integer_fields", "integer_list_fields"),
+    ):
+        overlap = categories[left] & categories[right]
+        if overlap:
+            raise ValueError(
+                f"{spec.source_path}: field(s) {sorted(overlap)} overlap between "
+                f"{left} and {right}"
+            )
     SECTION_REGISTRY[spec.source_path] = spec
 
 
