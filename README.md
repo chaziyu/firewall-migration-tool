@@ -27,8 +27,7 @@ Key references:
 - [User guide](documentation/how-to/user-guide.md)
 - [Architecture](documentation/explanation/architecture.md)
 - [Safety model](documentation/explanation/safety-model.md)
-- [Canonical IR reference](documentation/reference/ir/ir-schema.md)
-- [Extraction model](documentation/reference/ir/extraction-model.md)
+- [Canonical IR model](documentation/ir-model.md)
 - [Generated runtime capabilities](documentation/generated/capabilities.md)
 - [Vendor-version verification metadata](documentation/metadata/vendors.yml)
 
