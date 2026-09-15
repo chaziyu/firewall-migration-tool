@@ -41,7 +41,7 @@ Use a complete, unchanged source export where possible:
 - **FortiGate**: `show full-configuration`.
 - **PAN-OS / Panorama**: exported XML running configuration.
 - **Cisco ASA**: `show running-config` with paging disabled.
-- **Cisco FTD / FMC**: use the offline FMC REST bundle described in [`../reference/vendors/cisco/fmc-extraction-reference.md`](../reference/vendors/cisco/fmc-extraction-reference.md) for policy/NAT migration. FTD text is limited management/interface/route evidence and is generation-blocked for full policy migration.
+- **Cisco FTD / FMC / FDM**: use the offline FMC REST bundle described in [`../reference/vendors/cisco/fmc-extraction-reference.md`](../reference/vendors/cisco/fmc-extraction-reference.md) or the separate offline FDM contract in [`../reference/vendors/cisco/fdm-extraction-reference.md`](../reference/vendors/cisco/fdm-extraction-reference.md). FTD text is limited management/interface/route evidence and is generation-blocked for full policy migration.
 - **Check Point**: supported management JSON/API bundle and/or Gaia configuration evidence as documented in the vendor reference.
 - **Juniper SRX**: root-level `show configuration | display set | no-more` or supported hierarchical configuration.
 

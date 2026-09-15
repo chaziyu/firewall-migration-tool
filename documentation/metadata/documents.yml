@@ -144,7 +144,17 @@ documents:
     source_of_truth:
       - src/fwmigrate/parsers/cisco_ftd/
       - tests/test_cisco_fmc_bundle.py
-    last_verified: 2026-09-14
+    last_verified: 2026-09-15
+
+  documentation/reference/vendors/cisco/fdm-extraction-reference.md:
+    title: Cisco Secure Firewall / FDM REST Extraction Reference
+    status: current
+    document_type: reference
+    source_of_truth:
+      - src/fwmigrate/parsers/cisco_ftd/fdm_bundle.py
+      - src/fwmigrate/parsers/cisco_ftd/fdm_adapter.py
+      - tests/test_cisco_fdm_bundle.py
+    last_verified: 2026-09-15
 
   documentation/reference/vendors/cisco/support-matrix.md:
     title: Cisco Support Matrix
@@ -154,7 +164,7 @@ documents:
       - src/fwmigrate/parsers/cisco_asa/
       - src/fwmigrate/parsers/cisco_ftd/
       - tests/
-    last_verified: 2026-09-14
+    last_verified: 2026-09-15
 
   documentation/reference/vendors/checkpoint/extraction-reference.md:
     title: Check Point Extraction Reference

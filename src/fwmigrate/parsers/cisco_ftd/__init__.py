@@ -4,6 +4,7 @@ from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.cisco_ftd.extractor import extract_cisco_ftd_config
 from fwmigrate.parsers.cisco_ftd.fmc_adapter import CiscoFMCBundleParser, is_fmc_bundle
+from fwmigrate.parsers.cisco_ftd.fdm_adapter import CiscoFDMBundleParser, is_fdm_bundle
 
 
 class CiscoFTDSourceParser(BaseSourceParser):
@@ -22,6 +23,8 @@ class CiscoFTDSourceParser(BaseSourceParser):
     def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
         if is_fmc_bundle(content):
             return CiscoFMCBundleParser(content).parse()
+        if is_fdm_bundle(content):
+            return CiscoFDMBundleParser(content).parse()
         return CiscoFTDParser(content).parse()
 
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None):
@@ -31,6 +34,6 @@ class CiscoFTDSourceParser(BaseSourceParser):
 from fwmigrate.parsers.cisco_ftd.parser import CiscoFTDParser
 
 __all__ = [
-    "CiscoFTDSourceParser", "CiscoFTDParser", "CiscoFMCBundleParser",
-    "extract_cisco_ftd_config", "is_fmc_bundle",
+    "CiscoFTDSourceParser", "CiscoFTDParser", "CiscoFMCBundleParser", "CiscoFDMBundleParser",
+    "extract_cisco_ftd_config", "is_fmc_bundle", "is_fdm_bundle",
 ]
