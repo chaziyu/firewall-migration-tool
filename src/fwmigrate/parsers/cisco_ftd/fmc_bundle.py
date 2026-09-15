@@ -652,6 +652,22 @@ class CiscoFMCBundleParser:
         else:
             source_mode = None
 
+        destination_mode = None
+        destination_method = str(
+            rule.get("destinationTranslationMode")
+            or rule.get("destinationTranslationMethod")
+            or rule.get("destinationTranslationType")
+            or ""
+        ).upper()
+        if destination_method in {"STATIC", "STATIC_NAT"}:
+            destination_mode = NATTranslationMode.STATIC
+        elif destination_method in {"DYNAMIC", "DYNAMIC_IP"}:
+            destination_mode = NATTranslationMode.DYNAMIC_IP
+        elif destination_method in {"DYNAMIC_IP_AND_PORT", "PAT"}:
+            destination_mode = NATTranslationMode.DYNAMIC_IP_AND_PORT
+        elif translated_destination and nat_type == "STATIC":
+            destination_mode = NATTranslationMode.STATIC
+
         has_destination_translation = bool(translated_destination)
         ir_type = NATType.TWICE if has_destination_translation else NATType.SOURCE
         unresolved = any((src_if_unresolved, dst_if_unresolved, src_unresolved, trans_unresolved))
@@ -681,6 +697,8 @@ class CiscoFMCBundleParser:
              identity=nat_type in {"IDENTITY", "IDENTITY_STATIC"},
              exemption=nat_type in {"EXEMPTION", "IDENTITY"},
             source_translation_mode=source_mode,
+            destination_translation_mode=destination_mode,
+            sequence=index,
             enabled=bool(rule.get("enabled", True)), description=rule.get("description"),
             migration_status="PARTIALLY_NORMALIZED" if requires_review else "NORMALIZED",
             requires_manual_review=requires_review, review_reasons=review_reasons,
@@ -688,6 +706,9 @@ class CiscoFMCBundleParser:
                 "fmc_policy_id": policy.get("id"), "fmc_policy_name": policy_name,
                 "fmc_nat_rule": rule, "fmc_nat_section": section, "fmc_auto_nat": auto,
                 "fmc_nat_type": nat_type, "fmc_interface_translation": interface_translation,
+                "fmc_destination_translation_mode": destination_method or None,
+                "fmc_target_index": rule.get("targetIndex"),
+                "fmc_source_index": rule.get("ruleIndex") or rule.get("index"),
                 "dns": rule.get("dns"), "route_lookup": rule.get("routeLookup"),
                 "no_proxy_arp": rule.get("noProxyArp"), "net_to_net": rule.get("netToNet"),
                 "fall_through": rule.get("fallThrough"), "unidirectional": rule.get("unidirectional"),
