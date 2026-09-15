@@ -1,7 +1,7 @@
 """FortiOS 7.4.6 firewall VIP source contract and validation.
 
 This module defines the FortiOS 7.4.6 source-side field contract for
-``config firewall vip``.  It does not imply target-vendor portability.
+``config firewall vip``. It does not imply target-vendor portability.
 Unknown, malformed, or source-only behavior must remain review evidence.
 """
 
@@ -123,14 +123,6 @@ FORTIOS_746_VIP_DEFAULTS = {
     "type": "static-nat",
 }
 
-FORTIOS_746_VIP_TYPES = frozenset({
-    "static-nat",
-    "load-balance",
-    "server-load-balance",
-    "dns-translation",
-    "fqdn",
-})
-
 FORTIOS_746_VIP_BOOKKEEPING_EXTRA_SETTINGS = frozenset({
     "invalid_fields",
     "unparsed_fields",
@@ -155,10 +147,11 @@ def effective_vip_settings_746(vip: Any) -> dict[str, Any]:
 def validate_vip_746(vip: Any, source_version: str | None = None) -> list[str]:
     """Validate source accounting against the FortiOS 7.4.6 VIP contract.
 
-    The function is intentionally conservative.  It reports source fields that
-    fall outside the reviewed contract, official fields that were preserved only
-    in ``extra_settings``, malformed values, and unknown VIP types.  It does not
-    decide whether a valid FortiOS feature is portable to a target platform.
+    The function deliberately validates field accounting rather than the full
+    option space for each field. The CLI reference abbreviates several large
+    enumerations in the syntax summary, so an incomplete local enum must not
+    reject a valid FortiOS value. Target-portability classification remains in
+    the transformer.
     """
     reasons: list[str] = []
 
@@ -168,10 +161,6 @@ def validate_vip_746(vip: Any, source_version: str | None = None) -> list[str]:
             f"VIP field '{field.replace('_', '-')}' is outside the FortiOS 7.4.6 reviewed contract."
         )
 
-    vip_type = getattr(vip, "type", None)
-    if vip_type and vip_type not in FORTIOS_746_VIP_TYPES:
-        reasons.append(f"Unknown FortiOS 7.4.6 VIP type '{vip_type}'.")
-
     extra_settings = dict(getattr(vip, "extra_settings", {}) or {})
     for key in sorted(extra_settings):
         if key in FORTIOS_746_VIP_BOOKKEEPING_EXTRA_SETTINGS:
@@ -179,7 +168,7 @@ def validate_vip_746(vip: Any, source_version: str | None = None) -> list[str]:
         if key.startswith("unparsed_"):
             reasons.append(
                 "VIP contains invalid source value for "
-                f"{key.removeprefix('unparsed_').replace('_', '-')} ."
+                f"{key.removeprefix('unparsed_').replace('_', '-')}."
             )
             continue
         if key in FORTIOS_746_VIP_FIELDS:
