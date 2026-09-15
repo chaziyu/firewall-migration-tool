@@ -76,12 +76,11 @@ def test_checkpoint_r81_golden_matrix_extraction():
     assert all(policy.source_extra_settings["vpn"] == "Any" for policy in ir.policies)
 
     # 6. NAT Rules
-    assert len(ir.nat_rules) == 2
-    dnat = next(n for n in ir.nat_rules if n.name == "DNAT_Web_Server")
-    assert dnat.type == NATType.DESTINATION
-    assert dnat.translated_destinations == ["Web_Server_01"]
-    assert not dnat.safe_for_target_generation
-    assert any("Web_Services" in reason for reason in dnat.review_reasons)
+    assert len(ir.nat_rules) == 1
+    assert all(n.name != "DNAT_Web_Server" for n in ir.nat_rules)
+    dnat_inventory = next(i for i in extraction.inventory_items if i.name == "DNAT_Web_Server")
+    assert dnat_inventory.status.value == "PARTIALLY_NORMALIZED"
+    assert "invalid-destination-nat-method:hide" in dnat_inventory.notes
 
     snat = next(n for n in ir.nat_rules if n.name == "LAN_Hide_NAT")
     assert snat.type == NATType.SOURCE
@@ -135,3 +134,26 @@ def test_checkpoint_golden_matrix_cross_vendor_generation():
     wb = load_workbook(io.BytesIO(excel_bytes), read_only=True)
     assert "Source Inventory" in wb.sheetnames
     assert "Extraction Coverage" in wb.sheetnames
+    nat_sheet = wb["NAT Rules"]
+    nat_headers = {cell.value: cell.column for cell in nat_sheet[3]}
+    assert {
+        "Enabled", "Original Source", "Original Destination", "Original Service",
+        "Translated Source", "Translated Destination", "Translated Service",
+        "Source Translation Mode", "Destination Translation Mode", "Install On",
+        "Check Point NAT Origin", "Check Point Source NAT Evidence", "Migration Status",
+        "Manual Review", "Review Reasons",
+    } <= set(nat_headers)
+    nat_rows = {
+        nat_sheet.cell(row, nat_headers["Name"]).value: row
+        for row in range(4, nat_sheet.max_row + 1)
+    }
+    snat_row = nat_rows["LAN_Hide_NAT"]
+    assert nat_sheet.cell(snat_row, nat_headers["Source Translation Mode"]).value == "dynamic-ip-and-port"
+    assert nat_sheet.cell(snat_row, nat_headers["Translated Source"]).value == "Egress_NAT_Pool"
+    inventory_values = [
+        str(cell.value)
+        for row in wb["Source Inventory"].iter_rows()
+        for cell in row
+    ]
+    assert any("DNAT_Web_Server" in value for value in inventory_values)
+    assert any("invalid-destination-nat-method:hide" in value for value in inventory_values)

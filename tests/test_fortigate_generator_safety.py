@@ -365,6 +365,26 @@ def test_checkpoint_identity_and_ambiguous_source_nat_are_not_converted():
     assert content.count("config firewall central-snat-map") == 0
 
 
+def test_checkpoint_automatic_source_nat_is_withheld_with_reason_in_both_outputs():
+    rule = IRNATRule(
+        name="automatic-hide", type=NATType.SOURCE,
+        source_policy_reference="7", source_rule_id="7",
+        source=["LAN_NET"], destination=["all"], services=["ALL"],
+        source_translation_mode=NATTranslationMode.INTERFACE_ADDRESS,
+        source_to_interfaces=["wan1"], source_origin="automatic",
+        source_attributes={"checkpoint-nat-origin": "automatic"},
+    )
+    ir = IRConfig(metadata=IRMetadata(source_vendor="checkpoint"), nat_rules=[rule])
+
+    cli = FortiGateCLIGenerator().generate(ir)[0].content
+    tf = [artifact for artifact in FortiGateTerraformGenerator().generate(ir) if artifact.filename == "main.tf"][0].content
+    reason = "checkpoint-automatic-nat-equivalence-not-proven"
+    assert f"# NAT rule automatic-hide withheld: {reason}" in cli
+    assert f"# Central NAT automatic-hide withheld: {reason}" in tf
+    assert "config firewall central-snat-map" not in cli
+    assert "fortios_firewall_centralsnatmap" not in tf
+
+
 def test_terraform_hcl_serialization():
     """Verify Terraform generator emits valid HCL lists with double quotes, not Python single-quoted lists."""
     pol = IRPolicy(

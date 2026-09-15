@@ -123,6 +123,35 @@ def test_nat_origin_identity_order_and_automatic_object_relationships_are_preser
     assert "checkpoint-identity-nat-ordering-requires-manual-review" in result.blocking_reasons
 
 
+def test_nat_fidelity_matches_rule_uid_before_ambiguous_sequence_and_name():
+    result = extract_checkpoint_config(_bundle([
+        {
+            "command": "show-nat-rulebase", "domain": "D", "package": "Package", "gateway": "gw-a",
+            "data": {"rulebase": [{
+                "uid": "nat-a", "rule-number": 1, "name": "Shared_Rule",
+                "type": "nat-rule", "original-source": "Any",
+                "original-destination": "Any", "original-service": "Any",
+                "translated-source": "Any", "translated-destination": "Original",
+                "translated-service": "Original", "method": "hide",
+                "hide-behind": "gateway", "comments": "package A", "enabled": True,
+            }, {
+                "uid": "nat-b", "rule-number": 1, "name": "Shared_Rule",
+                "type": "nat-rule", "original-source": "Any",
+                "original-destination": "Any", "original-service": "Any",
+                "translated-source": "Any", "translated-destination": "Original",
+                "translated-service": "Original", "method": "hide",
+                "hide-behind": "gateway", "comments": "package B", "enabled": True,
+            }]},
+        },
+    ], domain="D", selected_domain="D", selected_package="Package"))
+
+    rules = {rule.source_policy_uuid: rule for rule in result.canonical_ir.nat_rules}
+    assert rules["nat-a"].source_context == "D/Package"
+    assert rules["nat-a"].source_attributes["comments"] == "package A"
+    assert rules["nat-b"].source_context == "D/Package"
+    assert rules["nat-b"].source_attributes["comments"] == "package B"
+
+
 def test_policy_package_retains_ordered_and_inline_layer_relationships():
     result = extract_checkpoint_config(_bundle([
         {"command": "show-packages", "domain": "D", "data": {"objects": [

@@ -22,6 +22,7 @@ def test_collection_manifest_contains_verified_r81_families():
         "show-wildcards", "show-multicast-address-ranges", "show-dynamic-objects",
         "show-dns-domains", "show-network-feeds", "show-checkpoint-hosts",
         "show-interoperable-devices", "show-updatable-objects", "show-data-center-objects",
+        "show-global-properties",
         "show-services-citrix-tcp", "show-services-dce-rpc", "show-services-rpc",
         "show-services-gtp", "show-services-compound-tcp", "show-access-layers",
         "show-simple-gateways", "show-simple-clusters", "show-global-assignments",

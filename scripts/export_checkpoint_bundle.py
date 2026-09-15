@@ -34,6 +34,7 @@ from fwmigrate.parsers.checkpoint.r81_commands import (  # noqa: E402
 _COLLECTION_SOURCE = {
     "core_objects": [
         ("show-domains", {"details-level": "full", "limit": 100}),
+        ("show-global-properties", {"details-level": "full", "limit": 100}),
         ("show-gateways-and-servers", {"details-level": "full"}),
         ("show-simple-gateways", {"details-level": "full", "limit": 500}),
         ("show-simple-clusters", {"details-level": "full", "limit": 500}),

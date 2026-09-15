@@ -70,18 +70,29 @@ def nat_capabilities(target_vendor: str) -> NATCapabilities:
     return TARGET_NAT_CAPABILITIES.get(target_vendor, NATCapabilities())
 
 
-def plan_fortigate_central_snat(
+def checkpoint_fortigate_central_snat_reason(
     rule: IRNATRule, ip_pool_names: set[str] | None = None,
-) -> Optional[IRNATRule]:
-    """Convert only conservative Check Point source NAT shapes for FortiGate."""
+) -> str | None:
+    """Return a review reason when Check Point source NAT is not portable."""
     if rule.type != NATType.SOURCE or rule.identity or rule.exemption:
         return None
+    attributes = rule.source_attributes or {}
+    if attributes.get("checkpoint-nat-origin") == "automatic" or rule.source_origin == "automatic":
+        if attributes.get("checkpoint-ordering-barrier") or attributes.get("checkpoint-preceding-identity-rules"):
+            return "checkpoint-automatic-nat-ordering-not-portable"
+        return "checkpoint-automatic-nat-equivalence-not-proven"
+    if attributes.get("checkpoint-ordering-barrier"):
+        return "checkpoint-nat-ordering-not-portable"
     if rule.translated_services or rule.translated_destinations:
-        return None
+        return "checkpoint-translated-fields-not-portable"
+    resolution = attributes.get("checkpoint-source-nat-method-resolution")
+    if isinstance(resolution, dict) and (
+        resolution.get("resolved") is not True or resolution.get("reasons")
+    ):
+        return "checkpoint-source-nat-method-evidence-incomplete"
     if rule.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS:
-        if not rule.source_to_interfaces:
-            return None
-    elif rule.source_translation_mode in {
+        return None if rule.source_to_interfaces else "checkpoint-hide-gateway-unresolved"
+    if rule.source_translation_mode in {
         NATTranslationMode.STATIC,
         NATTranslationMode.DYNAMIC_IP_AND_PORT,
         NATTranslationMode.POOL,
@@ -89,10 +100,21 @@ def plan_fortigate_central_snat(
         pool_references = list(rule.source_pool_references)
         if not pool_references and ip_pool_names:
             pool_references = [name for name in rule.translated_sources if name in ip_pool_names]
-        if not pool_references:
-            return None
-    else:
+        return None if pool_references else "checkpoint-source-pool-unresolved"
+    return "checkpoint-source-nat-method-unresolved"
+
+
+def plan_fortigate_central_snat(
+    rule: IRNATRule, ip_pool_names: set[str] | None = None,
+) -> Optional[IRNATRule]:
+    """Convert only conservative Check Point source NAT shapes for FortiGate."""
+    if checkpoint_fortigate_central_snat_reason(rule, ip_pool_names):
         return None
+    if rule.type != NATType.SOURCE or rule.identity or rule.exemption:
+        return None
+    pool_references = list(rule.source_pool_references)
+    if not pool_references and ip_pool_names:
+        pool_references = [name for name in rule.translated_sources if name in ip_pool_names]
     updates = {
         "type": NATType.CENTRAL,
         "source_origin": "checkpoint-source-nat-to-fortigate-central",

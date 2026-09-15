@@ -48,6 +48,13 @@ def _first_present(source: Mapping[str, Any], keys: Tuple[str, ...]) -> Any:
     return None
 
 
+def _normalize_nat_method(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    return normalized or None
+
+
 def _nat_metadata_for_ref(
     ref: Any,
     resolver: CheckPointObjectResolver,
@@ -170,32 +177,42 @@ def resolve_destination_nat_method(
 ) -> SourceNATMethodResolution:
     """Resolve destination method without applying source Hide NAT rules."""
     result = SourceNATMethodResolution()
-    method_raw = _first_present(rule, _DESTINATION_NAT_METHOD_KEYS)
-    if method_raw is None and use_common_method:
-        common_method = _first_present(rule, ("method", "nat-method", "nat_method"))
-        if str(common_method or "").strip().lower() in {"static", "static-nat"}:
-            method_raw = common_method
-    if method_raw is None and resolver is not None:
+    explicit_method = _normalize_nat_method(_first_present(rule, _DESTINATION_NAT_METHOD_KEYS))
+    common_method = (
+        _normalize_nat_method(_first_present(rule, ("method", "nat-method", "nat_method")))
+        if use_common_method else None
+    )
+    method = explicit_method or common_method
+    if explicit_method:
+        result.evidence.append(f"rule:destination-method={explicit_method}")
+    if common_method:
+        result.evidence.append(f"rule:method={common_method}")
+    if explicit_method and common_method and explicit_method != common_method:
+        result.reasons.append("conflicting-destination-nat-method-evidence")
+
+    if method is None and resolver is not None:
         for ref in (rule.get("original-destination"), translated_destination_ref):
             metadata = _nat_metadata_for_ref(ref, resolver, domain, object_nat_metadata or {})
-            object_method = _first_present(metadata or {}, ("method", "nat-method", "nat_method"))
-            if object_method is not None:
-                method_raw = object_method
+            object_method = _normalize_nat_method(
+                _first_present(metadata or {}, ("method", "nat-method", "nat_method"))
+            )
+            if object_method:
+                method = object_method
                 result.evidence.append(
                     f"object-nat-settings:{_ref_label(ref, resolver, domain)}:destination-method="
-                    f"{str(method_raw).strip().lower()}"
+                    f"{object_method}"
                 )
                 break
-    if method_raw is None:
+    if result.reasons:
         return result
-    method = str(method_raw).strip().lower()
+    if method is None:
+        return result
     result.method = method
-    result.evidence.append(f"rule:destination-method={method}")
     if method in {"static", "static-nat"}:
         result.resolved = True
         result.mode = NATTranslationMode.STATIC
     else:
-        result.reasons.append(f"destination-nat-method-unrepresentable:{method}")
+        result.reasons.append(f"invalid-destination-nat-method:{method}")
     return result
 
 

@@ -10,7 +10,11 @@ from fwmigrate.generators.target_helpers import (
     is_generation_safe_object,
     terraform_resource_label,
 )
-from fwmigrate.generators.nat_capabilities import nat_capabilities, plan_fortigate_central_snat
+from fwmigrate.generators.nat_capabilities import (
+    checkpoint_fortigate_central_snat_reason,
+    nat_capabilities,
+    plan_fortigate_central_snat,
+)
 from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir import IRConfig
 from fwmigrate.ir.enums import AddressType, NATType, PolicyAction, ServiceProtocol
@@ -743,12 +747,17 @@ variable "fortios_vdom" {
 
         # Policies
         central_rules = [rule for rule in ir.nat_rules if rule.type == NATType.CENTRAL]
+        checkpoint_withheld = []
         if ir.metadata.source_vendor == "checkpoint":
             ip_pool_names = {pool.name for pool in ir.ip_pools}
-            central_rules.extend(
-                planned for rule in ir.nat_rules
-                if (planned := plan_fortigate_central_snat(rule, ip_pool_names)) is not None
-            )
+            for rule in ir.nat_rules:
+                planned = plan_fortigate_central_snat(rule, ip_pool_names)
+                if planned is not None:
+                    central_rules.append(planned)
+                elif (reason := checkpoint_fortigate_central_snat_reason(rule, ip_pool_names)):
+                    checkpoint_withheld.append((rule, reason))
+        for rule, reason in checkpoint_withheld:
+            main_tf_lines.append(f"# Central NAT {rule.name} withheld: {reason}\n")
         for index, rule in enumerate(central_rules, 1):
             if rule.type != NATType.CENTRAL:
                 continue
