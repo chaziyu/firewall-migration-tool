@@ -47,11 +47,11 @@ def test_cisco_nat_modifiers_are_first_class_excel_columns():
     ):
         assert header in headers
 
-    assert sheet.cell(4, headers["DNS Rewrite"]).value == "yes"
-    assert sheet.cell(4, headers["No Proxy ARP"]).value == "yes"
-    assert sheet.cell(4, headers["Route Lookup"]).value == "no"
-    assert sheet.cell(4, headers["Unidirectional"]).value == "yes"
-    assert sheet.cell(4, headers["Net-to-Net"]).value == "no"
+    assert sheet.cell(4, headers["DNS Rewrite"]).value == "TRUE"
+    assert sheet.cell(4, headers["No Proxy ARP"]).value == "TRUE"
+    assert sheet.cell(4, headers["Route Lookup"]).value == "FALSE"
+    assert sheet.cell(4, headers["Unidirectional"]).value == "TRUE"
+    assert sheet.cell(4, headers["Net-to-Net"]).value == "FALSE"
     assert "round-robin" in sheet.cell(4, headers["PAT Options"]).value
     assert "unknown-option" in sheet.cell(4, headers["Raw NAT Options"]).value
     assert "Additional Settings" in headers
