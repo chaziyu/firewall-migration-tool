@@ -155,11 +155,11 @@ class RuleOptimizer:
         unused_addr_grp_set = set(unused.get("unused_address_groups", []))
         unused_svc_grp_set = set(unused.get("unused_service_groups", []))
 
-        new_ir = self.ir.model_copy(deep=True)
-        new_ir.addresses = [a for a in new_ir.addresses if a.name not in unused_addr_set]
-        new_ir.services = [s for s in new_ir.services if s.name not in unused_svc_set]
-        new_ir.address_groups = [g for g in new_ir.address_groups if g.name not in unused_addr_grp_set]
-        new_ir.service_groups = [g for g in new_ir.service_groups if g.name not in unused_svc_grp_set]
+        new_ir = self.ir.model_copy()
+        new_ir.addresses = [a for a in self.ir.addresses if a.name not in unused_addr_set]
+        new_ir.services = [s for s in self.ir.services if s.name not in unused_svc_set]
+        new_ir.address_groups = [g for g in self.ir.address_groups if g.name not in unused_addr_grp_set]
+        new_ir.service_groups = [g for g in self.ir.service_groups if g.name not in unused_svc_grp_set]
         return new_ir
 
     def fix_outbound_threat_source_anomalies(self):
