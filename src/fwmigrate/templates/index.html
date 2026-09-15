@@ -10,7 +10,11 @@
       content="A focused workspace for firewall configuration conversion, source inventory extraction, and live migration."
     />
     <title>Firewall Migration Tool · Workspace</title>
-    <link rel="icon" href="{{ url_for('static', filename='app_icon.ico') }}" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="{{ url_for('static', filename='app_icon.svg') }}"
+    />
     <link
       rel="preload"
       href="{{ url_for('static', filename='fonts/dm-sans.ttf') }}"
@@ -110,11 +114,6 @@
         <button id="btn-open-guide" class="sidebar-link" type="button">
           {{ icon('book') }}<span>Workspace guide</span>{{ icon('chevron') }}
         </button>
-        <div class="sidebar-status">
-          <span class="status-dot"></span
-          ><span id="sidebar-workspace-status">Ready for configuration</span
-          ><span class="version">0.2</span>
-        </div>
       </div>
     </aside>
     <div class="app-shell">
