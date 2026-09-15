@@ -1,5 +1,6 @@
 import json
 
+from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.ir.enums import NATTranslationMode, NATType
 from fwmigrate.parsers.cisco_ftd import CiscoFDMBundleParser, CiscoFTDSourceParser
 from fwmigrate.parsers.cisco_ftd.extractor import extract_cisco_ftd_config
@@ -64,6 +65,10 @@ def _bundle(unresolved=False):
     }
 
 
+def _section(result, path):
+    return next(item for item in result.source_sections if item.path == path)
+
+
 def test_fdm_bundle_uses_separate_contract_and_preserves_canonical_nat():
     text = json.dumps(_bundle())
     ir = CiscoFDMBundleParser(text).parse()
@@ -101,6 +106,12 @@ def test_fdm_public_entry_points_route_only_explicit_fdm_bundles():
     assert len(parsed.nat_rules) == 4
     assert not result.unsupported_items
 
+    objects = _section(result, "fdm/objects")
+    assert objects.object_count_source == 8
+    assert objects.object_count_parsed == 8
+    assert objects.object_count_normalized == 8
+    assert objects.status == ExtractionStatus.NORMALIZED
+
 
 def test_fdm_unresolved_reference_is_not_broadened():
     result = extract_cisco_ftd_config(json.dumps(_bundle(unresolved=True)))
@@ -111,3 +122,46 @@ def test_fdm_unresolved_reference_is_not_broadened():
     assert result.generation_safe is False
     assert result.unsupported_items
     assert "Unresolved FDM object/policy reference" in result.blocking_reasons
+
+
+def test_fdm_invalid_host_is_withheld_and_accounted():
+    bundle = _bundle()
+    bundle["objects"]["hosts"].append({
+        "id": "bad-host", "name": "BadHost", "value": "999.1.1.1",
+    })
+    bundle["nat_rules"][0]["originalSource"] = {"id": "bad-host"}
+
+    result = extract_cisco_ftd_config(json.dumps(bundle))
+
+    assert "BadHost" not in {item.name for item in result.canonical_ir.addresses}
+    assert result.canonical_ir.nat_rules[0].source == []
+    assert result.generation_safe is False
+    assert any("Invalid FDM host/network address object" in item.reason for item in result.unsupported_items)
+
+    objects = _section(result, "fdm/objects")
+    assert objects.object_count_source == 9
+    assert objects.object_count_parsed == 8
+    assert objects.object_count_normalized == 8
+    assert objects.status == ExtractionStatus.PARTIALLY_NORMALIZED
+
+
+def test_fdm_invalid_network_and_range_are_withheld():
+    bundle = _bundle()
+    bundle["objects"]["networks"].append({
+        "id": "bad-net", "name": "BadNet", "value": "10.0.0.0/99",
+    })
+    bundle["objects"]["ranges"].extend([
+        {"id": "reverse", "name": "ReverseRange", "start": "203.0.113.30", "end": "203.0.113.20"},
+        {"id": "mixed", "name": "MixedRange", "start": "203.0.113.20", "end": "2001:db8::1"},
+    ])
+
+    parser = CiscoFDMBundleParser(json.dumps(bundle))
+    ir = parser.parse()
+    names = {item.name for item in ir.addresses}
+
+    assert "BadNet" not in names
+    assert "ReverseRange" not in names
+    assert "MixedRange" not in names
+    reasons = [item.get("reason") for item in parser.unresolved_references]
+    assert "Invalid FDM host/network address object" in reasons
+    assert reasons.count("Invalid FDM address range object") == 2
