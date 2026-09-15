@@ -5,6 +5,8 @@ from datetime import date
 from typing import Any, Iterable, List, Optional
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text
+from fwmigrate.ir.enums import NATTranslationAddressSource, NATTranslationMode
+from fwmigrate.ir.nat import IRNATSourceTranslationFallback, IRNATTranslationAddressSelection
 from fwmigrate.parsers.cisco_asa.model import CiscoNATRule, CiscoTimeRangeClause
 from fwmigrate.parsers.cisco_asa.reference_validation import ReferenceIssue
 
@@ -109,6 +111,25 @@ def _normalize_nat_source_model(config: Any) -> None:
         reason = "Dynamic NAT interface PAT fallback is source-preserved"
         if reason not in rule.review_reasons:
             rule.review_reasons.append(reason)
+
+
+def _build_nat_translation_fallback(source_rule: Any) -> IRNATSourceTranslationFallback:
+    output_interface = source_rule.destination_interface or source_rule.source_interface
+    return IRNATSourceTranslationFallback(
+        mode=NATTranslationMode.INTERFACE_ADDRESS,
+        address_selection=IRNATTranslationAddressSelection(
+            address_source=NATTranslationAddressSource.INTERFACE_ADDRESS,
+            interface=output_interface,
+        ),
+        interface=output_interface,
+        source_attributes={
+            "raw_command": source_rule.raw_line,
+            "source_interface": source_rule.source_interface,
+            "destination_interface": source_rule.destination_interface,
+            "mapped_source": source_rule.mapped_source,
+            "fallback_translation_mode": source_rule.source_attributes.get("fallback_translation_mode"),
+        },
+    )
 
 
 def _apply_global_mtu(self: Any) -> None:
@@ -319,6 +340,7 @@ def _wrap_transform_to_ir(original: Any):
                 if reason not in ir_rule.review_reasons:
                     ir_rule.review_reasons.append(reason)
             if source_rule.source_attributes.get("interface_pat_fallback"):
+                ir_rule.source_translation_fallback = _build_nat_translation_fallback(source_rule)
                 ir_rule.source_attributes["interface_pat_fallback"] = True
                 ir_rule.source_attributes["fallback_translation_mode"] = "interface-address"
                 ir_rule.requires_manual_review = True

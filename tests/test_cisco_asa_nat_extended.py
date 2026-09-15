@@ -232,6 +232,22 @@ def test_nat_exemption_is_preserved_as_extract_only():
     assert rule.syntax_family == "legacy-exemption"
 
 
+def test_modern_identity_nat_preserves_identity_without_fabrication():
+    parser = CiscoASAParser("""
+object network REAL
+ host 10.0.0.10
+nat (inside,outside) source static REAL REAL
+""")
+    ir = parser.transform_to_ir()
+    rule = ir.nat_rules[0]
+
+    assert rule.identity is True
+    assert rule.source == ["REAL"]
+    assert rule.translated_sources == ["REAL"]
+    assert rule.source_translation_mode.value == "static"
+    assert rule.safe_for_target_generation is False
+
+
 def test_named_twice_nat_operands_are_validated_without_any_fallback():
     parser = CiscoASAParser("nat (inside,outside) source static REAL MAPPED destination static MISSING PRIVATE")
     config = parser.parse_raw()
