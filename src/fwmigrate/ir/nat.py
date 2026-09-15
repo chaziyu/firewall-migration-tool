@@ -445,6 +445,7 @@ class IRVirtualIPGroup(BaseModel):
     source_uuid: Optional[str] = None
     interface: Optional[str] = None
     members: List[str] = Field(default_factory=list)
+    unresolved_members: List[str] = Field(default_factory=list)
     source_color: Optional[int] = None
     description: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"

@@ -45,7 +45,7 @@ end
     assert group.source_color == 9
     assert group.description == "Published services"
     assert group.source_attributes == {"visibility": "enable"}
-    assert group.migration_status == "EXTRACT_ONLY"
+    assert group.migration_status == "PARTIALLY_NORMALIZED"
     assert result.canonical_ir.nat_rules == []
 
 
@@ -333,7 +333,7 @@ def test_valid_vip_group_full_fields_preserve_source_model_ir_and_excel():
     assert (
         group.source_uuid, group.interface, group.members,
         group.source_color, group.description, group.migration_status,
-    ) == ("v4-uuid", "wan1", ["VIP_A", "VIP_B"], 32, "Published services", "EXTRACT_ONLY")
+        ) == ("v4-uuid", "wan1", ["VIP_A", "VIP_B"], 32, "Published services", "PARTIALLY_NORMALIZED")
     assert group.source_attributes == {"unknown_setting": "retained"}
     assert result.canonical_ir.nat_rules == []
 
@@ -343,7 +343,8 @@ def test_valid_vip_group_full_fields_preserve_source_model_ir_and_excel():
     assert sheet.cell(4, headers["Name"]).value == "V4_GROUP"
     assert sheet.cell(4, headers["Members"]).value == "VIP_A\nVIP_B"
     assert sheet.cell(4, headers["Source Color"]).value == 32
-    assert sheet.cell(4, headers["Extraction Status"]).value == "EXTRACT_ONLY"
+    assert sheet.cell(4, headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
+    assert sheet.cell(4, headers["Unresolved Members"]).value == "VIP_A\nVIP_B"
     assert sheet.cell(4, headers["Description"]).value == "Published services"
 
 
