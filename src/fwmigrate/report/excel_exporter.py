@@ -1996,6 +1996,7 @@ class IRExcelExporter:
                 item.migration_status,
                 self._optional_bool_literal(item.requires_manual_review),
                 item.audit_note,
+                item.source_context,
                 self._format_settings(
                     item.source_attributes
                 ),
@@ -3079,6 +3080,8 @@ class IRExcelExporter:
                 item.address_family,
                 item.routing_instance,
                 item.pool_type,
+                item.addresses,
+                self._format_ip_pool_ranges(item.address_ranges),
                 item.start_ip,
                 item.end_ip,
                 item.source_start_ip,
@@ -3130,6 +3133,7 @@ class IRExcelExporter:
                 item.checkpoint_member_assignments, item.checkpoint_applicability,
                 item.checkpoint_precedence, item.checkpoint_vpn_scope,
                 self._optional_bool_literal(item.checkpoint_mep),
+                item.source_context,
             )
             for item in self.ir.ip_pools
         ]
@@ -3137,7 +3141,8 @@ class IRExcelExporter:
             workbook,
             "IP Pools",
             (
-                "Name", "Address Family", "Routing Instance", "Type", "Start IP", "End IP", "Source Start IP",
+                "Name", "Address Family", "Routing Instance", "Type", "Addresses", "Address Ranges",
+                "Start IP", "End IP", "Source Start IP",
                 "Source End IP", "Source Prefix6", "Start Port", "End Port", "Associated Interface",
                 "ARP Reply", "ARP Interface", "Permit Any Host", "Excluded IPs",
                 "Block Size", "Blocks Per User", "PBA Timeout", "PBA Interim Log",
@@ -3153,7 +3158,7 @@ class IRExcelExporter:
                 "Source UUID", "Source Origin", "Check Point Pool Object Type",
                 "Check Point Networks", "Check Point Network Groups", "Check Point Address Ranges",
                 "Check Point Gateways", "Check Point Member Assignments", "Check Point Applicability",
-                "Check Point Precedence", "Check Point VPN Scope", "Check Point MEP",
+                "Check Point Precedence", "Check Point VPN Scope", "Check Point MEP", "Source VDOM",
             ),
             rows,
         )
@@ -3277,7 +3282,8 @@ class IRExcelExporter:
         rows = (
             (
                 index, item.sequence, self._format_nat_source_section(item), item.source_rule_id,
-                item.name, item.type, item.source_origin, item.nat_family,
+                item.name, item.source_rule_set, item.sequence,
+                item.type, item.source_origin, item.nat_family,
                 item.original_address_family, item.translated_address_family,
                 f"{item.protocol_name or ''}/{item.protocol_number or ''}".strip("/"),
                 self._format_nat_ports(item.original_source_ports),
@@ -3295,6 +3301,7 @@ class IRExcelExporter:
                 item.source_policy_uuid, self._optional_bool_literal(item.enabled),
                 item.source_from_interfaces, item.from_zone, item.source_to_interfaces,
                  item.to_zone, item.source, item.destination,
+                 item.from_routing_instances, item.to_routing_instances,
                  self._format_nat_address_ranges(item.address_range_mappings, "original_start"),
                  self._format_nat_address_ranges(item.address_range_mappings, "original_end"),
                  self._format_nat_address_ranges(item.address_range_mappings, "translated_start"),
@@ -3346,6 +3353,7 @@ class IRExcelExporter:
                  self._format_settings(item.source_attributes.get("checkpoint-source-nat-method-resolution") or {}),
                  self._optional_bool_literal(item.source_attributes.get("checkpoint-ordering-barrier")),
                 self._format_settings(item.source_attributes),
+                item.source_context,
             )
             for index, item in enumerate(self.ir.nat_rules, 1)
         )
@@ -3353,7 +3361,8 @@ class IRExcelExporter:
             workbook,
             "NAT Rules",
             (
-                "Rule #", "Sequence", "Source Section", "Source Rule ID", "Name", "Type", "Source Origin", "NAT Family",
+                "Rule #", "Sequence", "Source Section", "Source Rule ID", "Name", "Rule Set", "Rule Position",
+                "Type", "Source Origin", "NAT Family",
                 "Original Address Family", "Translated Address Family", "Protocol / Number",
                 "Original Source Port", "Original Destination Port", "Translated Source Port",
                 "Translated Destination Port", "Source Port Behavior", "Install Translation Route",
@@ -3361,6 +3370,7 @@ class IRExcelExporter:
                 "RTP Addresses", "Source Policy ID", "Source Policy UUID",
                  "Enabled", "Source Interface", "From Zone", "Destination Interface",
                  "To Zone", "Original Source", "Original Destination",
+                 "From Routing Instance", "To Routing Instance",
                  "Original Range Start", "Original Range End", "Translated Range Start",
                  "Translated Range End", "Services",
                  "Internet Services", "Source Translation Mode", "Destination Translation Mode",
@@ -3380,7 +3390,7 @@ class IRExcelExporter:
                  "Manual Review", "Review Reasons", "Description", "Identity", "Exemption",
                  "Source Rule Number", "Source Rule UID", "Original Service", "Translated Service",
                  "Install On", "Source Translation Method", "Check Point NAT Origin", "Check Point Section",
-                 "Check Point Source NAT Evidence", "Check Point Ordering Barrier", "Additional Settings",
+                 "Check Point Source NAT Evidence", "Check Point Ordering Barrier", "Additional Settings", "Source VDOM",
             ),
             rows,
         )
@@ -3498,6 +3508,7 @@ class IRExcelExporter:
                 item.migration_status,
                 self._optional_bool_literal(item.requires_manual_review),
                 item.audit_note,
+                item.source_context,
             )
             for item in self.ir.virtual_ips
         ]
@@ -3521,7 +3532,7 @@ class IRExcelExporter:
                 "SSL Server Algorithm", "SSL Server Min Version", "SSL Server Max Version",
                 "SSL PFS", "GSLB Domain Name", "GSLB Hostname", "Source Explicit Fields",
                 "Effective Source Settings", "Additional Settings", "Extraction Status",
-                "Manual Review", "Review Reason",
+                "Manual Review", "Review Reason", "Source VDOM",
             ),
             rows,
         )
@@ -6623,6 +6634,10 @@ class IRExcelExporter:
             f"{port.start}-{port.end}" if port.end is not None else str(port.start)
             for port in ports
         )
+
+    @staticmethod
+    def _format_ip_pool_ranges(ranges: list[Any]) -> str:
+        return " ".join(f"{item.start_ip} to {item.end_ip}" for item in ranges)
 
     @staticmethod
     def _format_nat_source_section(item: Any) -> Any:
