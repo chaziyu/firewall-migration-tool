@@ -102,6 +102,7 @@ class CapabilityAnalyzer:
                             object_type=object_name,
                             object_id=str(object_id) if object_id is not None else None,
                             target_vendor=vendor,
+                            blocks_generation=field_cap.blocks_generation,
                         ))
 
                 unknown_fields = getattr(getattr(obj, "provenance", None), "unknown_fields", {})

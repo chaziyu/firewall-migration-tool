@@ -1,8 +1,8 @@
 import subprocess
 from pathlib import Path
 from typing import List, Optional
-from fwmigrate.jobs.models import MigrationIssue
 from fwmigrate.engine.runner import TerraformRunner, TerraformSandbox
+from fwmigrate.validation.models import ValidationIssue
 
 class NativeValidator:
     """
@@ -15,13 +15,13 @@ class NativeValidator:
         self.sandbox = sandbox
         self.runner = runner
         
-    def validate(self) -> List[MigrationIssue]:
+    def validate(self) -> List[ValidationIssue]:
         issues = []
         
         # 1. Run Terraform Init
         init_ok, init_log = self.runner.run_init()
         if not init_ok:
-            issues.append(MigrationIssue(
+            issues.append(ValidationIssue(
                 severity="CRITICAL",
                 category="NATIVE_VALIDATION",
                 source_object="Terraform",
@@ -47,7 +47,7 @@ class NativeValidator:
                     data = json.loads(proc.stdout)
                     for diag in data.get('diagnostics', []):
                         if diag.get('severity') == 'error':
-                            issues.append(MigrationIssue(
+                            issues.append(ValidationIssue(
                                 severity="CRITICAL",
                                 category="NATIVE_VALIDATION",
                                 source_object=diag.get('range', {}).get('filename', 'Terraform'),
@@ -55,7 +55,7 @@ class NativeValidator:
                                 blocking=True
                             ))
                 except json.JSONDecodeError:
-                    issues.append(MigrationIssue(
+                    issues.append(ValidationIssue(
                         severity="CRITICAL",
                         category="NATIVE_VALIDATION",
                         source_object="Terraform",
@@ -63,7 +63,7 @@ class NativeValidator:
                         blocking=True
                     ))
         except Exception as e:
-            issues.append(MigrationIssue(
+            issues.append(ValidationIssue(
                 severity="CRITICAL",
                 category="NATIVE_VALIDATION",
                 source_object="Terraform",

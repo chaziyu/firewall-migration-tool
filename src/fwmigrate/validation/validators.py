@@ -1,17 +1,17 @@
+import heapq
+import ipaddress
 from typing import Dict, List, Optional
 from fwmigrate.ir import IRConfig
 from fwmigrate.ir.enums import AddressType
 from fwmigrate.ir.index import IRIndex
-from fwmigrate.jobs.models import MigrationIssue
 from fwmigrate.core.constants import UNIVERSAL_KEYWORDS
-from fwmigrate.validation.models import ValidationResult
-import ipaddress
+from fwmigrate.validation.models import ValidationIssue, ValidationResult
 
 _UNIVERSAL_KEYWORDS = {keyword.casefold() for keyword in UNIVERSAL_KEYWORDS}
 
 class Validator:
     """Base class for validation passes."""
-    def validate(self, ir_config: IRConfig) -> List[MigrationIssue]:
+    def validate(self, ir_config: IRConfig) -> List[ValidationIssue]:
         raise NotImplementedError
 
 class DependencyValidator(Validator):
@@ -22,7 +22,7 @@ class DependencyValidator(Validator):
     def __init__(self, ir_index: Optional[IRIndex] = None):
         self.ir_index = ir_index
 
-    def validate(self, ir_config: IRConfig) -> List[MigrationIssue]:
+    def validate(self, ir_config: IRConfig) -> List[ValidationIssue]:
         issues = []
         index = self.ir_index or IRIndex.build(ir_config)
         known_zones = set(index.by_name.get("zones", {}))
@@ -45,7 +45,7 @@ class DependencyValidator(Validator):
         for ag in ir_config.address_groups:
             for member in ag.members:
                 if member not in all_address_objects:
-                    issues.append(MigrationIssue(
+                    issues.append(ValidationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
                         source_object=f"AddressGroup:{ag.name}",
@@ -56,7 +56,7 @@ class DependencyValidator(Validator):
         # Check Policies
         for policy in ir_config.policies:
             if not policy.source:
-                issues.append(MigrationIssue(
+                issues.append(ValidationIssue(
                     severity="CRITICAL",
                     category="SEMANTIC",
                     source_object=f"SecurityRule:{policy.name}",
@@ -64,7 +64,7 @@ class DependencyValidator(Validator):
                     blocking=True
                 ))
             if not policy.destination:
-                issues.append(MigrationIssue(
+                issues.append(ValidationIssue(
                     severity="CRITICAL",
                     category="SEMANTIC",
                     source_object=f"SecurityRule:{policy.name}",
@@ -72,7 +72,7 @@ class DependencyValidator(Validator):
                     blocking=True
                 ))
             if not policy.service:
-                issues.append(MigrationIssue(
+                issues.append(ValidationIssue(
                     severity="CRITICAL",
                     category="SEMANTIC",
                     source_object=f"SecurityRule:{policy.name}",
@@ -82,7 +82,7 @@ class DependencyValidator(Validator):
             # Check Zones
             for z in policy.from_zone:
                 if z.casefold() not in _UNIVERSAL_KEYWORDS and z not in known_zones:
-                    issues.append(MigrationIssue(
+                    issues.append(ValidationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
                         source_object=f"SecurityRule:{policy.name}",
@@ -93,7 +93,7 @@ class DependencyValidator(Validator):
             # Check Addresses
             for src in policy.source:
                 if src.casefold() not in _UNIVERSAL_KEYWORDS and src.casefold() not in pan_builtin_tokens and src not in all_address_objects:
-                    issues.append(MigrationIssue(
+                    issues.append(ValidationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
                         source_object=f"SecurityRule:{policy.name}",
@@ -103,7 +103,7 @@ class DependencyValidator(Validator):
                     
             for dst in policy.destination:
                 if dst.casefold() not in _UNIVERSAL_KEYWORDS and dst.casefold() not in pan_builtin_tokens and dst not in all_address_objects:
-                    issues.append(MigrationIssue(
+                    issues.append(ValidationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
                         source_object=f"SecurityRule:{policy.name}",
@@ -119,7 +119,7 @@ class DependencyValidator(Validator):
                     is_builtin = True
                     
                 if not is_builtin and srv not in all_service_objects:
-                    issues.append(MigrationIssue(
+                    issues.append(ValidationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
                         source_object=f"SecurityRule:{policy.name}",
@@ -134,12 +134,14 @@ class SemanticValidator(Validator):
     """
     Identifies logical flaws like shadowed rules or overlapping definitions.
     """
-    def validate(self, ir_config: IRConfig) -> List[MigrationIssue]:
+    def validate(self, ir_config: IRConfig) -> List[ValidationIssue]:
         issues = []
         
-        # Check for address object overlaps
-        addr_map = {}
-        for addr in ir_config.addresses:
+        # Parse each family once, then sweep only intervals that can overlap.
+        intervals = {4: [], 6: []}
+        issues_by_order = []
+        latest_by_name = {4: {}, 6: {}}
+        for index, addr in enumerate(ir_config.addresses):
             if addr.type in (AddressType.NETWORK, AddressType.HOST, AddressType.RANGE):
                 try:
                     if '/' in addr.value:
@@ -149,26 +151,66 @@ class SemanticValidator(Validator):
                         continue
                     else:
                         network = ipaddress.ip_network(f"{addr.value}/32")
-                        
-                    for existing_name, existing_net in addr_map.items():
-                        if network.overlaps(existing_net):
-                            issues.append(MigrationIssue(
-                                severity="LOW",
-                                category="SEMANTIC",
-                                source_object=f"Address:{addr.name}",
-                                message=f"Overlaps with existing address {existing_name} ({existing_net})",
-                                blocking=False
-                            ))
-                    addr_map[addr.name] = network
+
+                    intervals[network.version].append((
+                        network.network_address, network.broadcast_address,
+                        index, addr.name, network,
+                        latest_by_name[network.version].get(addr.name),
+                    ))
+                    latest_by_name[network.version][addr.name] = index
                 except ValueError:
-                    issues.append(MigrationIssue(
+                    issues_by_order.append((index, -1, ValidationIssue(
                         severity="MEDIUM",
                         category="SEMANTIC",
                         source_object=f"Address:{addr.name}",
                         message=f"Invalid IP format: {addr.value}",
                         blocking=True
-                    ))
-                    
+                    )))
+
+        overlap_pairs = []
+        for family_intervals in intervals.values():
+            active = {}
+            expirations = []
+            for start, end, index, name, network, previous_same_name in sorted(
+                family_intervals, key=lambda item: (item[0], item[1], item[2])
+            ):
+                while expirations and expirations[0][0] < start:
+                    _, expired_index = heapq.heappop(expirations)
+                    active.pop(expired_index, None)
+                current = (start, end, index, name, network, previous_same_name)
+                # ponytail: worst-case O(n²) remains when every pair overlaps; emitting every issue is the contract.
+                for existing in active.values():
+                    existing_index = existing[2]
+                    later_index, earlier_index, later_interval, earlier_interval = (
+                        (index, existing_index, current, existing)
+                        if index > existing_index
+                        else (existing_index, index, existing, current)
+                    )
+                    if (
+                        later_interval[3] != earlier_interval[3]
+                        or later_interval[5] == earlier_index
+                    ):
+                        overlap_pairs.append((
+                            later_index, earlier_index, later_interval, earlier_interval,
+                        ))
+                active[index] = current
+                heapq.heappush(expirations, (end, index))
+
+        for later_index, earlier_index, later_interval, earlier_interval in sorted(
+            overlap_pairs, key=lambda pair: (pair[0], pair[1])
+        ):
+            issues_by_order.append((later_index, earlier_index, ValidationIssue(
+                severity="LOW",
+                category="SEMANTIC",
+                source_object=f"Address:{later_interval[3]}",
+                message=(
+                    f"Overlaps with existing address {earlier_interval[3]} "
+                    f"({earlier_interval[4]})"
+                ),
+                blocking=False,
+            )))
+
+        issues = [issue for _, _, issue in sorted(issues_by_order, key=lambda item: (item[0], item[1]))]
         return issues
 
 
@@ -179,7 +221,7 @@ class CapacityValidator(Validator):
     def __init__(self, limits: Dict[str, int]):
         self.limits = limits
         
-    def validate(self, ir_config: IRConfig) -> List[MigrationIssue]:
+    def validate(self, ir_config: IRConfig) -> List[ValidationIssue]:
         issues = []
         
         limit_checks = {
@@ -191,7 +233,7 @@ class CapacityValidator(Validator):
         for key, count in limit_checks.items():
             limit = self.limits.get(key)
             if limit and count > limit:
-                issues.append(MigrationIssue(
+                issues.append(ValidationIssue(
                     severity="CRITICAL",
                     category="CAPACITY",
                     source_object="Global",

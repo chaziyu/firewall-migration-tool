@@ -30,6 +30,15 @@ def test_semantic_validator_overlapping_ips():
     assert issues[0].blocking is False
     assert "Overlaps" in issues[0].message
 
+
+def test_semantic_validator_separates_ipv4_and_ipv6():
+    ir = IRConfig(metadata=IRMetadata(), addresses=[
+        IRAddress(name="ipv4", type=AddressType.NETWORK, value="10.0.0.0/24"),
+        IRAddress(name="ipv6", type=AddressType.NETWORK, value="2001:db8::/64"),
+    ])
+
+    assert SemanticValidator().validate(ir) == []
+
 def test_capacity_validator():
     zones = [IRZone(name=f"zone{i}") for i in range(5)]
     

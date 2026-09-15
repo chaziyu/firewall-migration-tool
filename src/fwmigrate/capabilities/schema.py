@@ -122,6 +122,7 @@ class FieldCapability(BaseModel):
     allowed_characters: Optional[str] = None
     max_items: Optional[int] = None # For lists
     notes: Optional[str] = None
+    blocks_generation: bool = False
 
 class ObjectCapability(BaseModel):
     """

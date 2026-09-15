@@ -2,8 +2,6 @@ from dataclasses import dataclass
 from typing import List, Dict, Set, Tuple
 from collections import defaultdict
 from fwmigrate.ir import IRConfig
-from fwmigrate.ir.metadata import IRAuditEntry
-from fwmigrate.ir.enums import MigrationConfidence
 
 
 @dataclass(frozen=True)
@@ -38,6 +36,7 @@ class DependencyGraph:
         self.issues: List[DependencyIssue] = []
         self._dependencies: Dict[Tuple[str, str], Set[Tuple[str, str]]] = {}
         self._root_references: Dict[str, Set[str]] = {"addresses": set(), "services": set()}
+        self._issue_keys: Set[Tuple[str, str, str, str, str, str]] = set()
         self._built = False
 
     _UNIVERSAL = {"any", "all", "none", "ALL", "application-default"}
@@ -55,9 +54,19 @@ class DependencyGraph:
 
         def resolve(name: str, target_type: str) -> List[Tuple[str, str]]:
             if target_type == "addresses":
-                return [("address_groups", name)] if name in address_group_names else [("addresses", name)] if name in address_names else []
+                targets = []
+                if name in address_names:
+                    targets.append(("addresses", name))
+                if name in address_group_names:
+                    targets.append(("address_groups", name))
+                return targets
             if target_type == "services":
-                return [("service_groups", name)] if name in service_group_names else [("services", name)] if name in service_names else []
+                targets = []
+                if name in service_names:
+                    targets.append(("services", name))
+                if name in service_group_names:
+                    targets.append(("service_groups", name))
+                return targets
             if target_type == "zones" and name in zone_names:
                 return [("zones", name)]
             return []
@@ -182,10 +191,14 @@ class DependencyGraph:
         # But within address groups, we might need topological sort if they reference other groups.
         
         # Sort address groups if there are nested groups
-        ordered_address_groups = self._topological_sort_groups(self.config.address_groups)
+        ordered_address_groups = self._topological_sort_groups(
+            self.config.address_groups, "address_groups"
+        )
         
         # Sort service groups
-        ordered_service_groups = self._topological_sort_groups(self.config.service_groups)
+        ordered_service_groups = self._topological_sort_groups(
+            self.config.service_groups, "service_groups"
+        )
         
         return {
             "zones": self.config.zones,
@@ -201,7 +214,16 @@ class DependencyGraph:
             "routes": self.config.routes,
         }
 
-    def _topological_sort_groups(self, groups: List) -> List:
+    def _record_issue_once(self, issue: DependencyIssue) -> None:
+        key = (
+            issue.source_type, issue.source_id, issue.target_type,
+            issue.reference, issue.field, issue.reason,
+        )
+        if key not in self._issue_keys:
+            self._issue_keys.add(key)
+            self.issues.append(issue)
+
+    def _topological_sort_groups(self, groups: List, group_domain: str = "groups") -> List:
         """Simple topological sort for groups that might reference each other."""
         graph = defaultdict(list)
         in_degree = defaultdict(int)
@@ -242,11 +264,13 @@ class DependencyGraph:
             for g in groups:
                 if g.name not in added:
                     sorted_groups.append(g)
-                    self.config.audit_entries.append(IRAuditEntry(
-                        id=g.name,
-                        category="Dependency Graph",
-                        message=f"Circular dependency detected involving group '{g.name}'. This may cause target generation or deployment failures.",
-                        confidence=MigrationConfidence.MANUAL
+                    self._record_issue_once(DependencyIssue(
+                        source_type=group_domain,
+                        source_id=g.name,
+                        target_type=group_domain,
+                        reference=g.name,
+                        field="members",
+                        reason="circular dependency",
                     ))
                     
         return sorted_groups

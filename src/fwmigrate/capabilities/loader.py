@@ -1,5 +1,6 @@
 import yaml
 from pathlib import Path
+from typing import Optional
 from fwmigrate.capabilities.schema import VendorCapabilityProfile
 
 class CapabilityLoader:
@@ -13,7 +14,7 @@ class CapabilityLoader:
         else:
             self.capability_dir = capability_dir
             
-    def load_profile(self, vendor_id: str, os_version: str) -> VendorCapabilityProfile:
+    def load_profile(self, vendor_id: str, os_version: Optional[str] = None) -> VendorCapabilityProfile:
         """
         Loads the capability profile for a specific vendor and OS version.
         Falls back to 'default.yaml' if specific version is not found.
@@ -22,14 +23,20 @@ class CapabilityLoader:
         if not target_dir.exists():
             raise FileNotFoundError(f"No capability profiles found for vendor: {vendor_id}")
             
-        version_file = target_dir / f"{os_version}.yaml"
         default_file = target_dir / "default.yaml"
-        
-        file_to_load = version_file if version_file.exists() else default_file
+        version_file = target_dir / f"{os_version}.yaml" if os_version else None
+        file_to_load = version_file if version_file and version_file.exists() else default_file
         
         if not file_to_load.exists():
-            raise FileNotFoundError(f"Could not find {version_file.name} or default.yaml for {vendor_id}")
+            version_name = version_file.name if version_file else "a version profile"
+            raise FileNotFoundError(f"Could not find {version_name} or default.yaml for {vendor_id}")
             
         with open(file_to_load, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-            return VendorCapabilityProfile(**data)
+            profile = VendorCapabilityProfile(**data)
+            if profile.vendor_id != vendor_id:
+                raise ValueError(
+                    f"Capability profile vendor mismatch: expected {vendor_id}, "
+                    f"got {profile.vendor_id}"
+                )
+            return profile

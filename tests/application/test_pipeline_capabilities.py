@@ -3,16 +3,23 @@ from unittest.mock import Mock, patch
 from tests.fixture_paths import CISCO_ASA_FIXTURE
 
 from fwmigrate.application import MigrationPipeline, MigrationRequest
-from fwmigrate.capabilities.schema import CapabilityAnalysisResult, CapabilityIssue, CapabilityStatus
+from fwmigrate.capabilities.schema import (
+    CapabilityAnalysisResult,
+    CapabilityIssue,
+    CapabilityStatus,
+    VendorCapabilityProfile,
+)
 
 
-def request():
-    return MigrationRequest(
+def request(**overrides):
+    values = dict(
         source_vendor="cisco_asa",
         target_vendor="palo_alto",
         source_content=CISCO_ASA_FIXTURE.read_text(encoding="utf-8"),
         target_format="xml",
     )
+    values.update(overrides)
+    return MigrationRequest(**values)
 
 
 def test_blocking_capability_prevents_generator_call():
@@ -48,3 +55,17 @@ def test_manual_review_capability_continues_to_generator():
     assert result.generation_allowed is True
     assert result.artifacts
     assert result.requires_manual_review is True
+
+
+def test_pipeline_loads_profile_for_canonical_target_and_version():
+    loader = Mock()
+    loader.load_profile.return_value = VendorCapabilityProfile(
+        vendor_id="palo_alto", os_version="11.1"
+    )
+
+    result = MigrationPipeline(capability_loader=loader).run(
+        request(target_version="11.1")
+    )
+
+    assert result.generation_allowed is True
+    loader.load_profile.assert_called_once_with("palo_alto", "11.1")
