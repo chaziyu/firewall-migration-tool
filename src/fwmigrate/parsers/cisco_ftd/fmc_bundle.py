@@ -34,6 +34,36 @@ from fwmigrate.ir.enums import AddressType, NATTranslationMode, NATType, PolicyA
 FMC_BUNDLE_FORMAT = "cisco-fmc-rest-export-v1"
 
 
+def _fmc_nat_protocol(rule: dict) -> Optional[str]:
+    for key in ("protocol", "protocolName", "transportProtocol"):
+        value = rule.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip().lower()
+    for key in (
+        "originalSourcePort", "translatedSourcePort",
+        "originalDestinationPort", "translatedDestinationPort",
+    ):
+        value = rule.get(key)
+        values = value if isinstance(value, list) else [value]
+        for item in values:
+            if isinstance(item, dict):
+                protocol = item.get("protocol") or item.get("protocolName")
+                if protocol is not None and str(protocol).strip():
+                    return str(protocol).strip().lower()
+    return None
+
+
+def _classify_fmc_dynamic_translation(pat_options: Any, translated_source_port: Any) -> NATTranslationMode:
+    if translated_source_port:
+        return NATTranslationMode.DYNAMIC_IP_AND_PORT
+    if isinstance(pat_options, dict):
+        for key in ("type", "method", "translationMethod", "patType"):
+            value = str(pat_options.get(key) or "").strip().lower().replace("_", "-")
+            if value in {"pat", "port-address-translation", "dynamic-ip-and-port", "dynamic-port"}:
+                return NATTranslationMode.DYNAMIC_IP_AND_PORT
+    return NATTranslationMode.DYNAMIC_IP
+
+
 def _items(value: Any) -> List[dict]:
     if value is None:
         return []
@@ -614,6 +644,8 @@ class CiscoFMCBundleParser:
         rule_name = rule.get("name") or rule.get("id") or f"nat_{index}"
         owner = f"{policy_name}/{rule_name}"
         nat_type = str(rule.get("natType") or "").upper()
+        pat_options = rule.get("patOptions")
+        protocol = _fmc_nat_protocol(rule)
         src_if, src_if_unresolved = self._nat_ref(rule.get("sourceInterface"), owner=owner, field="sourceInterface", any_when_none=False)
         dst_if, dst_if_unresolved = self._nat_ref(rule.get("destinationInterface"), owner=owner, field="destinationInterface", any_when_none=False)
 
@@ -645,10 +677,9 @@ class CiscoFMCBundleParser:
         elif nat_type == "STATIC":
             source_mode = NATTranslationMode.STATIC
         elif nat_type == "DYNAMIC":
-            pat_options = rule.get("patOptions") if isinstance(rule.get("patOptions"), dict) else {}
             # Port translation is explicit when PAT options/translated source
             # port are present. Otherwise FMC dynamic NAT is address-only.
-            source_mode = NATTranslationMode.DYNAMIC_IP_AND_PORT if (pat_options or translated_source_port) else NATTranslationMode.DYNAMIC_IP
+            source_mode = _classify_fmc_dynamic_translation(pat_options, translated_source_port)
         else:
             source_mode = None
 
@@ -678,7 +709,7 @@ class CiscoFMCBundleParser:
             review_reasons.append(f"Unsupported or missing FMC NAT type: {nat_type or '<missing>'}")
         if original_source_port or translated_source_port or original_destination_port or translated_destination_port:
             review_reasons.append("FMC NAT port-translation references are source-preserved for target capability review")
-        if rule.get("patOptions"):
+        if pat_options:
             review_reasons.append("FMC PAT options are source-preserved for target capability review")
 
         requires_review = bool(review_reasons)
@@ -698,6 +729,8 @@ class CiscoFMCBundleParser:
              exemption=nat_type in {"EXEMPTION", "IDENTITY"},
             source_translation_mode=source_mode,
             destination_translation_mode=destination_mode,
+            protocol_name=protocol,
+            destination_protocol=protocol,
             sequence=index,
             enabled=bool(rule.get("enabled", True)), description=rule.get("description"),
             migration_status="PARTIALLY_NORMALIZED" if requires_review else "NORMALIZED",
@@ -707,6 +740,8 @@ class CiscoFMCBundleParser:
                 "fmc_nat_rule": rule, "fmc_nat_section": section, "fmc_auto_nat": auto,
                 "fmc_nat_type": nat_type, "fmc_interface_translation": interface_translation,
                 "fmc_destination_translation_mode": destination_method or None,
+                "fmc_pat_options": pat_options,
+                "fmc_nat_protocol": protocol,
                 "fmc_target_index": rule.get("targetIndex"),
                 "fmc_source_index": rule.get("ruleIndex") or rule.get("index"),
                 "dns": rule.get("dns"), "route_lookup": rule.get("routeLookup"),

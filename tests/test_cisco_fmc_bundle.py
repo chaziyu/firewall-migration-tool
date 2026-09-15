@@ -223,3 +223,31 @@ def test_fmc_nat_sequence_and_destination_translation_are_canonical():
     assert destination.translated_destinations == ["InsideHost"]
     assert destination.destination_translation_mode == NATTranslationMode.STATIC
     assert destination.source_attributes["fmc_nat_section"] == "after_auto"
+
+
+def test_fmc_nat_preserves_ports_protocol_and_pat_classification():
+    bundle = _bundle()
+    rules = bundle["nat_policies"][0]["manual_rules_before_auto"]
+    rules[0]["originalSourcePort"] = {"port": "1000", "endPort": "2000", "protocol": "TCP"}
+    rules[0]["translatedSourcePort"] = {"port": "3000", "protocol": "TCP"}
+    rules[0]["patOptions"] = {"method": "PAT", "blockAllocation": True}
+
+    rule = CiscoFMCBundleParser(json.dumps(bundle)).parse().nat_rules[0]
+    assert rule.source_translation_mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
+    assert [(port.start, port.end) for port in rule.original_source_ports] == [(1000, 2000)]
+    assert [(port.start, port.end) for port in rule.translated_source_ports] == [(3000, 3000)]
+    assert rule.protocol_name == "tcp"
+    assert rule.source_attributes["fmc_pat_options"] == {"method": "PAT", "blockAllocation": True}
+    assert rule.review_reasons.count("FMC PAT options are source-preserved for target capability review") == 1
+
+
+def test_fmc_unsupported_pat_options_do_not_promote_address_only_dynamic_nat():
+    bundle = _bundle()
+    rule = bundle["nat_policies"][0]["manual_rules_before_auto"][0]
+    rule["patOptions"] = {"method": "vendor-specific", "preservePort": True}
+
+    ir = CiscoFMCBundleParser(json.dumps(bundle)).parse()
+    nat = ir.nat_rules[0]
+    assert nat.source_translation_mode == NATTranslationMode.DYNAMIC_IP
+    assert nat.source_attributes["fmc_pat_options"]["method"] == "vendor-specific"
+    assert nat.review_reasons.count("FMC PAT options are source-preserved for target capability review") == 1
