@@ -1,4 +1,4 @@
-from fwmigrate.ir.enums import NATTranslationMode
+from fwmigrate.ir.enums import NATTranslationAddressSource, NATTranslationMode
 from fwmigrate.parsers.cisco_asa.parser import CiscoASAParser
 
 
@@ -106,16 +106,30 @@ nat (inside,outside) source dynamic REAL POOL interface
     assert fallback.source_attributes["interface_pat_fallback"] is True
 
     ir = parser.transform_to_ir()
-    assert ir.nat_rules[0].source_translation_mode == NATTranslationMode.DYNAMIC_IP
-    assert ir.nat_rules[0].source_attributes["asa_translation_semantics"] == "dynamic-nat"
-    assert ir.nat_rules[0].requires_manual_review is False
-    assert ir.nat_rules[1].source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS
-    assert ir.nat_rules[2].source_translation_mode == NATTranslationMode.DYNAMIC_IP
-    assert ir.nat_rules[2].requires_manual_review is True
-    assert ir.nat_rules[2].source_attributes["interface_pat_fallback"] is True
-    assert ir.nat_rules[2].source_translation_fallback.mode == NATTranslationMode.INTERFACE_ADDRESS
-    assert ir.nat_rules[2].source_translation_fallback.interface == "outside"
-    assert ir.nat_rules[2].source_translation_fallback.address_selection.interface == "outside"
+    dynamic_nat = ir.nat_rules[0]
+    interface_pat = ir.nat_rules[1]
+    fallback_nat = ir.nat_rules[2]
+
+    assert dynamic_nat.source_translation_mode == NATTranslationMode.DYNAMIC_IP
+    assert dynamic_nat.source_attributes["asa_translation_semantics"] == "dynamic-nat"
+    assert dynamic_nat.requires_manual_review is False
+
+    assert interface_pat.source_translation_mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
+    assert interface_pat.source_attributes["asa_translation_semantics"] == "dynamic-pat-interface"
+    assert interface_pat.translated_sources == []
+    assert interface_pat.source_translation_address_selection is not None
+    assert (
+        interface_pat.source_translation_address_selection.address_source
+        == NATTranslationAddressSource.INTERFACE_ADDRESS
+    )
+    assert interface_pat.source_translation_address_selection.interface == "outside"
+
+    assert fallback_nat.source_translation_mode == NATTranslationMode.DYNAMIC_IP
+    assert fallback_nat.requires_manual_review is True
+    assert fallback_nat.source_attributes["interface_pat_fallback"] is True
+    assert fallback_nat.source_translation_fallback.mode == NATTranslationMode.DYNAMIC_IP_AND_PORT
+    assert fallback_nat.source_translation_fallback.interface == "outside"
+    assert fallback_nat.source_translation_fallback.address_selection.interface == "outside"
 
 
 def test_legacy_nat_exemption_single_interface_tuple_is_preserved():
