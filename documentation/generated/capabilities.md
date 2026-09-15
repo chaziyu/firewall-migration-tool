@@ -25,6 +25,6 @@ This file is generated from the runtime plugin registry. It reports registration
 | `juniper_srx` | Juniper SRX / JunOS | `set`, `cli`, `terraform` | `srx`, `junos` | stable |
 | `palo_alto` | Palo Alto Networks (PAN-OS / Panorama) | `xml`, `terraform` | `panos`, `paloalto` | stable |
 
-**Current executable IR schema:** `1.67`
+**Current executable IR schema:** `1.68`
 
 > A registered source and a registered target do not imply lossless feature parity. Review the vendor support matrix and migration report before deployment.

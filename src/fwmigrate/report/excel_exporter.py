@@ -2036,6 +2036,7 @@ class IRExcelExporter:
                 "Migration Status",
                 "Manual Review",
                 "Audit Note",
+                "Source VDOM",
                 "Additional Settings",
                 "Description",
             ),

@@ -135,6 +135,9 @@ def test_logical_systems_full_context_reference_isolation():
     nat_dict = {n.name: n for n in ir.nat_rules}
     n1 = nat_dict["LS1__r1"]
     n2 = nat_dict["LS2__r1"]
+    assert n1.source_rule_set == "rs1"
+    assert n2.source_rule_set == "rs1"
+    assert n1.sequence == n2.sequence == 1
     assert n1.from_zone == ["LS1__trust"]
     assert n1.to_zone == ["LS1__untrust"]
     assert n1.source == ["LS1__srv"]

@@ -84,7 +84,30 @@ def test_repaired_junos_fields_survive_the_full_excel_pipeline():
     pool_headers = {cell.value: cell.column for cell in workbook["IP Pools"][3]}
     pool_row = next(row for row in workbook["IP Pools"].iter_rows(min_row=4, values_only=False) if row[pool_headers["Name"] - 1].value == "dst")
     assert pool_row[pool_headers["Routing Instance"] - 1].value == "RI"
+    assert pool_row[pool_headers["Addresses"] - 1].value == "10.0.0.10/32"
 
     nat_headers = {cell.value: cell.column for cell in workbook["NAT Rules"][3]}
     nat_row = next(row for row in workbook["NAT Rules"].iter_rows(min_row=4, values_only=False) if row[nat_headers["Name"] - 1].value == "s1")
     assert "8443" in str(nat_row[nat_headers["Translated Destination Port"] - 1].value)
+    assert nat_row[nat_headers["Rule Set"] - 1].value == "s"
+    assert nat_row[nat_headers["Rule Position"] - 1].value == 1
+    assert nat_row[nat_headers["Type"] - 1].value == "static"
+    assert nat_row[nat_headers["Static NAT Bi-directional"] - 1].value == "TRUE"
+
+
+def test_junos_address_set_topology_is_exported():
+    ir = JuniperSRXParser("""
+    set security address-book global address host 10.0.0.1/32
+    set security address-book global address-set child address host
+    set security address-book global address-set parent address-set child
+    """).extract().canonical_ir
+
+    workbook = load_workbook(BytesIO(IRExcelExporter(ir).generate()))
+    headers = {cell.value: cell.column for cell in workbook["Address Groups"][3]}
+    row = next(
+        row for row in workbook["Address Groups"].iter_rows(min_row=4, values_only=False)
+        if row[headers["Name"] - 1].value == "parent"
+    )
+    assert row[headers["Direct Address Members"] - 1].value in (None, "")
+    assert row[headers["Nested Address-Set Members"] - 1].value == "child"
+    assert row[headers["Resolved Members"] - 1].value == "host"

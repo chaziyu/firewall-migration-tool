@@ -75,6 +75,7 @@ set security nat static rule-set STATIC rule R1 then static-nat prefix routing-i
     assert action["mapped_port"] == "8443"
     assert action["routing_instance"] == "VR-INTERNAL"
     assert ir_rule.requires_manual_review is True
-    assert ir_rule.type.value == "destination"
+    assert ir_rule.type.value == "static"
+    assert ir_rule.source_translation_bidirectional is True
     assert ir_rule.translated_sources == []
     assert ir_rule.translated_destinations == ["10.10.10.10/32"]
