@@ -1,3 +1,4 @@
+import importlib
 from pathlib import Path
 
 from fwmigrate.parsers.fortigate import extract_fortigate_config
@@ -177,3 +178,86 @@ def test_structured_profile_builders_preserve_declared_cardinality():
     assert ssl_profile.protocols[0].ports == ["443"]
 
     assert extract_fortigate_config(source).canonical_ir is not None
+
+
+def test_system_fsso_polling_is_static_typed_source_only_and_redacts_password():
+    source = """\
+config system fsso-polling
+    set status enable
+    set listening-port malformed
+    set authentication password
+    set auth-password super-secret
+    set future-setting future-value
+end
+"""
+
+    parser = FortiGateParser(FortiGateTokenizer(source))
+    config = parser.parse()
+
+    polling = config.system_fsso_polling
+    assert polling is not None
+    assert polling.status == "enable"
+    assert polling.listening_port is None
+    assert polling.extra_settings["unparsed_listening_port"] == "malformed"
+    assert polling.extra_settings["future_setting"] == "future-value"
+    assert polling.has_auth_password is True
+    assert "super-secret" not in polling.model_dump_json()
+    assert FortiGateParser.__init__.__module__ == "fwmigrate.parsers.fortigate.parser"
+
+    extraction = extract_fortigate_config(source)
+    section = next(
+        item for item in extraction.source_sections
+        if item.path == "system fsso-polling"
+    )
+    assert section.status.value == "EXTRACT_ONLY"
+    assert "TYPED_EXTRACT_ONLY" in " ".join(section.notes)
+
+
+def test_canonical_models_keep_dns_authentication_and_session_semantics():
+    source = """\
+config system dns
+    set server-hostname dns-one dns-two
+end
+config system global
+    set tcp-halfclose-timer malformed
+end
+config authentication scheme
+    edit scheme-one
+        set method basic unsupported
+        set fsso-guest invalid
+    next
+end
+config firewall service custom
+    edit web
+        set session-ttl never
+        set tcp-halfopen-timer malformed
+        set tcp-portrange 443:1024-1025
+    next
+end
+"""
+
+    config = FortiGateParser(FortiGateTokenizer(source)).parse()
+
+    assert config.dns.server_hostname == ["dns-one", "dns-two"]
+    assert config.system_global.tcp_halfclose_timer is None
+    assert config.system_global.extra_settings["unparsed_tcp_halfclose_timer"] == "malformed"
+    assert config.authentication_schemes[0].method == ["basic"]
+    assert config.authentication_schemes[0].extra_settings["unparsed_method"] == ["unsupported"]
+    assert config.authentication_schemes[0].extra_settings["unparsed_fsso_guest"] == "invalid"
+    service = config.services[0]
+    assert service.session_ttl == "never"
+    assert service.extra_settings["unparsed_tcp_halfopen_timer"] == "malformed"
+    assert service.tcp_port_ranges[0].source_start == 1024
+    assert service.tcp_port_ranges[0].source_end == 1025
+
+
+def test_repeated_system_fsso_imports_do_not_mutate_parser_methods():
+    methods = {
+        name: getattr(FortiGateParser, name)
+        for name in ("__init__", "parse", "build_model", "_build_structured_typed_parents")
+    }
+    module = importlib.import_module("fwmigrate.parsers.fortigate.system_fsso")
+    importlib.import_module("fwmigrate.parsers.fortigate.system_fsso")
+    importlib.reload(module)
+
+    assert all(getattr(FortiGateParser, name) is method for name, method in methods.items())

@@ -14,6 +14,7 @@ from fwmigrate.parsers.fortigate.tokenizer import (
 from fwmigrate.parsers.fortigate.model import (
     FGConfig,
     FGSystemGlobal,
+    FGSystemFSSOPolling,
     FGInterface,
     FGL2TPClientSettings,
     FGInterfaceSecondaryIP,
@@ -206,52 +207,12 @@ from fwmigrate.parsers.fortigate.model import (
 )
 from fwmigrate.parsers.fortigate.certificates import parse_certificate_metadata
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
+from fwmigrate.parsers.fortigate.system_fsso import parse_system_fsso_polling_node
 from fwmigrate.parsers.fortigate.firewall_ip_746 import (
     effective_ipv6_eh_filter_settings,
     validate_ipv6_eh_filter_746,
 )
-from fwmigrate.parsers.fortigate.dns_multivalue_fix import FGDnsMultiValue746
-from fwmigrate.parsers.fortigate.service_parser_extensions import parse_service_port_ranges
-from fwmigrate.parsers.fortigate.authentication_scheme_extensions import (
-    AUTHENTICATION_METHODS,
-    AUTHENTICATION_STRING_LIMITS,
-    AUTHENTICATION_SWITCH_FIELDS,
-)
-from fwmigrate.parsers.fortigate.session_ttl_extensions import (
-    SESSION_TTL_OVERRIDE_INT_FIELDS,
-    SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
-    FGServiceSessionTimers,
-    FGSystemGlobalSessionTimers,
-)
-from fwmigrate.parsers.fortigate.phase_42_antivirus import (
-    _build_antivirus_profiles,
-    FGAntivirusProfile746,
-    FGAntivirusProtocol746,
-    FGAntivirusProfileConfig746,
-)
-from fwmigrate.parsers.fortigate.phase_43_webfilter import (
-    _build_webfilter_profiles,
-    FGWebFilterProfile746,
-    FGWebFilterCategory746,
-    FGWebFilterOverride746,
-)
-from fwmigrate.parsers.fortigate.phase_44_dnsfilter import (
-    _build_dnsfilter_profiles,
-    FGDNSFilterProfile746,
-    FGDNSFilterCategory746,
-)
-from fwmigrate.parsers.fortigate.phase_45_application_control import (
-    _build_application_lists,
-    FGApplicationList746,
-    FGApplicationEntry746,
-)
 from fwmigrate.parsers.fortigate.firewall_vip_746 import FORTIOS_746_VIP_FIELDS
-from fwmigrate.parsers.fortigate.phase_46_50_extensions import (
-    _build_ips_sensor,
-    _build_ssl_ssh_profile,
-    _refresh_interface_ipv6_from_source,
-    _refresh_policy_address_families,
-)
 from fwmigrate.extraction.models import ExtractionStatus, SourceCommand, SourceInventoryItem
 from fwmigrate.parsers.fortigate.source_tree import (
     FGSourceCommand,
@@ -264,6 +225,11 @@ from fwmigrate.parsers.fortigate.source_tree import (
     STRUCTURED_OPERATIONAL_SECTIONS,
 )
 from fwmigrate.parsers.fortigate.section_registry import (
+    AUTHENTICATION_METHODS,
+    AUTHENTICATION_STRING_LIMITS,
+    AUTHENTICATION_SWITCH_FIELDS,
+    SESSION_TTL_OVERRIDE_INT_FIELDS,
+    SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
     SECTION_INTEGER_FIELDS,
     SECTION_INTEGER_LIST_FIELDS,
     SECTION_LIST_FIELDS,
@@ -486,19 +452,6 @@ for _path in ("vpn ipsec phase1-interface", "vpn ipsec phase1"):
         "default_gw_priority", "distance", "priority", "dns_suffix_search",
     })
 
-FGService = FGServiceSessionTimers
-FGSystemGlobal = FGSystemGlobalSessionTimers
-FGDns = FGDnsMultiValue746
-FGAntivirusProfile = FGAntivirusProfile746
-FGAntivirusProtocol = FGAntivirusProtocol746
-FGAntivirusProfileConfig = FGAntivirusProfileConfig746
-FGWebFilterProfile = FGWebFilterProfile746
-FGWebFilterCategory = FGWebFilterCategory746
-FGWebFilterOverride = FGWebFilterOverride746
-FGDNSFilterProfile = FGDNSFilterProfile746
-FGDNSFilterCategory = FGDNSFilterCategory746
-FGApplicationList = FGApplicationList746
-FGApplicationEntry = FGApplicationEntry746
 SECTION_EXPLICIT_FIELDS.setdefault("system interface", set()).add("ping_serv_status")
 SECTION_EXPLICIT_FIELDS.setdefault("firewall vip", set()).update(FORTIOS_746_VIP_FIELDS)
 SECTION_EXPLICIT_FIELDS["firewall ippool_grp"] = {"member"}
@@ -739,187 +692,42 @@ def _classify_pppoe_password(values: List[str]) -> tuple[bool, Optional[str]]:
     return True, "encrypted" if value.upper().startswith("ENC ") else "plaintext"
 
 
-def _initialize_section_registry() -> None:
-    """Register the parser's static section metadata once at module import."""
+def parse_service_port_ranges(value: Optional[str]) -> List[FGPortRange]:
+    """Parse FortiOS destination[:source] service port expressions."""
+    ranges: List[FGPortRange] = []
+    for original in re.split(r"[,\s]+", (value or "").strip()):
+        if not original:
+            continue
+        parsed: List[tuple[int, int]] = []
+        for part in original.split(":", 1):
+            bounds = part.split("-", 1)
+            try:
+                parsed.append((int(bounds[0]), int(bounds[-1])))
+            except (TypeError, ValueError):
+                parsed = []
+                break
+        if not parsed:
+            ranges.append(FGPortRange(original=original))
+            continue
+        destination_start, destination_end = parsed[0]
+        if len(parsed) == 1:
+            ranges.append(FGPortRange(
+                original=original,
+                port=destination_start if destination_start == destination_end else None,
+                destination_start=destination_start,
+                destination_end=destination_end,
+            ))
+            continue
+        source_start, source_end = parsed[1]
+        ranges.append(FGPortRange(
+            original=original,
+            source_start=source_start,
+            source_end=source_end,
+            destination_start=destination_start,
+            destination_end=destination_end,
+        ))
+    return ranges
 
-    models = {
-        "system interface": FGInterface,
-        "system zone": FGSystemZone,
-        "firewall wildcard-fqdn custom": FGWildcardFQDN,
-        "firewall service category": FGServiceCategory,
-        "firewall address": FGAddress,
-        "firewall address6": FGAddress,
-        "firewall address6-template": FGAddress6Template,
-        "firewall addrgrp": FGAddressGroup,
-        "firewall addrgrp6": FGAddressGroup,
-        "firewall service custom": FGService,
-        "firewall service group": FGServiceGroup,
-        "firewall proxy-address": FGProxyAddress,
-        "firewall schedule recurring": FGSchedule,
-        "firewall schedule onetime": FGSchedule,
-        "firewall schedule group": FGScheduleGroup,
-        "firewall ippool": FGIPPool,
-        "firewall ippool6": FGIPPool6,
-        "firewall ippool_grp": FGIPPoolGroup,
-        "endpoint-control fctems": FGFCTEMS,
-        "user adgrp": FGADGroup,
-        "user local": FGLocalUser,
-        "user group": FGUserGroup,
-        "user saml": FGUserSAML,
-        "system dns-server": FGDnsServer,
-        "firewall vip": FGVIP,
-        "firewall vip6": FGVIP6,
-        "firewall vipgrp": FGVIPGroup,
-        "firewall vipgrp6": FGVIPGroup6,
-        "firewall vip realservers": FGVIPRealServer,
-        "firewall vip6 realservers": FGVIPRealServer,
-        "system interface secondaryip": FGInterfaceSecondaryIP,
-        "firewall policy": FGPolicy,
-        "firewall security-policy": FGSecurityPolicy,
-        "firewall shaping-policy": FGShapingPolicy,
-        "firewall central-snat-map": FGCentralSNATRule,
-        "router static": FGStaticRoute,
-        "router static6": FGStaticRoute,
-        "router policy": FGPolicyRoute,
-        "router policy6": FGPolicyRoute,
-        "system dhcp server": FGDHCPServer,
-        "system dhcp6 server": FGDHCP6Server,
-        "system dns": FGDns,
-        "authentication scheme": FGAuthenticationScheme,
-        "authentication rule": FGAuthenticationRule,
-        "vpn ipsec phase1-interface": FGPhase1Interface,
-        "vpn ipsec phase1": FGPhase1Policy,
-        "vpn ipsec phase2-interface": FGPhase2Interface,
-        "vpn ipsec phase2": FGPhase2Policy,
-    }
-    common_list_fields = {
-        "allowaccess", "detectprotocol", "dhcp_relay_ip", "member", "day",
-        "srcintf", "dstintf", "srcaddr", "dst", "dst6",
-        "ip_range", "ip6_range", "groups", "users", "service", "poolname",
-        "proposal", "internet_service_name", "exclude_ip", "mappedip", "extaddr",
-        "src_filter", "srcintf_filter", "monitor", "ztna_ems_tag",
-        "ztna_ems_tag_secondary", "ztna_geo_tag", "capabilities", "fsso_group",
-    }
-    list_fields = {
-        path: set(SECTION_LIST_FIELDS.get(path, ()))
-        | (common_list_fields & set(model.model_fields))
-        for path, model in models.items()
-    }
-    list_fields.update({
-        path: set(fields)
-        for path, fields in SECTION_LIST_FIELDS.items()
-        if path not in list_fields
-    })
-    destination_collections = {
-        "system interface": "interfaces",
-        "system zone": "system_zones",
-        "firewall wildcard-fqdn custom": "wildcard_fqdns",
-        "firewall service category": "service_categories",
-        "firewall address": "addresses",
-        "firewall address6": "addresses",
-        "firewall address6-template": "address6_templates",
-        "firewall addrgrp": "address_groups",
-        "firewall addrgrp6": "address_groups",
-        "firewall service custom": "services",
-        "firewall service group": "service_groups",
-        "firewall proxy-address": "proxy_addresses",
-        "firewall schedule recurring": "schedules",
-        "firewall schedule onetime": "schedules",
-        "firewall schedule group": "schedule_groups",
-        "firewall ippool": "ip_pools",
-        "firewall ippool6": "ip_pools6",
-        "firewall ippool_grp": "ip_pool_groups",
-        "endpoint-control fctems": "fctems_connectors",
-        "user adgrp": "ad_groups",
-        "user saml": "user_saml_servers",
-        "system dns-server": "dns_servers",
-        "firewall vip": "vips",
-        "firewall vip6": "vips6",
-        "firewall vipgrp": "vip_groups",
-        "firewall vipgrp6": "vip_groups6",
-        "firewall policy": "policies",
-        "firewall security-policy": "security_policies",
-        "firewall shaping-policy": "shaping_policies",
-        "firewall central-snat-map": "central_snat_rules",
-        "router static": "static_routes",
-        "router static6": "static_routes",
-        "router policy": "policy_routes",
-        "router policy6": "policy_routes",
-        "system dhcp server": "dhcp_servers",
-        "system dhcp6 server": "dhcp6_servers",
-        "authentication scheme": "authentication_schemes",
-        "authentication rule": "authentication_rules",
-        "vpn ipsec phase1-interface": "phase1_interfaces",
-        "vpn ipsec phase1": "phase1_policies",
-        "vpn ipsec phase2-interface": "phase2_interfaces",
-        "vpn ipsec phase2": "phase2_policies",
-    }
-    integer_fields = {
-        path: set(fields) for path, fields in SECTION_INTEGER_FIELDS.items()
-    }
-    integer_fields.update({
-        "router policy": FG_POLICY_ROUTE_INT_FIELDS,
-        "router policy6": FG_POLICY_ROUTE_INT_FIELDS,
-        "system sdwan zone": FG_SDWAN_ZONE_INT_FIELDS,
-        "system sdwan health-check": FG_SDWAN_HEALTH_CHECK_INT_FIELDS,
-        "system sdwan health-check sla": FG_SDWAN_HEALTH_CHECK_SLA_INT_FIELDS,
-        "system sdwan service": FG_SDWAN_SERVICE_INT_FIELDS,
-        "system dhcp server": FG_DHCP_SERVER_INT_FIELDS,
-        "system dhcp server ip-range": FG_DHCP_RANGE_INT_FIELDS,
-        "system dhcp server options": FG_DHCP_OPTION_INT_FIELDS,
-        "authentication scheme": {"saml_timeout"},
-        "system global": SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
-        "system session-ttl port": SESSION_TTL_OVERRIDE_INT_FIELDS,
-    })
-    integer_list_fields = {
-        path: set(fields) for path, fields in SECTION_INTEGER_LIST_FIELDS.items()
-    }
-    integer_list_fields.update({
-        "router policy": FG_POLICY_ROUTE_INT_LIST_FIELDS,
-        "router policy6": FG_POLICY_ROUTE_INT_LIST_FIELDS,
-        "system sdwan service": FG_SDWAN_SERVICE_INT_LIST_FIELDS,
-    })
-    scalar_fields = {
-        path: set(model.model_fields)
-            - list_fields.get(path, set())
-        - integer_fields.get(path, set())
-        - integer_list_fields.get(path, set())
-        - {"extra_settings", "source_explicit_fields", "source_attributes", "nested_configs"}
-        for path, model in models.items()
-    }
-    secret_fields = {
-        path: IDENTITY_SECRET_FIELDS for path in IDENTITY_SECTIONS
-    }
-    secret_fields.update({
-        "system admin": ADMIN_SECRET_FIELDS,
-        "vpn ipsec phase1": {"psksecret", "psksecret_remote", "authpasswd", "group_authentication_secret", "ppk_secret"},
-        "vpn ipsec phase1-interface": {"psksecret", "psksecret_remote", "authpasswd", "group_authentication_secret", "ppk_secret"},
-    })
-    paths = (
-        set(models)
-        | set(list_fields)
-        | set(SECTION_EXPLICIT_FIELDS)
-        | CONTEXTUAL_MODEL_SECTIONS
-        | STRUCTURED_SECURITY_SECTIONS
-        | STRUCTURED_ROUTING_SECTIONS
-        | STRUCTURED_ROUTING_DEPENDENCY_SECTIONS
-        | STRUCTURED_IDENTITY_SECTIONS
-        | STRUCTURED_OPERATIONAL_SECTIONS
-    )
-    register_sections(
-        paths,
-        models=models,
-        destination_collections=destination_collections,
-        list_fields=list_fields,
-        integer_fields=integer_fields,
-        integer_list_fields=integer_list_fields,
-        scalar_fields=scalar_fields,
-        explicit_fields=SECTION_EXPLICIT_FIELDS,
-        secret_fields=secret_fields,
-    )
-
-
-_initialize_section_registry()
 
 STANDARD_SECTION_PATHS = frozenset({
     "system zone",
@@ -1182,6 +990,10 @@ class FortiGateParser:
             else:
                 pass
 
+        from fwmigrate.parsers.fortigate.builders.security import (
+            _refresh_interface_ipv6_from_source,
+            _refresh_policy_address_families,
+        )
         _refresh_interface_ipv6_from_source(self.config, sys.modules[__name__])
         _refresh_policy_address_families(self.config)
         return self.config
@@ -1438,6 +1250,24 @@ class FortiGateParser:
         top_edits: List[FGSourceNode],
     ) -> None:
         """Expose common fields while keeping the recursive source tree authoritative."""
+        from fwmigrate.parsers.fortigate.builders.security import (
+            _build_antivirus_profiles,
+            _build_application_lists,
+            _build_dnsfilter_profiles,
+            _build_ips_sensor,
+            _build_ssl_ssh_profile,
+            _build_webfilter_profiles,
+        )
+        if source_path == "system fsso-polling":
+            root = top_edits[0] if top_edits else FGSourceNode(
+                node_type="config",
+                name=source_path,
+            )
+            self.config.system_fsso_polling = parse_system_fsso_polling_node(
+                root,
+                self.current_context or "root",
+            )
+            return
         if source_path == "ips sensor":
             _build_ips_sensor(self, top_edits)
             return
@@ -2741,6 +2571,14 @@ class FortiGateParser:
                     values[0]
                 )
 
+            elif clean_key in SYSTEM_GLOBAL_SESSION_TIMER_FIELDS and values:
+                try:
+                    setattr(self.config.system_global, clean_key, int(values[0]))
+                except (TypeError, ValueError):
+                    self.config.system_global.extra_settings[
+                        f"unparsed_{clean_key}"
+                    ] = value
+
             elif clean_key in {
                 "admin_sport", "admin_http_port", "admin_https_port", "admin_ssh_port",
                 "admin_telnet_port", "admin_lockout_threshold", "admin_lockout_duration",
@@ -2778,7 +2616,7 @@ class FortiGateParser:
 
         elif section_path == "system dns":
             if not self.config.dns:
-                self.config.dns = FGDnsMultiValue746()
+                self.config.dns = FGDns()
 
             clean_key = key.replace("-", "_")
             value = values[0] if len(values) == 1 else " ".join(values)

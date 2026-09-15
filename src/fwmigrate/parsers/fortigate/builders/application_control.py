@@ -1,4 +1,4 @@
-"""Phase 45 FortiGate application-control list typing.
+"""FortiGate application-control list typing.
 
 Uses the Phase 41 operation-aware evaluator and models the FortiOS 7.4.6
 ``config application list`` hierarchy explicitly. Source nodes/commands remain
@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from fwmigrate.parsers.fortigate import phase_41_security_profiles as phase41
-from fwmigrate.parsers.fortigate.phase_44_dnsfilter import FGConfigDNS746 as _FGConfigDNS746
+from fwmigrate.parsers.fortigate.builders import security_profiles as phase41
+from fwmigrate.parsers.fortigate.builders.dnsfilter import FGConfigDNS746 as _FGConfigDNS746
 from fwmigrate.parsers.fortigate.model import (
     FGApplicationEntry as _FGApplicationEntry,
     FGApplicationFilter,

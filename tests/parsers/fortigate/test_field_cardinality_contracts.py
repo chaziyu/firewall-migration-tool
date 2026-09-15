@@ -1,7 +1,7 @@
 import pytest
 
 from fwmigrate.parsers.fortigate.command_evaluator import evaluate_commands
-from fwmigrate.parsers.fortigate.phase_41_security_profiles import (
+from fwmigrate.parsers.fortigate.builders.security_profiles import (
     _effective_node_attributes,
     _effective_profile_settings,
     _typed_values,
@@ -12,7 +12,7 @@ from fwmigrate.parsers.fortigate.section_registry import (
     register_section,
 )
 from fwmigrate.parsers.fortigate.source_tree import FGSourceCommand, FGSourceNode
-from fwmigrate.parsers.fortigate.phase_43_webfilter import (
+from fwmigrate.parsers.fortigate.builders.webfilter import (
     FGWebFilterProfile746,
     _WEB_PROFILE_SPEC,
 )

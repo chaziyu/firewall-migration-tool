@@ -1,4 +1,4 @@
-"""Phase 44 FortiGate DNS-filter profile typing.
+"""FortiGate DNS-filter profile typing.
 
 Extends the Phase 41 shared operation-aware evaluator with explicit FortiOS
 7.4.6 DNS-filter hierarchy and field declarations. Structured source nodes
@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from fwmigrate.parsers.fortigate import phase_41_security_profiles as phase41
-from fwmigrate.parsers.fortigate.phase_43_webfilter import FGConfigWeb746 as _FGConfigWeb746
+from fwmigrate.parsers.fortigate.builders import security_profiles as phase41
+from fwmigrate.parsers.fortigate.builders.webfilter import FGConfigWeb746 as _FGConfigWeb746
 from fwmigrate.parsers.fortigate.model import (
     FGDNSFilterCategory as _FGDNSFilterCategory,
     FGDNSFilterProfile as _FGDNSFilterProfile,
