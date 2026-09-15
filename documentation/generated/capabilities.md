@@ -6,24 +6,24 @@ This file is generated from the runtime plugin registry. It reports registration
 
 ## Source parsers
 
-| Source ID | Display name | Accepted extensions |
-|---|---|---|
-| `checkpoint` | Check Point R80/R81 (JSON Dump / API) | `.json`, `.txt`, `.cfg` |
-| `cisco_asa` | Cisco ASA | `.cfg`, `.txt`, `.conf` |
-| `cisco_ftd` | Cisco Firepower Threat Defense | `.cfg`, `.txt`, `.conf`, `.json` |
-| `fortigate` | Fortinet FortiGate | `.conf`, `.cfg`, `.txt` |
-| `juniper_srx` | Juniper SRX (Junos root-level display set) | `.set`, `.txt`, `.conf` |
-| `palo_alto` | Palo Alto Networks (PAN-OS) | `.xml` |
+| Source ID | Display name | Accepted extensions | Aliases | Status |
+|---|---|---|---|---|
+| `checkpoint` | Check Point R80/R81 (JSON Dump / API) | `.json`, `.txt`, `.cfg` | `check_point` | stable |
+| `cisco_asa` | Cisco ASA | `.cfg`, `.txt`, `.conf` | `asa` | stable |
+| `cisco_ftd` | Cisco Firepower Threat Defense | `.cfg`, `.txt`, `.conf`, `.json` | `ftd` | stable |
+| `fortigate` | Fortinet FortiGate | `.conf`, `.cfg`, `.txt` | `fortinet`, `fg` | stable |
+| `juniper_srx` | Juniper SRX (Junos root-level display set) | `.set`, `.txt`, `.conf` | `srx`, `junos` | stable |
+| `palo_alto` | Palo Alto Networks (PAN-OS / Panorama) | `.xml`, `.json`, `.txt` | `panos`, `paloalto` | stable |
 
 ## Target generators
 
-| Target ID | Display name | Registered formats |
-|---|---|---|
-| `checkpoint` | Check Point Quantum / CloudGuard | `cli`, `terraform` |
-| `cisco_asa` | Cisco ASA / Firepower | `cli`, `terraform` |
-| `fortigate` | Fortinet FortiGate (FortiOS CLI / Terraform) | `cli`, `terraform` |
-| `juniper_srx` | Juniper SRX / JunOS | `set`, `cli`, `terraform` |
-| `palo_alto` | Palo Alto Networks (PAN-OS / Panorama) | `xml`, `terraform` |
+| Target ID | Display name | Registered formats | Aliases | Status |
+|---|---|---|---|---|
+| `checkpoint` | Check Point Quantum / CloudGuard | `cli`, `terraform` | `check_point` | stable |
+| `cisco_asa` | Cisco ASA / Firepower | `cli`, `terraform` | `asa` | stable |
+| `fortigate` | Fortinet FortiGate (FortiOS CLI / Terraform) | `cli`, `terraform` | `fortinet`, `fg` | stable |
+| `juniper_srx` | Juniper SRX / JunOS | `set`, `cli`, `terraform` | `srx`, `junos` | stable |
+| `palo_alto` | Palo Alto Networks (PAN-OS / Panorama) | `xml`, `terraform` | `panos`, `paloalto` | stable |
 
 **Current executable IR schema:** `1.67`
 

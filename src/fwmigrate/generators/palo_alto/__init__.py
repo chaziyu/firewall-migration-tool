@@ -1,6 +1,5 @@
 from typing import List, Optional
 from fwmigrate.core.base_generator import BaseTargetGenerator, MigrationArtifact
-from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.ir import IRConfig
 from fwmigrate.generators.palo_alto.xml_generator import PANOSXMLGenerator
 from fwmigrate.generators.palo_alto.terraform_generator import PANOSTerraformGenerator
@@ -36,5 +35,3 @@ class PANOSTargetGenerator(BaseTargetGenerator):
 
         return artifacts
 
-# Register automatically
-PluginRegistry.register_generator(PANOSTargetGenerator)

@@ -8,9 +8,9 @@ import re
 from pathlib import Path
 from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
 
-# Auto-register plugins
-import fwmigrate.parsers
-import fwmigrate.generators
+from fwmigrate.builtin_plugins import register_builtin_plugins
+
+register_builtin_plugins()
 
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
@@ -190,6 +190,10 @@ def create_app(test_config=None):
                     'error': 'Migration blocked: generation safety checks failed.',
                     'blocking_reasons': result.blocking_reasons,
                     'requires_manual_review': result.requires_manual_review,
+                    'capability_analysis': (
+                        result.capability_analysis.to_dict()
+                        if result.capability_analysis else None
+                    ),
                 }), 422
 
             ir_config = result.final_ir

@@ -5,6 +5,7 @@ from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.core.normalizer import NormalizationResult
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
+from fwmigrate.capabilities.schema import CapabilityAnalysisResult
 
 
 @dataclass
@@ -32,3 +33,4 @@ class MigrationResult:
     blocking_reasons: List[str] = field(default_factory=list)
     requires_manual_review: bool = False
     normalization: Optional[NormalizationResult] = None
+    capability_analysis: Optional[CapabilityAnalysisResult] = None

@@ -10,9 +10,9 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = io.StringIO()
 
-# Auto-register all plugin modules
-import fwmigrate.parsers
-import fwmigrate.generators
+from fwmigrate.builtin_plugins import register_builtin_plugins
+
+register_builtin_plugins()
 
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.application import MigrationPipeline, MigrationRequest
@@ -40,8 +40,8 @@ def vendors():
 @cli.command()
 @click.option('--input', '-i', required=True, type=click.Path(exists=True), help='Input configuration file (.conf, .cfg, .json, .set)')
 @click.option('--output', '-o', required=True, type=click.Path(), help='Output directory')
-@click.option('--source-vendor', type=str, default='fortigate', help='Source vendor (fortigate, cisco_asa, checkpoint, juniper_srx)')
-@click.option('--target-vendor', type=str, default='palo_alto', help='Target vendor (palo_alto, fortigate)')
+@click.option('--source-vendor', type=str, default='fortigate', help='Registered source vendor identifier')
+@click.option('--target-vendor', type=str, default='palo_alto', help='Registered target vendor identifier')
 @click.option('--zone-map', type=click.Path(exists=True), help='YAML file with interface to zone mappings')
 @click.option('--format', type=click.Choice(['xml', 'set', 'terraform', 'cli']), default='xml', help='Output format')
 @click.option('--optimize', is_flag=True, default=False, help='Prune unused objects and optimize rules')
@@ -80,6 +80,13 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
             if result.requires_manual_review:
                 click.echo("Manual review is required before generation.", err=True)
             sys.exit(1)
+
+        if result.capability_analysis and len(result.capability_analysis):
+            click.echo(
+                f"Capability analysis: {result.capability_analysis.partial_count} partial, "
+                f"{result.capability_analysis.unsupported_count} unsupported, "
+                f"{result.capability_analysis.manual_review_count} manual review."
+            )
 
         ir_config = result.final_ir
         if ir_config is None:

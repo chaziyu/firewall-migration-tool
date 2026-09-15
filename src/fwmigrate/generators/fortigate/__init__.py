@@ -1,6 +1,5 @@
 from typing import List, Optional
 from fwmigrate.core.base_generator import BaseTargetGenerator, MigrationArtifact
-from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.ir import IRConfig
 from fwmigrate.generators.fortigate.cli_generator import FortiGateCLIGenerator
 from fwmigrate.generators.fortigate.terraform_generator import FortiGateTerraformGenerator
@@ -31,8 +30,5 @@ class FortiGateTargetGenerator(BaseTargetGenerator):
             artifacts.extend(tf_gen.generate(ir))
 
         return artifacts
-
-# Auto-register
-PluginRegistry.register_generator(FortiGateTargetGenerator)
 
 __all__ = ["FortiGateTargetGenerator"]

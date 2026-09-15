@@ -1,6 +1,5 @@
 from typing import List, Optional, Dict
 from fwmigrate.core.base_parser import BaseSourceParser
-from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.juniper_srx.parser import JuniperSRXParser
@@ -27,7 +26,5 @@ class JuniperSRXSourceParser(BaseSourceParser):
         """Compatibility projection returning canonical IRConfig."""
         return self.extract(content, zone_mapping=zone_mapping).canonical_ir
 
-# Auto-register
-PluginRegistry.register_parser(JuniperSRXSourceParser)
 
 __all__ = ["JuniperSRXSourceParser"]

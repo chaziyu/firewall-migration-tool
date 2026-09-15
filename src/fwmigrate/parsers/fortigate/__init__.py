@@ -1,6 +1,5 @@
 from typing import List, Optional, Dict, Any
 from fwmigrate.core.base_parser import BaseSourceParser
-from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.fortigate import coverage as _coverage_module
@@ -214,5 +213,3 @@ class FortiGateSourceParser(BaseSourceParser):
         return extract_fortigate_config(content, zone_mapping=zone_mapping)
 
 
-# Register automatically
-PluginRegistry.register_parser(FortiGateSourceParser)
