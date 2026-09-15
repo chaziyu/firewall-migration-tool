@@ -5,6 +5,7 @@ from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.checkpoint import extractor as _extractor
 from fwmigrate.parsers.checkpoint.fidelity import apply_checkpoint_fidelity
+from fwmigrate.parsers.checkpoint.group_fidelity import apply_checkpoint_group_fidelity
 from fwmigrate.parsers.checkpoint.gaia_scope_policy import parse_gaia_configuration as _parse_gaia_configuration_scoped
 
 # Keep the large extractor stable while upgrading Gaia parsing as an explicit
@@ -20,6 +21,7 @@ def extract_checkpoint_config(
 ) -> ExtractionResult:
     """Run the core extractor and attach Check Point policy/NAT fidelity context."""
     result = _original_extract_checkpoint_config(content, zone_mapping=zone_mapping)
+    result = apply_checkpoint_group_fidelity(result)
     return apply_checkpoint_fidelity(result)
 
 
