@@ -14,8 +14,7 @@ Do not add direct source-to-target converters. Parsers must not contain target-v
 
 ## Read Before Changing Semantics
 
-- `documentation/reference/ir/ir-schema.md` — canonical IR contract and schema authority.
-- `documentation/reference/ir/extraction-model.md` — source accounting and zero-silent-loss rules.
+- `documentation/ir-model.md` — canonical IR model, schema authority, and source-accounting boundary.
 - `documentation/explanation/safety-model.md` — cross-vendor fail-closed requirements.
 - Relevant vendor reference and support matrix under `documentation/reference/vendors/`.
 - Implementation and tests — documentation alone is not proof that a feature is implemented.
