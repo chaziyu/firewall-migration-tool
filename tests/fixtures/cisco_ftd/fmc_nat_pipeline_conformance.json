@@ -1,0 +1,45 @@
+{
+  "format": "cisco-fmc-rest-export-v1",
+  "source": "fmc-rest-api",
+  "domain": {"id": "fmc-domain", "name": "Global"},
+  "objects": {
+    "hosts": [
+      {"id": "inside", "name": "InsideHost", "type": "Host", "value": "10.0.0.10"},
+      {"id": "public", "name": "PublicHost", "type": "Host", "value": "203.0.113.10"}
+    ],
+    "securityzones": [
+      {"id": "inside-zone", "name": "inside", "type": "SecurityZone"},
+      {"id": "outside-zone", "name": "outside", "type": "SecurityZone"}
+    ],
+    "protocolportobjects": [
+      {"id": "http", "name": "HTTP", "type": "ProtocolPortObject", "protocol": "6", "port": "80"}
+    ]
+  },
+  "nat_policies": [{
+    "id": "nat-policy",
+    "name": "FTD NAT",
+    "manual_rules_before_auto": [{
+      "id": "fmc-twice",
+      "name": "Manual Twice",
+      "natType": "STATIC",
+      "sourceInterface": {"id": "inside-zone", "name": "inside", "type": "SecurityZone"},
+      "destinationInterface": {"id": "outside-zone", "name": "outside", "type": "SecurityZone"},
+      "originalSource": {"id": "inside", "name": "InsideHost", "type": "Host"},
+      "translatedSource": {"id": "public", "name": "PublicHost", "type": "Host"},
+      "originalDestination": {"id": "public", "name": "PublicHost", "type": "Host"},
+      "translatedDestination": {"id": "inside", "name": "InsideHost", "type": "Host"},
+      "originalDestinationPort": {"port": "80", "endPort": "90", "protocol": "TCP"},
+      "translatedDestinationPort": {"port": "8080", "protocol": "TCP"}
+    }],
+    "auto_rules": [{
+      "id": "fmc-pat",
+      "name": "Interface PAT",
+      "natType": "DYNAMIC",
+      "sourceInterface": {"id": "inside-zone", "name": "inside", "type": "SecurityZone"},
+      "destinationInterface": {"id": "outside-zone", "name": "outside", "type": "SecurityZone"},
+      "originalNetwork": {"id": "inside", "name": "InsideHost", "type": "Host"},
+      "interfaceInTranslatedNetwork": true
+    }],
+    "manual_rules_after_auto": []
+  }]
+}

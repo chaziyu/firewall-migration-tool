@@ -1,0 +1,26 @@
+hostname asa-nat-conformance
+object network REAL_HOST
+ host 10.0.0.10
+object network REAL_SUBNET
+ subnet 10.0.1.0 255.255.255.0
+object network REAL_RANGE
+ range 10.0.2.10 10.0.2.20
+object network PUBLIC_HOST
+ host 203.0.113.10
+object network PRIVATE_SERVER
+ host 10.0.0.20
+object network PAT_POOL
+ range 203.0.113.20 203.0.113.30
+object-group network NESTED
+ network-object host 10.0.3.10
+object-group network MIXED
+ network-object host 10.0.3.11
+ network-object 10.0.4.0 255.255.255.0
+ group-object NESTED
+nat (inside,outside) source static REAL_HOST PUBLIC_HOST
+nat (inside,outside) source dynamic REAL_SUBNET interface
+nat (inside,outside) source dynamic REAL_RANGE pat-pool PAT_POOL
+nat (outside,inside) source static any interface destination static PUBLIC_HOST PRIVATE_SERVER service tcp 80 8080
+nat (inside,outside) source static REAL_HOST PUBLIC_HOST destination static PUBLIC_HOST PRIVATE_SERVER
+nat (inside,outside) source static REAL_HOST REAL_HOST
+nat (inside,outside) after-auto 99 source dynamic REAL_HOST interface
