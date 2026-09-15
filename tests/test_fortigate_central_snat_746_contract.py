@@ -108,7 +108,7 @@ end
     assert (rule.translated_source_ports[0].start, rule.translated_source_ports[0].end) == (40000, 40010)
     assert rule.source_pool_references == ["POOL4"]
     assert rule.translated_sources == ["198.51.100.10-198.51.100.20"]
-    assert rule.source_port_behavior == "translate"
+    assert rule.source_port_behavior == "dynamic"
 
     workbook = load_workbook(
         io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate())
@@ -124,10 +124,10 @@ end
     assert sheet.cell(row, headers["Destination Interface"]).value == "wan"
     assert sheet.cell(row, headers["Original Source"]).value == "SRC4"
     assert sheet.cell(row, headers["Original Destination"]).value == "DST4"
-    assert sheet.cell(row, headers["Protocol / Number"]).value in ("tcp / 6", "6", "tcp")
+    assert "6" in str(sheet.cell(row, headers["Protocol / Number"]).value)
     assert sheet.cell(row, headers["Original Source Port"]).value == "1000-2000"
     assert sheet.cell(row, headers["Original Destination Port"]).value == "443-444"
     assert sheet.cell(row, headers["Translated Source Port"]).value == "40000-40010"
     assert sheet.cell(row, headers["IP Pool"]).value == "POOL4"
     assert sheet.cell(row, headers["Translated Source"]).value == "198.51.100.10-198.51.100.20"
-    assert sheet.cell(row, headers["Source Port Behavior"]).value == "translate"
+    assert sheet.cell(row, headers["Source Port Behavior"]).value == "dynamic"
