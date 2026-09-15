@@ -60,8 +60,9 @@ def test_append_tokenization_is_unchanged() -> None:
         TokenType.APPEND,
         TokenType.STRING,
         TokenType.STRING,
+        TokenType.STRING,
     ]
-    assert [token.value for token in tokens[1:]] == ["A", "B"]
+    assert [token.value for token in tokens[1:]] == ["member", "A", "B"]
 
 
 def test_multiline_quoted_value_containing_select_is_not_rejected() -> None:
