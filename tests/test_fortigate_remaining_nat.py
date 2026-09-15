@@ -32,8 +32,9 @@ end
     assert rule.nat_family.value == "nat66"
     assert rule.original_address_family == "ipv6"
     assert rule.translated_address_family == "ipv6"
-    assert rule.translated_sources == ["2001:db8::10-2001:db8::20"]
-    assert not rule.requires_manual_review
+    assert rule.translated_sources == []
+    assert rule.requires_manual_review is True
+    assert any("IPv6 interface-address NAT cannot be resolved" in reason for reason in rule.review_reasons)
 
 
 def test_multicast_nat_is_typed_and_auditable():
