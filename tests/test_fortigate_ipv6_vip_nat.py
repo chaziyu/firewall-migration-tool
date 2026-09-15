@@ -149,7 +149,7 @@ end
     )
     assert rule.destination == ["2001:db8:64::150"]
     assert rule.translated_destinations == ["192.0.2.156"]
-    assert rule.translated_sources == ["192.0.2.101"]
+    assert rule.translated_sources == []
     assert rule.source_pool_references == ["NAT64_POOL4"]
     assert rule.source_vip_reference == "NAT64_VIP6"
     assert rule.original_destination_ports[0].start == 443
@@ -178,7 +178,7 @@ end
     )
     assert sheet.cell(row, headers["Original Destination"]).value == "2001:db8:64::150"
     assert sheet.cell(row, headers["Translated Destination"]).value == "192.0.2.156"
-    assert sheet.cell(row, headers["Translated Source"]).value == "192.0.2.101"
+    assert sheet.cell(row, headers["Translated Source"]).value is None
     assert sheet.cell(row, headers["NAT Family"]).value == "nat64"
     assert sheet.cell(row, headers["IP Pool"]).value == "NAT64_POOL4"
     assert sheet.cell(row, headers["VIP"]).value == "NAT64_VIP6"
@@ -310,7 +310,7 @@ end
     assert len(result.canonical_ir.nat_rules) == 1
     rule = result.canonical_ir.nat_rules[0]
     assert (rule.type, rule.source_context) == (NATType.TWICE, "tenant-a")
-    assert rule.translated_sources == ["2001:db8:2::1"]
+    assert rule.translated_sources == []
 
 
 def test_vip6_source_model_preserves_typed_fields_lists_and_nested_nodes() -> None:

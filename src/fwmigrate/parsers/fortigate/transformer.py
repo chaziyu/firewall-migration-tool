@@ -8467,6 +8467,7 @@ class FGToIRTransformer:
             )
 
     def _transform_vip_groups(self) -> None:
+        vips = self._build_vip_index("ipv4")
         for group in self.fg.vip_groups:
             validation_issues = group.extra_settings.get("invalid_fields")
             validation_note = (
@@ -8474,6 +8475,14 @@ class FGToIRTransformer:
                 if isinstance(validation_issues, dict) and validation_issues
                 else None
             )
+            _, unresolved_members = self._resolve_vip_group_members(group, vips)
+            review_reasons = []
+            if unresolved_members:
+                review_reasons.append(
+                    "unresolved VIP member(s): " + ", ".join(unresolved_members)
+                )
+            if validation_note:
+                review_reasons.append(validation_note)
             self.ir.virtual_ip_groups.append(
                 IRVirtualIPGroup(
                     name=group.name,
@@ -8481,18 +8490,21 @@ class FGToIRTransformer:
                     source_uuid=group.uuid,
                     interface=group.interface,
                     members=list(group.member),
+                    unresolved_members=unresolved_members,
                     source_color=group.color,
                     description=group.comments or group.comment,
                     source_attributes=dict(group.extra_settings),
-                    audit_note=validation_note,
+                    migration_status=(
+                        "PARTIALLY_NORMALIZED" if unresolved_members else "EXTRACT_ONLY"
+                    ),
+                    requires_manual_review=True,
+                    audit_note="; ".join(review_reasons) or None,
                 )
             )
 
+        vips6 = self._build_vip_index("ipv6")
         for group in self.fg.vip_groups6:
-            missing_members = [
-                name for name in group.member
-                if not any((vip.source_context, vip.name) == (group.source_context, name) for vip in self.fg.vips6)
-            ]
+            _, missing_members = self._resolve_vip_group_members(group, vips6)
             validation_issues = group.extra_settings.get("invalid_fields")
             review_reasons = []
             if missing_members:
@@ -8510,6 +8522,7 @@ class FGToIRTransformer:
                     address_family="ipv6",
                     source_uuid=group.uuid,
                     members=list(group.member),
+                    unresolved_members=missing_members,
                     source_color=group.color,
                     description=group.comments,
                     source_attributes=dict(group.extra_settings),
@@ -8524,6 +8537,39 @@ class FGToIRTransformer:
     # ------------------------------------------------------------------
     # NAT
     # ------------------------------------------------------------------
+
+    def _build_vip_index(self, address_family: str = "ipv4") -> dict[tuple[str, str], Any]:
+        source_vips = self.fg.vips if address_family == "ipv4" else self.fg.vips6
+        return {
+            (self._policy_context(vip), vip.name): vip
+            for vip in source_vips
+        }
+
+    def _build_vip_group_index(
+        self,
+        address_family: str = "ipv4",
+    ) -> dict[tuple[str, str], Any]:
+        source_groups = self.fg.vip_groups if address_family == "ipv4" else self.fg.vip_groups6
+        return {
+            (self._policy_context(group), group.name): group
+            for group in source_groups
+        }
+
+    def _resolve_vip_group_members(
+        self,
+        group: Any,
+        vip_index: dict[tuple[str, str], Any],
+    ) -> tuple[list[Any], list[str]]:
+        context = self._policy_context(group)
+        resolved = []
+        unresolved = []
+        for member_name in group.member:
+            member = vip_index.get((context, member_name))
+            if member is None:
+                unresolved.append(member_name)
+            else:
+                resolved.append(member)
+        return resolved, unresolved
 
     @staticmethod
     def _nat_port_ranges(value: Optional[str]) -> Tuple[List[IRNATPortRange], Optional[str]]:
@@ -8875,10 +8921,7 @@ class FGToIRTransformer:
             for family in ("ipv4", "ipv6")
         }
 
-        vips_by_name = {
-            (vip.source_context, vip.name): vip
-            for vip in self.fg.vips
-        }
+        vips_by_name = self._build_vip_index("ipv4")
 
         ir_vips_by_name = {
             (vip.source_context, vip.name): vip
@@ -8886,10 +8929,7 @@ class FGToIRTransformer:
             if vip.address_family == "ipv4"
         }
 
-        vip_groups_by_name = {
-            (group.source_context, group.name): group
-            for group in self.fg.vip_groups
-        }
+        vip_groups_by_name = self._build_vip_group_index("ipv4")
 
         def add_reason(reasons: List[str], reason: str) -> None:
             if reason not in reasons:
@@ -8965,11 +9005,12 @@ class FGToIRTransformer:
             )
             snat_enabled = self._policy_source_nat_enabled(policy, nat_family)
             nat_review_reasons: List[str] = []
+            vip_group_review_reasons: List[str] = []
             vip_matches = []
             ordinary_destinations = []
 
             for destination in policy.dstaddr:
-                destination_key = (policy.source_context, destination)
+                destination_key = (self._policy_context(policy), destination)
                 if destination_key in vips_by_name:
                     vip_matches.append(
                         (
@@ -8994,24 +9035,18 @@ class FGToIRTransformer:
                     )
                     continue
 
-                for member in vip_group.member:
-                    vip = vips_by_name.get(
-                        (policy.source_context, member)
+                group_members, unresolved_members = self._resolve_vip_group_members(
+                    vip_group,
+                    vips_by_name,
+                )
+                if unresolved_members:
+                    reason = (
+                        f"VIP group '{vip_group.name}' has unresolved member(s): "
+                        + ", ".join(unresolved_members)
                     )
-
-                    if vip is None:
-                        audit(
-                            policy.id,
-                            (
-                                f"Policy {policy.id} VIP "
-                                f"group '{vip_group.name}' "
-                                "references missing VIP "
-                                f"'{member}'."
-                            ),
-                            MigrationConfidence.MANUAL,
-                        )
-                        continue
-
+                    vip_group_review_reasons.append(reason)
+                    audit(policy.id, f"Policy {policy.id} {reason}.", MigrationConfidence.MANUAL)
+                for vip in group_members:
                     vip_matches.append(
                         (
                             vip,
@@ -9031,6 +9066,9 @@ class FGToIRTransformer:
                 not ir_policy.from_zone
                 or not ir_policy.to_zone
             )
+            for reason in vip_group_review_reasons:
+                source_requires_review = True
+                add_reason(nat_review_reasons, reason)
             source_port_behavior, port_review_reason = (
                 _policy_nat_source_port_behavior(policy)
             )
@@ -9466,7 +9504,7 @@ class FGToIRTransformer:
                     )
                     continue
 
-                ir_vip = ir_vips_by_name[(policy.source_context, vip.name)]
+                ir_vip = ir_vips_by_name[(self._policy_context(policy), vip.name)]
                 external_destinations, translated_destinations = (
                     self._resolve_vip_destination_translation(vip, nat_family)
                 )
@@ -9498,7 +9536,7 @@ class FGToIRTransformer:
                     add_reason(vip_review_reasons, f"VIP '{vip.name}' has service restrictions")
 
                 if vip_group_name:
-                    group = vip_groups_by_name[(policy.source_context, vip_group_name)]
+                    group = vip_groups_by_name[(self._policy_context(policy), vip_group_name)]
                     if (
                         group.interface
                         and group.interface != "any"
@@ -9771,8 +9809,8 @@ class FGToIRTransformer:
             }
             for family in ("ipv4", "ipv6")
         }
-        vips = {(vip.source_context, vip.name): vip for vip in self.fg.vips6}
-        groups = {(group.source_context, group.name): group for group in self.fg.vip_groups6}
+        vips = self._build_vip_index("ipv6")
+        groups = self._build_vip_group_index("ipv6")
         ir_vips = {
             (vip.source_context, vip.name): vip
             for vip in self.ir.virtual_ips
@@ -9835,6 +9873,7 @@ class FGToIRTransformer:
             pool_family = "ipv6" if family in {"nat46", "nat66"} else "ipv4"
             pools = pools_by_family[pool_family]
             translated: List[str] = []
+            vip_group_review_reasons: List[str] = []
             for name in pool_names:
                 pool = pools.get((policy.source_context, name))
                 if pool is None:
@@ -9895,17 +9934,24 @@ class FGToIRTransformer:
             )
             vip_matches = []
             for name in policy.dstaddr6:
-                vip = vips.get((policy.source_context, name))
+                context = self._policy_context(policy)
+                vip = vips.get((context, name))
                 if vip is not None:
                     vip_matches.append((vip, None))
                     continue
-                group = groups.get((policy.source_context, name))
+                group = groups.get((context, name))
                 if group is not None:
-                    vip_matches.extend(
-                        (member, name)
-                        for member_name in group.member
-                        if (member := vips.get((policy.source_context, member_name))) is not None
+                    group_members, unresolved_members = self._resolve_vip_group_members(
+                        group,
+                        vips,
                     )
+                    if unresolved_members:
+                        vip_group_review_reasons.append(
+                            f"VIP6 group '{group.name}' has unresolved member(s): "
+                            + ", ".join(unresolved_members)
+                        )
+                    vip_matches.extend((member, name) for member in group_members)
+            snat_reasons.extend(vip_group_review_reasons)
             if snat_enabled and not vip_matches:
                 self.ir.nat_rules.append(IRNATRule(
                     name=f"SNAT6-P{policy.id}", type=NATType.SOURCE,
@@ -9934,8 +9980,8 @@ class FGToIRTransformer:
                     ))
                     continue
 
-                ir_vip = ir_vips[(policy.source_context, vip.name)]
-                reasons = list(snat_reasons if snat_enabled else [])
+                ir_vip = ir_vips[(self._policy_context(policy), vip.name)]
+                reasons = list(snat_reasons if snat_enabled else vip_group_review_reasons)
                 if ir_vip.requires_manual_review:
                     reasons.append(ir_vip.audit_note or f"VIP6 '{vip.name}' requires manual review")
                 external_destinations, translated_destinations = (

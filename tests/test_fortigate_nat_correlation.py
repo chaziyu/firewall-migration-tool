@@ -1595,3 +1595,41 @@ end
     assert [rule.type for rule in ir.nat_rules] == [NATType.TWICE, NATType.SOURCE]
     assert ir.nat_rules[0].destination == ["198.51.100.10"]
     assert ir.nat_rules[1].destination == ["ORDINARY_SERVER"]
+
+
+def test_vip_group_unresolved_member_taints_resolved_nat_without_dropping_inventory():
+    result = extract_fortigate_config("""
+config firewall vip
+    edit "VIP_OK"
+        set extip 198.51.100.10
+        set mappedip "10.0.0.10"
+    next
+end
+config firewall vipgrp
+    edit "VIP_GROUP"
+        set member "VIP_OK" "VIP_MISSING"
+    next
+end
+config firewall policy
+    edit 10
+        set srcintf "WAN"
+        set dstintf "LAN"
+        set srcaddr "all"
+        set dstaddr "VIP_GROUP"
+        set service "HTTPS"
+        set action accept
+    next
+end
+""")
+
+    group = result.canonical_ir.virtual_ip_groups[0]
+    assert group.members == ["VIP_OK", "VIP_MISSING"]
+    assert group.unresolved_members == ["VIP_MISSING"]
+    assert group.migration_status == "PARTIALLY_NORMALIZED"
+
+    rule = result.canonical_ir.nat_rules[0]
+    assert rule.source_vip_reference == "VIP_OK"
+    assert rule.source_vip_group_reference == "VIP_GROUP"
+    assert rule.translated_destinations == ["10.0.0.10"]
+    assert rule.migration_status == "PARTIALLY_NORMALIZED"
+    assert any("VIP_MISSING" in reason for reason in rule.review_reasons)
