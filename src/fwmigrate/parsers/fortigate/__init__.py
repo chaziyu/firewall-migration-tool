@@ -84,6 +84,9 @@ from fwmigrate.parsers.fortigate.fortios_746_address_schedule_fixes import (
 from fwmigrate.parsers.fortigate.fortios_746_ci_regression_fixes import (
     install_fortios_746_ci_regression_fixes,
 )
+from fwmigrate.parsers.fortigate.dependency_resolution_safety_fix import (
+    install_dependency_resolution_safety_fix,
+)
 
 
 def _phase_46_50_effective_node_attributes(
@@ -187,6 +190,13 @@ install_fortios_746_address_schedule_fixes(
 install_fortios_746_ci_regression_fixes(
     _transformer_module,
     _coverage_module,
+)
+
+# Apply dependency safety after every earlier FortiGate dependency wrapper so
+# their source-specific relationships remain intact and are checked uniformly.
+install_dependency_resolution_safety_fix(
+    _dependencies_module,
+    _extractor_module,
 )
 
 # Bind the public package alias only after all FortiGate extensions are installed.

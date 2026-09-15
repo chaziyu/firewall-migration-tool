@@ -89,6 +89,11 @@ class FortiGateTokenizer:
             return
 
         keyword = parts[0].lower()
+        if keyword == "select":
+            raise TokenizerError(
+                "Unsupported FortiOS mutation command 'select' "
+                f"at line {line_number}; expected show full-configuration input."
+            )
 
         try:
             token_type = TokenType(keyword)
