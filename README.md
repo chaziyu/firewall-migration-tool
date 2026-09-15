@@ -33,7 +33,6 @@ Key references:
 
 The runtime registry and executable schema are authoritative for code-derived capability facts. Vendor support matrices describe semantic limits and must not be interpreted as complete feature parity.
 
-Current IR schema: `1.68`.
 
 ## Installation
 
