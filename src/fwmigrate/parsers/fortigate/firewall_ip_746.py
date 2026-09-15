@@ -404,6 +404,47 @@ def validate_ip_translation_746(rule: Any) -> list[str]:
     return list(dict.fromkeys(reasons))
 
 
+def classify_ippool_746(pool: Any, source_version: str | None = None) -> list[str]:
+    """Classify pool semantics that cannot be safely flattened into target NAT."""
+    reasons = validate_ippool_746(pool, source_version)
+    if pool.exclude_ip:
+        reasons.append("IP pool exclusions require exact target-specific handling")
+    if pool.permit_any_host == "enable":
+        reasons.append("permit-any-host enables full-cone behavior")
+    if pool.type == "fixed-port-range":
+        reasons.append("fixed-port-range pool semantics")
+    if pool.type == "port-block-allocation":
+        reasons.append("port-block-allocation pool semantics")
+    if any(
+        field in pool.source_explicit_fields
+        for field in (
+            "block_size", "num_blocks_per_user", "pba_timeout",
+            "pba_interim_log", "port_per_user", "privileged_port_use_pba",
+        )
+    ):
+        reasons.append("IP pool PBA settings require exact target-specific handling")
+    if pool.source_startip or pool.source_endip:
+        reasons.append("IP pool source-range semantics require exact target-specific handling")
+    if pool.startport is not None or pool.endport is not None:
+        reasons.append("IP pool port-allocation semantics require exact target-specific handling")
+    cgn_values = (
+        pool.cgn_block_size,
+        pool.cgn_client_startip,
+        pool.cgn_client_endip,
+        pool.cgn_client_ipv6shift,
+        pool.cgn_fixedalloc,
+        pool.cgn_overload,
+        pool.cgn_port_start,
+        pool.cgn_port_end,
+        pool.cgn_spa,
+    )
+    if any(value is not None for value in cgn_values):
+        reasons.append("carrier-grade NAT fields are configured")
+    if pool.nat64 == "enable":
+        reasons.append("NAT64 pool semantics")
+    return list(dict.fromkeys(reasons))
+
+
 def validate_ipv6_eh_filter_746(item: Any) -> list[str]:
     reasons: list[str] = []
     for field in (
