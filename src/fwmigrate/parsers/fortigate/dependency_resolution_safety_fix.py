@@ -5,13 +5,13 @@ fail-closed issues without bypassing prior FortiGate relationship extensions:
 
 - values previously treated as global built-ins are resolved against an exact
   same-context allowed target first;
-- multiple valid same-context targets are reported as unresolved ambiguity
-  instead of selecting the first source object.
+- multiple distinct valid same-context targets are reported as unresolved
+  ambiguity instead of selecting the first source object.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 from fwmigrate.extraction.models import DependencyRecord, SourceInventoryItem
 
@@ -60,6 +60,10 @@ BUILTIN_REFERENCE_RULES: Dict[Tuple[str, str], set[str]] = {
     ("firewall multicast-policy6", "srcintf"): {"any"},
     ("firewall multicast-policy6", "dstintf"): {"any"},
     ("firewall multicast-policy6", "srcaddr"): {"all"},
+    ("router policy", "srcaddr"): {"all"},
+    ("router policy", "dstaddr"): {"all"},
+    ("router policy6", "srcaddr"): {"all"},
+    ("router policy6", "dstaddr"): {"all"},
     ("firewall vip", "extintf"): {"any"},
     ("firewall vip", "service"): {"all", "none"},
     ("vpn ssl settings", "source-interface"): {"any"},
@@ -131,16 +135,18 @@ def _matching_candidates(
     dependencies_module: Any,
 ) -> List[SourceInventoryItem]:
     matches: List[SourceInventoryItem] = []
-    seen_ids: set[int] = set()
     for candidate in index.get((source_context, reference), []):
-        if id(candidate) in seen_ids:
-            continue
         if not dependencies_module._allowed_section_matches(
             candidate.source_path,
             allowed_sections,
         ):
             continue
-        seen_ids.add(id(candidate))
+        # Existing FortiGate extension composition can surface the same logical
+        # inventory object more than once. Equivalent records are one target,
+        # while same-name records with different source evidence remain
+        # distinct and therefore ambiguous.
+        if any(candidate == existing for existing in matches):
+            continue
         matches.append(candidate)
     return matches
 
