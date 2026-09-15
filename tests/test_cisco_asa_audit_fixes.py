@@ -113,6 +113,9 @@ nat (inside,outside) source dynamic REAL POOL interface
     assert ir.nat_rules[2].source_translation_mode == NATTranslationMode.DYNAMIC_IP
     assert ir.nat_rules[2].requires_manual_review is True
     assert ir.nat_rules[2].source_attributes["interface_pat_fallback"] is True
+    assert ir.nat_rules[2].source_translation_fallback.mode == NATTranslationMode.INTERFACE_ADDRESS
+    assert ir.nat_rules[2].source_translation_fallback.interface == "outside"
+    assert ir.nat_rules[2].source_translation_fallback.address_selection.interface == "outside"
 
 
 def test_legacy_nat_exemption_single_interface_tuple_is_preserved():
