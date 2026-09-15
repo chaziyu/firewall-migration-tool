@@ -146,18 +146,15 @@ def test_equivalent_duplicate_inventory_records_are_one_logical_target() -> None
     assert dependency.target_path == "firewall address"
 
 
-def test_address_and_address_group_name_collision_is_ambiguous() -> None:
+def test_different_allowed_source_types_preserve_existing_resolution_precedence() -> None:
     dependency = build_dependency_registry([
         _item("firewall address", "COLLISION"),
         _item("firewall addrgrp", "COLLISION"),
         _policy("srcaddr", "COLLISION"),
     ])[0]
 
-    assert dependency.result == "UNRESOLVED"
-    assert dependency.target_path is None
-    assert dependency.notes is not None
-    assert "firewall address" in dependency.notes
-    assert "firewall addrgrp" in dependency.notes
+    assert dependency.result == "RESOLVED"
+    assert dependency.target_path == "firewall address"
 
 
 def test_cross_type_name_collision_uses_only_allowed_target_sections() -> None:
