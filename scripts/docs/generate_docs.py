@@ -8,7 +8,6 @@ from fwmigrate.builtin_plugins import register_builtin_plugins
 register_builtin_plugins()
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.ir.version import IR_SCHEMA_VERSION
 
 ROOT = Path(__file__).resolve().parents[2]
 GENERATED_DIR = ROOT / "documentation" / "generated"
@@ -53,8 +52,6 @@ def render_capabilities() -> str:
             f"{'experimental' if item['experimental'] else 'stable'} |"
         )
     lines += [
-        "",
-        f"**Current executable IR schema:** `{IR_SCHEMA_VERSION}`",
         "",
         "> A registered source and a registered target do not imply lossless feature parity. Review the vendor support matrix and migration report before deployment.",
         "",
