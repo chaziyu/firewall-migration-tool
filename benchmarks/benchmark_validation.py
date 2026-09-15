@@ -23,7 +23,7 @@ def build_validation_ir(scale: int) -> IRConfig:
             type=AddressType.NETWORK,
             value=value,
         ))
-    return IRConfig(metadata=IRMetadata(hostname=f"validation-{scale}"), addresses=addresses)
+    return IRConfig(metadata=IRMetadata(hostname=f"validation-{scale}", source_vendor="benchmark"), addresses=addresses)
 
 
 def main() -> None:

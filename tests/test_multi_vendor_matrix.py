@@ -156,6 +156,11 @@ def test_palo_alto_to_fortigate_utm_profile_group_is_withheld_when_zone_context_
         grp.wildfire_analysis_profiles = []
         grp.data_filtering_profiles = []
         grp.ssl_decryption = None
+    # The V2 parse projection now preserves extraction-level safety. Clear the
+    # root state so this test continues to isolate missing zone context only.
+    ir.generation_safe = True
+    ir.generation_blocking_reasons = []
+    ir.requires_manual_review = False
 
     assert len(ir.security_profile_groups) >= 1
     assert any(p.security_profile_group for p in ir.policies)
@@ -228,7 +233,7 @@ def test_palo_alto_generator_withholds_partial_profiles_without_fabricated_defau
 def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
     """Verify that any-ipv4 and any-ipv6 canonical keywords generate valid, safe target syntax without broadening access or non-existent object references."""
     ir = IRConfig(
-        metadata=IRMetadata(hostname="Test-Dual-Any"),
+        metadata=IRMetadata(hostname="Test-Dual-Any", source_vendor="test"),
         zones=[IRZone(name="trust"), IRZone(name="untrust")],
         policies=[
             IRPolicy(
@@ -311,7 +316,7 @@ def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
 def test_canonical_any4_and_any6_aliases_handling():
     """Verify that canonical aliases any4 and any6 are classified and mapped identically to any-ipv4 and any-ipv6."""
     ir = IRConfig(
-        metadata=IRMetadata(hostname="Test-Aliases"),
+        metadata=IRMetadata(hostname="Test-Aliases", source_vendor="test"),
         zones=[IRZone(name="trust"), IRZone(name="untrust")],
         policies=[
             IRPolicy(

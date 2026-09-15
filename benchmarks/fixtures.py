@@ -47,7 +47,7 @@ def build_ir(scale: int = 100) -> IRConfig:
         for i in range(max(1, scale // 2))
     ]
     return IRConfig(
-        metadata=IRMetadata(hostname=f"benchmark-{scale}"),
+        metadata=IRMetadata(hostname=f"benchmark-{scale}", source_vendor="benchmark"),
         addresses=addresses,
         address_groups=address_groups,
         services=services,

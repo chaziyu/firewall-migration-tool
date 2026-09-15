@@ -1,7 +1,6 @@
 from typing import List, Optional, Dict
 from fwmigrate.core.base_parser import BaseSourceParser
-from fwmigrate.extraction.models import ExtractionResult
-from fwmigrate.ir import IRConfig
+from fwmigrate.extraction import ExtractionResult, finalize_extraction
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.parsers.fortigate.section_registry import initialize_builtin_sections
 
@@ -22,9 +21,8 @@ class FortiGateSourceParser(BaseSourceParser):
     def supported_extensions(self) -> List[str]:
         return [".conf", ".cfg", ".txt"]
 
-    def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
-        return self.extract(content, zone_mapping=zone_mapping).canonical_ir
-
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:
-        return extract_fortigate_config(content, zone_mapping=zone_mapping)
+        return finalize_extraction(
+            extract_fortigate_config(content, zone_mapping=zone_mapping)
+        )
 

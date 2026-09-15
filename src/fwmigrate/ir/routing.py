@@ -20,7 +20,7 @@ class IRRoutePathMonitorDestination(BaseModel):
     count: Optional[int] = None
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRRoutePathMonitor(BaseModel):
+class IRPathMonitor(BaseModel):
     enabled: Optional[bool] = None
     failure_condition: Optional[str] = None
     hold_time: Optional[str] = None
@@ -32,6 +32,7 @@ class IRRoutePathMonitor(BaseModel):
 class IRRoute(BaseModel):
     name: str
     source_context: Optional[str] = None
+    routing_instance: Optional[str] = None
     address_family: str = "ipv4"
     destination: Optional[str] = None
     source_destination: Optional[str] = None
@@ -60,7 +61,7 @@ class IRRoute(BaseModel):
     dynamic_gateway: Optional[str] = None
     link_monitor_exempt: Optional[str] = None
     bfd: Optional[str] = None
-    path_monitor: Optional[IRRoutePathMonitor] = None
+    path_monitor: Optional[IRPathMonitor] = None
     vrf: Optional[int] = None
     route_tag: Optional[int] = None
     internet_service: Optional[int] = None
@@ -87,7 +88,7 @@ class IRPBFSymmetricReturn(BaseModel):
     enabled: Optional[bool] = None
     next_hop_addresses: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRPolicyBasedForwardingRule(BaseModel):
+class IRForwardingPolicy(BaseModel):
     name: str
     source_context: Optional[str] = None
     source_rule_id: Optional[str] = None
@@ -437,11 +438,17 @@ class IRSDWAN(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+IRRoutePathMonitor = IRPathMonitor
+IRPolicyBasedForwardingRule = IRForwardingPolicy
+
+
 __all__ = [
     "IRRoutePathMonitorDestination",
+    "IRPathMonitor",
     "IRRoutePathMonitor",
     "IRRoute",
     "IRPBFSymmetricReturn",
+    "IRForwardingPolicy",
     "IRPolicyBasedForwardingRule",
     "IRPolicyRoute",
     "IRFortiGatePolicyRoute",

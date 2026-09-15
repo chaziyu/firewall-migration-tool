@@ -1300,7 +1300,7 @@ class FortiGateCLIGenerator:
 
         central_rules = [
             rule for rule in ir.nat_rules
-            if rule.type == NATType.CENTRAL
+            if rule.is_central_rulebase
         ]
         checkpoint_withheld = []
         if ir.metadata.source_vendor == "checkpoint":

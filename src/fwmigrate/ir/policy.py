@@ -73,16 +73,24 @@ class IRHTTPSInspectionRule(BaseModel):
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRCheckpointIdentitySource(BaseModel):
+class IRIdentitySource(BaseModel):
     name: str
     source_context: Optional[str] = None
     source_type: str
+    servers: List[str] = Field(default_factory=list)
+    port: Optional[int] = None
+    tls: Optional[bool] = None
+    certificate: Optional[str] = None
+    credentials_present: bool = False
+    base_dn: Optional[str] = None
+    user_lookup: Dict[str, Any] = Field(default_factory=dict)
+    group_lookup: Dict[str, Any] = Field(default_factory=dict)
     enabled: Optional[bool] = None
     settings: Dict[str, Any] = Field(default_factory=dict)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRCheckpointAccessRole(BaseModel):
+class IRAccessRole(BaseModel):
     name: str
     source_uuid: Optional[str] = None
     source_context: Optional[str] = None
@@ -317,7 +325,7 @@ class IRMulticastPolicy(BaseModel):
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
-class IRPolicy(BaseModel):
+class IRSecurityPolicy(BaseModel):
     # Portable policy intent.  Target generators may consume these fields
     # only when the source-policy audit below confirms semantic safety.
     name: str
@@ -551,10 +559,15 @@ class IRFirewallFilter(BaseModel):
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRZTNAProvider(BaseModel):
+class IREndpointContextProvider(BaseModel):
     name: str
     provider_type: Optional[str] = None
     enabled: bool = True
+    endpoints: List[str] = Field(default_factory=list)
+    tenant: Optional[str] = None
+    trust_certificate: Optional[str] = None
+    attributes: Dict[str, Any] = Field(default_factory=dict)
+    connection_status: Optional[str] = None
 
     source_vendor: Optional[str] = None
     source_id: Optional[str] = None
@@ -626,9 +639,45 @@ class IRLocalDeviceAccessRule(IRFortiGateSourceRule):
     action: Optional[str] = None
 
 
+class IRIdentityMappingProvider(BaseModel):
+    name: str
+    provider_type: str
+    endpoints: List[str] = Field(default_factory=list)
+    domain: Optional[str] = None
+    groups: List[str] = Field(default_factory=list)
+    polling_interval: Optional[int] = None
+    mapping_timeout: Optional[int] = None
+    source_interfaces: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRManagementAccessPolicy(BaseModel):
+    name: str
+    services: List[str] = Field(default_factory=list)
+    interfaces: List[str] = Field(default_factory=list)
+    sources: List[str] = Field(default_factory=list)
+    administrators: List[str] = Field(default_factory=list)
+    roles: List[str] = Field(default_factory=list)
+    enabled: bool = True
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+IRCheckpointIdentitySource = IRIdentitySource
+IRCheckpointAccessRole = IRAccessRole
+IRPolicy = IRSecurityPolicy
+IRZTNAProvider = IREndpointContextProvider
+
+
 __all__ = [
     "IRSecurityProfileGroup",
+    "IRIdentitySource",
     "IRCheckpointIdentitySource",
+    "IRIdentityMappingProvider",
+    "IRAccessRole",
     "IRCheckpointAccessRole",
     "IRCheckpointAccessRule",
     "IRCheckpointThreatPreventionRule",
@@ -643,14 +692,17 @@ __all__ = [
     "IRCheckpointDomain",
     "IRCheckpointGlobalAssignment",
     "IRMulticastPolicy",
+    "IRSecurityPolicy",
     "IRPolicy",
     "IRDefaultSecurityRule",
     "IRFirewallFilterTerm",
     "IRFirewallFilter",
+    "IREndpointContextProvider",
     "IRZTNAProvider",
     "IRSessionHelper",
     "IRSessionTTLOverride",
     "IRSessionTTLSettings",
     "IRFortiGateSourceRule",
     "IRLocalDeviceAccessRule",
+    "IRManagementAccessPolicy",
 ]

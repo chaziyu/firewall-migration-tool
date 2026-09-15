@@ -1,5 +1,6 @@
 """Vendor-neutral source extraction accounting models."""
 
+from fwmigrate.extraction.finalize import finalize_extraction
 from fwmigrate.extraction.models import (
     ExtractionResult,
     ExtractionStatus,
@@ -16,4 +17,5 @@ __all__ = [
     "SourceInventoryItem",
     "SourceSectionResult",
     "UnsupportedItem",
+    "finalize_extraction",
 ]

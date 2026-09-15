@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.extraction import ExtractionStatus, finalize_extraction
 
 from .audit_semantics import install_audit_semantic_fixes
 from .dependencies import build_pan_nat_dependencies
@@ -208,4 +208,4 @@ class PANOSSourceParser(
         self._mark_nat_hierarchy_completeness(extraction)
         sync_effective_order_to_ir(extraction)
         self._refresh_extraction_accounting(extraction)
-        return extraction
+        return finalize_extraction(extraction)

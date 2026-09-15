@@ -43,4 +43,5 @@ def test_ir_payload_loads_without_schema_version():
     })
 
     assert ir.nat_rules[0].address_range_mappings == []
-    assert ir.nat_rules[0].source_origin is None
+    assert ir.nat_rules[0].type == NATType.SOURCE
+    assert ir.nat_rules[0].source_origin == "central-snat-map"

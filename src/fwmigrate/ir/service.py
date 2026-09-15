@@ -128,19 +128,35 @@ class IRTrafficShaper(BaseModel):
     migration_status: str = "PARTIALLY_NORMALIZED"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRProxyAddress(BaseModel):
+class IRProxyRequestMatch(BaseModel):
     name: str
     source_context: Optional[str] = None
     source_uuid: Optional[str] = None
     proxy_address_type: Optional[str] = None
     host: Optional[str] = None
+    host_pattern: Optional[str] = None
     host_regex: Optional[str] = None
+    path_pattern: Optional[str] = None
     path: Optional[str] = None
+    query_pattern: Optional[str] = None
     query: Optional[str] = None
+    method: Optional[str] = None
+    headers: Dict[str, str] = Field(default_factory=dict)
+    url_category: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRWebProxySettings(BaseModel):
+class IRWebProxy(BaseModel):
+    name: str = "default"
+    mode: Optional[str] = None
+    listener_interfaces: List[str] = Field(default_factory=list)
+    listener_address: Optional[str] = None
+    listener_port: Optional[int] = None
+    fqdn: Optional[str] = None
+    authentication: Optional[str] = None
+    upstream_proxy: Optional[str] = None
+    dns: Optional[str] = None
+    policy_refs: List[str] = Field(default_factory=list)
     proxy_fqdn: Optional[str] = None
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
@@ -334,6 +350,10 @@ class IRScheduleGroup(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+IRProxyAddress = IRProxyRequestMatch
+IRWebProxySettings = IRWebProxy
+
+
 __all__ = [
     "IRServicePort",
     "IRServiceCategory",
@@ -342,7 +362,9 @@ __all__ = [
     "IRSchedule",
     "IRScheduleGroup",
     "IRTrafficShaper",
+    "IRProxyRequestMatch",
     "IRProxyAddress",
+    "IRWebProxy",
     "IRWebProxySettings",
     "IRApplication",
     "IRApplicationGroup",

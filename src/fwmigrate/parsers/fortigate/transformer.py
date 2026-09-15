@@ -7095,10 +7095,10 @@ class FGToIRTransformer:
             )
 
         if self.fg.web_proxy_global is not None:
-            self.ir.web_proxy_settings = IRWebProxySettings(
+            self.ir.web_proxies.append(IRWebProxySettings(
                 proxy_fqdn=self.fg.web_proxy_global.proxy_fqdn,
                 source_attributes=dict(self.fg.web_proxy_global.extra_settings),
-            )
+            ))
 
     # ------------------------------------------------------------------
     # Policies
@@ -8390,7 +8390,7 @@ class FGToIRTransformer:
                 review_reasons.append(
                     "FortiGate NGFW application/profile selectors are target-specific"
                 )
-            self.ir.security_policies.append(self._source_rule_to_ir(
+            self.ir.vendor_extensions.fortios.security_policies.append(self._source_rule_to_ir(
                 rule,
                 review_reasons[0],
                 review_reasons,
@@ -9176,7 +9176,7 @@ class FGToIRTransformer:
 
             self.ir.nat_rules.append(IRNATRule(
                 name=f"central-snat-{rule.id}",
-                type=NATType.CENTRAL,
+                type=NATType.SOURCE,
                 source_context=rule.source_context,
                 source_policy_reference=str(rule.id),
                 source_policy_uuid=rule.uuid,

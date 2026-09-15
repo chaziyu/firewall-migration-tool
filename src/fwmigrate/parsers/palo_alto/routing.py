@@ -396,8 +396,8 @@ class PANRouteExtractor:
             "ipv6-address": "ip-address",
             "discard": "discard",
             "fqdn": "fqdn",
-            "next-vr": "next-vr",
-            "next-lr": "next-lr",
+            "next-vr": "next-routing-instance",
+            "next-lr": "next-routing-instance",
             "none": "none",
         }
         configured = [key for key in next_hop_values if key in supported_next_hops]

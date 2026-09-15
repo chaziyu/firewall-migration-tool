@@ -11,7 +11,7 @@ class IRIPPoolRange(BaseModel):
     end_ip: str
 
 
-class IRIPPool(BaseModel):
+class IRNATPool(BaseModel):
     name: str
     source_context: Optional[str] = None
     address_family: str = "ipv4"
@@ -135,7 +135,7 @@ class IRVirtualIPSSLCipherSuite(BaseModel):
     cipher: Optional[str] = None
     versions: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRVirtualIP(BaseModel):
+class IRPublishedService(BaseModel):
     name: str
     source_context: Optional[str] = None
     address_family: str = "ipv4"
@@ -355,6 +355,13 @@ class IRNATRule(BaseModel):
     description: Optional[str] = None
 
     @property
+    def is_central_rulebase(self) -> bool:
+        return self.type == NATType.CENTRAL or self.source_origin in {
+            "central-snat-map",
+            "checkpoint-source-nat-to-fortigate-central",
+        }
+
+    @property
     def safe_for_target_generation(self) -> bool:
         if self.type == NATType.STATIC:
             return False
@@ -367,6 +374,22 @@ class IRNATRule(BaseModel):
         if not self.source_policy_reference:
             if not self.source or not self.destination or not self.services:
                 return False
+        if self.is_central_rulebase:
+            if self.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS:
+                return bool(self.source_to_interfaces)
+            if (
+                self.source_translation_mode is not None
+                and self.source_translation_mode != NATTranslationMode.NONE
+                and not self.translated_sources
+            ):
+                return False
+            if (
+                self.destination_translation_mode is not None
+                and self.destination_translation_mode != NATTranslationMode.NONE
+                and not self.translated_destinations
+            ):
+                return False
+            return True
         if self.type == NATType.SOURCE:
             return bool(
                 self.translated_sources
@@ -397,22 +420,6 @@ class IRNATRule(BaseModel):
             )
         if self.type == NATType.ADDRESS_TRANSLATION:
             return bool(self.address_range_mappings)
-        if self.type == NATType.CENTRAL:
-            if self.source_translation_mode == NATTranslationMode.INTERFACE_ADDRESS:
-                return bool(self.source_to_interfaces)
-            if (
-                self.source_translation_mode is not None
-                and self.source_translation_mode != NATTranslationMode.NONE
-                and not self.translated_sources
-            ):
-                return False
-            if (
-                self.destination_translation_mode is not None
-                and self.destination_translation_mode != NATTranslationMode.NONE
-                and not self.translated_destinations
-            ):
-                return False
-            return True
         if self.type == NATType.SERVICE:
             return False
         return False
@@ -438,7 +445,7 @@ class IRNATRule(BaseModel):
             if not self.translated_sources and not self.translated_destinations:
                 raise ValueError(f"NAT Rule {self.name} of type TWICE must have at least one translated field defined (source or destination).")
         return self
-class IRVirtualIPGroup(BaseModel):
+class IRPublishedServiceGroup(BaseModel):
     name: str
     source_context: Optional[str] = None
     address_family: str = "ipv4"
@@ -454,12 +461,19 @@ class IRVirtualIPGroup(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+IRIPPool = IRNATPool
+IRVirtualIP = IRPublishedService
+IRVirtualIPGroup = IRPublishedServiceGroup
+
+
 __all__ = [
+    "IRNATPool",
     "IRIPPool",
     "IRVirtualIPRealServer",
     "IRVirtualIPGSLBPublicIP",
     "IRVirtualIPQUICSettings",
     "IRVirtualIPSSLCipherSuite",
+    "IRPublishedService",
     "IRVirtualIP",
     "IRNATPortRange",
     "IRNATServiceMatch",
@@ -470,5 +484,6 @@ __all__ = [
     "IRNATTranslationAddressSelection",
     "IRNATSourceTranslationFallback",
     "IRNATRule",
+    "IRPublishedServiceGroup",
     "IRVirtualIPGroup",
 ]

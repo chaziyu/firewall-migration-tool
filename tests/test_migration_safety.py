@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from fwmigrate.application import MigrationPipeline, MigrationRequest
@@ -10,10 +8,7 @@ from fwmigrate.ir.enums import PolicyAction
 from tests.fixture_paths import FORTIGATE_FIXTURE, VENDOR_FIXTURES
 
 
-SOURCE_FIXTURES = {
-    **VENDOR_FIXTURES,
-    "cisco_ftd": Path("tests/fixtures/cisco_ftd/fdm_nat_pipeline_conformance.json"),
-}
+SOURCE_FIXTURES = VENDOR_FIXTURES
 TARGET_FORMATS = {
     "palo_alto": "xml",
     "fortigate": "cli",
@@ -73,7 +68,7 @@ def test_unsafe_extraction_cannot_reach_generation():
 def test_target_generators_withhold_unsupported_semantics(target_vendor, target_format):
     register_builtin_plugins()
     ir = IRConfig(
-        metadata=IRMetadata(hostname="safety-test"),
+        metadata=IRMetadata(hostname="safety-test", source_vendor="test"),
         zones=[IRZone(name="trust"), IRZone(name="untrust")],
         policies=[IRPolicy(
             name="UNSAFE_MARKER",

@@ -669,7 +669,7 @@ def extract_fortigate_config(
     # configured PBR, local-in rule, proxy rule, DHCPv6 server, or similar
     # source-only traffic construct could coexist with generation_safe=True.
     source_only_rule_collections = (
-        ir_config.security_policies,
+        ir_config.vendor_extensions.fortios.security_policies,
         ir_config.policy_routes,
         ir_config.local_in_policies,
         ir_config.proxy_policies,

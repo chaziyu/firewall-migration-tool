@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class IRSecurityProfileRule(BaseModel):
@@ -718,10 +718,17 @@ class IRFirewallSniffer(BaseModel):
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRAuthenticationScheme(BaseModel):
+class IRAuthenticationProfile(BaseModel):
     name: str
     method: Optional[str] = None
+    identity_source: Optional[str] = None
+    server_refs: List[str] = Field(default_factory=list)
+    realm: Optional[str] = None
+    domain: Optional[str] = None
     user_database: Optional[str] = None
+    certificate_profile: Optional[str] = None
+    mfa_provider: Optional[str] = None
+    timeout: Optional[int] = None
     resolved_user_databases: List[str] = Field(default_factory=list)
     unresolved_user_databases: List[str] = Field(default_factory=list)
     user_database_dependencies: List[IRIdentityDependency] = Field(default_factory=list)
@@ -732,12 +739,26 @@ class IRAuthenticationSequence(BaseModel):
     name: str
     source_context: Optional[str] = None
     authentication_profiles: List[str] = Field(default_factory=list)
+    profiles: List[str] = Field(default_factory=list)
+    order: List[str] = Field(default_factory=list)
+    continue_on_failure: bool = False
+    stop_on_failure: bool = True
     resolved_authentication_profiles: List[str] = Field(default_factory=list)
     unresolved_authentication_profiles: List[str] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def normalize_profile_aliases(self):
+        if self.profiles:
+            self.authentication_profiles = list(self.profiles)
+        else:
+            self.profiles = list(self.authentication_profiles)
+        if not self.order:
+            self.order = list(self.profiles)
+        return self
 class IRSSLTLSServiceProfile(BaseModel):
     name: str
     source_context: Optional[str] = None
@@ -752,8 +773,18 @@ class IRSSLTLSServiceProfile(BaseModel):
     requires_manual_review: bool = True
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRAuthenticationRule(BaseModel):
+class IRAuthenticationPolicy(BaseModel):
     name: str
+    source: List[str] = Field(default_factory=list)
+    destination: List[str] = Field(default_factory=list)
+    interfaces: List[str] = Field(default_factory=list)
+    zones: List[str] = Field(default_factory=list)
+    services: List[str] = Field(default_factory=list)
+    users: List[str] = Field(default_factory=list)
+    schedule: Optional[str] = None
+    authentication_profile: Optional[str] = None
+    authentication_sequence: Optional[str] = None
+    action: Optional[str] = None
     source_interfaces: List[str] = Field(default_factory=list)
     source_addresses: List[str] = Field(default_factory=list)
     active_auth_method: Optional[str] = None
@@ -762,6 +793,10 @@ class IRAuthenticationRule(BaseModel):
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+IRAuthenticationScheme = IRAuthenticationProfile
+IRAuthenticationRule = IRAuthenticationPolicy
 class IRUserAuthenticationSettings(BaseModel):
     auth_certificate: Optional[str] = None
     auth_certificate_resolved: Optional[bool] = None
@@ -1219,6 +1254,79 @@ class IRPANCustomReport(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRLogDestinationProfile(BaseModel):
+    name: str
+    destination_type: str
+    servers: List[str] = Field(default_factory=list)
+    address: Optional[str] = None
+    transport: Optional[str] = None
+    port: Optional[int] = None
+    tls: Optional[bool] = None
+    format: Optional[str] = None
+    facility: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRLogForwardingPolicy(BaseModel):
+    name: str
+    log_type: Optional[str] = None
+    filter: Optional[str] = None
+    severity: Optional[str] = None
+    destinations: List[str] = Field(default_factory=list)
+    actions: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRDNSProxy(BaseModel):
+    name: str
+    interfaces: List[str] = Field(default_factory=list)
+    default_servers: List[str] = Field(default_factory=list)
+    domain_rules: List[Dict[str, Any]] = Field(default_factory=list)
+    cache_enabled: Optional[bool] = None
+    tcp_enabled: Optional[bool] = None
+    conditional_forwarding: bool = False
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRMonitorProfile(BaseModel):
+    name: str
+    probe_type: Optional[str] = None
+    targets: List[str] = Field(default_factory=list)
+    interval: Optional[int] = None
+    timeout: Optional[int] = None
+    failure_threshold: Optional[int] = None
+    recovery_threshold: Optional[int] = None
+    action: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRQoSProfile(BaseModel):
+    name: str
+    classes: List[Dict[str, Any]] = Field(default_factory=list)
+    priority: Optional[str] = None
+    guaranteed_bandwidth: Optional[int] = None
+    maximum_bandwidth: Optional[int] = None
+    queue: Optional[str] = None
+    dscp: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRReportDefinition(BaseModel):
+    name: str
+    report_type: Optional[str] = None
+    data_source: Optional[str] = None
+    filters: List[Dict[str, Any]] = Field(default_factory=list)
+    query: Optional[str] = None
+    columns: List[str] = Field(default_factory=list)
+    metrics: List[str] = Field(default_factory=list)
+    group_by: List[str] = Field(default_factory=list)
+    sort_by: List[str] = Field(default_factory=list)
+    limit: Optional[int] = None
+    time_range: Optional[str] = None
+    schedule: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 __all__ = [
     "IRCertificate",
     "IRSSHKey",
@@ -1261,9 +1369,11 @@ __all__ = [
     "IRDoSAnomaly",
     "IRDoSPolicy",
     "IRFirewallSniffer",
+    "IRAuthenticationProfile",
     "IRAuthenticationScheme",
     "IRAuthenticationSequence",
     "IRSSLTLSServiceProfile",
+    "IRAuthenticationPolicy",
     "IRAuthenticationRule",
     "IRUserAuthenticationSettings",
     "IRUserQuarantineSettings",
@@ -1303,4 +1413,10 @@ __all__ = [
     "IRPANBotnetUnknownApplicationThreshold",
     "IRPANBotnetReportSettings",
     "IRPANCustomReport",
+    "IRLogDestinationProfile",
+    "IRLogForwardingPolicy",
+    "IRDNSProxy",
+    "IRMonitorProfile",
+    "IRQoSProfile",
+    "IRReportDefinition",
 ]
