@@ -8,6 +8,17 @@ globals().update({
     if not name.startswith("__")
 })
 
+from fwmigrate.parsers.fortigate.builders.antivirus import _build_antivirus_profiles
+from fwmigrate.parsers.fortigate.builders.webfilter import _build_webfilter_profiles
+from fwmigrate.parsers.fortigate.builders.dnsfilter import _build_dnsfilter_profiles
+from fwmigrate.parsers.fortigate.builders.application_control import _build_application_lists
+from fwmigrate.parsers.fortigate.builders.security_profiles_extra import (
+    _build_ips_sensor,
+    _build_ssl_ssh_profile,
+    _refresh_interface_ipv6_from_source,
+    _refresh_policy_address_families,
+)
+
 def build_security(self: Any, section_path: str, attributes: Dict[str, Any]) -> bool:
     if section_path == "user ldap":
         for key in ("port", "source_port", "timeout", "connect_timeout", "query_timeout"):
@@ -362,4 +373,3 @@ def build_security(self: Any, section_path: str, attributes: Dict[str, Any]) -> 
         return True
 
     return False
-

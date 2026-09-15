@@ -1,4 +1,4 @@
-"""FortiGate phases 46-50 extraction extensions.
+"""FortiGate advanced security extraction helpers.
 
 The implementation deliberately remains source-oriented.  It improves typed
 FortiOS 7.4.6 extraction and dependency accounting without claiming portable
@@ -28,7 +28,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGSSLSSHProfile,
     FGSSLSSHProtocolInspection,
 )
-from fwmigrate.parsers.fortigate.phase_41_security_profiles import (
+from fwmigrate.parsers.fortigate.builders.security_profiles import (
     PROFILE_SECURITY_SECRET_FIELDS,
     _effective_node_attributes as _shared_effective_node_attributes,
 )

@@ -1,4 +1,4 @@
-"""Phase 41 shared FortiGate security-profile command evaluation.
+"""Shared FortiGate security-profile command evaluation.
 
 Typed profile models expose the effective FortiOS configuration while the
 recursive FGSourceNode/FGSourceCommand tree remains the lossless source of

@@ -163,6 +163,14 @@ def test_registry_reports_parser_capability_from_active_section_spec():
     assert get_section_parser_capability("future feature")["classification"] == "unknown"
 
 
+def test_system_fsso_polling_has_a_static_typed_section_spec():
+    spec = get_section_spec("system fsso-polling")
+    assert spec is not None
+    assert spec.model.__name__ == "FGSystemFSSOPolling"
+    assert "listening_port" in spec.integer_fields
+    assert get_section_parser_capability("system fsso-polling")["classification"] == "typed"
+
+
 def test_migration_critical_sections_keep_objects_and_unknown_fields():
     config = FortiGateParser(FortiGateTokenizer('''config firewall address
 edit a

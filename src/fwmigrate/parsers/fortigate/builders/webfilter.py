@@ -1,4 +1,4 @@
-"""Phase 43 FortiGate web-filter profile typing.
+"""FortiGate web-filter profile typing.
 
 Extends the Phase 41 shared operation-aware evaluator with explicit FortiOS
 7.4.6 web-filter profile hierarchy and field declarations. Structured source
@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from fwmigrate.parsers.fortigate import phase_41_security_profiles as phase41
-from fwmigrate.parsers.fortigate.phase_42_antivirus import FGConfig746 as _FGConfig746
+from fwmigrate.parsers.fortigate.builders import security_profiles as phase41
+from fwmigrate.parsers.fortigate.builders.antivirus import FGConfig746 as _FGConfig746
 from fwmigrate.parsers.fortigate.model import (
     FGWebFilterCategory as _FGWebFilterCategory,
     FGWebFilterOverride as _FGWebFilterOverride,

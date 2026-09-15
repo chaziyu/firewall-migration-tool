@@ -95,6 +95,7 @@ TYPED_SECTIONS = {
     "system dns",
     "system dns-server",
     "system dns64",
+    "system fsso-polling",
     "system interface",
     "system interface secondaryip",
     "system zone",
@@ -284,6 +285,7 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "system settings",
     "system dns-server",
     "system dns64",
+    "system fsso-polling",
     "firewall schedule group",
     "router policy",
     "router policy6",
@@ -481,6 +483,7 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "system dns": ("dns", "dns_settings"),
     "system dns-server": ("dns_servers", "dns_servers"),
     "system dns64": ("dns64_settings", "dns64_settings"),
+    "system fsso-polling": ("system_fsso_polling", "system_fsso_polling"),
     "system interface": ("interfaces", "interfaces"),
     "system interface secondaryip": ("interfaces", "interfaces"),
     "system zone": ("system_zones", "zones"),
@@ -653,6 +656,7 @@ SEMANTIC_SUPPORT_LEVELS = {
     "system dhcp server": "TYPED_EXTRACT_ONLY",
     "system dns-server": "TYPED_EXTRACT_ONLY",
     "system dns64": "TYPED_EXTRACT_ONLY",
+    "system fsso-polling": "TYPED_EXTRACT_ONLY",
     "firewall local-in-policy": "TYPED_EXTRACT_ONLY",
     "firewall local-in-policy6": "TYPED_EXTRACT_ONLY",
     "firewall shaping-policy": "TYPED_EXTRACT_ONLY",
@@ -862,7 +866,7 @@ def _count_collection(
         if path in {"firewall vipgrp", "firewall vipgrp6"}:
             family = "ipv6" if path.endswith("6") else "ipv4"
             return sum(item.address_family == family for item in collection)
-    if path in {"system global", "system dns", "system session-ttl", "system settings"}:
+    if path in {"system global", "system dns", "system session-ttl", "system settings", "system fsso-polling"}:
         return 1
     if path == "ips sensor":
         return len(collection)
@@ -1064,7 +1068,7 @@ def classify_section_coverage(
             | STRUCTURED_IDENTITY_SECTIONS
             | STRUCTURED_OPERATIONAL_SECTIONS
         )
-        if path not in {"user radius", "user tacacs+", "system dns-server", "system dns64"} and (path in structured_sections or any(
+        if path not in {"user radius", "user tacacs+", "system dns-server", "system dns64", "system fsso-polling"} and (path in structured_sections or any(
             path.startswith(f"{parent} ") for parent in structured_sections
         )):
             section.status = ExtractionStatus.EXTRACT_ONLY
@@ -1080,7 +1084,7 @@ def classify_section_coverage(
                 f"Support level: {PROFILE_SUPPORT_LEVELS.get(profile_path, 'STRUCTURED_EXTRACT_ONLY')}."
             )
             continue
-        if path not in {"user radius", "user tacacs+", "system dns-server", "system dns64"} and is_operational_source_path(path):
+        if path not in {"user radius", "user tacacs+", "system dns-server", "system dns64", "system fsso-polling"} and is_operational_source_path(path):
             section.status = ExtractionStatus.EXTRACT_ONLY
             section.parser_handler = "source inventory"
             section.notes.append(

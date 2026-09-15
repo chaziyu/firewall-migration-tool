@@ -1,9 +1,24 @@
 from datetime import datetime
 from ipaddress import ip_address
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Literal, Optional, Set, Union
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, field_validator, model_validator
 
 from fwmigrate.parsers.fortigate.source_tree import FGSourceNode, FGStructuredSourceObject
+
+
+SYSTEM_GLOBAL_SESSION_TIMER_FIELDS = {
+    "tcp_halfclose_timer",
+    "tcp_halfopen_timer",
+    "tcp_rst_timer",
+    "tcp_timewait_timer",
+    "udp_idle_timer",
+}
+
+SESSION_TTL_OVERRIDE_INT_FIELDS = {
+    "protocol",
+    "start_port",
+    "end_port",
+}
 
 
 def _preserve_malformed_int_fields(value: Any, fields: Set[str]) -> Any:
@@ -629,6 +644,12 @@ class FGPortRange(BaseModel):
 class FGService(FGContextualModel):
     name: str
     protocol: str = "tcp/udp/sctp"  # default
+    session_ttl: Optional[Union[int, Literal["never"]]] = None
+    tcp_halfclose_timer: Optional[int] = None
+    tcp_halfopen_timer: Optional[int] = None
+    tcp_rst_timer: Optional[int] = None
+    tcp_timewait_timer: Optional[int] = None
+    udp_idle_timer: Optional[int] = None
     source_protocol_configured: Optional[str] = None
     tcp_portrange: Optional[str] = None
     udp_portrange: Optional[str] = None
@@ -646,6 +667,28 @@ class FGService(FGContextualModel):
     color: Optional[int] = None
     fabric_object: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_session_timer_fields(cls, value: Any) -> Any:
+        normalized = _preserve_malformed_int_fields(
+            value,
+            SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
+        )
+        if not isinstance(normalized, dict):
+            return normalized
+
+        raw_session_ttl = normalized.get("session_ttl")
+        if raw_session_ttl is None:
+            return normalized
+        if isinstance(raw_session_ttl, str) and raw_session_ttl.lower() == "never":
+            normalized = dict(normalized)
+            normalized["session_ttl"] = "never"
+            extra_settings = dict(normalized.get("extra_settings") or {})
+            extra_settings.pop("unparsed_session_ttl", None)
+            normalized["extra_settings"] = extra_settings
+            return normalized
+        return _preserve_malformed_int_fields(normalized, {"session_ttl"})
 
 class FGServiceGroup(FGContextualModel):
     name: str
@@ -2150,7 +2193,7 @@ class FGDns(BaseModel):
     protocol: List[str] = Field(default_factory=list)
     server_select_method: Optional[str] = None
     domain: List[str] = Field(default_factory=list)
-    server_hostname: Optional[str] = None
+    server_hostname: List[str] = Field(default_factory=list)
     interface_select_method: Optional[str] = None
     interface: Optional[str] = None
     source_ip: Optional[str] = None
@@ -2207,7 +2250,20 @@ class FGSystemGlobal(BaseModel):
     admin_lockout_duration: Optional[int] = None
     admin_console_timeout: Optional[int] = None
     timezone: Optional[str] = None
+    tcp_halfclose_timer: Optional[int] = None
+    tcp_halfopen_timer: Optional[int] = None
+    tcp_rst_timer: Optional[int] = None
+    tcp_timewait_timer: Optional[int] = None
+    udp_idle_timer: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_session_timer_fields(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(
+            value,
+            SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
+        )
 
 
 class FGInternetService(BaseModel):
@@ -4121,6 +4177,19 @@ class FGSSLSSHProfile(BaseModel):
     entries: List[FGProfileNestedSection] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+
+class FGSystemFSSOPolling(BaseModel):
+    """Typed, source-only FortiOS ``config system fsso-polling`` settings."""
+
+    source_context: str = "root"
+    status: Optional[str] = None
+    listening_port: Optional[int] = None
+    authentication: Optional[str] = None
+    has_auth_password: bool = False
+    source_explicit_fields: Set[str] = Field(default_factory=set)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
 class FGConfig(BaseModel):
     """Root model for a parsed FortiGate configuration."""
 
@@ -4225,7 +4294,7 @@ class FGConfig(BaseModel):
     user_ldap_servers: List[FGUserLDAP] = Field(default_factory=list)
     fsso_servers: List[FGFSSOServer] = Field(default_factory=list)
     fsso_polling: List[FGFSSOPolling] = Field(default_factory=list)
-    system_fsso_polling: Optional[Any] = None
+    system_fsso_polling: Optional[FGSystemFSSOPolling] = None
     ad_groups: List[FGADGroup] = Field(default_factory=list)
     user_saml_servers: List[FGUserSAML] = Field(default_factory=list)
     local_users: List[FGLocalUser] = Field(default_factory=list)

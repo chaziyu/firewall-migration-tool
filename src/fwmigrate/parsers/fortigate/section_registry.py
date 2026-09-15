@@ -5,6 +5,29 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Mapping
 
+from fwmigrate.parsers.fortigate.model import (
+    SESSION_TTL_OVERRIDE_INT_FIELDS,
+    SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
+)
+
+
+AUTHENTICATION_METHODS = {
+    "ntlm", "basic", "digest", "form", "negotiate",
+    "fsso", "rsso", "ssh-publickey", "cert", "saml",
+}
+
+AUTHENTICATION_SWITCH_FIELDS = {
+    "fsso_guest", "negotiate_ntlm", "require_tfa", "user_cert",
+}
+
+AUTHENTICATION_STRING_LIMITS = {
+    "domain_controller": 35,
+    "fsso_agent_for_ntlm": 35,
+    "kerberos_keytab": 35,
+    "saml_server": 35,
+    "ssh_ca": 35,
+}
+
 
 @dataclass(frozen=True)
 class SectionSpec:
@@ -431,6 +454,204 @@ def register_sections(
             secret_fields=frozenset(mappings[5].get(path, ())),
             source_only_fields=frozenset((source_only_fields or {}).get(path, ())),
         ))
+
+
+_BUILTINS_INITIALIZED = False
+
+
+def initialize_builtin_sections() -> None:
+    """Build the built-in registry once after the parser module is loaded."""
+    global _BUILTINS_INITIALIZED
+    if _BUILTINS_INITIALIZED:
+        return
+
+    from fwmigrate.parsers.fortigate import parser as parser_module
+
+    models = {
+        "system interface": parser_module.FGInterface,
+        "system zone": parser_module.FGSystemZone,
+        "firewall wildcard-fqdn custom": parser_module.FGWildcardFQDN,
+        "firewall service category": parser_module.FGServiceCategory,
+        "firewall address": parser_module.FGAddress,
+        "firewall address6": parser_module.FGAddress,
+        "firewall address6-template": parser_module.FGAddress6Template,
+        "firewall addrgrp": parser_module.FGAddressGroup,
+        "firewall addrgrp6": parser_module.FGAddressGroup,
+        "firewall service custom": parser_module.FGService,
+        "firewall service group": parser_module.FGServiceGroup,
+        "firewall proxy-address": parser_module.FGProxyAddress,
+        "firewall schedule recurring": parser_module.FGSchedule,
+        "firewall schedule onetime": parser_module.FGSchedule,
+        "firewall schedule group": parser_module.FGScheduleGroup,
+        "firewall ippool": parser_module.FGIPPool,
+        "firewall ippool6": parser_module.FGIPPool6,
+        "firewall ippool_grp": parser_module.FGIPPoolGroup,
+        "endpoint-control fctems": parser_module.FGFCTEMS,
+        "user adgrp": parser_module.FGADGroup,
+        "user local": parser_module.FGLocalUser,
+        "user group": parser_module.FGUserGroup,
+        "user saml": parser_module.FGUserSAML,
+        "system dns-server": parser_module.FGDnsServer,
+        "system fsso-polling": parser_module.FGSystemFSSOPolling,
+        "firewall vip": parser_module.FGVIP,
+        "firewall vip6": parser_module.FGVIP6,
+        "firewall vipgrp": parser_module.FGVIPGroup,
+        "firewall vipgrp6": parser_module.FGVIPGroup6,
+        "firewall vip realservers": parser_module.FGVIPRealServer,
+        "firewall vip6 realservers": parser_module.FGVIPRealServer,
+        "system interface secondaryip": parser_module.FGInterfaceSecondaryIP,
+        "firewall policy": parser_module.FGPolicy,
+        "firewall security-policy": parser_module.FGSecurityPolicy,
+        "firewall shaping-policy": parser_module.FGShapingPolicy,
+        "firewall central-snat-map": parser_module.FGCentralSNATRule,
+        "router static": parser_module.FGStaticRoute,
+        "router static6": parser_module.FGStaticRoute,
+        "router policy": parser_module.FGPolicyRoute,
+        "router policy6": parser_module.FGPolicyRoute,
+        "system dhcp server": parser_module.FGDHCPServer,
+        "system dhcp6 server": parser_module.FGDHCP6Server,
+        "system dns": parser_module.FGDns,
+        "authentication scheme": parser_module.FGAuthenticationScheme,
+        "authentication rule": parser_module.FGAuthenticationRule,
+        "vpn ipsec phase1-interface": parser_module.FGPhase1Interface,
+        "vpn ipsec phase1": parser_module.FGPhase1Policy,
+        "vpn ipsec phase2-interface": parser_module.FGPhase2Interface,
+        "vpn ipsec phase2": parser_module.FGPhase2Policy,
+    }
+    common_list_fields = {
+        "allowaccess", "detectprotocol", "dhcp_relay_ip", "member", "day",
+        "srcintf", "dstintf", "srcaddr", "dst", "dst6",
+        "ip_range", "ip6_range", "groups", "users", "service", "poolname",
+        "proposal", "internet_service_name", "exclude_ip", "mappedip", "extaddr",
+        "src_filter", "srcintf_filter", "monitor", "ztna_ems_tag",
+        "ztna_ems_tag_secondary", "ztna_geo_tag", "capabilities", "fsso_group",
+    }
+    list_fields = {
+        path: set(SECTION_LIST_FIELDS.get(path, ()))
+        | (common_list_fields & set(model.model_fields))
+        for path, model in models.items()
+    }
+    list_fields.update({
+        path: set(fields)
+        for path, fields in SECTION_LIST_FIELDS.items()
+        if path not in list_fields
+    })
+    destination_collections = {
+        "system interface": "interfaces",
+        "system zone": "system_zones",
+        "firewall wildcard-fqdn custom": "wildcard_fqdns",
+        "firewall service category": "service_categories",
+        "firewall address": "addresses",
+        "firewall address6": "addresses",
+        "firewall address6-template": "address6_templates",
+        "firewall addrgrp": "address_groups",
+        "firewall addrgrp6": "address_groups",
+        "firewall service custom": "services",
+        "firewall service group": "service_groups",
+        "firewall proxy-address": "proxy_addresses",
+        "firewall schedule recurring": "schedules",
+        "firewall schedule onetime": "schedules",
+        "firewall schedule group": "schedule_groups",
+        "firewall ippool": "ip_pools",
+        "firewall ippool6": "ip_pools6",
+        "firewall ippool_grp": "ip_pool_groups",
+        "endpoint-control fctems": "fctems_connectors",
+        "user adgrp": "ad_groups",
+        "user saml": "user_saml_servers",
+        "system dns-server": "dns_servers",
+        "firewall vip": "vips",
+        "firewall vip6": "vips6",
+        "firewall vipgrp": "vip_groups",
+        "firewall vipgrp6": "vip_groups6",
+        "firewall policy": "policies",
+        "firewall security-policy": "security_policies",
+        "firewall shaping-policy": "shaping_policies",
+        "firewall central-snat-map": "central_snat_rules",
+        "router static": "static_routes",
+        "router static6": "static_routes",
+        "router policy": "policy_routes",
+        "router policy6": "policy_routes",
+        "system dhcp server": "dhcp_servers",
+        "system dhcp6 server": "dhcp6_servers",
+        "authentication scheme": "authentication_schemes",
+        "authentication rule": "authentication_rules",
+        "vpn ipsec phase1-interface": "phase1_interfaces",
+        "vpn ipsec phase1": "phase1_policies",
+        "vpn ipsec phase2-interface": "phase2_interfaces",
+        "vpn ipsec phase2": "phase2_policies",
+    }
+    integer_fields = {
+        path: set(fields) for path, fields in SECTION_INTEGER_FIELDS.items()
+    }
+    integer_fields.update({
+        "router policy": parser_module.FG_POLICY_ROUTE_INT_FIELDS,
+        "router policy6": parser_module.FG_POLICY_ROUTE_INT_FIELDS,
+        "system sdwan zone": parser_module.FG_SDWAN_ZONE_INT_FIELDS,
+        "system sdwan health-check": parser_module.FG_SDWAN_HEALTH_CHECK_INT_FIELDS,
+        "system sdwan health-check sla": parser_module.FG_SDWAN_HEALTH_CHECK_SLA_INT_FIELDS,
+        "system sdwan service": parser_module.FG_SDWAN_SERVICE_INT_FIELDS,
+        "system dhcp server": parser_module.FG_DHCP_SERVER_INT_FIELDS,
+        "system dhcp server ip-range": parser_module.FG_DHCP_RANGE_INT_FIELDS,
+        "system dhcp server options": parser_module.FG_DHCP_OPTION_INT_FIELDS,
+        "authentication scheme": {"saml_timeout"},
+        "system global": SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
+        "system fsso-polling": {"listening_port"},
+        "system session-ttl port": SESSION_TTL_OVERRIDE_INT_FIELDS,
+    })
+    integer_list_fields = {
+        path: set(fields) for path, fields in SECTION_INTEGER_LIST_FIELDS.items()
+    }
+    integer_list_fields.update({
+        "router policy": parser_module.FG_POLICY_ROUTE_INT_LIST_FIELDS,
+        "router policy6": parser_module.FG_POLICY_ROUTE_INT_LIST_FIELDS,
+        "system sdwan service": parser_module.FG_SDWAN_SERVICE_INT_LIST_FIELDS,
+    })
+    scalar_fields = {
+        path: set(model.model_fields)
+        - list_fields.get(path, set())
+        - integer_fields.get(path, set())
+        - integer_list_fields.get(path, set())
+        - {"extra_settings", "source_explicit_fields", "source_attributes", "nested_configs"}
+        for path, model in models.items()
+    }
+    secret_fields = {
+        path: parser_module.IDENTITY_SECRET_FIELDS
+        for path in parser_module.IDENTITY_SECTIONS
+    }
+    secret_fields.update({
+        "system admin": parser_module.ADMIN_SECRET_FIELDS,
+        "vpn ipsec phase1": {
+            "psksecret", "psksecret_remote", "authpasswd",
+            "group_authentication_secret", "ppk_secret",
+        },
+        "vpn ipsec phase1-interface": {
+            "psksecret", "psksecret_remote", "authpasswd",
+            "group_authentication_secret", "ppk_secret",
+        },
+    })
+    paths = (
+        set(models)
+        | set(list_fields)
+        | set(parser_module.SECTION_EXPLICIT_FIELDS)
+        | parser_module.CONTEXTUAL_MODEL_SECTIONS
+        | parser_module.STRUCTURED_SECURITY_SECTIONS
+        | parser_module.STRUCTURED_ROUTING_SECTIONS
+        | parser_module.STRUCTURED_ROUTING_DEPENDENCY_SECTIONS
+        | parser_module.STRUCTURED_IDENTITY_SECTIONS
+        | parser_module.STRUCTURED_OPERATIONAL_SECTIONS
+    )
+    register_sections(
+        paths,
+        models=models,
+        destination_collections=destination_collections,
+        list_fields=list_fields,
+        integer_fields=integer_fields,
+        integer_list_fields=integer_list_fields,
+        scalar_fields=scalar_fields,
+        explicit_fields=parser_module.SECTION_EXPLICIT_FIELDS,
+        secret_fields=secret_fields,
+    )
+    _BUILTINS_INITIALIZED = True
 
 
 def update_section(path: str, **changes: Any) -> SectionSpec:

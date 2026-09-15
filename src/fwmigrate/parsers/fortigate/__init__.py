@@ -3,6 +3,10 @@ from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
+from fwmigrate.parsers.fortigate.section_registry import initialize_builtin_sections
+
+
+initialize_builtin_sections()
 
 
 class FortiGateSourceParser(BaseSourceParser):

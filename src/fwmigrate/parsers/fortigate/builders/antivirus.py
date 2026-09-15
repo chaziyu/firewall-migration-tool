@@ -1,4 +1,4 @@
-"""Phase 42 FortiGate antivirus profile typing.
+"""FortiGate antivirus profile typing.
 
 This module extends the Phase 41 operation-aware profile evaluator with
 FortiOS 7.4.6 antivirus-specific field declarations and typed projections.
@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
-from fwmigrate.parsers.fortigate import phase_41_security_profiles as phase41
+from fwmigrate.parsers.fortigate.builders import security_profiles as phase41
 from fwmigrate.parsers.fortigate.model import (
     FGConfig as _FGConfig,
     FGAntivirusProfile as _FGAntivirusProfile,

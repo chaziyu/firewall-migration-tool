@@ -44,7 +44,7 @@ SOURCE_ONLY_OPERATIONAL_SECTIONS = {
     "system link-monitor", "system switch-interface",
     "system virtual-wire-pair", "system vdom-link", "system pppoe-interface",
     "vpn certificate crl", "vpn certificate ocsp-server", "vpn certificate setting",
-    "system dns-server", "system dns64", "firewall dnstranslation",
+    "system dns-server", "system dns64", "system fsso-polling", "firewall dnstranslation",
     "firewall access-proxy", "firewall access-proxy6",
     "firewall access-proxy-virtual-host", "firewall access-proxy-ssh-client-cert",
     "firewall ipv6-eh-filter",
