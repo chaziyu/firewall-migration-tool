@@ -218,6 +218,8 @@ class IRAddressGroup(BaseModel):
     name: str
     source_context: Optional[str] = None
     members: List[str] = Field(default_factory=list)
+    source_direct_members: List[str] = Field(default_factory=list)
+    source_nested_group_members: List[str] = Field(default_factory=list)
     description: Optional[str] = None
     is_dynamic: bool = False
     dynamic_filter: Optional[str] = None
