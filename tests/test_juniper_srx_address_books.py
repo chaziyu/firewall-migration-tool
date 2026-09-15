@@ -54,6 +54,13 @@ def test_address_books_and_typed_addresses():
     # Named book prefix
     assert "custom_dmz_book__dmz_server" in addr_dict
 
+    groups = {group.name: group for group in ir.address_groups}
+    assert groups["grp_hosts"].source_direct_members == ["host_ipv4", "host_desc"]
+    assert groups["grp_nested"].source_direct_members == ["net_corp"]
+    assert groups["grp_nested"].source_nested_group_members == ["grp_hosts"]
+    assert groups["grp_nested"].members == ["host_ipv4", "host_desc", "net_corp"]
+    assert ir.virtual_ip_groups == []
+
     assert_no_silent_loss(res, total_input_commands=21)
 
 def test_malformed_range_address_no_silent_repair():
@@ -127,3 +134,25 @@ def test_range_address_requires_documented_syntax_and_matching_families():
         assert command.extraction_status is ExtractionStatus.PARSE_ERROR
         assert command.requires_manual_review
         assert address.range_start is None and address.range_end is None
+
+
+def test_address_set_topology_preserves_cycles_and_book_identity():
+    content = """
+    set security address-book global address host 10.0.0.1/32
+    set security address-book global address-set loop address-set loop
+    set security address-book global address-set loop address host
+    set security address-book book_a address same 10.0.0.2/32
+    set security address-book book_a address-set same address same
+    set security address-book book_b address same 10.0.0.3/32
+    set security address-book book_b address-set same address same
+    """
+
+    ir = JuniperSRXParser(content).extract().canonical_ir
+    groups = {group.name: group for group in ir.address_groups}
+
+    assert groups["loop"].source_nested_group_members == ["loop"]
+    assert groups["loop"].source_direct_members == ["host"]
+    assert groups["loop"].members == ["host"]
+    assert groups["loop"].requires_manual_review is True
+    assert groups["book_a__same"].source_direct_members == ["book_a__same"]
+    assert groups["book_b__same"].source_direct_members == ["book_b__same"]

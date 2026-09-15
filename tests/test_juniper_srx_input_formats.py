@@ -21,6 +21,8 @@ def test_hierarchical_and_display_set_inputs_have_same_semantics():
     """
     set_ir = JuniperSRXParser(display_set).extract().canonical_ir
     hierarchical_ir = JuniperSRXParser(hierarchical).extract().canonical_ir
+    assert set_ir.metadata.source_format == "junos_display_set"
+    assert hierarchical_ir.metadata.source_format == "junos_hierarchical"
     assert [(i.name, i.ip) for i in set_ir.interfaces] == [
         (i.name, i.ip) for i in hierarchical_ir.interfaces
     ]
@@ -41,3 +43,27 @@ def test_hierarchical_inactive_child_does_not_create_active_value():
     cfg = JuniperSRXParser(content).parse_raw()
     members = cfg.contexts["root"].address_books["global"].address_sets["hosts"].members
     assert [member.name for member in members] == ["host1"]
+
+
+def test_hierarchical_and_display_set_nat_preserve_equivalent_semantics():
+    display_set = """
+    set security nat source rule-set rs from zone trust
+    set security nat source rule-set rs to zone untrust
+    set security nat source rule-set rs rule r match source-address 10.0.0.0/24
+    set security nat source rule-set rs rule r then source-nat interface
+    """
+    hierarchical = """
+    security {
+        nat { source { rule-set rs {
+            from { zone trust; }
+            to { zone untrust; }
+            rule r { match { source-address 10.0.0.0/24; } then source-nat interface; }
+        } } }
+    }
+    """
+
+    set_rule = JuniperSRXParser(display_set).extract().canonical_ir.nat_rules[0]
+    hierarchical_rule = JuniperSRXParser(hierarchical).extract().canonical_ir.nat_rules[0]
+    assert set_rule.model_dump(mode="json", exclude={"source_attributes"}) == hierarchical_rule.model_dump(
+        mode="json", exclude={"source_attributes"}
+    )

@@ -27,6 +27,7 @@ from fwmigrate.ir.policy import (
 )
 from fwmigrate.ir.nat import (
     IRIPPool,
+    IRIPPoolRange,
     IRNATPortRange,
     IRNATRule,
 )
@@ -56,9 +57,11 @@ class JuniperToIRTransformer:
         self,
         config: JuniperSRXConfig,
         zone_mapping: Optional[Dict[str, str]] = None,
+        source_format: Optional[str] = None,
     ) -> None:
         self.config = config
         self.zone_mapping = zone_mapping or {}
+        self.source_format = source_format or "junos_display_set"
         self._policy_names: set[str] = set()
 
     def map_zone(self, zone_name: Optional[str]) -> Optional[str]:
@@ -170,6 +173,7 @@ class JuniperToIRTransformer:
                 source_vendor="juniper_srx",
                 source_version=self.config.version,
                 input_type="junos_display_set",
+                source_format=self.source_format,
             )
         )
 
@@ -697,6 +701,19 @@ class JuniperToIRTransformer:
         members, has_cycle = resolver.expand_address_set(
             resolver.context.address_books.get(book_name, aset), aset.name
         )
+        source_direct_members: List[str] = []
+        source_nested_group_members: List[str] = []
+        for member in aset.members:
+            if member.disabled or not resolver._member_is_effective(aset, member):
+                continue
+            canonical_member = resolver._resolve_in_book(book_name, member.name).name
+            target = (
+                source_direct_members
+                if member.member_type == "address"
+                else source_nested_group_members
+            )
+            if member.member_type in {"address", "address-set"} and canonical_member not in target:
+                target.append(canonical_member)
 
         src_attrs = {
             "junos_address_book": book_name,
@@ -713,6 +730,8 @@ class JuniperToIRTransformer:
             IRAddressGroup(
                 name=canonical_name,
                 members=members,
+                source_direct_members=source_direct_members,
+                source_nested_group_members=source_nested_group_members,
                 description=aset.description,
                 requires_manual_review=has_cycle or aset.disabled,
                 audit_note="Cyclic address-set reference detected" if has_cycle else None,
@@ -1499,15 +1518,30 @@ class JuniperToIRTransformer:
                     reasons.append(f"Invalid NAT pool port values: {invalid_ports}")
                 if len(addresses) > 1:
                     reasons.append("Multiple NAT pool addresses require source review")
+                if len(ranges) > 1 or (addresses and ranges):
+                    reasons.append("Multiple NAT pool addresses/ranges require source review")
                 if pool.options:
                     reasons.append("NAT pool options require source review")
                 if pool.routing_instance:
                     reasons.append(
                         f"NAT pool routing-instance '{pool.routing_instance}' requires target review"
                     )
-                first_range = ranges[0] if ranges else None
-                start_ip = addresses[0] if len(addresses) == 1 else (first_range or {}).get("start")
-                end_ip = addresses[0] if len(addresses) == 1 else (first_range or {}).get("end")
+                typed_ranges = [
+                    IRIPPoolRange(start_ip=item["start"], end_ip=item["end"])
+                    for item in ranges
+                    if isinstance(item, dict)
+                    and isinstance(item.get("start"), str)
+                    and isinstance(item.get("end"), str)
+                ]
+                if len(typed_ranges) != len(ranges):
+                    reasons.append("Malformed NAT pool address range preserved in source evidence")
+                if len(addresses) + len(typed_ranges) == 1 and addresses:
+                    start_ip = end_ip = addresses[0]
+                elif len(addresses) + len(typed_ranges) == 1:
+                    start_ip = typed_ranges[0].start_ip
+                    end_ip = typed_ranges[0].end_ip
+                else:
+                    start_ip = end_ip = None
                 family_values = addresses + [item for item in (start_ip, end_ip) if item]
                 address_family = self._address_family(family_values)
                 ir.ip_pools.append(
@@ -1517,6 +1551,8 @@ class JuniperToIRTransformer:
                         address_family=address_family,
                         routing_instance=pool.routing_instance,
                         pool_type=nat_type,
+                        addresses=addresses,
+                        address_ranges=typed_ranges,
                         start_ip=start_ip,
                         end_ip=end_ip,
                         source_start_ip=start_ip,
@@ -1552,13 +1588,51 @@ class JuniperToIRTransformer:
         source = getattr(rs, f"{side}_context", None)
         return list(getattr(source, value, [])) if source else []
 
+    @staticmethod
+    def _validate_static_nat_prefix_mapping(
+        destination_addresses: List[str],
+        destination_address_names: List[str],
+        translated_prefix: str,
+        resolver: JuniperReferenceResolver,
+    ) -> List[str]:
+        reasons: List[str] = []
+        originals = []
+        for value in destination_addresses:
+            try:
+                originals.append(ipaddress.ip_network(value, strict=False))
+            except (ValueError, TypeError):
+                reasons.append(f"Static NAT original destination is not a valid prefix: {value}")
+
+        for name in destination_address_names:
+            resolved = resolver.resolve_nat(name)
+            if not resolved.address or not resolved.address.prefix:
+                reasons.append(f"Static NAT destination prefix could not be resolved: {name}")
+                continue
+            try:
+                originals.append(ipaddress.ip_network(resolved.address.prefix, strict=False))
+            except (ValueError, TypeError):
+                reasons.append(f"Static NAT destination prefix is invalid: {name}")
+
+        try:
+            translated = ipaddress.ip_network(translated_prefix, strict=False)
+        except (ValueError, TypeError):
+            return reasons
+
+        for original in originals:
+            if original.version != translated.version:
+                reasons.append("Static NAT original and translated prefixes use different address families")
+            elif original.prefixlen != translated.prefixlen:
+                reasons.append("Static NAT original and translated prefixes have different prefix lengths")
+        if not originals:
+            reasons.append("Static NAT prefix relationship could not be proven")
+        return reasons
+
     def _transform_nat(
         self,
         context: JuniperContextConfig,
         ir: IRConfig,
         resolver: JuniperReferenceResolver,
     ) -> None:
-        seq = 1
         ctx_name = context.name
 
         # Source NAT
@@ -1728,7 +1802,10 @@ class JuniperToIRTransformer:
                         name=rule_name,
                         type=NATType.SOURCE,
                         source_context=ctx_name if ctx_name != "root" else None,
-                        sequence=seq,
+                        source_rule_set=rs.name,
+                        sequence=r.sequence,
+                        from_routing_instances=from_routing_instances,
+                        to_routing_instances=to_routing_instances,
                         source_from_interfaces=from_interfaces,
                         source_to_interfaces=to_interfaces,
                         from_zone=from_z,
@@ -1753,8 +1830,6 @@ class JuniperToIRTransformer:
                         source_attributes=src_attrs,
                     )
                 )
-                seq += 1
-
         # Destination NAT
         for rs in sorted(context.nat.destination_rule_sets.values(), key=lambda value: value.name):
             from_z = [
@@ -1767,6 +1842,7 @@ class JuniperToIRTransformer:
             ] if rs.to_context else []
             from_interfaces = self._nat_context_values(context, rs, "from", "interfaces")
             to_interfaces = self._nat_context_values(context, rs, "to", "interfaces")
+            from_routing_instances = self._nat_context_values(context, rs, "from", "routing_instances")
 
             rs_requires_review = rs.disabled
             rs_review_reasons: List[str] = []
@@ -1870,7 +1946,9 @@ class JuniperToIRTransformer:
                         name=rule_name,
                         type=NATType.DESTINATION,
                         source_context=ctx_name if ctx_name != "root" else None,
-                        sequence=seq,
+                        source_rule_set=rs.name,
+                        sequence=r.sequence,
+                        from_routing_instances=from_routing_instances,
                         source_from_interfaces=from_interfaces,
                         source_to_interfaces=to_interfaces,
                         from_zone=from_z,
@@ -1894,8 +1972,6 @@ class JuniperToIRTransformer:
                         source_attributes=src_attrs,
                     )
                 )
-                seq += 1
-
         # Static NAT: conservative mapping
         for rs in sorted(context.nat.static_rule_sets.values(), key=lambda value: value.name):
             from_z = [
@@ -1908,6 +1984,7 @@ class JuniperToIRTransformer:
             ] if rs.to_context else []
             from_interfaces = self._nat_context_values(context, rs, "from", "interfaces")
             to_interfaces = self._nat_context_values(context, rs, "to", "interfaces")
+            from_routing_instances = self._nat_context_values(context, rs, "from", "routing_instances")
             rs_requires_review = True
             rs_review_reasons = ["Junos static NAT requires manual review for exact bidirectional semantics"]
             if rs.from_context.interfaces or rs.from_context.routing_instances:
@@ -1956,8 +2033,6 @@ class JuniperToIRTransformer:
                     context_label = "tenant" if context.context_type == "tenant" else "logical system"
                     review_reasons.append(f"Static NAT in {context_label} '{ctx_name}' requires manual review")
 
-                # Static NAT is destination translation. It does not imply source translation.
-                # Otherwise, the unrepresentable/incomplete rule is preserved strictly in ExtractionResult accounting.
                 prefix_val = action.get("prefix")
                 prefix_name = action.get("prefix_name")
                 translated_prefix = None
@@ -1992,13 +2067,22 @@ class JuniperToIRTransformer:
                         review_reasons.append(f"Unresolved static NAT prefix-name: {prefix_name}")
 
                 if translated_prefix:
+                    review_reasons.extend(self._validate_static_nat_prefix_mapping(
+                        self._effective_members(r.match, "destination_addresses"),
+                        self._effective_members(r.match, "destination_address_names"),
+                        translated_prefix,
+                        resolver,
+                    ))
                     rule_name = f"{ctx_name}__{r.name}" if ctx_name != "root" else r.name
                     ir.nat_rules.append(
                         IRNATRule(
                             name=rule_name,
-                            type=NATType.DESTINATION,
+                            type=NATType.STATIC,
                             source_context=ctx_name if ctx_name != "root" else None,
-                            sequence=seq,
+                            source_rule_set=rs.name,
+                            sequence=r.sequence,
+                            from_routing_instances=from_routing_instances,
+                            source_translation_bidirectional=True,
                             source_from_interfaces=from_interfaces,
                             source_to_interfaces=to_interfaces,
                             from_zone=from_z,
@@ -2021,9 +2105,9 @@ class JuniperToIRTransformer:
                             review_reasons=review_reasons,
                             disabled=r.disabled or None,
                             source_attributes=src_attrs,
+                            source_origin="junos-static-nat",
                         )
                     )
-                    seq += 1
 
     def _transform_vpn(self, context: JuniperContextConfig, ir: IRConfig) -> None:
         for vpn in context.vpn.ipsec_vpns.values():

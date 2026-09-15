@@ -12,6 +12,7 @@ class NATCapabilities:
     nat64: bool = False
     nat66: bool = False
     central_nat: bool = False
+    static_nat: bool = False
     sctp_address_translation: bool = False
     pba: bool = False
     cgn: bool = False
@@ -22,6 +23,8 @@ class NATCapabilities:
     persistent_dynamic_ip_and_port: bool = False
 
     def unsupported_reason(self, rule: IRNATRule) -> str | None:
+        if rule.type == NATType.STATIC and not self.static_nat:
+            return "static NAT"
         if (
             rule.source_translation_mode == NATTranslationMode.PERSISTENT_DYNAMIC_IP_AND_PORT
             and not self.persistent_dynamic_ip_and_port

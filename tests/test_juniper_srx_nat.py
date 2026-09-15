@@ -17,6 +17,8 @@ def test_source_nat_extraction():
     # Pool NAT
     assert "r1" in nat_dict
     assert nat_dict["r1"].type == NATType.SOURCE
+    assert nat_dict["r1"].source_rule_set == "rs_trust_to_untrust"
+    assert nat_dict["r1"].sequence == 1
     assert nat_dict["r1"].source_translation_mode == NATTranslationMode.POOL
     assert nat_dict["r1"].source_pool_references == ["src_pool_1"]
 
@@ -29,6 +31,7 @@ def test_source_nat_extraction():
     assert "r3_off" in nat_dict
     assert nat_dict["r3_off"].type == NATType.SOURCE
     assert nat_dict["r3_off"].source_translation_mode == NATTranslationMode.NONE
+    assert nat_dict["r3_off"].sequence == 3
 
     assert_no_silent_loss(res, total_input_commands=17)
 
@@ -44,6 +47,8 @@ def test_destination_nat_extraction():
     nat_dict = {n.name: n for n in ir.nat_rules}
     assert "r_vip" in nat_dict
     assert nat_dict["r_vip"].type == NATType.DESTINATION
+    assert nat_dict["r_vip"].source_rule_set == "rs_inbound_web"
+    assert nat_dict["r_vip"].sequence == 1
     assert "172.16.1.100/32" in nat_dict["r_vip"].translated_destinations
     assert [(port.start, port.end) for port in nat_dict["r_vip"].translated_destination_ports] == [(8080, None)]
 
@@ -61,6 +66,13 @@ def test_static_nat_extraction():
     nat_dict = {n.name: n for n in ir.nat_rules}
     assert "r_static_server" in nat_dict
     assert nat_dict["r_static_server"].requires_manual_review is True
+    assert nat_dict["r_static_server"].type == NATType.STATIC
+    assert nat_dict["r_static_server"].source_translation_bidirectional is True
+    assert nat_dict["r_static_server"].source_origin == "junos-static-nat"
+    assert nat_dict["r_static_server"].source_rule_set == "rs_static_pub"
+    assert nat_dict["r_static_server"].sequence == 1
+    assert res.canonical_ir.virtual_ips == []
+    assert res.canonical_ir.virtual_ip_groups == []
 
     assert_no_silent_loss(res, total_input_commands=7)
 
@@ -168,10 +180,82 @@ def test_static_nat_prefix_name_and_mapped_port():
     ir = res.canonical_ir
 
     rule = next(rule for rule in ir.nat_rules if rule.name == "r_pfx")
+    assert rule.type == NATType.STATIC
+    assert rule.source_translation_bidirectional is True
+    assert rule.safe_for_target_generation is False
     assert rule.translated_destinations == ["172.16.1.50/32"]
     assert rule.source_attributes["junos_static_nat_prefix_name"] == "internal_srv"
     assert [(port.start, port.end) for port in rule.translated_destination_ports] == [(8443, None)]
     assert_no_silent_loss(res, total_input_commands=7)
+
+
+def test_static_nat_mismatched_prefix_remains_manual_review():
+    ir = PluginRegistry.get_parser("juniper_srx").extract("""
+    set security nat static rule-set rs from zone untrust
+    set security nat static rule-set rs rule r match destination-address 198.51.100.0/24
+    set security nat static rule-set rs rule r then static-nat prefix 10.0.0.10/32
+    """).canonical_ir
+
+    rule = ir.nat_rules[0]
+    assert rule.type == NATType.STATIC
+    assert rule.translated_destinations == ["10.0.0.10/32"]
+    assert rule.migration_status == "PARTIALLY_NORMALIZED"
+    assert any("different prefix lengths" in reason for reason in rule.review_reasons)
+
+
+def test_static_nat_prefix_mapping_preserves_matching_subnet_lengths():
+    ir = PluginRegistry.get_parser("juniper_srx").extract("""
+    set security nat static rule-set rs from zone untrust
+    set security nat static rule-set rs rule r match destination-address 198.51.100.0/24
+    set security nat static rule-set rs rule r then static-nat prefix 10.0.0.0/24
+    """).canonical_ir
+
+    rule = ir.nat_rules[0]
+    assert rule.type == NATType.STATIC
+    assert rule.destination == ["198.51.100.0/24"]
+    assert rule.translated_destinations == ["10.0.0.0/24"]
+    assert not any("different prefix" in reason for reason in rule.review_reasons)
+
+
+def test_nat_rule_set_identity_sequence_and_routing_instance_context():
+    content = """
+    set security nat source rule-set alpha from routing-instance RI-A
+    set security nat source rule-set alpha to routing-instance RI-B
+    set security nat source rule-set alpha rule R1 match source-address 10.0.0.0/24
+    set security nat source rule-set alpha rule R1 then source-nat interface
+    set security nat source rule-set alpha rule R2 match source-address 10.0.1.0/24
+    set security nat source rule-set alpha rule R2 then source-nat off
+    set security nat source rule-set alpha rule R3 match source-address 10.0.2.0/24
+    set security nat source rule-set alpha rule R3 disable
+    set security nat source rule-set alpha rule R3 then source-nat interface
+    set security nat source rule-set beta from zone trust
+    set security nat source rule-set beta to zone untrust
+    set security nat source rule-set beta rule R1 match source-address 10.1.0.0/24
+    set security nat source rule-set beta rule R1 then source-nat interface
+    set security nat destination rule-set dnat from routing-instance RI-D
+    set security nat destination rule-set dnat rule R1 match destination-address 198.51.100.10/32
+    set security nat destination rule-set dnat rule R1 then destination-nat pool missing
+    set security nat static rule-set stat from routing-instance RI-S
+    set security nat static rule-set stat rule R1 match destination-address 198.51.100.20/32
+    set security nat static rule-set stat rule R1 then static-nat prefix 10.1.1.20/32
+    """
+
+    ir = PluginRegistry.get_parser("juniper_srx").extract(content).canonical_ir
+    by_identity = {(rule.source_rule_set, rule.sequence): rule for rule in ir.nat_rules}
+
+    assert {key for key in by_identity if key[0] in {"alpha", "beta"}} == {
+        ("alpha", 1), ("alpha", 2), ("alpha", 3), ("beta", 1),
+    }
+    assert by_identity[("alpha", 1)].from_routing_instances == ["RI-A"]
+    assert by_identity[("alpha", 1)].to_routing_instances == ["RI-B"]
+    assert by_identity[("alpha", 1)].from_zone == []
+    assert by_identity[("beta", 1)].from_zone == ["trust"]
+    assert by_identity[("alpha", 3)].requires_manual_review is True
+    assert by_identity[("dnat", 1)].from_routing_instances == ["RI-D"]
+    assert by_identity[("dnat", 1)].to_routing_instances == []
+    assert by_identity[("stat", 1)].type == NATType.STATIC
+    assert by_identity[("stat", 1)].from_routing_instances == ["RI-S"]
+    assert by_identity[("stat", 1)].to_routing_instances == []
 
 
 def test_source_nat_pool_port_and_attributes_provenance_preserved():
@@ -197,6 +281,48 @@ def test_source_nat_pool_port_and_attributes_provenance_preserved():
     assert "pool_ports" in r.source_attributes
     assert "5000-6000" in r.source_attributes["pool_ports"] or "5000" in str(r.source_attributes["pool_ports"])
     assert any("port/PAT constraints" in reason for reason in r.review_reasons)
+
+
+def test_junos_nat_pools_preserve_all_addresses_and_ranges():
+    content = """
+    set security nat source pool multi-address address 203.0.113.10
+    set security nat source pool multi-address address 203.0.113.11
+    set security nat source pool multi-range address 198.51.100.10 to 198.51.100.20
+    set security nat source pool multi-range address 198.51.100.30 to 198.51.100.40
+    set security nat source pool mixed address 192.0.2.10
+    set security nat source pool mixed address 192.0.2.20 to 192.0.2.30
+    set security nat destination pool destination-ranges address 10.0.0.10 to 10.0.0.20
+    set security nat destination pool destination-ranges address 10.0.0.30 to 10.0.0.40
+    set security nat source rule-set src from zone trust
+    set security nat source rule-set src rule source-rule match source-address 10.1.0.0/24
+    set security nat source rule-set src rule source-rule then source-nat pool multi-address
+    set security nat destination rule-set dst from zone untrust
+    set security nat destination rule-set dst rule destination-rule match destination-address 198.51.100.50/32
+    set security nat destination rule-set dst rule destination-rule then destination-nat pool destination-ranges
+    """
+
+    ir = PluginRegistry.get_parser("juniper_srx").extract(content).canonical_ir
+    pools = {pool.name: pool for pool in ir.ip_pools}
+
+    assert pools["multi-address"].addresses == ["203.0.113.10", "203.0.113.11"]
+    assert pools["multi-address"].address_ranges == []
+    assert pools["multi-address"].start_ip is None
+    assert pools["multi-address"].migration_status == "PARTIALLY_NORMALIZED"
+    assert [
+        (item.start_ip, item.end_ip) for item in pools["multi-range"].address_ranges
+    ] == [("198.51.100.10", "198.51.100.20"), ("198.51.100.30", "198.51.100.40")]
+    assert pools["multi-range"].start_ip is None
+    assert [
+        (item.start_ip, item.end_ip) for item in pools["mixed"].address_ranges
+    ] == [("192.0.2.20", "192.0.2.30")]
+    assert pools["mixed"].addresses == ["192.0.2.10"]
+    assert pools["destination-ranges"].pool_type == "destination"
+
+    source_rule = next(rule for rule in ir.nat_rules if rule.name == "source-rule")
+    destination_rule = next(rule for rule in ir.nat_rules if rule.name == "destination-rule")
+    assert source_rule.source_pool_references == ["multi-address"]
+    assert destination_rule.destination_pool_references == ["destination-ranges"]
+    assert destination_rule.translated_destinations == []
 
 
 def test_static_nat_prefix_syntax_validation():

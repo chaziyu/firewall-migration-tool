@@ -90,7 +90,12 @@ class JuniperSRXParser:
 
     def extract(self) -> ExtractionResult:
         """Execute the complete extraction pipeline returning authoritative ExtractionResult."""
-        source = normalize_hierarchy(self.content) if looks_hierarchical(self.content) else self.content
+        source_format = (
+            "junos_hierarchical"
+            if looks_hierarchical(self.content)
+            else "junos_display_set"
+        )
+        source = normalize_hierarchy(self.content) if source_format == "junos_hierarchical" else self.content
         commands = self.tokenizer.tokenize(source)
         self.activation_state.apply(commands)
         effective_commands = resolve_group_commands(commands)
@@ -241,7 +246,11 @@ class JuniperSRXParser:
         self._apply_activation_state_to_models()
 
         # 5. Transform to Canonical IR
-        transformer = JuniperToIRTransformer(self.config, zone_mapping=self.zone_mapping)
+        transformer = JuniperToIRTransformer(
+            self.config,
+            zone_mapping=self.zone_mapping,
+            source_format=source_format,
+        )
         canonical_ir = transformer.transform()
 
         # 6. Build ExtractionResult with 100% command-level accounting
