@@ -95,7 +95,8 @@ def test_unknown_vip_setting_is_preserved_and_gets_contract_review_reason():
     vip = FGToIRTransformer(parsed).transform().virtual_ips[0]
     assert vip.migration_status == "PARTIALLY_NORMALIZED"
     assert vip.requires_manual_review is True
-    assert any("unmodeled source setting 'future_setting'" in reason for reason in vip.review_reasons)
+    assert vip.extra_settings["future_setting"] == "keep-me"
+    assert "unmodeled source setting 'future_setting'" in (vip.audit_note or "")
 
 
 def test_src_vip_filter_is_in_contract_but_remains_review_gated():
@@ -112,8 +113,8 @@ def test_src_vip_filter_is_in_contract_but_remains_review_gated():
     assert validate_vip_746(source) == []
 
     vip = FGToIRTransformer(parsed).transform().virtual_ips[0]
-    assert vip.source_attributes["src_vip_filter"] == "enable"
-    assert vip.source_attributes["src_vip_filter_enabled"] is True
+    assert vip.extra_settings["src_vip_filter"] == "enable"
+    assert vip.extra_settings["src_vip_filter_enabled"] is True
     assert vip.migration_status == "PARTIALLY_NORMALIZED"
     assert vip.requires_manual_review is True
-    assert any("reverse-SNAT source filtering" in reason for reason in vip.review_reasons)
+    assert "reverse-SNAT source filtering" in (vip.audit_note or "")
