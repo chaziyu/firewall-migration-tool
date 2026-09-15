@@ -317,39 +317,3 @@ def _build_application_lists(
         getattr(parser.config, collection_name).append(profile)
 
 
-def install_phase_45_application_control_support(parser_module: Any) -> None:
-    """Install Phase 45 Application Control typing on top of Phases 41-44."""
-
-    phase41.PROFILE_FIELD_SPECS[FGApplicationList746] = _PROFILE_SPEC
-    phase41.PROFILE_FIELD_SPECS[FGApplicationDefaultNetworkService746] = _DEFAULT_NETWORK_SERVICE_SPEC
-    phase41.PROFILE_FIELD_SPECS[FGApplicationEntry746] = _ENTRY_SPEC
-    phase41.PROFILE_FIELD_SPECS[FGApplicationParameterMember746] = _MEMBER_SPEC
-
-    # Only ``application list`` belongs to this phase. Keep ``application custom``
-    # on its existing path/model because it has a different FortiOS schema.
-    phase41._PROFILE_PATHS["application list"] = (
-        "application_lists",
-        FGApplicationList746,
-    )
-
-    original_builder = phase41._build_dns_app_ssl
-    if not getattr(original_builder, "_phase_45_wrapped", False):
-        def build_dns_app_ssl(
-            parser: Any,
-            source_path: str,
-            collection_name: str,
-            model: Any,
-            top_edits: List[FGSourceNode],
-        ) -> None:
-            if model is FGApplicationList746:
-                _build_application_lists(parser, collection_name, top_edits)
-                return
-            original_builder(parser, source_path, collection_name, model, top_edits)
-
-        build_dns_app_ssl._phase_45_wrapped = True
-        phase41._build_dns_app_ssl = build_dns_app_ssl
-
-    parser_module.FGConfig = FGConfigApplication746
-    parser_module.FGApplicationList = FGApplicationList746
-    parser_module.FGApplicationEntry = FGApplicationEntry746
-    parser_module.PROFILE_FIELD_SPECS = phase41.PROFILE_FIELD_SPECS

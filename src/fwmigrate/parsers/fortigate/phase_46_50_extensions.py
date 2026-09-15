@@ -238,6 +238,7 @@ def _build_ips_sensor(parser: Any, nodes: List[FGSourceNode]) -> None:
         parser.config.ips_sensors.append(
             FGIPSSensor(
                 name=node.name,
+                source_context=parser.current_context or "root",
                 entries=entries,
                 extra_settings=sanitize_source_attributes(extra),
                 **sensor_values,
@@ -580,13 +581,6 @@ def _build_profile_groups(parser: Any, nodes: List[FGSourceNode]) -> None:
         )
 
 
-def _install_profile_group_dependencies(dependencies_module: Any) -> None:
-    for field, target in PROFILE_GROUP_REFERENCE_RULES.items():
-        key = ("firewall profile-group", field)
-        dependencies_module.REFERENCE_RULES[key] = target
-        dependencies_module.REFERENCE_TARGET_SECTIONS[key] = {target}
-
-
 # ---------------------------------------------------------------------------
 # Phase 49 - IPv6 interface effective-state hardening
 # ---------------------------------------------------------------------------
@@ -766,66 +760,6 @@ def _refresh_interface_ipv6_from_source(config: Any, parser_module: Any) -> None
         interface.vrrp6 = vrrp6
 
 
-def _install_ipv6_inventory_classifier(extractor_module: Any) -> None:
-    def is_typed_ipv6_interface_inventory(item: Any) -> bool:
-        if "interface-nested-config" not in item.notes:
-            return False
-        if not item.source_path.endswith(" interface ipv6"):
-            return False
-        if not all(
-            command.operation in {"set", "append", "unset"}
-            and str(command.key).replace("_", "-").lower()
-            in extractor_module.INTERFACE_IPV6_TYPED_COMMANDS
-            for command in item.commands
-        ):
-            return False
-
-        def valid_child(node: Any, section_name: Optional[str] = None) -> bool:
-            current_section = section_name
-            if node.source_path != item.source_path:
-                suffix = node.source_path[len(item.source_path):].strip()
-                if suffix:
-                    current_section = suffix.split()[0]
-            if current_section and current_section not in IPV6_TYPED_CHILDREN:
-                return False
-            allowed_fields = IPV6_CHILD_FIELDS.get(current_section, set())
-            for command in node.commands:
-                key = str(command.key).replace("_", "-").lower()
-                if command.operation not in {"set", "append", "unset"}:
-                    return False
-                if current_section and key not in allowed_fields:
-                    return False
-            return all(valid_child(child, current_section) for child in node.children)
-
-        return all(valid_child(child) for child in item.children)
-
-    extractor_module._is_typed_ipv6_interface_inventory = is_typed_ipv6_interface_inventory
-
-    original_extract = extractor_module.extract_fortigate_config
-    if getattr(original_extract, "_phase_49_wrapped", False):
-        return
-
-    def extract_fortigate_config(*args: Any, **kwargs: Any) -> Any:
-        result = original_extract(*args, **kwargs)
-        for inventory in result.inventory_items:
-            if is_typed_ipv6_interface_inventory(inventory):
-                inventory.requires_manual_review = bool(
-                    inventory.notes and any(
-                        note.startswith("unresolved-reference:")
-                        or note.startswith("incompatible-")
-                        for note in inventory.notes
-                    )
-                )
-        result.requires_manual_review = bool(result.blocking_reasons) or any(
-            item.requires_manual_review for item in result.inventory_items
-        )
-        result.canonical_ir.requires_manual_review = result.requires_manual_review
-        return result
-
-    extract_fortigate_config._phase_49_wrapped = True
-    extractor_module.extract_fortigate_config = extract_fortigate_config
-
-
 # ---------------------------------------------------------------------------
 # Phase 50 - IPv6 firewall-policy family classification
 # ---------------------------------------------------------------------------
@@ -855,51 +789,3 @@ def _refresh_policy_address_families(config: Any) -> None:
             policy.address_family = "ipv4"
 
 
-# ---------------------------------------------------------------------------
-# Installer
-# ---------------------------------------------------------------------------
-
-
-def install_phase_46_50_extensions(
-    parser_module: Any,
-    dependencies_module: Any,
-    extractor_module: Any,
-    source_tree_module: Any,
-) -> None:
-    """Install phases 46-50 after the Phase 41/42 wrappers."""
-
-    # Route IPS through the recursive source-tree path so the shared evaluator
-    # sees every set/append/unset operation in source order.
-    source_tree_module.STRUCTURED_SECURITY_SECTIONS.add("ips sensor")
-    parser_module.STRUCTURED_SECURITY_SECTIONS.add("ips sensor")
-
-    _install_profile_group_dependencies(dependencies_module)
-    _install_ipv6_inventory_classifier(extractor_module)
-
-    parser_cls = parser_module.FortiGateParser
-    current_build = parser_cls._build_structured_typed_parents
-    if not getattr(current_build, "_phase_46_50_wrapped", False):
-        def build_structured_typed_parents(
-            self: Any,
-            source_path: str,
-            top_edits: List[FGSourceNode],
-        ) -> None:
-            if source_path == "ips sensor":
-                _build_ips_sensor(self, top_edits)
-                return
-            if source_path == "firewall ssl-ssh-profile":
-                _build_ssl_ssh_profile(self, top_edits)
-                return
-            if source_path == "firewall profile-group":
-                _build_profile_groups(self, top_edits)
-                return
-            current_build(self, source_path, top_edits)
-
-        build_structured_typed_parents._phase_46_50_wrapped = True
-        parser_cls._build_structured_typed_parents = build_structured_typed_parents
-
-    # Expose exact hierarchy constants for tests and later phases.
-    parser_module.SSL_PROTOCOL_SECTIONS = SSL_PROTOCOL_SECTIONS
-    parser_module.SSL_EXEMPTION_SECTIONS = SSL_EXEMPTION_SECTIONS
-    parser_module.SSL_SERVER_SECTIONS = SSL_SERVER_SECTIONS
-    parser_module.PROFILE_GROUP_REFERENCE_RULES = PROFILE_GROUP_REFERENCE_RULES

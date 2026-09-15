@@ -1,8 +1,14 @@
 import pytest
 
-from fwmigrate.parsers.fortigate.command_evaluator import evaluate_commands
+from fwmigrate.parsers.fortigate.command_evaluator import (
+    evaluate_commands,
+    evaluate_section_commands,
+)
 from fwmigrate.parsers.fortigate.parser import FortiGateParser
-from fwmigrate.parsers.fortigate.section_registry import get_section_parser_capability
+from fwmigrate.parsers.fortigate.section_registry import (
+    get_section_parser_capability,
+    get_section_spec,
+)
 from fwmigrate.parsers.fortigate.source_tree import FGSourceCommand
 from fwmigrate.parsers.fortigate.tokenizer import (
     FortiGateTokenizer,
@@ -125,13 +131,31 @@ def test_shared_command_evaluator_applies_operations_and_preserves_bad_values():
         "unparsed_append_scalar": "not-applied",
     }
 
+    section_result = evaluate_section_commands(
+        "firewall address",
+        [
+            FGSourceCommand(operation="set", key="color", values=["bad"]),
+            FGSourceCommand(operation="set", key="future-field", values=["kept"]),
+        ],
+        get_section_spec("firewall address"),
+        initial={"name": "address-one"},
+    )
+    assert section_result.attributes == {
+        "name": "address-one",
+        "future_field": "kept",
+    }
+    assert section_result.extra_settings == {
+        "unparsed_color": "bad",
+        "future_field": "kept",
+    }
+
 
 def test_registry_reports_parser_capability_from_active_section_spec():
     FortiGateParser(FortiGateTokenizer(""))
     capability = get_section_parser_capability("firewall address")
 
     assert capability["known_section"] is True
-    assert capability["model"] == "FGAddress746"
+    assert capability["model"] == "FGAddress"
     assert "color" in capability["integer_fields"]
     assert get_section_parser_capability(
         "firewall address", {"color", "future_field"}

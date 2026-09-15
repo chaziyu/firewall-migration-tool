@@ -30,6 +30,7 @@ class MigrationReporter:
             self._render_header(),
             self._render_executive_summary(),
             self._render_extraction_safety(),
+            self._render_migration_critical_configuration(),
             self._render_audit_trail(),
             self._render_network_topology(),
             self._render_object_inventory(),
@@ -60,6 +61,10 @@ class MigrationReporter:
                 "internet_services": len(self.ir.internet_services)
             },
             "extraction_safety": self._extraction_safety_counts() if self.extraction_result else {},
+            "migration_critical_configuration": (
+                self._migration_critical_configuration()
+                if self.extraction_result else {}
+            ),
         }
 
     def _extraction_safety_counts(self) -> Dict[str, int]:
@@ -85,6 +90,61 @@ class MigrationReporter:
             if any("without-selector" in note or "scope-selection-required" in note for note in section.notes)
         )
         return counts
+
+    def _migration_critical_configuration(self) -> Dict[str, object]:
+        """Return the compact source-to-IR completeness view for engineers."""
+
+        inventory = self.extraction_result.inventory_items
+        status_counts = {
+            status.value: sum(item.status == status for item in inventory)
+            for status in ExtractionStatus
+        }
+        unresolved = sum(
+            dependency.result == "UNRESOLVED"
+            for dependency in self.extraction_result.dependencies
+        )
+        section_paths = {
+            "interfaces": ("system interface",),
+            "zones": ("system zone",),
+            "addresses": ("firewall address", "firewall address6"),
+            "address_groups": ("firewall addrgrp", "firewall addrgrp6"),
+            "services": ("firewall service custom",),
+            "service_groups": ("firewall service group",),
+            "schedules": (
+                "firewall schedule recurring", "firewall schedule onetime",
+            ),
+            "schedule_groups": ("firewall schedule group",),
+            "policies": ("firewall policy",),
+            "vips": ("firewall vip", "firewall vip6"),
+            "vip_groups": ("firewall vipgrp", "firewall vipgrp6"),
+            "ip_pools": ("firewall ippool", "firewall ippool6"),
+            "static_routes": ("router static", "router static6"),
+        }
+        source_counts = {
+            key: sum(
+                section.object_count_source or 0
+                for section in self.extraction_result.source_sections
+                if section.path in paths
+            )
+            for key, paths in section_paths.items()
+        }
+        blockers = set(self.extraction_result.blocking_reasons)
+        blockers.update(getattr(self.ir, "generation_blocking_reasons", []) or [])
+        return {
+            **source_counts,
+            "nat_rules": len(self.ir.nat_rules),
+            "canonical_vips": len(self.ir.virtual_ips),
+            "canonical_ip_pools": len(self.ir.ip_pools),
+            "canonical_static_routes": len(self.ir.routes),
+            "unresolved_dependencies": unresolved,
+            "blocked_by_unresolved_dependency": unresolved,
+            "partial_objects": status_counts.get(ExtractionStatus.PARTIALLY_NORMALIZED.value, 0),
+            "source_only_objects": status_counts.get(ExtractionStatus.EXTRACT_ONLY.value, 0),
+            "unsupported_objects": status_counts.get(ExtractionStatus.UNSUPPORTED.value, 0),
+            "parse_error_objects": status_counts.get(ExtractionStatus.PARSE_ERROR.value, 0),
+            "generation_blockers": len(blockers),
+            "status_counts": status_counts,
+        }
 
     def _has_migration_issues(self) -> bool:
         if any(not policy.safe_for_target_generation for policy in self.ir.policies):
@@ -151,6 +211,65 @@ class MigrationReporter:
                     f"`{dependency.source_field}` | `{dependency.reference}` | "
                     f"`{dependency.expected_type}` |"
                 )
+        return "\n".join(lines)
+
+    def _render_migration_critical_configuration(self) -> str:
+        if not self.extraction_result:
+            return ""
+        summary = self._migration_critical_configuration()
+        rows = [
+            ("Interfaces", "interfaces"),
+            ("Zones", "zones"),
+            ("Addresses", "addresses"),
+            ("Address groups", "address_groups"),
+            ("Services", "services"),
+            ("Service groups", "service_groups"),
+            ("Schedules", "schedules"),
+            ("Policies", "policies"),
+            ("VIPs", "vips"),
+            ("IP pools", "ip_pools"),
+            ("NAT rules", "nat_rules"),
+            ("Static routes", "static_routes"),
+            ("Unresolved dependencies", "unresolved_dependencies"),
+            ("Partial objects", "partial_objects"),
+            ("Source-only objects", "source_only_objects"),
+            ("Unsupported objects", "unsupported_objects"),
+            ("Parse-error objects", "parse_error_objects"),
+            ("Generation blockers", "generation_blockers"),
+        ]
+        lines = [
+            "## Migration Critical Configuration",
+            "",
+            "| Category | Count | Interpretation |",
+            "| :--- | ---: | :--- |",
+        ]
+        for label, key in rows:
+            value = summary[key]
+            interpretation = (
+                "blocked by unresolved dependency"
+                if key in {"unresolved_dependencies", "generation_blockers"} and value
+                else "parsed but partial"
+                if key == "partial_objects" and value
+                else "extract-only/source-only"
+                if key == "source_only_objects" and value
+                else "unsupported"
+                if key == "unsupported_objects" and value
+                else "parse error"
+                if key == "parse_error_objects" and value
+                else "parsed and normalized"
+            )
+            lines.append(f"| {label} | {value} | {interpretation} |")
+        lines.extend([
+            "",
+            "### Extraction State Counts",
+            "",
+            "| State | Count |",
+            "| :--- | ---: |",
+        ])
+        for status in ExtractionStatus:
+            lines.append(
+                f"| {status.value} | {summary['status_counts'].get(status.value, 0)} |"
+            )
         return "\n".join(lines)
 
     def _render_header(self) -> str:

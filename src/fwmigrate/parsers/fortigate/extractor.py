@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from typing import Dict, Optional
 
 from fwmigrate.extraction.models import (
     ExtractionResult,
     ExtractionStatus,
+    SourceCommand,
+    SourceInventoryItem,
     UnsupportedItem,
 )
 from fwmigrate.parsers.fortigate.coverage import (
@@ -45,6 +48,8 @@ SOURCE_ONLY_OPERATIONAL_SECTIONS = {
     "firewall access-proxy", "firewall access-proxy6",
     "firewall access-proxy-virtual-host", "firewall access-proxy-ssh-client-cert",
     "firewall ipv6-eh-filter",
+    "firewall address6-template",
+    "firewall ippool_grp",
     "endpoint-control fctems-override",
     "vpn ssl web realm", "vpn ssl web user-bookmark", "vpn ssl web group-bookmark",
     "vpn ipsec manualkey-interface",
@@ -74,20 +79,298 @@ INTERFACE_IPV6_TYPED_COMMANDS = frozenset({
     "ip6-prefix-mode", "ip6-reachable-time", "ip6-retrans-time", "ip6-subnet",
     "ip6-upstream-interface",
 })
+
+IPV6_TYPED_CHILDREN = frozenset({
+    "ip6-extra-addr",
+    "ip6-prefix-list",
+    "ip6-delegated-prefix-list",
+    "dhcp6-iapd-list",
+    "vrrp6",
+})
+IPV6_CHILD_FIELDS = {
+    "ip6-extra-addr": set(),
+    "ip6-prefix-list": {
+        "autonomous-flag", "dnssl", "onlink-flag",
+        "preferred-life-time", "rdnss", "valid-life-time",
+    },
+    "ip6-delegated-prefix-list": {
+        "autonomous-flag", "delegated-prefix-iaid", "onlink-flag",
+        "rdnss", "rdnss-service", "subnet", "upstream-interface",
+    },
+    "dhcp6-iapd-list": {"prefix-hint", "prefix-hint-plt", "prefix-hint-vlt"},
+    "vrrp6": {
+        "accept-mode", "adv-interval", "ignore-default-route", "preempt",
+        "priority", "start-time", "status", "vrdst6", "vrdst6-priority",
+        "vrgrp", "vrip6",
+    },
+}
+
+
 def _is_typed_ipv6_interface_inventory(item) -> bool:
-    """Identify the simple IPv6 interface block already represented in IR."""
+    """Identify the IPv6 interface subtree represented by typed source models."""
     if "interface-nested-config" not in item.notes:
         return False
     if not item.source_path.endswith(" interface ipv6"):
         return False
     if not all(
-        command.operation == "set"
+        command.operation in {"set", "append", "unset"}
         and str(command.key).replace("_", "-").lower()
         in INTERFACE_IPV6_TYPED_COMMANDS
         for command in item.commands
     ):
         return False
-    return not item.children
+
+    def valid_child(node, section_name: Optional[str] = None) -> bool:
+        current_section = section_name
+        if node.source_path != item.source_path:
+            suffix = node.source_path[len(item.source_path):].strip()
+            if suffix:
+                current_section = suffix.split()[0]
+        if current_section and current_section not in IPV6_TYPED_CHILDREN:
+            return False
+        allowed_fields = IPV6_CHILD_FIELDS.get(current_section, set())
+        for command in node.commands:
+            key = str(command.key).replace("_", "-").lower()
+            if command.operation not in {"set", "append", "unset"}:
+                return False
+            if current_section and key not in allowed_fields:
+                return False
+        return all(valid_child(child, current_section) for child in node.children)
+
+    return all(valid_child(child) for child in item.children)
+
+
+_GENERIC_CANONICAL_REVIEW_BLOCKER = (
+    "One or more traffic-affecting canonical objects require manual review"
+)
+
+
+def _find_unquoted_hash(line: str) -> int | None:
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and quote is not None:
+            escaped = True
+            continue
+        if quote is not None:
+            if char == quote:
+                quote = None
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            continue
+        if char == "#":
+            return index
+    return None
+
+
+def _unsupported_source_lines(text: str) -> list[tuple[int, str, str]]:
+    findings: list[tuple[int, str, str]] = []
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if re.match(r"^select(?:\s+|$)", stripped, flags=re.IGNORECASE):
+            findings.append((line_number, "select", stripped))
+            continue
+        hash_index = _find_unquoted_hash(raw_line)
+        if hash_index is not None and raw_line[:hash_index].strip():
+            findings.append((line_number, "inline-comment", stripped))
+    return findings
+
+
+def _normalize_complete_vip_groups(ir) -> None:
+    for group in getattr(ir, "virtual_ip_groups", []):
+        if getattr(group, "unresolved_members", []):
+            continue
+        if getattr(group, "source_attributes", {}):
+            continue
+        group.migration_status = "NORMALIZED"
+        group.requires_manual_review = False
+        if getattr(group, "audit_note", None) and "unresolved" not in group.audit_note.lower():
+            group.audit_note = None
+
+
+def _critical_review_objects(ir):
+    ipv4_pools = [
+        pool for pool in getattr(ir, "ip_pools", [])
+        if getattr(pool, "address_family", "ipv4") == "ipv4"
+    ]
+    collections = (
+        getattr(ir, "interfaces", []),
+        getattr(ir, "policies", []),
+        getattr(ir, "multicast_policies", []),
+        getattr(ir, "nat_rules", []),
+        getattr(ir, "routes", []),
+        getattr(ir, "addresses", []),
+        getattr(ir, "address_groups", []),
+        getattr(ir, "services", []),
+        getattr(ir, "service_groups", []),
+        ipv4_pools,
+        getattr(ir, "virtual_ips", []),
+    )
+    for collection in collections:
+        yield from collection
+
+
+def _sync_vip_group_status(result) -> None:
+    ir = result.canonical_ir
+    groups = {
+        (
+            getattr(group, "source_context", None) or "root",
+            group.name,
+            getattr(group, "address_family", "ipv4"),
+        ): group
+        for group in getattr(ir, "virtual_ip_groups", [])
+    }
+    for item in result.inventory_items:
+        if item.source_path not in {"firewall vipgrp", "firewall vipgrp6"} or not item.name:
+            continue
+        context = item.source_context or "root"
+        family = "ipv6" if item.source_path.endswith("vipgrp6") else "ipv4"
+        group = groups.get((context, item.name, family))
+        if (
+            group
+            and group.migration_status == "NORMALIZED"
+            and not group.requires_manual_review
+            and not getattr(group, "source_attributes", {})
+        ):
+            item.status = ExtractionStatus.NORMALIZED
+            item.requires_manual_review = False
+
+    for section in result.source_sections:
+        if section.path not in {"firewall vipgrp", "firewall vipgrp6"}:
+            continue
+        family = "ipv6" if section.path.endswith("vipgrp6") else "ipv4"
+        context = section.source_context or "root"
+        section_groups = [
+            group
+            for (group_context, _, item_family), group in groups.items()
+            if group_context == context and item_family == family
+        ]
+        if section_groups and all(
+            group.migration_status == "NORMALIZED"
+            and not group.requires_manual_review
+            and not getattr(group, "source_attributes", {})
+            for group in section_groups
+        ):
+            section.status = ExtractionStatus.NORMALIZED
+
+
+def _remove_resolved_source_only_blockers(result) -> None:
+    ir = result.canonical_ir
+    blockers = list(result.blocking_reasons)
+    if _GENERIC_CANONICAL_REVIEW_BLOCKER in blockers:
+        still_unsafe = any(
+            getattr(obj, "requires_manual_review", False)
+            or getattr(obj, "migration_status", "NORMALIZED") != "NORMALIZED"
+            or bool(getattr(obj, "review_reasons", []))
+            for obj in _critical_review_objects(ir)
+        )
+        if not still_unsafe:
+            blockers.remove(_GENERIC_CANONICAL_REVIEW_BLOCKER)
+    result.blocking_reasons = list(dict.fromkeys(blockers))
+    ir.generation_blocking_reasons = list(result.blocking_reasons)
+    result.generation_safe = not result.blocking_reasons
+    result.migration_complete = not result.blocking_reasons
+    ir.generation_safe = result.generation_safe
+
+
+def _record_unsupported_syntax(
+    result,
+    findings: list[tuple[int, str, str]],
+) -> None:
+    if not findings:
+        return
+    for line_number, kind, raw in findings:
+        if kind == "select":
+            parts = raw.split()
+            values = parts[1:]
+            message = (
+                f"Unsupported FortiOS select operation at line {line_number}; "
+                "interactive selection semantics are not applied during configuration extraction."
+            )
+            result.inventory_items.append(
+                SourceInventoryItem(
+                    domain="unsupported-cli",
+                    source_path="unsupported select",
+                    commands=[
+                        SourceCommand(
+                            operation="select",
+                            key=values[0] if values else "",
+                            values=values[1:] if len(values) > 1 else [],
+                            line_number=line_number,
+                            status=ExtractionStatus.UNSUPPORTED,
+                            requires_manual_review=True,
+                        )
+                    ],
+                    status=ExtractionStatus.UNSUPPORTED,
+                    requires_manual_review=True,
+                    notes=["unsupported-interactive-operation"],
+                )
+            )
+        else:
+            message = (
+                f"Unsupported unquoted inline comment syntax at line {line_number}; "
+                "the source line is retained for review instead of guessing where the command ends."
+            )
+        result.unsupported_items.append(
+            UnsupportedItem(
+                source_path="raw configuration",
+                reason=message,
+                requires_manual_review=True,
+                raw_capture=raw,
+            )
+        )
+        result.blocking_reasons.append(message)
+    result.blocking_reasons = list(dict.fromkeys(result.blocking_reasons))
+    result.requires_manual_review = True
+    result.generation_safe = False
+    result.migration_complete = False
+    ir = result.canonical_ir
+    ir.requires_manual_review = True
+    ir.generation_safe = False
+    ir.generation_blocking_reasons = list(
+        dict.fromkeys([*ir.generation_blocking_reasons, *result.blocking_reasons])
+    )
+
+
+def _apply_structured_extraction_regressions(result) -> None:
+    for inventory in result.inventory_items:
+        if _is_typed_ipv6_interface_inventory(inventory):
+            inventory.requires_manual_review = bool(
+                inventory.notes and any(
+                    note.startswith("unresolved-reference:")
+                    or note.startswith("incompatible-")
+                    for note in inventory.notes
+                )
+            )
+
+    reviewed_nested_ipv6 = any(
+        interface.requires_manual_review
+        and any(node.name == "ipv6" for node in interface.nested_source_configs)
+        for interface in result.canonical_ir.interfaces
+    )
+    if not reviewed_nested_ipv6:
+        return
+
+    nested_reason = (
+        "FortiGate nested interface configuration contains source-specific "
+        "IPv6 behavior requiring target-platform review"
+    )
+    if any("nested interface configuration" in reason for reason in result.blocking_reasons):
+        return
+    result.blocking_reasons.append(nested_reason)
+    result.requires_manual_review = True
+    result.migration_complete = False
+    result.generation_safe = False
+    result.canonical_ir.requires_manual_review = True
+    result.canonical_ir.generation_safe = False
+    if nested_reason not in result.canonical_ir.generation_blocking_reasons:
+        result.canonical_ir.generation_blocking_reasons.append(nested_reason)
 
 
 def extract_fortigate_config(
@@ -427,7 +710,7 @@ def extract_fortigate_config(
     ir_config.generation_blocking_reasons = list(blocking_reasons)
     ir_config.requires_manual_review = requires_review
 
-    return ExtractionResult(
+    result = ExtractionResult(
         canonical_ir=ir_config,
         source_sections=source_sections,
         inventory_items=inventory_items,
@@ -438,3 +721,13 @@ def extract_fortigate_config(
         generation_safe=not blocking_reasons,
         blocking_reasons=blocking_reasons,
     )
+    _normalize_complete_vip_groups(result.canonical_ir)
+    _sync_vip_group_status(result)
+    _remove_resolved_source_only_blockers(result)
+    _apply_structured_extraction_regressions(result)
+    _record_unsupported_syntax(result, _unsupported_source_lines(text))
+    result.requires_manual_review = bool(result.blocking_reasons) or any(
+        item.requires_manual_review for item in result.inventory_items
+    )
+    result.canonical_ir.requires_manual_review = result.requires_manual_review
+    return result

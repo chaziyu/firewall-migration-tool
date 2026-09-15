@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
+from fwmigrate.parsers.fortigate.section_registry import SectionSpec
 
 
 @dataclass(frozen=True)
@@ -159,4 +160,28 @@ def evaluate_commands(
         attributes=sanitize_source_attributes(attributes),
         explicit_fields=explicit,
         extra_settings=sanitize_source_attributes(extras),
+    )
+
+
+def evaluate_section_commands(
+    section_path: str,
+    commands: Iterable[Any],
+    spec: SectionSpec | None,
+    *,
+    initial: Mapping[str, Any] | None = None,
+) -> CommandEvaluation:
+    """Evaluate a section using the registry's declared field semantics."""
+
+    if spec is None:
+        return evaluate_commands(commands, initial=initial)
+
+    return evaluate_commands(
+        commands,
+        list_fields=spec.list_fields,
+        integer_fields=spec.integer_fields,
+        integer_list_fields=spec.integer_list_fields,
+        scalar_fields=spec.scalar_fields,
+        explicit_fields=spec.explicit_fields,
+        secret_fields=spec.secret_fields,
+        initial=initial,
     )

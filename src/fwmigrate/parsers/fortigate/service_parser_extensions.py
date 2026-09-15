@@ -76,31 +76,3 @@ def parse_service_port_ranges(value: Optional[str]) -> list[FGPortRange]:
 
     return ranges
 
-
-def install_service_parser_extensions(parser_module) -> None:
-    """Install Phase 26/27 behavior on the existing parser implementation."""
-
-    parser_cls = parser_module.FortiGateParser
-    parser_cls._parse_port_ranges = staticmethod(parse_service_port_ranges)
-
-    # Make the service-group member contract explicit rather than relying on
-    # the parser's broad fallback ``member`` list handling.
-    parser_module.SECTION_LIST_FIELDS.setdefault(
-        "firewall service group", set()
-    ).add("member")
-
-    if getattr(parser_cls.build_model, "_phase_26_27_wrapped", False):
-        return
-
-    original_build_model = parser_cls.build_model
-
-    def build_model(self, section_path, attributes):
-        if section_path == "firewall service custom":
-            for field in ("protocol_number", "icmptype", "icmpcode", "color"):
-                self._normalize_optional_int(attributes, field)
-        elif section_path == "firewall service group":
-            self._normalize_optional_int(attributes, "color")
-        return original_build_model(self, section_path, attributes)
-
-    build_model._phase_26_27_wrapped = True
-    parser_cls.build_model = build_model
