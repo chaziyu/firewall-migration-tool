@@ -74,6 +74,7 @@ class IRRouteNextHopType(str, Enum):
     FQDN = "fqdn"
     NEXT_VR = "next-vr"
     NEXT_LR = "next-lr"
+    NEXT_ROUTING_INSTANCE = "next-routing-instance"
     DISCARD = "discard"
     NONE = "none"
 

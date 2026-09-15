@@ -45,7 +45,9 @@ from fwmigrate.parsers.checkpoint.coverage import (
     apply_checkpoint_coverage,
     create_section_result,
 )
-from fwmigrate.parsers.checkpoint.gaia import parse_gaia_configuration
+from fwmigrate.parsers.checkpoint.gaia_scope_policy import parse_gaia_configuration
+from fwmigrate.parsers.checkpoint.fidelity import apply_checkpoint_fidelity
+from fwmigrate.parsers.checkpoint.group_fidelity import apply_checkpoint_group_fidelity
 from fwmigrate.parsers.checkpoint.cluster import extract_clusters
 from fwmigrate.parsers.checkpoint.performance import extract_performance_settings
 from fwmigrate.parsers.checkpoint.certificates import attach_certificate_usages, extract_certificates
@@ -1278,4 +1280,6 @@ def extract_checkpoint_config(
         blocking_reasons=blocking_reasons,
     )
 
-    return sanitize_extraction_result(raw_result)
+    result = sanitize_extraction_result(raw_result)
+    result = apply_checkpoint_group_fidelity(result)
+    return apply_checkpoint_fidelity(result)

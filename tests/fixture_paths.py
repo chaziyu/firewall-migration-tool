@@ -13,6 +13,7 @@ FORTIGATE_P0_EDGE_CASES_FIXTURE = (
 )
 PALO_ALTO_FIXTURE = FIXTURES_DIR / "example_palo_alto.xml"
 CISCO_ASA_FIXTURE = FIXTURES_DIR / "example_cisco_asa.cfg"
+CISCO_FTD_FIXTURE = FIXTURES_DIR / "cisco_ftd" / "fdm_nat_pipeline_conformance.json"
 CHECKPOINT_FIXTURE = FIXTURES_DIR / "checkpoint" / "minimal_bundle.json"
 CHECKPOINT_AMBIGUOUS_FIXTURE = FIXTURES_DIR / "checkpoint" / "legacy_ambiguous_rulebase.json"
 CHECKPOINT_GOLDEN_FIXTURE = FIXTURES_DIR / "checkpoint" / "r81_golden_matrix.json"
@@ -23,6 +24,7 @@ VENDOR_FIXTURES = {
     "fortigate": FORTIGATE_FIXTURE,
     "palo_alto": PALO_ALTO_FIXTURE,
     "cisco_asa": CISCO_ASA_FIXTURE,
+    "cisco_ftd": CISCO_FTD_FIXTURE,
     "checkpoint": CHECKPOINT_FIXTURE,
     "juniper_srx": JUNIPER_SRX_FIXTURE,
 }

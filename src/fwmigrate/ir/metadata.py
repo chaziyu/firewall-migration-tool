@@ -8,7 +8,7 @@ from fwmigrate.ir.enums import MigrationConfidence
 
 class IRMetadata(BaseModel):
     hostname: Optional[str] = None
-    source_vendor: str = "fortinet"
+    source_vendor: str
     source_product: Optional[str] = None
     target_vendor: Optional[str] = None
     input_type: str = "Unknown"

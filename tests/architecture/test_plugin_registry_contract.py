@@ -51,3 +51,11 @@ def test_conflicting_registration_fails(monkeypatch):
     monkeypatch.setitem(PluginRegistry._parser_specs, vendor_id, first)
     with pytest.raises(PluginRegistrationError):
         PluginRegistry.register_parser(second)
+
+
+def test_checkpoint_pipeline_does_not_rebind_extractor_at_import_time():
+    from fwmigrate.parsers.checkpoint import extract_checkpoint_config
+    from fwmigrate.parsers.checkpoint.extractor import parse_gaia_configuration
+
+    assert extract_checkpoint_config.__module__.endswith("checkpoint.extractor")
+    assert parse_gaia_configuration.__module__.endswith("checkpoint.gaia_scope_policy")

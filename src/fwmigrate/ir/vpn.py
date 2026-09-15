@@ -144,9 +144,31 @@ class IRVPNGateway(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class IRRemoteAccessVPN(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    protocols: List[str] = Field(default_factory=list)
+    listener_interfaces: List[str] = Field(default_factory=list)
+    client_ipv4_pools: List[str] = Field(default_factory=list)
+    client_ipv6_pools: List[str] = Field(default_factory=list)
+    dns_servers: List[str] = Field(default_factory=list)
+    wins_servers: List[str] = Field(default_factory=list)
+    split_include: List[str] = Field(default_factory=list)
+    split_exclude: List[str] = Field(default_factory=list)
+    authentication: List[str] = Field(default_factory=list)
+    certificate: Optional[str] = None
+    idle_timeout: Optional[int] = None
+    session_timeout: Optional[int] = None
+    client_settings: Dict[str, Any] = Field(default_factory=dict)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
 __all__ = [
     "IRVPNTunnel",
     "IRVPNPhase2",
     "IRVPNCommunity",
     "IRVPNGateway",
+    "IRRemoteAccessVPN",
 ]

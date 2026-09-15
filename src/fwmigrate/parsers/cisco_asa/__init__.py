@@ -1,6 +1,6 @@
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
 from fwmigrate.core.base_parser import BaseSourceParser
-from fwmigrate.ir import IRConfig
+from fwmigrate.extraction import finalize_extraction
 from fwmigrate.parsers.cisco_asa.parser import CiscoASAParser
 from fwmigrate.parsers.cisco_asa.phase10_17 import apply_phase_10_17_patches
 from fwmigrate.parsers.cisco_asa.phase10_17_safety import apply_phase_10_17_safety
@@ -32,12 +32,10 @@ class CiscoASASourceParser(BaseSourceParser):
     def supported_extensions(self) -> List[str]:
         return [".cfg", ".txt", ".conf"]
 
-    def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
-        parser = CiscoASAParser(content, zone_mapping=zone_mapping)
-        return parser.transform_to_ir()
-
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None):
-        return extract_cisco_asa_config(content, zone_mapping=zone_mapping)
+        return finalize_extraction(
+            extract_cisco_asa_config(content, zone_mapping=zone_mapping)
+        )
 
 
 __all__ = ["CiscoASASourceParser", "extract_cisco_asa_config"]

@@ -746,7 +746,7 @@ variable "fortios_vdom" {
                 nat_rules_by_policy.setdefault(key, []).append(rule)
 
         # Policies
-        central_rules = [rule for rule in ir.nat_rules if rule.type == NATType.CENTRAL]
+        central_rules = [rule for rule in ir.nat_rules if rule.is_central_rulebase]
         checkpoint_withheld = []
         if ir.metadata.source_vendor == "checkpoint":
             ip_pool_names = {pool.name for pool in ir.ip_pools}
@@ -759,7 +759,7 @@ variable "fortios_vdom" {
         for rule, reason in checkpoint_withheld:
             main_tf_lines.append(f"# Central NAT {rule.name} withheld: {reason}\n")
         for index, rule in enumerate(central_rules, 1):
-            if rule.type != NATType.CENTRAL:
+            if not rule.is_central_rulebase:
                 continue
             reason = nat_capabilities("fortigate").unsupported_reason(rule)
             if reason or not rule.safe_for_target_generation:

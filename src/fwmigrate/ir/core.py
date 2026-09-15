@@ -12,18 +12,26 @@ from fwmigrate.ir.enums import (
     MigrationConfidence,
     IRRouteNextHopType,
 )
-from .common import IRExecutionContext
+from .common import IRExecutionContext, IRVirtualFirewallContext
 from .metadata import IRMetadata, IRCheckpointManagementAccess, IRCheckpointPerformanceSettings, IRCheckpointSecureXLSettings, IRCheckpointCoreXLSettings, IRAuditEntry
 from .provenance import IRSourceConfigCommand, IRSourceConfigNode
 from .network import IRZoneTaggingEntry, IRZone, IRInterfaceGroup, IRInterfaceSecondaryIP, IRInterfaceIPv6Address, IRInterfaceIPv4Address, IRInterfaceIPv6PrefixAdvertisement, IRInterfaceIPv6DelegatedPrefix, IRInterfaceDHCPv6IAPD, IRInterfaceVRRP6, IRCheckpointInterfaceContext, IRInterface, IRClusterInterface, IRHighAvailability, IRDHCPIPRange, IRDHCPExcludeRange, IRDHCPReservation, IRDHCPOption, IRDHCPServer, IRSystemSettings, IRCheckpointSICMetadata, IRManagementPlaneSettings, IRNTPServer, IRNTPSettings, IRDNSSettings
 from .address import IRAddressTaggingEntry, IRMACAddressEntry, IRAddress, IRAddressGroupTaggingEntry, IRAddressGroup
 from .service import IRServicePort, IRServiceCategory, IRService, IRServiceGroup, IRSchedule, IRTrafficShaper, IRProxyAddress, IRWebProxySettings, IRApplication, IRApplicationGroup, IRApplicationCategory, IRInternetService, IRInternetServiceDefinitionPortRange, IRInternetServiceDefinitionEntry, IRInternetServiceDefinition, IRInternetServiceCustomPortRange, IRInternetServiceCustomEntry, IRInternetServiceCustom, IRInternetServiceCustomGroup, IRInternetServiceAdditionPortRange, IRInternetServiceAdditionEntry, IRInternetServiceAddition, IRInternetServiceAppend, IRInternetServiceExtensionIPv4Range, IRInternetServiceExtensionIPv6Range, IRInternetServiceExtensionPortRange, IRInternetServiceExtensionDisableEntry, IRInternetServiceExtensionEntry, IRInternetServiceExtension, IRInternetServiceGroup, IRScheduleGroup
 from .policy import IRSecurityProfileGroup, IRHTTPSInspectionRule, IRCheckpointIdentitySource, IRCheckpointAccessRole, IRCheckpointAccessRule, IRCheckpointThreatPreventionRule, IRCheckpointThreatPreventionProfile, IRCustomURLCategory, IRIPSSensorExemptIP, IRIPSSensorEntry, IRIPSSensor, IRCheckpointPolicyPackage, IRCheckpointAccessLayer, IRCheckpointDomain, IRCheckpointGlobalAssignment, IRMulticastPolicy, IRPolicy, IRDefaultSecurityRule, IRFirewallFilterTerm, IRFirewallFilter, IRZTNAProvider, IRSessionHelper, IRSessionTTLOverride, IRSessionTTLSettings, IRFortiGateSourceRule, IRLocalDeviceAccessRule
-from .nat import IRIPPool, IRIPPoolRange, IRVirtualIPRealServer, IRVirtualIPGSLBPublicIP, IRVirtualIPQUICSettings, IRVirtualIPSSLCipherSuite, IRVirtualIP, IRNATPortRange, IRNATServiceMatch, IRNATDestinationDistribution, IRNATDestinationDNSRewrite, IRNATAddressRangeMapping, IRNATRuntimeBehavior, IRNATTranslationAddressSelection, IRNATSourceTranslationFallback, IRNATRule, IRVirtualIPGroup
-from .routing import IRRoutePathMonitorDestination, IRRoutePathMonitor, IRRoute, IRPBFSymmetricReturn, IRPolicyBasedForwardingRule, IRPolicyRoute, IRFortiGatePolicyRoute, IRManagementServiceRoute, IRSDWANZone, IRSDWANMember, IRSDWANSLA, IRSDWANHealthCheck, IRSDWANRuleSLA, IRSDWANRule, IRSDWANDuplicationRule, IRSDWANNeighbor, IRSDWAN
+from .nat import IRNATPool, IRIPPool, IRIPPoolRange, IRVirtualIPRealServer, IRVirtualIPGSLBPublicIP, IRVirtualIPQUICSettings, IRVirtualIPSSLCipherSuite, IRPublishedService, IRVirtualIP, IRNATPortRange, IRNATServiceMatch, IRNATDestinationDistribution, IRNATDestinationDNSRewrite, IRNATAddressRangeMapping, IRNATRuntimeBehavior, IRNATTranslationAddressSelection, IRNATSourceTranslationFallback, IRNATRule, IRPublishedServiceGroup, IRVirtualIPGroup
+from .routing import IRRoutePathMonitorDestination, IRPathMonitor, IRRoutePathMonitor, IRRoute, IRPBFSymmetricReturn, IRForwardingPolicy, IRPolicyBasedForwardingRule, IRPolicyRoute, IRFortiGatePolicyRoute, IRManagementServiceRoute, IRSDWANZone, IRSDWANMember, IRSDWANSLA, IRSDWANHealthCheck, IRSDWANRuleSLA, IRSDWANRule, IRSDWANDuplicationRule, IRSDWANNeighbor, IRSDWAN
 from .vpn import IRVPNTunnel, IRVPNPhase2, IRVPNCommunity, IRVPNGateway
+from .vpn import IRRemoteAccessVPN
+from .service import IRProxyRequestMatch, IRWebProxy
+from .policy import IREndpointContextProvider
+from .security_profiles import IRDNSProxy, IRLogDestinationProfile, IRLogForwardingPolicy, IRMonitorProfile, IRQoSProfile, IRReportDefinition
+from .policy import IRAccessRole, IRIdentityMappingProvider, IRIdentitySource, IRManagementAccessPolicy, IRSecurityPolicy
+from .security_profiles import IRAuthenticationPolicy, IRAuthenticationProfile
 from .security_profiles import IRSecurityProfileRule, IRSecurityProfileCredentialEnforcement, IRSecurityProfileDefinition, IRCertificate, IRSSHKey, IRIdentityServerEndpoint, IRUserLDAP, IRUserRADIUSAccountingServer, IRUserRADIUS, IRFSSOEndpoint, IRFSSOProvider, IRUserTACACS, IRFSSOADGroup, IRUserSAML, IRLocalUser, IRUserGroupMatch, IRUserGroupGuest, IRIdentityDependency, IRUserGroup, IRAdministrator, IRAdminProfilePermissionBlock, IRAdminProfile, IRFortiToken, IRSSLVPNHostCheckItem, IRSSLVPNHostCheck, IRFSSOPollingADGroup, IRFSSOPolling, IRSSLVPNPortalSplitDNS, IRSSLVPNPortalBookmarkFormData, IRSSLVPNPortalBookmark, IRSSLVPNPortalBookmarkGroup, IRSSLVPNPortalLandingPageFormData, IRSSLVPNPortalLandingPage, IRSSLVPNPortalMACAddressRule, IRSSLVPNPortalOSCheck, IRSSLVPNPortal, IRSSLVPNAuthenticationRule, IRSSLVPNSettings, IRDoSAnomaly, IRDoSPolicy, IRFirewallSniffer, IRAuthenticationScheme, IRAuthenticationSequence, IRSSLTLSServiceProfile, IRAuthenticationRule, IRUserAuthenticationSettings, IRUserQuarantineSettings, IRGlobalProtectClientAuthentication, IRGlobalProtectGatewayPriorityRule, IRGlobalProtectExternalGateway, IRGlobalProtectAppSetting, IRGlobalProtectPortalClientConfig, IRGlobalProtectPortalRootCA, IRGlobalProtectPortal, IRGlobalProtectGatewayRole, IRGlobalProtectRemoteUserTunnelConfig, IRGlobalProtectGateway, IRGlobalProtectNetworkGateway, IRPANLogServerEndpoint, IRPANLogServerProfile, IRPANLogForwardingMatch, IRPANLogForwardingProfile, IRPANManagementLogSetting, IRPANDNSProxyDomainServer, IRPANDNSProxy, IRPANMonitorProfile, IRPANQoSClass, IRPANQoSProfile, IRPANSDWANInterfaceProfile, IRPANSDWANLinkSettings, IRPANSDWANPathQualityProfile, IRPANSDWANTrafficDistributionProfile, IRPANSDWANRule, IRPANHAInterface, IRPANHALinkMonitorGroup, IRPANHAPathMonitorGroup, IRPANVirtualWire, IRPANHighAvailability, IRPANDeviceOperationalSettings, IRPANVsysSettings, IRPANBotnetUnknownApplicationThreshold, IRPANBotnetReportSettings, IRPANCustomReport
 from .config import IRConfig
+from .extensions import IRCiscoASAExtensions, IRCiscoFTDExtensions, IRCheckPointExtensions, IRFortiOSExtensions, IRJunosExtensions, IRPANOSExtensions, IRVendorExtensions
+from .version import CURRENT_IR_SCHEMA_VERSION, LEGACY_IR_SCHEMA_VERSION
 
 
 __all__ = [
@@ -37,7 +45,25 @@ __all__ = [
     "NATSourcePortBehavior",
     "MigrationConfidence",
     "IRRouteNextHopType",
+    "IRVirtualFirewallContext",
     "IRExecutionContext",
+    "IRSecurityPolicy",
+    "IRIdentitySource",
+    "IRIdentityMappingProvider",
+    "IRAccessRole",
+    "IRAuthenticationProfile",
+    "IRAuthenticationPolicy",
+    "IRManagementAccessPolicy",
+    "IRRemoteAccessVPN",
+    "IRProxyRequestMatch",
+    "IRWebProxy",
+    "IREndpointContextProvider",
+    "IRLogDestinationProfile",
+    "IRLogForwardingPolicy",
+    "IRDNSProxy",
+    "IRMonitorProfile",
+    "IRQoSProfile",
+    "IRReportDefinition",
     "IRMetadata",
     "IRCheckpointManagementAccess",
     "IRCheckpointPerformanceSettings",
@@ -133,12 +159,14 @@ __all__ = [
     "IRSessionTTLSettings",
     "IRFortiGateSourceRule",
     "IRLocalDeviceAccessRule",
+    "IRNATPool",
     "IRIPPool",
     "IRIPPoolRange",
     "IRVirtualIPRealServer",
     "IRVirtualIPGSLBPublicIP",
     "IRVirtualIPQUICSettings",
     "IRVirtualIPSSLCipherSuite",
+    "IRPublishedService",
     "IRVirtualIP",
     "IRNATPortRange",
     "IRNATServiceMatch",
@@ -149,11 +177,14 @@ __all__ = [
     "IRNATTranslationAddressSelection",
     "IRNATSourceTranslationFallback",
     "IRNATRule",
+    "IRPublishedServiceGroup",
     "IRVirtualIPGroup",
     "IRRoutePathMonitorDestination",
+    "IRPathMonitor",
     "IRRoutePathMonitor",
     "IRRoute",
     "IRPBFSymmetricReturn",
+    "IRForwardingPolicy",
     "IRPolicyBasedForwardingRule",
     "IRPolicyRoute",
     "IRFortiGatePolicyRoute",
@@ -255,4 +286,13 @@ __all__ = [
     "IRPANBotnetReportSettings",
     "IRPANCustomReport",
     "IRConfig",
+    "CURRENT_IR_SCHEMA_VERSION",
+    "LEGACY_IR_SCHEMA_VERSION",
+    "IRVendorExtensions",
+    "IRFortiOSExtensions",
+    "IRPANOSExtensions",
+    "IRCheckPointExtensions",
+    "IRCiscoASAExtensions",
+    "IRCiscoFTDExtensions",
+    "IRJunosExtensions",
 ]

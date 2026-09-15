@@ -2863,7 +2863,10 @@ class IRExcelExporter:
             ("IPv6 Internet Service Source Names", "internet_service6_src_name"),
         )
         rows = []
-        for item in sorted(self.ir.security_policies, key=lambda value: value.source_order):
+        for item in sorted(
+            self.ir.vendor_extensions.fortios.security_policies,
+            key=lambda value: value.source_order,
+        ):
             attrs = item.source_attributes
             profiles = {
                 key: attrs[key]

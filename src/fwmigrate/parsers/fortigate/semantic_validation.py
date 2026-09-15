@@ -50,7 +50,7 @@ def _rule_for_dependency(dependency: DependencyRecord, ir_config: IRConfig):
     collections = {
         "firewall local-in-policy": ir_config.local_in_policies,
         "firewall local-in-policy6": ir_config.local_in_policies,
-        "firewall security-policy": ir_config.security_policies,
+        "firewall security-policy": ir_config.vendor_extensions.fortios.security_policies,
         "firewall policy": ir_config.policies,
     }
     identifier = "source_rule_id" if dependency.source_path == "firewall policy" else "source_id"

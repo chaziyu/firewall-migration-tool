@@ -30,7 +30,7 @@ class NATCapabilities:
             and not self.persistent_dynamic_ip_and_port
         ):
             return "persistent dynamic IP-and-port NAT"
-        if rule.type == NATType.CENTRAL and not self.central_nat:
+        if rule.is_central_rulebase and not self.central_nat:
             return "central NAT"
         if rule.type == NATType.ADDRESS_TRANSLATION and not self.sctp_address_translation:
             return "SCTP address translation"
@@ -114,7 +114,7 @@ def plan_fortigate_central_snat(
     if rule.type != NATType.SOURCE or rule.identity or rule.exemption:
         return None
     updates = {
-        "type": NATType.CENTRAL,
+        "type": NATType.SOURCE,
         "source_origin": "checkpoint-source-nat-to-fortigate-central",
     }
     return rule.model_copy(update=updates)
