@@ -71,6 +71,7 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
             optimize=optimize,
             source_name=Path(input).name,
             zone_mapping=migration_config.zone_mapping,
+            context_mapping=migration_config.context_mapping,
         ))
 
         if not result.generation_allowed:

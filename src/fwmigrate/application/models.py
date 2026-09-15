@@ -20,7 +20,8 @@ class MigrationRequest:
     prune_unused: bool = False
     source_name: Optional[str] = None
     zone_mapping: Dict[str, str] = field(default_factory=dict)
-    target_options: Dict[str, str] = field(default_factory=dict)
+    context_mapping: Dict[str, str] = field(default_factory=dict)
+    target_options: Dict[str, object] = field(default_factory=dict)
     collect_metrics: bool = False
 
 

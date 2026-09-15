@@ -87,6 +87,9 @@ from fwmigrate.parsers.fortigate.fortios_746_ci_regression_fixes import (
 from fwmigrate.parsers.fortigate.dependency_resolution_safety_fix import (
     install_dependency_resolution_safety_fix,
 )
+from fwmigrate.parsers.fortigate.audit_remediation import (
+    install_fortios_746_audit_remediation,
+)
 
 
 def _phase_46_50_effective_node_attributes(
@@ -198,6 +201,10 @@ install_dependency_resolution_safety_fix(
     _dependencies_module,
     _extractor_module,
 )
+
+# Apply the 7.4.6 audit wrapper after dependency safety so unsupported raw
+# syntax and source-accounting checks observe the final extraction behavior.
+install_fortios_746_audit_remediation(_extractor_module)
 
 # Bind the public package alias only after all FortiGate extensions are installed.
 extract_fortigate_config = _extractor_module.extract_fortigate_config

@@ -77,41 +77,19 @@ _SCOPED_REFERENCE_RULES = {
 }
 
 _SCOPED_REFERENCE_TARGETS = {
-    # These fields identify actual interface objects. Do not inherit the
-    # resolver's broad legacy system-interface alias that also matches zones.
-    ("system interface", "interface"): {
-        "system interface",
-    },
-    ("system zone", "interface"): {
-        "system interface",
-    },
-    ("firewall ippool", "associated-interface"): {
-        "system interface",
-    },
-    ("firewall ippool", "arp-intf"): {
-        "system interface",
-    },
+    ("system interface", "interface"): {"system interface"},
+    ("system zone", "interface"): {"system interface"},
+    ("firewall ippool", "associated-interface"): {"system interface"},
+    ("firewall ippool", "arp-intf"): {"system interface"},
     ("firewall policy", "schedule"): {
         "firewall schedule recurring",
         "firewall schedule onetime",
         "firewall schedule group",
     },
-    ("firewall addrgrp", "member"): {
-        "firewall address",
-        "firewall addrgrp",
-    },
-    # FortiOS 7.4.6 documents exclude-member as an address object only, not a
-    # nested address group. Keep this stricter than normal member resolution.
-    ("firewall addrgrp", "exclude-member"): {
-        "firewall address",
-    },
-    ("firewall addrgrp6", "member"): {
-        "firewall address6",
-        "firewall addrgrp6",
-    },
-    ("firewall addrgrp6", "exclude-member"): {
-        "firewall address6",
-    },
+    ("firewall addrgrp", "member"): {"firewall address", "firewall addrgrp"},
+    ("firewall addrgrp", "exclude-member"): {"firewall address"},
+    ("firewall addrgrp6", "member"): {"firewall address6", "firewall addrgrp6"},
+    ("firewall addrgrp6", "exclude-member"): {"firewall address6"},
     ("firewall service group", "member"): {
         "firewall service custom",
         "firewall service group",
@@ -120,8 +98,6 @@ _SCOPED_REFERENCE_TARGETS = {
         "firewall schedule recurring",
         "firewall schedule onetime",
     },
-    # Preserve the existing system-zone alias and add the FortiOS 7.4.6
-    # SD-WAN-zone capability for Central SNAT interface selectors.
     ("firewall central-snat-map", "srcintf"): {
         "system interface",
         "system zone",
@@ -150,6 +126,11 @@ _SCOPED_REFERENCE_TARGETS = {
     },
 }
 
+_SRC_VIP_FILTER_REVIEW_REASON = (
+    "FortiGate VIP src-vip-filter enables reverse-SNAT source filtering and "
+    "requires source-specific review."
+)
+
 
 def _preserve_source_attribute(target: Any, key: str, value: Any) -> None:
     if value is None:
@@ -165,16 +146,34 @@ def _preserve_source_attribute(target: Any, key: str, value: Any) -> None:
         target.extra_settings = extra_settings
 
 
-def _mark_manual_review(target: Any, reason: str) -> None:
-    if hasattr(target, "review_reasons"):
-        review_reasons = list(getattr(target, "review_reasons", []) or [])
-        if reason not in review_reasons:
-            review_reasons.append(reason)
-        target.review_reasons = review_reasons
-    if hasattr(target, "requires_manual_review"):
-        target.requires_manual_review = True
+def _preserve_src_vip_filter(target: Any, setting: Optional[str]) -> None:
+    """Retain the FortiOS-only setting without claiming portable semantics."""
+    if setting is None:
+        return
+    _preserve_source_attribute(target, "src_vip_filter", setting)
+    if setting in {"enable", "disable"}:
+        _preserve_source_attribute(
+            target,
+            "src_vip_filter_enabled",
+            setting == "enable",
+        )
+
+
+def _mark_src_vip_filter_review(target: Any, setting: Optional[str]) -> None:
+    if setting != "enable":
+        return
+    target.requires_manual_review = True
     if hasattr(target, "migration_status"):
         target.migration_status = "PARTIALLY_NORMALIZED"
+    if hasattr(target, "review_reasons"):
+        reasons = list(getattr(target, "review_reasons", []) or [])
+        if _SRC_VIP_FILTER_REVIEW_REASON not in reasons:
+            reasons.append(_SRC_VIP_FILTER_REVIEW_REASON)
+        target.review_reasons = reasons
+    if hasattr(target, "audit_note"):
+        note = getattr(target, "audit_note", None)
+        if not note:
+            target.audit_note = _SRC_VIP_FILTER_REVIEW_REASON
 
 
 def install_policy_nat_preservation_extensions(
@@ -184,7 +183,6 @@ def install_policy_nat_preservation_extensions(
 ) -> None:
     """Install the scoped policy/NAT preservation and relationship fixes."""
 
-    # Parser.py resolves these model globals at runtime inside build_model().
     parser_module.FGInterface = FGInterface746
     parser_module.FGInterfaceSecondaryIP = FGInterfaceSecondaryIP746
     parser_module.FGVIP = FGVIP746
@@ -195,10 +193,6 @@ def install_policy_nat_preservation_extensions(
         "src_vip_filter"
     )
 
-    # These source fields are already parsed and retained. Register their
-    # relationship semantics so the extraction dependency registry can verify
-    # the referenced object in the same VDOM/context instead of leaving the
-    # relationship as an unvalidated string only.
     dependencies_module.REFERENCE_RULES.update(_SCOPED_REFERENCE_RULES)
     dependencies_module.REFERENCE_TARGET_SECTIONS.update(_SCOPED_REFERENCE_TARGETS)
 
@@ -229,26 +223,14 @@ def install_policy_nat_preservation_extensions(
 
         def _transform_virtual_ips(self: Any) -> None:
             original_transform_virtual_ips(self)
-            source_vips = {
-                (vip.source_context, vip.name): vip
-                for vip in self.fg.vips
-            }
+            source_vips = {(vip.source_context, vip.name): vip for vip in self.fg.vips}
             for virtual_ip in self.ir.virtual_ips:
-                source_vip = source_vips.get(
-                    (virtual_ip.source_context, virtual_ip.name)
-                )
+                source_vip = source_vips.get((virtual_ip.source_context, virtual_ip.name))
                 if source_vip is None:
                     continue
                 setting = getattr(source_vip, "src_vip_filter", None)
-                _preserve_source_attribute(virtual_ip, "src_vip_filter", setting)
-                if setting == "enable":
-                    _mark_manual_review(
-                        virtual_ip,
-                        (
-                            f"VIP '{source_vip.name}' enables src-vip-filter; "
-                            "FortiGate reverse-SNAT source filtering is source-specific."
-                        ),
-                    )
+                _preserve_src_vip_filter(virtual_ip, setting)
+                _mark_src_vip_filter_review(virtual_ip, setting)
 
         _transform_virtual_ips._policy_nat_preservation_wrapped = True
         transformer_cls._transform_virtual_ips = _transform_virtual_ips
@@ -262,10 +244,7 @@ def install_policy_nat_preservation_extensions(
 
         def _transform_nat(self: Any) -> None:
             original_transform_nat(self)
-            source_vips = {
-                (vip.source_context, vip.name): vip
-                for vip in self.fg.vips
-            }
+            source_vips = {(vip.source_context, vip.name): vip for vip in self.fg.vips}
             for nat_rule in self.ir.nat_rules:
                 vip_name = getattr(nat_rule, "source_vip_reference", None)
                 if not vip_name:
@@ -274,15 +253,8 @@ def install_policy_nat_preservation_extensions(
                 if source_vip is None:
                     continue
                 setting = getattr(source_vip, "src_vip_filter", None)
-                _preserve_source_attribute(nat_rule, "src_vip_filter", setting)
-                if setting == "enable":
-                    _mark_manual_review(
-                        nat_rule,
-                        (
-                            f"VIP '{source_vip.name}' enables src-vip-filter; "
-                            "reverse-SNAT source filtering must remain explicit."
-                        ),
-                    )
+                _preserve_src_vip_filter(nat_rule, setting)
+                _mark_src_vip_filter_review(nat_rule, setting)
 
         _transform_nat._policy_nat_preservation_wrapped = True
         transformer_cls._transform_nat = _transform_nat
