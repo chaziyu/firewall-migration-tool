@@ -84,6 +84,9 @@ from fwmigrate.parsers.fortigate.fortios_746_address_schedule_fixes import (
 from fwmigrate.parsers.fortigate.fortios_746_ci_regression_fixes import (
     install_fortios_746_ci_regression_fixes,
 )
+from fwmigrate.parsers.fortigate.audit_remediation import (
+    install_fortios_746_audit_remediation,
+)
 
 
 def _phase_46_50_effective_node_attributes(
@@ -108,13 +111,9 @@ def _phase_46_50_effective_node_attributes(
     )
 
 
-# Keep one operation engine. Phase 46-50 only adapts declarative field-spec
-# names and legacy positional calls; the semantics remain Phase 41's.
 _phase_46_50_module._effective_node_attributes = _phase_46_50_effective_node_attributes
 
 
-# Install FortiGate source-parser extensions in phase order so later wrappers
-# delegate through earlier behavior rather than replacing it.
 install_phase22_parser_support()
 install_phase_23_25_extensions(_parser_module)
 install_service_parser_extensions(_parser_module)
@@ -174,11 +173,8 @@ install_phase_46_50_regression_fixes(
 )
 install_routing_ngfw_semantics_fix(_transformer_module)
 
-# Phase 1 must compose with the final root model after all later installers.
 install_final_session_ttl_serialization(_parser_module)
 
-# Install the audited 7.4.6 address/schedule fixes against the final active
-# root model so no earlier serializer specialization is lost.
 install_fortios_746_address_schedule_fixes(
     _parser_module,
     _transformer_module,
@@ -188,8 +184,8 @@ install_fortios_746_ci_regression_fixes(
     _transformer_module,
     _coverage_module,
 )
+install_fortios_746_audit_remediation(_extractor_module)
 
-# Bind the public package alias only after all FortiGate extensions are installed.
 extract_fortigate_config = _extractor_module.extract_fortigate_config
 
 
