@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Iterable, Sequence
 
+from fwmigrate.extraction.sanitize import sanitize_source_attributes, sanitize_source_value
 from fwmigrate.ir.address import IRAddress
 from fwmigrate.ir import IRConfig
 from fwmigrate.ir.enums import AddressType
@@ -467,8 +468,10 @@ class IRExcelExporter:
 
     @staticmethod
     def _format_source_command_values(
+        key: str,
         values: Sequence[Any],
     ) -> str:
+        values = sanitize_source_value(key, list(values))
         if not values:
             return ""
 
@@ -512,6 +515,7 @@ class IRExcelExporter:
                         command.operation,
                         command.key,
                         self._format_source_command_values(
+                            command.key,
                             command.values
                         ),
                         "EXTRACT_ONLY",
@@ -1593,7 +1597,7 @@ class IRExcelExporter:
         """Expose every explicitly configured interface setting without reinterpreting it."""
         rows = []
         for item in self.ir.interfaces:
-            for setting, value in item.source_attributes.items():
+            for setting, value in sanitize_source_attributes(item.source_attributes).items():
                 display_setting = str(setting).replace("_", "-")
                 if isinstance(value, set):
                     display_value = json.dumps(sorted(value), ensure_ascii=False, default=str)
@@ -3561,7 +3565,7 @@ class IRExcelExporter:
                         object_name,
                         command.operation,
                         command.key,
-                        self._format_source_command_values(command.values),
+                        self._format_source_command_values(command.key, command.values),
                         "EXTRACT_ONLY",
                         "Yes",
                     )
@@ -6618,6 +6622,8 @@ class IRExcelExporter:
 
     @staticmethod
     def _format_settings(settings: dict[str, Any]) -> str:
+        settings = sanitize_source_attributes(settings)
+
         def format_value(value: Any) -> str:
             if isinstance(value, (list, tuple, set)):
                 return " ".join(str(item) for item in value)

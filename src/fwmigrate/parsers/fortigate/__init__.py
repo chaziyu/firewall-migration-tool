@@ -1,15 +1,17 @@
+from copy import deepcopy
+from types import SimpleNamespace
 from typing import List, Optional, Dict
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.fortigate import coverage as _coverage_module
 from fwmigrate.parsers.fortigate import extractor as _extractor_module
+from fwmigrate.parsers.fortigate import model as _model_module
 from fwmigrate.parsers.fortigate import parser as _parser_module
 from fwmigrate.parsers.fortigate import transformer as _transformer_module
 from fwmigrate.parsers.fortigate import dependencies as _dependencies_module
 from fwmigrate.parsers.fortigate import source_tree as _source_tree_module
 from fwmigrate.parsers.fortigate import phase_46_50_extensions as _phase_46_50_module
-from fwmigrate.parsers.fortigate.shaping_models import install_phase22_parser_support
 from fwmigrate.parsers.fortigate.session_ttl_extensions import (
     install_final_session_ttl_serialization,
     install_session_ttl_extensions,
@@ -82,47 +84,57 @@ from fwmigrate.parsers.fortigate.audit_remediation import (
     install_fortios_746_audit_remediation,
 )
 
-# Install FortiGate source-parser extensions in phase order so later wrappers
-# delegate through earlier behavior rather than replacing it.
-install_phase22_parser_support()
-install_session_ttl_extensions(_parser_module)
+_static_model_config = _model_module.FGConfig
+_parser_extensions = SimpleNamespace(**vars(_parser_module))
+_parser_extensions.SECTION_LIST_FIELDS = deepcopy(_parser_module.SECTION_LIST_FIELDS)
+_parser_extensions.SECTION_EXPLICIT_FIELDS = deepcopy(_parser_module.SECTION_EXPLICIT_FIELDS)
+_parser_extensions.FortiGateParser = type(
+    "FortiGateParserExtensionSink",
+    (_parser_module.FortiGateParser,),
+    {},
+)
+
+# Run mixed legacy installers against an isolated parser subclass. Their
+# dependency, extraction, transformer, and coverage hooks remain active while
+# the public parser and its statically imported models stay unchanged.
+install_session_ttl_extensions(_parser_extensions)
 install_ztna_relationship_support(_dependencies_module)
 install_certificate_reference_support(_dependencies_module)
 install_authentication_scheme_support(
-    _parser_module,
+    _parser_extensions,
     _dependencies_module,
     _extractor_module,
     _transformer_module,
 )
 install_policy_nat_preservation_extensions(
-    _parser_module,
+    _parser_extensions,
     _transformer_module,
     _dependencies_module,
 )
 install_policy_dlp_profile_fix(
-    _parser_module,
+    _parser_extensions,
     _dependencies_module,
     _transformer_module,
 )
 install_policy_ips_voip_filter_fix(
-    _parser_module,
+    _parser_extensions,
     _dependencies_module,
     _transformer_module,
 )
 install_policy_security_profile_dependency_fix(
-    _parser_module,
+    _parser_extensions,
     _dependencies_module,
     _transformer_module,
 )
 install_policy_ipv6_vip_dependency_fix(_dependencies_module)
-install_system_fsso_polling_support()
-install_phase_41_security_profile_support(_parser_module)
-install_phase_42_antivirus_support(_parser_module)
-install_phase_43_webfilter_support(_parser_module)
-install_phase_44_dnsfilter_support(_parser_module)
-install_phase_45_application_control_support(_parser_module)
+install_system_fsso_polling_support(patch_parser=False)
+install_phase_41_security_profile_support(_parser_extensions)
+install_phase_42_antivirus_support(_parser_extensions)
+install_phase_43_webfilter_support(_parser_extensions)
+install_phase_44_dnsfilter_support(_parser_extensions)
+install_phase_45_application_control_support(_parser_extensions)
 _phase_46_50_module.install_phase_46_50_extensions(
-    _parser_module,
+    _parser_extensions,
     _dependencies_module,
     _extractor_module,
     _source_tree_module,
@@ -132,7 +144,7 @@ install_phase_48_effective_profile_group_dependencies(
     _extractor_module,
 )
 install_phase_46_50_regression_fixes(
-    _parser_module,
+    _parser_extensions,
     _dependencies_module,
     _extractor_module,
     _coverage_module,
@@ -140,12 +152,12 @@ install_phase_46_50_regression_fixes(
 install_routing_ngfw_semantics_fix(_transformer_module)
 
 # Phase 1 must compose with the final root model after all later installers.
-install_final_session_ttl_serialization(_parser_module)
+install_final_session_ttl_serialization(_parser_extensions)
 
 # Install the audited 7.4.6 address/schedule fixes against the final active
 # root model so no earlier serializer specialization is lost.
 install_fortios_746_address_schedule_fixes(
-    _parser_module,
+    _parser_extensions,
     _transformer_module,
     _dependencies_module,
 )
@@ -157,7 +169,7 @@ install_fortios_746_ci_regression_fixes(
 # Preserve FortiGate IP-pool groups as typed source/canonical evidence before
 # the final dependency safety wrapper validates multi-target pool references.
 install_ippool_group_support(
-    _parser_module,
+    _parser_extensions,
     _transformer_module,
     _dependencies_module,
     _coverage_module,
@@ -181,6 +193,8 @@ install_ippool_group_dependency_safety(
 # Apply the 7.4.6 audit wrapper after dependency safety so unsupported raw
 # syntax and source-accounting checks observe the final extraction behavior.
 install_fortios_746_audit_remediation(_extractor_module)
+
+_model_module.FGConfig = _static_model_config
 
 # Bind the public package alias only after all FortiGate extensions are installed.
 extract_fortigate_config = _extractor_module.extract_fortigate_config

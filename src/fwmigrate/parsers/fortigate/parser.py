@@ -2,6 +2,7 @@ import re
 import sys
 from typing import Iterator, List, Dict, Any, Optional
 
+from fwmigrate.parsers.fortigate.command_evaluator import evaluate_commands
 from fwmigrate.parsers.fortigate.tokenizer import (
     Token,
     TokenType,
@@ -228,7 +229,31 @@ from fwmigrate.parsers.fortigate.session_ttl_extensions import (
     FGServiceSessionTimers,
     FGSystemGlobalSessionTimers,
 )
-from fwmigrate.parsers.fortigate.fortios_746_address_schedule_fixes import _apply_address_defaults
+from fwmigrate.parsers.fortigate.fortios_746_address_schedule_fixes import (
+    FGAddress746,
+    FGAddress6Template746,
+    _apply_address_defaults,
+)
+from fwmigrate.parsers.fortigate.policy_dlp_profile_fix import FGPolicyDLPProfile746
+from fwmigrate.parsers.fortigate.policy_ips_voip_filter_fix import FGPolicyIPSVoIPFilter746
+from fwmigrate.parsers.fortigate.phase_42_antivirus import (
+    FGAntivirusProfile746,
+    FGAntivirusProtocol746,
+    FGAntivirusProfileConfig746,
+)
+from fwmigrate.parsers.fortigate.phase_43_webfilter import (
+    FGWebFilterProfile746,
+    FGWebFilterCategory746,
+    FGWebFilterOverride746,
+)
+from fwmigrate.parsers.fortigate.phase_44_dnsfilter import (
+    FGDNSFilterProfile746,
+    FGDNSFilterCategory746,
+)
+from fwmigrate.parsers.fortigate.phase_45_application_control import (
+    FGApplicationList746,
+    FGApplicationEntry746,
+)
 from fwmigrate.parsers.fortigate.policy_nat_preservation_extensions import (
     FGInterface746,
     FGInterfaceSecondaryIP746,
@@ -256,6 +281,7 @@ from fwmigrate.parsers.fortigate.source_tree import (
     STRUCTURED_OPERATIONAL_SECTIONS,
 )
 from fwmigrate.parsers.fortigate.section_registry import (
+    SECTION_LIST_FIELDS,
     get_section_spec,
     register_sections,
 )
@@ -463,283 +489,6 @@ SECTION_EXPLICIT_FIELDS = {
 }
 
 
-SECTION_LIST_FIELDS = {
-    "system dhcp server": {"tftp_server", "vci_string"},
-    "system dhcp server ip-range": {"uci_string", "vci_string"},
-    "system dhcp server exclude-range": {"uci_string", "vci_string"},
-    "system dhcp server options": {"uci_string", "vci_string", "ip"},
-    "system dhcp6 server option": {"ip6"},
-    "system dhcp6 server options": {"ip6"},
-    "authentication scheme": {"method", "user_database"},
-    "authentication rule": {"srcintf", "srcaddr", "srcaddr6", "dstaddr", "dstaddr6", "protocol", "auth_method"},
-    "system zone": {"interface"},
-    "system zone tagging": {"tags"},
-    "user ldap": {"search_type"},
-    "firewall local-in-policy": {
-        "dstaddr",
-        "internet_service_src_custom",
-        "internet_service_src_custom_group",
-        "internet_service_src_group",
-        "internet_service_src_name",
-        "intf",
-        "service",
-        "srcaddr",
-    },
-    "firewall local-in-policy6": {
-        "dstaddr",
-        "internet_service6_src_custom",
-        "internet_service6_src_custom_group",
-        "internet_service6_src_group",
-        "internet_service6_src_name",
-        "intf",
-        "service",
-        "srcaddr",
-    },
-    "router policy": {
-        "dst",
-        "dstaddr",
-        "input_device",
-        "internet_service_custom",
-        "internet_service_id",
-        "src",
-        "srcaddr",
-    },
-    "router policy6": {
-        "dst",
-        "dstaddr",
-        "input_device",
-        "internet_service_custom",
-        "internet_service_id",
-        "src",
-        "srcaddr",
-    },
-    "router static": {"sdwan_zone"},
-    "router static6": {"sdwan_zone"},
-    "firewall addrgrp": {"member", "exclude_member"},
-    "firewall addrgrp6": {"member", "exclude_member"},
-    "firewall address tagging": {"tags"},
-    "firewall address6 tagging": {"tags"},
-    "firewall multicast-address tagging": {"tags"},
-    "firewall multicast-address6 tagging": {"tags"},
-    "firewall addrgrp tagging": {"tags"},
-    "firewall addrgrp6 tagging": {"tags"},
-    "firewall vip": {
-        "extaddr", "mappedip", "monitor", "service",
-        "src_filter", "srcintf_filter",
-    },
-    "firewall vip realservers": {"monitor"},
-    "firewall vipgrp": {"member"},
-    "firewall vip6": {"mappedip", "monitor", "src_filter"},
-    "firewall vip6 realservers": {"monitor"},
-    "firewall vipgrp6": {"member"},
-    "firewall policy": {
-        "custom_log_fields",
-        "pcp_poolname",
-        "srcintf",
-        "dstintf",
-        "srcaddr",
-        "dstaddr",
-        "service",
-        "groups",
-        "users",
-        "poolname",
-        "srcaddr6",
-        "dstaddr6",
-        "poolname6",
-        "fsso_groups",
-        "internet_service_custom",
-        "internet_service_custom_group",
-        "internet_service_group",
-        "internet_service_name",
-        "internet_service_src_custom",
-        "internet_service_src_custom_group",
-        "internet_service_src_group",
-        "internet_service_src_name",
-        "internet_service6_custom",
-        "internet_service6_custom_group",
-        "internet_service6_group",
-        "internet_service6_name",
-        "internet_service6_src_custom",
-        "internet_service6_src_custom_group",
-        "internet_service6_src_group",
-        "internet_service6_src_name",
-        "network_service_dynamic",
-        "network_service_src_dynamic",
-        "ntlm_enabled_browsers",
-        "rtp_addr",
-        "sgt",
-        "src_vendor_mac",
-        "ztna_ems_tag",
-        "ztna_ems_tag_secondary",
-        "ztna_geo_tag",
-        "application",
-        "app_category",
-        "app_group",
-        "url_category",
-    },
-    "firewall security-policy": {
-        "srcintf", "dstintf", "srcaddr", "dstaddr", "srcaddr6", "dstaddr6",
-        "service", "application", "app_category", "app_group", "groups",
-        "fsso_groups", "users", "url_category", "internet_service_custom",
-        "internet_service_custom_group", "internet_service_group",
-        "internet_service_name", "internet_service_src_custom",
-        "internet_service_src_custom_group", "internet_service_src_group",
-        "internet_service_src_name", "internet_service6_custom",
-        "internet_service6_custom_group", "internet_service6_group",
-        "internet_service6_name", "internet_service6_src_custom",
-        "internet_service6_src_custom_group", "internet_service6_src_group",
-        "internet_service6_src_name",
-    },
-    "firewall shaping-policy": {
-        "srcintf", "dstintf", "srcaddr", "dstaddr", "srcaddr6", "dstaddr6",
-        "application", "app_category", "app_group", "url_category", "service",
-    },
-    "firewall multicast-policy": {
-        "srcaddr", "dstaddr",
-    },
-    "firewall multicast-policy6": {
-        "srcaddr", "dstaddr",
-    },
-    "firewall central-snat-map": {
-        "srcintf", "dstintf", "orig_addr", "orig_addr6", "dst_addr",
-        "dst_addr6", "nat_ippool", "nat_ippool6",
-    },
-    "firewall schedule group": {"member"},
-    "firewall service group": {"member"},
-    "system dns": {"protocol", "domain", "server_hostname"},
-    "system admin": {"vdom", "guest_usergroups"},
-    # These settings accept multiple CLI values on a system interface.  Keep
-    # this section-specific because the same keys may be scalar in other
-    # FortiOS sections, and because source preservation must not depend only
-    # on the broad global list-field set below.
-    "system interface": {
-        "member",
-        "fail_alert_interfaces",
-        "fail_detect_option",
-        "dns_server_protocol",
-        "security_groups",
-        "dhcp_relay_ip",
-    },
-    "system interface secondaryip": {
-        "detectprotocol",
-    },
-    "vpn ipsec phase1-interface": {
-        "proposal",
-        "certificate",
-        "backup_gateway",
-        "signature_hash_alg",
-        "exchange_ip_addr4",
-        "exchange_ip_addr6",
-        "ipv4_split_include",
-        "ipv4_split_exclude",
-        "ipv6_split_include",
-        "ipv6_split_exclude",
-        "split_include_service",
-        "dhgrp",
-    },
-    "vpn ipsec phase1": {
-        "proposal",
-        "certificate",
-        "backup_gateway",
-        "signature_hash_alg",
-        "exchange_ip_addr4",
-        "exchange_ip_addr6",
-        "ipv4_split_include",
-        "ipv4_split_exclude",
-        "ipv6_split_include",
-        "ipv6_split_exclude",
-        "split_include_service",
-        "dhgrp",
-    },
-    "vpn ipsec phase2-interface": {
-        "proposal",
-        "src_name",
-        "dst_name",
-        "src_name6",
-        "dst_name6",
-        "dhgrp",
-    },
-    "vpn ipsec phase2": {
-        "proposal",
-        "src_name",
-        "dst_name",
-        "src_name6",
-        "dst_name6",
-        "dhgrp",
-    },
-    "ips sensor entries": {
-        "rule",
-        "severity",
-        "protocol",
-        "application",
-        "cve",
-        "os",
-        "vuln_type",
-    },
-    "system sdwan health-check": {"members", "server"},
-    "system sdwan health-check sla": {"link_cost_factor"},
-    "system sdwan service": {
-        "service",
-        "src",
-        "src6",
-        "dst",
-        "dst6",
-        "groups",
-        "health_check",
-        "input_device",
-        "input_zone",
-        "priority_members",
-        "priority_zone",
-        "internet_service_name",
-        "internet_service_app_ctrl",
-        "internet_service_app_ctrl_category",
-        "internet_service_app_ctrl_group",
-        "internet_service_custom",
-        "internet_service_custom_group",
-        "internet_service_group",
-        "users",
-    },
-    "system sdwan duplication": {
-        "srcaddr",
-        "dstaddr",
-        "srcaddr6",
-        "dstaddr6",
-        "srcintf",
-        "dstintf",
-        "service",
-    },
-    "vpn ssl web portal": {
-        "ip_pools",
-        "ipv6_pools",
-        "host_check_policy",
-        "allow_user_access",
-        "split_tunneling_routing_address",
-        "ipv6_split_tunneling_routing_address",
-    },
-    "vpn ssl web portal mac-addr-check-rule": {"mac_addr_list"},
-    "vpn ssl web host-check-software check-item-list": {"md5s"},
-    "vpn ssl settings": {
-        "banned_cipher",
-        "ciphersuite",
-        "client_sigalgs",
-        "source_interface",
-        "source_address",
-        "source_address6",
-        "tunnel_ip_pools",
-        "tunnel_ipv6_pools",
-    },
-    "vpn ssl settings authentication-rule": {
-        "groups",
-        "users",
-        "source_address",
-        "source_address6",
-        "source_interface",
-    },
-    "firewall DoS-policy": {"srcaddr", "dstaddr", "service"},
-    "firewall DoS-policy6": {"srcaddr", "dstaddr", "service"},
-    "authentication rule": {"srcintf", "srcaddr"},
-    "user quarantine": {"firewall_groups"},
-}
 
 SECTION_LIST_FIELDS.setdefault("firewall schedule recurring", set()).add("day")
 for _path in ("vpn ipsec phase1-interface", "vpn ipsec phase1"):
@@ -764,6 +513,19 @@ FGDns = FGDnsMultiValue746
 FGInterface = FGInterface746
 FGInterfaceSecondaryIP = FGInterfaceSecondaryIP746
 FGVIP = FGVIP746
+FGAddress = FGAddress746
+FGAddress6Template = FGAddress6Template746
+FGPolicy = FGPolicyIPSVoIPFilter746
+FGAntivirusProfile = FGAntivirusProfile746
+FGAntivirusProtocol = FGAntivirusProtocol746
+FGAntivirusProfileConfig = FGAntivirusProfileConfig746
+FGWebFilterProfile = FGWebFilterProfile746
+FGWebFilterCategory = FGWebFilterCategory746
+FGWebFilterOverride = FGWebFilterOverride746
+FGDNSFilterProfile = FGDNSFilterProfile746
+FGDNSFilterCategory = FGDNSFilterCategory746
+FGApplicationList = FGApplicationList746
+FGApplicationEntry = FGApplicationEntry746
 SECTION_EXPLICIT_FIELDS.setdefault("system interface", set()).add("ping_serv_status")
 SECTION_EXPLICIT_FIELDS.setdefault("firewall vip", set()).update(FORTIOS_746_VIP_FIELDS)
 SECTION_EXPLICIT_FIELDS["firewall ippool_grp"] = {"member"}
@@ -1001,23 +763,30 @@ def _classify_pppoe_password(values: List[str]) -> tuple[bool, Optional[str]]:
     return True, "encrypted" if value.upper().startswith("ENC ") else "plaintext"
 
 
-def _refresh_section_registry() -> None:
-    """Build the active registry after compatibility modules finish importing."""
+def _initialize_section_registry() -> None:
+    """Register the parser's static section metadata once at module import."""
 
     models = {
         "system interface": FGInterface,
         "system zone": FGSystemZone,
+        "firewall wildcard-fqdn custom": FGWildcardFQDN,
+        "firewall service category": FGServiceCategory,
         "firewall address": FGAddress,
         "firewall address6": FGAddress,
         "firewall addrgrp": FGAddressGroup,
         "firewall addrgrp6": FGAddressGroup,
         "firewall service custom": FGService,
         "firewall service group": FGServiceGroup,
+        "firewall proxy-address": FGProxyAddress,
         "firewall schedule recurring": FGRecurringSchedule746,
         "firewall schedule onetime": FGOnetimeSchedule746,
         "firewall schedule group": FGScheduleGroup,
         "firewall ippool": FGIPPool,
         "firewall ippool6": FGIPPool6,
+        "endpoint-control fctems": FGFCTEMS,
+        "user adgrp": FGADGroup,
+        "user saml": FGUserSAML,
+        "system dns-server": FGDnsServer,
         "firewall vip": FGVIP,
         "firewall vip6": FGVIP6,
         "firewall vipgrp": FGVIPGroup,
@@ -1039,6 +808,66 @@ def _refresh_section_registry() -> None:
         "vpn ipsec phase1": FGPhase1Policy,
         "vpn ipsec phase2-interface": FGPhase2Interface,
         "vpn ipsec phase2": FGPhase2Policy,
+    }
+    common_list_fields = {
+        "allowaccess", "detectprotocol", "dhcp_relay_ip", "member", "day",
+        "srcintf", "dstintf", "srcaddr", "dstaddr", "dst", "dst6",
+        "ip_range", "ip6_range", "groups", "users", "service", "poolname",
+        "proposal", "internet_service_name", "exclude_ip", "mappedip", "extaddr",
+        "src_filter", "srcintf_filter", "monitor", "ztna_ems_tag",
+        "ztna_ems_tag_secondary", "ztna_geo_tag", "capabilities", "fsso_group",
+    }
+    list_fields = {
+        path: set(SECTION_LIST_FIELDS.get(path, ()))
+        | (common_list_fields & set(model.model_fields))
+        for path, model in models.items()
+    }
+    list_fields.update({
+        path: set(fields)
+        for path, fields in SECTION_LIST_FIELDS.items()
+        if path not in list_fields
+    })
+    destination_collections = {
+        "system interface": "interfaces",
+        "system zone": "system_zones",
+        "firewall wildcard-fqdn custom": "wildcard_fqdns",
+        "firewall service category": "service_categories",
+        "firewall address": "addresses",
+        "firewall address6": "addresses",
+        "firewall addrgrp": "address_groups",
+        "firewall addrgrp6": "address_groups",
+        "firewall service custom": "services",
+        "firewall service group": "service_groups",
+        "firewall proxy-address": "proxy_addresses",
+        "firewall schedule recurring": "schedules",
+        "firewall schedule onetime": "schedules",
+        "firewall schedule group": "schedule_groups",
+        "firewall ippool": "ip_pools",
+        "firewall ippool6": "ip_pools6",
+        "endpoint-control fctems": "fctems_connectors",
+        "user adgrp": "ad_groups",
+        "user saml": "user_saml_servers",
+        "system dns-server": "dns_servers",
+        "firewall vip": "vips",
+        "firewall vip6": "vips6",
+        "firewall vipgrp": "vip_groups",
+        "firewall vipgrp6": "vip_groups6",
+        "firewall policy": "policies",
+        "firewall security-policy": "security_policies",
+        "firewall shaping-policy": "shaping_policies",
+        "firewall central-snat-map": "central_snat_rules",
+        "router static": "static_routes",
+        "router static6": "static_routes",
+        "router policy": "policy_routes",
+        "router policy6": "policy_routes",
+        "system dhcp server": "dhcp_servers",
+        "system dhcp6 server": "dhcp6_servers",
+        "authentication scheme": "authentication_schemes",
+        "authentication rule": "authentication_rules",
+        "vpn ipsec phase1-interface": "phase1_interfaces",
+        "vpn ipsec phase1": "phase1_policies",
+        "vpn ipsec phase2-interface": "phase2_interfaces",
+        "vpn ipsec phase2": "phase2_policies",
     }
     integer_fields = {
         "firewall address": {"color", "cache_ttl", "route_tag"},
@@ -1068,7 +897,7 @@ def _refresh_section_registry() -> None:
     }
     scalar_fields = {
         path: set(model.model_fields)
-        - SECTION_LIST_FIELDS.get(path, set())
+            - list_fields.get(path, set())
         - integer_fields.get(path, set())
         - integer_list_fields.get(path, set())
         - {"extra_settings", "source_explicit_fields", "source_attributes", "nested_configs"}
@@ -1084,7 +913,7 @@ def _refresh_section_registry() -> None:
     })
     paths = (
         set(models)
-        | set(SECTION_LIST_FIELDS)
+        | set(list_fields)
         | set(SECTION_EXPLICIT_FIELDS)
         | CONTEXTUAL_MODEL_SECTIONS
         | STRUCTURED_SECURITY_SECTIONS
@@ -1096,13 +925,33 @@ def _refresh_section_registry() -> None:
     register_sections(
         paths,
         models=models,
-        list_fields=SECTION_LIST_FIELDS,
+        destination_collections=destination_collections,
+        list_fields=list_fields,
         integer_fields=integer_fields,
         integer_list_fields=integer_list_fields,
         scalar_fields=scalar_fields,
         explicit_fields=SECTION_EXPLICIT_FIELDS,
         secret_fields=secret_fields,
     )
+
+
+_initialize_section_registry()
+
+STANDARD_SECTION_PATHS = frozenset({
+    "system zone",
+    "firewall wildcard-fqdn custom",
+    "firewall service category",
+    "firewall service group",
+    "firewall schedule group",
+    "firewall proxy-address",
+    "firewall ippool6",
+    "endpoint-control fctems",
+    "user adgrp",
+    "user saml",
+    "authentication scheme",
+    "authentication rule",
+    "system dns-server",
+})
 
 def _extract_extra_settings(
     attributes: Dict[str, Any],
@@ -1254,7 +1103,6 @@ class ParserError(Exception):
 
 class FortiGateParser:
     def __init__(self, tokenizer: FortiGateTokenizer):
-        _refresh_section_registry()
         self.tokens = list(tokenizer.tokenize())
         self.pos = 0
         self.config = FGConfig()
@@ -1362,8 +1210,20 @@ class FortiGateParser:
         return " ".join(section_parts)
 
     def parse_config_contents(self, full_path: str):
+        root = self.parse_source_node("config", full_path)
+        self._process_config_source_node(full_path, root)
+        return
+
+    def _process_config_source_node(self, full_path: str, root: FGSourceNode) -> None:
         if full_path == "vdom":
-            self._parse_vdom_contents()
+            previous_context = self.current_context
+            for vdom in (child for child in root.children if child.node_type == "edit"):
+                self.current_context = vdom.name
+                self._execution_context(vdom.name)
+                for child in vdom.children:
+                    if child.node_type == "config":
+                        self._process_config_source_node(child.name, child)
+            self.current_context = previous_context
             return
 
         if full_path in (
@@ -1373,13 +1233,9 @@ class FortiGateParser:
             | STRUCTURED_IDENTITY_SECTIONS
             | STRUCTURED_OPERATIONAL_SECTIONS
         ):
-            self._parse_structured_source_section(full_path)
+            self._parse_structured_source_section(full_path, root)
             return
 
-        # Keep an unknown migration-relevant block as a recursive source tree
-        # instead of routing its edits through ``build_model`` and losing them.
-        # The explicit set below covers paths that are handled by the existing
-        # edit/global parser but are not part of CONTEXTUAL_MODEL_SECTIONS.
         known_edit_or_global_sections = {
             "system settings", "system global", "system dns",
             "system session-ttl", "system session-ttl port",
@@ -1407,93 +1263,62 @@ class FortiGateParser:
             "authentication scheme", "authentication rule",
             "firewall ipv6-eh-filter",
         }
-        known_source_paths = (
-            CONTEXTUAL_MODEL_SECTIONS
-            | known_edit_or_global_sections
-            | STRUCTURED_SECURITY_SECTIONS
-            | STRUCTURED_ROUTING_SECTIONS
-            | STRUCTURED_ROUTING_DEPENDENCY_SECTIONS
-            | STRUCTURED_IDENTITY_SECTIONS
-            | STRUCTURED_OPERATIONAL_SECTIONS
-        )
-        if full_path not in known_source_paths:
-            self._parse_unknown_source_section(full_path)
+        if full_path not in CONTEXTUAL_MODEL_SECTIONS | known_edit_or_global_sections:
+            self._parse_unknown_source_section(full_path, root)
             return
 
-        source_commands: List[SourceCommand] = []
-        direct_attributes: Dict[str, Any] = {}
         saw_edit = False
-        while self.peek():
-            token = self.peek()
-
-            if token.type == TokenType.END:
-                self.consume(TokenType.END)
-                break
-
-            elif token.type == TokenType.EDIT:
+        for child in root.children:
+            if child.node_type == "edit":
                 saw_edit = True
-                self.parse_edit_block(full_path)
-
-            elif token.type == TokenType.SET:
-                key, values = self.parse_set()
-                source_commands.append(
-                    self._source_command("set", key, values)
-                )
-                if full_path == "firewall internet-service-append":
-                    self.apply_attribute(direct_attributes, key, values, full_path)
-                else:
-                    self.apply_global_set(full_path, key, values)
-
-            elif token.type == TokenType.UNSET:
-                key, values = self.parse_key_values(TokenType.UNSET)
-                source_commands.append(
-                    self._source_command("unset", key, values)
-                )
-                if full_path == "firewall internet-service-append":
-                    direct_attributes.pop(self._normalize_attribute_key(key), None)
-                    direct_attributes.setdefault("source_unset_settings", []).append(key)
-                else:
-                    self.apply_global_unset(full_path, key)
-
-            elif token.type == TokenType.APPEND:
-                key, values = self.parse_key_values(TokenType.APPEND)
-                source_commands.append(
-                    self._source_command("append", key, values)
-                )
-                if full_path == "firewall internet-service-append":
-                    self.apply_append_attribute(direct_attributes, key, values, full_path)
-                elif full_path == "system dns" and key.replace("-", "_") == "server_hostname":
-                    if not self.config.dns:
-                        self.config.dns = FGDnsMultiValue746()
-                    self.config.dns.server_hostname.extend(values)
-                    self.config.dns.source_explicit_fields.add("server_hostname")
-                    self.config.dns.extra_settings["server_hostname"] = list(
-                        self.config.dns.server_hostname
-                    )
-
-            elif token.type == TokenType.CONFIG:
-                self.consume(TokenType.CONFIG)
-                nested_name = self.read_section_name()
-                nested_path = f"{full_path} {nested_name}".strip()
-                if full_path == "vpn ssl settings" and nested_name == "authentication-rule":
-                    raw_rules = self.parse_nested_edit_collection(nested_path)
-                    self._attach_ssl_vpn_authentication_rules(raw_rules)
-                else:
-                    self.parse_config_contents(nested_path)
-
+                self.build_model(full_path, self._project_edit_source_node(full_path, child))
+                continue
+            if child.node_type != "config":
+                continue
+            nested_path = f"{full_path} {child.name}".strip()
+            if full_path == "vpn ssl settings" and child.name == "authentication-rule":
+                self._attach_ssl_vpn_authentication_rules([
+                    self._project_edit_source_node(nested_path, entry)
+                    for entry in child.children
+                    if entry.node_type == "edit"
+                ])
             else:
-                self.next_token()
+                self._process_config_source_node(nested_path, child)
+
+        spec = get_section_spec(full_path)
+        evaluated = evaluate_commands(
+            root.commands,
+            list_fields=spec.list_fields if spec else (),
+            integer_fields=spec.integer_fields if spec else (),
+            integer_list_fields=spec.integer_list_fields if spec else (),
+            scalar_fields=spec.scalar_fields if spec else (),
+            explicit_fields=spec.explicit_fields if spec else (),
+            secret_fields=spec.secret_fields if spec else (),
+        )
+        direct_attributes = {**evaluated.attributes, **evaluated.extra_settings}
+        if evaluated.explicit_fields:
+            direct_attributes["source_explicit_fields"] = evaluated.explicit_fields
+
+        for command in root.commands:
+            if command.operation == "set":
+                if full_path == "firewall internet-service-append":
+                    continue
+                self.apply_global_set(full_path, command.key, list(command.values))
+            elif command.operation == "unset":
+                if full_path == "firewall internet-service-append":
+                    continue
+                self.apply_global_unset(full_path, command.key)
+            elif command.operation == "append" and full_path == "system dns":
+                clean_key = self._normalize_attribute_key(command.key)
+                if clean_key == "server_hostname":
+                    values = evaluated.attributes.get(clean_key, [])
+                    self.apply_global_set(full_path, command.key, list(values))
 
         if full_path == "firewall internet-service-append" and not saw_edit:
             self.build_model(full_path, direct_attributes)
 
-        if source_commands:
-            inventory = SourceInventoryItem(
-                domain=full_path.split(" ", 1)[0] if full_path else "unknown",
-                source_path=full_path,
-                source_context=self.current_context,
-                commands=source_commands,
-            )
+        if root.commands:
+            inventory = self._source_node_inventory(root, full_path)
             if full_path == "firewall ipv6-eh-filter" and self.config.ipv6_eh_filter:
                 item = self.config.ipv6_eh_filter
                 inventory.source_attributes = item.model_dump(
@@ -1511,9 +1336,13 @@ class FortiGateParser:
                 )
             self.source_inventory_items.append(inventory)
 
-    def _parse_unknown_source_section(self, source_path: str) -> None:
+    def _parse_unknown_source_section(
+        self,
+        source_path: str,
+        root: Optional[FGSourceNode] = None,
+    ) -> None:
         """Capture an unregistered config block without interpreting it."""
-        root = self.parse_source_node("config", source_path)
+        root = root or self.parse_source_node("config", source_path)
         structured = FGStructuredSourceObject(
             source_path=source_path,
             source_context=self.current_context or "root",
@@ -1536,31 +1365,6 @@ class FortiGateParser:
             inventory.notes.append("unknown-section-source-fallback")
             self.source_inventory_items.append(inventory)
 
-    def _parse_vdom_contents(self) -> None:
-        """Remove the VDOM wrapper while retaining its execution context."""
-        previous_context = self.current_context
-        while self.peek():
-            token = self.peek()
-            if token.type == TokenType.END:
-                self.consume(TokenType.END)
-                break
-            if token.type != TokenType.EDIT:
-                self.next_token()
-                continue
-            self.consume(TokenType.EDIT)
-            self.current_context = self.consume(TokenType.STRING).value
-            self._execution_context(self.current_context)
-            while self.peek():
-                token = self.peek()
-                if token.type == TokenType.NEXT:
-                    self.consume(TokenType.NEXT)
-                    break
-                if token.type == TokenType.CONFIG:
-                    self.consume(TokenType.CONFIG)
-                    self.parse_config_contents(self.read_section_name())
-                else:
-                    self.next_token()
-        self.current_context = previous_context
 
     def _execution_context(self, vdom: Optional[str] = None) -> FGExecutionContext:
         context_name = vdom or self.current_context or "root"
@@ -1571,8 +1375,12 @@ class FortiGateParser:
         self.config.execution_contexts.append(context)
         return context
 
-    def _parse_structured_source_section(self, source_path: str) -> None:
-        root = self.parse_source_node("config", source_path)
+    def _parse_structured_source_section(
+        self,
+        source_path: str,
+        root: Optional[FGSourceNode] = None,
+    ) -> None:
+        root = root or self.parse_source_node("config", source_path)
         top_edits = [child for child in root.children if child.node_type == "edit"]
         current_ctx = self.current_context or "root"
         objects = [
@@ -2394,695 +2202,173 @@ class FortiGateParser:
         )
 
     def parse_edit_block(self, section_path: str):
-        attributes = self.parse_edit_attributes(section_path)
+        self.consume(TokenType.EDIT)
+        item_name = self.consume(TokenType.STRING).value
+        source_node = self.parse_source_node("edit", item_name)
+        attributes = self.parse_edit_attributes(section_path, source_node)
         self.build_model(section_path, attributes)
 
     def parse_edit_attributes(
         self,
         section_path: str,
+        source_node: FGSourceNode,
     ) -> Dict[str, Any]:
-        self.consume(TokenType.EDIT)
+        return self._project_edit_source_node(section_path, source_node)
 
-        name_token = self.consume(TokenType.STRING)
-        item_name = name_token.value
+    def _project_edit_source_node(
+        self,
+        section_path: str,
+        node: FGSourceNode,
+    ) -> Dict[str, Any]:
+        """Project one completed edit node into parser attributes."""
 
-        attributes = {
-            "name": item_name,
-        }
-        source_commands: List[SourceCommand] = []
-
-        if item_name.isdigit():
-            attributes["id"] = int(item_name)
+        initial: Dict[str, Any] = {"name": node.name}
+        if node.name.isdigit():
+            initial["id"] = int(node.name)
             if section_path == "firewall policy":
-                attributes.pop("name", None)
+                initial.pop("name")
 
-        while self.peek():
-            token = self.peek()
-
-            if token.type in (
-                TokenType.NEXT,
-                TokenType.END,
-            ):
-                if token.type == TokenType.NEXT:
-                    self.consume(TokenType.NEXT)
-
-                break
-
-            elif token.type == TokenType.SET:
-                key, values = self.parse_set()
-                safe_values = (
-                    ["[REDACTED]"]
-                    if section_path.endswith(" form-data") and key == "value"
-                    else values
-                )
-
-                source_commands.append(
-                    self._source_command("set", key, safe_values)
-                )
-
-                self.apply_attribute(
-                    attributes,
-                    key,
-                    values,
-                    section_path,
-                )
-
-            elif token.type == TokenType.UNSET:
-                key, values = self.parse_key_values(TokenType.UNSET)
-                clean_key = self._normalize_attribute_key(key)
-                attributes.pop(clean_key, None)
-                if section_path == "system dhcp server" and clean_key == "ddns_key":
-                    attributes["has_ddns_key"] = False
-                    attributes["ddns_key_format"] = None
-                if section_path == "system sdwan health-check" and clean_key == "password":
-                    attributes["has_password"] = False
-                    attributes["password_format"] = None
-                if section_path in SECTION_EXPLICIT_FIELDS:
-                    attributes.get("source_explicit_fields", set()).discard(
-                        clean_key
-                    )
-                attributes.setdefault("source_unset_settings", []).append(key)
-                source_commands.append(
-                    self._source_command("unset", key, values)
-                )
-
-            elif token.type == TokenType.APPEND:
-                key, values = self.parse_key_values(TokenType.APPEND)
-                self.apply_append_attribute(
-                    attributes,
-                    key,
-                    values,
-                    section_path,
-                )
-                source_commands.append(
-                    self._source_command("append", key, values)
-                )
-
-            elif token.type == TokenType.CONFIG:
-                self.consume(TokenType.CONFIG)
-
-                nested_name = self.read_section_name()
-                nested_path = (
-                    f"{section_path} {nested_name}".strip()
-                )
-
-                if (
-                    section_path == "system interface"
-                    and nested_name == "secondaryip"
-                ):
-                    attributes["secondary_ips"] = (
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif (
-                    section_path in {"firewall vip", "firewall vip6"}
-                    and nested_name == "realservers"
-                ):
-                    attributes["realservers"] = (
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif (
-                    section_path in {"firewall addrgrp", "firewall addrgrp6"}
-                    and nested_name == "tagging"
-                ):
-                    attributes["tagging"] = self.parse_nested_edit_collection(nested_path)
-
-                elif section_path == "firewall address" and nested_name == "list":
-                    attributes["address_list"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif (
-                    section_path in {
-                        "firewall address",
-                        "firewall address6",
-                        "firewall multicast-address",
-                        "firewall multicast-address6",
-                    }
-                    and nested_name == "tagging"
-                ):
-                    attributes["tagging"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif (
-                    section_path in {"system dhcp server", "system dhcp6 server"}
-                    and nested_name == "ip-range"
-                ):
-                    attributes.setdefault("ip_ranges", []).extend(
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif (
-                    section_path == "system dhcp server"
-                    and nested_name == "exclude-range"
-                ):
-                    attributes.setdefault("exclude_ranges", []).extend(
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif (
-                    section_path == "system dhcp server"
-                    and nested_name == "reserved-address"
-                ):
-                    attributes.setdefault("reserved_addresses", []).extend(
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif (
-                    section_path == "system dhcp server"
-                    and nested_name == "options"
-                ):
-                    attributes.setdefault("options", []).extend(
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif (
-                    section_path == "system dhcp6 server"
-                    and nested_name == "prefix-range"
-                ):
-                    attributes.setdefault("prefix_ranges", []).extend(
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif (
-                    section_path == "system dhcp6 server"
-                    and nested_name in {"option", "options"}
-                ):
-                    attributes.setdefault("options", []).extend(
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif (
-                    section_path == "ips sensor"
-                    and nested_name == "entries"
-                ):
-                    attributes["entries"] = (
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif section_path == "ips sensor entries" and nested_name == "exempt-ip":
-                    attributes["exempt_ips"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif (
-                    section_path == "firewall internet-service-definition"
-                    and nested_name == "entry"
-                ):
-                    attributes["entries"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif (
-                    section_path == "firewall internet-service-definition entry"
-                    and nested_name == "port-range"
-                ):
-                    attributes["port_ranges"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif section_path in {
-                    "firewall internet-service-custom",
-                    "firewall internet-service-addition",
-                } and nested_name == "entry":
-                    attributes["entries"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif section_path in {
-                    "firewall internet-service-custom entry",
-                    "firewall internet-service-addition entry",
-                } and nested_name == "port-range":
-                    attributes["port_ranges"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif section_path == "firewall internet-service-extension" and nested_name in {
-                    "disable-entry", "entry",
-                }:
-                    key = "disable_entries" if nested_name == "disable-entry" else "entries"
-                    attributes[key] = self.parse_nested_edit_collection(nested_path)
-
-                elif (
-                    section_path == "firewall internet-service-extension disable-entry"
-                    and nested_name in {"ip-range", "ip6-range"}
-                ):
-                    key = "ip_range" if nested_name == "ip-range" else "ip6_range"
-                    attributes.setdefault(key, []).extend(
-                        self.parse_nested_edit_collection(nested_path)
-                    )
-
-                elif section_path in {
-                    "firewall internet-service-extension disable-entry",
-                    "firewall internet-service-extension entry",
-                } and nested_name == "port-range":
-                    attributes["port_ranges"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif (
-                    section_path == "system sdwan health-check"
-                    and nested_name == "sla"
-                ):
-                    attributes.setdefault("sla", []).extend(
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif (
-                    section_path == "system sdwan service"
-                    and nested_name == "sla"
-                ):
-                    attributes.setdefault("sla", []).extend(
-                        self.parse_nested_edit_collection(
-                            nested_path
-                        )
-                    )
-
-                elif section_path == "user group" and nested_name == "match":
-                    attributes["match"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif section_path == "user group" and nested_name == "guest":
-                    attributes["guests"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif (
-                    section_path == "vpn ssl web portal"
-                    and nested_name == "host-check-software"
-                ):
-                    attributes["host_checks"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif section_path == "vpn ssl web portal" and nested_name == "bookmark-group":
-                    attributes["bookmark_groups"] = self.parse_nested_edit_collection(nested_path)
-
-                elif section_path == "vpn ssl web portal" and nested_name == "landing-page":
-                    attributes["landing_pages"] = self.parse_nested_edit_collection(nested_path)
-
-                elif section_path == "vpn ssl web portal" and nested_name == "mac-addr-check-rule":
-                    attributes["mac_address_check_rules"] = self.parse_nested_edit_collection(nested_path)
-
-                elif section_path == "vpn ssl web portal" and nested_name == "os-check-list":
-                    attributes["os_check_list"] = self.parse_nested_edit_collection(nested_path)
-
-                elif section_path == "vpn ssl web portal" and nested_name == "split-dns":
-                    attributes["split_dns"] = self.parse_nested_edit_collection(nested_path)
-
-                elif section_path == "vpn ssl web portal bookmark-group" and nested_name == "bookmarks":
-                    attributes["bookmarks"] = self.parse_nested_edit_collection(nested_path)
-
-                elif section_path == "vpn ssl web portal bookmark-group bookmarks" and nested_name == "form-data":
-                    attributes["form_data"] = self.parse_nested_edit_collection(nested_path)
-
-                elif section_path == "vpn ssl web portal landing-page" and nested_name == "form-data":
-                    attributes["form_data"] = self.parse_nested_edit_collection(nested_path)
-
-                elif (
-                    section_path == "vpn ssl web host-check-software"
-                    and nested_name == "check-item-list"
-                ):
-                    attributes["check_items"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif (
-                    section_path in {"firewall DoS-policy", "firewall DoS-policy6"}
-                    and nested_name == "anomaly"
-                ):
-                    attributes["anomalies"] = self.parse_nested_edit_collection(
-                        nested_path
-                    )
-
-                elif (
-                    section_path == "system accprofile"
-                    and nested_name in {
-                        "fwgrp-permission", "loggrp-permission",
-                        "netgrp-permission", "sysgrp-permission",
-                        "utmgrp-permission",
-                    }
-                ):
-                    attributes.setdefault("permission_blocks", []).append(
-                        self._parse_admin_profile_permission_block(nested_name)
-                    )
-
-                elif section_path == "system zone" and nested_name == "tagging":
-                    nested_node = self.parse_source_node("config", nested_name)
-                    attributes["tagging"] = [
-                        self._parse_system_zone_tagging_entry(entry)
-                        for entry in nested_node.children
-                        if entry.node_type == "edit"
-                    ]
-                    attributes.setdefault("nested_configs", []).append(nested_node)
-                    inventory = self._source_node_inventory(
-                        nested_node, nested_path, item_name
-                    )
-                    inventory.notes.append("nested-source-config")
-                    self.source_inventory_items.append(inventory)
-
-                elif nested_name:
-                    nested_node = self.parse_source_node("config", nested_name)
-                    if section_path in {"firewall vip", "firewall vip6"}:
-                        if nested_name == "gslb-public-ips":
-                            public_ips = []
-                            for entry in nested_node.children:
-                                if entry.node_type != "edit":
-                                    continue
-                                values = self._nested_command_attributes(entry)
-                                values["index"] = entry.name
-                                self._normalize_optional_int(values, "index")
-                                values["extra_settings"] = _extract_extra_settings(
-                                    values, set(FGVIPGSLBPublicIP.model_fields)
-                                )
-                                public_ips.append(FGVIPGSLBPublicIP(**values))
-                            attributes["gslb_public_ips"] = public_ips
-                        elif nested_name == "quic":
-                            values = self._nested_command_attributes(nested_node)
-                            for key in (
-                                "max_idle_timeout",
-                                "max_udp_payload_size",
-                                "active_connection_id_limit",
-                                "ack_delay_exponent",
-                                "max_ack_delay",
-                                "max_datagram_frame_size",
-                            ):
-                                self._normalize_optional_int(values, key)
-                            values["extra_settings"] = _extract_extra_settings(
-                                values, set(FGVIPQUICSettings.model_fields)
-                            )
-                            attributes["quic"] = FGVIPQUICSettings(**values)
-                        elif nested_name in {
-                            "ssl-cipher-suites",
-                            "ssl-server-cipher-suites",
-                        }:
-                            suites = []
-                            for entry in nested_node.children:
-                                if entry.node_type != "edit":
-                                    continue
-                                values = self._nested_command_attributes(
-                                    entry, {"versions"}
-                                )
-                                values["priority"] = values.get("priority", entry.name)
-                                self._normalize_optional_int(values, "priority")
-                                values["extra_settings"] = _extract_extra_settings(
-                                    values, set(FGVIPSSLCipherSuite.model_fields)
-                                )
-                                suites.append(FGVIPSSLCipherSuite(**values))
-                            attributes[
-                                "ssl_cipher_suites"
-                                if nested_name == "ssl-cipher-suites"
-                                else "ssl_server_cipher_suites"
-                            ] = suites
-                    if section_path == "system interface" and nested_name == "ipv6":
-                        ipv6_source_settings = {}
-                        for command in nested_node.commands:
-                            clean_key = command.key.replace("-", "_")
-                            attribute_key = "ipv6_autoconf" if clean_key == "autoconf" else clean_key
-
-                            if command.operation == "unset":
-                                attributes.pop(attribute_key, None)
-                                ipv6_source_settings.pop(clean_key, None)
-                                attributes.get("source_explicit_fields", set()).discard(attribute_key)
-                            elif command.operation == "append":
-                                attributes.setdefault("source_explicit_fields", set()).add(attribute_key)
-                                if clean_key in FG_INTERFACE_IPV6_LIST_FIELDS:
-                                    attributes.setdefault(attribute_key, []).extend(command.values)
-                                    current_src = ipv6_source_settings.get(clean_key)
-                                    if isinstance(current_src, list):
-                                        current_src.extend(command.values)
-                                    elif current_src is not None:
-                                        ipv6_source_settings[clean_key] = [current_src, *command.values]
-                                    else:
-                                        ipv6_source_settings[clean_key] = list(command.values)
-                                else:
-                                    current_val = attributes.get(attribute_key)
-                                    joined_vals = " ".join(command.values)
-                                    attributes[attribute_key] = f"{current_val} {joined_vals}".strip() if current_val else joined_vals
-                                    ipv6_source_settings[clean_key] = attributes[attribute_key]
-                            elif command.operation == "set":
-                                attributes.setdefault("source_explicit_fields", set()).add(attribute_key)
-                                source_value = (
-                                    command.values[0]
-                                    if len(command.values) == 1
-                                    else list(command.values)
-                                )
-                                ipv6_source_settings[clean_key] = source_value
-
-                                if clean_key in FG_INTERFACE_IPV6_LIST_FIELDS:
-                                    attributes[attribute_key] = list(command.values)
-                                elif clean_key in FG_INTERFACE_IPV6_SCALAR_FIELDS:
-                                    attributes[attribute_key] = (
-                                        command.values[0]
-                                        if len(command.values) == 1
-                                        else " ".join(command.values)
-                                    )
-                                else:
-                                    attributes[attribute_key] = (
-                                        command.values[0]
-                                        if len(command.values) == 1
-                                        else list(command.values)
-                                    )
-
-                        extra_node = next(
-                            (child for child in nested_node.children if child.name == "ip6-extra-addr"),
-                            None,
-                        )
-                        if extra_node is not None:
-                            attributes["ipv6_extra_addresses"] = [
-                                FGInterfaceIPv6ExtraAddress(
-                                    source_address=entry.name,
-                                    extra_settings=_extract_extra_settings(
-                                        self._nested_command_attributes(entry),
-                                        {"source_address", "extra_settings"},
-                                    ),
-                                )
-                                for entry in extra_node.children
-                                if entry.node_type == "edit"
-                            ]
-
-                        prefix_node = next((child for child in nested_node.children if child.name == "ip6-prefix-list"), None)
-                        if prefix_node is not None:
-                            attributes["ipv6_prefix_advertisements"] = []
-                            for entry in prefix_node.children:
-                                if entry.node_type != "edit":
-                                    continue
-                                values = self._nested_command_attributes(entry, {"dnssl", "rdnss"})
-                                values["prefix"] = entry.name
-                                for key in ("preferred_life_time", "valid_life_time"):
-                                    self._normalize_optional_int(values, key)
-                                values["extra_settings"] = sanitize_source_attributes(
-                                    _extract_extra_settings(values, set(FGIPv6PrefixAdvertisement.model_fields))
-                                )
-                                attributes["ipv6_prefix_advertisements"].append(FGIPv6PrefixAdvertisement(**values))
-
-                        delegated_node = next((child for child in nested_node.children if child.name == "ip6-delegated-prefix-list"), None)
-                        if delegated_node is not None:
-                            attributes["ipv6_delegated_prefix_advertisements"] = []
-                            for entry in delegated_node.children:
-                                if entry.node_type != "edit":
-                                    continue
-                                values = self._nested_command_attributes(entry, {"rdnss"})
-                                values["prefix_id"] = entry.name
-                                self._normalize_optional_int(values, "delegated_prefix_iaid")
-                                values["extra_settings"] = sanitize_source_attributes(
-                                    _extract_extra_settings(values, set(FGIPv6DelegatedPrefixAdvertisement.model_fields))
-                                )
-                                attributes["ipv6_delegated_prefix_advertisements"].append(FGIPv6DelegatedPrefixAdvertisement(**values))
-
-                        iapd_node = next((child for child in nested_node.children if child.name == "dhcp6-iapd-list"), None)
-                        if iapd_node is not None:
-                            attributes["dhcp6_iapd"] = []
-                            for entry in iapd_node.children:
-                                if entry.node_type != "edit":
-                                    continue
-                                values = self._nested_command_attributes(entry)
-                                values["source_iaid"] = entry.name
-                                try:
-                                    values["iaid"] = int(entry.name)
-                                except (TypeError, ValueError):
-                                    values["iaid"] = None
-                                    values.setdefault("extra_settings", {})["unparsed_iaid"] = entry.name
-                                for key in ("prefix_hint_plt", "prefix_hint_vlt"):
-                                    self._normalize_optional_int(values, key)
-                                values["extra_settings"] = sanitize_source_attributes(
-                                    _extract_extra_settings(values, set(FGDHCPv6IAPD.model_fields))
-                                )
-                                attributes["dhcp6_iapd"].append(FGDHCPv6IAPD(**values))
-
-                        vrrp_node = next((child for child in nested_node.children if child.name == "vrrp6"), None)
-                        if vrrp_node is not None:
-                            attributes["vrrp6"] = []
-                            for entry in vrrp_node.children:
-                                if entry.node_type != "edit":
-                                    continue
-                                values = self._nested_command_attributes(entry)
-                                values["source_vrid"] = entry.name
-                                try:
-                                    values["vrid"] = int(entry.name)
-                                except (TypeError, ValueError):
-                                    values["vrid"] = None
-                                    values.setdefault("extra_settings", {})["unparsed_vrid"] = entry.name
-                                for key in ("adv_interval", "priority", "vrgrp", "start_time", "vrdst6_priority"):
-                                    self._normalize_optional_int(values, key)
-                                values["extra_settings"] = sanitize_source_attributes(
-                                    _extract_extra_settings(values, set(FGInterfaceVRRP6.model_fields))
-                                )
-                                attributes["vrrp6"].append(FGInterfaceVRRP6(**values))
-
-                        attributes["ipv6_source_settings"] = sanitize_source_attributes(
-                            ipv6_source_settings
-                        )
-                    elif section_path == "system interface" and nested_name == "client-options":
-                        attributes["client_options"] = [
-                            self._interface_nested_entry(
-                                entry,
-                                FGInterfaceClientOption,
-                                list_fields={"ip"},
-                                int_fields={"code"},
-                                source_id=True,
-                            )
-                            for entry in nested_node.children
-                            if entry.node_type == "edit"
-                        ]
-                    elif section_path == "system interface" and nested_name == "dhcp-snooping-server-list":
-                        attributes["dhcp_snooping_server_list"] = [
-                            self._interface_nested_entry(
-                                entry,
-                                FGInterfaceDHCPSnoopingServer,
-                            )
-                            for entry in nested_node.children
-                            if entry.node_type == "edit"
-                        ]
-                    elif section_path == "system interface" and nested_name == "tagging":
-                        attributes["tagging"] = [
-                            self._interface_nested_entry(
-                                entry,
-                                FGInterfaceTaggingEntry,
-                                list_fields={"tags"},
-                            )
-                            for entry in nested_node.children
-                            if entry.node_type == "edit"
-                        ]
-                    elif section_path == "system interface" and nested_name == "vrrp":
-                        attributes["vrrp"] = []
-                        for entry in nested_node.children:
-                            if entry.node_type != "edit":
-                                continue
-                            values = self._nested_command_attributes(entry)
-                            values["source_vrid"] = entry.name
-                            try:
-                                values["vrid"] = int(entry.name)
-                            except (TypeError, ValueError):
-                                values["vrid"] = None
-                                values.setdefault("extra_settings", {})["unparsed_vrid"] = entry.name
-                            for key in (
-                                "adv_interval", "priority", "start_time",
-                                "version", "vrdst_priority", "vrgrp",
-                            ):
-                                self._normalize_optional_int(values, key)
-                            proxy_node = next(
-                                (child for child in entry.children if child.name == "proxy-arp"),
-                                None,
-                            )
-                            values["proxy_arp"] = [
-                                self._interface_nested_entry(
-                                    proxy,
-                                    FGInterfaceVRRPProxyARP,
-                                    source_id=True,
-                                )
-                                for proxy in (proxy_node.children if proxy_node else [])
-                                if proxy.node_type == "edit"
-                            ]
-                            values["extra_settings"] = _extract_extra_settings(
-                                values,
-                                set(FGInterfaceVRRP.model_fields),
-                            )
-                            attributes["vrrp"].append(FGInterfaceVRRP(**values))
-                    elif section_path == "system interface" and nested_name == "egress-queues":
-                        values = self._nested_command_attributes(nested_node)
-                        values["extra_settings"] = _extract_extra_settings(
-                            values,
-                            set(FGInterfaceEgressQueues.model_fields),
-                        )
-                        attributes["egress_queues"] = FGInterfaceEgressQueues(**values)
-                    elif section_path == "system interface" and nested_name == "l2tp-client-settings":
-                        values = self._nested_command_attributes(nested_node)
-                        values["has_password"] = any(
-                            command.key.replace("-", "_") == "password"
-                            for command in nested_node.commands
-                        )
-                        values.pop("password", None)
-                        self._normalize_optional_int(values, "mtu")
-                        values["extra_settings"] = _extract_extra_settings(
-                            values, set(FGL2TPClientSettings.model_fields)
-                        )
-                        attributes["l2tp_client_settings"] = FGL2TPClientSettings(**values)
-                    attributes.setdefault("nested_configs", []).append(nested_node)
-                    inventory = self._source_node_inventory(
-                        nested_node, nested_path, item_name
-                    )
-                    inventory.notes.append(
-                        "interface-nested-config"
-                        if section_path == "system interface"
-                        else "nested-source-config"
-                    )
-                    self.source_inventory_items.append(inventory)
-
-            else:
-                self.next_token()
-
-        inventory_name = item_name
-        if section_path == "firewall policy":
-            inventory_name = attributes.get("name")
-
-        self.source_inventory_items.append(
-            SourceInventoryItem(
-                domain=section_path.split(" ", 1)[0] if section_path else "unknown",
-                source_path=section_path,
-                name=inventory_name,
-                source_id=item_name if item_name.isdigit() else None,
-                source_record_id=(
-                    item_name
-                    if section_path.startswith("system dhcp server")
-                    and not item_name.isdigit()
-                    else None
-                ),
-                source_context=self.current_context,
-                commands=source_commands,
-                notes=(
-                    [
-                        "parse-error: malformed DHCP edit identifier retained as source inventory"
-                    ]
-                    if section_path.startswith("system dhcp server")
-                    and not item_name.isdigit()
-                    else []
-                ),
-            )
+        spec = get_section_spec(section_path)
+        evaluated = evaluate_commands(
+            node.commands,
+            list_fields=spec.list_fields if spec else (),
+            integer_fields=spec.integer_fields if spec else (),
+            integer_list_fields=spec.integer_list_fields if spec else (),
+            scalar_fields=spec.scalar_fields if spec else (),
+            explicit_fields=spec.explicit_fields if spec else (),
+            secret_fields=spec.secret_fields if spec else (),
+            initial=initial,
         )
+        attributes = {**evaluated.attributes, **evaluated.extra_settings}
+        if evaluated.explicit_fields:
+            attributes["source_explicit_fields"] = evaluated.explicit_fields
+
+        for command in node.commands:
+            clean_key = self._normalize_attribute_key(command.key)
+            if command.operation == "unset":
+                attributes.setdefault("source_unset_settings", []).append(command.key)
+                if section_path == "system dhcp server" and clean_key == "ddns_key":
+                    attributes.update(has_ddns_key=False, ddns_key_format=None)
+                elif section_path == "system sdwan health-check" and clean_key == "password":
+                    attributes.update(has_password=False, password_format=None)
+                continue
+            if command.operation not in {"set", "append"}:
+                continue
+            if (
+                clean_key in {"password", "passwd", "ppk_secret", "psksecret", "psksecret_remote", "authpasswd", "group_authentication_secret", "ddns_key"}
+                or section_path.startswith("vpn certificate ")
+                or section_path.startswith("certificate ")
+                or section_path.startswith("firewall ssh ")
+                or section_path == "system admin"
+                or section_path == "user fortitoken"
+            ):
+                self.apply_attribute(attributes, command.key, list(command.values), section_path)
+
+        nested_collections = {
+            ("system interface", "secondaryip"): "secondary_ips",
+            ("firewall vip", "realservers"): "realservers",
+            ("firewall vip6", "realservers"): "realservers",
+            ("firewall addrgrp", "tagging"): "tagging",
+            ("firewall addrgrp6", "tagging"): "tagging",
+            ("firewall address", "list"): "address_list",
+            ("firewall address", "tagging"): "tagging",
+            ("firewall address6", "tagging"): "tagging",
+            ("firewall multicast-address", "tagging"): "tagging",
+            ("firewall multicast-address6", "tagging"): "tagging",
+            ("system dhcp server", "ip-range"): "ip_ranges",
+            ("system dhcp6 server", "ip-range"): "ip_ranges",
+            ("system dhcp server", "exclude-range"): "exclude_ranges",
+            ("system dhcp server", "reserved-address"): "reserved_addresses",
+            ("system dhcp server", "options"): "options",
+            ("system dhcp6 server", "prefix-range"): "prefix_ranges",
+            ("system dhcp6 server", "option"): "options",
+            ("system dhcp6 server", "options"): "options",
+            ("ips sensor", "entries"): "entries",
+            ("ips sensor entries", "exempt-ip"): "exempt_ips",
+            ("firewall internet-service-definition", "entry"): "entries",
+            ("firewall internet-service-definition entry", "port-range"): "port_ranges",
+            ("firewall internet-service-custom", "entry"): "entries",
+            ("firewall internet-service-addition", "entry"): "entries",
+            ("firewall internet-service-custom entry", "port-range"): "port_ranges",
+            ("firewall internet-service-addition entry", "port-range"): "port_ranges",
+            ("firewall internet-service-extension", "disable-entry"): "disable_entries",
+            ("firewall internet-service-extension", "entry"): "entries",
+            ("firewall internet-service-extension disable-entry", "ip-range"): "ip_range",
+            ("firewall internet-service-extension disable-entry", "ip6-range"): "ip6_range",
+            ("firewall internet-service-extension disable-entry", "port-range"): "port_ranges",
+            ("firewall internet-service-extension entry", "port-range"): "port_ranges",
+            ("system sdwan health-check", "sla"): "sla",
+            ("system sdwan service", "sla"): "sla",
+            ("user group", "match"): "match",
+            ("user group", "guest"): "guests",
+            ("vpn ssl web portal", "host-check-software"): "host_checks",
+            ("vpn ssl web portal", "bookmark-group"): "bookmark_groups",
+            ("vpn ssl web portal", "landing-page"): "landing_pages",
+            ("vpn ssl web portal", "mac-addr-check-rule"): "mac_address_check_rules",
+            ("vpn ssl web portal", "os-check-list"): "os_check_list",
+            ("vpn ssl web portal", "split-dns"): "split_dns",
+            ("vpn ssl web portal bookmark-group", "bookmarks"): "bookmarks",
+            ("vpn ssl web portal bookmark-group bookmarks", "form-data"): "form_data",
+            ("vpn ssl web portal landing-page", "form-data"): "form_data",
+            ("vpn ssl web host-check-software", "check-item-list"): "check_items",
+            ("firewall DoS-policy", "anomaly"): "anomalies",
+            ("firewall DoS-policy6", "anomaly"): "anomalies",
+        }
+        for child in node.children:
+            nested_path = f"{section_path} {child.name}".strip()
+            collection = nested_collections.get((section_path, child.name))
+            if collection:
+                values = [
+                    self._project_edit_source_node(nested_path, entry)
+                    for entry in child.children
+                    if entry.node_type == "edit"
+                ]
+                attributes.setdefault(collection, []).extend(values)
+                continue
+            if section_path == "system accprofile" and child.name.endswith("grp-permission"):
+                settings = evaluate_commands(child.commands).attributes
+                attributes.setdefault("permission_blocks", []).append({
+                    "name": child.name,
+                    "settings": settings,
+                })
+                continue
+            attributes.setdefault("nested_configs", []).append(child)
+
+        inventory_name = attributes.get("name") if section_path == "firewall policy" else node.name
+        self.source_inventory_items.append(SourceInventoryItem(
+            domain=section_path.split(" ", 1)[0] if section_path else "unknown",
+            source_path=section_path,
+            name=inventory_name,
+            source_id=node.name if node.name.isdigit() else None,
+            source_record_id=(
+                node.name
+                if section_path.startswith("system dhcp server") and not node.name.isdigit()
+                else None
+            ),
+            source_context=self.current_context,
+            commands=[
+                SourceCommand(
+                    operation=command.operation,
+                    key=command.key,
+                    values=list(command.values),
+                    line_number=command.line_number,
+                )
+                for command in node.commands
+            ],
+            children=[
+                self._source_node_inventory(
+                    child,
+                    f"{section_path} {child.name}" if child.node_type == "config" else section_path,
+                    child.name,
+                )
+                for child in node.children
+            ],
+            notes=(
+                ["parse-error: malformed DHCP edit identifier retained as source inventory"]
+                if section_path.startswith("system dhcp server") and not node.name.isdigit()
+                else []
+            ),
+        ))
         return attributes
 
     @staticmethod
@@ -3152,48 +2438,7 @@ class FortiGateParser:
         )
         return dict(FGSystemZoneTaggingEntry(**attributes))
 
-    def _parse_admin_profile_permission_block(self, name: str) -> Dict[str, Any]:
-        """Parse a direct-setting accprofile child while retaining unknown keys."""
-        settings: Dict[str, Any] = {}
-        while self.peek():
-            token = self.peek()
-            if token.type == TokenType.END:
-                self.consume(TokenType.END)
-                break
-            if token.type == TokenType.SET:
-                key, values = self.parse_set()
-                self.apply_attribute(settings, key, values)
-            elif token.type == TokenType.UNSET:
-                key, _ = self.parse_key_values(TokenType.UNSET)
-                settings.pop(self._normalize_attribute_key(key), None)
-            else:
-                self.next_token()
-        return {"name": name, "settings": settings}
 
-    def parse_nested_edit_collection(
-        self,
-        section_path: str,
-    ) -> List[Dict[str, Any]]:
-        items = []
-
-        while self.peek():
-            token = self.peek()
-
-            if token.type == TokenType.END:
-                self.consume(TokenType.END)
-                break
-
-            if token.type == TokenType.EDIT:
-                items.append(
-                    self.parse_edit_attributes(
-                        section_path
-                    )
-                )
-
-            else:
-                self.next_token()
-
-        return items
 
     def _attach_ssl_vpn_authentication_rules(
         self,
@@ -3362,29 +2607,11 @@ class FortiGateParser:
     ) -> None:
         clean_key = key.replace("-", "_")
         spec = get_section_spec(section_path)
-        fields = spec.explicit_fields if spec else SECTION_EXPLICIT_FIELDS.get(section_path, set())
+        fields = spec.explicit_fields if spec else ()
         if clean_key not in fields:
             return
         attributes.setdefault("source_explicit_fields", set()).add(clean_key)
 
-    def apply_append_attribute(
-        self,
-        attributes: Dict[str, Any],
-        key: str,
-        values: List[str],
-        section_path: str = "",
-    ) -> None:
-        self._record_explicit_field(attributes, section_path, key)
-        clean_key = self._normalize_attribute_key(key)
-        if clean_key not in attributes:
-            self.apply_attribute(attributes, key, values, section_path)
-            return
-
-        current = attributes[clean_key]
-        if isinstance(current, list):
-            current.extend(values)
-        elif values:
-            attributes[clean_key] = " ".join([str(current), *values])
 
     def apply_attribute(
         self,
@@ -3561,7 +2788,7 @@ class FortiGateParser:
             or clean_key in (
                 get_section_spec(section_path).list_fields
                 if get_section_spec(section_path)
-                else SECTION_LIST_FIELDS.get(section_path, set())
+                else ()
             )
             or (
                 clean_key == "interface"
@@ -3830,7 +3057,7 @@ class FortiGateParser:
             clean_key = key.replace("-", "_")
             if clean_key == "servercert":
                 self.config.ssl_vpn_settings.servercert_configured = True
-            if clean_key in SECTION_LIST_FIELDS["vpn ssl settings"]:
+            if clean_key in get_section_spec("vpn ssl settings").list_fields:
                 value: Any = list(values)
             elif clean_key in {
                 "login_attempt_limit", "login_block_time", "auth_timeout",
@@ -3988,7 +3215,7 @@ class FortiGateParser:
                 sdwan.load_balance_mode = None
             sdwan.extra_settings.pop(clean_key, None)
         elif section_path == "vpn ssl settings" and self.config.ssl_vpn_settings:
-            if clean_key in SECTION_LIST_FIELDS["vpn ssl settings"]:
+            if clean_key in get_section_spec("vpn ssl settings").list_fields:
                 setattr(self.config.ssl_vpn_settings, clean_key, [])
             elif clean_key in FGSSLVPNSettings.model_fields and clean_key not in {
                 "authentication_rules",
@@ -4191,15 +3418,15 @@ class FortiGateParser:
             "firewall internet-service-group",
         }:
             attributes.setdefault("source_context", self.current_context)
-        if section_path == "system zone":
+        if section_path in STANDARD_SECTION_PATHS:
             attributes["extra_settings"] = _extract_extra_settings(
-                attributes, set(FGSystemZone.model_fields)
+                attributes, set(spec.model.model_fields)
             )
-            self.config.system_zones.append(
-                FGSystemZone(**attributes)
-            )
+            getattr(self.config, spec.destination_collection).append(spec.model(**attributes))
+            return
 
-        elif section_path == "system interface":
+
+        if section_path == "system interface":
             attributes.setdefault("has_pppoe_password", False)
             attributes.setdefault("pppoe_password_format", None)
             explicit_vdom = attributes.get("vdom")
@@ -4436,29 +3663,7 @@ class FortiGateParser:
                 FGAddressGroup(**attributes)
             )
 
-        elif section_path == "firewall wildcard-fqdn custom":
-            attributes["extra_settings"] = (
-                _extract_extra_settings(
-                    attributes,
-                    set(FGWildcardFQDN.model_fields),
-                )
-            )
 
-            self.config.wildcard_fqdns.append(
-                FGWildcardFQDN(**attributes)
-            )
-
-        elif section_path == "firewall service category":
-            attributes["extra_settings"] = (
-                _extract_extra_settings(
-                    attributes,
-                    set(FGServiceCategory.model_fields),
-                )
-            )
-
-            self.config.service_categories.append(
-                FGServiceCategory(**attributes)
-            )
 
         elif section_path == "firewall service custom":
             attributes["source_protocol_configured"] = attributes.get(
@@ -4487,17 +3692,6 @@ class FortiGateParser:
                     self.config.services[-1].session_ttl
                 )
 
-        elif section_path == "firewall service group":
-            attributes["extra_settings"] = (
-                _extract_extra_settings(
-                    attributes,
-                    set(FGServiceGroup.model_fields),
-                )
-            )
-
-            self.config.service_groups.append(
-                FGServiceGroup(**attributes)
-            )
 
         elif section_path in {
             "firewall schedule recurring",
@@ -4519,11 +3713,6 @@ class FortiGateParser:
                 schedule_model(**attributes)
             )
 
-        elif section_path == "firewall schedule group":
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes, set(FGScheduleGroup.model_fields)
-            )
-            self.config.schedule_groups.append(FGScheduleGroup(**attributes))
 
         elif section_path == "firewall shaper traffic-shaper":
             for key in (
@@ -4548,14 +3737,6 @@ class FortiGateParser:
                 FGTrafficShaper(**attributes)
             )
 
-        elif section_path == "firewall proxy-address":
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGProxyAddress.model_fields),
-            )
-            self.config.proxy_addresses.append(
-                FGProxyAddress(**attributes)
-            )
 
         elif section_path == "firewall ippool":
             attributes["extra_settings"] = _extract_extra_settings(
@@ -4566,12 +3747,6 @@ class FortiGateParser:
                 FGIPPool(**attributes)
             )
 
-        elif section_path == "firewall ippool6":
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGIPPool6.model_fields),
-            )
-            self.config.ip_pools6.append(FGIPPool6(**attributes))
 
         elif section_path in {"firewall vip", "firewall vip6"}:
             raw_realservers = attributes.pop("realservers", [])
@@ -5398,15 +4573,6 @@ class FortiGateParser:
                 FGInternetServiceDefinition(**attributes)
             )
         
-        elif section_path == "endpoint-control fctems":
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGFCTEMS.model_fields),
-            )
-
-            self.config.fctems_connectors.append(
-                FGFCTEMS(**attributes)
-            )
 
         elif section_path == "user ldap":
             for key in ("port", "source_port", "timeout", "connect_timeout", "query_timeout"):
@@ -5448,19 +4614,7 @@ class FortiGateParser:
             )
             self.config.fsso_servers.append(FGFSSOServer(**attributes))
 
-        elif section_path == "user adgrp":
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGADGroup.model_fields),
-            )
-            self.config.ad_groups.append(FGADGroup(**attributes))
 
-        elif section_path == "user saml":
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGUserSAML.model_fields),
-            )
-            self.config.user_saml_servers.append(FGUserSAML(**attributes))
 
         elif section_path == "user local":
             self._normalize_optional_int(attributes, "id")
@@ -5623,23 +4777,7 @@ class FortiGateParser:
             )
             self.config.firewall_sniffers.append(FGFirewallSniffer(**attributes))
 
-        elif section_path == "authentication scheme":
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGAuthenticationScheme.model_fields),
-            )
-            self.config.authentication_schemes.append(
-                FGAuthenticationScheme(**attributes)
-            )
 
-        elif section_path == "authentication rule":
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGAuthenticationRule.model_fields),
-            )
-            self.config.authentication_rules.append(
-                FGAuthenticationRule(**attributes)
-            )
 
         elif section_path == "system session-helper":
             if attributes.get("name") == str(attributes.get("id")):
@@ -5769,12 +4907,6 @@ class FortiGateParser:
             )
             self.config.dhcp_servers.append(FGDHCPServer(**attributes))
 
-        elif section_path == "system dns-server":
-            attributes["extra_settings"] = _extract_extra_settings(
-                attributes,
-                set(FGDnsServer.model_fields),
-            )
-            self.config.dns_servers.append(FGDnsServer(**attributes))
 
         elif section_path == "system dns64":
             attributes.pop("name", None)
