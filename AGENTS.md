@@ -4,75 +4,114 @@
 
 Firewall Migration Tool is a Python 3.10+ multi-vendor firewall extraction and migration platform.
 
-Preserve the M×N architecture:
+Current engineering priority:
 
 ```text
-source config -> source parser -> ExtractionResult + canonical IR -> validation/optimization -> target generator
+vendor source -> ExtractionResult -> IR V2 -> Excel
 ```
 
-Do not add direct source-to-target converters. Parsers must not contain target-vendor logic, and generators must consume canonical IR rather than parser-specific models.
+Target generation remains supported, but parser, extraction, IR, source-accounting, and Excel correctness take priority.
+
+Do not add direct source-to-target converters. Parsers must not contain target-vendor generation logic. Excel/reporting must not parse vendor source independently.
+
+## Required Source Extraction Pipeline
+
+All built-in vendors must converge on the same lifecycle:
+
+```text
+1. Input detection / format adapter
+2. Source normalization
+3. Parse / tokenize / load
+4. Vendor source model
+5. Context / scope / inheritance resolution
+6. Reference and dependency resolution
+7. Source inventory and coverage accounting
+8. Transform to IR V2
+   - canonical generic IR
+   - typed vendor extensions
+9. Semantic validation
+10. Extraction safety / completeness evaluation
+11. Finalize ExtractionResult
+12. Excel / reporting
+```
+
+Rules:
+
+- `extract()` is the authoritative source-parser entry point.
+- `parse()` is compatibility only and should project `extract(...).canonical_ir`.
+- Vendor syntax handling may differ internally, but all vendors must return the same `ExtractionResult` contract.
+- Every meaningful source item must be accounted for. Nothing may disappear silently.
+- Source items should end in an explicit state such as normalized, partially normalized, vendor extension, extract-only, unsupported, ignored-by-policy, or parse error.
+- Vendor-specific semantics belong in typed vendor extensions or source evidence unless they are genuinely portable canonical concepts.
+- Excel/reporting consumes `ExtractionResult` and IR only. Do not add a separate vendor-to-Excel parser path.
 
 ## Read Before Changing Semantics
 
-- `documentation/ir-model.md` — canonical IR model, schema authority, and source-accounting boundary.
-- `documentation/explanation/safety-model.md` — cross-vendor fail-closed requirements.
-- Relevant vendor reference and support matrix under `documentation/reference/vendors/`.
-- Implementation and tests — documentation alone is not proof that a feature is implemented.
+- `documentation/ir-schema-v2-plan.md` — planned IR V2 target contract and generic/vendor-extension boundary.
+- `documentation/ir-model.md` — currently implemented IR schema.
+- `documentation/vendor-mapping/<vendor>.md` — maintained source-to-IR mapping and coverage notes.
+- Relevant official vendor documentation — authority for vendor syntax and semantics.
+- Implementation and regression tests — authority for what the repository currently supports.
 
-If serialized IR changes, update executable models, serialization/migrations, affected tests, and schema version according to the current IR rules.
+If the planned IR document conflicts with proven vendor semantics or safe implementation behavior, do not guess. Preserve the source semantics and report the discrepancy.
+
+If serialized IR changes, update models, compatibility/migration handling, tests, and schema version together.
 
 ## Important Areas
 
-- `src/fwmigrate/ir/` — canonical Pydantic IR.
-- `src/fwmigrate/extraction/` — `ExtractionResult`, coverage, residual/unsupported accounting.
-- `src/fwmigrate/parsers/` — source-vendor adapters and source models.
-- `src/fwmigrate/generators/` — native/Terraform target generators.
-- `src/fwmigrate/core/` — plugin registry, optimizer, base interfaces, shared logic.
-- `src/fwmigrate/engine/` and `src/fwmigrate/deployment/` — Terraform/runtime and deployment support.
-- `src/fwmigrate/report/` — Excel and migration reports.
-- `src/fwmigrate/main.py` — Click CLI; `serve` and `app` launch the web/desktop workflows.
-- `tests/fixtures/` — sanitized committed source fixtures.
-- `documentation/` — maintained documentation system, generated capability references, and archived history.
+- `src/fwmigrate/ir/` — canonical IR and vendor-extension models.
+- `src/fwmigrate/extraction/` — `ExtractionResult`, coverage, inventory, unsupported/residual accounting, safety finalization.
+- `src/fwmigrate/parsers/` — vendor adapters, source models, resolvers, transformers, and extractors.
+- `src/fwmigrate/report/` — Excel and report generation from extraction/IR data.
+- `src/fwmigrate/core/` — shared parser interfaces, registry, and cross-vendor logic.
+- `src/fwmigrate/application/` — application pipeline orchestration.
+- `src/fwmigrate/generators/` — target generators; secondary to the current extraction-first milestone.
+- `tests/fixtures/` — sanitized source fixtures.
+- `documentation/` — maintained architecture, IR, and vendor-mapping documentation.
 
-Plugin registration is import-driven. `fwmigrate.parsers` and `fwmigrate.generators` import built-in vendor packages, and those packages register with `PluginRegistry`. When adding a parser or generator, update the corresponding package `__init__.py`; do not hard-code vendor routing in shared UI/CLI code.
+Plugin registration is import-driven. Built-in vendor packages register with `PluginRegistry`. Do not hard-code vendor routing in shared CLI/UI/application code.
 
-## Documentation Rules
+## Extraction and IR Rules
 
-- Executable code and regression tests are authoritative for implementation claims.
-- Official vendor documentation and release notes are authoritative for vendor behavior.
-- `latest_vendor_version_checked` is not the same as a tested/supported release.
-- Do not claim compatibility with a newer vendor release without repository validation evidence.
-- Do not manually edit files under `documentation/generated/`; run `scripts/docs/generate_docs.py`.
-- Keep active docs in lowercase kebab-case paths and register them in `documentation/metadata/documents.yml`.
-- Update `documentation/metadata/vendors.yml` only from official vendor sources.
-- Historical phase/fix plans belong under `documentation/archive/` and must not be presented as current authority.
-- If a code-derived capability changes, regenerate docs and run the documentation validators.
+- **Zero silent loss:** recognized or migration-relevant source data must be normalized or explicitly accounted for.
+- **Fail closed:** unresolved, malformed, ambiguous, or unsupported semantics must not become broader values such as `any`, `allow`, `/0`, `/32`, fabricated interfaces/zones, or enabled rules.
+- Preserve source context, ordering, inheritance, provenance, unresolved references, and vendor-only behavior when needed for auditability.
+- Keep canonical IR vendor-neutral. Do not place a vendor field in the generic core merely because only one parser currently uses it.
+- Do not force unlike concepts into one generic model. Use vendor extensions when portability is not proven.
+- Do not let a generic normalizer guess intent from names or other weak heuristics unless that behavior is explicit, audited, and separately tested.
+- Do not remove source-only/vendor-specific models until equivalent extraction evidence is preserved elsewhere.
 
-## Setup, Run, and Validate
+## Excel and Reporting Rules
 
-CI/development install:
+Excel is the primary near-term verification output.
 
-```bash
-python -m pip install -e ".[dev]"
-```
+It should make extraction behavior auditable by exposing, where relevant:
 
-Optional extras currently defined by `pyproject.toml` are only `cisco` and `reports`:
+- canonical objects and rules
+- vendor-extension data
+- source context/provenance
+- extraction/migration status
+- review reasons
+- unresolved dependencies
+- unsupported items
+- parse errors
+- source versus normalized/accounted counts
 
-```bash
-python -m pip install -e ".[dev,cisco,reports]"
-```
+A reviewer should be able to trace important Excel output back to the source configuration.
 
-Useful entry points:
+Never expose passwords, usable PSKs, private keys, tokens, API keys, or real customer secrets in reports, fixtures, logs, or generated artifacts.
 
-```bash
-fwmigrate vendors
-fwmigrate serve --port 5000
-fwmigrate app
-```
+## Testing Expectations
 
-`run_migration.bat` is the Windows web launcher.
+- Parser changes: add/update sanitized fixtures and assert source-model behavior, canonical IR, vendor extensions, dependencies, coverage, and safety accounting.
+- A parser test is incomplete if it only proves that parsing did not crash.
+- A successful parse with silently dropped source data is a failure.
+- IR changes: test legacy payload compatibility, serialization round-trip, aliases/migrations, and all affected vendors.
+- Reporting changes: test both canonical data and extraction/accounting output; preserve secret redaction.
+- Shared extraction changes: run affected vendor suites and the full suite because they cross vendor boundaries.
+- Generator changes, when required: consume canonical IR and preserve fail-closed behavior; do not depend on parser-private models.
 
-Run focused tests first, then the full CI checks for shared or migration-semantic changes:
+Run focused tests first, then full validation for shared or semantic changes:
 
 ```bash
 python -m pytest -q
@@ -82,30 +121,22 @@ python scripts/docs/validate_docs.py
 python scripts/docs/generate_docs.py --check
 ```
 
-CI runs the full test suite on Python 3.11, 3.12, and 3.13. There is no configured Ruff/Black/mypy/pre-commit gate; do not invent or claim one.
+CI currently runs the full test suite on Python 3.11, 3.12, and 3.13. Do not invent additional lint/type-check gates that are not configured.
 
-For Windows executable packaging, follow the PyInstaller guidance in `README.md`. `Firewall Migration Tool.spec` intentionally bundles the tracked `bin/terraform.exe`; do not remove or replace that binary as generic cleanup.
+## Documentation Rules
 
-## Migration Safety Rules
-
-- **Zero silent loss:** migration-relevant source data must be normalized or explicitly accounted for as partial, extract-only, vendor-specific, unsupported, ignored-by-policy, or parse-error data.
-- **Fail closed:** unresolved or malformed semantics must not silently become broader values such as `any`, `allow`, `/0`, `/32`, an enabled rule, or fabricated object/zone/interface topology.
-- Preserve unresolved references and source provenance when needed for review/audit.
-- Keep vendor-specific semantics in vendor adapters or extraction/vendor-extension data unless they are genuinely portable IR concepts.
-- Source inventory/Excel output must come from parser extraction (`ExtractionResult` + canonical IR), not a separate vendor-to-Excel parsing path.
-- Never expose passwords, usable PSKs, private keys, tokens, API keys, or real customer configuration in logs, reports, fixtures, API responses, or generated artifacts.
-- Treat live deployment as high impact. Do not bypass Terraform plan/review/approval safeguards or contact real firewalls from ordinary automated tests.
-
-## Testing Expectations
-
-- Parser changes: add/update sanitized fixtures and assert canonical IR plus extraction/accounting behavior. A successful parse with silently dropped source data is a failure.
-- Generator changes: assert target semantics and capability/fail-closed behavior, not only non-empty output or incidental whitespace.
-- IR/core/registry changes: run affected vendor tests and the full suite because they cross vendor boundaries.
-- Reporting changes: test normalized IR data and extraction/residual coverage where relevant; keep secret-redaction behavior intact.
-- Deployment/Terraform changes: validate generated Terraform where applicable, but never run an automatic real `apply` in normal tests.
+- Official vendor documentation and release notes are authoritative for vendor behavior.
+- Code and regression tests are authoritative for implementation claims.
+- `documentation/ir-schema-v2-plan.md` describes the planned target contract; do not present unimplemented V2 behavior as current implementation.
+- `documentation/ir-model.md` describes the currently implemented IR until V2 migration is complete.
+- Keep vendor-specific mapping and support notes in `documentation/vendor-mapping/`.
+- Do not create new phase/fix-plan documents as long-term authority. Historical plans belong in archive/history only.
+- Do not manually edit generated documentation under `documentation/generated/`.
 
 ## Repository Hygiene
 
-`.gitignore` excludes customer-style `*.conf`, `*.xml`, `*.xlsx`, Terraform state, generated outputs, logs, and temporary files. Only sanitized fixtures under `tests/fixtures/` are intentionally exempted for supported fixture extensions.
+Keep changes focused. Do not mix unrelated refactoring with parser, IR, extraction, or reporting fixes.
 
-Keep changes focused. Do not mix unrelated refactors with parser/generator fixes, especially in shared IR, registry, or migration-safety code.
+Do not refactor solely to reduce file count. Split or merge modules only when it clarifies pipeline ownership, removes obsolete patch layering, or reduces duplicated logic without changing semantics.
+
+Do not contact real firewalls from ordinary automated tests. Only sanitized fixtures under `tests/fixtures/` should contain representative source configuration.
