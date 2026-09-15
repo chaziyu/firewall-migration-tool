@@ -5,8 +5,8 @@ fail-closed issues without bypassing prior FortiGate relationship extensions:
 
 - values previously treated as global built-ins are resolved against an exact
   same-context allowed target first;
-- multiple distinct valid same-context targets are reported as unresolved
-  ambiguity instead of selecting the first source object.
+- multiple distinct same-type targets in the same context are reported as
+  unresolved ambiguity instead of selecting the first source object.
 """
 
 from __future__ import annotations
@@ -114,8 +114,6 @@ def _build_index(
     index: Dict[Tuple[str, str], List[SourceInventoryItem]] = {}
     for item in items:
         source_context = item.source_context or "root"
-        # name and source_id can be the same value for numeric FortiOS edits.
-        # Index that source object once per textual key.
         names = dict.fromkeys(
             str(name)
             for name in (item.name, item.source_id)
@@ -142,13 +140,27 @@ def _matching_candidates(
         ):
             continue
         # Existing FortiGate extension composition can surface the same logical
-        # inventory object more than once. Equivalent records are one target,
-        # while same-name records with different source evidence remain
-        # distinct and therefore ambiguous.
+        # inventory object more than once. Equivalent records are one target.
         if any(candidate == existing for existing in matches):
             continue
         matches.append(candidate)
     return matches
+
+
+def _ambiguous_candidates(
+    candidates: List[SourceInventoryItem],
+    dependencies_module: Any,
+) -> List[SourceInventoryItem]:
+    """Return candidates only when one source family has multiple targets."""
+    by_section: Dict[str, List[SourceInventoryItem]] = {}
+    for candidate in candidates:
+        section = dependencies_module._norm(candidate.source_path)
+        by_section.setdefault(section, []).append(candidate)
+    ambiguous: List[SourceInventoryItem] = []
+    for section_candidates in by_section.values():
+        if len(section_candidates) > 1:
+            ambiguous.extend(section_candidates)
+    return ambiguous
 
 
 def _ambiguity_note(
@@ -191,7 +203,8 @@ def _replace_ambiguous_records(
             allowed_sections=allowed_sections,
             dependencies_module=dependencies_module,
         )
-        if len(candidates) <= 1:
+        ambiguous = _ambiguous_candidates(candidates, dependencies_module)
+        if not ambiguous:
             result.append(record)
             continue
 
@@ -202,7 +215,7 @@ def _replace_ambiguous_records(
                     "target_path": None,
                     "target_uid": None,
                     "target_name": None,
-                    "notes": _ambiguity_note(candidates, dependencies_module),
+                    "notes": _ambiguity_note(ambiguous, dependencies_module),
                     "reason": "ambiguous-reference",
                 }
             )
@@ -267,6 +280,7 @@ def _missing_filtered_reference_records(
                     allowed_sections=allowed_sections,
                     dependencies_module=dependencies_module,
                 )
+                ambiguous = _ambiguous_candidates(candidates, dependencies_module)
 
                 if self_reference:
                     record = DependencyRecord(
@@ -280,7 +294,7 @@ def _missing_filtered_reference_records(
                         target_path=None,
                         notes="Interface member cannot reference its own interface.",
                     )
-                elif len(candidates) > 1:
+                elif ambiguous:
                     record = DependencyRecord(
                         source_context=source_context,
                         source_path=source_path,
@@ -290,10 +304,10 @@ def _missing_filtered_reference_records(
                         expected_type=expected,
                         result="UNRESOLVED",
                         target_path=None,
-                        notes=_ambiguity_note(candidates, dependencies_module),
+                        notes=_ambiguity_note(ambiguous, dependencies_module),
                         reason="ambiguous-reference",
                     )
-                elif len(candidates) == 1:
+                elif candidates:
                     record = DependencyRecord(
                         source_context=source_context,
                         source_path=source_path,
@@ -313,8 +327,6 @@ def _missing_filtered_reference_records(
                     reference,
                     dependencies_module,
                 ):
-                    # Match legacy behavior for genuine FortiOS built-ins: they
-                    # are selector semantics, not object dependencies.
                     continue
                 else:
                     resolution_mode = dependencies_module._reference_resolution_mode(
