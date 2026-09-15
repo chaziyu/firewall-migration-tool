@@ -164,3 +164,8 @@ class ExtractionResult(BaseModel):
     generation_safe: bool = True
     blocking_reasons: List[str] = Field(default_factory=list)
 
+    input_source_type: str = "unknown"
+    policy_extraction_supported: bool = True
+    nat_extraction_supported: bool = True
+    object_extraction_supported: bool = True
+

@@ -22,3 +22,34 @@ def test_ftd_is_independent_and_preserves_management_source():
     assert PluginRegistry.get_parser("cisco_ftd").vendor_id == "cisco_ftd"
     result = extract_cisco_ftd_config(text)
     assert result.inventory_items[0].source_attributes["raw"].startswith("configure network")
+
+
+def test_ftd_text_is_explicitly_limited_and_blocks_generation():
+    result = extract_cisco_ftd_config("""
+interface GigabitEthernet0/0
+ nameif inside
+ ip address 192.0.2.1 255.255.255.0
+route inside 0.0.0.0 0.0.0.0 192.0.2.254
+""")
+
+    assert result.input_source_type == "ftd-text-evidence"
+    assert result.policy_extraction_supported is False
+    assert result.nat_extraction_supported is False
+    assert result.object_extraction_supported is False
+    assert result.migration_complete is False
+    assert result.generation_safe is False
+    assert "FTD text input does not contain an authoritative managed NAT/policy representation" in result.blocking_reasons
+
+
+def test_ftd_text_nat_and_object_commands_remain_unsupported_evidence():
+    result = extract_cisco_ftd_config("""
+object network INSIDE
+ host 10.0.0.10
+nat (inside,outside) source dynamic INSIDE interface
+""")
+
+    assert result.generation_safe is False
+    assert result.migration_complete is False
+    raw = "\n".join(item.raw_capture or "" for item in result.unsupported_items)
+    assert "object network INSIDE" in raw
+    assert "nat (inside,outside) source dynamic INSIDE interface" in raw
