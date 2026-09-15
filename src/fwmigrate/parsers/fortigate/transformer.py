@@ -20,6 +20,7 @@ from fwmigrate.parsers.fortigate.model import (
     FGPolicyRoute,
 )
 from fwmigrate.parsers.fortigate.firewall_ip_746 import (
+    classify_ippool_746,
     effective_ippool6_settings,
     effective_ippool_settings,
     effective_ip_translation_settings,
@@ -8016,42 +8017,10 @@ class FGToIRTransformer:
         self,
     ) -> None:
         for pool in self.fg.ip_pools:
-            review_reasons = validate_ippool_746(
+            review_reasons = classify_ippool_746(
                 pool,
                 self.fg.source_version,
             )
-            if pool.exclude_ip:
-                review_reasons.append("IP pool exclusions require exact target-specific handling")
-            if pool.permit_any_host == "enable":
-                review_reasons.append("permit-any-host enables full-cone behavior")
-            if pool.type == "fixed-port-range":
-                review_reasons.append("fixed-port-range pool semantics")
-            if pool.type == "port-block-allocation":
-                review_reasons.append("port-block-allocation pool semantics")
-            if any(
-                field in pool.source_explicit_fields
-                for field in (
-                    "block_size", "num_blocks_per_user", "pba_timeout",
-                    "pba_interim_log", "port_per_user", "privileged_port_use_pba",
-                )
-            ):
-                review_reasons.append("IP pool PBA settings require exact target-specific handling")
-            cgn_values = (
-                pool.cgn_block_size,
-                pool.cgn_client_startip,
-                pool.cgn_client_endip,
-                pool.cgn_client_ipv6shift,
-                pool.cgn_fixedalloc,
-                pool.cgn_overload,
-                pool.cgn_port_start,
-                pool.cgn_port_end,
-                pool.cgn_spa,
-            )
-            if any(value is not None for value in cgn_values):
-                review_reasons.append("carrier-grade NAT fields are configured")
-            if pool.nat64 == "enable":
-                review_reasons.append("NAT64 pool semantics")
-            review_reasons = list(dict.fromkeys(review_reasons))
 
             self.ir.ip_pools.append(
                 IRIPPool(
@@ -8637,12 +8606,20 @@ class FGToIRTransformer:
                     if pool is None:
                         review_reasons.append(f"Central SNAT pool '{pool_name}' is missing")
                         continue
-                    if pool.start_ip:
+                    if pool.requires_manual_review:
+                        review_reasons.append(
+                            pool.audit_note or f"IP pool '{pool.name}' requires manual review"
+                        )
+                    if (
+                        not pool.requires_manual_review
+                        and pool.migration_status == "NORMALIZED"
+                        and pool.start_ip
+                    ):
                         translated_sources.append(
                             pool.start_ip if pool.start_ip == pool.end_ip or not pool.end_ip
                             else f"{pool.start_ip}-{pool.end_ip}"
                         )
-                    else:
+                    elif not pool.requires_manual_review:
                         review_reasons.append(f"Central SNAT pool '{pool_name}' has no address range")
 
             if rule.nat == "enable" and not source_pool_references:
@@ -9181,6 +9158,11 @@ class FGToIRTransformer:
                             pool.audit_note or f"IP pool '{pool.name}' requires manual review",
                         )
 
+                    pool_safe_for_translation = (
+                        pool.migration_status == "NORMALIZED"
+                        and not pool.requires_manual_review
+                    )
+
                     if pool.pool_type == "one-to-one" and (
                         pool.source_start_ip or pool.source_end_ip
                     ):
@@ -9190,29 +9172,15 @@ class FGToIRTransformer:
                             f"one-to-one pool '{pool.name}' has explicit source-range semantics",
                         )
 
-                    if (
-                        pool.start_ip
-                        and pool.end_ip
-                    ):
-                        if (
-                            pool.start_ip
-                            == pool.end_ip
-                        ):
-                            translated_sources.append(
-                                pool.start_ip
-                            )
-                        else:
-                            translated_sources.append(
-                                f"{pool.start_ip}-"
-                                f"{pool.end_ip}"
-                            )
-
-                    elif pool.start_ip:
+                    if pool_safe_for_translation and pool.start_ip and pool.end_ip:
                         translated_sources.append(
                             pool.start_ip
+                            if pool.start_ip == pool.end_ip
+                            else f"{pool.start_ip}-{pool.end_ip}"
                         )
-
-                    else:
+                    elif pool_safe_for_translation and pool.start_ip:
+                        translated_sources.append(pool.start_ip)
+                    elif pool_safe_for_translation:
                         source_requires_review = True
                         add_reason(
                             nat_review_reasons,
@@ -9230,30 +9198,12 @@ class FGToIRTransformer:
                             MigrationConfidence.MANUAL,
                         )
 
-                    if (
-                        pool.pool_type
-                        not in (
-                            None,
-                            "overload",
-                            "one-to-one",
-                        )
-                        or pool.nat64
-                    ):
-                        source_requires_review = True
-                        add_reason(
-                            nat_review_reasons,
-                            f"advanced IP pool '{pool.name}' type '{pool.pool_type}'",
-                        )
-
+                    if pool.requires_manual_review:
                         audit(
                             policy.id,
                             (
-                                f"Policy {policy.id} "
-                                "uses advanced IP pool "
-                                f"'{pool.name}' type "
-                                f"'{pool.pool_type}' that "
-                                "requires target-specific "
-                                "review."
+                                f"Policy {policy.id} uses IP pool '{pool.name}' "
+                                "with semantics that require target-specific review."
                             ),
                         )
 
@@ -9894,9 +9844,13 @@ class FGToIRTransformer:
                     snat_reasons.append(
                         pool.audit_note or f"IP pool '{pool.name}' requires manual review"
                     )
-                if pool.start_ip:
+                if (
+                    not pool.requires_manual_review
+                    and pool.migration_status == "NORMALIZED"
+                    and pool.start_ip
+                ):
                     translated.append(pool.start_ip if pool.start_ip == pool.end_ip else f"{pool.start_ip}-{pool.end_ip}")
-                else:
+                elif not pool.requires_manual_review:
                     snat_reasons.append(
                         f"{pool_family} IP pool '{name}' has no translated address range"
                     )

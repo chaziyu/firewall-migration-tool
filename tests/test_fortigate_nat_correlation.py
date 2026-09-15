@@ -152,7 +152,7 @@ end
     )
     assert rule.destination == ["10.1.100.150"]
     assert rule.translated_destinations == ["2001:db8:200::156"]
-    assert rule.translated_sources == ["2001:db8:101::1"]
+    assert rule.translated_sources == []
     assert rule.source_pool_references == ["NAT46_POOL6"]
     assert rule.migration_status == "PARTIALLY_NORMALIZED"
     assert rule.requires_manual_review is True
@@ -184,7 +184,7 @@ end
     )
     assert sheet.cell(row, headers["Original Destination"]).value == "10.1.100.150"
     assert sheet.cell(row, headers["Translated Destination"]).value == "2001:db8:200::156"
-    assert sheet.cell(row, headers["Translated Source"]).value == "2001:db8:101::1"
+    assert sheet.cell(row, headers["Translated Source"]).value is None
     assert sheet.cell(row, headers["NAT Family"]).value == "nat46"
     assert sheet.cell(row, headers["IP Pool"]).value == "NAT46_POOL6"
     assert sheet.cell(row, headers["VIP"]).value == "NAT46_VIP"
