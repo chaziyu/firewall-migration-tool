@@ -7,6 +7,7 @@ from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
 from fwmigrate.ir.dependency import DependencyGraph
 from fwmigrate.ir.index import IRIndex
+from fwmigrate.validation.models import ValidationResult
 
 
 @dataclass
@@ -19,6 +20,7 @@ class MigrationContext:
     ir_index: Optional[IRIndex] = None
     dependency_graph: Optional[DependencyGraph] = None
     metrics: Optional[PipelineMetrics] = None
+    validation_result: Optional[ValidationResult] = None
 
     def set_ir(self, ir: Optional[IRConfig]) -> None:
         self.ir = ir

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
@@ -15,6 +15,7 @@ class SafetyDecision:
 def evaluate_generation_safety(
     extraction: Optional[ExtractionResult],
     ir: Optional[IRConfig],
+    validation_blocking_reasons: Sequence[str] = (),
 ) -> SafetyDecision:
     reasons: List[str] = []
     if extraction is None:
@@ -30,6 +31,8 @@ def evaluate_generation_safety(
         reasons.extend(ir.generation_blocking_reasons)
         if not ir.generation_blocking_reasons:
             reasons.append("Canonical IR marked generation unsafe.")
+
+    reasons.extend(validation_blocking_reasons)
 
     unique_reasons = list(dict.fromkeys(reasons))
     return SafetyDecision(
