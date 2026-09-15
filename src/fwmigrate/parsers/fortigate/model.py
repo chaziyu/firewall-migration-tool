@@ -157,7 +157,13 @@ class FGInterfaceSecondaryIP(BaseModel):
     gwdetect: Optional[str] = None
     ha_priority: Optional[int] = None
     ping_serv: Optional[str] = None
+    ping_serv_status: Optional[int] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_ping_serv_status(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(value, {"ping_serv_status"})
 
 class FGInterfaceIPv6ExtraAddress(BaseModel):
     source_address: str
@@ -296,6 +302,7 @@ class FGInterface(BaseModel):
     allowaccess: List[str] = Field(default_factory=list)
     detectprotocol: List[str] = Field(default_factory=list)
     detectserver: Optional[str] = None
+    ping_serv_status: Optional[int] = None
     defaultgw: Optional[str] = None
     dhcp_client_identifier: Optional[str] = None
     dhcp_broadcast_flag: Optional[str] = None
@@ -519,7 +526,8 @@ class FGAddress(FGContextualModel):
     uuid: Optional[str] = None
     type: str = "ipmask"  # ipmask, fqdn, iprange, dynamic
     sub_type: Optional[str] = None
-    fsso_group: Optional[str] = None
+    fsso_group: List[str] = Field(default_factory=list)
+    source_effective_defaults: Dict[str, Any] = Field(default_factory=dict)
     hw_model: Optional[str] = None
     hw_vendor: Optional[str] = None
     clearpass_spt: Optional[str] = None
@@ -793,6 +801,8 @@ class FGScheduleGroup(FGContextualModel):
     name: str
     member: List[str] = Field(default_factory=list)
     comments: Optional[str] = None
+    color: Optional[int] = None
+    fabric_object: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -804,6 +814,15 @@ class FGIPPool6(FGContextualModel):
     nat46: Optional[str] = None
     add_nat46_route: Optional[str] = None
     comments: Optional[str] = None
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGIPPoolGroup(FGContextualModel):
+    """Typed FortiOS ``config firewall ippool_grp`` source object."""
+
+    name: str
+    member: List[str] = Field(default_factory=list)
+    source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -942,6 +961,7 @@ class FGVIP(FGContextualModel):
     ipv6_mappedport: Optional[str] = None
 
     src_filter: List[str] = Field(default_factory=list)
+    src_vip_filter: Optional[str] = None
     srcintf_filter: List[str] = Field(default_factory=list)
     service: List[str] = Field(default_factory=list)
 
@@ -1141,11 +1161,13 @@ class FGPolicy(FGContextualModel):
     cifs_filter_profile: Optional[str] = None
     diameter_filter_profile: Optional[str] = None
     dlp_sensor: Optional[str] = None
+    dlp_profile: Optional[str] = None
     dnsfilter_profile: Optional[str] = None
     emailfilter_profile: Optional[str] = None
     file_filter_profile: Optional[str] = None
     icap_profile: Optional[str] = None
     ips_sensor: Optional[str] = None
+    ips_voip_filter: Optional[str] = None
     application_list: Optional[str] = None
     profile_type: Optional[str] = None
     profile_group: Optional[str] = None
@@ -1358,6 +1380,21 @@ class FGPhase1Common(BaseModel):
     eap_exclude_peergrp: Optional[str] = None
     authusr: Optional[str] = None
     authusrgrp: Optional[str] = None
+    ip_version: Optional[str] = None
+    remote_gw_match: Optional[str] = None
+    remote_gw_start_ip: Optional[str] = None
+    remote_gw_subnet: Optional[str] = None
+    remote_gw_country: Optional[str] = None
+    remote_gw_ztna_tags: List[str] = Field(default_factory=list)
+    cert_trust_store: Optional[str] = None
+    cert_peer_username_strip: Optional[str] = None
+    cert_peer_username_validation: Optional[str] = None
+    acct_verify: Optional[str] = None
+    default_gw: Optional[str] = None
+    default_gw_priority: Optional[int] = None
+    distance: Optional[int] = None
+    priority: Optional[int] = None
+    dns_suffix_search: List[str] = Field(default_factory=list)
     xauthtype: Optional[str] = None
     ipv4_start_ip: Optional[str] = None
     ipv4_end_ip: Optional[str] = None
@@ -1436,11 +1473,26 @@ class FGPhase1Common(BaseModel):
     source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_phase1_ints(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(
+            value,
+            {"default_gw_priority", "distance", "priority"},
+        )
+
 
 class FGPhase1Interface(FGPhase1Common, FGContextualModel):
     name: str
     interface: str
     comments: Optional[str] = None
+    aggregate_member: Optional[str] = None
+    aggregate_weight: Optional[int] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_interface_phase1_ints(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(value, {"aggregate_weight"})
 
 class FGPhase2Interface(FGContextualModel):
     name: str
@@ -1462,11 +1514,11 @@ class FGPhase2Interface(FGContextualModel):
     dst_end_ip: Optional[str] = None
     dst_start_ip6: Optional[str] = None
     dst_end_ip6: Optional[str] = None
-    src_port: Optional[str] = None
-    dst_port: Optional[str] = None
+    src_port: Optional[int] = None
+    dst_port: Optional[int] = None
     src_name6: List[str] = Field(default_factory=list)
     dst_name6: List[str] = Field(default_factory=list)
-    protocol: Optional[str] = None
+    protocol: Optional[int] = None
     add_route: Optional[str] = None
     auto_discovery_forwarder: Optional[str] = None
     auto_discovery_sender: Optional[str] = None
@@ -1496,6 +1548,14 @@ class FGPhase2Interface(FGContextualModel):
     keepalive: Optional[str] = None
     comments: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_selector_ints(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(
+            value,
+            {"protocol", "src_port", "dst_port"},
+        )
 
 class FGStaticRoute(FGContextualModel):
     id: int
@@ -1729,11 +1789,11 @@ class FGPhase2Policy(FGSourceOnlyRule):
     dst_end_ip: Optional[str] = None
     dst_start_ip6: Optional[str] = None
     dst_end_ip6: Optional[str] = None
-    src_port: Optional[str] = None
-    dst_port: Optional[str] = None
+    src_port: Optional[int] = None
+    dst_port: Optional[int] = None
     src_name6: List[str] = Field(default_factory=list)
     dst_name6: List[str] = Field(default_factory=list)
-    protocol: Optional[str] = None
+    protocol: Optional[int] = None
     add_route: Optional[str] = None
     auto_discovery_forwarder: Optional[str] = None
     auto_discovery_sender: Optional[str] = None
@@ -1762,6 +1822,14 @@ class FGPhase2Policy(FGSourceOnlyRule):
     network_id: Optional[int] = None
     keepalive: Optional[str] = None
     comments: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_selector_ints(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(
+            value,
+            {"protocol", "src_port", "dst_port"},
+        )
 
 
 class FGLocalInPolicy(FGSourceOnlyRule):
@@ -3525,13 +3593,107 @@ class FGAccessProxyMapping(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGAddress6Template(FGContextualModel):
-    """Typed inventory for IPv6 address templates; not a concrete address."""
-    name: str
-    host: Optional[str] = None
-    host_type: Optional[str] = None
-    template: Optional[str] = None
+class FGAddress6TemplateValue(BaseModel):
+    """One value entry beneath an IPv6 address-template subnet segment."""
+
+    source_id: str
+    value: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FGAddress6TemplateSegment(BaseModel):
+    """One ``config subnet-segment`` entry from FortiOS 7.4.6."""
+
+    source_id: str
+    bits: Optional[int] = None
+    exclusive: Optional[str] = None
+    name: Optional[str] = None
+    values: List[FGAddress6TemplateValue] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_bits(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(value, {"bits"})
+
+
+def _address6_template_command_settings(node: Any) -> Dict[str, Any]:
+    settings: Dict[str, Any] = {}
+    for command in getattr(node, "commands", []):
+        key = str(command.key).replace("-", "_")
+        values = list(command.values)
+        value: Any = values[0] if len(values) == 1 else values
+        if command.operation == "unset":
+            settings.pop(key, None)
+        else:
+            settings[key] = value
+    return settings
+
+
+def _parse_address6_template_segments(
+    nodes: List[FGSourceNode],
+) -> List[FGAddress6TemplateSegment]:
+    segments: List[FGAddress6TemplateSegment] = []
+    for node in nodes:
+        if node.node_type != "config":
+            continue
+        if str(node.name).lower().replace("_", "-") != "subnet-segment":
+            continue
+        for entry in node.children:
+            if entry.node_type != "edit":
+                continue
+            settings = _address6_template_command_settings(entry)
+            values: List[FGAddress6TemplateValue] = []
+            for child in entry.children:
+                if child.node_type != "config":
+                    continue
+                if str(child.name).lower().replace("_", "-") != "values":
+                    continue
+                for value_node in child.children:
+                    if value_node.node_type != "edit":
+                        continue
+                    value_settings = _address6_template_command_settings(value_node)
+                    value = value_settings.pop("value", None)
+                    values.append(
+                        FGAddress6TemplateValue(
+                            source_id=str(value_node.name),
+                            value=None if value is None else str(value),
+                            extra_settings=value_settings,
+                        )
+                    )
+            segments.append(
+                FGAddress6TemplateSegment(
+                    source_id=str(entry.name),
+                    bits=settings.pop("bits", None),
+                    exclusive=settings.pop("exclusive", None),
+                    name=settings.pop("name", None),
+                    values=values,
+                    extra_settings=settings,
+                )
+            )
+    return segments
+
+
+class FGAddress6Template(FGContextualModel):
+    """Typed FortiOS 7.4.6 IPv6 address-template inventory."""
+
+    name: str
+    ip6: Optional[str] = None
+    subnet_segment_count: Optional[int] = None
+    fabric_object: Optional[str] = None
+    subnet_segments: List[FGAddress6TemplateSegment] = Field(default_factory=list)
+    extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_count(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(value, {"subnet_segment_count"})
+
+    @model_validator(mode="after")
+    def _project_subnet_segments(self) -> "FGAddress6Template":
+        if not self.subnet_segments:
+            self.subnet_segments = _parse_address6_template_segments(self.nested_configs)
+        return self
 
 
 class FGAccessProxySSHClientCertExtension(BaseModel):
@@ -3635,7 +3797,22 @@ class FGAuthenticationScheme(BaseModel):
     name: str
     method: List[str] = Field(default_factory=list)
     user_database: List[str] = Field(default_factory=list)
+    domain_controller: Optional[str] = None
+    fsso_agent_for_ntlm: Optional[str] = None
+    fsso_guest: Optional[str] = None
+    kerberos_keytab: Optional[str] = None
+    negotiate_ntlm: Optional[str] = None
+    require_tfa: Optional[str] = None
+    saml_server: Optional[str] = None
+    saml_timeout: Optional[int] = None
+    ssh_ca: Optional[str] = None
+    user_cert: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_saml_timeout(cls, value: Any) -> Any:
+        return _preserve_malformed_int_fields(value, {"saml_timeout"})
 
 
 class FGAuthenticationRule(BaseModel):
@@ -3974,7 +4151,7 @@ class FGConfig(BaseModel):
 
     ip_pools: List[FGIPPool] = Field(default_factory=list)
     ip_pools6: List[FGIPPool6] = Field(default_factory=list)
-    ip_pool_groups: List[Any] = Field(default_factory=list)
+    ip_pool_groups: List[FGIPPoolGroup] = Field(default_factory=list)
     ipv6_eh_filter: Optional[FGIPv6EHFilter] = None
 
     vips: List[SerializeAsAny[FGVIP]] = Field(default_factory=list)

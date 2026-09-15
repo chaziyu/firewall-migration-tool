@@ -4,7 +4,7 @@ from ipaddress import IPv6Address
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, SerializeAsAny, ValidationError, field_validator
 
 from fwmigrate.parsers.fortigate.model import (
     FGConfig,
@@ -28,6 +28,7 @@ from fwmigrate.parsers.fortigate.firewall_ip_746 import (
     validate_ippool_746,
     validate_ip_translation_746,
 )
+from fwmigrate.parsers.fortigate.firewall_vip_746 import validate_vip_746
 
 FORTIOS_SDWAN_MEMBER_ID_MIN = 0
 FORTIOS_SDWAN_MEMBER_ID_MAX = 512
@@ -59,6 +60,24 @@ CENTRAL_NAT_UNKNOWN_REVIEW_REASON = (
     "central NAT rules exist but effective central-nat mode cannot be proven "
     "from supplied configuration"
 )
+SRC_VIP_FILTER_REVIEW_REASON = (
+    "FortiGate VIP src-vip-filter enables reverse-SNAT source filtering and "
+    "requires source-specific review."
+)
+AUTHENTICATION_SOURCE_ONLY_FIELDS = (
+    "method",
+    "user_database",
+    "domain_controller",
+    "fsso_agent_for_ntlm",
+    "fsso_guest",
+    "kerberos_keytab",
+    "negotiate_ntlm",
+    "require_tfa",
+    "saml_server",
+    "saml_timeout",
+    "ssh_ca",
+    "user_cert",
+)
 FORTIOS_SDWAN_HEALTH_CHECK_RANGES = {
     "class_id": (0, 4294967295), "failtime": (1, 3600), "ha_priority": (1, 50),
     "interval": (20, 3600000), "packet_size": (0, 65535), "port": (0, 65535),
@@ -70,7 +89,7 @@ FORTIOS_SDWAN_HEALTH_CHECK_RANGES = {
     "threshold_warning_packetloss": (0, 100), "vrf": (0, 251),
 }
 from fwmigrate.parsers.fortigate.mac_utils import parse_fortigate_macaddr
-from fwmigrate.ir import IRConfig
+from fwmigrate.ir import IRConfig as _IRConfig
 from fwmigrate.ir.metadata import (
     IRMetadata,
     IRAuditEntry,
@@ -94,7 +113,7 @@ from fwmigrate.ir.network import (
     IRDNSSettings,
 )
 from fwmigrate.ir.address import (
-    IRAddress,
+    IRAddress as _IRAddress,
     IRMACAddressEntry,
     IRAddressTaggingEntry,
     IRAddressGroup,
@@ -158,7 +177,7 @@ from fwmigrate.ir.nat import (
     IRVirtualIPGSLBPublicIP,
     IRVirtualIPQUICSettings,
     IRVirtualIPSSLCipherSuite,
-    IRNATRule,
+    IRNATRule as _IRNATRule,
     IRNATPortRange,
     IRNATAddressRangeMapping,
     IRVirtualIPGroup,
@@ -242,6 +261,132 @@ from fwmigrate.parsers.vendor_maps import normalize_to_ir
 from fwmigrate.core.constants import IR_KEYWORD_ANY
 
 from fwmigrate.parsers.fortigate.source_tree import FGSourceNode
+
+
+IPPOOL_GROUP_REVIEW_REASON = (
+    "FortiGate IP-pool group semantics are retained for inventory and "
+    "correlation only; target NAT translation is withheld."
+)
+
+
+class IRAddress6TemplateValue(BaseModel):
+    source_id: str
+    value: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRAddress6TemplateSegment(BaseModel):
+    source_id: str
+    bits: Optional[int] = None
+    exclusive: Optional[str] = None
+    name: Optional[str] = None
+    values: List[IRAddress6TemplateValue] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRAddress6Template(BaseModel):
+    """Canonical source-preserving address-template inventory."""
+
+    name: str
+    source_context: Optional[str] = None
+    ip6: Optional[str] = None
+    subnet_segment_count: Optional[int] = None
+    subnet_segments: List[IRAddress6TemplateSegment] = Field(default_factory=list)
+    source_fabric_object: Optional[str] = None
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRAddressFortiGate(_IRAddress):
+    """FortiGate source-preserving address fields outside shared IR."""
+
+    source_fsso_group: List[str] = Field(default_factory=list)
+    source_effective_defaults: Dict[str, Any] = Field(default_factory=dict)
+    source_template: Optional[str] = None
+    source_template_reference_resolved: Optional[bool] = None
+
+    @field_validator("source_fsso_group", mode="before")
+    @classmethod
+    def _normalize_source_fsso_group(cls, value: Any) -> Any:
+        return [] if value is None else value
+
+
+class IRIPPoolGroup(BaseModel):
+    """Canonical source-preserving IP-pool-group inventory."""
+
+    name: str
+    source_context: Optional[str] = None
+    members: List[str] = Field(default_factory=list)
+    unresolved_members: List[str] = Field(default_factory=list)
+    source_explicit_fields: List[str] = Field(default_factory=list)
+    migration_status: str = "EXTRACT_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class IRNATRuleFortiGate(_IRNATRule):
+    source_pool_group_references: List[str] = Field(default_factory=list)
+
+
+class IRConfigFortiGate(_IRConfig):
+    addresses: List[SerializeAsAny[IRAddressFortiGate]] = Field(default_factory=list)
+    address6_templates: List[SerializeAsAny[IRAddress6Template]] = Field(
+        default_factory=list
+    )
+    ip_pool_groups: List[SerializeAsAny[IRIPPoolGroup]] = Field(default_factory=list)
+    nat_rules: List[SerializeAsAny[IRNATRuleFortiGate]] = Field(default_factory=list)
+
+
+IRConfig = IRConfigFortiGate
+IRAddress = IRAddressFortiGate
+IRNATRule = IRNATRuleFortiGate
+
+
+def _canonical_address6_template(source: Any) -> IRAddress6Template:
+    segments = [
+        IRAddress6TemplateSegment(
+            source_id=segment.source_id,
+            bits=segment.bits,
+            exclusive=segment.exclusive,
+            name=segment.name,
+            values=[
+                IRAddress6TemplateValue(
+                    source_id=value.source_id,
+                    value=value.value,
+                    source_attributes=dict(value.extra_settings),
+                )
+                for value in segment.values
+            ],
+            source_attributes=dict(segment.extra_settings),
+        )
+        for segment in source.subnet_segments
+    ]
+    reasons = [
+        "FortiGate address6-template is retained as canonical source "
+        "inventory and is not expanded into concrete IPv6 addresses."
+    ]
+    if (
+        source.subnet_segment_count is not None
+        and source.subnet_segment_count != len(segments)
+    ):
+        reasons.append(
+            "Declared subnet-segment-count "
+            f"{source.subnet_segment_count} does not match parsed segment count "
+            f"{len(segments)}."
+        )
+    return IRAddress6Template(
+        name=source.name,
+        source_context=source.source_context,
+        ip6=source.ip6,
+        subnet_segment_count=source.subnet_segment_count,
+        subnet_segments=segments,
+        source_fabric_object=source.fabric_object,
+        review_reasons=reasons,
+        source_attributes=dict(source.extra_settings),
+    )
 
 
 FORTIGATE_RESERVED_ADDRESS_NAMES = {
@@ -429,6 +574,99 @@ _FORTIGATE_POLICY_EFFECTIVE_DEFAULTS = {
 }
 
 _FORTIGATE_POLICY_EFFECTIVE_INT_DEFAULTS = {"reputation_minimum": 0, "reputation_minimum6": 0}
+
+_POLICY_BASED_NGFW_REVIEW = (
+    "VDOM uses policy-based NGFW mode; firewall policy is an SSL inspection/"
+    "authentication pre-match rule and is not portable firewall-policy intent"
+)
+
+
+def _is_policy_based_ngfw(transformer: Any, policy: Any) -> bool:
+    if str(getattr(policy, "ngfw_mode", "") or "").strip().lower() == "policy-based":
+        return True
+    source_context = getattr(policy, "source_context", "root")
+    return any(
+        getattr(context, "vdom", "root") == source_context
+        and str(getattr(context, "ngfw_mode", "") or "").strip().lower()
+        == "policy-based"
+        for context in getattr(transformer.fg, "execution_contexts", []) or []
+    )
+
+
+def _structured_policy_source(transformer: Any, policy: Any) -> Optional[Any]:
+    source_id = str(getattr(policy, "id", ""))
+    source_context = getattr(policy, "source_context", "root")
+    return next(
+        (
+            source_object
+            for source_object in getattr(transformer.fg, "structured_source_objects", []) or []
+            if getattr(source_object, "source_path", None) == "firewall policy"
+            and getattr(source_object, "source_context", "root") == source_context
+            and str(getattr(source_object, "source_id", "") or "") == source_id
+        ),
+        None,
+    )
+
+
+def _policy_based_source_attributes(transformer: Any, policy: Any) -> Dict[str, Any]:
+    attributes: Dict[str, Any] = {}
+    for field in (
+        "srcintf", "dstintf", "srcaddr", "dstaddr", "srcaddr6", "dstaddr6",
+        "service", "users", "groups", "fsso_groups",
+    ):
+        value = getattr(policy, field, None)
+        if value:
+            attributes[field] = list(value)
+    for field in (
+        "uuid", "ssl_ssh_profile", "inspection_mode", "profile_protocol_options",
+        "auth_cert", "auth_path", "auth_redirect_addr", "comments",
+    ):
+        value = getattr(policy, field, None)
+        if value not in (None, ""):
+            attributes[field] = value
+    extra_settings = dict(getattr(policy, "extra_settings", {}) or {})
+    if extra_settings:
+        attributes["extra_settings"] = extra_settings
+    source_object = _structured_policy_source(transformer, policy)
+    if source_object is not None:
+        attributes["source_tree"] = source_object.root.model_dump()
+    return attributes
+
+
+def _policy_based_source_rule(
+    transformer: Any,
+    policy: Any,
+    source_order: int,
+) -> IRFortiGateSourceRule:
+    source_object = _structured_policy_source(transformer, policy)
+    explicit_keys = {
+        str(getattr(command, "key", "") or "").strip().lower()
+        for command in getattr(getattr(source_object, "root", None), "commands", []) or []
+        if str(getattr(command, "operation", "") or "").strip().lower()
+        in {"set", "unset"}
+    }
+    review_reasons = [_POLICY_BASED_NGFW_REVIEW]
+    if "action" in explicit_keys:
+        review_reasons.append(
+            "policy-based NGFW pre-match contains an action command; retained as source evidence only"
+        )
+    if "schedule" in explicit_keys:
+        review_reasons.append(
+            "policy-based NGFW pre-match contains a schedule command; retained as source evidence only"
+        )
+    return IRFortiGateSourceRule(
+        family="ngfw-pre-match-policy",
+        source_id=str(policy.id),
+        name=policy.name,
+        source_order=source_order,
+        source_context=getattr(policy, "source_context", "root"),
+        enabled=str(getattr(policy, "status", "enable") or "enable").lower() != "disable",
+        effective_action=None,
+        source_attributes=_policy_based_source_attributes(transformer, policy),
+        migration_status="EXTRACT_ONLY",
+        requires_manual_review=True,
+        review_reasons=review_reasons,
+    )
 
 
 def _effective_policy_setting(
@@ -2965,7 +3203,14 @@ class FGToIRTransformer:
                 name=item.name,
                 method=item.method[0] if item.method else None,
                 user_database=item.user_database[0] if item.user_database else None,
-                source_attributes=dict(item.extra_settings),
+                source_attributes={
+                    **dict(item.extra_settings),
+                    **{
+                        field: getattr(item, field)
+                        for field in AUTHENTICATION_SOURCE_ONLY_FIELDS
+                        if getattr(item, field, None) is not None
+                    },
+                },
             )
             for item in self.fg.authentication_schemes
         )
@@ -2991,21 +3236,36 @@ class FGToIRTransformer:
             ("fsso-provider", {item.name for item in self.ir.fsso_providers}),
         )
         provider_names = set().union(*(names for _, names in provider_types))
-        for scheme in self.ir.authentication_schemes:
-            if not scheme.user_database:
+        for source, scheme in zip(
+            self.fg.authentication_schemes,
+            self.ir.authentication_schemes,
+        ):
+            references = list(source.user_database)
+            if not references and scheme.user_database:
+                references = [scheme.user_database]
+            if not references:
                 continue
-            raw_reference = scheme.user_database
-            references = [raw_reference]
-            if raw_reference not in provider_names and "," in raw_reference:
-                references = [item.strip() for item in raw_reference.split(",") if item.strip()]
-            for reference in references:
+            expanded_references: List[str] = []
+            for raw_reference in references:
+                if raw_reference not in provider_names and "," in raw_reference:
+                    expanded_references.extend(
+                        item.strip()
+                        for item in raw_reference.split(",")
+                        if item.strip()
+                    )
+                else:
+                    expanded_references.append(raw_reference)
+            for reference in expanded_references:
                 dependency_type = "unknown"
-                resolved = False
-                for candidate_type, names in provider_types:
-                    if reference in names:
-                        dependency_type = candidate_type
-                        resolved = True
-                        break
+                resolved = reference.casefold() == "local"
+                if resolved:
+                    dependency_type = "local"
+                else:
+                    for candidate_type, names in provider_types:
+                        if reference in names:
+                            dependency_type = candidate_type
+                            resolved = True
+                            break
                 scheme.user_database_dependencies.append(IRIdentityDependency(
                     reference=reference,
                     dependency_type=dependency_type,
@@ -4301,8 +4561,15 @@ class FGToIRTransformer:
             "wildcard_fqdn",
         ):
             value = getattr(addr, key)
+            if key == "fsso_group" and not value:
+                continue
             if value is not None:
                 attributes[key] = value
+        defaults = dict(getattr(addr, "source_effective_defaults", {}) or {})
+        for key in defaults:
+            attributes.pop(key, None)
+        if addr.fsso_group:
+            attributes["fsso_group"] = list(addr.fsso_group)
         return attributes
 
     @staticmethod
@@ -5310,6 +5577,43 @@ class FGToIRTransformer:
         self._apply_node_ip_only_and_obj_id()
         self._apply_address_metadata()
 
+        self.ir.address6_templates.extend(
+            _canonical_address6_template(template)
+            for template in self.fg.address6_templates
+        )
+        template_keys = {
+            (template.source_context, template.name)
+            for template in self.fg.address6_templates
+        }
+        source_by_key = {
+            (address.source_context, address.name): address
+            for address in self.fg.addresses
+        }
+        for address in self.ir.addresses:
+            source = source_by_key.get((address.source_context, address.name))
+            if source is None:
+                continue
+            defaults = dict(source.source_effective_defaults or {})
+            if defaults:
+                address.source_effective_defaults = defaults
+            template_name = source.template
+            if not template_name:
+                continue
+            resolved = (source.source_context, template_name) in template_keys
+            address.source_template = template_name
+            address.source_template_reference_resolved = resolved
+            address.source_attributes["template_reference_resolved"] = resolved
+            if not resolved:
+                address.requires_manual_review = True
+                address.migration_status = "PARTIALLY_NORMALIZED"
+                reason = (
+                    f"FortiGate IPv6 template reference {template_name!r} "
+                    "was not found in the same source context."
+                )
+                address.audit_note = "; ".join(
+                    part for part in (address.audit_note, reason) if part
+                )
+
     @staticmethod
     def _validate_sdwan_member(member) -> List[str]:
         reasons: List[str] = []
@@ -5739,7 +6043,7 @@ class FGToIRTransformer:
             reasons = self._clearpass_spt_review_reasons(addr)
             reasons.extend(self._address_metadata_review_reasons(addr))
             reasons.extend(filter(None, [self._epg_name_review_reason(addr.epg_name)]))
-            if addr.fsso_group is not None:
+            if addr.fsso_group:
                 if len(addr.fsso_group) > FORTIGATE_FSSO_GROUP_MAX_LENGTH:
                     reasons.append("FortiGate address fsso-group exceeds the documented maximum length of 511")
                 if addr.type != "dynamic":
@@ -5893,6 +6197,39 @@ class FGToIRTransformer:
             "port_forward": port_forward,
             "explicit_fields": sorted(explicit),
         }
+
+    @staticmethod
+    def _apply_vip_source_semantics(target: Any, source_vip: Any) -> None:
+        setting = getattr(source_vip, "src_vip_filter", None)
+        reasons = list(validate_vip_746(source_vip))
+        if setting is not None:
+            attribute_name = (
+                "source_attributes"
+                if hasattr(target, "source_attributes")
+                else "extra_settings"
+            )
+            attributes = dict(getattr(target, attribute_name, {}) or {})
+            attributes["src_vip_filter"] = setting
+            if setting in {"enable", "disable"}:
+                attributes["src_vip_filter_enabled"] = setting == "enable"
+            setattr(target, attribute_name, attributes)
+        if setting == "enable":
+            reasons.insert(0, SRC_VIP_FILTER_REVIEW_REASON)
+        if not reasons:
+            return
+        target.requires_manual_review = True
+        target.migration_status = "PARTIALLY_NORMALIZED"
+        if hasattr(target, "review_reasons"):
+            existing = list(getattr(target, "review_reasons", []) or [])
+            for reason in reasons:
+                if reason not in existing:
+                    existing.append(reason)
+            target.review_reasons = existing
+        if hasattr(target, "audit_note"):
+            note = getattr(target, "audit_note", None)
+            additions = [reason for reason in reasons if not note or reason not in note]
+            if additions:
+                target.audit_note = "; ".join(filter(None, [note, *additions]))
 
     @staticmethod
     def _vip_typed_nested(vip: Any) -> Dict[str, Any]:
@@ -6680,13 +7017,16 @@ class FGToIRTransformer:
 
     def _transform_schedule_groups(self) -> None:
         schedules = {(item.source_context, item.name) for item in self.fg.schedules}
-        group_names = {(item.source_context, item.name) for item in self.fg.schedule_groups}
         for group in self.fg.schedule_groups:
             unresolved = [
                 member for member in group.member
                 if (group.source_context, member) not in schedules
-                and (group.source_context, member) not in group_names
             ]
+            source_attributes = dict(group.extra_settings)
+            if group.color is not None:
+                source_attributes["color"] = group.color
+            if group.fabric_object is not None:
+                source_attributes["fabric_object"] = group.fabric_object
             self.ir.schedule_groups.append(
                 IRScheduleGroup(
                     name=group.name,
@@ -6695,7 +7035,7 @@ class FGToIRTransformer:
                     description=group.comments,
                     unresolved_members=unresolved,
                     requires_manual_review=bool(unresolved),
-                    source_attributes=dict(group.extra_settings),
+                    source_attributes=source_attributes,
                 )
             )
 
@@ -7121,11 +7461,28 @@ class FGToIRTransformer:
         )
         _, _, _, unresolved_security_profiles = self._resolve_security_profile_references(policy)
         portable_profile_semantics = any((
-            policy.av_profile,
-            policy.ips_sensor,
-            policy.webfilter_profile,
             policy.application_list,
+            policy.av_profile,
+            policy.casb_profile,
+            policy.cifs_profile,
+            policy.diameter_filter_profile,
+            policy.dlp_profile,
+            policy.dnsfilter_profile,
+            policy.emailfilter_profile,
+            policy.file_filter_profile,
+            policy.icap_profile,
+            policy.ips_sensor,
+            policy.ips_voip_filter,
             policy.profile_group,
+            policy.profile_protocol_options,
+            policy.sctp_filter_profile,
+            policy.ssh_filter_profile,
+            policy.ssl_ssh_profile,
+            policy.videofilter_profile,
+            policy.virtual_patch_profile,
+            policy.voip_profile,
+            policy.waf_profile,
+            policy.webfilter_profile,
         ))
         if profiles_enforced and portable_profile_semantics:
             review_reasons.append(
@@ -7267,28 +7624,68 @@ class FGToIRTransformer:
         self, policy: FGPolicy,
     ) -> tuple[Dict[str, str], Dict[str, str], Dict[str, str], List[str]]:
         candidates = (
-            ("av_profile", "antivirus profile", policy.av_profile),
-            ("webfilter_profile", "webfilter profile", policy.webfilter_profile),
-            ("dnsfilter_profile", "dnsfilter profile", policy.extra_settings.get("dnsfilter_profile")),
             ("application_list", "application list", policy.application_list),
+            ("av_profile", "antivirus profile", policy.av_profile),
+            ("casb_profile", "casb profile", policy.casb_profile),
+            (
+                "cifs_profile",
+                "cifs profile",
+                policy.cifs_profile or policy.cifs_filter_profile,
+            ),
+            ("diameter_filter_profile", "diameter-filter profile", policy.diameter_filter_profile),
+            (
+                "dlp_profile",
+                "dlp profile",
+                policy.dlp_profile or policy.extra_settings.get("dlp_profile"),
+            ),
+            (
+                "dnsfilter_profile",
+                "dnsfilter profile",
+                policy.dnsfilter_profile or policy.extra_settings.get("dnsfilter_profile"),
+            ),
+            ("emailfilter_profile", "emailfilter profile", policy.emailfilter_profile),
+            ("file_filter_profile", "file-filter profile", policy.file_filter_profile),
+            ("icap_profile", "icap profile", policy.icap_profile),
             ("ips_sensor", "ips sensor", policy.ips_sensor),
-            ("ssl_ssh_profile", "firewall ssl-ssh-profile", policy.ssl_ssh_profile),
+            ("ips_voip_filter", "voip profile", policy.ips_voip_filter),
             ("profile_protocol_options", "firewall profile-protocol-options", policy.profile_protocol_options),
             ("profile_group", "firewall profile-group", policy.profile_group),
+            ("sctp_filter_profile", "sctp-filter profile", policy.sctp_filter_profile),
+            ("ssh_filter_profile", "ssh-filter profile", policy.ssh_filter_profile),
+            ("ssl_ssh_profile", "firewall ssl-ssh-profile", policy.ssl_ssh_profile),
+            ("videofilter_profile", "videofilter profile", policy.videofilter_profile),
+            ("virtual_patch_profile", "virtual-patch profile", policy.virtual_patch_profile),
+            ("voip_profile", "voip profile", policy.voip_profile),
+            ("waf_profile", "waf profile", policy.waf_profile),
+            ("webfilter_profile", "webfilter profile", policy.webfilter_profile),
         )
         source_references: Dict[str, str] = {}
         statuses: Dict[str, str] = {}
         unresolved: Dict[str, str] = {}
         unresolved_list: List[str] = []
         legacy_labels = {
-            "av_profile": "antivirus",
-            "webfilter_profile": "webfilter",
-            "dnsfilter_profile": "dnsfilter",
             "application_list": "application",
+            "av_profile": "antivirus",
+            "casb_profile": "casb",
+            "cifs_profile": "cifs",
+            "diameter_filter_profile": "diameter-filter",
+            "dlp_profile": "dlp",
+            "dnsfilter_profile": "dnsfilter",
+            "emailfilter_profile": "emailfilter",
+            "file_filter_profile": "file-filter",
+            "icap_profile": "icap",
             "ips_sensor": "ips",
-            "ssl_ssh_profile": "ssl-ssh",
+            "ips_voip_filter": "ips-voip-filter",
             "profile_protocol_options": "protocol-options",
             "profile_group": "profile-group",
+            "sctp_filter_profile": "sctp-filter",
+            "ssh_filter_profile": "ssh-filter",
+            "ssl_ssh_profile": "ssl-ssh",
+            "videofilter_profile": "videofilter",
+            "virtual_patch_profile": "virtual-patch",
+            "voip_profile": "voip",
+            "waf_profile": "waf",
+            "webfilter_profile": "webfilter",
         }
         for field, source_path, name in candidates:
             if not name:
@@ -7330,7 +7727,16 @@ class FGToIRTransformer:
         self,
     ) -> None:
         identity_indexes = self._build_identity_dependency_indexes()
+        pre_match_rules: List[IRFortiGateSourceRule] = []
+        context_order: Dict[str, int] = {}
         for policy in self.fg.policies:
+            context = getattr(policy, "source_context", "root") or "root"
+            context_order[context] = context_order.get(context, 0) + 1
+            if _is_policy_based_ngfw(self, policy):
+                pre_match_rules.append(
+                    _policy_based_source_rule(self, policy, context_order[context])
+                )
+                continue
             source_security_profile_references, security_profile_reference_statuses, unresolved_security_profile_references, unresolved_security_profiles = self._resolve_security_profile_references(policy)
             from_zones = self._resolve_policy_zones(
                 policy.srcintf,
@@ -7388,11 +7794,28 @@ class FGToIRTransformer:
                 or policy.profile_type == "group"
             )
             portable_profile_semantics = any((
-                policy.av_profile,
-                policy.ips_sensor,
-                policy.webfilter_profile,
                 policy.application_list,
+                policy.av_profile,
+                policy.casb_profile,
+                policy.cifs_profile,
+                policy.diameter_filter_profile,
+                policy.dlp_profile,
+                policy.dnsfilter_profile,
+                policy.emailfilter_profile,
+                policy.file_filter_profile,
+                policy.icap_profile,
+                policy.ips_sensor,
+                policy.ips_voip_filter,
                 policy.profile_group,
+                policy.profile_protocol_options,
+                policy.sctp_filter_profile,
+                policy.ssh_filter_profile,
+                policy.ssl_ssh_profile,
+                policy.videofilter_profile,
+                policy.virtual_patch_profile,
+                policy.voip_profile,
+                policy.waf_profile,
+                policy.webfilter_profile,
             ))
             security_profile_semantics_review = bool(
                 profiles_enforced and portable_profile_semantics
@@ -7724,6 +8147,7 @@ class FGToIRTransformer:
             self.ir.policies.append(
                 ir_policy
             )
+        self.ir.source_only_rules.extend(pre_match_rules)
 
     # ------------------------------------------------------------------
     # IP pools
@@ -8145,6 +8569,39 @@ class FGToIRTransformer:
                 )
             )
 
+        pool_keys = {
+            (
+                str(getattr(pool, "source_context", "root") or "root"),
+                str(pool.name),
+            )
+            for pool in self.fg.ip_pools
+        }
+        for group in self.fg.ip_pool_groups:
+            context = str(getattr(group, "source_context", "root") or "root")
+            unresolved = [
+                member
+                for member in group.member
+                if (context, str(member)) not in pool_keys
+            ]
+            reasons = [IPPOOL_GROUP_REVIEW_REASON]
+            if unresolved:
+                reasons.append(
+                    "Unresolved same-context IP-pool members: "
+                    + ", ".join(str(member) for member in unresolved)
+                    + "."
+                )
+            self.ir.ip_pool_groups.append(
+                IRIPPoolGroup(
+                    name=group.name,
+                    source_context=context,
+                    members=list(group.member),
+                    unresolved_members=unresolved,
+                    source_explicit_fields=sorted(group.source_explicit_fields),
+                    review_reasons=reasons,
+                    source_attributes=dict(group.extra_settings),
+                )
+            )
+
     # ------------------------------------------------------------------
     # Virtual IPs
     # ------------------------------------------------------------------
@@ -8465,6 +8922,19 @@ class FGToIRTransformer:
                     audit_note="; ".join(review_reasons) or None,
                 )
             )
+
+        source_vips = {
+            (vip.source_context, vip.name): vip
+            for vip in self.fg.vips
+        }
+        for virtual_ip in self.ir.virtual_ips:
+            if virtual_ip.address_family != "ipv4":
+                continue
+            source_vip = source_vips.get(
+                (virtual_ip.source_context, virtual_ip.name)
+            )
+            if source_vip is not None:
+                self._apply_vip_source_semantics(virtual_ip, source_vip)
 
     def _transform_vip_groups(self) -> None:
         vips = self._build_vip_index("ipv4")
@@ -9798,6 +10268,86 @@ class FGToIRTransformer:
                     )
                 )
 
+        source_vips = {
+            (vip.source_context, vip.name): vip
+            for vip in self.fg.vips
+        }
+        for nat_rule in self.ir.nat_rules:
+            vip_name = getattr(nat_rule, "source_vip_reference", None)
+            if not vip_name:
+                continue
+            source_vip = source_vips.get(
+                (nat_rule.source_context, vip_name)
+            )
+            if source_vip is not None:
+                self._apply_vip_source_semantics(nat_rule, source_vip)
+
+        group_keys = {
+            (
+                str(getattr(group, "source_context", "root") or "root"),
+                str(group.name),
+            )
+            for group in self.fg.ip_pool_groups
+        }
+        pool_keys = {
+            (
+                str(getattr(pool, "source_context", "root") or "root"),
+                str(pool.name),
+            )
+            for pool in self.fg.ip_pools
+        }
+        policies = {
+            (
+                str(getattr(policy, "source_context", "root") or "root"),
+                str(policy.id),
+            ): policy
+            for policy in self.fg.policies
+        }
+        for rule in self.ir.nat_rules:
+            policy_ref = getattr(rule, "source_policy_reference", None)
+            if policy_ref is None:
+                continue
+            context = str(getattr(rule, "source_context", "root") or "root")
+            policy = policies.get((context, str(policy_ref)))
+            if policy is None:
+                continue
+
+            group_refs = []
+            ambiguous_refs = []
+            for reference in policy.poolname:
+                key = (context, str(reference))
+                if key not in group_keys:
+                    continue
+                group_refs.append(str(reference))
+                if key in pool_keys:
+                    ambiguous_refs.append(str(reference))
+            if not group_refs:
+                continue
+
+            rule.source_pool_group_references = list(dict.fromkeys(group_refs))
+            direct_refs = list(rule.source_pool_references)
+            if ambiguous_refs:
+                reason = (
+                    "FortiGate policy poolname matches both firewall ippool and "
+                    "firewall ippool_grp in the same context: "
+                    + ", ".join(dict.fromkeys(ambiguous_refs))
+                    + "."
+                )
+            else:
+                group_ref_set = set(group_refs)
+                rule.source_pool_references = [
+                    reference for reference in direct_refs
+                    if reference not in group_ref_set
+                ]
+                reason = IPPOOL_GROUP_REVIEW_REASON
+
+            rule.translated_sources = []
+            rule.translated_source = None
+            rule.requires_manual_review = True
+            rule.migration_status = "PARTIALLY_NORMALIZED"
+            if reason not in rule.review_reasons:
+                rule.review_reasons.append(reason)
+
     def _transform_ipv6_policy_nat(self) -> None:
         """Correlate IPv6 policy SNAT and VIP6 DNAT without mixing address namespaces."""
         policy_identity_index = self._build_policy_identity_index()
@@ -10764,6 +11314,8 @@ class FGToIRTransformer:
             source_attributes = {
                 **dict(route.extra_settings),
             }
+            if route.address_family == "ipv6" and route.devindex is not None:
+                source_attributes["devindex"] = route.devindex
             if route.blackhole not in {"enable", "disable"}:
                 source_attributes["blackhole"] = route.blackhole
             if route.status is not None and route.status not in {"enable", "disable"}:

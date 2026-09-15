@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.extraction.models import DependencyRecord, SourceInventoryItem
-from fwmigrate.parsers.fortigate.predefined_services import is_predefined_service
+from fwmigrate.parsers.fortigate.predefined_services import (
+    is_predefined_service,
+    is_predefined_service_group,
+)
 
 
 # Values are source section families, not canonical IR types.  Keeping this
@@ -546,6 +549,273 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     ("system sdwan service sla", "edit"): {"system sdwan health-check"},
 }
 
+# P0 relationships live in this registry rather than being added by import
+# time patch modules.  Targets are intentionally source-specific: a matching
+# name in the wrong FortiOS object family is not a valid dependency.
+REFERENCE_RULES.update({
+    ("system interface", "interface"): "system interface",
+    ("system zone", "interface"): "system interface",
+    ("firewall address", "interface"): "system interface",
+    ("firewall address", "associated-interface"): "system interface",
+    ("firewall address6", "interface"): "system interface",
+    ("firewall address6", "associated-interface"): "system interface",
+    ("firewall address6", "template"): "firewall address6-template",
+    ("firewall addrgrp", "member"): "firewall address",
+    ("firewall addrgrp", "exclude-member"): "firewall address",
+    ("firewall addrgrp6", "member"): "firewall address6",
+    ("firewall addrgrp6", "exclude-member"): "firewall address6",
+    ("firewall service group", "member"): "firewall service custom",
+    ("firewall schedule group", "member"): "firewall schedule recurring",
+    ("firewall vipgrp", "member"): "firewall vip",
+    ("firewall vipgrp", "interface"): "system interface",
+    ("firewall vipgrp6", "member"): "firewall vip6",
+    ("firewall policy", "poolname"): "firewall ippool",
+    ("firewall policy", "poolname6"): "firewall ippool6",
+    ("firewall policy", "pcp-poolname"): "firewall ippool",
+    ("firewall ippool", "associated-interface"): "system interface",
+    ("firewall ippool", "arp-intf"): "system interface",
+    ("firewall ippool-grp", "member"): "firewall ippool",
+    ("firewall central-snat-map", "srcintf"): "system interface",
+    ("firewall central-snat-map", "dstintf"): "system interface",
+    ("firewall central-snat-map", "orig-addr"): "firewall address",
+    ("firewall central-snat-map", "dst-addr"): "firewall address",
+    ("firewall central-snat-map", "orig-addr6"): "firewall address6",
+    ("firewall central-snat-map", "dst-addr6"): "firewall address6",
+    ("firewall central-snat-map", "nat-ippool"): "firewall ippool",
+    ("firewall central-snat-map", "nat-ippool6"): "firewall ippool6",
+    ("firewall vip6", "extintf"): "system interface",
+    ("firewall vip6", "service"): "firewall service custom",
+    ("firewall vip6", "srcintf-filter"): "system interface",
+    ("firewall vip6 realservers", "address"): "firewall address6",
+    ("firewall vip6 realservers", "monitor"): "firewall ldb-monitor",
+})
+
+PROFILE_GROUP_REFERENCE_RULES = {
+    "application-list": "application list",
+    "av-profile": "antivirus profile",
+    "casb-profile": "casb profile",
+    "cifs-profile": "cifs profile",
+    "diameter-filter-profile": "diameter-filter profile",
+    "dlp-profile": "dlp profile",
+    "dnsfilter-profile": "dnsfilter profile",
+    "emailfilter-profile": "emailfilter profile",
+    "file-filter-profile": "file-filter profile",
+    "icap-profile": "icap profile",
+    "ips-sensor": "ips sensor",
+    "ips-voip-filter": "voip profile",
+    "profile-protocol-options": "firewall profile-protocol-options",
+    "sctp-filter-profile": "sctp-filter profile",
+    "ssh-filter-profile": "ssh-filter profile",
+    "ssl-ssh-profile": "firewall ssl-ssh-profile",
+    "videofilter-profile": "videofilter profile",
+    "virtual-patch-profile": "virtual-patch profile",
+    "voip-profile": "voip profile",
+    "waf-profile": "waf profile",
+    "webfilter-profile": "webfilter profile",
+}
+
+REFERENCE_RULES.update({
+    ("firewall profile-group", field): target
+    for field, target in PROFILE_GROUP_REFERENCE_RULES.items()
+})
+REFERENCE_RULES.update({
+    ("firewall policy", field): target
+    for field, target in PROFILE_GROUP_REFERENCE_RULES.items()
+})
+REFERENCE_RULES.update({
+    ("authentication scheme", "domain-controller"): "user domain-controller",
+    ("authentication scheme", "fsso-agent-for-ntlm"): "user fsso",
+    ("authentication scheme", "kerberos-keytab"): "user krb-keytab",
+    ("authentication scheme", "saml-server"): "user saml",
+    ("authentication scheme", "ssh-ca"): "vpn certificate ca",
+    ("authentication scheme", "user-database"): "user ldap",
+    ("firewall vip", "ssl-certificate"): "vpn certificate local",
+    ("firewall access-proxy", "certificate"): "vpn certificate local",
+    ("firewall access-proxy", "ssl-certificate"): "vpn certificate local",
+    ("firewall access-proxy6", "certificate"): "vpn certificate local",
+    ("firewall access-proxy6", "ssl-certificate"): "vpn certificate local",
+    ("firewall access-proxy-virtual-host", "certificate"): "vpn certificate local",
+    ("firewall access-proxy-virtual-host", "ssl-certificate"): "vpn certificate local",
+    ("firewall access-proxy virtual-host", "certificate"): "vpn certificate local",
+    ("firewall access-proxy virtual-host", "ssl-certificate"): "vpn certificate local",
+    ("firewall access-proxy6 virtual-host", "certificate"): "vpn certificate local",
+    ("firewall access-proxy6 virtual-host", "ssl-certificate"): "vpn certificate local",
+    ("firewall access-proxy realservers", "ssl-certificate"): "vpn certificate local",
+    ("firewall access-proxy6 realservers", "ssl-certificate"): "vpn certificate local",
+    ("firewall ssl-ssh-profile", "caname"): "vpn certificate ca",
+    ("firewall ssl-ssh-profile", "server-cert"): "vpn certificate local",
+    ("system global", "admin-server-cert"): "vpn certificate local",
+    ("user setting", "auth-cert"): "vpn certificate local",
+    ("user setting", "auth-ca-cert"): "vpn certificate ca",
+    ("user ldap", "ca-cert"): "vpn certificate ca",
+    ("user peer", "ca"): "vpn certificate ca",
+    ("user saml", "cert"): "vpn certificate local",
+    ("user saml", "idp-cert"): "vpn certificate remote",
+    ("system saml", "cert"): "vpn certificate local",
+    ("system saml", "idp-cert"): "vpn certificate remote",
+    ("vpn ipsec phase1-interface", "certificate"): "vpn certificate local",
+    ("vpn ssl settings", "servercert"): "vpn certificate local",
+})
+REFERENCE_RULES.update({
+    ("firewall access-proxy" if suffix == "" else f"firewall access-proxy{suffix}", field): target
+    for suffix in ("", "6")
+    for field, target in {
+        "interface": "system interface",
+        "srcintf": "system interface",
+        "certificate": "vpn certificate local",
+        "ssl-certificate": "vpn certificate local",
+        "auth-method": "authentication scheme",
+        "auth-rule": "authentication rule",
+        "auth-virtual-host": "firewall access-proxy-virtual-host",
+        "service": "firewall service custom",
+        "ssl-vpn-web-portal": "vpn ssl web portal",
+    }.items()
+})
+REFERENCE_RULES.update({
+    ("firewall access-proxy-virtual-host", field): target
+    for field, target in {
+        "access-proxy": "firewall access-proxy",
+        "certificate": "vpn certificate local",
+        "ssl-certificate": "vpn certificate local",
+        "interface": "system interface",
+        "auth-method": "authentication scheme",
+        "auth-portal": "firewall auth-portal",
+    }.items()
+})
+REFERENCE_RULES.update({
+    ("authentication rule", field): "authentication scheme"
+    for field in ("active-auth-method", "auth-method")
+})
+
+REFERENCE_TARGET_SECTIONS.update({
+    ("firewall profile-group", field): {target}
+    for field, target in PROFILE_GROUP_REFERENCE_RULES.items()
+})
+REFERENCE_TARGET_SECTIONS.update({
+    ("firewall policy", field): {target}
+    for field, target in PROFILE_GROUP_REFERENCE_RULES.items()
+})
+REFERENCE_TARGET_SECTIONS.update({
+    ("authentication scheme", "domain-controller"): {"user domain-controller"},
+    ("authentication scheme", "fsso-agent-for-ntlm"): {"user fsso", "user fsso-polling"},
+    ("authentication scheme", "kerberos-keytab"): {"user krb-keytab"},
+    ("authentication scheme", "saml-server"): {"user saml"},
+    ("authentication scheme", "ssh-ca"): {"vpn certificate ca"},
+    ("authentication scheme", "user-database"): {"user ldap"},
+})
+REFERENCE_TARGET_SECTIONS.update({
+    key: {value}
+    for key, value in {
+        ("firewall vip", "ssl-certificate"): "vpn certificate local",
+        ("firewall access-proxy", "certificate"): "vpn certificate local",
+        ("firewall access-proxy", "ssl-certificate"): "vpn certificate local",
+        ("firewall access-proxy6", "certificate"): "vpn certificate local",
+        ("firewall access-proxy6", "ssl-certificate"): "vpn certificate local",
+        ("firewall access-proxy-virtual-host", "certificate"): "vpn certificate local",
+        ("firewall access-proxy-virtual-host", "ssl-certificate"): "vpn certificate local",
+        ("firewall access-proxy virtual-host", "certificate"): "vpn certificate local",
+        ("firewall access-proxy virtual-host", "ssl-certificate"): "vpn certificate local",
+        ("firewall access-proxy6 virtual-host", "certificate"): "vpn certificate local",
+        ("firewall access-proxy6 virtual-host", "ssl-certificate"): "vpn certificate local",
+        ("firewall access-proxy realservers", "ssl-certificate"): "vpn certificate local",
+        ("firewall access-proxy6 realservers", "ssl-certificate"): "vpn certificate local",
+        ("firewall ssl-ssh-profile", "caname"): "vpn certificate ca",
+        ("firewall ssl-ssh-profile", "server-cert"): "vpn certificate local",
+        ("system global", "admin-server-cert"): "vpn certificate local",
+        ("user setting", "auth-cert"): "vpn certificate local",
+        ("user setting", "auth-ca-cert"): "vpn certificate ca",
+        ("user ldap", "ca-cert"): "vpn certificate ca",
+        ("user peer", "ca"): "vpn certificate ca",
+        ("user saml", "cert"): "vpn certificate local",
+        ("user saml", "idp-cert"): "vpn certificate remote",
+        ("system saml", "cert"): "vpn certificate local",
+        ("system saml", "idp-cert"): "vpn certificate remote",
+        ("vpn ipsec phase1-interface", "certificate"): "vpn certificate local",
+        ("vpn ssl settings", "servercert"): "vpn certificate local",
+    }.items()
+})
+for _suffix in ("", "6"):
+    _access_proxy_path = (
+        "firewall access-proxy"
+        if not _suffix
+        else "firewall access-proxy6"
+    )
+    REFERENCE_TARGET_SECTIONS.update({
+        (_access_proxy_path, "interface"): {"system interface"},
+        (_access_proxy_path, "srcintf"): {"system interface"},
+        (_access_proxy_path, "certificate"): {"vpn certificate local"},
+        (_access_proxy_path, "ssl-certificate"): {"vpn certificate local"},
+        (_access_proxy_path, "auth-method"): {"authentication scheme"},
+        (_access_proxy_path, "auth-rule"): {"authentication rule"},
+        (_access_proxy_path, "auth-virtual-host"): {
+            "firewall access-proxy-virtual-host"
+        },
+        (_access_proxy_path, "service"): {
+            "firewall service custom", "firewall service group"
+        },
+        (_access_proxy_path, "ssl-vpn-web-portal"): {"vpn ssl web portal"},
+    })
+REFERENCE_TARGET_SECTIONS.update({
+    ("firewall access-proxy-virtual-host", "access-proxy"): {
+        "firewall access-proxy", "firewall access-proxy6"
+    },
+    ("firewall access-proxy-virtual-host", "certificate"): {"vpn certificate local"},
+    ("firewall access-proxy-virtual-host", "ssl-certificate"): {"vpn certificate local"},
+    ("firewall access-proxy-virtual-host", "interface"): {"system interface"},
+    ("firewall access-proxy-virtual-host", "auth-method"): {"authentication scheme"},
+    ("firewall access-proxy-virtual-host", "auth-portal"): {"firewall auth-portal"},
+    ("authentication rule", "active-auth-method"): {"authentication scheme"},
+    ("authentication rule", "auth-method"): {"authentication scheme"},
+})
+
+# Phase 46-50 keeps the historical nested profile sections valid as targets.
+for _profile_field, _nested_targets in {
+    "ssh-filter-profile": {"ssh-filter profile", "firewall profile-group ssh-filter"},
+    "diameter-filter-profile": {"diameter-filter profile", "firewall profile-group diameter-filter"},
+    "sctp-filter-profile": {"sctp-filter profile", "firewall profile-group sctp-filter"},
+    "videofilter-profile": {"videofilter profile", "firewall profile-group videofilter"},
+}.items():
+    REFERENCE_TARGET_SECTIONS[("firewall profile-group", _profile_field)] = _nested_targets
+
+for _relationship, _targets in {
+    ("system interface", "interface"): {"system interface"},
+    ("system zone", "interface"): {"system interface"},
+    ("firewall address", "interface"): {"system interface"},
+    ("firewall address", "associated-interface"): {"system interface"},
+    ("firewall address6", "interface"): {"system interface"},
+    ("firewall address6", "associated-interface"): {"system interface"},
+    ("firewall address6", "template"): {"firewall address6-template"},
+    ("firewall addrgrp", "member"): {"firewall address", "firewall addrgrp"},
+    ("firewall addrgrp", "exclude-member"): {"firewall address"},
+    ("firewall addrgrp6", "member"): {"firewall address6", "firewall addrgrp6"},
+    ("firewall addrgrp6", "exclude-member"): {"firewall address6"},
+    ("firewall service group", "member"): {"firewall service custom", "firewall service group"},
+    ("firewall schedule group", "member"): {"firewall schedule recurring", "firewall schedule onetime"},
+    ("firewall vipgrp", "member"): {"firewall vip"},
+    ("firewall vipgrp", "interface"): {"system interface"},
+    ("firewall vipgrp6", "member"): {"firewall vip6"},
+    ("firewall policy", "poolname"): {"firewall ippool", "firewall ippool_grp"},
+    ("firewall policy", "poolname6"): {"firewall ippool6"},
+    ("firewall policy", "pcp-poolname"): {"firewall ippool"},
+    ("firewall ippool", "associated-interface"): {"system interface"},
+    ("firewall ippool", "arp-intf"): {"system interface"},
+    ("firewall ippool-grp", "member"): {"firewall ippool"},
+    ("firewall central-snat-map", "srcintf"): {"system interface", "system zone", "system sdwan zone"},
+    ("firewall central-snat-map", "dstintf"): {"system interface", "system zone", "system sdwan zone"},
+    ("firewall central-snat-map", "orig-addr"): {"firewall address", "firewall addrgrp"},
+    ("firewall central-snat-map", "dst-addr"): {"firewall address", "firewall addrgrp"},
+    ("firewall central-snat-map", "orig-addr6"): {"firewall address6", "firewall addrgrp6"},
+    ("firewall central-snat-map", "dst-addr6"): {"firewall address6", "firewall addrgrp6"},
+    ("firewall central-snat-map", "nat-ippool"): {"firewall ippool"},
+    ("firewall central-snat-map", "nat-ippool6"): {"firewall ippool6"},
+    ("firewall vip6", "extintf"): {"system interface"},
+    ("firewall vip6", "service"): {"firewall service custom", "firewall service group"},
+    ("firewall vip6", "srcintf-filter"): {"system interface"},
+    ("firewall vip6 realservers", "address"): {"firewall address6", "firewall address"},
+    ("firewall vip6 realservers", "monitor"): {"firewall ldb-monitor"},
+}.items():
+    REFERENCE_TARGET_SECTIONS.setdefault(_relationship, set()).update(_targets)
+
 BUILTIN_REFERENCES = {
     "all", "any", "always", "none", "default", "enable", "disable",
 }
@@ -633,7 +903,7 @@ def _flatten(items: Iterable[SourceInventoryItem]) -> List[SourceInventoryItem]:
 def _reference_values(values: list[str]) -> list[str]:
     return [
         value for value in values
-        if value and value.lower() not in BUILTIN_REFERENCES
+        if value
         and value not in {"[REDACTED]", "<redacted>"}
     ]
 
@@ -656,24 +926,168 @@ def _reference_is_active(item: SourceInventoryItem, field: str) -> bool:
     )
 
 
+_FIELD_SPECIFIC_BUILTINS = {
+    ("firewall policy", "srcintf"): {"any"},
+    ("firewall policy", "dstintf"): {"any"},
+    ("firewall policy", "srcaddr"): {"all"},
+    ("firewall policy", "dstaddr"): {"all"},
+    ("firewall policy", "srcaddr6"): {"all"},
+    ("firewall policy", "dstaddr6"): {"all"},
+    ("firewall policy", "service"): {"all", "none"},
+    ("firewall policy", "schedule"): {"always"},
+    ("firewall security-policy", "srcintf"): {"any"},
+    ("firewall security-policy", "dstintf"): {"any"},
+    ("firewall security-policy", "srcaddr"): {"all"},
+    ("firewall security-policy", "dstaddr"): {"all"},
+    ("firewall security-policy", "srcaddr6"): {"all"},
+    ("firewall security-policy", "dstaddr6"): {"all"},
+    ("firewall security-policy", "service"): {"all", "none"},
+    ("firewall security-policy", "schedule"): {"always"},
+    ("firewall local-in-policy", "intf"): {"any"},
+    ("firewall local-in-policy", "srcaddr"): {"all"},
+    ("firewall local-in-policy", "dstaddr"): {"all"},
+    ("firewall local-in-policy", "service"): {"all", "none"},
+    ("firewall local-in-policy", "schedule"): {"always"},
+    ("firewall local-in-policy6", "intf"): {"any"},
+    ("firewall local-in-policy6", "srcaddr"): {"all"},
+    ("firewall local-in-policy6", "dstaddr"): {"all"},
+    ("firewall local-in-policy6", "service"): {"all", "none"},
+    ("firewall local-in-policy6", "schedule"): {"always"},
+    ("firewall dos-policy", "interface"): {"any"},
+    ("firewall dos-policy", "srcaddr"): {"all"},
+    ("firewall dos-policy", "dstaddr"): {"all"},
+    ("firewall dos-policy", "service"): {"all", "none"},
+    ("firewall dos-policy6", "interface"): {"any"},
+    ("firewall dos-policy6", "srcaddr"): {"all"},
+    ("firewall dos-policy6", "dstaddr"): {"all"},
+    ("firewall dos-policy6", "service"): {"all", "none"},
+    ("firewall multicast-policy", "srcintf"): {"any"},
+    ("firewall multicast-policy", "dstintf"): {"any"},
+    ("firewall multicast-policy", "srcaddr"): {"all"},
+    ("firewall multicast-policy6", "srcintf"): {"any"},
+    ("firewall multicast-policy6", "dstintf"): {"any"},
+    ("firewall multicast-policy6", "srcaddr"): {"all"},
+    ("router policy", "srcaddr"): {"all"},
+    ("router policy", "dstaddr"): {"all"},
+    ("router policy6", "srcaddr"): {"all"},
+    ("router policy6", "dstaddr"): {"all"},
+    ("firewall vip", "extintf"): {"any"},
+    ("firewall vip", "service"): {"all", "none"},
+    ("firewall vip6", "extintf"): {"any"},
+    ("firewall vip6", "service"): {"all", "none"},
+    ("vpn ssl settings", "source-interface"): {"any"},
+    ("vpn ssl settings", "source-address"): {"all"},
+    ("vpn ssl settings", "source-address6"): {"all"},
+}
+
+
+def _is_field_specific_builtin(source_path: str, field: str, reference: str) -> bool:
+    values = _FIELD_SPECIFIC_BUILTINS.get((_norm(source_path), _norm(field)), set())
+    return _norm(reference) in values
+
+
+def _is_predefined_service_group_reference(
+    source_path: str,
+    field: str,
+    reference: str,
+) -> bool:
+    if not is_predefined_service_group(reference):
+        return False
+    if _norm(source_path) == "firewall service group" and field == "member":
+        return True
+    return field == "service" and _norm(source_path) in {
+        "firewall policy",
+        "firewall local-in-policy",
+        "firewall local-in-policy6",
+        "firewall security-policy",
+        "firewall dos-policy",
+        "firewall dos-policy6",
+    }
+
+
+def _candidate_index(
+    items: Iterable[SourceInventoryItem],
+) -> Dict[Tuple[str, str], List[SourceInventoryItem]]:
+    index: Dict[Tuple[str, str], List[SourceInventoryItem]] = {}
+    for item in items:
+        context = item.source_context or "root"
+        names = dict.fromkeys(
+            str(name)
+            for name in (item.name, item.source_id)
+            if name is not None and str(name)
+        )
+        for name in names:
+            candidates = index.setdefault((context, name), [])
+            if not any(
+                candidate.source_path == item.source_path
+                and candidate.name == item.name
+                and candidate.source_id == item.source_id
+                for candidate in candidates
+            ):
+                candidates.append(item)
+    return index
+
+
+def _matching_candidates(
+    index: Dict[Tuple[str, str], List[SourceInventoryItem]],
+    *,
+    source_context: str,
+    reference: str,
+    allowed_sections: set[str],
+) -> List[SourceInventoryItem]:
+    return [
+        candidate
+        for candidate in index.get((source_context, reference), [])
+        if _allowed_section_matches(candidate.source_path, allowed_sections)
+    ]
+
+
+def _ambiguous_candidates(
+    candidates: List[SourceInventoryItem],
+) -> List[SourceInventoryItem]:
+    by_section: Dict[str, List[SourceInventoryItem]] = {}
+    for candidate in candidates:
+        by_section.setdefault(_norm(candidate.source_path), []).append(candidate)
+    return [
+        candidate
+        for same_section in by_section.values()
+        if len(same_section) > 1
+        for candidate in same_section
+    ]
+
+
+def _ambiguity_note(candidates: List[SourceInventoryItem]) -> str:
+    sections = sorted({_norm(candidate.source_path) for candidate in candidates})
+    return (
+        "Reference is ambiguous in the same VDOM/context; "
+        f"{len(candidates)} valid targets match: {', '.join(sections)}."
+    )
+
+
+def _pool_reference_collision(candidates: List[SourceInventoryItem]) -> bool:
+    return {
+        _norm(candidate.source_path) for candidate in candidates
+    } >= {"firewall ippool", "firewall ippool-grp"}
+
+
 def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[DependencyRecord]:
     """Build deterministic context-scoped dependency records."""
 
     all_items = _flatten(items)
-    index: Dict[Tuple[Optional[str], str], List[SourceInventoryItem]] = {}
-    for item in all_items:
-        source_context = item.source_context or "root"
-        names = [name for name in (item.name, item.source_id) if name]
-        for name in names:
-            index.setdefault((source_context, name), []).append(item)
+    index = _candidate_index(all_items)
 
     dependencies: List[DependencyRecord] = []
     for item in all_items:
         source_context = item.source_context or "root"
         source_path = _norm(item.source_path)
         if source_path == "system sdwan service sla" and item.name:
-            health_check = index.get((source_context, item.name), [])
-            resolved = any(_norm(candidate.source_path) == "system sdwan health-check" for candidate in health_check)
+            health_check = _matching_candidates(
+                index,
+                source_context=source_context,
+                reference=item.name,
+                allowed_sections={"system sdwan health-check"},
+            )
+            resolved = len(health_check) == 1
             dependencies.append(DependencyRecord(
                 source_context=source_context,
                 source_path=source_path,
@@ -686,6 +1100,8 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                 notes="Nested SD-WAN service SLA references its health-check by edit name.",
             ))
         for command in item.commands:
+            if getattr(command, "operation", "set") not in {"set", "append"}:
+                continue
             field = _norm(command.key)
             expected = REFERENCE_RULES.get((source_path, field))
             if expected is None or not _reference_is_active(item, field):
@@ -697,80 +1113,81 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                 expected,
             )
             for reference in _reference_values(command.values):
-                vip_target = next(
-                    (
-                        candidate
-                        for candidate in index.get((source_context, reference), [])
-                        if source_path == "firewall policy"
-                        and field == "dstaddr6"
-                        and _norm(candidate.source_path) in {"firewall vip6", "firewall vipgrp6"}
-                    ),
-                    None,
+                candidates = _matching_candidates(
+                    index,
+                    source_context=source_context,
+                    reference=reference,
+                    allowed_sections=allowed_sections,
                 )
-                if (source_path, field, _norm(reference)) in SDWAN_BUILTIN_REFERENCES:
-                    dependencies.append(DependencyRecord(
-                        source_context=source_context,
-                        source_path=source_path,
-                        source_object=item.name or item.source_id,
-                        source_field=command.key,
-                        reference=reference,
-                        expected_type=expected,
-                        result="RESOLVED",
-                        target_path="fortigate built-in sdwan zone",
-                        notes="FortiOS built-in virtual-wan-link zone.",
-                    ))
-                    continue
+                ambiguous = _ambiguous_candidates(candidates)
+                pool_collision = (
+                    source_path == "firewall policy"
+                    and field == "poolname"
+                    and _pool_reference_collision(candidates)
+                )
+                self_reference = (
+                    source_path == "system interface"
+                    and field == "member"
+                    and item.name == reference
+                )
+                target = None
                 predefined_service = False
-                if resolution_mode == "external":
-                    target = None
-                    result = "EXTERNAL"
-                    note = EXTERNAL_REFERENCE_NOTE
-                else:
-                    self_reference = (
-                        source_path == "system interface"
-                        and field == "member"
-                        and item.name == reference
+                predefined_service_group = False
+                reason = None
+                if self_reference:
+                    result = "UNRESOLVED"
+                    note = "Interface member cannot reference its own interface."
+                    reason = "self-reference"
+                elif ambiguous or pool_collision:
+                    result = "UNRESOLVED"
+                    note = (
+                        "Reference is ambiguous in the same VDOM/context; both "
+                        "firewall ippool and firewall ippool_grp match this policy poolname."
+                        if pool_collision
+                        else _ambiguity_note(ambiguous)
                     )
-                    if self_reference:
-                        target = None
-                        result = "UNRESOLVED"
-                        note = "Interface member cannot reference its own interface."
-                    else:
-                        candidates = index.get((source_context, reference), [])
-                        target = next(
-                            (
-                                candidate
-                                for candidate in candidates
-                                if _allowed_section_matches(
-                                    candidate.source_path,
-                                    allowed_sections,
-                                )
-                            ),
-                            None,
-                        )
-                        predefined_service = (
-                            target is None
-                            and expected == "firewall service custom"
-                            and is_predefined_service(reference)
-                        )
-                        result = "RESOLVED" if target or predefined_service else (
-                            "EXTERNAL"
-                            if resolution_mode == "local-or-external"
-                            else "UNRESOLVED"
-                        )
-                        note = (
-                            None
-                            if target
-                            else (
-                                "FortiOS 7.4.x predefined service."
-                                if predefined_service
-                                else (
-                                    EXTERNAL_REFERENCE_NOTE
-                                    if result == "EXTERNAL"
-                                    else "Reference was not found in the same VDOM/context."
-                                )
-                            )
-                        )
+                    reason = "ambiguous-reference"
+                elif candidates:
+                    target = candidates[0]
+                    result = "RESOLVED"
+                    note = None
+                elif _is_field_specific_builtin(source_path, field, reference):
+                    # A documented FortiOS selector is not an object reference.
+                    continue
+                elif (source_path, field, _norm(reference)) in SDWAN_BUILTIN_REFERENCES:
+                    result = "RESOLVED"
+                    note = "FortiOS built-in virtual-wan-link zone."
+                    target = None
+                elif (
+                    source_path == "authentication scheme"
+                    and field == "user-database"
+                    and _norm(reference) == "local"
+                ):
+                    result = "RESOLVED"
+                    note = "FortiOS built-in local authentication database."
+                    target = None
+                elif _is_predefined_service_group_reference(
+                    source_path, field, reference
+                ):
+                    predefined_service_group = True
+                    result = "RESOLVED"
+                    note = "FortiOS predefined service group."
+                    target = None
+                elif expected == "firewall service custom" and is_predefined_service(reference):
+                    predefined_service = True
+                    result = "RESOLVED"
+                    note = "FortiOS 7.4.x predefined service."
+                else:
+                    result = (
+                        "EXTERNAL"
+                        if resolution_mode in {"external", "local-or-external"}
+                        else "UNRESOLVED"
+                    )
+                    note = (
+                        EXTERNAL_REFERENCE_NOTE
+                        if result == "EXTERNAL"
+                        else "Reference was not found in the same VDOM/context."
+                    )
                 dependencies.append(DependencyRecord(
                     source_context=source_context,
                     source_path=source_path,
@@ -782,11 +1199,23 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                     target_path=(
                         _norm(target.source_path) if target
                         else "fortigate predefined service" if predefined_service
+                        else "fortigate predefined service group" if predefined_service_group
+                        else "fortigate built-in local user database"
+                        if (
+                            source_path == "authentication scheme"
+                            and field == "user-database"
+                            and _norm(reference) == "local"
+                        )
                         else None
                     ),
                     notes=note,
+                    reason=reason,
                 ))
-                if vip_target is not None:
+                if target is not None and (
+                    source_path == "firewall policy"
+                    and field == "dstaddr6"
+                    and _norm(target.source_path) in {"firewall vip6", "firewall vipgrp6"}
+                ):
                     dependencies.append(DependencyRecord(
                         source_context=source_context,
                         source_path=source_path,
@@ -795,7 +1224,53 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                         reference=reference,
                         expected_type="firewall vip6",
                         result="RESOLVED",
-                        target_path=_norm(vip_target.source_path),
+                        target_path=_norm(target.source_path),
                         notes="Separate IPv6 DNAT/VIP relationship.",
                     ))
+    profile_fields = {_norm(field) for field in PROFILE_GROUP_REFERENCE_RULES}
+    effective_profile_values: Dict[Tuple[str, str, str], List[str]] = {}
+    has_profile_group = False
+    for item in all_items:
+        if _norm(item.source_path) != "firewall profile-group":
+            continue
+        has_profile_group = True
+        context = item.source_context or "root"
+        source_object = item.name or item.source_id
+        for command in item.commands:
+            field = _norm(command.key)
+            if field not in profile_fields:
+                continue
+            key = (context, source_object, field)
+            values = _reference_values(command.values)
+            operation = str(getattr(command, "operation", "set")).lower()
+            if operation == "set":
+                effective_profile_values[key] = list(values)
+            elif operation == "append":
+                effective_profile_values.setdefault(key, []).extend(values)
+            elif operation == "unset":
+                effective_profile_values.pop(key, None)
+
+    if has_profile_group:
+        filtered: List[DependencyRecord] = []
+        seen_profile_dependencies: set[Tuple[str, str, str, str]] = set()
+        for dependency in dependencies:
+            source_path = _norm(dependency.source_path)
+            field = _norm(dependency.source_field)
+            if source_path != "firewall profile-group" or field not in profile_fields:
+                filtered.append(dependency)
+                continue
+            key = (
+                dependency.source_context or "root",
+                dependency.source_object or "",
+                field,
+            )
+            if dependency.reference not in effective_profile_values.get(key, []):
+                continue
+            dependency_key = (*key, dependency.reference)
+            if dependency_key in seen_profile_dependencies:
+                continue
+            seen_profile_dependencies.add(dependency_key)
+            filtered.append(dependency)
+        dependencies = filtered
+
     return dependencies

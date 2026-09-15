@@ -300,6 +300,83 @@ SECTION_LIST_FIELDS = {
     "user quarantine": {"firewall_groups"},
 }
 
+# Numeric CLI fields are declared here so normal edit evaluation does not
+# depend on the section-specific model builder remembering to coerce them.
+SECTION_INTEGER_FIELDS = {
+    "system interface": {
+        "bfd_desired_min_tx", "bfd_detect_mult", "bfd_required_min_rx",
+        "bandwidth_measure_time", "snmp_index", "weight", "mtu", "tcp_mss",
+        "estimated_upstream_bandwidth", "estimated_downstream_bandwidth",
+        "link_up_delay", "link_down_delay", "distance", "priority",
+        "ha_priority", "dhcp_renew_time", "lacp_select_timeout", "bandwidth",
+        "cli_conn6_status", "ip6_default_life", "ip6_delegated_prefix_iaid",
+        "ip6_hop_limit", "ip6_link_mtu", "ip6_max_interval", "ip6_min_interval",
+        "ip6_reachable_time", "ip6_retrans_time", "vlanid", "vrf", "min_links",
+        "ping_serv_status",
+    },
+    "system interface secondaryip": {"id", "ha_priority", "ping_serv_status"},
+    "firewall address": {"cache_ttl", "route_tag", "color"},
+    "firewall address6": {"cache_ttl", "route_tag", "color"},
+    "firewall addrgrp": {"color"},
+    "firewall addrgrp6": {"color"},
+    "firewall service custom": {
+        "protocol_number", "icmptype", "icmpcode", "color",
+        "tcp_halfclose_timer", "tcp_halfopen_timer", "tcp_rst_timer",
+        "tcp_timewait_timer", "udp_idle_timer",
+    },
+    "firewall service group": {"color"},
+    "firewall schedule recurring": {"color", "expiration_days"},
+    "firewall schedule onetime": {"color", "expiration_days"},
+    "firewall schedule group": {"color"},
+    "firewall address6-template": {"subnet_segment_count"},
+    "vpn ipsec phase1-interface": {
+        "default_gw_priority", "distance", "priority", "aggregate_weight",
+    },
+    "vpn ipsec phase1": {"default_gw_priority", "distance", "priority"},
+    "vpn ipsec phase2-interface": {"protocol", "src_port", "dst_port"},
+    "vpn ipsec phase2": {"protocol", "src_port", "dst_port"},
+    "firewall ippool": {
+        "startport", "endport", "block_size", "num_blocks_per_user",
+        "pba_timeout", "pba_interim_log", "port_per_user", "client_prefix_length",
+        "tcp_session_quota", "udp_session_quota", "icmp_session_quota",
+        "cgn_block_size", "cgn_client_ipv6shift", "cgn_port_start", "cgn_port_end",
+        "utilization_alarm_clear", "utilization_alarm_raise",
+    },
+    "firewall vip": {
+        "id", "gratuitous_arp_interval", "max_embryonic_connections", "color",
+    },
+    "firewall vip6": {
+        "id", "max_embryonic_connections", "color",
+    },
+    "firewall vipgrp": {"color"},
+    "firewall vipgrp6": {"color"},
+    "firewall vip realservers": {
+        "id", "port", "weight", "holddown_interval", "max_connections",
+    },
+    "firewall vip6 realservers": {
+        "id", "port", "weight", "holddown_interval", "max_connections",
+    },
+    "firewall policy": {
+        "id", "tcp_mss_sender", "tcp_mss_receiver", "session_ttl",
+        "vlan_cos_fwd", "vlan_cos_rev", "reputation_minimum",
+        "reputation_minimum6",
+    },
+    "firewall central-snat-map": {"id", "protocol"},
+    "firewall ip-translation": {"id"},
+    "router static": {
+        "id", "distance", "priority", "weight", "vrf", "tag",
+        "internet_service", "devindex",
+    },
+    "router static6": {
+        "id", "distance", "priority", "weight", "vrf", "tag",
+        "internet_service", "devindex",
+    },
+}
+
+SECTION_INTEGER_LIST_FIELDS = {
+    "firewall policy": {"application", "app_category"},
+}
+
 
 SECTION_REGISTRY: dict[str, SectionSpec] = {}
 

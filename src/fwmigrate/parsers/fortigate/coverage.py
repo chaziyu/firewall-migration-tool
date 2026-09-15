@@ -174,6 +174,7 @@ TYPED_SECTIONS = {
     "firewall internet-service-extension entry port-range",
     "firewall internet-service-group",
     "firewall ippool",
+    "firewall ippool_grp",
     "firewall vip",
     "firewall vip realservers",
     "firewall vipgrp",
@@ -270,6 +271,8 @@ TYPED_SECTIONS = {
     "firewall central-snat-map",
     "firewall ip-translation",
     "firewall ippool6",
+    "firewall ippool_grp",
+    "firewall address6-template",
     "firewall ipv6-eh-filter",
     "firewall vip6",
     "firewall vip6 realservers",
@@ -526,7 +529,8 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall internet-service-custom": ("custom_internet_services", "custom_internet_services"),
     "firewall internet-service-custom-group": ("custom_internet_service_groups", "custom_internet_service_groups"),
     "firewall ippool": ("ip_pools", "ip_pools"),
-    "firewall ippool6": ("ip_pools6", "ip_pools"),
+    "firewall ippool6": ("ip_pools6", "ip_pools6"),
+    "firewall ippool_grp": ("ip_pool_groups", "ip_pool_groups"),
     "firewall vip": ("vips", "virtual_ips"),
     "firewall vip realservers": ("vips", "virtual_ips"),
     "firewall vip6": ("vips6", "virtual_ips"),
@@ -669,6 +673,9 @@ SEMANTIC_SUPPORT_LEVELS = {
     "ips sensor entries exempt-ip": "TYPED_EXTRACT_ONLY",
     **{path: "STRUCTURED_EXTRACT_ONLY" for path in STRUCTURED_SECURITY_SECTIONS},
     "firewall profile-group": "TYPED_EXTRACT_ONLY",
+    "ips sensor": "TYPED_EXTRACT_ONLY",
+    "ips sensor entries": "TYPED_EXTRACT_ONLY",
+    "ips sensor entries exempt-ip": "TYPED_EXTRACT_ONLY",
 }
 
 

@@ -48,6 +48,7 @@ STRUCTURED_SECURITY_SECTIONS = {
     "casb saas-application",
     "casb user-activity",
     "ips settings",
+    "ips sensor",
 }
 
 STRUCTURED_ROUTING_SECTIONS = {

@@ -93,10 +93,6 @@ _INHERITED_RULE_FIELDS = {
     "source_explicit_fields",
 }
 
-_ORIGINAL_BUILD_MODEL = None
-_INSTALLED = False
-
-
 def _scalar(values: List[str]) -> Any:
     if not values:
         return None
@@ -308,44 +304,3 @@ def _build_shaping_profile(
     )
 
 
-def install_phase22_parser_support() -> None:
-    """Install typed handling for Phase 22 source-only shaping families.
-
-    The existing parser deliberately routes several non-portable families
-    through ``FGSourceOnlyRule``. This focused integration intercepts only the
-    two Phase 22 sections and delegates every other section unchanged.
-    """
-
-    global _ORIGINAL_BUILD_MODEL, _INSTALLED
-    if _INSTALLED:
-        return
-
-    from fwmigrate.parsers.fortigate import model as model_module
-    from fwmigrate.parsers.fortigate.parser import FortiGateParser
-
-    # Keep these source models accessible through the established model module
-    # import surface while the typed data remains in the source-only collection.
-    model_module.FGPerIPShaper = FGPerIPShaper
-    model_module.FGShapingProfileEntry = FGShapingProfileEntry
-    model_module.FGShapingProfile = FGShapingProfile
-
-    def _per_ip_shapers(config: FGConfig) -> List[FGPerIPShaper]:
-        return [
-            item
-            for item in config.source_only_rules
-            if isinstance(item, FGPerIPShaper)
-        ]
-
-    def _shaping_profiles(config: FGConfig) -> List[FGShapingProfile]:
-        return [
-            item
-            for item in config.source_only_rules
-            if isinstance(item, FGShapingProfile)
-        ]
-
-    if not hasattr(FGConfig, "per_ip_shapers"):
-        FGConfig.per_ip_shapers = property(_per_ip_shapers)
-    if not hasattr(FGConfig, "shaping_profiles"):
-        FGConfig.shaping_profiles = property(_shaping_profiles)
-
-    _INSTALLED = True
