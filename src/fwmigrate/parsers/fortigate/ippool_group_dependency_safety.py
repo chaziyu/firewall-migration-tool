@@ -26,7 +26,7 @@ def install_ippool_group_dependency_safety(
         object_types: dict[tuple[str, str], set[str]] = {}
         for item in item_list:
             path = dependencies_module._norm(item.source_path)
-            if path not in {"firewall ippool", "firewall ippool_grp"}:
+            if path not in {"firewall ippool", "firewall ippool-grp"}:
                 continue
             context = item.source_context or "root"
             for name in (item.name, item.source_id):
@@ -37,7 +37,7 @@ def install_ippool_group_dependency_safety(
         ambiguous_keys = {
             key
             for key, paths in object_types.items()
-            if {"firewall ippool", "firewall ippool_grp"}.issubset(paths)
+            if {"firewall ippool", "firewall ippool-grp"}.issubset(paths)
         }
         if not ambiguous_keys:
             return records

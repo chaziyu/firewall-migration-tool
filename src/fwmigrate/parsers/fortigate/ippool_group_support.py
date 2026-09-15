@@ -193,11 +193,12 @@ def install_ippool_group_support(
     # Group members are always IPv4 pools.  Policy poolname may legally name a
     # pool group; the final dependency safety wrapper will keep same-context
     # pool-vs-group name collisions unresolved instead of selecting one.
+    group_source_path = "firewall ippool-grp"
     dependencies_module.REFERENCE_RULES[
-        ("firewall ippool_grp", "member")
+        (group_source_path, "member")
     ] = "firewall ippool"
     dependencies_module.REFERENCE_TARGET_SECTIONS[
-        ("firewall ippool_grp", "member")
+        (group_source_path, "member")
     ] = {"firewall ippool"}
     dependencies_module.REFERENCE_TARGET_SECTIONS.setdefault(
         ("firewall policy", "poolname"),
