@@ -14,6 +14,7 @@ from fwmigrate.parsers.fortigate.coverage import (
     extract_only_requires_manual_review,
 )
 from fwmigrate.parsers.fortigate.dependencies import build_dependency_registry
+from fwmigrate.parsers.fortigate.dependencies import _norm
 from fwmigrate.parsers.fortigate.semantic_validation import (
     validate_internet_service_group_directions,
 )
@@ -218,7 +219,7 @@ def extract_fortigate_config(
         item_dependencies = [
             dependency for dependency in unresolved_dependencies
             if dependency.source_context == item.source_context
-            and dependency.source_path == item.source_path
+            and _norm(dependency.source_path) == _norm(item.source_path)
             and dependency.source_object in {item.name, item.source_id}
         ]
         if item_dependencies:

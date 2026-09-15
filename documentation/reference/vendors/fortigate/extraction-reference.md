@@ -40,6 +40,8 @@ FortiOS settings that influence behavior but lack exact portable semantics must 
 - `firewall vipgrp` members are resolved within their source VDOM. Valid members retain their group and individual VIP references in derived NAT evidence. Unresolved members remain visible and taint affected output rather than being silently dropped.
 - Policy-based IPsec policies with `natinbound` and/or `natoutbound` produce separate source and destination NAT evidence rows. They remain partial/manual-review and are withheld from target generation. `natip` becomes a static translated source only when it is one unambiguous IPv4 host; broad, multiple, malformed, or unresolved values remain source evidence.
 - Matching same-VDOM Phase 2 policies are retained with `vpntunnel`, `id`, `name`, `phase1name`, and `use-natip` evidence. Missing references or conflicting `use-natip` values remain review findings.
+- `config firewall ippool_grp` is typed as FortiGate source inventory. Ordered member names, unresolved same-VDOM members, explicit fields, and unknown settings are preserved. Policy `poolname` references can resolve to an IP pool group, but the group is not flattened into translated addresses; dependent NAT rules remain partial/manual-review and are withheld from target generation. A same-VDOM name collision between `firewall ippool` and `firewall ippool_grp` remains ambiguous and fails closed.
+- Advanced IP-pool and VIP features, including PBA, NAT46/NAT64, exclusions, full-cone behavior, filters, and load-balancing controls, are preserved and withheld or marked partial when exact target semantics are not proven.
 
 ## Safety boundaries
 
