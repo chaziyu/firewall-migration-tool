@@ -102,5 +102,8 @@ def test_asa_parser_ir_excel_pipeline_covers_phased_regressions():
     assert pbr_rows[0][pbr_headers.index("Next Hops")] == "192.0.2.254\n192.0.2.253"
     assert nat_rows[0][nat_headers.index("Original Source Port")] == "1000-1000"
     assert nat_rows[1][nat_headers.index("Original Destination Port")] == "443-443"
+    assert nat_rows[0][nat_headers.index("Sequence")] == 1
+    assert nat_rows[0][nat_headers.index("Source Section")] == "manual"
+    assert nat_rows[1][nat_headers.index("Source Section")] == "manual"
     assert workbook["IP Pools"].max_row == 3
     assert workbook["Virtual IPs"].max_row == 3
