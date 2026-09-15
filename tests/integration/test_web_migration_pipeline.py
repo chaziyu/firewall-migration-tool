@@ -2,6 +2,8 @@ import io
 import zipfile
 from unittest.mock import patch
 
+import pytest
+
 from fwmigrate.application import MigrationPipeline
 from fwmigrate.web import create_app
 from tests.fixture_paths import CISCO_ASA_FIXTURE
@@ -35,3 +37,59 @@ def test_web_migration_uses_shared_pipeline():
     with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
         assert "palo_alto_config.xml" in archive.namelist()
         assert "migration_report.md" in archive.namelist()
+        assert any(name.endswith(".xlsx") for name in archive.namelist())
+
+
+def test_web_migration_can_skip_reports_and_inventory():
+    app = create_app({"TESTING": True})
+    client = app.test_client()
+
+    with (
+        patch("fwmigrate.web.MigrationReporter") as reporter,
+        patch("fwmigrate.web.IRExcelExporter") as exporter,
+    ):
+        response = client.post(
+            "/api/migrate",
+            data={
+                "source_vendor": "cisco_asa",
+                "target_vendor": "palo_alto",
+                "include_report": "false",
+                "include_inventory": "false",
+                "file": (io.BytesIO(CISCO_ASA_FIXTURE.read_bytes()), "example.cfg"),
+            },
+            content_type="multipart/form-data",
+        )
+
+    assert response.status_code == 200
+    reporter.assert_not_called()
+    exporter.assert_not_called()
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        assert "palo_alto_config.xml" in archive.namelist()
+        assert not any(name.startswith("migration_report.") or name.endswith(".xlsx") for name in archive.namelist())
+
+
+@pytest.mark.parametrize(
+    ("flags", "has_report", "has_inventory"),
+    [
+        ({"include_report": "false"}, False, True),
+        ({"include_inventory": "false"}, True, False),
+    ],
+)
+def test_web_migration_can_skip_each_optional_artifact(flags, has_report, has_inventory):
+    app = create_app({"TESTING": True})
+    response = app.test_client().post(
+        "/api/migrate",
+        data={
+            "source_vendor": "cisco_asa",
+            "target_vendor": "palo_alto",
+            **flags,
+            "file": (io.BytesIO(CISCO_ASA_FIXTURE.read_bytes()), "example.cfg"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        names = archive.namelist()
+    assert ("migration_report.md" in names) is has_report
+    assert any(name.endswith(".xlsx") for name in names) is has_inventory
