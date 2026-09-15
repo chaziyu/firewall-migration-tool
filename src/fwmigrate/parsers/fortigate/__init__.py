@@ -84,8 +84,14 @@ from fwmigrate.parsers.fortigate.fortios_746_address_schedule_fixes import (
 from fwmigrate.parsers.fortigate.fortios_746_ci_regression_fixes import (
     install_fortios_746_ci_regression_fixes,
 )
+from fwmigrate.parsers.fortigate.ippool_group_support import (
+    install_ippool_group_support,
+)
 from fwmigrate.parsers.fortigate.dependency_resolution_safety_fix import (
     install_dependency_resolution_safety_fix,
+)
+from fwmigrate.parsers.fortigate.ippool_group_dependency_safety import (
+    install_ippool_group_dependency_safety,
 )
 from fwmigrate.parsers.fortigate.audit_remediation import (
     install_fortios_746_audit_remediation,
@@ -195,9 +201,26 @@ install_fortios_746_ci_regression_fixes(
     _coverage_module,
 )
 
+# Preserve FortiGate IP-pool groups as typed source/canonical evidence before
+# the final dependency safety wrapper validates multi-target pool references.
+install_ippool_group_support(
+    _parser_module,
+    _transformer_module,
+    _dependencies_module,
+    _coverage_module,
+    _extractor_module,
+)
+
 # Apply dependency safety after every earlier FortiGate dependency wrapper so
 # their source-specific relationships remain intact and are checked uniformly.
 install_dependency_resolution_safety_fix(
+    _dependencies_module,
+    _extractor_module,
+)
+
+# The generic dependency guard intentionally checks same-type ambiguity only.
+# Pool and pool-group name collisions are cross-type, so fail closed here.
+install_ippool_group_dependency_safety(
     _dependencies_module,
     _extractor_module,
 )
@@ -228,5 +251,4 @@ class FortiGateSourceParser(BaseSourceParser):
 
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:
         return extract_fortigate_config(content, zone_mapping=zone_mapping)
-
 
