@@ -97,10 +97,11 @@ def checkpoint_fortigate_central_snat_reason(
         NATTranslationMode.DYNAMIC_IP_AND_PORT,
         NATTranslationMode.POOL,
     }:
-        pool_references = list(rule.source_pool_references)
-        if not pool_references and ip_pool_names:
-            pool_references = [name for name in rule.translated_sources if name in ip_pool_names]
-        return None if pool_references else "checkpoint-source-pool-unresolved"
+        if rule.source_pool_references:
+            return None
+        if ip_pool_names and any(name in ip_pool_names for name in rule.translated_sources):
+            return "checkpoint-management-ip-pool-not-generic-snat"
+        return "checkpoint-source-pool-unresolved"
     return "checkpoint-source-nat-method-unresolved"
 
 
@@ -112,17 +113,8 @@ def plan_fortigate_central_snat(
         return None
     if rule.type != NATType.SOURCE or rule.identity or rule.exemption:
         return None
-    pool_references = list(rule.source_pool_references)
-    if not pool_references and ip_pool_names:
-        pool_references = [name for name in rule.translated_sources if name in ip_pool_names]
     updates = {
         "type": NATType.CENTRAL,
         "source_origin": "checkpoint-source-nat-to-fortigate-central",
     }
-    if rule.source_translation_mode in {
-        NATTranslationMode.STATIC,
-        NATTranslationMode.DYNAMIC_IP_AND_PORT,
-        NATTranslationMode.POOL,
-    } and not rule.source_pool_references:
-        updates["source_pool_references"] = pool_references
     return rule.model_copy(update=updates)
