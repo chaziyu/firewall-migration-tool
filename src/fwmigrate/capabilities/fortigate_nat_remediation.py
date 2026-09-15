@@ -10,6 +10,7 @@ from fwmigrate.capabilities.schema import (
     CapabilityStatus,
 )
 from fwmigrate.generators.nat_capabilities import nat_capabilities
+from fwmigrate.ir import IRConfig
 
 
 def _append_issue(
@@ -62,7 +63,7 @@ def _source_incomplete(obj: Any) -> bool:
 
 
 def _add_fortigate_nat_capability_issues(
-    ir_config: Any,
+    ir_config: IRConfig,
     target_vendor: str,
     issues: list[CapabilityIssue],
 ) -> None:
@@ -219,7 +220,11 @@ def install_fortigate_nat_capability_remediation(analyzer_module: Any) -> None:
     if getattr(original, "_fortigate_nat_remediation", False):
         return
 
-    def analyze(self: Any, ir_config: Any, target_vendor: str | None = None):
+    def analyze(
+        self: Any,
+        ir_config: IRConfig,
+        target_vendor: str | None = None,
+    ) -> CapabilityAnalysisResult:
         result = original(self, ir_config, target_vendor)
         if not isinstance(result, CapabilityAnalysisResult):
             result = CapabilityAnalysisResult(list(result))
