@@ -1,0 +1,27 @@
+{
+  "format": "cisco-fdm-rest-export-v1",
+  "source": "fdm-rest-api",
+  "domain": {"id": "fdm-device", "name": "Default"},
+  "objects": {
+    "hosts": [
+      {"id": "inside", "name": "InsideHost", "value": "10.0.0.10"},
+      {"id": "public", "name": "PublicHost", "value": "203.0.113.10"}
+    ],
+    "networks": [{"id": "inside-net", "name": "InsideNet", "value": "10.0.0.0/24"}],
+    "services": [{"id": "http", "name": "HTTP", "protocol": "tcp", "ports": [{"start": 80}]}],
+    "interfaces": [{"id": "inside-if", "name": "inside"}, {"id": "outside-if", "name": "outside"}]
+  },
+  "nat_rules": [
+    {
+      "id": "fdm-static", "name": "Static Source", "sequence": 1, "type": "SOURCE",
+      "originalSource": {"id": "inside"}, "translatedSource": {"id": "public"},
+      "sourceTranslationMode": "static", "service": {"id": "http"}
+    },
+    {
+      "id": "fdm-twice", "name": "Twice Destination", "sequence": 2, "type": "TWICE",
+      "originalSource": {"id": "inside"}, "translatedSource": {"id": "public"},
+      "originalDestination": {"id": "public"}, "translatedDestination": {"id": "inside"},
+      "sourceTranslationMode": "static", "destinationTranslationMode": "static"
+    }
+  ]
+}
