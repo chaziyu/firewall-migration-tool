@@ -3270,7 +3270,8 @@ class IRExcelExporter:
     def _build_nat_rules(self, workbook: Any) -> None:
         rows = (
             (
-                index, item.name, item.type, item.source_origin, item.nat_family,
+                index, item.sequence, self._format_nat_source_section(item), item.source_rule_id,
+                item.name, item.type, item.source_origin, item.nat_family,
                 item.original_address_family, item.translated_address_family,
                 f"{item.protocol_name or ''}/{item.protocol_number or ''}".strip("/"),
                 self._format_nat_ports(item.original_source_ports),
@@ -3346,7 +3347,7 @@ class IRExcelExporter:
             workbook,
             "NAT Rules",
             (
-                "Rule #", "Name", "Type", "Source Origin", "NAT Family",
+                "Rule #", "Sequence", "Source Section", "Source Rule ID", "Name", "Type", "Source Origin", "NAT Family",
                 "Original Address Family", "Translated Address Family", "Protocol / Number",
                 "Original Source Port", "Original Destination Port", "Translated Source Port",
                 "Translated Destination Port", "Source Port Behavior", "Install Translation Route",
@@ -4519,7 +4520,7 @@ class IRExcelExporter:
             (
                 "Name", "Address Family", "Source UUID", "Interface", "Members", "Source Color",
                 "Extraction Status", "Manual Review", "Review Reason",
-                "Additional Settings", "Description",
+                "Additional Settings", "Description", "Source VDOM", "Unresolved Members",
             ),
             (
                 (
@@ -4527,6 +4528,7 @@ class IRExcelExporter:
                     item.source_color, item.migration_status,
                     self._optional_bool_literal(item.requires_manual_review),
                     item.audit_note, self._format_settings(item.source_attributes), item.description,
+                    item.source_context, item.unresolved_members,
                 )
                 for item in self.ir.virtual_ip_groups
             ),
@@ -6615,6 +6617,11 @@ class IRExcelExporter:
             f"{port.start}-{port.end}" if port.end is not None else str(port.start)
             for port in ports
         )
+
+    @staticmethod
+    def _format_nat_source_section(item: Any) -> Any:
+        attributes = item.source_attributes or {}
+        return attributes.get("fmc_nat_section") or attributes.get("section")
 
     @staticmethod
     def _format_nat_address_ranges(mappings: list[Any], field: str) -> Any:

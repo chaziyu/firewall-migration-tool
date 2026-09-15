@@ -1,8 +1,12 @@
+import io
 import json
+
+from openpyxl import load_workbook
 
 from fwmigrate.ir.enums import NATTranslationMode, NATType, PolicyAction
 from fwmigrate.parsers.cisco_ftd import CiscoFMCBundleParser, CiscoFTDSourceParser
 from fwmigrate.parsers.cisco_ftd.extractor import extract_cisco_ftd_config
+from fwmigrate.report.excel_exporter import IRExcelExporter
 
 
 def _bundle():
@@ -251,3 +255,16 @@ def test_fmc_unsupported_pat_options_do_not_promote_address_only_dynamic_nat():
     assert nat.source_translation_mode == NATTranslationMode.DYNAMIC_IP
     assert nat.source_attributes["fmc_pat_options"]["method"] == "vendor-specific"
     assert nat.review_reasons.count("FMC PAT options are source-preserved for target capability review") == 1
+
+
+def test_fmc_nat_sequence_and_section_survive_excel_export():
+    ir = CiscoFMCBundleParser(json.dumps(_bundle())).parse()
+    workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()), data_only=False)
+    sheet = workbook["NAT Rules"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+
+    assert sheet.cell(4, headers["Sequence"]).value == 1
+    assert sheet.cell(4, headers["Source Section"]).value == "before_auto"
+    assert sheet.cell(5, headers["Sequence"]).value == 2
+    assert sheet.cell(5, headers["Source Section"]).value == "auto"
+    assert sheet.cell(4, headers["Translated Source"]).value == "PublicHost"
