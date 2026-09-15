@@ -195,3 +195,31 @@ def test_fmc_preserves_source_ports_zones_interface_groups_and_pbr():
     assert ir.zones[0].interfaces == ["Gig0/1"]
     assert ir.interface_groups[0].members == ["Gig0/1"]
     assert ir.policy_route_rules[0].source_order == 5
+
+
+def test_fmc_nat_sequence_and_destination_translation_are_canonical():
+    bundle = _bundle()
+    bundle["nat_policies"][0]["manual_rules_after_auto"] = [{
+        "id": "manual-after",
+        "name": "Destination translation",
+        "type": "FTDManualNatRule",
+        "natType": "STATIC",
+        "sourceInterface": {"id": "zone-inside", "name": "inside", "type": "SecurityZone"},
+        "destinationInterface": {"id": "zone-outside", "name": "outside", "type": "SecurityZone"},
+        "originalSource": {"id": "host-inside", "name": "InsideHost", "type": "Host"},
+        "translatedSource": {"id": "host-public", "name": "PublicHost", "type": "Host"},
+        "originalDestination": {"id": "host-public", "name": "PublicHost", "type": "Host"},
+        "translatedDestination": {"id": "host-inside", "name": "InsideHost", "type": "Host"},
+    }]
+
+    ir = CiscoFMCBundleParser(json.dumps(bundle)).parse()
+    assert [rule.sequence for rule in ir.nat_rules] == [1, 2, 3]
+
+    destination = ir.nat_rules[2]
+    assert destination.type == NATType.TWICE
+    assert destination.source == ["InsideHost"]
+    assert destination.translated_sources == ["PublicHost"]
+    assert destination.destination == ["PublicHost"]
+    assert destination.translated_destinations == ["InsideHost"]
+    assert destination.destination_translation_mode == NATTranslationMode.STATIC
+    assert destination.source_attributes["fmc_nat_section"] == "after_auto"
