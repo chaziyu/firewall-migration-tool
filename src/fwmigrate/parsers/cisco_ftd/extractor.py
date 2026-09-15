@@ -13,6 +13,7 @@ from fwmigrate.extraction.models import (
 from fwmigrate.extraction.sanitize import sanitize_extraction_result, sanitize_raw_text
 from fwmigrate.parsers.cisco_ftd.coverage import classify_cisco_ftd_coverage
 from fwmigrate.parsers.cisco_ftd.fmc_adapter import CiscoFMCBundleParser, is_fmc_bundle
+from fwmigrate.parsers.cisco_ftd.fdm_adapter import CiscoFDMBundleParser, is_fdm_bundle
 from fwmigrate.parsers.cisco_ftd.parser import (
     FTD_TEXT_GENERATION_BLOCK_REASON,
     CiscoFTDParser,
@@ -235,9 +236,73 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
     ))
 
 
+def _extract_fdm_bundle(text: str) -> ExtractionResult:
+    parser = CiscoFDMBundleParser(text)
+    ir = parser.parse()
+    inventory: list[SourceInventoryItem] = []
+
+    def add(items: list[Any], path: str, source_type: str) -> None:
+        for index, item in enumerate(items, 1):
+            review = bool(getattr(item, "requires_manual_review", False))
+            inventory.append(SourceInventoryItem(
+                domain="cisco_ftd", domain_uid=parser.domain_id, domain_name=parser.domain_name,
+                source_path=path, name=getattr(item, "name", None) or str(index),
+                source_id=str(getattr(item, "source_uuid", None) or getattr(item, "source_rule_id", None) or index),
+                source_type=source_type, source_context=getattr(item, "source_context", parser.context),
+                source_attributes={"migration_status": getattr(item, "migration_status", "NORMALIZED")},
+                status=_status(getattr(item, "migration_status", "NORMALIZED"), review),
+                requires_manual_review=review,
+            ))
+
+    add(ir.addresses, "fdm/objects/network", "network-object")
+    add(ir.address_groups, "fdm/objects/network-groups", "network-group")
+    add(ir.services, "fdm/objects/services", "service-object")
+    add(ir.service_groups, "fdm/objects/service-groups", "service-group")
+    add(ir.interfaces, "fdm/interfaces", "interface")
+    add(ir.zones, "fdm/zones", "security-zone")
+    add(ir.nat_rules, "fdm/nat-policies", "nat-rule")
+
+    unsupported = [
+        UnsupportedItem(
+            source_path="fdm/reference-resolution",
+            source_name=str(item.get("owner") or item.get("reference") or "reference"),
+            source_context=parser.context,
+            reason=f"Unresolved FDM reference in {item.get('field') or 'unknown field'}",
+            raw_capture=sanitize_raw_text(str(item)),
+        )
+        for item in parser.unresolved_references
+    ]
+    sections = [
+        SourceSectionResult(
+            path="fdm/objects", source_context=parser.context,
+            status=ExtractionStatus.PARTIALLY_NORMALIZED if any(item.requires_manual_review for item in inventory if item.source_path.startswith("fdm/objects")) else ExtractionStatus.NORMALIZED,
+            object_count_source=len(inventory),
+            object_count_parsed=sum(1 for item in inventory if item.source_path.startswith("fdm/objects")),
+        ),
+        SourceSectionResult(
+            path="fdm/nat-policies", source_context=parser.context,
+            status=ExtractionStatus.PARTIALLY_NORMALIZED if any(item.requires_manual_review for item in ir.nat_rules) else ExtractionStatus.NORMALIZED,
+            object_count_source=len(ir.nat_rules), object_count_parsed=len(ir.nat_rules),
+        ),
+    ]
+    requires_review = bool(unsupported) or any(item.requires_manual_review for item in inventory)
+    return sanitize_extraction_result(ExtractionResult(
+        canonical_ir=ir, source_sections=sections, inventory_items=inventory,
+        unsupported_items=unsupported, requires_manual_review=requires_review,
+        migration_complete=not requires_review,
+        generation_safe=ir.generation_safe and not bool(unsupported),
+        blocking_reasons=list(ir.generation_blocking_reasons),
+        input_source_type="fdm-rest-bundle",
+        policy_extraction_supported=True, nat_extraction_supported=True,
+        object_extraction_supported=True,
+    ))
+
+
 def extract_cisco_ftd_config(text: str) -> ExtractionResult:
     if is_fmc_bundle(text):
         return _extract_fmc_bundle(text)
+    if is_fdm_bundle(text):
+        return _extract_fdm_bundle(text)
 
     sections = scan_cisco_ftd_sections(text)
     classify_cisco_ftd_coverage(sections)
