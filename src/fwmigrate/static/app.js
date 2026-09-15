@@ -513,16 +513,6 @@ document.addEventListener("DOMContentLoaded", () => {
           : hasInput
             ? "loading"
             : "idle";
-    setText(
-      "sidebar-workspace-status",
-      sourceReady
-        ? "Configuration ready"
-        : sourceFailed
-          ? "Source needs attention"
-          : hasInput
-            ? "Reading configuration"
-            : "No source connected",
-    );
     const exportHint = document.querySelector(
       "#mode-download-form .export-hint",
     );
@@ -1343,7 +1333,6 @@ document.addEventListener("DOMContentLoaded", () => {
         syncWorkspace();
         if (!sourceReady) {
           setText("summary-state", "Review source file");
-          setText("sidebar-workspace-status", "Source needs attention");
         }
       }
     }
