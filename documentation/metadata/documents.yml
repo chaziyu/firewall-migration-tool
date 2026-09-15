@@ -78,9 +78,7 @@ documents:
       - src/fwmigrate/ir/vpn.py
       - src/fwmigrate/ir/security_profiles.py
       - src/fwmigrate/ir/core.py
-      - src/fwmigrate/ir/version.py
       - src/fwmigrate/ir/io.py
-      - src/fwmigrate/ir/migrations.py
     last_verified: 2026-09-14
 
   documentation/reference/ir/extraction-model.md:
