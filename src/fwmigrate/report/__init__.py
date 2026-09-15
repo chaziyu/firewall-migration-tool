@@ -28,16 +28,16 @@ from fwmigrate.report.fortigate_address_schedule_excel import (
     FortiGateAddressScheduleExcelExporter,
 )
 from fwmigrate.report.excel_optimized import SinglePassIRExcelExporter
+from fwmigrate.report.nat_audit_excel import NATAuditIRExcelExporter
 from fwmigrate.report.excel_options import ExcelExportOptions, ExcelExportProfile
 
 ExcelExportUnavailableError = _excel_exporter.ExcelExportUnavailableError
 XLSX_MIMETYPE = _excel_exporter.XLSX_MIMETYPE
 
 # Preserve the existing import surface while routing generation through the
-# single-pass workbook lifecycle. Presentation and semantics still come from the
-# existing layered exporter chain.
-_excel_exporter.IRExcelExporter = SinglePassIRExcelExporter
-IRExcelExporter = SinglePassIRExcelExporter
+# single-pass workbook lifecycle plus the final NAT audit visibility layer.
+_excel_exporter.IRExcelExporter = NATAuditIRExcelExporter
+IRExcelExporter = NATAuditIRExcelExporter
 
 __all__ = [
     "ExcelExportOptions",
