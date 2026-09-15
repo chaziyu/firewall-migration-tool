@@ -18,6 +18,7 @@ def main() -> None:
         ("index_build", lambda: IRIndex.build(ir)),
         ("dependency_build", lambda: DependencyGraph(ir).build()),
         ("optimizer_unused_objects", lambda: RuleOptimizer(ir).find_unused_objects()),
+        ("optimizer_prune", lambda: RuleOptimizer(ir).prune_unused_objects()),
     ):
         print_result(measure(name, operation, args.iterations))
 
