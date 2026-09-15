@@ -1,6 +1,12 @@
 """Firewall Migration Tool package."""
 
-import fwmigrate.parsers
-import fwmigrate.generators
+from fwmigrate.builtin_plugins import register_builtin_plugins
 
-__all__ = ["parsers", "generators"]
+# Keep imports from any fwmigrate submodule backward-compatible while making
+# the built-in catalog the only registration path.
+register_builtin_plugins()
+
+import fwmigrate.generators as generators
+import fwmigrate.parsers as parsers
+
+__all__ = ["generators", "parsers", "register_builtin_plugins"]

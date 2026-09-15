@@ -1,7 +1,6 @@
 from typing import List, Optional, Dict
 
 from fwmigrate.core.base_parser import BaseSourceParser
-from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.checkpoint import extractor as _extractor
@@ -49,5 +48,3 @@ class CheckPointSourceParser(BaseSourceParser):
         return extract_checkpoint_config(content, zone_mapping=zone_mapping)
 
 
-# Auto-register
-PluginRegistry.register_parser(CheckPointSourceParser)

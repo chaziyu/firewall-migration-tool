@@ -1,6 +1,5 @@
 from typing import List, Optional
 from fwmigrate.core.base_generator import BaseTargetGenerator, MigrationArtifact
-from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.ir import IRConfig
 from fwmigrate.generators.cisco_asa.cli_generator import CiscoASACLIGenerator
 from fwmigrate.generators.cisco_asa.terraform_generator import CiscoASATerraformGenerator
@@ -49,5 +48,3 @@ class CiscoASATargetGenerator(BaseTargetGenerator):
 
         return artifacts
 
-# Auto-register with PluginRegistry
-PluginRegistry.register_generator("cisco_asa", CiscoASATargetGenerator())

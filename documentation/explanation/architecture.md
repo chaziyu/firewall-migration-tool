@@ -11,6 +11,7 @@ source configuration / approved source snapshot
         -> validation
         -> mandatory target-independent normalization
         -> optional safe optimization
+        -> target capability analysis
         -> final safety validation
         -> target generator
         -> native config / Terraform / reports
@@ -68,6 +69,7 @@ Offline CLI and web migrations use `MigrationPipeline` as the shared orchestrati
 | Parser/extractor | Produce `ExtractionResult` and canonical `IRConfig` |
 | `IRNormalizer` | Apply mandatory vendor-neutral semantic normalization and report changes |
 | `RuleOptimizer` | Optionally analyze and prune unused objects |
+| Capability analyzer | Report target support and block unsupported semantics |
 | Safety evaluator | Block generation when source or final IR is unsafe |
 | Generator | Produce target `MigrationArtifact` objects from canonical IR |
 
@@ -80,12 +82,21 @@ source input
   -> source safety check
   -> mandatory IRNormalizer normalization
   -> optional optimization/pruning
+  -> target capability analysis
   -> final safety check
   -> target generator
   -> MigrationArtifact objects and reports
 ```
 
 The pipeline does not contain Flask or Click behavior, parsers do not contain target-vendor logic, generators do not parse source configuration, and optimization does not repair required semantics. Existing generator capability checks remain active at the final target boundary.
+
+## Jobs status
+
+`fwmigrate.jobs` is an experimental deployment/job-lifecycle subsystem. It is
+not part of the normal synchronous CLI or Web migration path, and its API may
+change. The production migration boundary remains `MigrationPipeline`; jobs
+may wrap that boundary in a future durable asynchronous workflow when that
+requirement is real.
 
 ## Design invariants
 

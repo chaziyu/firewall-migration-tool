@@ -1,102 +1,164 @@
-from typing import Dict, Type, List, Optional, Any, Union
-from fwmigrate.core.base_parser import BaseSourceParser
-from fwmigrate.core.base_generator import BaseTargetGenerator
+from typing import Any, Dict, List
+
 from fwmigrate.core.base_deployer import BaseDeployer
+from fwmigrate.core.base_generator import BaseTargetGenerator
+from fwmigrate.core.base_parser import BaseSourceParser
+from fwmigrate.core.plugins import PluginSpec, PluginType, normalize_vendor_id
+
+
+class PluginRegistrationError(ValueError):
+    """Raised when a plugin identifier collides with another implementation."""
+
 
 class PluginRegistry:
-    """Central registry and factory for all source parsers, API clients, target generators, and deployers."""
+    """Metadata registry and factory for source, target, and deployment plugins."""
 
-    _parsers: Dict[str, Type[BaseSourceParser]] = {}
-    _generators: Dict[str, Type[BaseTargetGenerator]] = {}
-    _deployers: Dict[str, Type[BaseDeployer]] = {}
-
-    @classmethod
-    def register_parser(cls, parser_or_cls: Any, instance: Any = None) -> Any:
-        if instance is not None:
-            inst = instance() if isinstance(instance, type) else instance
-            cls._parsers[parser_or_cls] = inst.__class__
-            return instance
-        if isinstance(parser_or_cls, type):
-            temp_inst = parser_or_cls()
-            cls._parsers[temp_inst.vendor_id] = parser_or_cls
-            return parser_or_cls
-        else:
-            cls._parsers[parser_or_cls.vendor_id] = parser_or_cls.__class__
-            return parser_or_cls
-
-
+    _parser_specs: Dict[str, PluginSpec] = {}
+    _generator_specs: Dict[str, PluginSpec] = {}
+    _deployer_specs: Dict[str, PluginSpec] = {}
 
     @classmethod
-    def register_generator(cls, generator_or_cls: Any, instance: Any = None) -> Any:
-        if instance is not None:
-            inst = instance() if isinstance(instance, type) else instance
-            cls._generators[generator_or_cls] = inst.__class__
-            return instance
-        if isinstance(generator_or_cls, type):
-            temp_inst = generator_or_cls()
-            cls._generators[temp_inst.vendor_id] = generator_or_cls
-            return generator_or_cls
-        else:
-            cls._generators[generator_or_cls.vendor_id] = generator_or_cls.__class__
-            return generator_or_cls
+    def _storage(cls, plugin_type: PluginType) -> Dict[str, PluginSpec]:
+        return {
+            PluginType.SOURCE_PARSER: cls._parser_specs,
+            PluginType.TARGET_GENERATOR: cls._generator_specs,
+            PluginType.DEPLOYER: cls._deployer_specs,
+        }[plugin_type]
 
     @classmethod
-    def register_deployer(cls, deployer_or_cls: Any, instance: Any = None) -> Any:
-        if instance is not None:
-            inst = instance() if isinstance(instance, type) else instance
-            cls._deployers[deployer_or_cls] = inst.__class__
-            return instance
-        if isinstance(deployer_or_cls, type):
-            temp_inst = deployer_or_cls()
-            cls._deployers[temp_inst.deployer_id] = deployer_or_cls
-            return deployer_or_cls
-        else:
-            cls._deployers[deployer_or_cls.deployer_id] = deployer_or_cls.__class__
-            return deployer_or_cls
+    def register(cls, spec: PluginSpec) -> PluginSpec:
+        if not isinstance(spec, PluginSpec):
+            raise TypeError("PluginRegistry.register expects a PluginSpec")
+        normalized = spec.normalized()
+        storage = cls._storage(normalized.plugin_type)
+        existing = storage.get(normalized.vendor_id)
+        if existing:
+            if existing.implementation is not normalized.implementation:
+                raise PluginRegistrationError(
+                    f"Plugin '{normalized.vendor_id}' is already registered with "
+                    f"{existing.implementation.__name__}"
+                )
+            return existing
+
+        identifiers = {normalized.vendor_id, *normalized.aliases}
+        if len(identifiers) != len(normalized.aliases) + 1:
+            raise PluginRegistrationError(
+                f"Plugin '{normalized.vendor_id}' declares duplicate identifiers"
+            )
+        for other_id, other in storage.items():
+            collision = identifiers & {other_id, *other.aliases}
+            if collision:
+                raise PluginRegistrationError(
+                    f"Plugin identifier collision for {sorted(collision)[0]!r}"
+                )
+        storage[normalized.vendor_id] = normalized
+        return normalized
+
+    @classmethod
+    def register_parser(cls, spec: PluginSpec) -> PluginSpec:
+        if not isinstance(spec, PluginSpec):
+            raise TypeError("Parser registrations require a PluginSpec")
+        if PluginType(spec.plugin_type) != PluginType.SOURCE_PARSER:
+            raise ValueError("Parser registrations require SOURCE_PARSER PluginSpec")
+        return cls.register(spec)
+
+    @classmethod
+    def register_generator(cls, spec: PluginSpec) -> PluginSpec:
+        if not isinstance(spec, PluginSpec):
+            raise TypeError("Generator registrations require a PluginSpec")
+        if PluginType(spec.plugin_type) != PluginType.TARGET_GENERATOR:
+            raise ValueError("Generator registrations require TARGET_GENERATOR PluginSpec")
+        return cls.register(spec)
+
+    @classmethod
+    def register_deployer(cls, spec: PluginSpec) -> PluginSpec:
+        if not isinstance(spec, PluginSpec):
+            raise TypeError("Deployer registrations require a PluginSpec")
+        if PluginType(spec.plugin_type) != PluginType.DEPLOYER:
+            raise ValueError("Deployer registrations require DEPLOYER PluginSpec")
+        return cls.register(spec)
+
+    @classmethod
+    def _resolve(cls, storage: Dict[str, PluginSpec], vendor_id: str, kind: str) -> PluginSpec:
+        requested = normalize_vendor_id(vendor_id)
+        spec = storage.get(requested)
+        if spec is None:
+            spec = next(
+                (candidate for candidate in storage.values() if requested in candidate.aliases),
+                None,
+            )
+        if spec is None:
+            raise KeyError(
+                f"{kind} '{vendor_id}' is not registered. Available: {list(storage)}"
+            )
+        return spec
+
+    @classmethod
+    def get_parser_spec(cls, vendor_id: str) -> PluginSpec:
+        return cls._resolve(cls._parser_specs, vendor_id, "Source parser")
+
+    @classmethod
+    def get_generator_spec(cls, vendor_id: str) -> PluginSpec:
+        return cls._resolve(cls._generator_specs, vendor_id, "Target generator")
+
+    @classmethod
+    def get_deployer_spec(cls, deployer_id: str) -> PluginSpec:
+        return cls._resolve(cls._deployer_specs, deployer_id, "Deployer")
 
     @classmethod
     def get_parser(cls, vendor_id: str) -> BaseSourceParser:
-        if vendor_id not in cls._parsers:
-            raise KeyError(f"Source parser '{vendor_id}' is not registered. Available: {list(cls._parsers.keys())}")
-        return cls._parsers[vendor_id]()
-
-
+        return cls.get_parser_spec(vendor_id).implementation()
 
     @classmethod
-    def get_generator(cls, vendor_id: str, **kwargs) -> BaseTargetGenerator:
-        if vendor_id not in cls._generators:
-            raise KeyError(f"Target generator '{vendor_id}' is not registered. Available: {list(cls._generators.keys())}")
-        return cls._generators[vendor_id](**kwargs)
+    def get_generator(cls, vendor_id: str, **kwargs: Any) -> BaseTargetGenerator:
+        return cls.get_generator_spec(vendor_id).implementation(**kwargs)
 
     @classmethod
-    def get_deployer(cls, deployer_id: str, **kwargs) -> BaseDeployer:
-        if deployer_id not in cls._deployers:
-            raise KeyError(f"Deployer '{deployer_id}' is not registered. Available: {list(cls._deployers.keys())}")
-        return cls._deployers[deployer_id](**kwargs)
+    def get_deployer(cls, deployer_id: str, **kwargs: Any) -> BaseDeployer:
+        return cls.get_deployer_spec(deployer_id).implementation(**kwargs)
+
+    @classmethod
+    def list_parsers(cls) -> List[PluginSpec]:
+        return list(cls._parser_specs.values())
+
+    @classmethod
+    def list_generators(cls) -> List[PluginSpec]:
+        return list(cls._generator_specs.values())
+
+    @classmethod
+    def list_deployers(cls) -> List[PluginSpec]:
+        return list(cls._deployer_specs.values())
 
     @classmethod
     def list_source_vendors(cls) -> List[Dict[str, Any]]:
-        """Returns metadata list of all available source parsers for UI/CLI."""
-        results = []
-        for vid, p_cls in cls._parsers.items():
-            inst = p_cls()
-            exts = getattr(inst, 'supported_extensions', getattr(inst, 'file_extensions', ['.conf', '.txt']))
-            results.append({
-                "vendor_id": inst.vendor_id,
-                "display_name": inst.display_name,
-                "file_extensions": exts
-            })
-        return results
+        return [
+            {
+                **dict(spec.metadata),
+                "vendor_id": spec.vendor_id,
+                "display_name": spec.display_name,
+                "file_extensions": list(spec.supported_extensions),
+                "aliases": list(spec.aliases),
+                "experimental": spec.experimental,
+                "description": spec.description,
+                "capabilities": list(spec.capabilities),
+            }
+            for spec in cls.list_parsers()
+        ]
 
     @classmethod
     def list_target_vendors(cls) -> List[Dict[str, Any]]:
-        """Returns metadata list of all available target generators for UI/CLI."""
-        results = []
-        for vid, g_cls in cls._generators.items():
-            inst = g_cls()
-            results.append({
-                "vendor_id": inst.vendor_id,
-                "display_name": inst.display_name,
-                "supported_formats": inst.supported_formats
-            })
-        return results
+        return [
+            {
+                **dict(spec.metadata),
+                "vendor_id": spec.vendor_id,
+                "display_name": spec.display_name,
+                "supported_formats": list(spec.supported_formats),
+                "aliases": list(spec.aliases),
+                "experimental": spec.experimental,
+                "description": spec.description,
+                "capabilities": list(spec.capabilities),
+                "supports_deployment": spec.supports_deployment,
+                "supports_terraform": spec.supports_terraform,
+            }
+            for spec in cls.list_generators()
+        ]

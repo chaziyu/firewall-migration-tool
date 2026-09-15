@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import fwmigrate.generators  # imports register built-in generators
-import fwmigrate.parsers  # imports register built-in parsers
+from fwmigrate.builtin_plugins import register_builtin_plugins
+
+register_builtin_plugins()
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.ir.version import IR_SCHEMA_VERSION
@@ -29,23 +30,27 @@ def render_capabilities() -> str:
         "",
         "## Source parsers",
         "",
-        "| Source ID | Display name | Accepted extensions |",
-        "|---|---|---|",
+        "| Source ID | Display name | Accepted extensions | Aliases | Status |",
+        "|---|---|---|---|---|",
     ]
     for item in sources:
         lines.append(
-            f"| `{item['vendor_id']}` | {item['display_name']} | {_join(list(item['file_extensions']))} |"
+            f"| `{item['vendor_id']}` | {item['display_name']} | "
+            f"{_join(list(item['file_extensions']))} | {_join(list(item['aliases'])) or '—'} | "
+            f"{'experimental' if item['experimental'] else 'stable'} |"
         )
     lines += [
         "",
         "## Target generators",
         "",
-        "| Target ID | Display name | Registered formats |",
-        "|---|---|---|",
+        "| Target ID | Display name | Registered formats | Aliases | Status |",
+        "|---|---|---|---|---|",
     ]
     for item in targets:
         lines.append(
-            f"| `{item['vendor_id']}` | {item['display_name']} | {_join(list(item['supported_formats']))} |"
+            f"| `{item['vendor_id']}` | {item['display_name']} | "
+            f"{_join(list(item['supported_formats']))} | {_join(list(item['aliases'])) or '—'} | "
+            f"{'experimental' if item['experimental'] else 'stable'} |"
         )
     lines += [
         "",
