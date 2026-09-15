@@ -7,6 +7,7 @@ from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
 from fwmigrate.capabilities.schema import CapabilityAnalysisResult
 from fwmigrate.application.metrics import PipelineMetrics
+from fwmigrate.validation.models import ValidationResult
 
 
 @dataclass
@@ -36,4 +37,5 @@ class MigrationResult:
     requires_manual_review: bool = False
     normalization: Optional[NormalizationResult] = None
     capability_analysis: Optional[CapabilityAnalysisResult] = None
+    validation_result: Optional[ValidationResult] = None
     metrics: Optional[PipelineMetrics] = None

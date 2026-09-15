@@ -4,7 +4,10 @@ from fwmigrate.ir.enums import AddressType
 from fwmigrate.ir.index import IRIndex
 from fwmigrate.jobs.models import MigrationIssue
 from fwmigrate.core.constants import UNIVERSAL_KEYWORDS
+from fwmigrate.validation.models import ValidationResult
 import ipaddress
+
+_UNIVERSAL_KEYWORDS = {keyword.casefold() for keyword in UNIVERSAL_KEYWORDS}
 
 class Validator:
     """Base class for validation passes."""
@@ -78,7 +81,7 @@ class DependencyValidator(Validator):
                 ))
             # Check Zones
             for z in policy.from_zone:
-                if z.lower() not in UNIVERSAL_KEYWORDS and z not in known_zones:
+                if z.casefold() not in _UNIVERSAL_KEYWORDS and z not in known_zones:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
@@ -89,7 +92,7 @@ class DependencyValidator(Validator):
             
             # Check Addresses
             for src in policy.source:
-                if src.lower() not in UNIVERSAL_KEYWORDS and src.lower() not in pan_builtin_tokens and src not in all_address_objects:
+                if src.casefold() not in _UNIVERSAL_KEYWORDS and src.casefold() not in pan_builtin_tokens and src not in all_address_objects:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
@@ -99,7 +102,7 @@ class DependencyValidator(Validator):
                     ))
                     
             for dst in policy.destination:
-                if dst.lower() not in UNIVERSAL_KEYWORDS and dst.lower() not in pan_builtin_tokens and dst not in all_address_objects:
+                if dst.casefold() not in _UNIVERSAL_KEYWORDS and dst.casefold() not in pan_builtin_tokens and dst not in all_address_objects:
                     issues.append(MigrationIssue(
                         severity="HIGH",
                         category="DEPENDENCY",
@@ -111,7 +114,7 @@ class DependencyValidator(Validator):
             # Check Services
             for srv in policy.service:
                 # Allow application-default, and predefined PAN services if vendor is palo_alto
-                is_builtin = srv.lower() in UNIVERSAL_KEYWORDS or srv.lower() == 'application-default'
+                is_builtin = srv.casefold() in _UNIVERSAL_KEYWORDS or srv.casefold() == 'application-default'
                 if is_panos and srv.lower() in pan_predefined_services:
                     is_builtin = True
                     
@@ -197,3 +200,10 @@ class CapacityValidator(Validator):
                 ))
                 
         return issues
+
+
+def validate_ir(ir_config: IRConfig, ir_index: Optional[IRIndex] = None) -> ValidationResult:
+    return ValidationResult(
+        DependencyValidator(ir_index).validate(ir_config)
+        + SemanticValidator().validate(ir_config)
+    )

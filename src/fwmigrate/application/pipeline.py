@@ -10,6 +10,7 @@ from fwmigrate.core.optimizer import RuleOptimizer
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.capabilities.analyzer import CapabilityAnalyzer
 from fwmigrate.capabilities.schema import CapabilityAnalysisResult
+from fwmigrate.validation.validators import validate_ir
 
 
 class MigrationPipeline:
@@ -89,6 +90,12 @@ class MigrationPipeline:
             ir = timed("optimization_prune", optimizer.prune_unused_objects)
             timed("index_rebuild", lambda: context.set_ir(ir))
 
+        validation_result = timed(
+            "validation",
+            lambda: validate_ir(ir, ir_index=context.ir_index),
+        )
+        context.validation_result = validation_result
+
         target_spec = timed(
             "target_resolution",
             lambda: PluginRegistry.get_generator_spec(request.target_vendor),
@@ -101,7 +108,9 @@ class MigrationPipeline:
             capability_result = CapabilityAnalysisResult(list(capability_result))
         final_safety = timed(
             "final_safety",
-            lambda: evaluate_generation_safety(extraction, ir),
+            lambda: evaluate_generation_safety(
+                extraction, ir, validation_result.blocking_reasons,
+            ),
         )
         capability_reasons = [issue.reason for issue in capability_result if issue.blocks_generation]
         if not final_safety.allowed or capability_reasons:
@@ -119,6 +128,7 @@ class MigrationPipeline:
                     or capability_result.requires_manual_review
                 ),
                 capability_analysis=capability_result,
+                validation_result=validation_result,
             ))
 
         if request.target_options:
@@ -147,4 +157,5 @@ class MigrationPipeline:
                 or capability_result.requires_manual_review
             ),
             capability_analysis=capability_result,
+            validation_result=validation_result,
         ))
