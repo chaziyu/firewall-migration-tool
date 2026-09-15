@@ -170,6 +170,8 @@ def create_app(test_config=None):
             source_vendor = request.form.get('source_vendor', 'fortigate')
             target_vendor = request.form.get('target_vendor', 'palo_alto')
             optimize = request.form.get('optimize', 'false').lower() == 'true'
+            include_report = request.form.get('include_report', 'true').lower() == 'true'
+            include_inventory = request.form.get('include_inventory', 'true').lower() == 'true'
 
             if 'file' not in request.files or request.files['file'].filename == '':
                 return jsonify({'error': 'A configuration file is required'}), 400
@@ -200,20 +202,23 @@ def create_app(test_config=None):
             if ir_config is None or result.source_ir is None:
                 return jsonify({'error': 'Failed to extract configuration from file'}), 400
 
-            # The inventory must represent parser output, before normalization or pruning.
-            source_inventory = IRExcelExporter(
-                result.source_ir,
-                extraction_result=result.extraction,
-            ).generate()
-            extraction_result = result.extraction
             artifacts = result.artifacts
+            source_inventory = None
+            if include_inventory:
+                # The inventory must represent parser output, before normalization or pruning.
+                source_inventory = IRExcelExporter(
+                    result.source_ir,
+                    extraction_result=result.extraction,
+                ).generate()
 
-            reporter = MigrationReporter(
-                ir_config, target_vendor=result.target_display_name or target_vendor,
-                extraction_result=extraction_result,
-            )
-            report_content = reporter.generate_report()
-            html_report_content = reporter.generate_html_report()
+            report_content = html_report_content = None
+            if include_report:
+                reporter = MigrationReporter(
+                    ir_config, target_vendor=result.target_display_name or target_vendor,
+                    extraction_result=result.extraction,
+                )
+                report_content = reporter.generate_report()
+                html_report_content = reporter.generate_html_report()
 
             # Package into ZIP
             memory_file = io.BytesIO()
@@ -223,12 +228,13 @@ def create_app(test_config=None):
                     fname = f"terraform/{art.filename}" if art.format == "terraform" else art.filename
                     zf.writestr(fname, art.content)
                     written_names.add(fname)
-                if "migration_report.md" not in written_names:
+                if include_report and "migration_report.md" not in written_names:
                     zf.writestr("migration_report.md", report_content)
-                if "migration_report.html" not in written_names:
+                if include_report and "migration_report.html" not in written_names:
                     zf.writestr("migration_report.html", html_report_content)
-                inventory_name = f"source_inventory_{_safe_vendor_filename(source_vendor)}.xlsx"
-                zf.writestr(inventory_name, source_inventory)
+                if include_inventory:
+                    inventory_name = f"source_inventory_{_safe_vendor_filename(source_vendor)}.xlsx"
+                    zf.writestr(inventory_name, source_inventory)
 
             memory_file.seek(0)
             return send_file(
