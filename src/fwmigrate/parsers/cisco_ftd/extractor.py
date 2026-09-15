@@ -262,27 +262,57 @@ def _extract_fdm_bundle(text: str) -> ExtractionResult:
     add(ir.zones, "fdm/zones", "security-zone")
     add(ir.nat_rules, "fdm/nat-policies", "nat-rule")
 
+    unresolved = parser.unresolved_references
     unsupported = [
         UnsupportedItem(
             source_path="fdm/reference-resolution",
             source_name=str(item.get("owner") or item.get("reference") or "reference"),
             source_context=parser.context,
-            reason=f"Unresolved FDM reference in {item.get('field') or 'unknown field'}",
+            reason=str(
+                item.get("reason")
+                or f"Unresolved FDM reference in {item.get('field') or 'unknown field'}"
+            ),
             raw_capture=sanitize_raw_text(str(item)),
         )
-        for item in parser.unresolved_references
+        for item in unresolved
     ]
+
+    source_object_count = sum(len(parser._collection(*names)) for names in (
+        ("hosts", "network_hosts"),
+        ("networks", "network_objects"),
+        ("ranges", "network_ranges"),
+        ("network_groups", "networkgroups"),
+        ("services", "service_objects"),
+        ("service_groups", "servicegroups"),
+    ))
+    parsed_object_items = [
+        item for item in inventory if item.source_path.startswith("fdm/objects")
+    ]
+    parsed_object_count = len(parsed_object_items)
+    normalized_object_count = sum(
+        1 for item in parsed_object_items if item.status == ExtractionStatus.NORMALIZED
+    )
+    object_partial = (
+        parsed_object_count < source_object_count
+        or any(item.requires_manual_review for item in parsed_object_items)
+    )
+
     sections = [
         SourceSectionResult(
             path="fdm/objects", source_context=parser.context,
-            status=ExtractionStatus.PARTIALLY_NORMALIZED if any(item.requires_manual_review for item in inventory if item.source_path.startswith("fdm/objects")) else ExtractionStatus.NORMALIZED,
-            object_count_source=len(inventory),
-            object_count_parsed=sum(1 for item in inventory if item.source_path.startswith("fdm/objects")),
+            status=(
+                ExtractionStatus.PARTIALLY_NORMALIZED
+                if object_partial else ExtractionStatus.NORMALIZED
+            ),
+            object_count_source=source_object_count,
+            object_count_parsed=parsed_object_count,
+            object_count_normalized=normalized_object_count,
         ),
         SourceSectionResult(
             path="fdm/nat-policies", source_context=parser.context,
             status=ExtractionStatus.PARTIALLY_NORMALIZED if any(item.requires_manual_review for item in ir.nat_rules) else ExtractionStatus.NORMALIZED,
             object_count_source=len(ir.nat_rules), object_count_parsed=len(ir.nat_rules),
+            object_count_normalized=sum(1 for item in ir.nat_rules if not item.requires_manual_review),
         ),
     ]
     requires_review = bool(unsupported) or any(item.requires_manual_review for item in inventory)

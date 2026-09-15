@@ -69,6 +69,7 @@ class CiscoFDMBundleParser:
         self._object_by_id: Dict[str, dict] = {}
         self._object_by_name: Dict[str, dict] = {}
         self._unresolved: List[dict] = []
+        self._invalid_object_refs: set[str] = set()
         self._index_objects()
 
     @property
@@ -99,6 +100,19 @@ class CiscoFDMBundleParser:
             if isinstance(item.get("name"), str):
                 self._object_by_name[item["name"]] = item
 
+    def _record_invalid_address(self, item: dict, *, field: str, value: Any, reason: str) -> None:
+        owner = str(item.get("name") or item.get("id") or "address-object")
+        for reference in (item.get("id"), item.get("name")):
+            if isinstance(reference, str) and reference:
+                self._invalid_object_refs.add(reference)
+        self._unresolved.append({
+            "owner": owner,
+            "field": field,
+            "reference": str(value) if value is not None else "",
+            "reason": reason,
+            "raw_object": item,
+        })
+
     def _resolve(self, value: Any, *, owner: str, field: str, allow_any: bool = False) -> Optional[str]:
         if value is None:
             return IR_KEYWORD_ANY if allow_any else None
@@ -109,6 +123,14 @@ class CiscoFDMBundleParser:
         else:
             reference = value
         text = str(reference).strip() if reference is not None else ""
+        if text in self._invalid_object_refs:
+            self._unresolved.append({
+                "owner": owner,
+                "field": field,
+                "reference": text,
+                "reason": "Referenced FDM address object is invalid",
+            })
+            return None
         if text in self._object_by_id:
             return self._object_by_id[text].get("name") or text
         if text in self._object_by_name:
@@ -138,18 +160,50 @@ class CiscoFDMBundleParser:
         ):
             for item in self._collection(*collection):
                 value = item.get("value") or item.get("subnet")
+                try:
+                    if value is None or not str(value).strip():
+                        raise ValueError("missing address value")
+                    if address_type == AddressType.HOST:
+                        normalized = str(ipaddress.ip_address(str(value).strip()))
+                    else:
+                        normalized = str(ipaddress.ip_network(str(value).strip(), strict=False))
+                except ValueError:
+                    self._record_invalid_address(
+                        item,
+                        field="value" if item.get("value") is not None else "subnet",
+                        value=value,
+                        reason="Invalid FDM host/network address object",
+                    )
+                    continue
                 ir.addresses.append(IRAddress(
                     name=str(item.get("name") or item.get("id")), type=address_type,
-                    subnet=str(value) if value is not None else None,
+                    subnet=normalized,
                     source_uuid=item.get("id"), source_context=self.context,
                     source_attributes={"fdm_object": item},
                 ))
         for item in self._collection("ranges", "network_ranges"):
             start = item.get("start") or item.get("startAddress")
             end = item.get("end") or item.get("endAddress")
+            try:
+                if start is None or end is None:
+                    raise ValueError("missing range endpoint")
+                start_ip = ipaddress.ip_address(str(start).strip())
+                end_ip = ipaddress.ip_address(str(end).strip())
+                if start_ip.version != end_ip.version:
+                    raise ValueError("mixed address families")
+                if int(start_ip) > int(end_ip):
+                    raise ValueError("range start exceeds end")
+            except ValueError:
+                self._record_invalid_address(
+                    item,
+                    field="range",
+                    value={"start": start, "end": end},
+                    reason="Invalid FDM address range object",
+                )
+                continue
             ir.addresses.append(IRAddress(
                 name=str(item.get("name") or item.get("id")), type=AddressType.RANGE,
-                ip_range_start=str(start), ip_range_end=str(end),
+                ip_range_start=str(start_ip), ip_range_end=str(end_ip),
                 source_uuid=item.get("id"), source_context=self.context,
                 source_attributes={"fdm_object": item},
             ))
