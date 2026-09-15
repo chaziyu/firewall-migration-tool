@@ -2,6 +2,7 @@ from copy import deepcopy
 from time import perf_counter
 
 from fwmigrate.application.context import MigrationContext
+from fwmigrate.application.context_mapping import apply_context_mapping
 from fwmigrate.application.metrics import PipelineMetrics
 from fwmigrate.application.models import MigrationRequest, MigrationResult
 from fwmigrate.application.safety import evaluate_generation_safety
@@ -46,6 +47,7 @@ class MigrationPipeline:
                 zone_mapping=request.zone_mapping,
             ),
         )
+        timed("context_mapping", lambda: apply_context_mapping(request, extraction))
         context = MigrationContext(request, extraction=extraction, metrics=metrics)
         extracted_ir = extraction.canonical_ir
         if request.source_name and extracted_ir is not None:
@@ -128,10 +130,13 @@ class MigrationPipeline:
                 validation_result=validation_result,
             ))
 
-        if request.target_options:
+        generator_options = dict(request.target_options)
+        if request.context_mapping:
+            generator_options["context_mapping"] = dict(request.context_mapping)
+        if generator_options:
             generator = PluginRegistry.get_generator(
                 request.target_vendor,
-                **request.target_options,
+                **generator_options,
             )
         else:
             generator = PluginRegistry.get_generator(request.target_vendor)
