@@ -59,6 +59,19 @@ AUTHENTICATION_SOURCE_ONLY_FIELDS = (
 )
 
 
+class FGAuthenticationSchemePhase4(model_module.FGAuthenticationScheme):
+    domain_controller: Optional[str] = None
+    fsso_agent_for_ntlm: Optional[str] = None
+    fsso_guest: Optional[str] = None
+    kerberos_keytab: Optional[str] = None
+    negotiate_ntlm: Optional[str] = None
+    require_tfa: Optional[str] = None
+    saml_server: Optional[str] = None
+    saml_timeout: Optional[int] = None
+    ssh_ca: Optional[str] = None
+    user_cert: Optional[str] = None
+
+
 def _normalized(value: str) -> str:
     return " ".join(value.lower().replace("_", "-").split())
 
@@ -77,64 +90,8 @@ def install_authentication_scheme_support(
     dependency validation and typed source access.
     """
 
-    base_scheme = parser_module.FGAuthenticationScheme
-
-    class FGAuthenticationSchemePhase4(base_scheme):
-        domain_controller: Optional[str] = None
-        fsso_agent_for_ntlm: Optional[str] = None
-        fsso_guest: Optional[str] = None
-        kerberos_keytab: Optional[str] = None
-        negotiate_ntlm: Optional[str] = None
-        require_tfa: Optional[str] = None
-        saml_server: Optional[str] = None
-        saml_timeout: Optional[int] = None
-        ssh_ca: Optional[str] = None
-        user_cert: Optional[str] = None
-
     parser_module.FGAuthenticationScheme = FGAuthenticationSchemePhase4
     model_module.FGAuthenticationScheme = FGAuthenticationSchemePhase4
-
-    parser_cls = parser_module.FortiGateParser
-    if not getattr(parser_cls.build_model, "_authentication_scheme_phase4_wrapped", False):
-        original_build_model = parser_cls.build_model
-
-        def build_model(self, section_path, attributes):
-            if section_path == "authentication scheme":
-                self._normalize_optional_int(attributes, "saml_timeout")
-                timeout = attributes.get("saml_timeout")
-                if timeout is not None and not 30 <= timeout <= 1200:
-                    attributes["unparsed_saml_timeout"] = attributes.pop("saml_timeout")
-
-                methods = attributes.get("method", [])
-                invalid_methods = [value for value in methods if value not in AUTHENTICATION_METHODS]
-                if invalid_methods:
-                    attributes["method"] = [value for value in methods if value in AUTHENTICATION_METHODS]
-                    attributes["unparsed_method"] = invalid_methods
-
-                for field in AUTHENTICATION_SWITCH_FIELDS:
-                    value = attributes.get(field)
-                    if value is not None and value not in {"enable", "disable"}:
-                        attributes[f"unparsed_{field}"] = attributes.pop(field)
-
-                for field, limit in AUTHENTICATION_STRING_LIMITS.items():
-                    value = attributes.get(field)
-                    if value is not None and (not isinstance(value, str) or len(value) > limit):
-                        attributes[f"unparsed_{field}"] = attributes.pop(field)
-
-                databases = attributes.get("user_database", [])
-                invalid_databases = [
-                    value for value in databases
-                    if not isinstance(value, str) or len(value) > 79
-                ]
-                if invalid_databases:
-                    attributes["user_database"] = [
-                        value for value in databases if value not in invalid_databases
-                    ]
-                    attributes["unparsed_user_database"] = invalid_databases
-            return original_build_model(self, section_path, attributes)
-
-        build_model._authentication_scheme_phase4_wrapped = True
-        parser_cls.build_model = build_model
 
     transformer_cls = transformer_module.FGToIRTransformer
     if not getattr(

@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
+from fwmigrate.parsers.fortigate.command_evaluator import evaluate_commands
 from fwmigrate.parsers.fortigate.model import (
     FGApplicationEntry,
     FGApplicationFilter,
@@ -202,6 +203,16 @@ def _effective_node_attributes(
         ):
             if category in field_spec:
                 spec[category] = set(field_spec[category])
+
+    evaluated = evaluate_commands(
+        source.commands,
+        scalar_fields=spec["scalar_fields"],
+        list_fields=spec["list_fields"],
+        integer_fields=spec["integer_fields"],
+        integer_list_fields=spec["integer_list_fields"],
+        secret_fields=spec["secret_fields"],
+    )
+    return evaluated.attributes, evaluated.extra_settings
 
     scalar_fields = spec["scalar_fields"]
     list_fields = spec["list_fields"]

@@ -14,6 +14,7 @@ from fwmigrate.parsers.fortigate.source_tree import (
     STRUCTURED_ROUTING_SECTIONS,
     STRUCTURED_SECURITY_SECTIONS,
 )
+from fwmigrate.parsers.fortigate.section_registry import get_section_parser_capability
 
 
 SYSTEM_BEHAVIOUR_PREFIXES = (
@@ -1027,6 +1028,11 @@ def classify_section_coverage(
     """Correlate source discovery, typed parsing, and canonical normalization."""
     for section in source_sections:
         path = section.path
+        capability = get_section_parser_capability(path)
+        if capability["known_section"]:
+            section.notes.append(
+                "Parser capability: registry typed/custom fields; unknown fields remain source-only."
+            )
         if path == "vdom":
             section.status = ExtractionStatus.VENDOR_EXTENSION
             section.parser_handler = "FortiGateParser._parse_vdom_contents"

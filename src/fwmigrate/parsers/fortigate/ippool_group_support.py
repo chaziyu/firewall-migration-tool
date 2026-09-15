@@ -125,25 +125,6 @@ def install_ippool_group_support(
     __init__._ippool_group_support = True
     parser_cls.__init__ = __init__
 
-    original_build_model = parser_cls.build_model
-
-    def build_model(
-        self: Any,
-        section_path: str,
-        attributes: Dict[str, Any],
-    ) -> Any:
-        if section_path == "firewall ippool_grp":
-            attributes["extra_settings"] = parser_module._extract_extra_settings(
-                attributes,
-                set(FGIPPoolGroup.model_fields),
-            )
-            self.config.ip_pool_groups.append(FGIPPoolGroup(**attributes))
-            return None
-        return original_build_model(self, section_path, attributes)
-
-    build_model._ippool_group_support = True
-    parser_cls.build_model = build_model
-
     # Source accounting remains explicit and source-only.  The canonical group
     # exists to preserve evidence; it is not portable target NAT semantics.
     coverage_module.TYPED_SECTIONS.add("firewall ippool_grp")

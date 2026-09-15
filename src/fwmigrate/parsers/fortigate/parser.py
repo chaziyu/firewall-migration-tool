@@ -205,6 +205,41 @@ from fwmigrate.parsers.fortigate.firewall_ip_746 import (
     effective_ipv6_eh_filter_settings,
     validate_ipv6_eh_filter_746,
 )
+from fwmigrate.parsers.fortigate.dns_multivalue_fix import FGDnsMultiValue746
+from fwmigrate.parsers.fortigate.service_parser_extensions import parse_service_port_ranges
+from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
+    FGOnetimeSchedule746,
+    FGPhase1Interface746,
+    FGPhase1Policy746,
+    FGPhase2Interface746,
+    FGPhase2Policy746,
+    FGRecurringSchedule746,
+    FGScheduleGroup746,
+)
+from fwmigrate.parsers.fortigate.authentication_scheme_extensions import (
+    AUTHENTICATION_METHODS,
+    AUTHENTICATION_STRING_LIMITS,
+    AUTHENTICATION_SWITCH_FIELDS,
+    FGAuthenticationSchemePhase4,
+)
+from fwmigrate.parsers.fortigate.session_ttl_extensions import (
+    SESSION_TTL_OVERRIDE_INT_FIELDS,
+    SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
+    FGServiceSessionTimers,
+    FGSystemGlobalSessionTimers,
+)
+from fwmigrate.parsers.fortigate.fortios_746_address_schedule_fixes import _apply_address_defaults
+from fwmigrate.parsers.fortigate.policy_nat_preservation_extensions import (
+    FGInterface746,
+    FGInterfaceSecondaryIP746,
+    FGVIP746,
+    FORTIOS_746_VIP_FIELDS,
+)
+from fwmigrate.parsers.fortigate.shaping_models import (
+    _build_per_ip_shaper,
+    _build_shaping_profile,
+)
+from fwmigrate.parsers.fortigate.ippool_group_support import FGIPPoolGroup
 from fwmigrate.parsers.fortigate.phase_46_50_extensions import (
     _refresh_interface_ipv6_from_source,
     _refresh_policy_address_families,
@@ -219,6 +254,10 @@ from fwmigrate.parsers.fortigate.source_tree import (
     STRUCTURED_ROUTING_DEPENDENCY_SECTIONS,
     STRUCTURED_SECURITY_SECTIONS,
     STRUCTURED_OPERATIONAL_SECTIONS,
+)
+from fwmigrate.parsers.fortigate.section_registry import (
+    get_section_spec,
+    register_sections,
 )
 
 
@@ -566,6 +605,8 @@ SECTION_LIST_FIELDS = {
         "dst_addr6", "nat_ippool", "nat_ippool6",
     },
     "firewall schedule group": {"member"},
+    "firewall service group": {"member"},
+    "system dns": {"protocol", "domain", "server_hostname"},
     "system admin": {"vdom", "guest_usergroups"},
     # These settings accept multiple CLI values on a system interface.  Keep
     # this section-specific because the same keys may be scalar in other
@@ -699,6 +740,34 @@ SECTION_LIST_FIELDS = {
     "authentication rule": {"srcintf", "srcaddr"},
     "user quarantine": {"firewall_groups"},
 }
+
+SECTION_LIST_FIELDS.setdefault("firewall schedule recurring", set()).add("day")
+for _path in ("vpn ipsec phase1-interface", "vpn ipsec phase1"):
+    SECTION_LIST_FIELDS.setdefault(_path, set()).update({"dns_suffix_search", "remote_gw_ztna_tags"})
+    SECTION_EXPLICIT_FIELDS.setdefault(_path, set()).update({
+        "ip_version", "remote_gw_match", "remote_gw_start_ip",
+        "remote_gw_subnet", "remote_gw_country", "remote_gw_ztna_tags",
+        "cert_trust_store", "cert_peer_username_strip",
+        "cert_peer_username_validation", "acct_verify", "default_gw",
+        "default_gw_priority", "distance", "priority", "dns_suffix_search",
+    })
+
+FGScheduleGroup = FGScheduleGroup746
+FGPhase1Interface = FGPhase1Interface746
+FGPhase1Policy = FGPhase1Policy746
+FGPhase2Interface = FGPhase2Interface746
+FGPhase2Policy = FGPhase2Policy746
+FGAuthenticationScheme = FGAuthenticationSchemePhase4
+FGService = FGServiceSessionTimers
+FGSystemGlobal = FGSystemGlobalSessionTimers
+FGDns = FGDnsMultiValue746
+FGInterface = FGInterface746
+FGInterfaceSecondaryIP = FGInterfaceSecondaryIP746
+FGVIP = FGVIP746
+SECTION_EXPLICIT_FIELDS.setdefault("system interface", set()).add("ping_serv_status")
+SECTION_EXPLICIT_FIELDS.setdefault("firewall vip", set()).update(FORTIOS_746_VIP_FIELDS)
+SECTION_EXPLICIT_FIELDS["firewall ippool_grp"] = {"member"}
+SECTION_LIST_FIELDS.setdefault("firewall ippool_grp", set()).add("member")
 
 FG_POLICY_ROUTE_INT_FIELDS = {
     "protocol",
@@ -872,6 +941,7 @@ POLICY_ROUTE_FAMILIES = {
 }
 
 CONTEXTUAL_MODEL_SECTIONS = {
+    "firewall ippool_grp",
     "system zone", "system interface",
     "firewall address", "firewall address6", "firewall address6-template",
     "firewall multicast-address", "firewall multicast-address6",
@@ -929,6 +999,110 @@ def _classify_pppoe_password(values: List[str]) -> tuple[bool, Optional[str]]:
     if not value:
         return False, None
     return True, "encrypted" if value.upper().startswith("ENC ") else "plaintext"
+
+
+def _refresh_section_registry() -> None:
+    """Build the active registry after compatibility modules finish importing."""
+
+    models = {
+        "system interface": FGInterface,
+        "system zone": FGSystemZone,
+        "firewall address": FGAddress,
+        "firewall address6": FGAddress,
+        "firewall addrgrp": FGAddressGroup,
+        "firewall addrgrp6": FGAddressGroup,
+        "firewall service custom": FGService,
+        "firewall service group": FGServiceGroup,
+        "firewall schedule recurring": FGRecurringSchedule746,
+        "firewall schedule onetime": FGOnetimeSchedule746,
+        "firewall schedule group": FGScheduleGroup,
+        "firewall ippool": FGIPPool,
+        "firewall ippool6": FGIPPool6,
+        "firewall vip": FGVIP,
+        "firewall vip6": FGVIP6,
+        "firewall vipgrp": FGVIPGroup,
+        "firewall vipgrp6": FGVIPGroup6,
+        "firewall policy": FGPolicy,
+        "firewall security-policy": FGSecurityPolicy,
+        "firewall shaping-policy": FGShapingPolicy,
+        "firewall central-snat-map": FGCentralSNATRule,
+        "router static": FGStaticRoute,
+        "router static6": FGStaticRoute,
+        "router policy": FGPolicyRoute,
+        "router policy6": FGPolicyRoute,
+        "system dhcp server": FGDHCPServer,
+        "system dhcp6 server": FGDHCP6Server,
+        "system dns": FGDns,
+        "authentication scheme": FGAuthenticationScheme,
+        "authentication rule": FGAuthenticationRule,
+        "vpn ipsec phase1-interface": FGPhase1Interface,
+        "vpn ipsec phase1": FGPhase1Policy,
+        "vpn ipsec phase2-interface": FGPhase2Interface,
+        "vpn ipsec phase2": FGPhase2Policy,
+    }
+    integer_fields = {
+        "firewall address": {"color", "cache_ttl", "route_tag"},
+        "firewall address6": {"color", "cache_ttl", "route_tag"},
+        "firewall addrgrp": {"color"},
+        "firewall addrgrp6": {"color"},
+        "system interface": FG_INTERFACE_INT_FIELDS | FG_INTERFACE_AGGREGATE_INT_FIELDS | {"ping_serv_status"},
+        "router policy": FG_POLICY_ROUTE_INT_FIELDS,
+        "router policy6": FG_POLICY_ROUTE_INT_FIELDS,
+        "system sdwan zone": FG_SDWAN_ZONE_INT_FIELDS,
+        "system sdwan health-check": FG_SDWAN_HEALTH_CHECK_INT_FIELDS,
+        "system sdwan health-check sla": FG_SDWAN_HEALTH_CHECK_SLA_INT_FIELDS,
+        "system sdwan service": FG_SDWAN_SERVICE_INT_FIELDS,
+        "system dhcp server": FG_DHCP_SERVER_INT_FIELDS,
+        "system dhcp server ip-range": FG_DHCP_RANGE_INT_FIELDS,
+        "system dhcp server options": FG_DHCP_OPTION_INT_FIELDS,
+        "firewall service custom": {"protocol_number", "icmptype", "icmpcode", "color"},
+        "firewall service group": {"color"},
+        "authentication scheme": {"saml_timeout"},
+        "system global": SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
+        "system session-ttl port": SESSION_TTL_OVERRIDE_INT_FIELDS,
+    }
+    integer_list_fields = {
+        "router policy": FG_POLICY_ROUTE_INT_LIST_FIELDS,
+        "router policy6": FG_POLICY_ROUTE_INT_LIST_FIELDS,
+        "system sdwan service": FG_SDWAN_SERVICE_INT_LIST_FIELDS,
+    }
+    scalar_fields = {
+        path: set(model.model_fields)
+        - SECTION_LIST_FIELDS.get(path, set())
+        - integer_fields.get(path, set())
+        - integer_list_fields.get(path, set())
+        - {"extra_settings", "source_explicit_fields", "source_attributes", "nested_configs"}
+        for path, model in models.items()
+    }
+    secret_fields = {
+        path: IDENTITY_SECRET_FIELDS for path in IDENTITY_SECTIONS
+    }
+    secret_fields.update({
+        "system admin": ADMIN_SECRET_FIELDS,
+        "vpn ipsec phase1": {"psksecret", "psksecret_remote", "authpasswd", "group_authentication_secret", "ppk_secret"},
+        "vpn ipsec phase1-interface": {"psksecret", "psksecret_remote", "authpasswd", "group_authentication_secret", "ppk_secret"},
+    })
+    paths = (
+        set(models)
+        | set(SECTION_LIST_FIELDS)
+        | set(SECTION_EXPLICIT_FIELDS)
+        | CONTEXTUAL_MODEL_SECTIONS
+        | STRUCTURED_SECURITY_SECTIONS
+        | STRUCTURED_ROUTING_SECTIONS
+        | STRUCTURED_ROUTING_DEPENDENCY_SECTIONS
+        | STRUCTURED_IDENTITY_SECTIONS
+        | STRUCTURED_OPERATIONAL_SECTIONS
+    )
+    register_sections(
+        paths,
+        models=models,
+        list_fields=SECTION_LIST_FIELDS,
+        integer_fields=integer_fields,
+        integer_list_fields=integer_list_fields,
+        scalar_fields=scalar_fields,
+        explicit_fields=SECTION_EXPLICIT_FIELDS,
+        secret_fields=secret_fields,
+    )
 
 def _extract_extra_settings(
     attributes: Dict[str, Any],
@@ -1080,6 +1254,7 @@ class ParserError(Exception):
 
 class FortiGateParser:
     def __init__(self, tokenizer: FortiGateTokenizer):
+        _refresh_section_registry()
         self.tokens = list(tokenizer.tokenize())
         self.pos = 0
         self.config = FGConfig()
@@ -1287,6 +1462,14 @@ class FortiGateParser:
                 )
                 if full_path == "firewall internet-service-append":
                     self.apply_append_attribute(direct_attributes, key, values, full_path)
+                elif full_path == "system dns" and key.replace("-", "_") == "server_hostname":
+                    if not self.config.dns:
+                        self.config.dns = FGDnsMultiValue746()
+                    self.config.dns.server_hostname.extend(values)
+                    self.config.dns.source_explicit_fields.add("server_hostname")
+                    self.config.dns.extra_settings["server_hostname"] = list(
+                        self.config.dns.server_hostname
+                    )
 
             elif token.type == TokenType.CONFIG:
                 self.consume(TokenType.CONFIG)
@@ -2113,14 +2296,18 @@ class FortiGateParser:
             getattr(self.config, collection_name).append(model(**attributes))
 
     def parse_source_node(self, node_type: str, node_name: str) -> FGSourceNode:
-        node = FGSourceNode(node_type=node_type, name=node_name)
+        node = FGSourceNode(
+            node_type=node_type,
+            name=node_name,
+            start_line_number=self.peek().line_number if self.peek() else None,
+        )
         while self.peek():
             token = self.peek()
             if token.type == TokenType.END and node_type == "config":
-                self.consume(TokenType.END)
+                node.end_line_number = self.consume(TokenType.END).line_number
                 break
             if token.type == TokenType.NEXT and node_type == "edit":
-                self.consume(TokenType.NEXT)
+                node.end_line_number = self.consume(TokenType.NEXT).line_number
                 break
             if token.type == TokenType.EDIT:
                 self.consume(TokenType.EDIT)
@@ -2132,6 +2319,7 @@ class FortiGateParser:
                 node.children.append(self.parse_source_node("config", name))
             elif token.type in {TokenType.SET, TokenType.UNSET, TokenType.APPEND}:
                 operation = token.type.value
+                line_number = token.line_number
                 key, values = self.parse_key_values(token.type)
                 safe = self._source_command(operation, key, values)
                 node.commands.append(
@@ -2139,8 +2327,32 @@ class FortiGateParser:
                         operation=safe.operation,
                         key=safe.key,
                         values=safe.values,
+                        line_number=line_number,
                     )
                 )
+            elif token.type == TokenType.COMMENT:
+                node.commands.append(FGSourceCommand(
+                    operation="comment",
+                    key="#",
+                    values=[self.next_token().value],
+                    line_number=token.line_number,
+                ))
+            elif token.type == TokenType.STRING:
+                line_number = token.line_number
+                values = []
+                key = self.next_token().value
+                while (
+                    self.peek()
+                    and self.peek().type == TokenType.STRING
+                    and self.peek().line_number == line_number
+                ):
+                    values.append(self.next_token().value)
+                node.commands.append(FGSourceCommand(
+                    operation="unknown",
+                    key=key,
+                    values=values,
+                    line_number=line_number,
+                ))
             else:
                 self.next_token()
         return node
@@ -2166,6 +2378,7 @@ class FortiGateParser:
                     operation=command.operation,
                     key=command.key,
                     values=list(command.values),
+                    line_number=command.line_number,
                 )
                 for command in node.commands
             ],
@@ -3085,45 +3298,7 @@ class FortiGateParser:
 
     @staticmethod
     def _parse_port_ranges(value: Optional[str]) -> List[FGPortRange]:
-        ranges: List[FGPortRange] = []
-        for original in (value or "").split(","):
-            original = original.strip()
-            if not original:
-                continue
-            parts = original.split(":", 1)
-            parsed: List[Optional[tuple[int, int]]] = []
-            valid = True
-            for part in parts:
-                bounds = part.split("-", 1)
-                try:
-                    start = int(bounds[0])
-                    end = int(bounds[-1])
-                except ValueError:
-                    valid = False
-                    break
-                parsed.append((start, end))
-            if not valid:
-                ranges.append(FGPortRange(original=original))
-                continue
-            if len(parsed) == 1:
-                start, end = parsed[0]
-                ranges.append(FGPortRange(
-                    original=original,
-                    port=start if start == end else None,
-                    destination_start=start,
-                    destination_end=end,
-                ))
-            else:
-                source_start, source_end = parsed[0]
-                destination_start, destination_end = parsed[1]
-                ranges.append(FGPortRange(
-                    original=original,
-                    source_start=source_start,
-                    source_end=source_end,
-                    destination_start=destination_start,
-                    destination_end=destination_end,
-                ))
-        return ranges
+        return parse_service_port_ranges(value)
 
     def parse_key_values(
         self,
@@ -3186,7 +3361,9 @@ class FortiGateParser:
         key: str,
     ) -> None:
         clean_key = key.replace("-", "_")
-        if clean_key not in SECTION_EXPLICIT_FIELDS.get(section_path, set()):
+        spec = get_section_spec(section_path)
+        fields = spec.explicit_fields if spec else SECTION_EXPLICIT_FIELDS.get(section_path, set())
+        if clean_key not in fields:
             return
         attributes.setdefault("source_explicit_fields", set()).add(clean_key)
 
@@ -3381,7 +3558,11 @@ class FortiGateParser:
         )
         if (
             (clean_key in list_fields and not multicast_scalar_interface)
-            or clean_key in SECTION_LIST_FIELDS.get(section_path, set())
+            or clean_key in (
+                get_section_spec(section_path).list_fields
+                if get_section_spec(section_path)
+                else SECTION_LIST_FIELDS.get(section_path, set())
+            )
             or (
                 clean_key == "interface"
                 and section_path == "system zone"
@@ -3592,7 +3773,7 @@ class FortiGateParser:
 
         elif section_path == "system dns":
             if not self.config.dns:
-                self.config.dns = FGDns()
+                self.config.dns = FGDnsMultiValue746()
 
             clean_key = key.replace("-", "_")
             value = values[0] if len(values) == 1 else " ".join(values)
@@ -3614,7 +3795,7 @@ class FortiGateParser:
             elif clean_key in {
                 "primary", "secondary", "alt_primary", "alt_secondary",
                 "ip6_primary", "ip6_secondary", "server_select_method",
-                "server_hostname", "interface_select_method", "interface",
+                "interface_select_method", "interface",
                 "source_ip", "source_ip6", "ssl_certificate",
                 "cache_notfound_responses", "log",
             } and values:
@@ -3622,6 +3803,10 @@ class FortiGateParser:
                 setattr(self.config.dns, clean_key, parsed_value)
                 if clean_key not in {"primary", "secondary"}:
                     self.config.dns.extra_settings.update(sanitize_source_attributes({clean_key: parsed_value}))
+            elif clean_key == "server_hostname":
+                parsed_value = list(values)
+                self.config.dns.server_hostname = parsed_value
+                self.config.dns.extra_settings[clean_key] = parsed_value
             elif clean_key != "extra_settings":
                 self.config.dns.extra_settings.update(
                     sanitize_source_attributes({clean_key: value})
@@ -3786,7 +3971,7 @@ class FortiGateParser:
             self.config.system_global.extra_settings.pop(clean_key, None)
         elif section_path == "system dns" and self.config.dns:
             self.config.dns.source_explicit_fields.discard(clean_key)
-            if clean_key in {"protocol", "domain"}:
+            if clean_key in {"protocol", "domain", "server_hostname"}:
                 setattr(self.config.dns, clean_key, [])
             elif clean_key in FGDns.model_fields and clean_key not in {"extra_settings", "source_explicit_fields"}:
                 setattr(self.config.dns, clean_key, None)
@@ -3925,6 +4110,67 @@ class FortiGateParser:
         attributes: Dict[str, Any],
         
     ):
+        if section_path == "firewall shaper per-ip-shaper":
+            self._source_order += 1
+            self.config.source_only_rules.append(_build_per_ip_shaper(self, attributes))
+            return
+        if section_path == "firewall shaping-profile":
+            self._source_order += 1
+            self.config.source_only_rules.append(_build_shaping_profile(self, attributes))
+            return
+        if section_path == "firewall ippool_grp":
+            attributes["extra_settings"] = _extract_extra_settings(
+                attributes, set(FGIPPoolGroup.model_fields)
+            )
+            self.config.ip_pool_groups.append(FGIPPoolGroup(**attributes))
+            return
+        spec = get_section_spec(section_path)
+        if spec:
+            for key in spec.integer_fields:
+                self._normalize_optional_int(attributes, key)
+        if section_path == "authentication scheme":
+            timeout = attributes.get("saml_timeout")
+            if timeout is not None and not 30 <= timeout <= 1200:
+                attributes["unparsed_saml_timeout"] = attributes.pop("saml_timeout")
+            methods = attributes.get("method", [])
+            invalid_methods = [value for value in methods if value not in AUTHENTICATION_METHODS]
+            if invalid_methods:
+                attributes["method"] = [value for value in methods if value in AUTHENTICATION_METHODS]
+                attributes["unparsed_method"] = invalid_methods
+            for field in AUTHENTICATION_SWITCH_FIELDS:
+                value = attributes.get(field)
+                if value is not None and value not in {"enable", "disable"}:
+                    attributes[f"unparsed_{field}"] = attributes.pop(field)
+            for field, limit in AUTHENTICATION_STRING_LIMITS.items():
+                value = attributes.get(field)
+                if value is not None and (not isinstance(value, str) or len(value) > limit):
+                    attributes[f"unparsed_{field}"] = attributes.pop(field)
+            databases = attributes.get("user_database", [])
+            invalid_databases = [value for value in databases if not isinstance(value, str) or len(value) > 79]
+            if invalid_databases:
+                attributes["user_database"] = [value for value in databases if value not in invalid_databases]
+                attributes["unparsed_user_database"] = invalid_databases
+        elif section_path == "firewall service custom":
+            for key in SYSTEM_GLOBAL_SESSION_TIMER_FIELDS:
+                self._normalize_optional_int(attributes, key)
+            raw_timeout = attributes.get("session_ttl")
+            if raw_timeout is not None and not (
+                isinstance(raw_timeout, str) and raw_timeout.lower() == "never"
+            ):
+                self._normalize_optional_int(attributes, "session_ttl")
+        elif section_path == "system session-ttl port":
+            timeout = attributes.get("timeout")
+            if timeout is not None and not (
+                isinstance(timeout, str) and timeout.lower() == "never"
+            ):
+                self._normalize_optional_int(attributes, "timeout")
+        if section_path in {
+            "firewall address",
+            "firewall address6",
+            "firewall multicast-address",
+            "firewall multicast-address6",
+        }:
+            _apply_address_defaults(section_path, attributes)
         if section_path in {
             "firewall address", "firewall address6",
             "firewall multicast-address", "firewall multicast-address6",
@@ -4236,6 +4482,10 @@ class FortiGateParser:
             self.config.services.append(
                 FGService(**attributes)
             )
+            if self.config.services[-1].session_ttl is not None:
+                self.config.services[-1].extra_settings["session_ttl"] = str(
+                    self.config.services[-1].session_ttl
+                )
 
         elif section_path == "firewall service group":
             attributes["extra_settings"] = (
@@ -4253,15 +4503,20 @@ class FortiGateParser:
             "firewall schedule recurring",
             "firewall schedule onetime",
         }:
+            schedule_model = (
+                FGOnetimeSchedule746
+                if section_path.endswith("onetime")
+                else FGRecurringSchedule746
+            )
             attributes["type"] = (
                 "onetime" if section_path.endswith("onetime") else "recurring"
             )
             attributes["extra_settings"] = _extract_extra_settings(
                 attributes,
-                set(FGSchedule.model_fields),
+                set(schedule_model.model_fields),
             )
             self.config.schedules.append(
-                FGSchedule(**attributes)
+                schedule_model(**attributes)
             )
 
         elif section_path == "firewall schedule group":

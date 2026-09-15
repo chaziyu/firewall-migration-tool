@@ -323,33 +323,6 @@ def install_phase22_parser_support() -> None:
     from fwmigrate.parsers.fortigate import model as model_module
     from fwmigrate.parsers.fortigate.parser import FortiGateParser
 
-    _ORIGINAL_BUILD_MODEL = FortiGateParser.build_model
-
-    def phase22_build_model(
-        self: Any,
-        section_path: str,
-        attributes: Dict[str, Any],
-    ) -> None:
-        if section_path == "firewall shaper per-ip-shaper":
-            self._source_order += 1
-            self.config.source_only_rules.append(
-                _build_per_ip_shaper(self, attributes)
-            )
-            return
-
-        if section_path == "firewall shaping-profile":
-            self._source_order += 1
-            self.config.source_only_rules.append(
-                _build_shaping_profile(self, attributes)
-            )
-            return
-
-        _ORIGINAL_BUILD_MODEL(self, section_path, attributes)
-
-    phase22_build_model.__name__ = "build_model"
-    phase22_build_model.__qualname__ = "FortiGateParser.build_model"
-    FortiGateParser.build_model = phase22_build_model
-
     # Keep these source models accessible through the established model module
     # import surface while the typed data remains in the source-only collection.
     model_module.FGPerIPShaper = FGPerIPShaper

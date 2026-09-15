@@ -123,16 +123,21 @@ STRUCTURED_OPERATIONAL_SECTIONS = {
 
 
 class FGSourceCommand(BaseModel):
+    """One sanitized source operation; keys and values retain source spelling/order."""
     operation: str
     key: str
     values: List[str] = Field(default_factory=list)
+    line_number: Optional[int] = None
 
 
 class FGSourceNode(BaseModel):
+    """Lossless config/edit hierarchy with no FortiOS semantic interpretation."""
     node_type: str
     name: str
     commands: List[FGSourceCommand] = Field(default_factory=list)
     children: List["FGSourceNode"] = Field(default_factory=list)
+    start_line_number: Optional[int] = None
+    end_line_number: Optional[int] = None
 
 
 class FGStructuredSourceObject(BaseModel):
