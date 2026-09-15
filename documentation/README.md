@@ -15,6 +15,7 @@ This directory is the maintained documentation entry point for the project.
 | [Generated capabilities](generated/capabilities.md) | Runtime-registered source/target plugins and formats |
 | [Generated extraction statuses](generated/extraction-statuses.md) | Executable extraction-status vocabulary |
 | [Architecture decisions](decisions/README.md) | Long-lived design decisions |
+| [Performance baseline](development/performance-baseline.md) | Repeatable performance measurements and optimization gates |
 | [Archive](archive/README.md) | Historical plans and superseded detailed snapshots |
 
 ## Authority model

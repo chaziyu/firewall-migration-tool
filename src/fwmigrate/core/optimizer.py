@@ -1,27 +1,39 @@
 from typing import Dict, List, Set, Any
 from fwmigrate.ir import IRConfig
 from fwmigrate.core.normalizer import IRNormalizer
+from fwmigrate.ir.dependency import DependencyGraph
+from fwmigrate.ir.index import IRIndex
 
 class RuleOptimizer:
     """Security rulebase and object optimization engine."""
 
-    def __init__(self, ir: IRConfig):
+    def __init__(
+        self,
+        ir: IRConfig,
+        *,
+        ir_index: IRIndex | None = None,
+        dependency_graph: DependencyGraph | None = None,
+    ):
         self.ir = ir
+        self.ir_index = ir_index
+        self.dependency_graph = dependency_graph or DependencyGraph(ir)
+        self._unused_objects_cache: Dict[str, List[str]] | None = None
 
     def find_unused_objects(self) -> Dict[str, List[str]]:
         """Identify address and service objects not referenced anywhere."""
+        if self._unused_objects_cache is not None:
+            return self._unused_objects_cache
+
         used_addresses: Set[str] = set()
         used_services: Set[str] = set()
         used_address_groups: Set[str] = set()
         used_service_groups: Set[str] = set()
 
-        # Check policies
         for pol in self.ir.policies:
             used_addresses.update(pol.source)
             used_addresses.update(pol.destination)
             used_services.update(pol.service)
 
-        # Check NAT
         for nat in self.ir.nat_rules:
             used_addresses.update(nat.source)
             used_addresses.update(nat.destination)
@@ -39,19 +51,14 @@ class RuleOptimizer:
         added_new = True
         while added_new:
             added_new = False
-            # For addresses
-            current_addrs = list(used_addresses)
-            for item in current_addrs:
+            for item in list(used_addresses):
                 if item in addr_group_dict and item not in used_address_groups:
                     used_address_groups.add(item)
                     for member in addr_group_dict[item]:
                         if member not in used_addresses:
                             used_addresses.add(member)
                             added_new = True
-            
-            # For services
-            current_svcs = list(used_services)
-            for item in current_svcs:
+            for item in list(used_services):
                 if item in svc_group_dict and item not in used_service_groups:
                     used_service_groups.add(item)
                     for member in svc_group_dict[item]:
@@ -64,12 +71,13 @@ class RuleOptimizer:
         unused_addr_groups = [g.name for g in self.ir.address_groups if g.name not in used_address_groups]
         unused_svc_groups = [g.name for g in self.ir.service_groups if g.name not in used_service_groups]
 
-        return {
+        self._unused_objects_cache = {
             "unused_addresses": unused_addrs,
             "unused_services": unused_svcs,
             "unused_address_groups": unused_addr_groups,
-            "unused_service_groups": unused_svc_groups
+            "unused_service_groups": unused_svc_groups,
         }
+        return self._unused_objects_cache
 
     def find_duplicate_objects(self) -> Dict[str, List[List[str]]]:
         """Identify address and service objects with identical values."""

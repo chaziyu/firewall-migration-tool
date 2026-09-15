@@ -7,6 +7,8 @@ from .semantics import (
     policy_references_unsafe_zone,
 )
 from .config import IRConfig
+from .index import IRIndex
+from .dependency import DependencyEdge, DependencyGraph, DependencyIssue
 
 from .common import IRExecutionContext
 from .metadata import IRMetadata, IRCheckpointManagementAccess, IRCheckpointPerformanceSettings, IRCheckpointSecureXLSettings, IRCheckpointCoreXLSettings, IRAuditEntry
@@ -29,6 +31,10 @@ __all__ = [
     "unsafe_zone_names",
     "policy_references_unsafe_zone",
     "IRConfig",
+    "IRIndex",
+    "DependencyEdge",
+    "DependencyGraph",
+    "DependencyIssue",
     "IRExecutionContext",
     "IRMetadata",
     "IRCheckpointManagementAccess",
