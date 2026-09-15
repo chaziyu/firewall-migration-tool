@@ -41,7 +41,6 @@ from fwmigrate.parsers.fortigate.routing_ngfw_semantics_fix import install_routi
 from fwmigrate.parsers.fortigate.fortios_746_address_schedule_fixes import install_fortios_746_address_schedule_fixes
 from fwmigrate.parsers.fortigate.fortios_746_ci_regression_fixes import install_fortios_746_ci_regression_fixes
 from fwmigrate.parsers.fortigate.audit_remediation import install_fortios_746_audit_remediation
-from fwmigrate.parsers.fortigate.ipv6_nat_remediation import install_ipv6_nat_remediation
 
 
 def _phase_46_50_effective_node_attributes(
@@ -107,7 +106,6 @@ install_final_session_ttl_serialization(_parser_module)
 install_fortios_746_address_schedule_fixes(_parser_module, _transformer_module, _dependencies_module)
 install_fortios_746_ci_regression_fixes(_transformer_module, _coverage_module)
 install_fortios_746_audit_remediation(_extractor_module)
-install_ipv6_nat_remediation(_extractor_module)
 
 extract_fortigate_config = _extractor_module.extract_fortigate_config
 
