@@ -54,6 +54,10 @@ FORTIOS_SDWAN_RULE_SLA_MEMBER_MIN = 0
 FORTIOS_SDWAN_RULE_SLA_MEMBER_MAX = 255
 FORTIOS_SDWAN_RULE_QUALITY_MIN = 0
 FORTIOS_SDWAN_RULE_QUALITY_MAX = 255
+CENTRAL_NAT_UNKNOWN_REVIEW_REASON = (
+    "central NAT rules exist but effective central-nat mode cannot be proven "
+    "from supplied configuration"
+)
 FORTIOS_SDWAN_HEALTH_CHECK_RANGES = {
     "class_id": (0, 4294967295), "failtime": (1, 3600), "ha_priority": (1, 50),
     "interval": (20, 3600000), "packet_size": (0, 65535), "port": (0, 65535),
@@ -810,19 +814,46 @@ class FGToIRTransformer:
         )
         return any((context, name) in vip_names for name in policy.dstaddr)
 
-    def _central_nat_enabled(self, source_context: Optional[str]) -> bool:
+    def _get_nat_authority_for_context(self, source_context: Optional[str]) -> str:
+        """Return policy, central, or unknown NAT authority for one VDOM."""
         context_name = source_context or "root"
-        return any(
-            context.vdom == context_name
-            and (
-                context.central_nat == "enable"
-                or context.ngfw_mode == "policy-based"
-            )
-            for context in self.fg.execution_contexts
-        ) or bool(
-            context_name == "root"
-            and getattr(self.fg.system_global, "central_nat", None) == "enable"
+        execution_context = next(
+            (
+                context for context in self.fg.execution_contexts
+                if context.vdom == context_name
+            ),
+            None,
         )
+        central_nat = getattr(execution_context, "central_nat", None)
+        if central_nat is None and context_name == "root":
+            central_nat = getattr(self.fg.system_global, "central_nat", None)
+            if central_nat is None:
+                central_nat = getattr(
+                    self.fg.system_global,
+                    "extra_settings",
+                    {},
+                ).get("central_nat")
+
+        central_nat = str(central_nat).strip().lower() if central_nat is not None else None
+        if central_nat == "enable":
+            return "central"
+        if central_nat == "disable":
+            return "policy"
+        if (
+            execution_context is not None
+            and str(getattr(execution_context, "ngfw_mode", "") or "").lower()
+            == "policy-based"
+        ):
+            return "central"
+
+        has_central_snat = any(
+            self._policy_context(rule) == context_name
+            for rule in self.fg.central_snat_rules
+        )
+        return "unknown" if has_central_snat else "policy"
+
+    def _central_nat_enabled(self, source_context: Optional[str]) -> bool:
+        return self._get_nat_authority_for_context(source_context) == "central"
 
     def _transform_ips_sensors(self) -> None:
         """Preserve FortiGate IPS sensors as source-only inventory."""
@@ -8576,9 +8607,14 @@ class FGToIRTransformer:
             (pool.source_context, pool.name): pool for pool in self.ir.ip_pools
         }
         for rule in self.fg.central_snat_rules:
-            if not self._central_nat_enabled(rule.source_context):
+            authority = self._get_nat_authority_for_context(rule.source_context)
+            if authority == "policy":
                 continue
-            review_reasons: List[str] = []
+            review_reasons: List[str] = (
+                [CENTRAL_NAT_UNKNOWN_REVIEW_REASON]
+                if authority == "unknown"
+                else []
+            )
             original_family = "ipv6" if rule.type.lower() == "ipv6" else "ipv4"
             sources = list(rule.orig_addr6 if original_family == "ipv6" else rule.orig_addr)
             destinations = list(rule.dst_addr6 if original_family == "ipv6" else rule.dst_addr)
@@ -8687,7 +8723,8 @@ class FGToIRTransformer:
     def _transform_central_dnat_vips(self) -> None:
         """Project enabled IPv4 VIP translations when Central NAT is effective."""
         for index, vip in enumerate(self.fg.vips, 1):
-            if not self._central_nat_enabled(vip.source_context) or vip.status == "disable":
+            authority = self._get_nat_authority_for_context(vip.source_context)
+            if authority == "policy" or vip.status == "disable":
                 continue
 
             eligible, eligibility_reasons = self._vip_static_dnat_eligibility(vip, "nat44")
@@ -8707,7 +8744,11 @@ class FGToIRTransformer:
                 item for item in self.ir.virtual_ips
                 if (item.source_context, item.name) == (vip.source_context, vip.name)
             )
-            reasons = []
+            reasons = (
+                [CENTRAL_NAT_UNKNOWN_REVIEW_REASON]
+                if authority == "unknown"
+                else []
+            )
             if ir_vip.requires_manual_review:
                 reasons.append(ir_vip.audit_note or f"VIP '{vip.name}' requires manual review")
             if vip.extra_settings:
@@ -8922,14 +8963,21 @@ class FGToIRTransformer:
                 continue
             if policy.nat64 == "enable" and (policy.srcaddr6 or policy.dstaddr6):
                 continue
-            if self._central_nat_enabled(policy.source_context):
+            nat_authority = self._get_nat_authority_for_context(policy.source_context)
+            if nat_authority in {"central", "unknown"}:
                 self.ir.audit_entries.append(
                     IRAuditEntry(
                         id=f"central-nat-policy-{policy.id}",
                         category="NAT",
                         message=(
-                            f"Policy {policy.id} is in VDOM '{policy.source_context}' where central NAT is enabled; "
-                            "no policy-derived NAT rule was emitted. central-snat-map remains authoritative source data."
+                            f"Policy {policy.id} is in VDOM '{policy.source_context}' where "
+                            + (
+                                "central NAT authority is ambiguous"
+                                if nat_authority == "unknown"
+                                else "central NAT is enabled"
+                            )
+                            + "; no policy-derived NAT rule was emitted. "
+                            "central-snat-map remains the retained NAT source data."
                         ),
                         confidence=MigrationConfidence.MANUAL,
                     )
@@ -9805,6 +9853,25 @@ class FGToIRTransformer:
             if not (policy.srcaddr6 or policy.dstaddr6 or policy.poolname6):
                 continue
             if policy.nat46 == "enable" and (policy.srcaddr or policy.dstaddr or policy.poolname):
+                continue
+            nat_authority = self._get_nat_authority_for_context(policy.source_context)
+            if nat_authority in {"central", "unknown"}:
+                self.ir.audit_entries.append(
+                    IRAuditEntry(
+                        id=f"central-nat-policy6-{policy.id}",
+                        category="NAT",
+                        message=(
+                            f"Policy {policy.id} IPv6 NAT was withheld because "
+                            + (
+                                "central NAT authority is ambiguous"
+                                if nat_authority == "unknown"
+                                else "central NAT is enabled"
+                            )
+                            + "; central-snat-map remains the retained NAT source data."
+                        ),
+                        confidence=MigrationConfidence.MANUAL,
+                    )
+                )
                 continue
             family, original_family, translated_family = self._policy_nat_family(
                 policy, "ipv6"

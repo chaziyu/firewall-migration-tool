@@ -350,6 +350,31 @@ end
     assert any("multiple possible outgoing interfaces" in reason for reason in rule.review_reasons)
 
 
+def test_central_snat_without_system_settings_is_unknown_and_blocks_generation():
+    result = extract_fortigate_config("""
+config firewall central-snat-map
+    edit 10
+        set srcintf "lan"
+        set dstintf "wan"
+        set orig-addr "all"
+        set dst-addr "all"
+        set nat enable
+    next
+end
+""")
+
+    rule = result.canonical_ir.nat_rules[0]
+    assert rule.source_origin == "central-snat-map"
+    assert rule.migration_status == "PARTIALLY_NORMALIZED"
+    assert rule.requires_manual_review is True
+    assert result.generation_safe is False
+    assert any(
+        "effective central-nat mode cannot be proven" in reason
+        for reason in rule.review_reasons
+    )
+    assert result.canonical_ir.central_snat_rules[0].source_id == "10"
+
+
 def test_policy_based_ngfw_enables_effective_central_nat_and_suppresses_policy_nat():
     extraction = extract_fortigate_config("""
 config system settings
