@@ -51,10 +51,7 @@ class MigrationPipeline:
         if request.source_name and extracted_ir is not None:
             extracted_ir.metadata.input_type = "Configuration File"
 
-        source_ir = timed(
-            "source_copy",
-            lambda: deepcopy(extracted_ir) if extracted_ir is not None else None,
-        )
+        source_ir = extracted_ir
         source_safety = timed(
             "source_safety",
             lambda: evaluate_generation_safety(extraction, source_ir),
