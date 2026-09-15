@@ -49,6 +49,15 @@ class NATAuditIRExcelExporter(SinglePassIRExcelExporter):
             for context in getattr(self.ir, "execution_contexts", []) or []
         }
 
+    def _format_cisco_nat_option(self, value: Any) -> str | None:
+        if value in (None, "", [], {}, ()):
+            return None
+        if isinstance(value, dict):
+            return self._format_settings(value)
+        if isinstance(value, (list, tuple, set)):
+            return " ".join(str(item) for item in value)
+        return str(value)
+
     def _cisco_nat_audit_values(self, rule: Any) -> tuple[Any, ...]:
         attrs = getattr(rule, "source_attributes", {}) or {}
         pat_options = attrs.get("pat_pool_options")
@@ -61,8 +70,8 @@ class NATAuditIRExcelExporter(SinglePassIRExcelExporter):
             self._optional_bool_literal(attrs.get("route_lookup")),
             self._optional_bool_literal(attrs.get("unidirectional")),
             self._optional_bool_literal(attrs.get("net_to_net")),
-            self._format_settings(pat_options) if pat_options not in (None, "", [], {}) else None,
-            self._format_settings(raw_options) if raw_options not in (None, "", [], {}) else None,
+            self._format_cisco_nat_option(pat_options),
+            self._format_cisco_nat_option(raw_options),
         )
 
     def _build_nat_rules(self, workbook: Any) -> None:
