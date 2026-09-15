@@ -10,83 +10,38 @@ from fwmigrate.parsers.fortigate import dependencies as _dependencies_module
 from fwmigrate.parsers.fortigate import source_tree as _source_tree_module
 from fwmigrate.parsers.fortigate import phase_46_50_extensions as _phase_46_50_module
 from fwmigrate.parsers.fortigate.shaping_models import install_phase22_parser_support
-from fwmigrate.parsers.fortigate.phase_23_25_extensions import (
-    install_phase_23_25_extensions,
-)
-from fwmigrate.parsers.fortigate.service_parser_extensions import (
-    install_service_parser_extensions,
-)
+from fwmigrate.parsers.fortigate.phase_23_25_extensions import install_phase_23_25_extensions
+from fwmigrate.parsers.fortigate.service_parser_extensions import install_service_parser_extensions
 from fwmigrate.parsers.fortigate.session_ttl_extensions import (
     install_final_session_ttl_serialization,
     install_session_ttl_extensions,
 )
-from fwmigrate.parsers.fortigate.ztna_relationship_extensions import (
-    install_ztna_relationship_support,
-)
-from fwmigrate.parsers.fortigate.certificate_reference_extensions import (
-    install_certificate_reference_support,
-)
-from fwmigrate.parsers.fortigate.authentication_scheme_extensions import (
-    install_authentication_scheme_support,
-)
-from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
-    install_phase_28_30_extensions,
-)
-from fwmigrate.parsers.fortigate.policy_nat_preservation_extensions import (
-    install_policy_nat_preservation_extensions,
-)
-from fwmigrate.parsers.fortigate.policy_dlp_profile_fix import (
-    install_policy_dlp_profile_fix,
-)
-from fwmigrate.parsers.fortigate.policy_ips_voip_filter_fix import (
-    install_policy_ips_voip_filter_fix,
-)
-from fwmigrate.parsers.fortigate.policy_security_profile_dependency_fix import (
-    install_policy_security_profile_dependency_fix,
-)
-from fwmigrate.parsers.fortigate.dns_multivalue_fix import (
-    install_dns_multivalue_fix,
-)
-from fwmigrate.parsers.fortigate.policy_ipv6_vip_dependency_fix import (
-    install_policy_ipv6_vip_dependency_fix,
-)
-from fwmigrate.parsers.fortigate.system_fsso import (
-    install_system_fsso_polling_support,
-)
+from fwmigrate.parsers.fortigate.ztna_relationship_extensions import install_ztna_relationship_support
+from fwmigrate.parsers.fortigate.certificate_reference_extensions import install_certificate_reference_support
+from fwmigrate.parsers.fortigate.authentication_scheme_extensions import install_authentication_scheme_support
+from fwmigrate.parsers.fortigate.phase_28_30_extensions import install_phase_28_30_extensions
+from fwmigrate.parsers.fortigate.policy_nat_preservation_extensions import install_policy_nat_preservation_extensions
+from fwmigrate.parsers.fortigate.policy_dlp_profile_fix import install_policy_dlp_profile_fix
+from fwmigrate.parsers.fortigate.policy_ips_voip_filter_fix import install_policy_ips_voip_filter_fix
+from fwmigrate.parsers.fortigate.policy_security_profile_dependency_fix import install_policy_security_profile_dependency_fix
+from fwmigrate.parsers.fortigate.dns_multivalue_fix import install_dns_multivalue_fix
+from fwmigrate.parsers.fortigate.policy_ipv6_vip_dependency_fix import install_policy_ipv6_vip_dependency_fix
+from fwmigrate.parsers.fortigate.system_fsso import install_system_fsso_polling_support
 from fwmigrate.parsers.fortigate.phase_41_security_profiles import (
     _effective_node_attributes as _phase_41_effective_node_attributes,
     install_phase_41_security_profile_support,
 )
-from fwmigrate.parsers.fortigate.phase_42_antivirus import (
-    install_phase_42_antivirus_support,
-)
-from fwmigrate.parsers.fortigate.phase_43_webfilter import (
-    install_phase_43_webfilter_support,
-)
-from fwmigrate.parsers.fortigate.phase_44_dnsfilter import (
-    install_phase_44_dnsfilter_support,
-)
-from fwmigrate.parsers.fortigate.phase_45_application_control import (
-    install_phase_45_application_control_support,
-)
-from fwmigrate.parsers.fortigate.phase_48_profile_group_dependencies import (
-    install_phase_48_effective_profile_group_dependencies,
-)
-from fwmigrate.parsers.fortigate.phase_46_50_regression_fixes import (
-    install_phase_46_50_regression_fixes,
-)
-from fwmigrate.parsers.fortigate.routing_ngfw_semantics_fix import (
-    install_routing_ngfw_semantics_fix,
-)
-from fwmigrate.parsers.fortigate.fortios_746_address_schedule_fixes import (
-    install_fortios_746_address_schedule_fixes,
-)
-from fwmigrate.parsers.fortigate.fortios_746_ci_regression_fixes import (
-    install_fortios_746_ci_regression_fixes,
-)
-from fwmigrate.parsers.fortigate.audit_remediation import (
-    install_fortios_746_audit_remediation,
-)
+from fwmigrate.parsers.fortigate.phase_42_antivirus import install_phase_42_antivirus_support
+from fwmigrate.parsers.fortigate.phase_43_webfilter import install_phase_43_webfilter_support
+from fwmigrate.parsers.fortigate.phase_44_dnsfilter import install_phase_44_dnsfilter_support
+from fwmigrate.parsers.fortigate.phase_45_application_control import install_phase_45_application_control_support
+from fwmigrate.parsers.fortigate.phase_48_profile_group_dependencies import install_phase_48_effective_profile_group_dependencies
+from fwmigrate.parsers.fortigate.phase_46_50_regression_fixes import install_phase_46_50_regression_fixes
+from fwmigrate.parsers.fortigate.routing_ngfw_semantics_fix import install_routing_ngfw_semantics_fix
+from fwmigrate.parsers.fortigate.fortios_746_address_schedule_fixes import install_fortios_746_address_schedule_fixes
+from fwmigrate.parsers.fortigate.fortios_746_ci_regression_fixes import install_fortios_746_ci_regression_fixes
+from fwmigrate.parsers.fortigate.audit_remediation import install_fortios_746_audit_remediation
+from fwmigrate.parsers.fortigate.ipv6_nat_remediation import install_ipv6_nat_remediation
 
 
 def _phase_46_50_effective_node_attributes(
@@ -104,15 +59,10 @@ def _phase_46_50_effective_node_attributes(
             field_spec["integer_fields"] = set(field_spec.pop("int_fields"))
         if "int_list_fields" in field_spec:
             field_spec["integer_list_fields"] = set(field_spec.pop("int_list_fields"))
-    return _phase_41_effective_node_attributes(
-        source,
-        model=model,
-        field_spec=field_spec,
-    )
+    return _phase_41_effective_node_attributes(source, model=model, field_spec=field_spec)
 
 
 _phase_46_50_module._effective_node_attributes = _phase_46_50_effective_node_attributes
-
 
 install_phase22_parser_support()
 install_phase_23_25_extensions(_parser_module)
@@ -127,26 +77,10 @@ install_authentication_scheme_support(
     _transformer_module,
 )
 install_phase_28_30_extensions(_parser_module)
-install_policy_nat_preservation_extensions(
-    _parser_module,
-    _transformer_module,
-    _dependencies_module,
-)
-install_policy_dlp_profile_fix(
-    _parser_module,
-    _dependencies_module,
-    _transformer_module,
-)
-install_policy_ips_voip_filter_fix(
-    _parser_module,
-    _dependencies_module,
-    _transformer_module,
-)
-install_policy_security_profile_dependency_fix(
-    _parser_module,
-    _dependencies_module,
-    _transformer_module,
-)
+install_policy_nat_preservation_extensions(_parser_module, _transformer_module, _dependencies_module)
+install_policy_dlp_profile_fix(_parser_module, _dependencies_module, _transformer_module)
+install_policy_ips_voip_filter_fix(_parser_module, _dependencies_module, _transformer_module)
+install_policy_security_profile_dependency_fix(_parser_module, _dependencies_module, _transformer_module)
 install_dns_multivalue_fix(_parser_module)
 install_policy_ipv6_vip_dependency_fix(_dependencies_module)
 install_system_fsso_polling_support()
@@ -161,10 +95,7 @@ _phase_46_50_module.install_phase_46_50_extensions(
     _extractor_module,
     _source_tree_module,
 )
-install_phase_48_effective_profile_group_dependencies(
-    _dependencies_module,
-    _extractor_module,
-)
+install_phase_48_effective_profile_group_dependencies(_dependencies_module, _extractor_module)
 install_phase_46_50_regression_fixes(
     _parser_module,
     _dependencies_module,
@@ -172,19 +103,11 @@ install_phase_46_50_regression_fixes(
     _coverage_module,
 )
 install_routing_ngfw_semantics_fix(_transformer_module)
-
 install_final_session_ttl_serialization(_parser_module)
-
-install_fortios_746_address_schedule_fixes(
-    _parser_module,
-    _transformer_module,
-    _dependencies_module,
-)
-install_fortios_746_ci_regression_fixes(
-    _transformer_module,
-    _coverage_module,
-)
+install_fortios_746_address_schedule_fixes(_parser_module, _transformer_module, _dependencies_module)
+install_fortios_746_ci_regression_fixes(_transformer_module, _coverage_module)
 install_fortios_746_audit_remediation(_extractor_module)
+install_ipv6_nat_remediation(_extractor_module)
 
 extract_fortigate_config = _extractor_module.extract_fortigate_config
 
@@ -207,5 +130,3 @@ class FortiGateSourceParser(BaseSourceParser):
 
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> ExtractionResult:
         return extract_fortigate_config(content, zone_mapping=zone_mapping)
-
-
