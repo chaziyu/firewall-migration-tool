@@ -3,6 +3,7 @@ import io
 import pytest
 from openpyxl import load_workbook
 
+from fwmigrate.generators.fortigate.cli_generator import FortiGateCLIGenerator
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.report.excel_exporter import IRExcelExporter
 
@@ -68,6 +69,7 @@ end
     assert rule.translated_sources == ["203.0.113.10"]
     assert rule.migration_status == "NORMALIZED", rule.review_reasons
     assert rule.safe_for_target_generation is True
+    assert result.generation_safe is True
 
     sheet = _workbook(result)["NAT Rules"]
     headers = _headers(sheet)
@@ -134,6 +136,7 @@ end
     assert rule.source_pool_references == ["POOL"]
     if expected_status != "NORMALIZED":
         assert rule.safe_for_target_generation is False
+        assert result.generation_safe is False
 
 
 def test_central_nat_unknown_is_preserved_as_partial_manual_review():
@@ -228,6 +231,7 @@ end
     assert rule.source_vip_reference == "VIP_OK"
     assert rule.migration_status == "PARTIALLY_NORMALIZED"
     assert rule.safe_for_target_generation is False
+    assert result.generation_safe is False
 
     workbook = _workbook(result)
     group_sheet = workbook["VIP Groups"]
@@ -337,3 +341,25 @@ end
     assert vip.mapped_ips == ["2001:db8:2::10"]
     assert vip.external_port == "443"
     assert vip.mapped_port == "8443"
+
+
+def test_partial_standalone_vip_blocks_target_generation():
+    result = extract_fortigate_config("""
+config firewall vip
+    edit "ADVANCED_VIP"
+        set type server-load-balance
+        set extip 203.0.113.80
+        set mappedip "10.0.0.80"
+        set extintf "wan"
+        set src-filter "TRUSTED_SOURCE"
+        set nat-source-vip enable
+    next
+end
+""")
+
+    vip = result.canonical_ir.virtual_ips[0]
+    assert vip.migration_status == "PARTIALLY_NORMALIZED"
+    assert vip.requires_manual_review is True
+    assert result.generation_safe is False
+    artifact = FortiGateCLIGenerator().generate(result.canonical_ir)[0].content
+    assert "BLOCKED" in artifact

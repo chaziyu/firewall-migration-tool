@@ -362,7 +362,7 @@ def extract_fortigate_config(
         ir_config.interfaces, ir_config.policies, ir_config.multicast_policies,
         ir_config.nat_rules, ir_config.routes,
         ir_config.addresses, ir_config.address_groups, ir_config.services,
-        ir_config.service_groups, ipv4_ip_pools,
+        ir_config.service_groups, ipv4_ip_pools, ir_config.virtual_ips,
     )
     if ir_config.dhcp_servers:
         blocking_reasons.append(
