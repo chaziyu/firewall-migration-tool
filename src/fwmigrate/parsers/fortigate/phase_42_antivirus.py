@@ -197,10 +197,15 @@ def _build_antivirus_profiles(
         profile_settings, profile_extra = phase41._effective_profile_settings(
             node,
             FGAntivirusProfile746,
+            field_spec=_AV_PROFILE_SPEC,
         )
         profile = FGAntivirusProfile746(
             name=node.name,
-            **phase41._typed_values(profile_settings, FGAntivirusProfile746),
+            **phase41._typed_values(
+                profile_settings,
+                FGAntivirusProfile746,
+                field_spec=_AV_PROFILE_SPEC,
+            ),
         )
         profile.extra_settings = profile_extra
 
@@ -214,13 +219,18 @@ def _build_antivirus_profiles(
                 settings, extra_settings = phase41._effective_profile_settings(
                     child,
                     FGAntivirusProtocol746,
+                    field_spec=_AV_PROTOCOL_SPEC,
                 )
                 protocol = FGAntivirusProtocol746(
                     name=child.name,
                     settings=settings,
                     entries=[phase41._typed_profile_node(entry) for entry in child_entries],
                     extra_settings=extra_settings,
-                    **phase41._typed_values(settings, FGAntivirusProtocol746),
+                    **phase41._typed_values(
+                        settings,
+                        FGAntivirusProtocol746,
+                        field_spec=_AV_PROTOCOL_SPEC,
+                    ),
                 )
                 for nested in child.children:
                     if nested.node_type != "config":
@@ -228,6 +238,7 @@ def _build_antivirus_profiles(
                     for projection in phase41._effective_nested_profile_edits(
                         nested,
                         FGAntivirusProfileConfig746,
+                        field_spec=_AV_CONFIG_SPEC,
                     ):
                         protocol.configs.append(
                             FGAntivirusProfileConfig746(
@@ -243,13 +254,18 @@ def _build_antivirus_profiles(
             settings, extra_settings = phase41._effective_profile_settings(
                 child,
                 FGAntivirusProfileConfig746,
+                field_spec=_AV_CONFIG_SPEC,
             )
             profile.configs.append(
                 FGAntivirusProfileConfig746(
                     name=child.name,
                     settings=settings,
                     extra_settings=extra_settings,
-                    **phase41._typed_values(settings, FGAntivirusProfileConfig746),
+                    **phase41._typed_values(
+                        settings,
+                        FGAntivirusProfileConfig746,
+                        field_spec=_AV_CONFIG_SPEC,
+                    ),
                 )
             )
 

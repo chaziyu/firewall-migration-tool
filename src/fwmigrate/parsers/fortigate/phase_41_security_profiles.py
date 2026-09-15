@@ -143,8 +143,11 @@ _PROFILE_PATHS = {
 }
 
 
-def _profile_field_spec(model: Optional[Any] = None) -> Dict[str, set[str]]:
-    declared = PROFILE_FIELD_SPECS.get(model, {})
+def _profile_field_spec(
+    model: Optional[Any] = None,
+    field_spec: Optional[Dict[str, set[str]]] = None,
+) -> Dict[str, set[str]]:
+    declared = PROFILE_FIELD_SPECS.get(model, {}) if field_spec is None else field_spec
     return {
         "scalar_fields": set(declared.get("scalar_fields", set())),
         "list_fields": set(declared.get("list_fields", set())),
@@ -192,17 +195,7 @@ def _effective_node_attributes(
     ``append`` is only interpreted for explicitly declared list fields.
     """
 
-    spec = _profile_field_spec(model)
-    if field_spec:
-        for category in (
-            "scalar_fields",
-            "list_fields",
-            "integer_fields",
-            "integer_list_fields",
-            "secret_fields",
-        ):
-            if category in field_spec:
-                spec[category] = set(field_spec[category])
+    spec = _profile_field_spec(model, field_spec)
 
     evaluated = evaluate_commands(
         source.commands,
@@ -360,8 +353,14 @@ def _effective_node_attributes(
 def _effective_profile_settings(
     source: FGSourceNode,
     model: Any,
+    *,
+    field_spec: Optional[Dict[str, set[str]]] = None,
 ) -> tuple[Dict[str, Any], Dict[str, Any]]:
-    effective, extra_settings = _effective_node_attributes(source, model=model)
+    effective, extra_settings = _effective_node_attributes(
+        source,
+        model=model,
+        field_spec=field_spec,
+    )
     settings = dict(effective)
     settings.update(
         {
@@ -373,11 +372,24 @@ def _effective_profile_settings(
     return settings, extra_settings
 
 
-def _typed_values(settings: Dict[str, Any], model: Any) -> Dict[str, Any]:
+def _typed_values(
+    settings: Dict[str, Any],
+    model: Any,
+    *,
+    field_spec: Optional[Dict[str, set[str]]] = None,
+) -> Dict[str, Any]:
+    spec = _profile_field_spec(model, field_spec)
+    typed_fields = (
+        spec["scalar_fields"]
+        | spec["list_fields"]
+        | spec["integer_fields"]
+        | spec["integer_list_fields"]
+    )
     return {
         key: value
         for key, value in settings.items()
         if key in model.model_fields
+        and key in typed_fields
         and key not in {"name", "settings", "extra_settings"}
     }
 
@@ -385,6 +397,8 @@ def _typed_values(settings: Dict[str, Any], model: Any) -> Dict[str, Any]:
 def _effective_nested_profile_edits(
     source: FGSourceNode,
     model: Any,
+    *,
+    field_spec: Optional[Dict[str, set[str]]] = None,
 ) -> List[Dict[str, Any]]:
     """Return ordered effective nested edits with their original source node."""
 
@@ -393,13 +407,17 @@ def _effective_nested_profile_edits(
         (child for child in source.children if child.node_type == "edit"),
         start=1,
     ):
-        settings, extra_settings = _effective_profile_settings(entry, model)
+        settings, extra_settings = _effective_profile_settings(
+            entry,
+            model,
+            field_spec=field_spec,
+        )
         projections.append(
             {
                 "name": entry.name,
                 "source_order": source_order,
                 "settings": settings,
-                "values": _typed_values(settings, model),
+                "values": _typed_values(settings, model, field_spec=field_spec),
                 "extra_settings": extra_settings,
                 "source": entry,
             }
