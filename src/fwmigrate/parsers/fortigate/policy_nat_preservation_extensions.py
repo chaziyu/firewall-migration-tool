@@ -14,6 +14,10 @@ from typing import Any, Dict, Optional
 
 from pydantic import model_validator
 
+from fwmigrate.parsers.fortigate.firewall_vip_746 import (
+    FORTIOS_746_VIP_FIELDS,
+    validate_vip_746,
+)
 from fwmigrate.parsers.fortigate.model import (
     FGInterface as _FGInterface,
     FGInterfaceSecondaryIP as _FGInterfaceSecondaryIP,
@@ -159,21 +163,30 @@ def _preserve_src_vip_filter(target: Any, setting: Optional[str]) -> None:
         )
 
 
-def _mark_src_vip_filter_review(target: Any, setting: Optional[str]) -> None:
-    if setting != "enable":
+def _mark_review_reasons(target: Any, reasons: list[str]) -> None:
+    """Apply source-contract findings without weakening existing review state."""
+    if not reasons:
         return
     target.requires_manual_review = True
     if hasattr(target, "migration_status"):
         target.migration_status = "PARTIALLY_NORMALIZED"
     if hasattr(target, "review_reasons"):
-        reasons = list(getattr(target, "review_reasons", []) or [])
-        if _SRC_VIP_FILTER_REVIEW_REASON not in reasons:
-            reasons.append(_SRC_VIP_FILTER_REVIEW_REASON)
-        target.review_reasons = reasons
+        existing = list(getattr(target, "review_reasons", []) or [])
+        for reason in reasons:
+            if reason not in existing:
+                existing.append(reason)
+        target.review_reasons = existing
     if hasattr(target, "audit_note"):
         note = getattr(target, "audit_note", None)
-        if not note:
-            target.audit_note = _SRC_VIP_FILTER_REVIEW_REASON
+        additions = [reason for reason in reasons if not note or reason not in note]
+        if additions:
+            target.audit_note = "; ".join(filter(None, [note, *additions]))
+
+
+def _mark_src_vip_filter_review(target: Any, setting: Optional[str]) -> None:
+    if setting != "enable":
+        return
+    _mark_review_reasons(target, [_SRC_VIP_FILTER_REVIEW_REASON])
 
 
 def install_policy_nat_preservation_extensions(
@@ -189,8 +202,8 @@ def install_policy_nat_preservation_extensions(
     parser_module.SECTION_EXPLICIT_FIELDS.setdefault("system interface", set()).add(
         "ping_serv_status"
     )
-    parser_module.SECTION_EXPLICIT_FIELDS.setdefault("firewall vip", set()).add(
-        "src_vip_filter"
+    parser_module.SECTION_EXPLICIT_FIELDS.setdefault("firewall vip", set()).update(
+        FORTIOS_746_VIP_FIELDS
     )
 
     dependencies_module.REFERENCE_RULES.update(_SCOPED_REFERENCE_RULES)
@@ -231,6 +244,7 @@ def install_policy_nat_preservation_extensions(
                 setting = getattr(source_vip, "src_vip_filter", None)
                 _preserve_src_vip_filter(virtual_ip, setting)
                 _mark_src_vip_filter_review(virtual_ip, setting)
+                _mark_review_reasons(virtual_ip, validate_vip_746(source_vip))
 
         _transform_virtual_ips._policy_nat_preservation_wrapped = True
         transformer_cls._transform_virtual_ips = _transform_virtual_ips
@@ -255,6 +269,7 @@ def install_policy_nat_preservation_extensions(
                 setting = getattr(source_vip, "src_vip_filter", None)
                 _preserve_src_vip_filter(nat_rule, setting)
                 _mark_src_vip_filter_review(nat_rule, setting)
+                _mark_review_reasons(nat_rule, validate_vip_746(source_vip))
 
         _transform_nat._policy_nat_preservation_wrapped = True
         transformer_cls._transform_nat = _transform_nat
