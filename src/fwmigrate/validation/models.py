@@ -1,15 +1,24 @@
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
-from fwmigrate.jobs.models import MigrationIssue
+
+@dataclass
+class ValidationIssue:
+    severity: str
+    category: str
+    source_object: str
+    message: str
+    blocking: bool
+    target_object: Optional[str] = None
+    recommended_action: Optional[str] = None
 
 
 @dataclass
 class ValidationResult:
-    issues: List[MigrationIssue] = field(default_factory=list)
+    issues: List[ValidationIssue] = field(default_factory=list)
 
     @property
-    def blocking_issues(self) -> List[MigrationIssue]:
+    def blocking_issues(self) -> List[ValidationIssue]:
         return [issue for issue in self.issues if issue.blocking]
 
     @property

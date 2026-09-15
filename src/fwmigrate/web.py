@@ -14,7 +14,6 @@ register_builtin_plugins()
 
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
-from fwmigrate.core.normalizer import IRNormalizer
 from fwmigrate.application import MigrationPipeline, MigrationRequest
 from fwmigrate.report.migration_report import MigrationReporter
 from fwmigrate.report.excel_exporter import (
@@ -107,15 +106,22 @@ def create_app(test_config=None):
 
             file = request.files['file']
             file_content = _decode_configuration(file.read())
-            ir_config, _ = _extract_source_config(source_vendor, file_content)
+            analysis = MigrationPipeline().analyze(MigrationRequest(
+                source_vendor=source_vendor,
+                target_vendor=request.form.get('target_vendor') or None,
+                target_version=request.form.get('target_version') or None,
+                source_content=file_content,
+                target_format='all',
+                source_name=file.filename,
+            ))
+            ir_config = analysis.final_ir or analysis.source_ir
 
             if not ir_config:
                 return jsonify({'success': False, 'error': 'Failed to extract configuration from file'}), 400
 
-            # Normalization is mandatory; optimizer analysis remains optional.
-            IRNormalizer(ir_config).normalize()
+            # Preview analysis is read-only; it never requests pruning.
             optimizer = RuleOptimizer(ir_config)
-            unused = optimizer.find_unused_objects()
+            unused = analysis.unused_objects or optimizer.find_unused_objects()
             duplicates = optimizer.find_duplicate_objects()
             shadowed = optimizer.find_shadowed_rules()
 
@@ -134,7 +140,7 @@ def create_app(test_config=None):
                     "description": p.description or ""
                 })
 
-            return jsonify({
+            response = {
                 'success': True,
                 'hostname': ir_config.metadata.hostname,
                 'source_vendor': ir_config.metadata.source_vendor,
@@ -156,8 +162,14 @@ def create_app(test_config=None):
                     'shadowed_rules_count': len(shadowed),
                     'shadowed_rules': shadowed
                 },
-                'policies': policies_preview
-            })
+                'policies': policies_preview,
+                'generation_allowed': analysis.generation_allowed,
+                'blocking_reasons': analysis.blocking_reasons,
+                'requires_manual_review': analysis.requires_manual_review,
+            }
+            if analysis.capability_analysis is not None:
+                response['capability_analysis'] = analysis.capability_analysis.to_dict()
+            return jsonify(response)
         except ConfigurationDecodeError as e:
             return jsonify({'success': False, 'error': str(e), 'stage': 'decode'}), 400
         except Exception as e:

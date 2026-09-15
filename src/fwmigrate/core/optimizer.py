@@ -1,4 +1,4 @@
-from typing import Dict, List, Set, Any
+from typing import Dict, List, Any
 from fwmigrate.ir import IRConfig
 from fwmigrate.core.normalizer import IRNormalizer
 from fwmigrate.ir.dependency import DependencyGraph
@@ -24,47 +24,11 @@ class RuleOptimizer:
         if self._unused_objects_cache is not None:
             return self._unused_objects_cache
 
-        used_addresses: Set[str] = set()
-        used_services: Set[str] = set()
-        used_address_groups: Set[str] = set()
-        used_service_groups: Set[str] = set()
-
-        for pol in self.ir.policies:
-            used_addresses.update(pol.source)
-            used_addresses.update(pol.destination)
-            used_services.update(pol.service)
-
-        for nat in self.ir.nat_rules:
-            used_addresses.update(nat.source)
-            used_addresses.update(nat.destination)
-            used_addresses.update(nat.translated_sources)
-            used_addresses.update(nat.translated_destinations)
-            used_services.update(service for service in nat.services if service != "any")
-            used_services.update(service for service in nat.translated_services if service != "any")
-
-        addr_group_dict = {
-            g.name: list(dict.fromkeys([*g.members, *g.exclude_members]))
-            for g in self.ir.address_groups
-        }
-        svc_group_dict = {g.name: g.members for g in self.ir.service_groups}
-
-        added_new = True
-        while added_new:
-            added_new = False
-            for item in list(used_addresses):
-                if item in addr_group_dict and item not in used_address_groups:
-                    used_address_groups.add(item)
-                    for member in addr_group_dict[item]:
-                        if member not in used_addresses:
-                            used_addresses.add(member)
-                            added_new = True
-            for item in list(used_services):
-                if item in svc_group_dict and item not in used_service_groups:
-                    used_service_groups.add(item)
-                    for member in svc_group_dict[item]:
-                        if member not in used_services:
-                            used_services.add(member)
-                            added_new = True
+        used = self.dependency_graph.reachable_reference_names()
+        used_addresses = used["addresses"]
+        used_services = used["services"]
+        used_address_groups = used["address_groups"]
+        used_service_groups = used["service_groups"]
 
         unused_addrs = [a.name for a in self.ir.addresses if a.name not in used_addresses and a.name not in ["any", "all"]]
         unused_svcs = [s.name for s in self.ir.services if s.name not in used_services and s.name not in ["any", "ALL", "service-http", "service-https"]]

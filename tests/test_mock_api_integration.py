@@ -151,3 +151,5 @@ def test_web_api_preview_endpoint(client):
     assert res_data['source_vendor'] == 'cisco_asa'
     assert 'stats' in res_data
     assert 'optimization' in res_data
+    assert res_data['generation_allowed'] is True
+    assert 'blocking_reasons' in res_data

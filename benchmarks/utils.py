@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import median
 from time import perf_counter
 import tracemalloc
 from typing import Callable, Generic, TypeVar
@@ -12,6 +13,7 @@ class BenchmarkResult(Generic[T]):
     name: str
     iterations: int
     average_ms: float
+    median_ms: float
     minimum_ms: float
     peak_memory_mib: float
     value: T
@@ -34,6 +36,7 @@ def measure(name: str, operation: Callable[[], T], iterations: int = 5) -> Bench
         name=name,
         iterations=iterations,
         average_ms=sum(timings) / len(timings),
+        median_ms=median(timings),
         minimum_ms=min(timings),
         peak_memory_mib=peak / 1024 / 1024,
         value=value,
@@ -46,7 +49,7 @@ def fixture_path(name: str) -> Path:
 
 def print_result(result: BenchmarkResult[object]) -> None:
     print(
-        f"{result.name}: avg_ms={result.average_ms:.3f} "
+        f"{result.name}: avg_ms={result.average_ms:.3f} median_ms={result.median_ms:.3f} "
         f"min_ms={result.minimum_ms:.3f} peak_mib={result.peak_memory_mib:.3f} "
         f"iterations={result.iterations}"
     )

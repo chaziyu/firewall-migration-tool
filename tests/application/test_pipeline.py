@@ -69,3 +69,32 @@ def test_pipeline_preserves_generator_artifacts():
     result = MigrationPipeline().run(request())
 
     assert all(isinstance(artifact, MigrationArtifact) for artifact in result.artifacts)
+
+
+def test_analyze_runs_shared_stages_without_generation():
+    pipeline = MigrationPipeline()
+    with patch.object(PluginRegistry, "get_generator") as get_generator:
+        result = pipeline.analyze(request())
+
+    assert result.generation_allowed
+    assert result.final_ir is not None
+    get_generator.assert_not_called()
+
+
+def test_run_calls_analyze_once():
+    pipeline = MigrationPipeline()
+    with patch.object(pipeline, "analyze", wraps=pipeline.analyze) as analyze:
+        result = pipeline.run(request())
+
+    assert result.generation_allowed
+    analyze.assert_called_once()
+
+
+def test_target_neutral_analysis_skips_capability_checks():
+    pipeline = MigrationPipeline()
+    with patch.object(pipeline, "_resolve_capability_analyzer") as resolve:
+        result = pipeline.analyze(request(target_vendor=None))
+
+    assert result.generation_allowed
+    assert result.capability_analysis is None
+    resolve.assert_not_called()

@@ -13,7 +13,7 @@ from fwmigrate.validation.models import ValidationResult
 @dataclass
 class MigrationRequest:
     source_vendor: str
-    target_vendor: str
+    target_vendor: Optional[str]
     source_content: str
     target_format: str = "all"
     optimize: bool = False
@@ -23,6 +23,22 @@ class MigrationRequest:
     context_mapping: Dict[str, str] = field(default_factory=dict)
     target_options: Dict[str, object] = field(default_factory=dict)
     collect_metrics: bool = False
+    target_version: Optional[str] = None
+
+
+@dataclass
+class MigrationAnalysisResult:
+    extraction: ExtractionResult
+    source_ir: Optional[IRConfig]
+    final_ir: Optional[IRConfig]
+    normalization: Optional[NormalizationResult] = None
+    validation_result: Optional[ValidationResult] = None
+    generation_allowed: bool = True
+    blocking_reasons: List[str] = field(default_factory=list)
+    requires_manual_review: bool = False
+    unused_objects: Dict[str, List[str]] = field(default_factory=dict)
+    capability_analysis: Optional[CapabilityAnalysisResult] = None
+    metrics: Optional[PipelineMetrics] = None
 
 
 @dataclass

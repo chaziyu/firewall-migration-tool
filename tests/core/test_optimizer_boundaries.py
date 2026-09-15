@@ -67,3 +67,29 @@ def test_pruning_replaces_only_pruned_collections():
     assert [item.name for item in pruned.service_groups] == ["kept-service-group"]
     assert pruned.addresses[0] is kept_address
     assert pruned.services[0] is kept_service
+
+
+def test_pruning_keeps_same_named_object_and_group_candidates():
+    ir = IRConfig(
+        metadata=IRMetadata(),
+        addresses=[IRAddress(name="shared", type=AddressType.HOST, value="192.0.2.1/32")],
+        address_groups=[IRAddressGroup(name="shared", members=[])],
+        services=[IRService(name="shared")],
+        service_groups=[IRServiceGroup(name="shared", members=[])],
+        policies=[IRPolicy(
+            name="keep-shared",
+            source=["shared"],
+            destination=["shared"],
+            service=["shared"],
+            action=PolicyAction.ALLOW,
+        )],
+    )
+
+    unused = RuleOptimizer(ir).find_unused_objects()
+
+    assert unused == {
+        "unused_addresses": [],
+        "unused_services": [],
+        "unused_address_groups": [],
+        "unused_service_groups": [],
+    }
