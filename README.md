@@ -3,35 +3,58 @@
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)
 
-A Python 3.10+ platform for multi-vendor firewall extraction, source inventory, migration, and target configuration generation.
+A Python 3.10+ platform for multi-vendor firewall extraction, source inventory, migration analysis, and target configuration generation.
 
-The project separates source parsing from target generation through a vendor-neutral Intermediate Representation (IR):
+## Key highlights
+
+| Highlight | Current implementation |
+|---|---|
+| Canonical IR | Registered source parsers produce `ExtractionResult` and the vendor-neutral `IRConfig`; target generators consume the IR, not parser-specific models. |
+| M×N architecture | `source config → source parser → IR → validation/normalization/optional optimization → target generator`. Adding a source or target does not require direct source-to-target converters. |
+| Source coverage | Six built-in source parsers: FortiGate, Palo Alto, Cisco ASA, Cisco FTD, Check Point, and Juniper SRX. |
+| Target coverage | Five built-in target generators: Palo Alto, FortiGate, Cisco ASA/Firepower, Check Point, and Juniper SRX. Cisco FTD currently has no target generator. |
+| Fail-closed safety | Parse errors, unsupported semantics, unresolved references, and unsafe topology are retained for review or block generation; they are not silently widened into permissive values. |
+| Source accounting | Extraction keeps source inventory, commands, unsupported items, and provenance so recognized data is not silently dropped. |
+| Analysis and outputs | The CLI and web UI support migration previews, capability analysis, optional unused-object pruning, native configuration, Terraform, Markdown/HTML reports, and Excel source inventory. |
+| Live collection | The integrated web/desktop workflow and `fwmigrate-live-fortigate` support complete FortiGate configuration collection over SSH. |
+
+The runtime plugin registry is the source of truth for registered parsers and generators. Parser recognition is broader than safe target generation, so every generated artifact still requires review and vendor validation before deployment.
+
+## Architecture
 
 ```text
-source config
-    -> source adapter
-    -> ExtractionResult + canonical IR
-    -> validation / optional optimization
-    -> target generator
-    -> native config / Terraform / reports
+source configuration
+        │
+        ▼
+registered source parser
+        │
+        ▼
+ExtractionResult + canonical IRConfig
+        │
+        ▼
+safety analysis → normalization → optional optimization → validation/capability analysis
+        │
+        ▼
+registered target generator
+        │
+        ▼
+native configuration / Terraform / reports / source inventory
 ```
-
-> **Safety:** Vendor and feature coverage varies. Generated configuration must be reviewed and validated before deployment. Unsupported or unresolved semantics are retained for review and should be withheld rather than silently broadened.
 
 ## Documentation
 
-Start at [`documentation/README.md`](documentation/README.md).
+The documentation follows one canonical IR reference and one standardized mapping file per source vendor:
 
-Key references:
+- [Documentation index](documentation/README.md)
+- [Current canonical IR model](documentation/ir-model.md)
+- [FortiGate mapping](documentation/vendor-mapping/fortigate.md)
+- [Palo Alto mapping](documentation/vendor-mapping/palo-alto.md)
+- [Cisco ASA mapping](documentation/vendor-mapping/cisco-asa.md)
+- [Cisco FTD mapping](documentation/vendor-mapping/cisco-ftd.md)
+- [Check Point mapping](documentation/vendor-mapping/checkpoint.md)
+- [Juniper mapping](documentation/vendor-mapping/juniper.md)
 
-- [User guide](documentation/how-to/user-guide.md)
-- [Architecture](documentation/explanation/architecture.md)
-- [Safety model](documentation/explanation/safety-model.md)
-- [Canonical IR model](documentation/ir-model.md)
-- [Generated runtime capabilities](documentation/generated/capabilities.md)
-- [Vendor-version verification metadata](documentation/metadata/vendors.yml)
-
-The runtime registry and executable schema are authoritative for code-derived capability facts. Vendor support matrices describe semantic limits and must not be interpreted as complete feature parity.
+The runtime registry and executable models are authoritative for code-derived capability facts. Vendor mappings describe source-to-IR coverage and semantic limits; they are not complete feature-parity claims.
 
 
 ## Installation
@@ -58,19 +81,7 @@ List the current registered source and target plugins:
 fwmigrate vendors
 ```
 
-Start the web application:
-
-```bash
-fwmigrate serve --port 5000
-```
-
-Start the desktop launcher:
-
-```bash
-fwmigrate app
-```
-
-Example migration:
+Run a file-based migration:
 
 ```bash
 fwmigrate migrate \
@@ -82,7 +93,23 @@ fwmigrate migrate \
   --report ./output/migration_report.md
 ```
 
-Live FortiGate source inventory:
+`--report` writes the Markdown report and an HTML sidecar with the same base name. Use `--optimize` to enable unused-object analysis and pruning. A zone-map YAML file can be supplied with `--zone-map` when interface-to-zone context needs to be provided.
+
+Start the web application with preview, migration, reporting, Excel inventory, and Terraform preparation workflows:
+
+```bash
+fwmigrate serve --port 5000
+```
+
+Open `http://localhost:5000`. The desktop launcher uses the same integrated workflow:
+
+```bash
+fwmigrate app --port 5000
+```
+
+If `pywebview` is not installed, the desktop command falls back to the default browser.
+
+Collect a FortiGate configuration over SSH and write parser-backed source inventory Excel:
 
 ```bash
 fwmigrate-live-fortigate \
@@ -92,7 +119,32 @@ fwmigrate-live-fortigate \
   --output fortigate_source_inventory.xlsx
 ```
 
-See the [user guide](documentation/how-to/user-guide.md) for workflow details.
+The command prompts for the password, requires a complete collection, and prints the resulting source SHA-256.
+
+## Built-in plugins
+
+### Source parsers
+
+| Vendor ID | Display name | Common input formats |
+|---|---|---|
+| `fortigate` | Fortinet FortiGate | `.conf`, `.cfg`, `.txt` |
+| `palo_alto` | Palo Alto Networks (PAN-OS / Panorama) | `.xml`, `.json`, `.txt` |
+| `cisco_asa` | Cisco ASA | `.cfg`, `.txt`, `.conf` |
+| `cisco_ftd` | Cisco Firepower Threat Defense | `.cfg`, `.txt`, `.conf`, `.json` |
+| `checkpoint` | Check Point R80/R81 (JSON Dump / API) | `.json`, `.txt`, `.cfg` |
+| `juniper_srx` | Juniper SRX (Junos root-level display set) | `.set`, `.txt`, `.conf` |
+
+### Target generators
+
+| Vendor ID | Display name | Formats |
+|---|---|---|
+| `palo_alto` | Palo Alto Networks (PAN-OS / Panorama) | XML, Terraform |
+| `fortigate` | Fortinet FortiGate (FortiOS CLI / Terraform) | CLI, Terraform |
+| `cisco_asa` | Cisco ASA / Firepower | CLI, Terraform |
+| `checkpoint` | Check Point Quantum / CloudGuard | CLI, Terraform |
+| `juniper_srx` | Juniper SRX / JunOS | set, CLI, Terraform |
+
+Aliases such as `fortinet`, `fg`, `panos`, `asa`, `ftd`, `check_point`, `srx`, and `junos` are registered where supported. Run `fwmigrate vendors` to inspect the live registry.
 
 ## Safety model
 
@@ -102,19 +154,19 @@ The project follows these core rules:
 2. **Fail closed:** missing, malformed, ambiguous, or unresolved semantics must not become broader values such as `any`, `allow`, `/0`, `/32`, or fabricated topology.
 3. **Preserve evidence:** unsupported and non-portable source semantics remain available for review.
 4. **Protect secrets:** passwords, usable PSKs, private keys, tokens, and equivalent credentials must not be exposed in normal outputs.
+5. **Review before deployment:** generated configuration and Terraform plans require human and vendor validation.
 
-Detailed rules are in [`AGENTS.md`](AGENTS.md) and the [safety model](documentation/explanation/safety-model.md).
+Detailed repository rules are in [`AGENTS.md`](AGENTS.md).
 
 ## Development and testing
 
 ```bash
-python -m compileall -q src tests scripts
-python scripts/docs/validate_docs.py
-python scripts/docs/generate_docs.py --check
+python -m compileall -q src tests
+python -m py_compile scripts/*.py scripts/docs/*.py
 python -m pytest -q
 ```
 
-CI runs the full test suite on Python 3.11, 3.12, and 3.13. Documentation consistency checks run in CI as well.
+CI runs the full test suite on Python 3.11, 3.12, and 3.13.
 
 ## Windows executable
 
