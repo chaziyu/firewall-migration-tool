@@ -34,6 +34,8 @@ Key references:
 
 The runtime registry and executable schema are authoritative for code-derived capability facts. Vendor support matrices describe semantic limits and must not be interpreted as complete feature parity.
 
+Current IR schema: `1.68`.
+
 ## Installation
 
 ```bash
@@ -108,8 +110,7 @@ Detailed rules are in [`AGENTS.md`](AGENTS.md) and the [safety model](documentat
 ## Development and testing
 
 ```bash
-python -m compileall -q src tests
-python -m py_compile scripts/*.py scripts/docs/*.py
+python -m compileall -q src tests scripts
 python scripts/docs/validate_docs.py
 python scripts/docs/generate_docs.py --check
 python -m pytest -q
