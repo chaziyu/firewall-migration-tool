@@ -1,11 +1,15 @@
+import pytest
+
 from fwmigrate.application import MigrationPipeline, MigrationRequest
 from fwmigrate.capabilities.analyzer import CapabilityAnalyzer
 from fwmigrate.generators.fortigate.cli_generator import FortiGateCLIGenerator
 from fwmigrate.parsers.fortigate import extract_fortigate_config
+from fwmigrate.parsers.fortigate.tokenizer import TokenizerError
 
 
-def test_select_command_is_retained_and_blocks_generation():
-    result = extract_fortigate_config('''
+def test_select_command_uses_main_tokenizer_fail_closed_contract():
+    with pytest.raises(TokenizerError, match="Unsupported FortiOS mutation command 'select'"):
+        extract_fortigate_config('''
 config firewall address
     edit "A"
         set subnet 10.0.0.1 255.255.255.255
@@ -13,12 +17,6 @@ config firewall address
     next
 end
 ''')
-
-    assert result.generation_safe is False
-    assert any("select operation" in reason for reason in result.blocking_reasons)
-    item = next(item for item in result.inventory_items if item.source_path == "unsupported select")
-    assert item.commands[0].operation == "select"
-    assert item.commands[0].line_number == 5
 
 
 def test_unquoted_inline_comment_blocks_but_quoted_hash_does_not():
