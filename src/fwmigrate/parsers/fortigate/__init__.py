@@ -90,6 +90,9 @@ from fwmigrate.parsers.fortigate.ippool_group_support import (
 from fwmigrate.parsers.fortigate.dependency_resolution_safety_fix import (
     install_dependency_resolution_safety_fix,
 )
+from fwmigrate.parsers.fortigate.ippool_group_dependency_safety import (
+    install_ippool_group_dependency_safety,
+)
 from fwmigrate.parsers.fortigate.audit_remediation import (
     install_fortios_746_audit_remediation,
 )
@@ -211,6 +214,13 @@ install_ippool_group_support(
 # Apply dependency safety after every earlier FortiGate dependency wrapper so
 # their source-specific relationships remain intact and are checked uniformly.
 install_dependency_resolution_safety_fix(
+    _dependencies_module,
+    _extractor_module,
+)
+
+# The generic dependency guard intentionally checks same-type ambiguity only.
+# Pool and pool-group name collisions are cross-type, so fail closed here.
+install_ippool_group_dependency_safety(
     _dependencies_module,
     _extractor_module,
 )
