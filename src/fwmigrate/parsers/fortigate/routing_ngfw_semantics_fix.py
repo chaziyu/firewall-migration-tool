@@ -177,16 +177,10 @@ def install_routing_ngfw_semantics_fix(transformer_module: Any) -> None:
                 )
 
     def _transform_nat(self: Any) -> None:
-        # The legacy NAT transform correlates source policies with ir.policies
-        # positionally. Once policy-based pre-match rules are withheld from
-        # ir.policies, filter the source side identically so positional pairing
-        # cannot cross VDOM/mode boundaries.
-        all_policies = list(self.fg.policies)
-        self.fg.policies = _portable_policies(self, all_policies)
-        try:
-            original_transform_nat(self)
-        finally:
-            self.fg.policies = all_policies
+        # NAT correlation is identity-based in the base transformer. Keep all
+        # source policies visible so withheld policy-based rules cannot shift
+        # the source/IR relationship.
+        original_transform_nat(self)
 
     def _transform_routes(self: Any) -> None:
         original_transform_routes(self)

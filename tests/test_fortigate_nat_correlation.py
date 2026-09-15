@@ -558,6 +558,78 @@ end
     assert "original_packet {" not in _main_tf(ir)
 
 
+def test_nat_correlation_uses_policy_identity_when_ir_policies_are_skipped_and_reordered():
+    config = f"""
+config firewall ippool
+    edit "POOL20"
+        set startip 203.0.113.20
+        set endip 203.0.113.20
+    next
+    edit "POOL30"
+        set startip 203.0.113.30
+        set endip 203.0.113.30
+    next
+end
+config firewall policy
+    edit 10
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set nat enable
+    next
+    edit 20
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set nat enable
+        set ippool enable
+        set poolname "POOL20"
+    next
+    edit 30
+        set srcintf "LAN"
+        set dstintf "WAN"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set nat enable
+        set ippool enable
+        set poolname "POOL30"
+    next
+end
+"""
+    transformer = FGToIRTransformer(parse_fortigate_config(INTERFACES + config))
+    original_transform_policies = transformer._transform_policies
+
+    def transform_policies_with_gap():
+        original_transform_policies()
+        transformer.ir.policies = [
+            policy
+            for policy in reversed(transformer.ir.policies)
+            if policy.source_rule_id != "20"
+        ]
+
+    transformer._transform_policies = transform_policies_with_gap
+    ir = transformer.transform()
+
+    rules = {
+        rule.source_policy_reference: rule
+        for rule in ir.nat_rules
+        if rule.source_origin == "firewall-policy"
+    }
+    assert set(rules) == {"10", "30"}
+    assert rules["30"].source_pool_references == ["POOL30"]
+    assert rules["30"].translated_sources == ["203.0.113.30"]
+    assert not any("POOL20" in rule.translated_sources for rule in rules.values())
+    assert any("policy 20" in entry.message.lower() for entry in ir.audit_entries)
+
+
 @pytest.mark.parametrize("action", ["accept", "deny"])
 def test_policy_ipsec_nat_controls_on_normal_policy_are_reviewed_without_ipsec_rows(action):
     ir = _transform(f"""
