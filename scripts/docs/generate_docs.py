@@ -7,7 +7,6 @@ from fwmigrate.builtin_plugins import register_builtin_plugins
 
 register_builtin_plugins()
 from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.extraction.models import ExtractionStatus
 
 ROOT = Path(__file__).resolve().parents[2]
 GENERATED_DIR = ROOT / "documentation" / "generated"
@@ -59,31 +58,6 @@ def render_capabilities() -> str:
     return "\n".join(lines)
 
 
-def _status_note(member_name: str) -> str:
-    if member_name == "EXTRACT_ONLY_UNKNOWN":
-        return "Compatibility name; serialized as `UNSUPPORTED`"
-    if member_name == "UNSUPPORTED":
-        return "Canonical public status; shares the compatibility serialized value"
-    return "Canonical status"
-
-
-def render_extraction_statuses() -> str:
-    lines = [
-        "# Extraction Status Vocabulary",
-        "",
-        "<!-- GENERATED FILE. DO NOT EDIT DIRECTLY. -->",
-        "",
-        "This file is generated from `fwmigrate.extraction.models.ExtractionStatus`.",
-        "",
-        "| Enum member | Serialized value | Note |",
-        "|---|---|---|",
-    ]
-    for member_name, member in ExtractionStatus.__members__.items():
-        lines.append(f"| `{member_name}` | `{member.value}` | {_status_note(member_name)} |")
-    lines.append("")
-    return "\n".join(lines)
-
-
 def _write_or_check(path: Path, content: str, check: bool) -> bool:
     if check:
         actual = path.read_text(encoding="utf-8") if path.exists() else None
@@ -104,7 +78,6 @@ def main() -> int:
 
     outputs = {
         GENERATED_DIR / "capabilities.md": render_capabilities(),
-        GENERATED_DIR / "extraction-statuses.md": render_extraction_statuses(),
     }
     results = [_write_or_check(path, content, args.check) for path, content in outputs.items()]
     return 0 if all(results) else 1

@@ -5,205 +5,62 @@ documents:
     document_type: reference
     source_of_truth:
       - AGENTS.md
-      - documentation/metadata/documentation-schema.yml
-    last_verified: 2026-09-14
-
-  documentation/how-to/user-guide.md:
-    title: User Guide
-    status: current
-    document_type: how-to
-    source_of_truth:
-      - src/fwmigrate/main.py
-      - src/fwmigrate/core/registry.py
-      - src/fwmigrate/web_live.py
-    last_verified: 2026-09-14
-
-  documentation/how-to/live-fortigate-extraction.md:
-    title: Live FortiGate Extraction
-    status: current
-    document_type: how-to
-    source_of_truth:
-      - src/fwmigrate/collectors/
-      - src/fwmigrate/live_source_cli.py
-      - src/fwmigrate/web_live.py
-    last_verified: 2026-09-14
-
-  documentation/explanation/architecture.md:
-    title: Architecture
-    status: current
-    document_type: explanation
-    source_of_truth:
-      - src/fwmigrate/core/registry.py
-      - src/fwmigrate/extraction/
-      - src/fwmigrate/ir/
-    last_verified: 2026-09-14
-
-  documentation/explanation/safety-model.md:
-    title: Safety Model
-    status: current
-    document_type: explanation
-    source_of_truth:
-      - AGENTS.md
-      - src/fwmigrate/extraction/
-      - src/fwmigrate/ir/
-    last_verified: 2026-09-14
-
-  documentation/development/performance-baseline.md:
-    title: Performance Baseline
-    status: current
-    document_type: reference
-    source_of_truth:
-      - benchmarks/
-      - src/fwmigrate/application/metrics.py
-      - src/fwmigrate/application/pipeline.py
-      - src/fwmigrate/ir/index.py
-      - src/fwmigrate/ir/dependency.py
+      - scripts/docs/validate_docs.py
     last_verified: 2026-09-15
 
-  documentation/reference/ir/ir-schema.md:
-    title: Canonical IR Schema Reference
+  documentation/ir-model.md:
+    title: Canonical IR Model
     status: current
     document_type: reference
     source_of_truth:
-      - src/fwmigrate/ir/config.py
-      - src/fwmigrate/ir/common.py
-      - src/fwmigrate/ir/metadata.py
-      - src/fwmigrate/ir/provenance.py
-      - src/fwmigrate/ir/network.py
-      - src/fwmigrate/ir/address.py
-      - src/fwmigrate/ir/service.py
-      - src/fwmigrate/ir/policy.py
-      - src/fwmigrate/ir/nat.py
-      - src/fwmigrate/ir/routing.py
-      - src/fwmigrate/ir/vpn.py
-      - src/fwmigrate/ir/security_profiles.py
-      - src/fwmigrate/ir/core.py
-      - src/fwmigrate/ir/io.py
-    last_verified: 2026-09-14
-
-  documentation/reference/ir/extraction-model.md:
-    title: Extraction Model Reference
-    status: current
-    document_type: reference
-    source_of_truth:
-      - src/fwmigrate/extraction/models.py
+      - src/fwmigrate/ir/
       - src/fwmigrate/extraction/
-    last_verified: 2026-09-14
+    last_verified: 2026-09-15
 
-  documentation/reference/vendors/fortigate/extraction-reference.md:
-    title: FortiGate Extraction Reference
+  documentation/vendor-mapping/checkpoint.md:
+    title: Check Point Vendor Mapping
     status: current
     document_type: reference
     source_of_truth:
-      - src/fwmigrate/parsers/fortigate/
-      - tests/
-    last_verified: 2026-09-14
+      - src/fwmigrate/parsers/checkpoint/
+    last_verified: 2026-09-15
 
-  documentation/reference/vendors/fortigate/support-matrix.md:
-    title: FortiGate Support Matrix
-    status: current
-    document_type: support-matrix
-    source_of_truth:
-      - src/fwmigrate/parsers/fortigate/
-      - tests/
-    last_verified: 2026-09-14
-
-  documentation/reference/vendors/panos/extraction-reference.md:
-    title: PAN-OS Extraction Reference
-    status: current
-    document_type: reference
-    source_of_truth:
-      - src/fwmigrate/parsers/palo_alto/
-      - tests/
-    last_verified: 2026-09-14
-
-  documentation/reference/vendors/panos/support-matrix.md:
-    title: PAN-OS Support Matrix
-    status: current
-    document_type: support-matrix
-    source_of_truth:
-      - src/fwmigrate/parsers/palo_alto/
-      - tests/
-    last_verified: 2026-09-14
-
-  documentation/reference/vendors/cisco/asa-extraction-reference.md:
-    title: Cisco ASA Extraction Reference
+  documentation/vendor-mapping/cisco-asa.md:
+    title: Cisco ASA Vendor Mapping
     status: current
     document_type: reference
     source_of_truth:
       - src/fwmigrate/parsers/cisco_asa/
-      - tests/
-    last_verified: 2026-09-14
+    last_verified: 2026-09-15
 
-  documentation/reference/vendors/cisco/fmc-extraction-reference.md:
-    title: Cisco Secure Firewall / FMC REST Extraction Reference
+  documentation/vendor-mapping/cisco-ftd.md:
+    title: Cisco FTD Vendor Mapping
     status: current
     document_type: reference
     source_of_truth:
       - src/fwmigrate/parsers/cisco_ftd/
     last_verified: 2026-09-15
 
-  documentation/reference/vendors/cisco/fdm-extraction-reference.md:
-    title: Cisco Secure Firewall / FDM REST Extraction Reference
+  documentation/vendor-mapping/fortigate.md:
+    title: FortiGate Vendor Mapping
     status: current
     document_type: reference
     source_of_truth:
-      - src/fwmigrate/parsers/cisco_ftd/fdm_bundle.py
-      - src/fwmigrate/parsers/cisco_ftd/fdm_adapter.py
+      - src/fwmigrate/parsers/fortigate/
     last_verified: 2026-09-15
 
-  documentation/reference/vendors/cisco/support-matrix.md:
-    title: Cisco Support Matrix
-    status: current
-    document_type: support-matrix
-    source_of_truth:
-      - src/fwmigrate/parsers/cisco_asa/
-      - src/fwmigrate/parsers/cisco_ftd/
-      - tests/
-    last_verified: 2026-09-15
-
-  documentation/reference/vendors/checkpoint/extraction-reference.md:
-    title: Check Point Extraction Reference
-    status: current
-    document_type: reference
-    source_of_truth:
-      - src/fwmigrate/parsers/checkpoint/
-      - scripts/export_checkpoint_bundle.py
-      - tests/
-    last_verified: 2026-09-14
-
-  documentation/reference/vendors/checkpoint/support-matrix.md:
-    title: Check Point Support Matrix
-    status: current
-    document_type: support-matrix
-    source_of_truth:
-      - src/fwmigrate/parsers/checkpoint/
-      - tests/
-    last_verified: 2026-09-14
-
-  documentation/reference/vendors/juniper-srx/extraction-reference.md:
-    title: Juniper SRX Extraction Reference
+  documentation/vendor-mapping/juniper.md:
+    title: Juniper SRX Vendor Mapping
     status: current
     document_type: reference
     source_of_truth:
       - src/fwmigrate/parsers/juniper_srx/
-      - tests/
-    last_verified: 2026-09-14
+    last_verified: 2026-09-15
 
-  documentation/reference/vendors/juniper-srx/support-matrix.md:
-    title: Juniper SRX Support Matrix
+  documentation/vendor-mapping/palo-alto.md:
+    title: Palo Alto Vendor Mapping
     status: current
-    document_type: support-matrix
+    document_type: reference
     source_of_truth:
-      - src/fwmigrate/parsers/juniper_srx/
-      - tests/
-    last_verified: 2026-09-14
-
-  documentation/decisions/README.md:
-    title: Architecture Decision Records
-    status: current
-    document_type: decision
-    source_of_truth:
-      - documentation/explanation/architecture.md
-      - documentation/explanation/safety-model.md
-    last_verified: 2026-09-14
+      - src/fwmigrate/parsers/palo_alto/
+    last_verified: 2026-09-15
