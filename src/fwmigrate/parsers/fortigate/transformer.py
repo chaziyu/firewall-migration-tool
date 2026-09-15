@@ -716,18 +716,110 @@ class FGToIRTransformer:
                 )
             )
 
+    @staticmethod
+    def _normalize_policy_identity(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            return str(int(text, 10))
+        except ValueError:
+            return text
+
+    @staticmethod
+    def _policy_context(policy: Any) -> str:
+        return str(getattr(policy, "source_context", None) or "root")
+
+    def _build_policy_identity_index(self) -> tuple[
+        dict[tuple[str, str], IRPolicy],
+        dict[tuple[str, str], IRPolicy],
+    ]:
+        by_id: dict[tuple[str, str], IRPolicy] = {}
+        by_uuid: dict[tuple[str, str], IRPolicy] = {}
+        for policy in self.ir.policies:
+            source_rule_id = self._normalize_policy_identity(policy.source_rule_id)
+            if source_rule_id is not None:
+                by_id.setdefault(
+                    (policy.source_context or "root", source_rule_id),
+                    policy,
+                )
+            if policy.source_uuid:
+                by_uuid.setdefault(
+                    (policy.source_context or "root", str(policy.source_uuid)),
+                    policy,
+                )
+        return by_id, by_uuid
+
+    def _resolve_ir_policy_for_source_policy(
+        self,
+        source_policy: Any,
+        identity_index: tuple[
+            dict[tuple[str, str], IRPolicy],
+            dict[tuple[str, str], IRPolicy],
+        ],
+    ) -> tuple[Optional[IRPolicy], Optional[str]]:
+        by_id, by_uuid = identity_index
+        context = self._policy_context(source_policy)
+        source_rule_id = self._normalize_policy_identity(
+            getattr(source_policy, "id", None)
+        )
+        if source_rule_id is None:
+            return None, "source policy has no stable policy ID"
+
+        ir_policy = by_id.get((context, source_rule_id))
+        if ir_policy is None:
+            return None, (
+                f"canonical policy {source_rule_id} was not found in VDOM '{context}'"
+            )
+
+        source_uuid = getattr(source_policy, "uuid", None)
+        ir_uuid = ir_policy.source_uuid
+        if source_uuid and ir_uuid and str(source_uuid) != str(ir_uuid):
+            uuid_policy = by_uuid.get((context, str(source_uuid)))
+            if uuid_policy is None:
+                return None, (
+                    f"policy {source_rule_id} UUID '{source_uuid}' does not match "
+                    f"canonical UUID '{ir_uuid}' in VDOM '{context}'"
+                )
+            return None, (
+                f"policy {source_rule_id} UUID resolves to a different canonical "
+                f"policy in VDOM '{context}'"
+            )
+        return ir_policy, None
+
+    def _policy_requires_nat_processing(self, policy: Any) -> bool:
+        if getattr(policy, "action", None) == "ipsec":
+            return True
+        if any(
+            getattr(policy, field, None) in {"enable", True}
+            for field in ("nat", "ippool", "nat46", "nat64", "natinbound", "natoutbound")
+        ):
+            return True
+        if getattr(policy, "poolname", None) or getattr(policy, "poolname6", None):
+            return True
+        context = self._policy_context(policy)
+        vip_names = {
+            (self._policy_context(vip), vip.name)
+            for vip in self.fg.vips
+        }
+        vip_names.update(
+            (self._policy_context(group), group.name)
+            for group in self.fg.vip_groups
+        )
+        return any((context, name) in vip_names for name in policy.dstaddr)
+
     def _central_nat_enabled(self, source_context: Optional[str]) -> bool:
         context_name = source_context or "root"
-        if any(
+        return any(
             context.vdom == context_name
             and (
                 context.central_nat == "enable"
                 or context.ngfw_mode == "policy-based"
             )
             for context in self.fg.execution_contexts
-        ):
-            return True
-        return bool(
+        ) or bool(
             context_name == "root"
             and getattr(self.fg.system_global, "central_nat", None) == "enable"
         )
@@ -6079,6 +6171,7 @@ class FGToIRTransformer:
             source_policy_reference=str(policy.id),
             source_policy_uuid=policy.uuid,
             source_policy_name=policy.name,
+            source_rule_id=self._normalize_policy_identity(policy.id),
             sequence=policy_index,
             enabled=policy.status != "disable",
             source_from_interfaces=list(policy.srcintf),
@@ -8751,6 +8844,7 @@ class FGToIRTransformer:
         Correlate policy match semantics with referenced NAT resources.
         """
 
+        policy_identity_index = self._build_policy_identity_index()
         self._transform_ipv6_policy_nat()
         self._transform_central_dnat_vips()
 
@@ -8801,16 +8895,24 @@ class FGToIRTransformer:
                 )
             )
 
-        for policy_index, (
-            policy,
-            ir_policy,
-        ) in enumerate(
-            zip(
-                self.fg.policies,
-                self.ir.policies,
-            ),
-            1,
-        ):
+        for policy_index, policy in enumerate(self.fg.policies, 1):
+            ir_policy, correlation_reason = self._resolve_ir_policy_for_source_policy(
+                policy,
+                policy_identity_index,
+            )
+            if ir_policy is None:
+                if self._policy_requires_nat_processing(policy):
+                    source_rule_id = self._normalize_policy_identity(policy.id) or "<unknown>"
+                    audit(
+                        policy.id,
+                        (
+                            f"Policy {source_rule_id} NAT correlation was withheld: "
+                            f"{correlation_reason}. Source NAT evidence was preserved "
+                            "for manual review; positional matching was not used."
+                        ),
+                        MigrationConfidence.MANUAL,
+                    )
+                continue
             if policy.action == "ipsec":
                 self._transform_policy_ipsec_nat(policy, ir_policy, policy_index)
                 continue
@@ -9261,6 +9363,7 @@ class FGToIRTransformer:
                 ),
                 source_policy_uuid=policy.uuid,
                 source_policy_name=policy.name,
+                source_rule_id=self._normalize_policy_identity(policy.id),
                 sequence=policy_index,
                 enabled=(
                     policy.status
@@ -9661,6 +9764,7 @@ class FGToIRTransformer:
 
     def _transform_ipv6_policy_nat(self) -> None:
         """Correlate IPv6 policy SNAT and VIP6 DNAT without mixing address namespaces."""
+        policy_identity_index = self._build_policy_identity_index()
         pools_by_family = {
             family: {
                 (pool.source_context, pool.name): pool
@@ -9676,7 +9780,26 @@ class FGToIRTransformer:
             for vip in self.ir.virtual_ips
             if vip.address_family == "ipv6"
         }
-        for index, (policy, ir_policy) in enumerate(zip(self.fg.policies, self.ir.policies), 1):
+        for index, policy in enumerate(self.fg.policies, 1):
+            ir_policy, correlation_reason = self._resolve_ir_policy_for_source_policy(
+                policy,
+                policy_identity_index,
+            )
+            if ir_policy is None:
+                if self._policy_requires_nat_processing(policy):
+                    self.ir.audit_entries.append(
+                        IRAuditEntry(
+                            id=f"nat6-policy-correlation-{self._normalize_policy_identity(policy.id) or 'unknown'}",
+                            category="NAT",
+                            message=(
+                                f"Policy {self._normalize_policy_identity(policy.id) or '<unknown>'} "
+                                f"IPv6 NAT correlation was withheld: {correlation_reason}. "
+                                "Positional matching was not used."
+                            ),
+                            confidence=MigrationConfidence.MANUAL,
+                        )
+                    )
+                continue
             if policy.action == "ipsec":
                 continue
             if not (policy.srcaddr6 or policy.dstaddr6 or policy.poolname6):
