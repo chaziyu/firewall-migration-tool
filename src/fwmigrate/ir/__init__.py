@@ -1,4 +1,3 @@
-from .version import IR_SCHEMA_VERSION
 from .semantics import (
     AddressUniversalFamily,
     classify_universal_address_reference,
@@ -24,7 +23,6 @@ from .security_profiles import IRSecurityProfileRule, IRSecurityProfileCredentia
 
 
 __all__ = [
-    "IR_SCHEMA_VERSION",
     "AddressUniversalFamily",
     "classify_universal_address_reference",
     "is_zone_safe_for_target_generation",

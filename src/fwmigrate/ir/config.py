@@ -2,7 +2,6 @@
 
 from typing import Any, List, Optional
 from pydantic import BaseModel, Field, model_validator
-from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from .common import IRExecutionContext
 from .metadata import IRAuditEntry, IRCheckpointManagementAccess, IRCheckpointPerformanceSettings, IRMetadata
 from .network import IRCheckpointSICMetadata, IRDHCPServer, IRDNSSettings, IRHighAvailability, IRInterface, IRInterfaceGroup, IRNTPSettings, IRSystemSettings, IRZone
@@ -16,7 +15,6 @@ from .security_profiles import IRAdminProfile, IRAdministrator, IRAuthentication
 
 
 class IRConfig(BaseModel):
-    schema_version: str = IR_SCHEMA_VERSION
     generation_safe: bool = True
     generation_blocking_reasons: List[str] = Field(default_factory=list)
     requires_manual_review: bool = False

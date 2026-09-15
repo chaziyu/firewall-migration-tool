@@ -6,7 +6,6 @@ from fwmigrate.ir.core import (
 )
 from fwmigrate.ir.enums import NATFamily, NATSourcePortBehavior, NATType
 from fwmigrate.ir.io import load_ir_payload
-from fwmigrate.ir.version import IR_SCHEMA_VERSION
 
 
 def test_nat_ir_represents_translation_fidelity_without_source_attributes():
@@ -37,13 +36,11 @@ def test_nat_ir_represents_translation_fidelity_without_source_attributes():
     assert rule.model_dump(mode="json")["nat_family"] == "nat44"
 
 
-def test_schema_1_34_nat_migration_adds_new_defaults():
+def test_ir_payload_loads_without_schema_version():
     ir = load_ir_payload({
-        "schema_version": "1.34",
         "metadata": {"source_vendor": "fortigate"},
         "nat_rules": [{"name": "legacy", "type": "central"}],
     })
 
-    assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.nat_rules[0].address_range_mappings == []
     assert ir.nat_rules[0].source_origin is None

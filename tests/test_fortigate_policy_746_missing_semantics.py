@@ -2,7 +2,6 @@ import io
 
 from openpyxl import load_workbook
 
-from fwmigrate.ir.migrations_1_67 import migrate_1_66_to_1_67
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.report.excel_exporter import IRExcelExporter
@@ -134,16 +133,3 @@ def test_policy_semantics_are_visible_as_configured_and_effective_excel_values()
     assert sheet.cell(4, headers["IPv6 Reputation Minimum"]).value == 3
     assert sheet.cell(4, headers["Effective IPv6 Reputation Minimum"]).value == 3
 
-
-def test_ir_166_policy_and_nat_fields_migrate_without_fabricated_values():
-    migrated = migrate_1_66_to_1_67({
-        "schema_version": "1.66",
-        "policies": [{"name": "policy"}],
-        "nat_rules": [{"name": "nat"}],
-    })
-
-    assert migrated["schema_version"] == "1.68"
-    assert migrated["policies"][0]["source_policy_expiry"] is None
-    assert migrated["policies"][0]["source_extra_setting_commands"] == []
-    assert migrated["nat_rules"][0]["source_policy_effective_match_vip"] is None
-    assert migrated["nat_rules"][0]["source_policy_effective_match_vip_only"] is None

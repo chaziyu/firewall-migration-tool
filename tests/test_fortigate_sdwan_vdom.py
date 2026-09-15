@@ -253,7 +253,6 @@ end
 
 def test_legacy_ir_sdwan_payload_migrates_to_context_scoped_collection():
     ir = load_ir_payload({
-        "schema_version": "1.17",
         "metadata": {"source_vendor": "fortigate"},
         "sdwan": {
             "rules": [{"source_id": 10}],

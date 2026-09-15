@@ -102,7 +102,6 @@ def test_identity_routing_is_ordered_source_only_with_strict_dependencies() -> N
 
 def test_legacy_policy_migrates_without_inventing_identity_route() -> None:
     policy = load_ir_payload({
-        "schema_version": "1.22",
         "metadata": {"source_vendor": "fortigate"},
         "policies": [{"name": "legacy"}],
     }).policies[0]

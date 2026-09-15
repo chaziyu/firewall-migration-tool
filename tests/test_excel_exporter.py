@@ -44,7 +44,6 @@ from fwmigrate.ir.enums import (
     PolicyAction,
     ServiceProtocol,
 )
-from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.report.excel_exporter import IRExcelExporter
 from fwmigrate.report.excel_exporter import ExcelExportUnavailableError
 
@@ -567,7 +566,6 @@ def test_excel_exporter_includes_ip_pool_inventory_and_existing_nat_output():
         for row in range(1, workbook["Summary"].max_row + 1)
     }
     assert summary_counts["IP Pools"] == 1
-    assert summary_counts["IR Schema Version"] == IR_SCHEMA_VERSION
 
     coverage_rows = {
         workbook["Extraction Coverage"].cell(row, 1).value:
