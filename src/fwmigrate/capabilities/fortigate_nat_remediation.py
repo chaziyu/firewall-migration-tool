@@ -53,6 +53,14 @@ def _src_vip_filter_enabled(obj: Any) -> bool:
     return raw == "enable"
 
 
+def _source_incomplete(obj: Any) -> bool:
+    return bool(
+        getattr(obj, "migration_status", "NORMALIZED") != "NORMALIZED"
+        or getattr(obj, "requires_manual_review", False)
+        or getattr(obj, "review_reasons", [])
+    )
+
+
 def _add_fortigate_nat_capability_issues(
     ir_config: Any,
     target_vendor: str,
@@ -61,10 +69,30 @@ def _add_fortigate_nat_capability_issues(
     caps = nat_capabilities(target_vendor)
 
     for pool in getattr(ir_config, "ip_pools", []):
-        if getattr(pool, "address_family", "ipv4") != "ipv4":
-            continue
-        pool_type = getattr(pool, "pool_type", None)
         object_id = str(pool.name)
+        if _source_incomplete(pool):
+            _append_issue(
+                issues,
+                feature="ip-pool-source-completeness",
+                reason="Source IP-pool semantics are incomplete or require manual review; target generation is withheld.",
+                object_type="IPPool",
+                object_id=object_id,
+                target_vendor=target_vendor,
+            )
+            continue
+        if getattr(pool, "address_family", "ipv4") != "ipv4":
+            if getattr(pool, "nat46", None) and not caps.nat46:
+                _append_issue(
+                    issues,
+                    feature="nat46-pool",
+                    reason="Target platform does not support NAT46 IP-pool semantics.",
+                    object_type="IPPool",
+                    object_id=object_id,
+                    target_vendor=target_vendor,
+                )
+            continue
+
+        pool_type = getattr(pool, "pool_type", None)
         if pool_type == "port-block-allocation" and not caps.pba:
             _append_issue(
                 issues,
@@ -139,15 +167,6 @@ def _add_fortigate_nat_capability_issues(
                 object_id=object_id,
                 target_vendor=target_vendor,
             )
-        if getattr(pool, "nat46", None) and not caps.nat46:
-            _append_issue(
-                issues,
-                feature="nat46-pool",
-                reason="Target platform does not support NAT46 IP-pool semantics.",
-                object_type="IPPool",
-                object_id=object_id,
-                target_vendor=target_vendor,
-            )
         if (
             getattr(pool, "excluded_ips", [])
             or getattr(pool, "permit_any_host", None)
@@ -172,20 +191,22 @@ def _add_fortigate_nat_capability_issues(
                 target_vendor=target_vendor,
             )
 
-    referenced_groups = {
-        (getattr(rule, "source_context", None) or "root", rule.source_vip_group_reference)
-        for rule in getattr(ir_config, "nat_rules", [])
-        if getattr(rule, "source_vip_group_reference", None)
-    }
-    if target_vendor != "fortigate":
-        for group in getattr(ir_config, "virtual_ip_groups", []):
-            key = (getattr(group, "source_context", None) or "root", group.name)
-            if key not in referenced_groups:
-                continue
+    for group in getattr(ir_config, "virtual_ip_groups", []):
+        if _source_incomplete(group):
+            _append_issue(
+                issues,
+                feature="vip-group-source-completeness",
+                reason="Source VIP-group semantics are incomplete or require manual review; target generation is withheld.",
+                object_type="VirtualIPGroup",
+                object_id=str(group.name),
+                target_vendor=target_vendor,
+            )
+            continue
+        if target_vendor != "fortigate":
             _append_issue(
                 issues,
                 feature="vip-group",
-                reason="Target platform has no proven native FortiGate VIP-group equivalent for this referenced NAT object.",
+                reason="Target platform has no proven native FortiGate VIP-group equivalent.",
                 object_type="VirtualIPGroup",
                 object_id=str(group.name),
                 target_vendor=target_vendor,
