@@ -19,14 +19,14 @@ def evaluate_generation_safety(
     reasons: List[str] = []
     if extraction is None:
         reasons.append("Extraction result is unavailable.")
-    elif not extraction.generation_safe:
+    elif not extraction.generation_safe or extraction.blocking_reasons:
         reasons.extend(extraction.blocking_reasons)
         if not extraction.blocking_reasons:
             reasons.append("Source extraction marked generation unsafe.")
 
     if ir is None:
         reasons.append("Canonical IR is unavailable.")
-    elif not ir.generation_safe:
+    elif not ir.generation_safe or ir.generation_blocking_reasons:
         reasons.extend(ir.generation_blocking_reasons)
         if not ir.generation_blocking_reasons:
             reasons.append("Canonical IR marked generation unsafe.")

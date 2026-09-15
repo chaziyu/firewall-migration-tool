@@ -41,3 +41,22 @@ def test_safety_deduplicates_blocking_reasons():
     assert decision.allowed is False
     assert decision.blocking_reasons == ["unsafe", "malformed"]
     assert decision.requires_manual_review is True
+
+
+def test_safety_blocks_contradictory_safe_flags():
+    decision = evaluate_generation_safety(
+        SimpleNamespace(
+            canonical_ir=object(),
+            generation_safe=True,
+            blocking_reasons=["source contradiction"],
+            requires_manual_review=False,
+        ),
+        SimpleNamespace(
+            generation_safe=True,
+            generation_blocking_reasons=["IR contradiction"],
+            requires_manual_review=False,
+        ),
+    )
+
+    assert decision.allowed is False
+    assert decision.blocking_reasons == ["source contradiction", "IR contradiction"]
