@@ -880,17 +880,6 @@ def install_phase_46_50_extensions(
         build_structured_typed_parents._phase_46_50_wrapped = True
         parser_cls._build_structured_typed_parents = build_structured_typed_parents
 
-    current_parse = parser_cls.parse
-    if not getattr(current_parse, "_phase_46_50_wrapped", False):
-        def parse(self: Any) -> Any:
-            config = current_parse(self)
-            _refresh_interface_ipv6_from_source(config, parser_module)
-            _refresh_policy_address_families(config)
-            return config
-
-        parse._phase_46_50_wrapped = True
-        parser_cls.parse = parse
-
     # Expose exact hierarchy constants for tests and later phases.
     parser_module.SSL_PROTOCOL_SECTIONS = SSL_PROTOCOL_SECTIONS
     parser_module.SSL_EXEMPTION_SECTIONS = SSL_EXEMPTION_SECTIONS
