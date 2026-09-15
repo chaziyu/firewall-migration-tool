@@ -1,3 +1,5 @@
+from copy import deepcopy
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests.fixture_paths import CISCO_ASA_FIXTURE
@@ -5,6 +7,7 @@ from tests.fixture_paths import CISCO_ASA_FIXTURE
 from fwmigrate.application import MigrationPipeline, MigrationRequest
 from fwmigrate.application.models import MigrationArtifact
 from fwmigrate.core.optimizer import RuleOptimizer
+from fwmigrate.core.registry import PluginRegistry
 
 
 def request(**overrides):
@@ -25,6 +28,21 @@ def test_pipeline_returns_source_and_final_ir():
     assert result.extraction.canonical_ir is not result.final_ir
     assert result.artifacts
     assert result.target_display_name == "Palo Alto Networks (PAN-OS / Panorama)"
+
+
+def test_pipeline_keeps_parser_snapshot_unchanged():
+    extraction = PluginRegistry.get_parser("cisco_asa").extract(
+        CISCO_ASA_FIXTURE.read_text(encoding="utf-8"),
+    )
+    snapshot = deepcopy(extraction.canonical_ir.model_dump(mode="json"))
+    parser = SimpleNamespace(extract=lambda *_args, **_kwargs: extraction)
+
+    with patch.object(PluginRegistry, "get_parser", return_value=parser):
+        result = MigrationPipeline().run(request(optimize=True))
+
+    assert result.source_ir is extraction.canonical_ir
+    assert result.source_ir.model_dump(mode="json") == snapshot
+    assert result.final_ir is not result.source_ir
 
 
 def test_optimizer_is_optional():
