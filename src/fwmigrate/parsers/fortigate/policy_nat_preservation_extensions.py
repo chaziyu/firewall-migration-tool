@@ -126,6 +126,11 @@ _SCOPED_REFERENCE_TARGETS = {
     },
 }
 
+_SRC_VIP_FILTER_REVIEW_REASON = (
+    "FortiGate VIP src-vip-filter enables reverse-SNAT source filtering and "
+    "requires source-specific review."
+)
+
 
 def _preserve_source_attribute(target: Any, key: str, value: Any) -> None:
     if value is None:
@@ -152,6 +157,23 @@ def _preserve_src_vip_filter(target: Any, setting: Optional[str]) -> None:
             "src_vip_filter_enabled",
             setting == "enable",
         )
+
+
+def _mark_src_vip_filter_review(target: Any, setting: Optional[str]) -> None:
+    if setting != "enable":
+        return
+    target.requires_manual_review = True
+    if hasattr(target, "migration_status"):
+        target.migration_status = "PARTIALLY_NORMALIZED"
+    if hasattr(target, "review_reasons"):
+        reasons = list(getattr(target, "review_reasons", []) or [])
+        if _SRC_VIP_FILTER_REVIEW_REASON not in reasons:
+            reasons.append(_SRC_VIP_FILTER_REVIEW_REASON)
+        target.review_reasons = reasons
+    if hasattr(target, "audit_note"):
+        note = getattr(target, "audit_note", None)
+        if not note:
+            target.audit_note = _SRC_VIP_FILTER_REVIEW_REASON
 
 
 def install_policy_nat_preservation_extensions(
@@ -201,20 +223,14 @@ def install_policy_nat_preservation_extensions(
 
         def _transform_virtual_ips(self: Any) -> None:
             original_transform_virtual_ips(self)
-            source_vips = {
-                (vip.source_context, vip.name): vip
-                for vip in self.fg.vips
-            }
+            source_vips = {(vip.source_context, vip.name): vip for vip in self.fg.vips}
             for virtual_ip in self.ir.virtual_ips:
-                source_vip = source_vips.get(
-                    (virtual_ip.source_context, virtual_ip.name)
-                )
+                source_vip = source_vips.get((virtual_ip.source_context, virtual_ip.name))
                 if source_vip is None:
                     continue
-                _preserve_src_vip_filter(
-                    virtual_ip,
-                    getattr(source_vip, "src_vip_filter", None),
-                )
+                setting = getattr(source_vip, "src_vip_filter", None)
+                _preserve_src_vip_filter(virtual_ip, setting)
+                _mark_src_vip_filter_review(virtual_ip, setting)
 
         _transform_virtual_ips._policy_nat_preservation_wrapped = True
         transformer_cls._transform_virtual_ips = _transform_virtual_ips
@@ -228,10 +244,7 @@ def install_policy_nat_preservation_extensions(
 
         def _transform_nat(self: Any) -> None:
             original_transform_nat(self)
-            source_vips = {
-                (vip.source_context, vip.name): vip
-                for vip in self.fg.vips
-            }
+            source_vips = {(vip.source_context, vip.name): vip for vip in self.fg.vips}
             for nat_rule in self.ir.nat_rules:
                 vip_name = getattr(nat_rule, "source_vip_reference", None)
                 if not vip_name:
@@ -239,10 +252,9 @@ def install_policy_nat_preservation_extensions(
                 source_vip = source_vips.get((nat_rule.source_context, vip_name))
                 if source_vip is None:
                     continue
-                _preserve_src_vip_filter(
-                    nat_rule,
-                    getattr(source_vip, "src_vip_filter", None),
-                )
+                setting = getattr(source_vip, "src_vip_filter", None)
+                _preserve_src_vip_filter(nat_rule, setting)
+                _mark_src_vip_filter_review(nat_rule, setting)
 
         _transform_nat._policy_nat_preservation_wrapped = True
         transformer_cls._transform_nat = _transform_nat
