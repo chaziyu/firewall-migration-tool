@@ -55,7 +55,13 @@ end
     }.items():
         assert rule.source_attributes[field] == expected
         assert isinstance(rule.source_attributes[field], list)
-    assert len(result.canonical_ir.nat_rules) == 0
+    assert len(result.canonical_ir.nat_rules) == 1
+    assert result.canonical_ir.nat_rules[0].migration_status == "PARTIALLY_NORMALIZED"
+    assert result.canonical_ir.nat_rules[0].requires_manual_review is True
+    assert any(
+        "effective central-nat mode cannot be proven" in reason
+        for reason in result.canonical_ir.nat_rules[0].review_reasons
+    )
     assert result.canonical_ir.policies == []
     assert result.canonical_ir.routes == []
 
