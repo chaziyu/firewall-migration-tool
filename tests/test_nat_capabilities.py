@@ -1,4 +1,8 @@
-from fwmigrate.generators.nat_capabilities import nat_capabilities
+from fwmigrate.generators.nat_capabilities import (
+    checkpoint_fortigate_central_snat_reason,
+    nat_capabilities,
+    plan_fortigate_central_snat,
+)
 from fwmigrate.ir.core import IRNATRule
 from fwmigrate.ir.enums import NATFamily, NATTranslationMode, NATType
 
@@ -45,3 +49,18 @@ def test_target_capability_gate_withholds_static_nat():
     assert rule.safe_for_target_generation is False
     assert nat_capabilities("fortigate").unsupported_reason(rule) == "static NAT"
     assert nat_capabilities("palo_alto").unsupported_reason(rule) == "static NAT"
+
+
+def test_checkpoint_automatic_snat_requires_explicit_equivalence_evidence():
+    rule = IRNATRule(
+        name="automatic-hide", type=NATType.SOURCE,
+        source_policy_reference="7", source=["LAN"], destination=["all"], services=["ALL"],
+        source_translation_mode=NATTranslationMode.INTERFACE_ADDRESS,
+        source_to_interfaces=["wan1"], source_origin="automatic",
+        source_attributes={"checkpoint-nat-origin": "automatic"},
+    )
+
+    assert checkpoint_fortigate_central_snat_reason(rule) == (
+        "checkpoint-automatic-nat-equivalence-not-proven"
+    )
+    assert plan_fortigate_central_snat(rule) is None

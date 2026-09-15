@@ -300,13 +300,45 @@ def _enrich_canonical_nat(
     inventory_by_scope: Dict[Tuple[str, Optional[str]], List[SourceInventoryItem]],
 ) -> None:
     canonical_rules = list(getattr(result.canonical_ir, "nat_rules", []))
-    candidates: Dict[Tuple[Optional[int], str], List[SourceInventoryItem]] = defaultdict(list)
-    for items in inventory_by_scope.values():
+    candidates: Dict[Tuple[Tuple[str, Optional[str]], Optional[int], str], List[SourceInventoryItem]] = defaultdict(list)
+    candidates_by_uid: Dict[str, List[SourceInventoryItem]] = defaultdict(list)
+    for scope, items in inventory_by_scope.items():
         for item in items:
-            candidates[(_rule_number(item.source_attributes), item.name or "")].append(item)
+            candidates[(scope, _rule_number(item.source_attributes), item.name or "")].append(item)
+            if _rule_uid(item):
+                candidates_by_uid[_rule_uid(item)].append(item)
 
     for rule in canonical_rules:
-        matching = candidates.get(_canonical_nat_key(rule), [])
+        matching: List[SourceInventoryItem] = []
+        rule_uid = getattr(rule, "source_policy_uuid", None)
+        if rule_uid:
+            uid_matches = candidates_by_uid.get(str(rule_uid), [])
+            if len(uid_matches) == 1:
+                matching = uid_matches
+            elif uid_matches:
+                rule_context = str(getattr(rule, "source_context", "") or "")
+                matching = [
+                    item for item in uid_matches
+                    if f"{_nat_scope(item)[0]}/{_nat_scope(item)[1] or '<missing-package>'}" == rule_context
+                ]
+        if not matching:
+            rule_scope = (
+                getattr(rule, "checkpoint_domain_name", None),
+                getattr(rule, "checkpoint_package_name", None),
+            )
+            if not rule_scope[0]:
+                context = str(getattr(rule, "source_context", "") or "")
+                if "/" in context:
+                    domain, package = context.split("/", 1)
+                    rule_scope = (domain, None if package == "<missing-package>" else package)
+            scoped_candidates = candidates.get((rule_scope, *_canonical_nat_key(rule)), []) if rule_scope[0] else []
+            matching = scoped_candidates or (
+                [
+                    item for items in inventory_by_scope.values() for item in items
+                    if (_rule_number(item.source_attributes), item.name or "") == _canonical_nat_key(rule)
+                ]
+                if not rule_scope[0] else []
+            )
         if len(matching) != 1:
             continue
         source_item = matching[0]

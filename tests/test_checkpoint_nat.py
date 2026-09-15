@@ -110,7 +110,7 @@ def test_extract_destination_and_twice_nat():
                         "translated-source": "Original",
                         "translated-destination": "uid-int-ip",
                         "translated-service": "Original",
-                        "method": "hide",
+                        "method": "static",
                         "enabled": True
                     },
                     {
@@ -266,6 +266,61 @@ def test_destination_static_nat_preserves_destination_translation_mode():
     )
     assert rules[0].type == NATType.DESTINATION
     assert rules[0].destination_translation_mode == NATTranslationMode.STATIC
+    assert rules[0].safe_for_target_generation
+
+
+@pytest.mark.parametrize("method", ["hide", "dynamic", "dynamic-ip", "dynamic-ip-and-port"])
+def test_destination_source_only_method_is_withheld(method):
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "private", "name": "Private", "type": "host"})
+    resolver.set_object_normalization("private", "Private", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "translated-source": "Original", "translated-destination": "private",
+        "method": method,
+    })
+    rules, items, _ = extract_nat_rulebase(
+        [CheckPointResponse(command="show-nat-rulebase", package="Standard",
+                            data={"rulebase": [rule]})],
+        resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert rules == []
+    assert items[0].status == ExtractionStatus.PARTIALLY_NORMALIZED
+    assert f"invalid-destination-nat-method:{method}" in items[0].notes
+    assert items[0].source_attributes["translated-destination"] == "private"
+
+
+def test_destination_specific_static_method_is_used_without_common_method():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "private", "name": "Private", "type": "host"})
+    resolver.set_object_normalization("private", "Private", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "translated-source": "Original", "translated-destination": "private",
+        "method": None, "destination-nat-method": "static",
+    })
+    rules, _, _ = extract_nat_rulebase(
+        [CheckPointResponse(command="show-nat-rulebase", package="Standard",
+                            data={"rulebase": [rule]})],
+        resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert rules[0].destination_translation_mode == NATTranslationMode.STATIC
+
+
+def test_conflicting_destination_specific_and_common_methods_require_review():
+    resolver = CheckPointObjectResolver()
+    resolver.register_object({"uid": "private", "name": "Private", "type": "host"})
+    resolver.set_object_normalization("private", "Private", ExtractionStatus.NORMALIZED)
+    rule = _valid_nat_rule(**{
+        "translated-source": "Original", "translated-destination": "private",
+        "method": "hide", "destination-nat-method": "static",
+    })
+    rules, items, _ = extract_nat_rulebase(
+        [CheckPointResponse(command="show-nat-rulebase", package="Standard",
+                            data={"rulebase": [rule]})],
+        resolver, ScopeSelectionResult(selected_package="Standard"),
+    )
+    assert rules == []
+    assert "conflicting-destination-nat-method-evidence" in items[0].notes
+    assert items[0].source_attributes["method"] == "hide"
 
 
 def test_source_nat_merges_rule_method_and_object_hide_behind_evidence():
@@ -374,7 +429,10 @@ def test_translated_service_taints_every_address_nat_shape(translations, expecte
         resolver.set_object_normalization(uid, name, ExtractionStatus.NORMALIZED)
     rule = _valid_nat_rule(
         **translations,
-        **{"translated-service": "svc", "hide-behind": None},
+        **{
+            "translated-service": "svc", "hide-behind": None,
+            "method": "static" if expected_type == NATType.DESTINATION else "hide",
+        },
     )
     response = CheckPointResponse(command="show-nat-rulebase", package="Standard", data={"rulebase": [rule]})
     rules, _, _ = extract_nat_rulebase(
