@@ -1,9 +1,9 @@
 """Focused FortiOS 7.4.6 audit remediations.
 
-The active FortiGate parser is intentionally conservative.  This extension
-separates source completeness from target portability for source semantics that
-are already represented losslessly, while preserving fail-closed behavior for
-unknown or malformed input.
+This extension adds explicit accounting for unsupported command-script syntax
+and promotes only losslessly represented VIP-group source objects.  Advanced IP
+pool and IPv6 pool statuses remain owned by the existing FortiGate transformer;
+target capability handling must not rewrite source completeness.
 """
 
 from __future__ import annotations
@@ -25,24 +25,6 @@ _MULTI_VDOM_BLOCKER = (
 )
 _GENERIC_CANONICAL_REVIEW_BLOCKER = (
     "One or more traffic-affecting canonical objects require manual review"
-)
-_KNOWN_IPV4_POOL_TYPES = {
-    None,
-    "overload",
-    "one-to-one",
-    "fixed-port-range",
-    "port-block-allocation",
-    "cgn-resource-allocation",
-}
-_POOL_PORTABILITY_REASON_MARKERS = (
-    "target-specific",
-    "full-cone behavior",
-    "fixed-port-range pool semantics",
-    "port-block-allocation pool semantics",
-    "IP pool PBA settings",
-    "IP pool source range",
-    "IP pool exclusions",
-    "cgn-resource-allocation",
 )
 
 
@@ -83,45 +65,6 @@ def _unsupported_source_lines(text: str) -> list[tuple[int, str, str]]:
     return findings
 
 
-def _pool_source_complete(pool: Any) -> bool:
-    return bool(
-        getattr(pool, "address_family", "ipv4") == "ipv4"
-        and getattr(pool, "pool_type", None) in _KNOWN_IPV4_POOL_TYPES
-        and not getattr(pool, "source_attributes", {})
-    )
-
-
-def _pool_portability_reason(reason: str) -> bool:
-    return any(marker.lower() in reason.lower() for marker in _POOL_PORTABILITY_REASON_MARKERS)
-
-
-def _normalize_complete_pools_and_rules(ir: Any) -> None:
-    pools = {
-        (getattr(pool, "source_context", None) or "root", pool.name): pool
-        for pool in getattr(ir, "ip_pools", [])
-    }
-    for pool in pools.values():
-        if not _pool_source_complete(pool):
-            continue
-        pool.migration_status = "NORMALIZED"
-        pool.requires_manual_review = False
-
-    for rule in getattr(ir, "nat_rules", []):
-        refs = list(getattr(rule, "source_pool_references", []) or [])
-        if not refs:
-            continue
-        context = getattr(rule, "source_context", None) or "root"
-        resolved = [pools.get((context, name)) for name in refs]
-        if not resolved or any(pool is None or not _pool_source_complete(pool) for pool in resolved):
-            continue
-        reasons = list(getattr(rule, "review_reasons", []) or [])
-        if not reasons or not all(_pool_portability_reason(reason) for reason in reasons):
-            continue
-        rule.review_reasons = []
-        rule.requires_manual_review = False
-        rule.migration_status = "NORMALIZED"
-
-
 def _normalize_complete_vip_groups(ir: Any) -> None:
     for group in getattr(ir, "virtual_ip_groups", []):
         if getattr(group, "unresolved_members", []):
@@ -156,13 +99,8 @@ def _critical_review_objects(ir: Any) -> Iterable[Any]:
         yield from collection
 
 
-def _sync_inventory_status(result: Any) -> None:
+def _sync_vip_group_status(result: Any) -> None:
     ir = result.canonical_ir
-    pools = {
-        (getattr(pool, "source_context", None) or "root", pool.name): pool
-        for pool in getattr(ir, "ip_pools", [])
-        if getattr(pool, "address_family", "ipv4") == "ipv4"
-    }
     groups = {
         (
             getattr(group, "source_context", None) or "root",
@@ -172,41 +110,37 @@ def _sync_inventory_status(result: Any) -> None:
         for group in getattr(ir, "virtual_ip_groups", [])
     }
     for item in result.inventory_items:
+        if item.source_path not in {"firewall vipgrp", "firewall vipgrp6"} or not item.name:
+            continue
         context = item.source_context or "root"
-        if item.source_path == "firewall ippool" and item.name:
-            pool = pools.get((context, item.name))
-            if pool and pool.migration_status == "NORMALIZED" and not pool.requires_manual_review:
-                item.status = ExtractionStatus.NORMALIZED
-                item.requires_manual_review = False
-        elif item.source_path in {"firewall vipgrp", "firewall vipgrp6"} and item.name:
-            family = "ipv6" if item.source_path.endswith("vipgrp6") else "ipv4"
-            group = groups.get((context, item.name, family))
-            if group and group.migration_status == "NORMALIZED" and not group.requires_manual_review:
-                item.status = ExtractionStatus.NORMALIZED
-                item.requires_manual_review = False
+        family = "ipv6" if item.source_path.endswith("vipgrp6") else "ipv4"
+        group = groups.get((context, item.name, family))
+        if (
+            group
+            and group.migration_status == "NORMALIZED"
+            and not group.requires_manual_review
+            and not getattr(group, "source_attributes", {})
+        ):
+            item.status = ExtractionStatus.NORMALIZED
+            item.requires_manual_review = False
 
     for section in result.source_sections:
-        if section.path == "firewall ippool":
-            section_pools = [
-                pool for (context, _), pool in pools.items()
-                if context == (section.source_context or "root")
-            ]
-            if section_pools and all(
-                pool.migration_status == "NORMALIZED" and not pool.requires_manual_review
-                for pool in section_pools
-            ):
-                section.status = ExtractionStatus.NORMALIZED
-        elif section.path in {"firewall vipgrp", "firewall vipgrp6"}:
-            family = "ipv6" if section.path.endswith("vipgrp6") else "ipv4"
-            section_groups = [
-                group for (context, _, item_family), group in groups.items()
-                if context == (section.source_context or "root") and item_family == family
-            ]
-            if section_groups and all(
-                group.migration_status == "NORMALIZED" and not group.requires_manual_review
-                for group in section_groups
-            ):
-                section.status = ExtractionStatus.NORMALIZED
+        if section.path not in {"firewall vipgrp", "firewall vipgrp6"}:
+            continue
+        family = "ipv6" if section.path.endswith("vipgrp6") else "ipv4"
+        context = section.source_context or "root"
+        section_groups = [
+            group
+            for (group_context, _, item_family), group in groups.items()
+            if group_context == context and item_family == family
+        ]
+        if section_groups and all(
+            group.migration_status == "NORMALIZED"
+            and not group.requires_manual_review
+            and not getattr(group, "source_attributes", {})
+            for group in section_groups
+        ):
+            section.status = ExtractionStatus.NORMALIZED
 
 
 def _remove_resolved_source_only_blockers(result: Any) -> None:
@@ -285,7 +219,7 @@ def _record_unsupported_syntax(result: Any, findings: list[tuple[int, str, str]]
 
 
 def install_fortios_746_audit_remediation(extractor_module: Any) -> None:
-    """Install source-accounting and source-completeness remediation."""
+    """Install scoped source accounting without weakening source safety."""
     original = extractor_module.extract_fortigate_config
     if getattr(original, "_fortios_746_audit_remediation", False):
         return
@@ -293,9 +227,8 @@ def install_fortios_746_audit_remediation(extractor_module: Any) -> None:
     def extract_fortigate_config(text: str, zone_mapping=None):
         findings = _unsupported_source_lines(text)
         result = original(text, zone_mapping=zone_mapping)
-        _normalize_complete_pools_and_rules(result.canonical_ir)
         _normalize_complete_vip_groups(result.canonical_ir)
-        _sync_inventory_status(result)
+        _sync_vip_group_status(result)
         _remove_resolved_source_only_blockers(result)
         _record_unsupported_syntax(result, findings)
         result.requires_manual_review = bool(result.blocking_reasons) or any(
@@ -308,7 +241,4 @@ def install_fortios_746_audit_remediation(extractor_module: Any) -> None:
     extractor_module.extract_fortigate_config = extract_fortigate_config
 
 
-__all__ = [
-    "install_fortios_746_audit_remediation",
-    "_MULTI_VDOM_BLOCKER",
-]
+__all__ = ["install_fortios_746_audit_remediation", "_MULTI_VDOM_BLOCKER"]
