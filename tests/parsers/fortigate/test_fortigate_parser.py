@@ -3,7 +3,10 @@ from pathlib import Path
 from fwmigrate.parsers.fortigate import extract_fortigate_config
 from fwmigrate.parsers.fortigate.command_evaluator import evaluate_commands
 from fwmigrate.parsers.fortigate.parser import FortiGateParser
-from fwmigrate.parsers.fortigate.section_registry import get_section_parser_capability
+from fwmigrate.parsers.fortigate.section_registry import (
+    get_section_parser_capability,
+    get_section_spec,
+)
 from fwmigrate.parsers.fortigate.source_tree import FGSourceCommand
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 
@@ -73,3 +76,48 @@ def test_fortigate_syntax_evaluation_and_critical_sections_are_lossless():
         for path in critical
     )
     assert all(item.commands or item.children for item in extraction.inventory_items)
+
+
+def test_local_user_passwd_time_uses_scalar_evaluation_and_reaches_ir():
+    spec = get_section_spec("user local")
+    assert spec is not None
+    assert spec.model.__name__ == "FGLocalUser"
+    assert "passwd_time" in spec.scalar_fields
+
+    timestamp_source = """\
+config user local
+    edit timestamp-user
+        set status enable
+        set passwd-time 2021-03-25 14:02:05
+    next
+end
+"""
+    config = FortiGateParser(FortiGateTokenizer(timestamp_source)).parse()
+    timestamp_user = next(
+        user for user in config.local_users if user.name == "timestamp-user"
+    )
+    assert timestamp_user.passwd_time == "2021-03-25 14:02:05"
+
+    extraction = extract_fortigate_config(timestamp_source)
+    ir_user = next(
+        user
+        for user in extraction.canonical_ir.local_users
+        if user.name == "timestamp-user"
+    )
+    assert ir_user.source_passwd_time == "2021-03-25 14:02:05"
+
+    for value, expected in (
+        ("2021-03-25 14:02:05", "2021-03-25 14:02:05"),
+        ("1720000000", "1720000000"),
+        (None, None),
+    ):
+        command = f"set passwd-time {value}" if value else "unset passwd-time"
+        source = f"""\
+config user local
+    edit test-user
+        {command}
+    next
+end
+"""
+        config = FortiGateParser(FortiGateTokenizer(source)).parse()
+        assert config.local_users[0].passwd_time == expected

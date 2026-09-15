@@ -758,6 +758,7 @@ def _initialize_section_registry() -> None:
         "firewall ippool_grp": FGIPPoolGroup,
         "endpoint-control fctems": FGFCTEMS,
         "user adgrp": FGADGroup,
+        "user local": FGLocalUser,
         "user saml": FGUserSAML,
         "system dns-server": FGDnsServer,
         "firewall vip": FGVIP,
