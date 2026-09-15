@@ -356,31 +356,6 @@ def install_fortios_746_address_schedule_fixes(
         "template",
     )] = {"firewall address6-template"}
 
-    parser_cls = parser_module.FortiGateParser
-    if not getattr(
-        parser_cls.build_model,
-        "_fortios_746_address_defaults_fixed",
-        False,
-    ):
-        original_build_model = parser_cls.build_model
-
-        def build_model(
-            self: Any,
-            section_path: str,
-            attributes: Dict[str, Any],
-        ) -> Any:
-            if section_path in {
-                "firewall address",
-                "firewall address6",
-                "firewall multicast-address",
-                "firewall multicast-address6",
-            }:
-                _apply_address_defaults(section_path, attributes)
-            return original_build_model(self, section_path, attributes)
-
-        build_model._fortios_746_address_defaults_fixed = True
-        parser_cls.build_model = build_model
-
     transformer_cls = transformer_module.FGToIRTransformer
 
     if not getattr(

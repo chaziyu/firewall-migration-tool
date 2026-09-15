@@ -30,9 +30,27 @@ from fwmigrate.parsers.fortigate.model import (
 )
 from fwmigrate.parsers.fortigate.phase_41_security_profiles import (
     PROFILE_SECURITY_SECRET_FIELDS,
-    _effective_node_attributes,
+    _effective_node_attributes as _shared_effective_node_attributes,
 )
 from fwmigrate.parsers.fortigate.source_tree import FGSourceNode
+
+
+def _effective_node_attributes(
+    source: FGSourceNode,
+    model: Any = None,
+    field_spec: Optional[Dict[str, set[str]]] = None,
+):
+    """Adapt legacy Phase 46 field names to the shared command evaluator."""
+
+    if isinstance(model, dict) and field_spec is None:
+        field_spec, model = model, None
+    if field_spec:
+        field_spec = dict(field_spec)
+        if "int_fields" in field_spec:
+            field_spec["integer_fields"] = set(field_spec.pop("int_fields"))
+        if "int_list_fields" in field_spec:
+            field_spec["integer_list_fields"] = set(field_spec.pop("int_list_fields"))
+    return _shared_effective_node_attributes(source, model=model, field_spec=field_spec)
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
@@ -10,9 +10,6 @@ from fwmigrate.parsers.fortigate import dependencies as _dependencies_module
 from fwmigrate.parsers.fortigate import source_tree as _source_tree_module
 from fwmigrate.parsers.fortigate import phase_46_50_extensions as _phase_46_50_module
 from fwmigrate.parsers.fortigate.shaping_models import install_phase22_parser_support
-from fwmigrate.parsers.fortigate.service_parser_extensions import (
-    install_service_parser_extensions,
-)
 from fwmigrate.parsers.fortigate.session_ttl_extensions import (
     install_final_session_ttl_serialization,
     install_session_ttl_extensions,
@@ -26,9 +23,6 @@ from fwmigrate.parsers.fortigate.certificate_reference_extensions import (
 from fwmigrate.parsers.fortigate.authentication_scheme_extensions import (
     install_authentication_scheme_support,
 )
-from fwmigrate.parsers.fortigate.phase_28_30_extensions import (
-    install_phase_28_30_extensions,
-)
 from fwmigrate.parsers.fortigate.policy_nat_preservation_extensions import (
     install_policy_nat_preservation_extensions,
 )
@@ -41,19 +35,13 @@ from fwmigrate.parsers.fortigate.policy_ips_voip_filter_fix import (
 from fwmigrate.parsers.fortigate.policy_security_profile_dependency_fix import (
     install_policy_security_profile_dependency_fix,
 )
-from fwmigrate.parsers.fortigate.dns_multivalue_fix import (
-    install_dns_multivalue_fix,
-)
 from fwmigrate.parsers.fortigate.policy_ipv6_vip_dependency_fix import (
     install_policy_ipv6_vip_dependency_fix,
 )
 from fwmigrate.parsers.fortigate.system_fsso import (
     install_system_fsso_polling_support,
 )
-from fwmigrate.parsers.fortigate.phase_41_security_profiles import (
-    _effective_node_attributes as _phase_41_effective_node_attributes,
-    install_phase_41_security_profile_support,
-)
+from fwmigrate.parsers.fortigate.phase_41_security_profiles import install_phase_41_security_profile_support
 from fwmigrate.parsers.fortigate.phase_42_antivirus import (
     install_phase_42_antivirus_support,
 )
@@ -94,38 +82,9 @@ from fwmigrate.parsers.fortigate.audit_remediation import (
     install_fortios_746_audit_remediation,
 )
 
-
-def _phase_46_50_effective_node_attributes(
-    source: Any,
-    model: Any = None,
-    field_spec: Optional[Dict[str, set[str]]] = None,
-):
-    """Use the Phase 41 evaluator with Phase 46-50 declarative field specs."""
-    if isinstance(model, dict) and field_spec is None:
-        field_spec = model
-        model = None
-    if field_spec:
-        field_spec = dict(field_spec)
-        if "int_fields" in field_spec:
-            field_spec["integer_fields"] = set(field_spec.pop("int_fields"))
-        if "int_list_fields" in field_spec:
-            field_spec["integer_list_fields"] = set(field_spec.pop("int_list_fields"))
-    return _phase_41_effective_node_attributes(
-        source,
-        model=model,
-        field_spec=field_spec,
-    )
-
-
-# Keep one operation engine. Phase 46-50 only adapts declarative field-spec
-# names and legacy positional calls; the semantics remain Phase 41's.
-_phase_46_50_module._effective_node_attributes = _phase_46_50_effective_node_attributes
-
-
 # Install FortiGate source-parser extensions in phase order so later wrappers
 # delegate through earlier behavior rather than replacing it.
 install_phase22_parser_support()
-install_service_parser_extensions(_parser_module)
 install_session_ttl_extensions(_parser_module)
 install_ztna_relationship_support(_dependencies_module)
 install_certificate_reference_support(_dependencies_module)
@@ -135,7 +94,6 @@ install_authentication_scheme_support(
     _extractor_module,
     _transformer_module,
 )
-install_phase_28_30_extensions(_parser_module)
 install_policy_nat_preservation_extensions(
     _parser_module,
     _transformer_module,
@@ -156,7 +114,6 @@ install_policy_security_profile_dependency_fix(
     _dependencies_module,
     _transformer_module,
 )
-install_dns_multivalue_fix(_parser_module)
 install_policy_ipv6_vip_dependency_fix(_dependencies_module)
 install_system_fsso_polling_support()
 install_phase_41_security_profile_support(_parser_module)

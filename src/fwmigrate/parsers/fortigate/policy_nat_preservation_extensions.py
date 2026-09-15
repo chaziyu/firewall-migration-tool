@@ -209,22 +209,6 @@ def install_policy_nat_preservation_extensions(
     dependencies_module.REFERENCE_RULES.update(_SCOPED_REFERENCE_RULES)
     dependencies_module.REFERENCE_TARGET_SECTIONS.update(_SCOPED_REFERENCE_TARGETS)
 
-    parser_cls = parser_module.FortiGateParser
-    if not getattr(parser_cls.build_model, "_policy_nat_preservation_wrapped", False):
-        original_build_model = parser_cls.build_model
-
-        def build_model(
-            self: Any,
-            section_path: str,
-            attributes: Dict[str, Any],
-        ) -> Any:
-            if section_path == "system interface":
-                self._normalize_optional_int(attributes, "ping_serv_status")
-            return original_build_model(self, section_path, attributes)
-
-        build_model._policy_nat_preservation_wrapped = True
-        parser_cls.build_model = build_model
-
     transformer_cls = transformer_module.FGToIRTransformer
 
     if not getattr(

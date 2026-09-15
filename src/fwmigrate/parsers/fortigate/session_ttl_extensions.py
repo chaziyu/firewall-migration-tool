@@ -112,54 +112,6 @@ def install_session_ttl_extensions(parser_module) -> None:
     parser_module.FGService = FGServiceSessionTimers
     parser_module.FGConfig = FGConfigSessionTimers
 
-    if not getattr(parser_cls.build_model, "_session_ttl_phase1_wrapped", False):
-        original_build_model = parser_cls.build_model
-
-        def build_model(self, section_path, attributes):
-            raw_service_session_ttl = None
-            if section_path == "firewall service custom":
-                raw_service_session_ttl = attributes.get("session_ttl")
-                for field in SYSTEM_GLOBAL_SESSION_TIMER_FIELDS:
-                    self._normalize_optional_int(attributes, field)
-
-                if raw_service_session_ttl is not None:
-                    if (
-                        isinstance(raw_service_session_ttl, str)
-                        and raw_service_session_ttl.lower() == "never"
-                    ):
-                        attributes["session_ttl"] = "never"
-                        extra_settings = attributes.get("extra_settings")
-                        if isinstance(extra_settings, dict):
-                            extra_settings.pop("unparsed_session_ttl", None)
-                    else:
-                        self._normalize_optional_int(attributes, "session_ttl")
-
-            elif section_path == "system session-ttl port":
-                for field in SESSION_TTL_OVERRIDE_INT_FIELDS:
-                    self._normalize_optional_int(attributes, field)
-
-                timeout = attributes.get("timeout")
-                if timeout is not None and not (
-                    isinstance(timeout, str) and timeout.lower() == "never"
-                ):
-                    self._normalize_optional_int(attributes, "timeout")
-
-            result = original_build_model(self, section_path, attributes)
-
-            if (
-                section_path == "firewall service custom"
-                and raw_service_session_ttl is not None
-                and self.config.services
-            ):
-                service = self.config.services[-1]
-                if service.session_ttl is not None:
-                    service.extra_settings["session_ttl"] = str(service.session_ttl)
-
-            return result
-
-        build_model._session_ttl_phase1_wrapped = True
-        parser_cls.build_model = build_model
-
     if not getattr(parser_cls.apply_global_set, "_session_ttl_phase1_wrapped", False):
         original_apply_global_set = parser_cls.apply_global_set
 
