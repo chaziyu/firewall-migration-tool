@@ -80,3 +80,11 @@ scratch/*.jsonl
 .fixing_plan.md
 .fortigate_interface_check.md
 firewall migration tool references link.txt
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
