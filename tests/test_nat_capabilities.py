@@ -64,3 +64,59 @@ def test_checkpoint_automatic_snat_requires_explicit_equivalence_evidence():
         "checkpoint-automatic-nat-equivalence-not-proven"
     )
     assert plan_fortigate_central_snat(rule) is None
+
+
+def test_checkpoint_management_ip_pool_name_match_is_not_promoted_to_generic_snat_pool():
+    rule = IRNATRule(
+        name="manual-hide-with-management-pool-name",
+        type=NATType.SOURCE,
+        source_policy_reference="8",
+        source=["LAN"],
+        destination=["all"],
+        services=["ALL"],
+        translated_sources=["CP-IP-Pool"],
+        source_translation_mode=NATTranslationMode.DYNAMIC_IP_AND_PORT,
+        source_attributes={
+            "checkpoint-source-nat-method-resolution": {
+                "resolved": True,
+                "mode": "dynamic-ip-and-port",
+                "method": "hide",
+                "evidence": ["rule:method=hide"],
+                "reasons": [],
+            },
+        },
+    )
+
+    assert checkpoint_fortigate_central_snat_reason(rule, {"CP-IP-Pool"}) == (
+        "checkpoint-management-ip-pool-not-generic-snat"
+    )
+    assert plan_fortigate_central_snat(rule, {"CP-IP-Pool"}) is None
+
+
+def test_checkpoint_explicit_source_pool_reference_remains_convertible():
+    rule = IRNATRule(
+        name="manual-hide-with-explicit-pool",
+        type=NATType.SOURCE,
+        source_policy_reference="9",
+        source=["LAN"],
+        destination=["all"],
+        services=["ALL"],
+        translated_sources=["PortablePool"],
+        source_pool_references=["PortablePool"],
+        source_translation_mode=NATTranslationMode.DYNAMIC_IP_AND_PORT,
+        source_attributes={
+            "checkpoint-source-nat-method-resolution": {
+                "resolved": True,
+                "mode": "dynamic-ip-and-port",
+                "method": "hide",
+                "evidence": ["rule:method=hide"],
+                "reasons": [],
+            },
+        },
+    )
+
+    assert checkpoint_fortigate_central_snat_reason(rule, {"PortablePool"}) is None
+    planned = plan_fortigate_central_snat(rule, {"PortablePool"})
+    assert planned is not None
+    assert planned.type == NATType.CENTRAL
+    assert planned.source_pool_references == ["PortablePool"]
