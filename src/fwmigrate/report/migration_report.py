@@ -160,7 +160,6 @@ class MigrationReporter:
             f"- **Hostname:** `{self.ir.metadata.hostname}`\n"
             f"- **Source Vendor:** {self.ir.metadata.source_vendor.title()}\n"
             f"- **Target Platform:** {self.target_vendor}\n"
-            f"- **IR Schema Version:** {self.ir.schema_version}\n"
             f"- **Generated At:** {timestamp_str}"
         )
 

@@ -228,7 +228,6 @@ def test_palo_alto_generator_withholds_partial_profiles_without_fabricated_defau
 def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
     """Verify that any-ipv4 and any-ipv6 canonical keywords generate valid, safe target syntax without broadening access or non-existent object references."""
     ir = IRConfig(
-        schema_version="1.15",
         metadata=IRMetadata(hostname="Test-Dual-Any"),
         zones=[IRZone(name="trust"), IRZone(name="untrust")],
         policies=[
@@ -312,7 +311,6 @@ def test_any_ipv4_and_any_ipv6_handling_across_all_target_generators():
 def test_canonical_any4_and_any6_aliases_handling():
     """Verify that canonical aliases any4 and any6 are classified and mapped identically to any-ipv4 and any-ipv6."""
     ir = IRConfig(
-        schema_version="1.15",
         metadata=IRMetadata(hostname="Test-Aliases"),
         zones=[IRZone(name="trust"), IRZone(name="untrust")],
         policies=[

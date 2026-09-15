@@ -3,8 +3,6 @@ import json
 
 from openpyxl import load_workbook
 
-from fwmigrate.ir.migrations import migrate_ir_payload
-from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.parsers.palo_alto.parser import PANOSSourceParser
 from fwmigrate.report.excel_exporter import IRExcelExporter
@@ -192,7 +190,7 @@ def test_globalprotect_strict_booleans_and_unresolved_references_require_review(
     assert any("unresolved" in reason for reason in portal.review_reasons)
 
 
-def test_globalprotect_excel_and_schema_migration():
+def test_globalprotect_excel_export():
     result = PANOSSourceParser().extract(_xml(_portal_and_gateway(), _network_gateway()))
     workbook = load_workbook(io.BytesIO(IRExcelExporter(result.canonical_ir, result).generate()))
     assert "GlobalProtect Portals" in workbook.sheetnames
@@ -213,9 +211,6 @@ def test_globalprotect_excel_and_schema_migration():
         for row in sheet.iter_rows()
         for cell in row
     )
-    migrated = migrate_ir_payload({"schema_version": "1.45", "metadata": {"source_vendor": "palo_alto"}})
-    assert migrated["schema_version"] == IR_SCHEMA_VERSION
-    assert migrated["global_protect_portals"] == []
 
 
 def test_globalprotect_scopes_do_not_deduplicate_and_unknown_site_to_site_is_visible():

@@ -1,6 +1,5 @@
 # Compatibility re-exports for the legacy fwmigrate.ir.core module
 
-from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.ir.enums import (
     AddressType,
     ServiceProtocol,
@@ -28,7 +27,6 @@ from .config import IRConfig
 
 
 __all__ = [
-    "IR_SCHEMA_VERSION",
     "AddressType",
     "ServiceProtocol",
     "PolicyAction",

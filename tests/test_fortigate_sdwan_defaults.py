@@ -187,7 +187,6 @@ end
 def test_schema_1_17_sdwan_objects_receive_provenance_defaults():
     ir = load_ir_payload(
         {
-            "schema_version": "1.17",
             "metadata": {
                 "hostname": "Legacy-FW",
                 "source_vendor": "fortigate",

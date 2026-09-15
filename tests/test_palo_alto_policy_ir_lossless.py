@@ -2,9 +2,7 @@ import pytest
 
 from fwmigrate.generators.fortigate.cli_generator import FortiGateCLIGenerator
 from fwmigrate.generators.palo_alto.transformer import IRToPANOSTransformer
-from fwmigrate.ir.migrations import migrate_ir_payload
 from fwmigrate.ir.enums import PolicyAction
-from fwmigrate.ir.version import IR_SCHEMA_VERSION
 from fwmigrate.parsers.palo_alto.parser import PANOSSourceParser
 
 
@@ -152,26 +150,3 @@ def test_unsupported_target_action_is_withheld_not_collapsed_to_deny():
     assert 'set name "Rule1"' not in output
 
 
-def test_schema_149_migrates_legacy_scalar_profile_projections():
-    migrated = migrate_ir_payload({
-        "schema_version": "1.49",
-        "metadata": {"source_vendor": "palo_alto"},
-        "policies": [{
-            "name": "p1",
-            "from_zone": ["trust"],
-            "to_zone": ["untrust"],
-            "source": ["any"],
-            "destination": ["any"],
-            "service": ["any"],
-            "action": "allow",
-            "security_profile_group": "g1",
-            "antivirus": "av1",
-        }],
-        "security_profile_groups": [{"name": "g1", "antivirus": "av1"}],
-    })
-
-    assert migrated["schema_version"] == IR_SCHEMA_VERSION
-    assert migrated["policies"][0]["security_profile_groups"] == ["g1"]
-    assert migrated["policies"][0]["antivirus_profiles"] == ["av1"]
-    assert migrated["policies"][0]["url_categories"] == []
-    assert migrated["security_profile_groups"][0]["antivirus_profiles"] == ["av1"]

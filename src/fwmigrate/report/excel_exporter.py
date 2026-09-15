@@ -846,7 +846,6 @@ class IRExcelExporter:
             ("Hostname", self.ir.metadata.hostname),
             ("Input Type", self.ir.metadata.input_type),
             ("Source Version", self.ir.metadata.source_version),
-            ("IR Schema Version", self.ir.schema_version),
             ("Source Context", self.ir.metadata.source_context),
             ("Extracted At (UTC)", self.ir.metadata.migration_timestamp),
             ("Extraction Status", extraction_status),
