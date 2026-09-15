@@ -1,12 +1,14 @@
-from typing import List, Set, Dict
-from fwmigrate.ir.v2.models import IRConfigV2
+from typing import Dict, List, Optional
+from fwmigrate.ir import IRConfig
+from fwmigrate.ir.enums import AddressType
+from fwmigrate.ir.index import IRIndex
 from fwmigrate.jobs.models import MigrationIssue
 from fwmigrate.core.constants import UNIVERSAL_KEYWORDS
 import ipaddress
 
 class Validator:
     """Base class for validation passes."""
-    def validate(self, ir_config: IRConfigV2) -> List[MigrationIssue]:
+    def validate(self, ir_config: IRConfig) -> List[MigrationIssue]:
         raise NotImplementedError
 
 class DependencyValidator(Validator):
@@ -14,16 +16,18 @@ class DependencyValidator(Validator):
     Ensures referential integrity across the IR.
     E.g., Policies must only reference valid zones, addresses, and services.
     """
-    def validate(self, ir_config: IRConfigV2) -> List[MigrationIssue]:
+    def __init__(self, ir_index: Optional[IRIndex] = None):
+        self.ir_index = ir_index
+
+    def validate(self, ir_config: IRConfig) -> List[MigrationIssue]:
         issues = []
-        
-        known_zones = {z.name for z in ir_config.zones}
-        known_addresses = {a.name for a in ir_config.addresses}
-        known_address_groups = {ag.name for ag in ir_config.address_groups}
+        index = self.ir_index or IRIndex.build(ir_config)
+        known_zones = set(index.by_name.get("zones", {}))
+        known_addresses = set(index.by_name.get("addresses", {}))
+        known_address_groups = set(index.by_name.get("address_groups", {}))
         all_address_objects = known_addresses.union(known_address_groups)
-        
-        known_services = {s.name for s in ir_config.services}
-        known_service_groups = {sg.name for sg in ir_config.service_groups}
+        known_services = set(index.by_name.get("services", {}))
+        known_service_groups = set(index.by_name.get("service_groups", {}))
         all_service_objects = known_services.union(known_service_groups)
         
         # Phase 14: PAN Builtin/Predefined namespaces
@@ -127,13 +131,13 @@ class SemanticValidator(Validator):
     """
     Identifies logical flaws like shadowed rules or overlapping definitions.
     """
-    def validate(self, ir_config: IRConfigV2) -> List[MigrationIssue]:
+    def validate(self, ir_config: IRConfig) -> List[MigrationIssue]:
         issues = []
         
         # Check for address object overlaps
         addr_map = {}
         for addr in ir_config.addresses:
-            if addr.type == 'ip-netmask' or addr.type == 'ip-range':
+            if addr.type in (AddressType.NETWORK, AddressType.HOST, AddressType.RANGE):
                 try:
                     if '/' in addr.value:
                         network = ipaddress.ip_network(addr.value, strict=False)
@@ -172,7 +176,7 @@ class CapacityValidator(Validator):
     def __init__(self, limits: Dict[str, int]):
         self.limits = limits
         
-    def validate(self, ir_config: IRConfigV2) -> List[MigrationIssue]:
+    def validate(self, ir_config: IRConfig) -> List[MigrationIssue]:
         issues = []
         
         limit_checks = {
