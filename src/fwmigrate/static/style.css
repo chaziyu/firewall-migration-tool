@@ -492,8 +492,15 @@ h1 {
   font-size: 12px;
   color: var(--text-muted);
 }
-.page-heading > .btn {
+.page-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex-shrink: 0;
+}
+.page-heading-actions .theme-toggle {
+  min-height: 39px;
+  padding: 10px 14px;
 }
 .workflow-track {
   list-style: none;
@@ -2274,13 +2281,17 @@ select {
   h1 {
     font-size: 28px;
   }
-  .page-heading > .btn {
+  .page-heading-actions {
+    margin-top: 24px;
+  }
+  .page-heading-actions .btn,
+  .page-heading-actions .theme-toggle {
     padding: 8px 10px;
     min-height: 34px;
     font-size: 10px;
-    margin-top: 24px;
   }
-  .page-heading > .btn .icon {
+  .page-heading-actions .btn .icon,
+  .page-heading-actions .theme-toggle .icon {
     width: 13px;
     height: 13px;
   }
@@ -2349,7 +2360,7 @@ select {
     flex-wrap: wrap;
     gap: 14px;
   }
-  .page-heading > .btn {
+  .page-heading-actions {
     margin-top: 0;
   }
   .page-heading p:last-child {
