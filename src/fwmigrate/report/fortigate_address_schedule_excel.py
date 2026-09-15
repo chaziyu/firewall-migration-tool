@@ -15,6 +15,12 @@ ADDRESS6_TEMPLATE_SHEET = "IPv6 Address Templates"
 IP_POOL_GROUP_SHEET = "IP Pool Groups"
 
 
+def _join_values(value: Any) -> Any:
+    if isinstance(value, (list, tuple, set)):
+        return "\n".join(str(item) for item in value)
+    return value
+
+
 class FortiGateAddressScheduleExcelExporter(ReadableFortiGateExcelExporter):
     """Expose corrected FortiGate address, schedule, and NAT inventory semantics."""
 
@@ -246,7 +252,7 @@ class FortiGateAddressScheduleExcelExporter(ReadableFortiGateExcelExporter):
             cell = sheet.cell(
                 row_number,
                 column,
-                self._format_list(
+                _join_values(
                     getattr(rule, "source_pool_group_references", []) or []
                 ),
             )
