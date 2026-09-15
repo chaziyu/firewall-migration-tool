@@ -1,7 +1,7 @@
 from datetime import datetime
 from ipaddress import ip_address
 from typing import Any, Dict, List, Optional, Set, Union
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, field_validator, model_validator
 
 from fwmigrate.parsers.fortigate.source_tree import FGSourceNode, FGStructuredSourceObject
 
@@ -3951,19 +3951,19 @@ class FGConfig(BaseModel):
     source_build: Optional[str] = None
     execution_contexts: List[FGExecutionContext] = Field(default_factory=list)
 
-    system_global: Optional[FGSystemGlobal] = None
+    system_global: Optional[SerializeAsAny[FGSystemGlobal]] = None
     dns: Optional[FGDns] = None
 
     system_zones: List[FGSystemZone] = Field(default_factory=list)
-    interfaces: List[FGInterface] = Field(default_factory=list)
+    interfaces: List[SerializeAsAny[FGInterface]] = Field(default_factory=list)
 
-    addresses: List[FGAddress] = Field(default_factory=list)
-    address6_templates: List[FGAddress6Template] = Field(default_factory=list)
+    addresses: List[SerializeAsAny[FGAddress]] = Field(default_factory=list)
+    address6_templates: List[SerializeAsAny[FGAddress6Template]] = Field(default_factory=list)
     address_groups: List[FGAddressGroup] = Field(default_factory=list)
     wildcard_fqdns: List[FGWildcardFQDN] = Field(default_factory=list)
 
     service_categories: List[FGServiceCategory] = Field(default_factory=list)
-    services: List[FGService] = Field(default_factory=list)
+    services: List[SerializeAsAny[FGService]] = Field(default_factory=list)
     service_groups: List[FGServiceGroup] = Field(default_factory=list)
 
     schedules: List[FGSchedule] = Field(default_factory=list)
@@ -3974,14 +3974,15 @@ class FGConfig(BaseModel):
 
     ip_pools: List[FGIPPool] = Field(default_factory=list)
     ip_pools6: List[FGIPPool6] = Field(default_factory=list)
+    ip_pool_groups: List[Any] = Field(default_factory=list)
     ipv6_eh_filter: Optional[FGIPv6EHFilter] = None
 
-    vips: List[FGVIP] = Field(default_factory=list)
+    vips: List[SerializeAsAny[FGVIP]] = Field(default_factory=list)
     vips6: List[FGVIP6] = Field(default_factory=list)
     vip_groups: List[FGVIPGroup] = Field(default_factory=list)
     vip_groups6: List[FGVIPGroup6] = Field(default_factory=list)
 
-    policies: List[FGPolicy] = Field(default_factory=list)
+    policies: List[SerializeAsAny[FGPolicy]] = Field(default_factory=list)
     multicast_policies: List[FGMulticastPolicy] = Field(default_factory=list)
     multicast_policies6: List[FGMulticastPolicy] = Field(default_factory=list)
     central_snat_rules: List[FGCentralSNATRule] = Field(default_factory=list)
@@ -4047,6 +4048,7 @@ class FGConfig(BaseModel):
     user_ldap_servers: List[FGUserLDAP] = Field(default_factory=list)
     fsso_servers: List[FGFSSOServer] = Field(default_factory=list)
     fsso_polling: List[FGFSSOPolling] = Field(default_factory=list)
+    system_fsso_polling: Optional[Any] = None
     ad_groups: List[FGADGroup] = Field(default_factory=list)
     user_saml_servers: List[FGUserSAML] = Field(default_factory=list)
     local_users: List[FGLocalUser] = Field(default_factory=list)
@@ -4065,10 +4067,10 @@ class FGConfig(BaseModel):
     firewall_sniffers: List[FGFirewallSniffer] = Field(default_factory=list)
     authentication_schemes: List[FGAuthenticationScheme] = Field(default_factory=list)
     authentication_rules: List[FGAuthenticationRule] = Field(default_factory=list)
-    antivirus_profiles: List[FGAntivirusProfile] = Field(default_factory=list)
-    webfilter_profiles: List[FGWebFilterProfile] = Field(default_factory=list)
-    dnsfilter_profiles: List[FGDNSFilterProfile] = Field(default_factory=list)
-    application_lists: List[FGApplicationList] = Field(default_factory=list)
+    antivirus_profiles: List[SerializeAsAny[FGAntivirusProfile]] = Field(default_factory=list)
+    webfilter_profiles: List[SerializeAsAny[FGWebFilterProfile]] = Field(default_factory=list)
+    dnsfilter_profiles: List[SerializeAsAny[FGDNSFilterProfile]] = Field(default_factory=list)
+    application_lists: List[SerializeAsAny[FGApplicationList]] = Field(default_factory=list)
     ssl_ssh_profiles: List[FGSSLSSHProfile] = Field(default_factory=list)
     structured_source_objects: List[FGStructuredSourceObject] = Field(default_factory=list)
 

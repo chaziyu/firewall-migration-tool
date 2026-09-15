@@ -97,7 +97,7 @@ def parse_system_fsso_polling_node(
 _INSTALLED = False
 
 
-def install_system_fsso_polling_support() -> None:
+def install_system_fsso_polling_support(*, patch_parser: bool = True) -> None:
     """Register typed system FSSO polling support with the FortiGate adapter.
 
     The repository installs several FortiGate source-parser extensions in phase
@@ -141,8 +141,9 @@ def install_system_fsso_polling_support() -> None:
             return
         original_build(self, source_path, top_edits)
 
-    parser_cls.__init__ = patched_init
-    parser_cls._build_structured_typed_parents = patched_build
+    if patch_parser:
+        parser_cls.__init__ = patched_init
+        parser_cls._build_structured_typed_parents = patched_build
 
     coverage_module.TYPED_SECTIONS.add("system fsso-polling")
     coverage_module.TYPED_EXTRACT_ONLY_SECTIONS.add("system fsso-polling")

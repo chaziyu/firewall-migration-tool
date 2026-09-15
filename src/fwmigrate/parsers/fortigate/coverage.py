@@ -1031,7 +1031,7 @@ def classify_section_coverage(
         capability = get_section_parser_capability(path)
         if capability["known_section"]:
             section.notes.append(
-                "Parser capability: registry typed/custom fields; unknown fields remain source-only."
+                f"Parser capability: {capability['classification']}; unknown fields remain source-only."
             )
         if path == "vdom":
             section.status = ExtractionStatus.VENDOR_EXTENSION
