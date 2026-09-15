@@ -108,6 +108,7 @@ def install_ippool_group_support(
     transformer_module.IRNATRule = IRNATRuleIPPoolGroup
     transformer_module.IRConfig = IRConfigIPPoolGroups
 
+    parser_module.CONTEXTUAL_MODEL_SECTIONS.add("firewall ippool_grp")
     parser_module.SECTION_EXPLICIT_FIELDS["firewall ippool_grp"] = {"member"}
     parser_module.SECTION_LIST_FIELDS.setdefault(
         "firewall ippool_grp", set()
