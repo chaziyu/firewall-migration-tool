@@ -142,7 +142,7 @@ def test_ir_166_policy_and_nat_fields_migrate_without_fabricated_values():
         "nat_rules": [{"name": "nat"}],
     })
 
-    assert migrated["schema_version"] == "1.67"
+    assert migrated["schema_version"] == "1.68"
     assert migrated["policies"][0]["source_policy_expiry"] is None
     assert migrated["policies"][0]["source_extra_setting_commands"] == []
     assert migrated["nat_rules"][0]["source_policy_effective_match_vip"] is None

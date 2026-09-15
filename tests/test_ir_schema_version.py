@@ -56,7 +56,7 @@ def _metadata(source_version=None):
 def test_ir_config_defaults_to_current_schema_version():
     ir = IRConfig(metadata=_metadata(source_version="7.4.5"))
 
-    assert IR_SCHEMA_VERSION == "1.67"
+    assert IR_SCHEMA_VERSION == "1.68"
     assert ir.schema_version == IR_SCHEMA_VERSION
     assert ir.metadata.source_version == "7.4.5"
 
@@ -74,7 +74,7 @@ def test_schema_1_63_migrates_route_scalar_to_next_hops():
         "routes": [{"next_hop": "192.0.2.1"}],
     })
 
-    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.67"
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.68"
     assert migrated["routes"][0]["next_hops"] == ["192.0.2.1"]
 
 
@@ -94,7 +94,7 @@ def test_schema_1_64_migrates_vpn_fidelity_defaults_without_psk_content():
     }
 
     migrated = migrate_ir_payload(payload)
-    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.67"
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.68"
     assert migrated["vpn_tunnels"][0]["psk"] is None
     assert migrated["vpn_tunnels"][0]["source_certificates"] == []
     assert migrated["vpn_phase2"][0]["source_names6"] == []
@@ -121,7 +121,7 @@ def test_schema_1_65_pan_nat_migrates_pool_references_and_interface_fallback():
     })
 
     rule = migrated["nat_rules"][0]
-    assert migrated["schema_version"] == "1.67"
+    assert migrated["schema_version"] == "1.68"
     assert rule["translated_source_address_references"] == ["pool1"]
     assert rule["translated_destination_address_references"] == ["dest1"]
     assert rule["source_pool_references"] == []
@@ -143,7 +143,7 @@ def test_schema_1_66_pan_nat_adds_typed_service_defaults():
         "nat_rules": [{"name": "legacy-pan-nat"}],
     })
 
-    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.67"
+    assert migrated["schema_version"] == IR_SCHEMA_VERSION == "1.68"
     assert migrated["nat_rules"][0]["service_matches"] == []
     assert migrated["nat_rules"][0]["destination_translation_distribution"] is None
     assert migrated["nat_rules"][0]["destination_dns_rewrite"] is None
@@ -276,7 +276,7 @@ def test_malformed_schema_versions_are_rejected(value):
         })
 
 
-@pytest.mark.parametrize("value", ["0.9", "1.68", "2.0"])
+@pytest.mark.parametrize("value", ["0.9", "1.69", "2.0"])
 def test_unsupported_schema_versions_are_rejected(value):
     with pytest.raises(UnsupportedIRSchemaError):
         validate_supported_schema_version(value)
@@ -295,6 +295,80 @@ def test_current_version_payload_and_json_load_successfully():
 
     assert load_ir_payload(payload).schema_version == IR_SCHEMA_VERSION
     assert load_ir_json(dump_ir_json(load_ir_payload(payload))).metadata.hostname == "FW"
+
+
+def test_static_nat_round_trips_and_is_not_generation_safe():
+    rule = IRNATRule(
+        name="static",
+        type=NATType.STATIC,
+        source=["any"],
+        destination=["198.51.100.10/32"],
+        services=["any"],
+        translated_destinations=["10.0.0.10/32"],
+        source_translation_bidirectional=True,
+    )
+
+    restored = IRNATRule.model_validate(rule.model_dump(mode="json"))
+
+    assert restored.type is NATType.STATIC
+    assert restored.source_translation_bidirectional is True
+    assert restored.from_routing_instances == []
+    assert restored.to_routing_instances == []
+    assert restored.safe_for_target_generation is False
+
+
+def test_schema_1_67_migrates_juniper_static_nat_and_pool_fidelity():
+    migrated = migrate_ir_payload({
+        "schema_version": "1.67",
+        "metadata": {"source_vendor": "juniper_srx"},
+        "nat_rules": [{
+            "name": "legacy-static",
+            "type": "destination",
+            "source_attributes": {"junos_static_nat": True},
+        }],
+        "ip_pools": [{
+            "name": "pool",
+            "source_attributes": {
+                "junos_addresses": ["203.0.113.10", "203.0.113.11"],
+                "junos_address_ranges": [{"start": "198.51.100.10", "end": "198.51.100.20"}],
+            },
+        }],
+        "address_groups": [{"name": "group"}],
+    })
+
+    assert migrated["schema_version"] == "1.68"
+    assert migrated["nat_rules"][0]["type"] == "static"
+    assert migrated["nat_rules"][0]["source_translation_bidirectional"] is True
+    assert migrated["nat_rules"][0]["source_rule_set"] is None
+    assert migrated["ip_pools"][0]["addresses"] == ["203.0.113.10", "203.0.113.11"]
+    assert migrated["ip_pools"][0]["address_ranges"] == [{
+        "start_ip": "198.51.100.10", "end_ip": "198.51.100.20",
+    }]
+    assert migrated["address_groups"][0]["source_direct_members"] == []
+    assert migrated["metadata"]["source_format"] is None
+
+
+def test_schema_1_67_migration_does_not_fabricate_malformed_junos_data():
+    migrated = migrate_ir_payload({
+        "schema_version": "1.67",
+        "nat_rules": [{
+            "name": "legacy",
+            "type": "destination",
+            "source_attributes": {"junos_static_nat": "true"},
+        }],
+        "ip_pools": [{
+            "name": "pool",
+            "source_attributes": {
+                "junos_addresses": "203.0.113.10",
+                "junos_address_ranges": [{"start": "bad"}],
+            },
+        }],
+    })
+
+    assert migrated["nat_rules"][0]["type"] == "destination"
+    assert migrated["nat_rules"][0].get("source_translation_bidirectional") is not True
+    assert migrated["ip_pools"][0]["addresses"] == []
+    assert migrated["ip_pools"][0]["address_ranges"] == []
 
 
 def test_schema_1_44_dhcp_payload_migrates_without_inventing_provenance():

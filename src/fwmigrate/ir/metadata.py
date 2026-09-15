@@ -12,6 +12,7 @@ class IRMetadata(BaseModel):
     source_product: Optional[str] = None
     target_vendor: Optional[str] = None
     input_type: str = "Unknown"
+    source_format: Optional[str] = None
     source_version: Optional[str] = None
     source_context: Optional[str] = None
     migration_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

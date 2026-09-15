@@ -6,6 +6,11 @@ from fwmigrate.ir.enums import NATType, NATTranslationMode, NATTranslationAddres
 from .provenance import IRSourceConfigNode
 
 
+class IRIPPoolRange(BaseModel):
+    start_ip: str
+    end_ip: str
+
+
 class IRIPPool(BaseModel):
     name: str
     source_context: Optional[str] = None
@@ -16,6 +21,8 @@ class IRIPPool(BaseModel):
 
     pool_type: Optional[str] = None
 
+    addresses: List[str] = Field(default_factory=list)
+    address_ranges: List[IRIPPoolRange] = Field(default_factory=list)
     start_ip: Optional[str] = None
     end_ip: Optional[str] = None
 
@@ -264,6 +271,9 @@ class IRNATRule(BaseModel):
     source_policy_uuid: Optional[str] = None
     source_policy_name: Optional[str] = None
     sequence: Optional[int] = None
+    source_rule_set: Optional[str] = None
+    from_routing_instances: List[str] = Field(default_factory=list)
+    to_routing_instances: List[str] = Field(default_factory=list)
     enabled: bool = True
     source_from_interfaces: List[str] = Field(default_factory=list)
     source_to_interfaces: List[str] = Field(default_factory=list)
@@ -346,6 +356,8 @@ class IRNATRule(BaseModel):
 
     @property
     def safe_for_target_generation(self) -> bool:
+        if self.type == NATType.STATIC:
+            return False
         if self.identity or self.exemption:
             return False
         if self.migration_status != "NORMALIZED":

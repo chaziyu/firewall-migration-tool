@@ -35,6 +35,7 @@ class PolicyAction(str, Enum):
 class NATType(str, Enum):
     SOURCE = "source"
     DESTINATION = "destination"
+    STATIC = "static"
     TWICE = "twice"
     SERVICE = "service"
     CENTRAL = "central"
