@@ -1,4 +1,5 @@
 import re
+import sys
 from typing import Iterator, List, Dict, Any, Optional
 
 from fwmigrate.parsers.fortigate.tokenizer import (
@@ -203,6 +204,10 @@ from fwmigrate.parsers.fortigate.extraction import sanitize_source_attributes
 from fwmigrate.parsers.fortigate.firewall_ip_746 import (
     effective_ipv6_eh_filter_settings,
     validate_ipv6_eh_filter_746,
+)
+from fwmigrate.parsers.fortigate.phase_46_50_extensions import (
+    _refresh_interface_ipv6_from_source,
+    _refresh_policy_address_families,
 )
 from fwmigrate.extraction.models import ExtractionStatus, SourceCommand, SourceInventoryItem
 from fwmigrate.parsers.fortigate.source_tree import (
@@ -1135,6 +1140,8 @@ class FortiGateParser:
             else:
                 pass
 
+        _refresh_interface_ipv6_from_source(self.config, sys.modules[__name__])
+        _refresh_policy_address_families(self.config)
         return self.config
 
     def _parse_header_comment(self, value: str) -> None:
