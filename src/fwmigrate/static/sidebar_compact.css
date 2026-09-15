@@ -8,7 +8,7 @@
   }
 
   .sidebar-bottom {
-    margin-top: 28px;
+    margin-top: auto;
     padding-top: 0;
   }
 
@@ -52,7 +52,7 @@
   }
 
   .sidebar-bottom {
-    margin-top: 20px;
+    margin-top: auto;
   }
 
   .sidebar-note {

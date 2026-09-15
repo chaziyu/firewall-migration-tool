@@ -28,11 +28,11 @@
     <script src="{{ url_for('static', filename='theme.js') }}?v=5.0"></script>
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='style.css') }}?v=5.0"
+      href="{{ url_for('static', filename='style.css') }}?v=5.2"
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='themes.css') }}?v=5.0"
+      href="{{ url_for('static', filename='themes.css') }}?v=5.2"
     />
     <script
       defer
@@ -40,7 +40,7 @@
     ></script>
     <script
       defer
-      src="{{ url_for('static', filename='default_workflow.js') }}?v=5.0"
+      src="{{ url_for('static', filename='default_workflow.js') }}?v=5.1"
     ></script>
   </head>
   <body data-default-workflow="extract">
@@ -118,49 +118,6 @@
       </div>
     </aside>
     <div class="app-shell">
-      <header class="topbar">
-        <div class="breadcrumb">
-          Workspace {{ icon('chevron') }} <span>New migration</span>
-        </div>
-        <div class="topbar-actions">
-          <div class="environment-label">
-            <span class="status-dot"></span>LOCAL WORKSPACE
-          </div>
-          <button
-            type="button"
-            id="btn-toggle-theme"
-            class="theme-toggle"
-            aria-label="Switch to dark mode"
-            aria-pressed="false"
-          >
-            <svg
-              class="icon theme-moon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.7"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" /></svg
-            ><svg
-              class="icon theme-sun"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.7"
-              stroke-linecap="round"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="4" />
-              <path
-                d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"
-              /></svg
-            ><span id="theme-label">Dark mode</span>
-          </button>
-        </div>
-      </header>
       <main class="main-content" id="main-content" tabindex="-1">
         <div class="page-heading reveal">
           <div>
@@ -170,37 +127,49 @@
               A clear path from your existing firewall to what comes next.
             </p>
           </div>
-          <button
-            id="btn-new-workspace"
-            class="btn btn-secondary"
-            type="button"
-          >
-            {{ icon('plus') }}<span>New workspace</span>
-          </button>
+          <div class="page-heading-actions">
+            <button
+              id="btn-new-workspace"
+              class="btn btn-secondary"
+              type="button"
+            >
+              {{ icon('plus') }}<span>New workspace</span>
+            </button>
+            <button
+              type="button"
+              id="btn-toggle-theme"
+              class="theme-toggle"
+              aria-label="Switch to dark mode"
+              aria-pressed="false"
+            >
+              <svg
+                class="icon theme-moon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" /></svg
+              ><svg
+                class="icon theme-sun"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="4" />
+                <path
+                  d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"
+                /></svg
+              ><span id="theme-label">Dark mode</span>
+            </button>
+          </div>
         </div>
-        <ol class="workflow-track reveal" aria-label="Workflow steps">
-          <li id="workflow-step-source" class="current">
-            <span class="track-number">01</span>
-            <div>
-              <strong>Connect your source</strong
-              ><span>Upload a file or connect a device</span>
-            </div>
-          </li>
-          <li id="workflow-step-review">
-            <span class="track-number">02</span>
-            <div>
-              <strong>Review configuration</strong
-              ><span>See what your source contains</span>
-            </div>
-          </li>
-          <li id="workflow-step-export">
-            <span class="track-number">03</span>
-            <div>
-              <strong>Generate your output</strong
-              ><span>Export, extract, or deploy</span>
-            </div>
-          </li>
-        </ol>
         <div class="workspace-grid">
           <div class="workspace-main">
             {% include 'partials/source_configuration.html' %} {% include
@@ -264,25 +233,6 @@
                 </div>
               </div>
             </section>
-            <section class="note-card">
-              <div class="note-heading">
-                {{ icon('info') }}<strong>A good migration starts here</strong>
-              </div>
-              <p>
-                Use a recent configuration backup. Review the generated
-                inventory and migration report before importing into your target
-                firewall.
-              </p>
-              <div class="note-footer">
-                {{ icon('file') }}<span>Your source file stays unchanged.</span>
-              </div>
-            </section>
-            <div class="context-footnote">
-              {{ icon('lock') }}<span
-                >File processing runs in this application.<br />No cloud account
-                required.</span
-              >
-            </div>
           </aside>
         </div>
         <footer class="app-footer">
