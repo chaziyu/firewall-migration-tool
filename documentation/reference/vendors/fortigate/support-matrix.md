@@ -8,7 +8,7 @@ Status describes **source extraction**, while target generation is tracked separ
 | Services and service groups | `NORMALIZED` / `PARTIALLY_NORMALIZED` | Broad | Conditional | Source-port/helper/proxy/application semantics can require review. |
 | Interfaces and topology | `NORMALIZED` / `PARTIALLY_NORMALIZED` | Broad | Conditional | Aggregate/redundant/VRF/vendor settings can remain partial. |
 | Security policy | `NORMALIZED` / `PARTIALLY_NORMALIZED` | Broad | Conditional | Dependency taint and unmodeled match/profile semantics can block output. |
-| NAT / VIP / IP pools | `NORMALIZED` / `PARTIALLY_NORMALIZED` | Broad | Conditional | Central SNAT port sentinels are preserved; policy-based IPsec NAT and advanced pool/VIP semantics remain partial/review-required unless proven portable. |
+| NAT / VIP / IP pools | `NORMALIZED` / `PARTIALLY_NORMALIZED` / `EXTRACT_ONLY` | Broad plus source-preserving extensions | Conditional | Central SNAT port sentinels are preserved. IP-pool groups are typed inventory/correlation evidence and are not flattened into target translations. Policy-based IPsec NAT and advanced pool/VIP semantics remain partial/review-required unless proven portable. |
 | Static routing | `NORMALIZED` / `PARTIALLY_NORMALIZED` | Broad | Conditional | Named destinations and vendor options can require review. |
 | SD-WAN | `EXTRACT_ONLY` | Source inventory | Withheld | Target selection/failover behavior is not inferred. |
 | Security profiles | `EXTRACT_ONLY` / `PARTIALLY_NORMALIZED` | Selected references/models | Conditional | Engine-specific behavior is not assumed equivalent across vendors. |
