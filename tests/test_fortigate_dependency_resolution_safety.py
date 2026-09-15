@@ -112,10 +112,18 @@ def test_local_service_named_all_overrides_builtin_name() -> None:
     assert dependency.target_path == "firewall service custom"
 
 
-def test_duplicate_same_type_targets_fail_closed_as_unresolved() -> None:
+def test_distinct_duplicate_same_type_targets_fail_closed_as_unresolved() -> None:
     dependency = build_dependency_registry([
-        _item("firewall address", "DUPLICATE"),
-        _item("firewall address", "DUPLICATE"),
+        _item(
+            "firewall address",
+            "DUPLICATE",
+            commands=[("subnet", ["192.0.2.1", "255.255.255.255"])],
+        ),
+        _item(
+            "firewall address",
+            "DUPLICATE",
+            commands=[("subnet", ["198.51.100.1", "255.255.255.255"])],
+        ),
         _policy("srcaddr", "DUPLICATE"),
     ])[0]
 
@@ -124,6 +132,18 @@ def test_duplicate_same_type_targets_fail_closed_as_unresolved() -> None:
     assert dependency.notes is not None
     assert "ambiguous" in dependency.notes.lower()
     assert "2 valid targets" in dependency.notes
+
+
+def test_equivalent_duplicate_inventory_records_are_one_logical_target() -> None:
+    duplicate = _item("firewall address", "SAME")
+    dependency = build_dependency_registry([
+        duplicate,
+        duplicate.model_copy(deep=True),
+        _policy("srcaddr", "SAME"),
+    ])[0]
+
+    assert dependency.result == "RESOLVED"
+    assert dependency.target_path == "firewall address"
 
 
 def test_address_and_address_group_name_collision_is_ambiguous() -> None:
