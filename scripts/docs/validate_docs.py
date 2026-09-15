@@ -45,7 +45,7 @@ def main() -> int:
     warnings: list[str] = []
 
     docs_meta = _load_yaml(METADATA).get("documents", {})
-    vendor_meta = _load_yaml(VENDORS).get("vendors", {})
+    vendor_meta = _load_yaml(VENDORS).get("vendors", {}) if VENDORS.exists() else {}
 
     required = {"title", "status", "document_type", "source_of_truth", "last_verified"}
     for rel, meta in docs_meta.items():
