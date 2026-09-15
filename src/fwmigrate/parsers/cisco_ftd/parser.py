@@ -15,6 +15,11 @@ from fwmigrate.parsers.cisco_ftd.model import (
 )
 
 
+FTD_TEXT_GENERATION_BLOCK_REASON = (
+    "FTD text input does not contain an authoritative managed NAT/policy representation"
+)
+
+
 class CiscoFTDParser:
     """Independent FTD management-source parser; never routes through ASA parsing."""
 
@@ -281,7 +286,12 @@ class CiscoFTDParser:
         return IRConfig(
             metadata=IRMetadata(
                 source_vendor=cfg.source_vendor, source_product=cfg.source_product,
+                input_type="ftd-text-evidence",
                 source_attributes={
+                    "input_source_type": "ftd-text-evidence",
+                    "policy_extraction_supported": False,
+                    "nat_extraction_supported": False,
+                    "object_extraction_supported": False,
                     "management_settings": [item.model_dump() for item in cfg.management_settings],
                     "cmi_enabled": cfg.cmi_enabled,
                     "management_ipv4": cfg.management_ipv4,
@@ -294,4 +304,7 @@ class CiscoFTDParser:
             ),
             interfaces=interfaces,
             routes=routes,
+            generation_safe=False,
+            requires_manual_review=True,
+            generation_blocking_reasons=[FTD_TEXT_GENERATION_BLOCK_REASON],
         )

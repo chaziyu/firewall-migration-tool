@@ -13,7 +13,10 @@ from fwmigrate.extraction.models import (
 from fwmigrate.extraction.sanitize import sanitize_extraction_result, sanitize_raw_text
 from fwmigrate.parsers.cisco_ftd.coverage import classify_cisco_ftd_coverage
 from fwmigrate.parsers.cisco_ftd.fmc_adapter import CiscoFMCBundleParser, is_fmc_bundle
-from fwmigrate.parsers.cisco_ftd.parser import CiscoFTDParser
+from fwmigrate.parsers.cisco_ftd.parser import (
+    FTD_TEXT_GENERATION_BLOCK_REASON,
+    CiscoFTDParser,
+)
 from fwmigrate.parsers.cisco_ftd.section_scanner import scan_cisco_ftd_sections
 
 
@@ -34,6 +37,10 @@ def _bundle_items(value: Any) -> list[dict]:
     if isinstance(value, dict) and isinstance(value.get("items"), list):
         return [item for item in value["items"] if isinstance(item, dict)]
     return []
+
+
+def _classify_ftd_input_source(text: str) -> str:
+    return "fmc-rest-bundle" if is_fmc_bundle(text) else "ftd-text-evidence"
 
 
 def _extract_fmc_bundle(text: str) -> ExtractionResult:
@@ -221,6 +228,10 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
         migration_complete=not requires_review,
         generation_safe=ir.generation_safe and not bool(unsupported),
         blocking_reasons=list(ir.generation_blocking_reasons),
+        input_source_type="fmc-rest-bundle",
+        policy_extraction_supported=True,
+        nat_extraction_supported=True,
+        object_extraction_supported=True,
     ))
 
 
@@ -261,16 +272,30 @@ def extract_cisco_ftd_config(text: str) -> ExtractionResult:
                 reason="FTD input syntax is not yet verified",
                 raw_capture=safe,
             ))
+    if FTD_TEXT_GENERATION_BLOCK_REASON not in ir.generation_blocking_reasons:
+        ir.generation_blocking_reasons.append(FTD_TEXT_GENERATION_BLOCK_REASON)
+    ir.generation_safe = False
+    has_unsupported_policy_syntax = any(
+        item.source_path == "other"
+        and item.commands
+        and item.commands[0].operation in {"access-list", "nat", "object", "policy-map", "class-map", "service-policy"}
+        for item in inventory
+    )
+    if has_unsupported_policy_syntax:
+        reason = "FTD text contains policy/NAT syntax that is retained as unsupported evidence"
+        if reason not in ir.generation_blocking_reasons:
+            ir.generation_blocking_reasons.append(reason)
     return sanitize_extraction_result(ExtractionResult(
         canonical_ir=ir,
         source_sections=sections,
         inventory_items=inventory,
         unsupported_items=unsupported,
-        requires_manual_review=bool(unsupported) or any(
-            item.requires_manual_review for item in ir.interfaces + ir.routes
-        ),
-        migration_complete=not unsupported and not any(
-            item.requires_manual_review for item in ir.interfaces + ir.routes
-        ),
-        generation_safe=ir.generation_safe and not bool(unsupported),
+        requires_manual_review=True,
+        migration_complete=False,
+        generation_safe=False,
+        blocking_reasons=list(ir.generation_blocking_reasons),
+        input_source_type=_classify_ftd_input_source(text),
+        policy_extraction_supported=False,
+        nat_extraction_supported=False,
+        object_extraction_supported=False,
     ))

@@ -2,7 +2,7 @@
 
 ## Scope
 
-Cisco FTD policy extraction through FMC REST bundles is intentionally separate from ASA/LINA CLI parsing.
+Cisco FTD policy extraction through FMC REST bundles is intentionally separate from ASA/LINA CLI parsing. Standalone FTD text is limited to management, interface, and route evidence; it is not an authoritative managed policy/NAT source and remains generation-blocked.
 
 **Executable authority:** `src/fwmigrate/parsers/cisco_ftd/`
 
