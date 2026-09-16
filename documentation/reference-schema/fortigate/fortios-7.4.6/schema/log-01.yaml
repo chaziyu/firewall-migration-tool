@@ -1,0 +1,791 @@
+domain: log
+part: 1
+parts: 2
+sections:
+- path: ips settings
+  mode: singleton
+  fields:
+    ips-packet-quota: integer
+    packet-log-history: integer
+    packet-log-memory: integer
+    packet-log-post-attack: integer
+    proxy-inline-ips: enum
+- path: ips view-map
+  mode: table
+  key: <id>
+  fields:
+    id-policy-id: integer
+    policy-id: integer
+    vdom-id: integer
+    which: enum
+  read_only: true
+- path: log azure-security-center2 filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log azure-security-center2 setting
+  mode: singleton
+  fields:
+    appliance-id: string
+    eventhub-name: string
+    policy-name: string
+    policy-saskey: string
+    servicebus-namespace: string
+    status: enum
+  nested:
+  - name: custom-field-name
+    mode: table
+    key: <id>
+    fields:
+      custom: string
+      name: string
+  model_dependent: true
+- path: log azure-security-center filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log azure-security-center setting
+  mode: singleton
+  fields:
+    appliance-id: string
+    eventhub-name: string
+    policy-name: string
+    policy-saskey: string
+    servicebus-namespace: string
+    status: enum
+  nested:
+  - name: custom-field-name
+    mode: table
+    key: <id>
+    fields:
+      custom: string
+      name: string
+  model_dependent: true
+- path: log custom-field
+  mode: table
+  key: <id>
+  fields:
+    name: string
+    value: string
+- path: log disk filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    dlp-archive: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log disk setting
+  mode: singleton
+  fields:
+    diskfull: enum
+    dlp-archive-quota: integer
+    full-final-warning-threshold: integer
+    full-first-warning-threshold: integer
+    full-second-warning-threshold: integer
+    interface: string
+    interface-select-method: enum
+    ips-archive: enum
+    log-quota: integer
+    max-log-file-size: integer
+    max-policy-packet-capture-size: integer
+    maximum-log-age: integer
+    report-quota: integer
+    roll-day: option-list
+    roll-schedule: enum
+    roll-time: opaque-user
+    source-ip: ipv4-address
+    status: enum
+    upload: enum
+    upload-delete-files: enum
+    upload-destination: option
+    upload-ssl-conn: enum
+    uploaddir: string
+    uploadip: ipv4-address
+    uploadpass: password!sensitive
+    uploadport: integer
+    uploadsched: enum
+    uploadtime: opaque-user
+    uploadtype: option-list
+    uploaduser: string
+  model_dependent: true
+- path: log eventfilter
+  mode: singleton
+  fields:
+    cifs: enum
+    connector: enum
+    endpoint: enum
+    event: enum
+    fortiextender: enum
+    ha: enum
+    rest-api: enum
+    router: enum
+    sdwan: enum
+    security-rating: enum
+    switch-controller: enum
+    system: enum
+    user: enum
+    vpn: enum
+    wan-opt: enum
+    webproxy: enum
+    wireless-activity: enum
+- path: log fortianalyzer-cloud filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    dlp-archive: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log fortianalyzer-cloud override-filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    dlp-archive: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log fortianalyzer-cloud override-setting
+  mode: singleton
+  fields:
+    status: enum
+- path: log fortianalyzer-cloud setting
+  mode: singleton
+  fields:
+    access-config: enum
+    certificate: string
+    certificate-verification: enum
+    conn-timeout: integer
+    enc-algorithm: enum
+    hmac-algorithm: option
+    interface: string
+    interface-select-method: enum
+    ips-archive: enum
+    max-log-rate: integer
+    monitor-failure-retry-period: integer
+    monitor-keepalive-period: integer
+    preshared-key: string
+    priority: enum
+    serial: identifier-list
+    source-ip: string
+    ssl-min-proto-version: enum
+    status: enum
+    upload-day: opaque-user
+    upload-interval: enum
+    upload-option: enum
+    upload-time: opaque-user
+- path: log fortianalyzer2 filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    dlp-archive: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log fortianalyzer2 override-filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    dlp-archive: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log fortianalyzer2 override-setting
+  mode: singleton
+  fields:
+    access-config: enum
+    alt-server: string
+    certificate: string
+    certificate-verification: enum
+    conn-timeout: integer
+    enc-algorithm: enum
+    fallback-to-primary: enum
+    hmac-algorithm: option
+    interface: string
+    interface-select-method: enum
+    ips-archive: enum
+    max-log-rate: integer
+    monitor-failure-retry-period: integer
+    monitor-keepalive-period: integer
+    preshared-key: string
+    priority: enum
+    reliable: enum
+    serial: identifier-list
+    server: string
+    server-cert-ca: string
+    source-ip: string
+    ssl-min-proto-version: enum
+    status: enum
+    upload-day: opaque-user
+    upload-interval: enum
+    upload-option: enum
+    upload-time: opaque-user
+    use-management-vdom: enum
+- path: log fortianalyzer2 setting
+  mode: singleton
+  fields:
+    access-config: enum
+    alt-server: string
+    certificate: string
+    certificate-verification: enum
+    conn-timeout: integer
+    enc-algorithm: enum
+    fallback-to-primary: enum
+    hmac-algorithm: option
+    interface: string
+    interface-select-method: enum
+    ips-archive: enum
+    max-log-rate: integer
+    monitor-failure-retry-period: integer
+    monitor-keepalive-period: integer
+    preshared-key: string
+    priority: enum
+    reliable: enum
+    serial: identifier-list
+    server: string
+    server-cert-ca: string
+    source-ip: string
+    ssl-min-proto-version: enum
+    status: enum
+    upload-day: opaque-user
+    upload-interval: enum
+    upload-option: enum
+    upload-time: opaque-user
+- path: log fortianalyzer3 filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    dlp-archive: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log fortianalyzer3 override-filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    dlp-archive: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log fortianalyzer3 override-setting
+  mode: singleton
+  fields:
+    access-config: enum
+    alt-server: string
+    certificate: string
+    certificate-verification: enum
+    conn-timeout: integer
+    enc-algorithm: enum
+    fallback-to-primary: enum
+    hmac-algorithm: option
+    interface: string
+    interface-select-method: enum
+    ips-archive: enum
+    max-log-rate: integer
+    monitor-failure-retry-period: integer
+    monitor-keepalive-period: integer
+    preshared-key: string
+    priority: enum
+    reliable: enum
+    serial: identifier-list
+    server: string
+    server-cert-ca: string
+    source-ip: string
+    ssl-min-proto-version: enum
+    status: enum
+    upload-day: opaque-user
+    upload-interval: enum
+    upload-option: enum
+    upload-time: opaque-user
+    use-management-vdom: enum
+- path: log fortianalyzer3 setting
+  mode: singleton
+  fields:
+    access-config: enum
+    alt-server: string
+    certificate: string
+    certificate-verification: enum
+    conn-timeout: integer
+    enc-algorithm: enum
+    fallback-to-primary: enum
+    hmac-algorithm: option
+    interface: string
+    interface-select-method: enum
+    ips-archive: enum
+    max-log-rate: integer
+    monitor-failure-retry-period: integer
+    monitor-keepalive-period: integer
+    preshared-key: string
+    priority: enum
+    reliable: enum
+    serial: identifier-list
+    server: string
+    server-cert-ca: string
+    source-ip: string
+    ssl-min-proto-version: enum
+    status: enum
+    upload-day: opaque-user
+    upload-interval: enum
+    upload-option: enum
+    upload-time: opaque-user
+- path: log fortianalyzer filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    dlp-archive: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log fortianalyzer override-filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    dlp-archive: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log fortianalyzer override-setting
+  mode: singleton
+  fields:
+    access-config: enum
+    alt-server: string
+    certificate: string
+    certificate-verification: enum
+    conn-timeout: integer
+    enc-algorithm: enum
+    fallback-to-primary: enum
+    hmac-algorithm: option
+    interface: string
+    interface-select-method: enum
+    ips-archive: enum
+    max-log-rate: integer
+    monitor-failure-retry-period: integer
+    monitor-keepalive-period: integer
+    preshared-key: string
+    priority: enum
+    reliable: enum
+    serial: identifier-list
+    server: string
+    server-cert-ca: string
+    source-ip: string
+    ssl-min-proto-version: enum
+    status: enum
+    upload-day: opaque-user
+    upload-interval: enum
+    upload-option: enum
+    upload-time: opaque-user
+    use-management-vdom: enum
+- path: log fortianalyzer setting
+  mode: singleton
+  fields:
+    access-config: enum
+    alt-server: string
+    certificate: string
+    certificate-verification: enum
+    conn-timeout: integer
+    enc-algorithm: enum
+    fallback-to-primary: enum
+    hmac-algorithm: option
+    interface: string
+    interface-select-method: enum
+    ips-archive: enum
+    max-log-rate: integer
+    monitor-failure-retry-period: integer
+    monitor-keepalive-period: integer
+    preshared-key: string
+    priority: enum
+    reliable: enum
+    serial: identifier-list
+    server: string
+    server-cert-ca: string
+    source-ip: string
+    ssl-min-proto-version: enum
+    status: enum
+    upload-day: opaque-user
+    upload-interval: enum
+    upload-option: enum
+    upload-time: opaque-user
+- path: log fortiguard filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log fortiguard override-filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log fortiguard override-setting
+  mode: singleton
+  fields:
+    access-config: enum
+    max-log-rate: integer
+    override: enum
+    priority: enum
+    status: enum
+    upload-day: opaque-user
+    upload-interval: enum
+    upload-option: enum
+    upload-time: opaque-user
+- path: log fortiguard setting
+  mode: singleton
+  fields:
+    access-config: enum
+    conn-timeout: integer
+    enc-algorithm: enum
+    interface: string
+    interface-select-method: enum
+    max-log-rate: integer
+    priority: enum
+    source-ip: ipv4-address
+    ssl-min-proto-version: enum
+    status: enum
+    upload-day: opaque-user
+    upload-interval: enum
+    upload-option: enum
+    upload-time: opaque-user
+- path: log gui-display
+  mode: singleton
+  fields:
+    fortiview-unscanned-apps: enum
+    resolve-apps: enum
+    resolve-hosts: enum
+- path: log memory filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log memory global-setting
+  mode: singleton
+  fields:
+    full-final-warning-threshold: integer
+    full-first-warning-threshold: integer
+    full-second-warning-threshold: integer
+    max-size: integer
+  model_dependent: true
+- path: log memory setting
+  mode: singleton
+  fields:
+    status: enum
+  model_dependent: true
+- path: log null-device filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log null-device setting
+  mode: singleton
+  fields:
+    status: enum
+- path: log setting
+  mode: singleton
+  fields:
+    anonymization-hash: string
+    brief-traffic-format: enum
+    custom-log-fields: identifier-list
+    daemon-log: enum
+    expolicy-implicit-log: enum
+    extended-log: enum
+    faz-override: enum
+    fortiview-weekly-data: enum
+    fwpolicy-implicit-log: enum
+    fwpolicy6-implicit-log: enum
+    local-in-allow: enum
+    local-in-deny-broadcast: enum
+    local-in-deny-unicast: enum
+    local-out: enum
+    local-out-ioc-detection: enum
+    log-policy-comment: enum
+    log-user-in-upper: enum
+    long-live-session-stat: enum
+    neighbor-event: enum
+    resolve-ip: enum
+    resolve-port: enum
+    rest-api-get: enum
+    rest-api-set: enum
+    syslog-override: enum
+    user-anonymize: enum
+  model_dependent: true
+- path: log syslogd2 filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true
+- path: log syslogd2 override-filter
+  mode: singleton
+  fields:
+    anomaly: enum
+    forti-switch: enum
+    forward-traffic: enum
+    gtp: enum
+    local-traffic: enum
+    multicast-traffic: enum
+    severity: enum
+    sniffer-traffic: enum
+    voip: enum
+    ztna-traffic: enum
+  nested:
+  - name: free-style
+    mode: table
+    key: <id>
+    fields:
+      category: enum
+      filter: string
+      filter-type: enum
+  model_dependent: true

@@ -1,0 +1,66 @@
+domain: endpoint-control
+part: 1
+parts: 1
+sections:
+- path: endpoint-control fctems-override
+  mode: table
+  key: <ems-id>
+  fields:
+    call-timeout: integer
+    capabilities: option-list
+    cloud-authentication-access-key: string
+    dirty-reason: enum
+    fortinetone-cloud-authentication: enum
+    https-port: integer
+    interface: string
+    interface-select-method: enum
+    name: string
+    out-of-sync-threshold: integer
+    preserve-ssl-session: enum
+    pull-avatars: enum
+    pull-malware-hash: enum
+    pull-sysinfo: enum
+    pull-tags: enum
+    pull-vulnerabilities: enum
+    send-tags-to-all-vdoms: enum
+    serial-number: string
+    server: string
+    source-ip: ipv4-address-any
+    status: enum
+    tenant-id: string
+    trust-ca-cn: enum
+    verifying-ca: string
+    websocket-override: enum
+- path: endpoint-control fctems
+  mode: table
+  key: <ems-id>
+  fields:
+    call-timeout: integer
+    capabilities: option-list
+    cloud-authentication-access-key: string
+    dirty-reason: enum
+    fortinetone-cloud-authentication: enum
+    https-port: integer
+    interface: string
+    interface-select-method: enum
+    name: string
+    out-of-sync-threshold: integer
+    preserve-ssl-session: enum
+    pull-avatars: enum
+    pull-malware-hash: enum
+    pull-sysinfo: enum
+    pull-tags: enum
+    pull-vulnerabilities: enum
+    send-tags-to-all-vdoms: enum
+    serial-number: string
+    server: string
+    source-ip: ipv4-address-any
+    status: enum
+    tenant-id: string
+    trust-ca-cn: enum
+    verifying-ca: string
+    websocket-override: enum
+- path: endpoint-control settings
+  mode: singleton
+  fields:
+    override: enum

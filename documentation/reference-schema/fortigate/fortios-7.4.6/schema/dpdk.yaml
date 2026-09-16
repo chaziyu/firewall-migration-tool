@@ -1,0 +1,28 @@
+domain: dpdk
+part: 1
+parts: 1
+sections:
+- path: dpdk cpus
+  mode: singleton
+  fields:
+    ips-cpus: string
+    isolated-cpus: string
+    rx-cpus: string
+    tx-cpus: string
+    vnp-cpus: string
+    vnpsp-cpus: string
+  model_dependent: true
+- path: dpdk global
+  mode: singleton
+  fields:
+    elasticbuffer: enum
+    hugepage-percentage: integer
+    interface: identifier-list
+    ipsec-offload: enum
+    mbufpool-percentage: integer
+    multiqueue: enum
+    per-session-accounting: enum
+    protects: string
+    sleep-on-idle: enum
+    status: enum
+  model_dependent: true

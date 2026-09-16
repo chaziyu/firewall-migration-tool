@@ -1,0 +1,18 @@
+domain: monitoring
+part: 1
+parts: 1
+sections:
+- path: monitoring np6-ipsec-engine
+  mode: singleton
+  fields:
+    interval: integer
+    status: enum
+    threshold: opaque-user
+  model_dependent: true
+- path: monitoring npu-hpe
+  mode: singleton
+  fields:
+    interval: integer
+    multipliers: opaque-user
+    status: enum
+  model_dependent: true

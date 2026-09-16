@@ -1,0 +1,676 @@
+domain: firewall
+part: 3
+parts: 4
+sections:
+- path: firewall profile-protocol-options
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    oversize-log: enum
+    replacemsg-group: string
+    rpc-over-http: enum
+    switching-protocols-log: enum
+  nested:
+  - name: cifs
+    mode: singleton
+    fields:
+      domain-controller: string
+      options: option-list
+      oversize-limit: integer
+      ports: integer
+      scan-bzip2: enum
+      server-credential-type: enum
+      status: enum
+      tcp-window-maximum: integer
+      tcp-window-minimum: integer
+      tcp-window-size: integer
+      tcp-window-type: enum
+      uncompressed-nest-limit: integer
+      uncompressed-oversize-limit: integer
+    nested:
+    - name: server-keytab
+      mode: table
+      key: <principal>
+      fields:
+        keytab: string
+  - name: dns
+    mode: singleton
+    fields:
+      ports: integer
+      status: enum
+  - name: ftp
+    mode: singleton
+    fields:
+      comfort-amount: integer
+      comfort-interval: integer
+      explicit-ftp-tls: enum
+      inspect-all: enum
+      options: option-list
+      oversize-limit: integer
+      ports: integer
+      scan-bzip2: enum
+      ssl-offloaded: enum
+      status: enum
+      stream-based-uncompressed-limit: integer
+      tcp-window-maximum: integer
+      tcp-window-minimum: integer
+      tcp-window-size: integer
+      tcp-window-type: enum
+      uncompressed-nest-limit: integer
+      uncompressed-oversize-limit: integer
+  - name: http
+    mode: singleton
+    fields:
+      address-ip-rating: enum
+      block-page-status-code: integer
+      comfort-amount: integer
+      comfort-interval: integer
+      h2c: enum
+      inspect-all: enum
+      options: option-list
+      oversize-limit: integer
+      ports: integer
+      post-lang: option-list
+      proxy-after-tcp-handshake: enum
+      range-block: enum
+      retry-count: integer
+      scan-bzip2: enum
+      ssl-offloaded: enum
+      status: enum
+      stream-based-uncompressed-limit: integer
+      streaming-content-bypass: enum
+      strip-x-forwarded-for: enum
+      switching-protocols: enum
+      tcp-window-maximum: integer
+      tcp-window-minimum: integer
+      tcp-window-size: integer
+      tcp-window-type: enum
+      tunnel-non-http: enum
+      uncompressed-nest-limit: integer
+      uncompressed-oversize-limit: integer
+      unknown-content-encoding: enum
+      unknown-http-version: enum
+      verify-dns-for-policy-matching: enum
+  - name: imap
+    mode: singleton
+    fields:
+      inspect-all: enum
+      options: option-list
+      oversize-limit: integer
+      ports: integer
+      proxy-after-tcp-handshake: enum
+      scan-bzip2: enum
+      ssl-offloaded: enum
+      status: enum
+      uncompressed-nest-limit: integer
+      uncompressed-oversize-limit: integer
+  - name: mail-signature
+    mode: singleton
+    fields:
+      signature: string
+      status: enum
+  - name: mapi
+    mode: singleton
+    fields:
+      options: option-list
+      oversize-limit: integer
+      ports: integer
+      scan-bzip2: enum
+      status: enum
+      uncompressed-nest-limit: integer
+      uncompressed-oversize-limit: integer
+  - name: nntp
+    mode: singleton
+    fields:
+      inspect-all: enum
+      options: option-list
+      oversize-limit: integer
+      ports: integer
+      proxy-after-tcp-handshake: enum
+      scan-bzip2: enum
+      status: enum
+      uncompressed-nest-limit: integer
+      uncompressed-oversize-limit: integer
+  - name: pop3
+    mode: singleton
+    fields:
+      inspect-all: enum
+      options: option-list
+      oversize-limit: integer
+      ports: integer
+      proxy-after-tcp-handshake: enum
+      scan-bzip2: enum
+      ssl-offloaded: enum
+      status: enum
+      uncompressed-nest-limit: integer
+      uncompressed-oversize-limit: integer
+  - name: smtp
+    mode: singleton
+    fields:
+      inspect-all: enum
+      options: option-list
+      oversize-limit: integer
+      ports: integer
+      proxy-after-tcp-handshake: enum
+      scan-bzip2: enum
+      server-busy: enum
+      ssl-offloaded: enum
+      status: enum
+      uncompressed-nest-limit: integer
+      uncompressed-oversize-limit: integer
+  - name: ssh
+    mode: singleton
+    fields:
+      comfort-amount: integer
+      comfort-interval: integer
+      options: option-list
+      oversize-limit: integer
+      scan-bzip2: enum
+      ssl-offloaded: enum
+      stream-based-uncompressed-limit: integer
+      tcp-window-maximum: integer
+      tcp-window-minimum: integer
+      tcp-window-size: integer
+      tcp-window-type: enum
+      uncompressed-nest-limit: integer
+      uncompressed-oversize-limit: integer
+  model_dependent: true
+- path: firewall proxy-address
+  mode: table
+  key: <name>
+  fields:
+    application: identifier-list
+    case-sensitivity: enum
+    category: identifier-list
+    color: integer
+    comment: var-string
+    header: string
+    header-name: string
+    host: string
+    host-regex: string
+    method: option-list
+    path: string
+    query: string
+    referrer: enum
+    type: enum
+    ua: option-list
+    ua-max-ver: string
+    ua-min-ver: string
+    uuid: uuid
+  nested:
+  - name: header-group
+    mode: table
+    key: <id>
+    fields:
+      case-sensitivity: enum
+      header: string
+      header-name: string
+  - name: tagging
+    mode: table
+    key: <name>
+    fields:
+      category: string
+      tags: identifier-list
+- path: firewall proxy-addrgrp
+  mode: table
+  key: <name>
+  fields:
+    color: integer
+    comment: var-string
+    member: identifier-list
+    type: enum
+    uuid: uuid
+  nested:
+  - name: tagging
+    mode: table
+    key: <name>
+    fields:
+      category: string
+      tags: identifier-list
+- path: firewall proxy-policy
+  mode: table
+  key: <policyid>
+  fields:
+    access-proxy: identifier-list
+    access-proxy6: identifier-list
+    action: enum
+    application-list: string
+    av-profile: string
+    block-notification: enum
+    casb-profile: string
+    comments: var-string
+    decrypted-traffic-mirror: string
+    detect-https-in-http-request: enum
+    device-ownership: enum
+    disclaimer: enum
+    dlp-profile: string
+    dstaddr: identifier-list
+    dstaddr-negate: enum
+    dstaddr6: identifier-list
+    dstintf: identifier-list
+    emailfilter-profile: string
+    file-filter-profile: string
+    groups: identifier-list
+    http-tunnel-auth: enum
+    icap-profile: string
+    internet-service: enum
+    internet-service-custom: identifier-list
+    internet-service-custom-group: identifier-list
+    internet-service-group: identifier-list
+    internet-service-name: identifier-list
+    internet-service-negate: enum
+    internet-service6: enum
+    internet-service6-custom: identifier-list
+    internet-service6-custom-group: identifier-list
+    internet-service6-group: identifier-list
+    internet-service6-name: identifier-list
+    internet-service6-negate: enum
+    ips-sensor: string
+    ips-voip-filter: string
+    logtraffic: enum
+    logtraffic-start: enum
+    name: string
+    poolname: identifier-list
+    profile-group: string
+    profile-protocol-options: string
+    profile-type: enum
+    proxy: enum
+    redirect-url: var-string
+    replacemsg-override-group: string
+    schedule: string
+    service: identifier-list
+    service-negate: enum
+    session-ttl: integer
+    srcaddr: identifier-list
+    srcaddr-negate: enum
+    srcaddr6: identifier-list
+    srcintf: identifier-list
+    ssh-filter-profile: string
+    ssh-policy-redirect: enum
+    ssl-ssh-profile: string
+    status: enum
+    transparent: enum
+    users: identifier-list
+    utm-status: enum
+    uuid: uuid
+    videofilter-profile: string
+    waf-profile: string
+    webcache: enum
+    webcache-https: enum
+    webfilter-profile: string
+    webproxy-forward-server: string
+    webproxy-profile: string
+    ztna-ems-tag: identifier-list
+    ztna-tags-match-logic: enum
+  model_dependent: true
+- path: firewall region
+  mode: table
+  key: <id>
+  fields:
+    city: identifier-list
+    name: string
+  read_only: true
+- path: firewall schedule group
+  mode: table
+  key: <name>
+  fields:
+    color: integer
+    fabric-object: enum
+    member: identifier-list
+- path: firewall schedule onetime
+  mode: table
+  key: <name>
+  fields:
+    color: integer
+    end: opaque-user
+    end-utc: opaque-user
+    expiration-days: integer
+    fabric-object: enum
+    start: opaque-user
+    start-utc: opaque-user
+- path: firewall schedule recurring
+  mode: table
+  key: <name>
+  fields:
+    color: integer
+    day: option-list
+    end: opaque-user
+    fabric-object: enum
+    start: opaque-user
+- path: firewall security-policy
+  mode: table
+  key: <policyid>
+  fields:
+    action: enum
+    app-category: identifier-list
+    app-group: identifier-list
+    application: identifier-list
+    application-list: string
+    av-profile: string
+    casb-profile: string
+    cifs-profile: string
+    comments: var-string
+    diameter-filter-profile: string
+    dlp-profile: string
+    dnsfilter-profile: string
+    dstaddr: identifier-list
+    dstaddr-negate: enum
+    dstaddr6: identifier-list
+    dstaddr6-negate: enum
+    dstintf: identifier-list
+    emailfilter-profile: string
+    enforce-default-app-port: enum
+    file-filter-profile: string
+    fsso-groups: identifier-list
+    groups: identifier-list
+    icap-profile: string
+    internet-service: enum
+    internet-service-custom: identifier-list
+    internet-service-custom-group: identifier-list
+    internet-service-group: identifier-list
+    internet-service-name: identifier-list
+    internet-service-negate: enum
+    internet-service-src: enum
+    internet-service-src-custom: identifier-list
+    internet-service-src-custom-group: identifier-list
+    internet-service-src-group: identifier-list
+    internet-service-src-name: identifier-list
+    internet-service-src-negate: enum
+    internet-service6: enum
+    internet-service6-custom: identifier-list
+    internet-service6-custom-group: identifier-list
+    internet-service6-group: identifier-list
+    internet-service6-name: identifier-list
+    internet-service6-negate: enum
+    internet-service6-src: enum
+    internet-service6-src-custom: identifier-list
+    internet-service6-src-custom-group: identifier-list
+    internet-service6-src-group: identifier-list
+    internet-service6-src-name: identifier-list
+    internet-service6-src-negate: enum
+    ips-sensor: string
+    ips-voip-filter: string
+    learning-mode: enum
+    logtraffic: enum
+    name: string
+    nat46: enum
+    nat64: enum
+    profile-group: string
+    profile-protocol-options: string
+    profile-type: enum
+    schedule: string
+    sctp-filter-profile: string
+    send-deny-packet: enum
+    service: identifier-list
+    service-negate: enum
+    srcaddr: identifier-list
+    srcaddr-negate: enum
+    srcaddr6: identifier-list
+    srcaddr6-negate: enum
+    srcintf: identifier-list
+    ssh-filter-profile: string
+    ssl-ssh-profile: string
+    status: enum
+    url-category: opaque-user
+    users: identifier-list
+    uuid: uuid
+    videofilter-profile: string
+    virtual-patch-profile: string
+    voip-profile: string
+    webfilter-profile: string
+- path: firewall service category
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    fabric-object: enum
+- path: firewall service custom
+  mode: table
+  key: <name>
+  fields:
+    app-category: identifier-list
+    app-service-type: enum
+    application: identifier-list
+    category: string
+    check-reset-range: enum
+    color: integer
+    comment: var-string
+    fabric-object: enum
+    fqdn: string
+    helper: enum
+    icmpcode: integer
+    icmptype: integer
+    iprange: opaque-user
+    protocol: enum
+    protocol-number: integer
+    proxy: enum
+    sctp-portrange: opaque-user
+    session-ttl: opaque-user
+    tcp-halfclose-timer: integer
+    tcp-halfopen-timer: integer
+    tcp-portrange: opaque-user
+    tcp-rst-timer: integer
+    tcp-timewait-timer: integer
+    udp-idle-timer: integer
+    udp-portrange: opaque-user
+    uuid: uuid
+- path: firewall service group
+  mode: table
+  key: <name>
+  fields:
+    color: integer
+    comment: var-string
+    fabric-object: enum
+    member: identifier-list
+    proxy: enum
+    uuid: uuid
+- path: firewall shaper per-ip-shaper
+  mode: table
+  key: <name>
+  fields:
+    bandwidth-unit: enum
+    diffserv-forward: enum
+    diffserv-reverse: enum
+    diffservcode-forward: opaque-user
+    diffservcode-rev: opaque-user
+    max-bandwidth: integer
+    max-concurrent-session: integer
+    max-concurrent-tcp-session: integer
+    max-concurrent-udp-session: integer
+  model_dependent: true
+- path: firewall shaper traffic-shaper
+  mode: table
+  key: <name>
+  fields:
+    bandwidth-unit: enum
+    cos: opaque-user
+    cos-marking: enum
+    cos-marking-method: enum
+    diffserv: enum
+    diffservcode: opaque-user
+    dscp-marking-method: enum
+    exceed-bandwidth: integer
+    exceed-class-id: integer
+    exceed-cos: opaque-user
+    exceed-dscp: opaque-user
+    guaranteed-bandwidth: integer
+    maximum-bandwidth: integer
+    maximum-cos: opaque-user
+    maximum-dscp: opaque-user
+    overhead: integer
+    per-policy: enum
+    priority: enum
+  model_dependent: true
+- path: firewall shaping-policy
+  mode: table
+  key: <id>
+  fields:
+    app-category: identifier-list
+    app-group: identifier-list
+    application: identifier-list
+    class-id: integer
+    comment: var-string
+    cos: opaque-user
+    cos-mask: opaque-user
+    diffserv-forward: enum
+    diffserv-reverse: enum
+    diffservcode-forward: opaque-user
+    diffservcode-rev: opaque-user
+    dstaddr: identifier-list
+    dstaddr6: identifier-list
+    dstintf: identifier-list
+    groups: identifier-list
+    internet-service: enum
+    internet-service-custom: identifier-list
+    internet-service-custom-group: identifier-list
+    internet-service-group: identifier-list
+    internet-service-name: identifier-list
+    internet-service-src: enum
+    internet-service-src-custom: identifier-list
+    internet-service-src-custom-group: identifier-list
+    internet-service-src-group: identifier-list
+    internet-service-src-name: identifier-list
+    ip-version: enum
+    name: string
+    per-ip-shaper: string
+    schedule: string
+    service: identifier-list
+    srcaddr: identifier-list
+    srcaddr6: identifier-list
+    srcintf: identifier-list
+    status: enum
+    tos: opaque-user
+    tos-mask: opaque-user
+    tos-negate: enum
+    traffic-shaper: string
+    traffic-shaper-reverse: string
+    traffic-type: enum
+    url-category: identifier-list
+    users: identifier-list
+    uuid: uuid
+- path: firewall shaping-profile
+  mode: table
+  key: <profile-name>
+  fields:
+    comment: var-string
+    default-class-id: integer
+    npu-offloading: enum
+    type: enum
+  nested:
+  - name: shaping-entries
+    mode: table
+    key: <id>
+    fields:
+      burst-in-msec: integer
+      cburst-in-msec: integer
+      class-id: integer
+      guaranteed-bandwidth-percentage: integer
+      limit: integer
+      max: integer
+      maximum-bandwidth-percentage: integer
+      min: integer
+      priority: enum
+      red-probability: integer
+- path: firewall sniffer
+  mode: table
+  key: <id>
+  fields:
+    application-list: string
+    application-list-status: enum
+    av-profile: string
+    av-profile-status: enum
+    dlp-profile: string
+    dlp-profile-status: enum
+    dsri: enum
+    emailfilter-profile: string
+    emailfilter-profile-status: enum
+    file-filter-profile: string
+    file-filter-profile-status: enum
+    host: string
+    interface: string
+    ip-threatfeed: identifier-list
+    ip-threatfeed-status: enum
+    ips-dos-status: enum
+    ips-sensor: string
+    ips-sensor-status: enum
+    ipv6: enum
+    logtraffic: enum
+    non-ip: enum
+    port: string
+    protocol: string
+    status: enum
+    uuid: uuid
+    vlan: string
+    webfilter-profile: string
+    webfilter-profile-status: enum
+  nested:
+  - name: anomaly
+    mode: table
+    key: <name>
+    fields:
+      action: enum
+      log: enum
+      quarantine: enum
+      quarantine-expiry: opaque-user
+      quarantine-log: enum
+      status: enum
+      threshold: integer
+      threshold(default): integer
+- path: firewall ssh host-key
+  mode: table
+  key: <name>
+  fields:
+    hostname: string
+    ip: ipv4-address-any
+    nid: enum
+    port: integer
+    public-key: var-string
+    status: enum
+    type: enum
+    usage: enum
+- path: firewall ssh local-ca
+  mode: table
+  key: <name>
+  fields:
+    password: password!sensitive
+    private-key: opaque-user
+    public-key: opaque-user
+    source: enum
+- path: firewall ssh local-key
+  mode: table
+  key: <name>
+  fields:
+    password: password!sensitive
+    private-key: opaque-user
+    public-key: opaque-user
+    source: enum
+- path: firewall ssh setting
+  mode: singleton
+  fields:
+    caname: string
+    host-trusted-checking: enum
+    hostkey-dsa1024: string
+    hostkey-ecdsa256: string
+    hostkey-ecdsa384: string
+    hostkey-ecdsa521: string
+    hostkey-ed25519: string
+    hostkey-rsa2048: string
+    untrusted-caname: string
+- path: firewall ssl-server
+  mode: table
+  key: <name>
+  fields:
+    add-header-x-forwarded-proto: enum
+    ip: ipv4-address-any
+    mapped-port: integer
+    port: integer
+    ssl-algorithm: enum
+    ssl-cert: identifier-list
+    ssl-client-renegotiation: enum
+    ssl-dh-bits: enum
+    ssl-max-version: enum
+    ssl-min-version: enum
+    ssl-mode: enum
+    ssl-send-empty-frags: enum
+    url-rewrite: enum

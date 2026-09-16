@@ -1,0 +1,91 @@
+domain: report
+part: 1
+parts: 1
+sections:
+- path: report layout
+  mode: table
+  key: <name>
+  fields:
+    cutoff-option: enum
+    cutoff-time: opaque-user
+    day: enum
+    description: string
+    email-recipients: string
+    email-send: enum
+    format: option-list
+    max-pdf-report: integer
+    options: option-list
+    schedule-type: enum
+    style-theme: string
+    subtitle: string
+    time: opaque-user
+    title: string
+  nested:
+  - name: body-item
+    mode: table
+    key: <id>
+    fields:
+      chart: string
+      chart-options: option-list
+      content: string
+      description: string
+      img-src: string
+      misc-component: enum
+      style: string
+      text-component: enum
+      title: string
+      top-n: integer
+      type: enum
+    nested:
+    - name: parameters
+      mode: table
+      key: <id>
+      fields:
+        name: string
+        value: string
+  - name: page
+    mode: singleton
+    fields:
+      column-break-before: option-list
+      options: option-list
+      page-break-before: option-list
+      paper: enum
+    nested:
+    - name: footer
+      mode: singleton
+      fields:
+        style: string
+      nested:
+      - name: footer-item
+        mode: table
+        key: <id>
+        fields:
+          content: string
+          description: string
+          img-src: string
+          style: string
+          type: enum
+    - name: header
+      mode: singleton
+      fields:
+        style: string
+      nested:
+      - name: header-item
+        mode: table
+        key: <id>
+        fields:
+          content: string
+          description: string
+          img-src: string
+          style: string
+          type: enum
+  model_dependent: true
+- path: report setting
+  mode: singleton
+  fields:
+    fortiview: enum
+    pdf-report: enum
+    report-source: option-list
+    top-n: integer
+    web-browsing-threshold: integer
+  model_dependent: true

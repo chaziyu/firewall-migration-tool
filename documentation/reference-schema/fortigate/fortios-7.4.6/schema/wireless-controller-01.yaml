@@ -1,0 +1,603 @@
+domain: wireless-controller
+part: 1
+parts: 3
+sections:
+- path: wireless-controller access-control-list
+  mode: table
+  key: <name>
+  fields:
+    comment: string
+  nested:
+  - name: layer3-ipv4-rules
+    mode: table
+    key: <rule-id>
+    fields:
+      action: enum
+      comment: string
+      dstaddr: opaque-user
+      dstport: integer
+      protocol: integer
+      srcaddr: opaque-user
+      srcport: integer
+  - name: layer3-ipv6-rules
+    mode: table
+    key: <rule-id>
+    fields:
+      action: enum
+      comment: string
+      dstaddr: opaque-user
+      dstport: integer
+      protocol: integer
+      srcaddr: opaque-user
+      srcport: integer
+- path: wireless-controller ap-status
+  mode: table
+  key: <id>
+  fields:
+    bssid: mac-address
+    ssid: string
+    status: enum
+- path: wireless-controller apcfg-profile
+  mode: table
+  key: <name>
+  fields:
+    ac-ip: ipv4-address
+    ac-port: integer
+    ac-timer: integer
+    ac-type: enum
+    ap-family: enum
+    comment: var-string
+  nested:
+  - name: command-list
+    mode: table
+    key: <id>
+    fields:
+      name: string
+      passwd-value: password!sensitive
+      type: enum
+      value: string
+- path: wireless-controller arrp-profile
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    darrp-optimize: integer
+    darrp-optimize-schedules: identifier-list
+    include-dfs-channel: enum
+    include-weather-channel: enum
+    monitor-period: integer
+    override-darrp-optimize: enum
+    selection-period: integer
+    threshold-ap: integer
+    threshold-channel-load: integer
+    threshold-noise-floor: string
+    threshold-rx-errors: integer
+    threshold-spectral-rssi: string
+    threshold-tx-retries: integer
+    weight-channel-load: integer
+    weight-dfs-channel: integer
+    weight-managed-ap: integer
+    weight-noise-floor: integer
+    weight-rogue-ap: integer
+    weight-spectral-rssi: integer
+    weight-weather-channel: integer
+- path: wireless-controller ble-profile
+  mode: table
+  key: <name>
+  fields:
+    advertising: option-list
+    beacon-interval: integer
+    ble-scanning: enum
+    comment: string
+    eddystone-instance: string
+    eddystone-namespace: string
+    eddystone-url: string
+    ibeacon-uuid: string
+    major-id: integer
+    minor-id: integer
+    scan-interval: integer
+    scan-period: integer
+    scan-threshold: string
+    scan-time: integer
+    scan-type: enum
+    scan-window: integer
+    txpower: enum
+- path: wireless-controller bonjour-profile
+  mode: table
+  key: <name>
+  fields:
+    comment: string
+  nested:
+  - name: policy-list
+    mode: table
+    key: <policy-id>
+    fields:
+      description: string
+      from-vlan: string
+      services: option-list
+      to-vlan: string
+- path: wireless-controller global
+  mode: singleton
+  fields:
+    acd-process-count: integer
+    ap-log-server: enum
+    ap-log-server-ip: ipv4-address
+    ap-log-server-port: integer
+    control-message-offload: option-list
+    data-ethernet-II: enum
+    dfs-lab-test: enum
+    discovery-mc-addr: ipv4-address-multicast
+    fiapp-eth-type: integer
+    image-download: enum
+    ipsec-base-ip: ipv4-address
+    link-aggregation: enum
+    local-radio-vdom: string
+    location: string
+    max-ble-device: integer
+    max-clients: integer
+    max-retransmit: integer
+    max-rogue-ap: integer
+    max-rogue-ap-wtp: integer
+    max-rogue-sta: integer
+    max-sta-cap: integer
+    max-sta-cap-wtp: integer
+    mesh-eth-type: integer
+    nac-interval: integer
+    name: string
+    rogue-scan-mac-adjacency: integer
+    rolling-wtp-upgrade: enum
+    rolling-wtp-upgrade-threshold: string
+    tunnel-mode: enum
+    wpad-process-count: integer
+    wtp-share: enum
+- path: wireless-controller hotspot20 anqp-3gpp-cellular
+  mode: table
+  key: <name>
+  nested:
+  - name: mcc-mnc-list
+    mode: table
+    key: <id>
+    fields:
+      mcc: string
+      mnc: string
+- path: wireless-controller hotspot20 anqp-ip-address-type
+  mode: table
+  key: <name>
+  fields:
+    ipv4-address-type: enum
+    ipv6-address-type: enum
+- path: wireless-controller hotspot20 anqp-nai-realm
+  mode: table
+  key: <name>
+  nested:
+  - name: nai-list
+    mode: table
+    key: <name>
+    fields:
+      encoding: enum
+      nai-realm: string
+    nested:
+    - name: eap-method
+      mode: table
+      key: <index>
+      fields:
+        method: enum
+      nested:
+      - name: auth-param
+        mode: table
+        key: <index>
+        fields:
+          id: enum
+          val: enum
+- path: wireless-controller hotspot20 anqp-network-auth-type
+  mode: table
+  key: <name>
+  fields:
+    auth-type: enum
+    url: string
+- path: wireless-controller hotspot20 anqp-roaming-consortium
+  mode: table
+  key: <name>
+  nested:
+  - name: oi-list
+    mode: table
+    key: <index>
+    fields:
+      comment: string
+      oi: string
+- path: wireless-controller hotspot20 anqp-venue-name
+  mode: table
+  key: <name>
+  nested:
+  - name: value-list
+    mode: table
+    key: <index>
+    fields:
+      lang: string
+      value: string
+- path: wireless-controller hotspot20 anqp-venue-url
+  mode: table
+  key: <name>
+  nested:
+  - name: value-list
+    mode: table
+    key: <index>
+    fields:
+      number: integer
+      value: string
+- path: wireless-controller hotspot20 h2qp-advice-of-charge
+  mode: table
+  key: <name>
+  nested:
+  - name: aoc-list
+    mode: table
+    key: <name>
+    fields:
+      nai-realm: string
+      nai-realm-encoding: string
+      type: enum
+    nested:
+    - name: plan-info
+      mode: table
+      key: <name>
+      fields:
+        currency: string
+        info-file: string
+        lang: string
+- path: wireless-controller hotspot20 h2qp-conn-capability
+  mode: table
+  key: <name>
+  fields:
+    esp-port: enum
+    ftp-port: enum
+    http-port: enum
+    icmp-port: enum
+    ikev2-port: enum
+    ikev2-xx-port: enum
+    pptp-vpn-port: enum
+    ssh-port: enum
+    tls-port: enum
+    voip-tcp-port: enum
+    voip-udp-port: enum
+- path: wireless-controller hotspot20 h2qp-operator-name
+  mode: table
+  key: <name>
+  nested:
+  - name: value-list
+    mode: table
+    key: <index>
+    fields:
+      lang: string
+      value: string
+- path: wireless-controller hotspot20 h2qp-osu-provider-nai
+  mode: table
+  key: <name>
+  nested:
+  - name: nai-list
+    mode: table
+    key: <name>
+    fields:
+      osu-nai: string
+- path: wireless-controller hotspot20 h2qp-osu-provider
+  mode: table
+  key: <name>
+  fields:
+    icon: string
+    osu-method: option-list
+    osu-nai: string
+    server-uri: string
+  nested:
+  - name: friendly-name
+    mode: table
+    key: <index>
+    fields:
+      friendly-name: string
+      lang: string
+  - name: service-description
+    mode: table
+    key: <service-id>
+    fields:
+      lang: string
+      service-description: string
+- path: wireless-controller hotspot20 h2qp-terms-and-conditions
+  mode: table
+  key: <name>
+  fields:
+    filename: string
+    timestamp: integer
+    url: string
+- path: wireless-controller hotspot20 h2qp-wan-metric
+  mode: table
+  key: <name>
+  fields:
+    downlink-load: integer
+    downlink-speed: integer
+    link-at-capacity: enum
+    link-status: enum
+    load-measurement-duration: integer
+    symmetric-wan-link: enum
+    uplink-load: integer
+    uplink-speed: integer
+- path: wireless-controller hotspot20 hs-profile
+  mode: table
+  key: <name>
+  fields:
+    3gpp-plmn: string
+    access-network-asra: enum
+    access-network-esr: enum
+    access-network-internet: enum
+    access-network-type: enum
+    access-network-uesa: enum
+    advice-of-charge: string
+    anqp-domain-id: integer
+    bss-transition: enum
+    conn-cap: string
+    deauth-request-timeout: integer
+    dgaf: enum
+    domain-name: string
+    gas-comeback-delay: integer
+    gas-fragmentation-limit: integer
+    hessid: mac-address
+    ip-addr-type: string
+    l2tif: enum
+    nai-realm: string
+    network-auth: string
+    oper-friendly-name: string
+    oper-icon: string
+    osu-provider: identifier-list
+    osu-provider-nai: string
+    osu-ssid: string
+    pame-bi: enum
+    proxy-arp: enum
+    qos-map: string
+    release: integer
+    roaming-consortium: string
+    terms-and-conditions: string
+    venue-group: enum
+    venue-name: string
+    venue-type: enum
+    venue-url: string
+    wan-metrics: string
+    wnm-sleep-mode: enum
+- path: wireless-controller hotspot20 icon
+  mode: table
+  key: <name>
+  nested:
+  - name: icon-list
+    mode: table
+    key: <name>
+    fields:
+      file: string
+      height: integer
+      lang: string
+      type: enum
+      width: integer
+- path: wireless-controller hotspot20 qos-map
+  mode: table
+  key: <name>
+  nested:
+  - name: dscp-except
+    mode: table
+    key: <index>
+    fields:
+      dscp: integer
+      up: integer
+  - name: dscp-range
+    mode: table
+    key: <index>
+    fields:
+      high: integer
+      low: integer
+      up: integer
+- path: wireless-controller inter-controller
+  mode: singleton
+  fields:
+    fast-failover-max: integer
+    fast-failover-wait: integer
+    inter-controller-key: password!sensitive
+    inter-controller-mode: enum
+    inter-controller-pri: enum
+    l3-roaming: enum
+  nested:
+  - name: inter-controller-peer
+    mode: table
+    key: <id>
+    fields:
+      peer-ip: ipv4-address
+      peer-port: integer
+      peer-priority: enum
+- path: wireless-controller log
+  mode: singleton
+  fields:
+    addrgrp-log: enum
+    ble-log: enum
+    clb-log: enum
+    dhcp-starv-log: enum
+    led-sched-log: enum
+    radio-event-log: enum
+    rogue-event-log: enum
+    sta-event-log: enum
+    sta-locate-log: enum
+    status: enum
+    wids-log: enum
+    wtp-event-log: enum
+    wtp-fips-event-log: enum
+- path: wireless-controller mpsk-profile
+  mode: table
+  key: <name>
+  fields:
+    mpsk-concurrent-clients: integer
+    mpsk-external-server: string
+    mpsk-external-server-auth: enum
+    mpsk-type: enum
+  nested:
+  - name: mpsk-group
+    mode: table
+    key: <name>
+    fields:
+      vlan-id: integer
+      vlan-type: enum
+    nested:
+    - name: mpsk-key
+      mode: table
+      key: <name>
+      fields:
+        comment: var-string
+        concurrent-client-limit-type: enum
+        concurrent-clients: integer
+        key-type: enum
+        mac: mac-address
+        mpsk-schedules: identifier-list
+        passphrase: password!sensitive
+        sae-password: password!sensitive
+        sae-pk: enum
+        sae-private-key: string
+- path: wireless-controller nac-profile
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    onboarding-vlan: string
+- path: wireless-controller qos-profile
+  mode: table
+  key: <name>
+  fields:
+    bandwidth-admission-control: enum
+    bandwidth-capacity: integer
+    burst: enum
+    call-admission-control: enum
+    call-capacity: integer
+    comment: string
+    downlink: integer
+    downlink-sta: integer
+    dscp-wmm-be: identifier-list
+    dscp-wmm-bk: identifier-list
+    dscp-wmm-mapping: enum
+    dscp-wmm-vi: identifier-list
+    dscp-wmm-vo: identifier-list
+    uplink: integer
+    uplink-sta: integer
+    wmm: enum
+    wmm-be-dscp: integer
+    wmm-bk-dscp: integer
+    wmm-dscp-marking: enum
+    wmm-uapsd: enum
+    wmm-vi-dscp: integer
+    wmm-vo-dscp: integer
+- path: wireless-controller region
+  mode: table
+  key: <name>
+  fields:
+    comments: string
+    grayscale: enum
+    opacity: integer
+- path: wireless-controller setting
+  mode: singleton
+  fields:
+    account-id: string
+    country: enum
+    darrp-optimize: integer
+    darrp-optimize-schedules: identifier-list
+    device-holdoff: integer
+    device-idle: integer
+    device-weight: integer
+    duplicate-ssid: enum
+    fake-ssid-action: option-list
+    fapc-compatibility: enum
+    firmware-provision-on-authorization: enum
+    phishing-ssid-detect: enum
+    rolling-wtp-upgrade: enum
+    wfa-compatibility: enum
+  nested:
+  - name: offending-ssid
+    mode: table
+    key: <id>
+    fields:
+      action: option-list
+      ssid-pattern: string
+- path: wireless-controller snmp
+  mode: singleton
+  fields:
+    contact-info: string
+    engine-id: string
+    trap-high-cpu-threshold: integer
+    trap-high-mem-threshold: integer
+  nested:
+  - name: community
+    mode: table
+    key: <id>
+    fields:
+      name: string
+      query-v1-status: enum
+      query-v2c-status: enum
+      status: enum
+      trap-v1-status: enum
+      trap-v2c-status: enum
+    nested:
+    - name: hosts
+      mode: table
+      key: <id>
+      fields:
+        ip: opaque-user
+  - name: user
+    mode: table
+    key: <name>
+    fields:
+      auth-proto: enum
+      auth-pwd: password!sensitive
+      notify-hosts: ipv4-address
+      priv-proto: enum
+      priv-pwd: password!sensitive
+      queries: enum
+      security-level: enum
+      status: enum
+      trap-status: enum
+- path: wireless-controller ssid-policy
+  mode: table
+  key: <name>
+  fields:
+    description: var-string
+    vlan: string
+- path: wireless-controller syslog-profile
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    log-level: enum
+    server-addr-type: enum
+    server-fqdn: string
+    server-ip: ipv4-address
+    server-port: integer
+    server-status: enum
+- path: wireless-controller timers
+  mode: singleton
+  fields:
+    ap-reboot-wait-interval1: integer
+    ap-reboot-wait-interval2: integer
+    ap-reboot-wait-time: string
+    auth-timeout: integer
+    ble-device-cleanup: integer
+    ble-scan-report-intv: integer
+    client-idle-rehome-timeout: integer
+    client-idle-timeout: integer
+    discovery-interval: integer
+    drma-interval: integer
+    echo-interval: integer
+    fake-ap-log: integer
+    ipsec-intf-cleanup: integer
+    nat-session-keep-alive: integer
+    radio-stats-interval: integer
+    rogue-ap-cleanup: integer
+    rogue-ap-log: integer
+    rogue-sta-cleanup: integer
+    sta-cap-cleanup: integer
+    sta-capability-interval: integer
+    sta-locate-timer: integer
+    sta-stats-interval: integer
+    vap-stats-interval: integer
+- path: wireless-controller vap-group
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    vaps: identifier-list

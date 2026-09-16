@@ -1,0 +1,22 @@
+domain: ethernet-oam
+part: 1
+parts: 1
+sections:
+- path: ethernet-oam cfm
+  mode: table
+  key: <domain-id>
+  fields:
+    domain-level: integer
+    domain-name: text
+  nested:
+  - name: service
+    mode: table
+    key: <service-id>
+    fields:
+      cos: integer
+      interface: string
+      mepid: integer
+      message-interval: enum
+      sender-id: enum
+      service-name: text
+  model_dependent: true
