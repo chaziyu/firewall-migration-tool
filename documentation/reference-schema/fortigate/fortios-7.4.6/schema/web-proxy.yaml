@@ -98,31 +98,250 @@ sections:
 - path: web-proxy global
   mode: singleton
   fields:
-    always-learn-client-ip: enum
-    fast-policy-match: enum
-    forward-proxy-auth: enum
-    forward-server-affinity-timeout: integer
-    ldap-user-cache: enum
-    learn-client-ip: enum
-    learn-client-ip-from-header: option-list
-    learn-client-ip-srcaddr: identifier-list
-    learn-client-ip-srcaddr6: identifier-list
-    log-app-id: enum
-    log-forward-server: enum
-    log-policy-pending: enum
-    max-message-length: integer
-    max-request-length: integer
-    max-waf-body-cache-length: integer
-    policy-category-deep-inspect: enum
-    proxy-fqdn: string
-    proxy-transparent-cert-inspection: enum
-    request-obs-fold: enum
-    src-affinity-exempt-addr: ipv4-address-any
-    src-affinity-exempt-addr6: ipv6-address
-    ssl-ca-cert: string
-    ssl-cert: string
-    strict-web-check: enum
-    webproxy-profile: string
+    always-learn-client-ip:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: always-learn-client-ip
+    fast-policy-match:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: fast-policy-match
+    forward-proxy-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: forward-proxy-auth
+    forward-server-affinity-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: forward-server-affinity-timeout
+    ldap-user-cache:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: ldap-user-cache
+    learn-client-ip:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: learn-client-ip
+    learn-client-ip-from-header:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: learn-client-ip-from-header
+      cardinality: list
+    learn-client-ip-srcaddr:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: learn-client-ip-srcaddr
+      cardinality: list
+    learn-client-ip-srcaddr6:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: learn-client-ip-srcaddr6
+      cardinality: list
+    log-app-id:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: log-app-id
+    log-forward-server:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: log-forward-server
+    log-policy-pending:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: log-policy-pending
+    max-message-length:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: max-message-length
+    max-request-length:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: max-request-length
+    max-waf-body-cache-length:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: max-waf-body-cache-length
+    policy-category-deep-inspect:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: policy-category-deep-inspect
+    proxy-fqdn:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: proxy-fqdn
+    proxy-transparent-cert-inspection:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: proxy-transparent-cert-inspection
+    request-obs-fold:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: request-obs-fold
+    src-affinity-exempt-addr:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: src-affinity-exempt-addr
+      address_family: ipv4
+    src-affinity-exempt-addr6:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: src-affinity-exempt-addr6
+      address_family: ipv6
+    ssl-ca-cert:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: ssl-ca-cert
+    ssl-cert:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: ssl-cert
+    strict-web-check:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: strict-web-check
+    webproxy-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: web-proxy global
+          parameter: webproxy-profile
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: web-proxy global
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: web-proxy global
 - path: web-proxy profile
   mode: table
   key: <name>

@@ -10,69 +10,449 @@ sections:
     mode: table
     key: <seq-num>
     fields:
-      category-id: integer
-      name: string
-      protocol: integer
+      category-id:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-definition
+            nested_config_path: firewall internet-service-definition entry
+            parameter: category-id
+      name:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-definition
+            nested_config_path: firewall internet-service-definition entry
+            parameter: name
+      protocol:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-definition
+            nested_config_path: firewall internet-service-definition entry
+            parameter: protocol
     nested:
     - name: port-range
       mode: table
       key: <id>
       fields:
-        end-port: integer
-        start-port: integer
+        end-port:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: firewall internet-service-definition
+              nested_config_path: firewall internet-service-definition entry port-range
+              parameter: end-port
+        start-port:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: firewall internet-service-definition
+              nested_config_path: firewall internet-service-definition entry port-range
+              parameter: start-port
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-definition
+          nested_config_path: firewall internet-service-definition entry port-range
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-definition
+            nested_config_path: firewall internet-service-definition entry port-range
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall internet-service-definition
+        nested_config_path: firewall internet-service-definition entry
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-definition
+          nested_config_path: firewall internet-service-definition entry
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall internet-service-definition
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall internet-service-definition
 - path: firewall internet-service-extension
   mode: table
   key: <id>
   fields:
-    comment: var-string
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-extension
+          parameter: comment
   nested:
   - name: disable-entry
     mode: table
     key: <id>
     fields:
-      addr-mode: enum
-      protocol: integer
+      addr-mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-extension
+            nested_config_path: firewall internet-service-extension disable-entry
+            parameter: addr-mode
+      protocol:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-extension
+            nested_config_path: firewall internet-service-extension disable-entry
+            parameter: protocol
     nested:
     - name: ip-range
       mode: table
       key: <id>
       fields:
-        end-ip: ipv4-address-any
-        start-ip: ipv4-address-any
+        end-ip:
+          source_type: ipv4-address-any
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: firewall internet-service-extension
+              nested_config_path: firewall internet-service-extension disable-entry ip-range
+              parameter: end-ip
+          address_family: ipv4
+        start-ip:
+          source_type: ipv4-address-any
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: firewall internet-service-extension
+              nested_config_path: firewall internet-service-extension disable-entry ip-range
+              parameter: start-ip
+          address_family: ipv4
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-extension
+          nested_config_path: firewall internet-service-extension disable-entry ip-range
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-extension
+            nested_config_path: firewall internet-service-extension disable-entry ip-range
     - name: ip6-range
       mode: table
       key: <id>
       fields:
-        end-ip6: ipv6-address
-        start-ip6: ipv6-address
+        end-ip6:
+          source_type: ipv6-address
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: firewall internet-service-extension
+              nested_config_path: firewall internet-service-extension disable-entry ip6-range
+              parameter: end-ip6
+          address_family: ipv6
+        start-ip6:
+          source_type: ipv6-address
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: firewall internet-service-extension
+              nested_config_path: firewall internet-service-extension disable-entry ip6-range
+              parameter: start-ip6
+          address_family: ipv6
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-extension
+          nested_config_path: firewall internet-service-extension disable-entry ip6-range
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-extension
+            nested_config_path: firewall internet-service-extension disable-entry ip6-range
     - name: port-range
       mode: table
       key: <id>
       fields:
-        end-port: integer
-        start-port: integer
+        end-port:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: firewall internet-service-extension
+              nested_config_path: firewall internet-service-extension disable-entry port-range
+              parameter: end-port
+        start-port:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: firewall internet-service-extension
+              nested_config_path: firewall internet-service-extension disable-entry port-range
+              parameter: start-port
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-extension
+          nested_config_path: firewall internet-service-extension disable-entry port-range
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-extension
+            nested_config_path: firewall internet-service-extension disable-entry port-range
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall internet-service-extension
+        nested_config_path: firewall internet-service-extension disable-entry
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-extension
+          nested_config_path: firewall internet-service-extension disable-entry
   - name: entry
     mode: table
     key: <id>
     fields:
-      addr-mode: enum
-      dst: identifier-list
-      dst6: identifier-list
-      protocol: integer
+      addr-mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-extension
+            nested_config_path: firewall internet-service-extension entry
+            parameter: addr-mode
+      dst:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-extension
+            nested_config_path: firewall internet-service-extension entry
+            parameter: dst
+        cardinality: list
+      dst6:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-extension
+            nested_config_path: firewall internet-service-extension entry
+            parameter: dst6
+        cardinality: list
+      protocol:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-extension
+            nested_config_path: firewall internet-service-extension entry
+            parameter: protocol
     nested:
     - name: port-range
       mode: table
       key: <id>
       fields:
-        end-port: integer
-        start-port: integer
+        end-port:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: firewall internet-service-extension
+              nested_config_path: firewall internet-service-extension entry port-range
+              parameter: end-port
+        start-port:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: firewall internet-service-extension
+              nested_config_path: firewall internet-service-extension entry port-range
+              parameter: start-port
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-extension
+          nested_config_path: firewall internet-service-extension entry port-range
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall internet-service-extension
+            nested_config_path: firewall internet-service-extension entry port-range
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall internet-service-extension
+        nested_config_path: firewall internet-service-extension entry
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-extension
+          nested_config_path: firewall internet-service-extension entry
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall internet-service-extension
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall internet-service-extension
 - path: firewall internet-service-group
   mode: table
   key: <name>
   fields:
-    comment: var-string
-    direction: enum
-    member: identifier-list
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-group
+          parameter: comment
+    direction:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-group
+          parameter: direction
+    member:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-group
+          parameter: member
+      cardinality: list
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall internet-service-group
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall internet-service-group
 - path: firewall internet-service-ipbl-reason
   mode: table
   key: <id>
@@ -95,11 +475,65 @@ sections:
   mode: table
   key: <name>
   fields:
-    city-id: integer
-    country-id: integer
-    internet-service-id: integer
-    region-id: integer
-    type: enum
+    city-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-name
+          parameter: city-id
+    country-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-name
+          parameter: country-id
+    internet-service-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-name
+          parameter: internet-service-id
+    region-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-name
+          parameter: region-id
+    type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall internet-service-name
+          parameter: type
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall internet-service-name
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall internet-service-name
 - path: firewall internet-service-owner
   mode: table
   key: <id>
@@ -144,10 +578,59 @@ sections:
   mode: table
   key: <transid>
   fields:
-    endip: ipv4-address-any
-    map-startip: ipv4-address-any
-    startip: ipv4-address-any
-    type: option
+    endip:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ip-translation
+          parameter: endip
+      address_family: ipv4
+    map-startip:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ip-translation
+          parameter: map-startip
+      address_family: ipv4
+    startip:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ip-translation
+          parameter: startip
+      address_family: ipv4
+    type:
+      source_type: option
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ip-translation
+          parameter: type
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall ip-translation
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ip-translation
 - path: firewall ipmacbinding setting
   mode: singleton
   fields:
@@ -440,6 +923,7 @@ sections:
       description: Final IPv4 address (inclusive) in the pool.
       default:
         value: 0.0.0.0
+      address_family: ipv4
     endport:
       source_type: integer
       fortios_type: integer
@@ -585,6 +1069,7 @@ sections:
       description: Final IPv4 source address to be translated.
       default:
         value: 0.0.0.0
+      address_family: ipv4
     source-startip:
       source_type: ipv4-address-any
       fortios_type: ipv4-address-any
@@ -598,6 +1083,7 @@ sections:
       description: First IPv4 source address to be translated.
       default:
         value: 0.0.0.0
+      address_family: ipv4
     startip:
       source_type: ipv4-address-any
       fortios_type: ipv4-address-any
@@ -611,6 +1097,7 @@ sections:
       description: First IPv4 address (inclusive) in the pool.
       default:
         value: 0.0.0.0
+      address_family: ipv4
     startport:
       source_type: integer
       fortios_type: integer
@@ -756,6 +1243,7 @@ sections:
       description: Final IPv6 address.
       default:
         value: '::'
+      address_family: ipv6
     nat46:
       source_type: enum
       fortios_type: option
@@ -787,6 +1275,7 @@ sections:
       description: First IPv6 address.
       default:
         value: '::'
+      address_family: ipv6
   evidence:
     status: documented
     source:
@@ -804,30 +1293,220 @@ sections:
 - path: firewall ipv6-eh-filter
   mode: singleton
   fields:
-    auth: enum
-    dest-opt: enum
-    fragment: enum
-    hdopt-type: integer
-    hop-opt: enum
-    no-next: enum
-    routing: enum
-    routing-type: integer
+    auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ipv6-eh-filter
+          parameter: auth
+    dest-opt:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ipv6-eh-filter
+          parameter: dest-opt
+    fragment:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ipv6-eh-filter
+          parameter: fragment
+    hdopt-type:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ipv6-eh-filter
+          parameter: hdopt-type
+    hop-opt:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ipv6-eh-filter
+          parameter: hop-opt
+    no-next:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ipv6-eh-filter
+          parameter: no-next
+    routing:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ipv6-eh-filter
+          parameter: routing
+    routing-type:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ipv6-eh-filter
+          parameter: routing-type
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall ipv6-eh-filter
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ipv6-eh-filter
 - path: firewall ldb-monitor
   mode: table
   key: <name>
   fields:
-    dns-match-ip: ipv4-address
-    dns-protocol: enum
-    dns-request-domain: string
-    http-get: string
-    http-match: string
-    http-max-redirects: integer
-    interval: integer
-    port: integer
-    retry: integer
-    src-ip: ipv4-address
-    timeout: integer
-    type: enum
+    dns-match-ip:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: dns-match-ip
+      address_family: ipv4
+    dns-protocol:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: dns-protocol
+    dns-request-domain:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: dns-request-domain
+    http-get:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: http-get
+    http-match:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: http-match
+    http-max-redirects:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: http-max-redirects
+    interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: interval
+    port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: port
+    retry:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: retry
+    src-ip:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: src-ip
+      address_family: ipv4
+    timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: timeout
+    type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ldb-monitor
+          parameter: type
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall ldb-monitor
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ldb-monitor
 - path: firewall local-in-policy
   mode: table
   key: <policyid>
@@ -1544,34 +2223,216 @@ sections:
   mode: table
   key: <name>
   fields:
-    associated-interface: string
-    color: integer
-    comment: var-string
-    end-ip: ipv4-address-any
-    start-ip: ipv4-address-any
-    subnet: ipv4-classnet-any
-    type: enum
+    associated-interface:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address
+          parameter: associated-interface
+    color:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address
+          parameter: color
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address
+          parameter: comment
+    end-ip:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address
+          parameter: end-ip
+      address_family: ipv4
+    start-ip:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address
+          parameter: start-ip
+      address_family: ipv4
+    subnet:
+      source_type: ipv4-classnet-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address
+          parameter: subnet
+      address_family: ipv4
+    type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address
+          parameter: type
   nested:
   - name: tagging
     mode: table
     key: <name>
     fields:
-      category: string
-      tags: identifier-list
+      category:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall multicast-address
+            nested_config_path: firewall multicast-address tagging
+            parameter: category
+      tags:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall multicast-address
+            nested_config_path: firewall multicast-address tagging
+            parameter: tags
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall multicast-address
+        nested_config_path: firewall multicast-address tagging
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address
+          nested_config_path: firewall multicast-address tagging
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall multicast-address
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall multicast-address
 - path: firewall multicast-address6
   mode: table
   key: <name>
   fields:
-    color: integer
-    comment: var-string
-    ip6: ipv6-network
+    color:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address6
+          parameter: color
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address6
+          parameter: comment
+    ip6:
+      source_type: ipv6-network
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address6
+          parameter: ip6
+      address_family: ipv6
   nested:
   - name: tagging
     mode: table
     key: <name>
     fields:
-      category: string
-      tags: identifier-list
+      category:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall multicast-address6
+            nested_config_path: firewall multicast-address6 tagging
+            parameter: category
+      tags:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall multicast-address6
+            nested_config_path: firewall multicast-address6 tagging
+            parameter: tags
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall multicast-address6
+        nested_config_path: firewall multicast-address6 tagging
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall multicast-address6
+          nested_config_path: firewall multicast-address6 tagging
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall multicast-address6
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall multicast-address6
 - path: firewall multicast-policy
   mode: table
   key: <id>
@@ -1640,6 +2501,7 @@ sections:
       description: IPv4 DNAT address used for multicast destination addresses.
       default:
         value: 0.0.0.0
+      address_family: ipv4
     dstaddr:
       source_type: identifier-list
       cardinality: list
@@ -1798,6 +2660,7 @@ sections:
       description: IPv4 source address for NATed traffic.
       default:
         value: 0.0.0.0
+      address_family: ipv4
     srcaddr:
       source_type: identifier-list
       cardinality: list
@@ -3278,6 +4141,7 @@ sections:
           config_path: firewall policy
           document_id: 01-746-912654-20241212
           parameter: natip
+      address_family: ipv4
     natoutbound:
       source_type: enum
       fortios_type: option

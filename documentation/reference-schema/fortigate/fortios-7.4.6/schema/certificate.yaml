@@ -6,18 +6,129 @@ sections:
   mode: table
   key: <name>
   fields:
-    auto-update-days: integer
-    auto-update-days-warning: integer
-    ca: opaque-user
-    ca-identifier: string
-    est-url: string
-    fabric-ca: enum
-    obsolete: enum
-    range: enum
-    scep-url: string
-    source: enum
-    source-ip: ipv4-address
-    ssl-inspection-trusted: enum
+    auto-update-days:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: auto-update-days
+    auto-update-days-warning:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: auto-update-days-warning
+    ca:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: ca
+    ca-identifier:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: ca-identifier
+    est-url:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: est-url
+    fabric-ca:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: fabric-ca
+    obsolete:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: obsolete
+    range:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: range
+    scep-url:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: scep-url
+    source:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: source
+    source-ip:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: source-ip
+      address_family: ipv4
+    ssl-inspection-trusted:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate ca
+          parameter: ssl-inspection-trusted
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: certificate ca
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: certificate ca
 - path: certificate crl
   mode: table
   key: <name>
@@ -38,47 +149,414 @@ sections:
   mode: table
   key: <name>
   fields:
-    acme-ca-url: string
-    acme-domain: string
-    acme-email: string
-    acme-renew-window: integer
-    acme-rsa-key-size: integer
-    auto-regenerate-days: integer
-    auto-regenerate-days-warning: integer
-    ca-identifier: string
-    certificate: opaque-user
-    cmp-path: string
-    cmp-regeneration-method: enum
-    cmp-server: string
-    cmp-server-cert: string
-    comments: string
-    csr: opaque-user
-    enroll-protocol: enum
-    est-ca-id: string
-    est-client-cert: string
-    est-http-password: string
-    est-http-username: string
-    est-regeneration-method: enum
-    est-server: string
-    est-server-cert: string
-    est-srp-password: string
-    est-srp-username: string
-    ike-localid: string
-    ike-localid-type: enum
-    name-encoding: enum
-    password: password!sensitive
-    private-key: opaque-user
-    private-key-retain: enum
-    range: enum
-    scep-password: password!sensitive
-    scep-url: string
-    source: enum
-    source-ip: ipv4-address
-    state: opaque-user
+    acme-ca-url:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: acme-ca-url
+    acme-domain:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: acme-domain
+    acme-email:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: acme-email
+    acme-renew-window:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: acme-renew-window
+    acme-rsa-key-size:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: acme-rsa-key-size
+    auto-regenerate-days:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: auto-regenerate-days
+    auto-regenerate-days-warning:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: auto-regenerate-days-warning
+    ca-identifier:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: ca-identifier
+    certificate:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: certificate
+    cmp-path:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: cmp-path
+    cmp-regeneration-method:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: cmp-regeneration-method
+    cmp-server:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: cmp-server
+    cmp-server-cert:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: cmp-server-cert
+    comments:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: comments
+    csr:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: csr
+    enroll-protocol:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: enroll-protocol
+    est-ca-id:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: est-ca-id
+    est-client-cert:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: est-client-cert
+    est-http-password:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: est-http-password
+    est-http-username:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: est-http-username
+    est-regeneration-method:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: est-regeneration-method
+    est-server:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: est-server
+    est-server-cert:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: est-server-cert
+    est-srp-password:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: est-srp-password
+    est-srp-username:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: est-srp-username
+    ike-localid:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: ike-localid
+    ike-localid-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: ike-localid-type
+    name-encoding:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: name-encoding
+    password:
+      source_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: password
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: certificate local
+            parameter: password
+    private-key:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: private-key
+    private-key-retain:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: private-key-retain
+    range:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: range
+    scep-password:
+      source_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: scep-password
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: certificate local
+            parameter: scep-password
+    scep-url:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: scep-url
+    source:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: source
+    source-ip:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: source-ip
+      address_family: ipv4
+    state:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate local
+          parameter: state
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: certificate local
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: certificate local
 - path: certificate remote
   mode: table
   key: <name>
   fields:
-    range: enum
-    remote: opaque-user
-    source: enum
+    range:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate remote
+          parameter: range
+    remote:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate remote
+          parameter: remote
+    source:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: certificate remote
+          parameter: source
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: certificate remote
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: certificate remote

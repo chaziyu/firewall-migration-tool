@@ -1577,18 +1577,112 @@ sections:
   mode: table
   key: <class-id>
   fields:
-    class-name: string
+    class-name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall traffic-class
+          parameter: class-name
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall traffic-class
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall traffic-class
 - path: firewall ttl-policy
   mode: table
   key: <id>
   fields:
-    action: enum
-    schedule: string
-    service: identifier-list
-    srcaddr: identifier-list
-    srcintf: string
-    status: enum
-    ttl: opaque-user
+    action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ttl-policy
+          parameter: action
+    schedule:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ttl-policy
+          parameter: schedule
+    service:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ttl-policy
+          parameter: service
+      cardinality: list
+    srcaddr:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ttl-policy
+          parameter: srcaddr
+      cardinality: list
+    srcintf:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ttl-policy
+          parameter: srcintf
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ttl-policy
+          parameter: status
+    ttl:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ttl-policy
+          parameter: ttl
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall ttl-policy
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ttl-policy
 - path: firewall vendor-mac
   mode: table
   key: <id>
@@ -1603,141 +1697,1178 @@ sections:
   key_type: string
   description: Configure virtual IP for IPv4.
   fields:
-    add-nat46-route: enum
-    arp-reply: enum
-    color: integer
-    comment: var-string
-    dns-mapping-ttl: integer
-    extaddr: identifier-list
-    extintf: string
-    extip: opaque-user
-    extport: opaque-user
-    gratuitous-arp-interval: integer
-    gslb-domain-name: string
-    gslb-hostname: string
-    h2-support: enum
-    h3-support: enum
-    http-cookie-age: integer
-    http-cookie-domain: string
-    http-cookie-domain-from-host: enum
-    http-cookie-generation: integer
-    http-cookie-path: string
-    http-cookie-share: enum
-    http-ip-header: enum
-    http-ip-header-name: string
-    http-multiplex: enum
-    http-multiplex-max-concurrent-request: integer
-    http-multiplex-max-request: integer
-    http-multiplex-ttl: integer
-    http-redirect: enum
-    https-cookie-secure: enum
-    id: integer
-    ipv6-mappedip: opaque-user
-    ipv6-mappedport: opaque-user
-    ldb-method: enum
-    mapped-addr: string
-    mappedip: identifier-list
-    mappedport: opaque-user
-    max-embryonic-connections: integer
-    monitor: identifier-list
-    nat-source-vip: enum
-    nat44: enum
-    nat46: enum
-    one-click-gslb-server: enum
-    outlook-web-access: enum
-    persistence: enum
-    portforward: enum
-    portmapping-type: enum
-    protocol: enum
-    server-type: enum
-    service: identifier-list
-    src-filter: identifier-list
-    src-vip-filter: enum
-    srcintf-filter: identifier-list
-    ssl-accept-ffdhe-groups: enum
-    ssl-algorithm: enum
-    ssl-certificate: identifier-list
-    ssl-client-fallback: enum
-    ssl-client-rekey-count: integer
-    ssl-client-renegotiation: enum
-    ssl-client-session-state-max: integer
-    ssl-client-session-state-timeout: integer
-    ssl-client-session-state-type: enum
-    ssl-dh-bits: enum
-    ssl-hpkp: enum
-    ssl-hpkp-age: integer
-    ssl-hpkp-backup: string
-    ssl-hpkp-include-subdomains: enum
-    ssl-hpkp-primary: string
-    ssl-hpkp-report-uri: var-string
-    ssl-hsts: enum
-    ssl-hsts-age: integer
-    ssl-hsts-include-subdomains: enum
-    ssl-http-location-conversion: enum
-    ssl-http-match-host: enum
-    ssl-max-version: enum
-    ssl-min-version: enum
-    ssl-mode: enum
-    ssl-pfs: enum
-    ssl-send-empty-frags: enum
-    ssl-server-algorithm: enum
-    ssl-server-max-version: enum
-    ssl-server-min-version: enum
-    ssl-server-renegotiation: enum
-    ssl-server-session-state-max: integer
-    ssl-server-session-state-timeout: integer
-    ssl-server-session-state-type: enum
-    status: enum
-    type: enum
-    uuid: uuid
-    weblogic-server: enum
-    websphere-server: enum
+    add-nat46-route:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: add-nat46-route
+    arp-reply:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: arp-reply
+    color:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: color
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: comment
+    dns-mapping-ttl:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: dns-mapping-ttl
+    extaddr:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: extaddr
+      cardinality: list
+    extintf:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: extintf
+    extip:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: extip
+    extport:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: extport
+    gratuitous-arp-interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: gratuitous-arp-interval
+    gslb-domain-name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: gslb-domain-name
+    gslb-hostname:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: gslb-hostname
+    h2-support:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: h2-support
+    h3-support:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: h3-support
+    http-cookie-age:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-cookie-age
+    http-cookie-domain:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-cookie-domain
+    http-cookie-domain-from-host:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-cookie-domain-from-host
+    http-cookie-generation:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-cookie-generation
+    http-cookie-path:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-cookie-path
+    http-cookie-share:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-cookie-share
+    http-ip-header:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-ip-header
+    http-ip-header-name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-ip-header-name
+    http-multiplex:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-multiplex
+    http-multiplex-max-concurrent-request:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-multiplex-max-concurrent-request
+    http-multiplex-max-request:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-multiplex-max-request
+    http-multiplex-ttl:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-multiplex-ttl
+    http-redirect:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: http-redirect
+    https-cookie-secure:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: https-cookie-secure
+    id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: id
+    ipv6-mappedip:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ipv6-mappedip
+    ipv6-mappedport:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ipv6-mappedport
+    ldb-method:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ldb-method
+    mapped-addr:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: mapped-addr
+    mappedip:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: mappedip
+      cardinality: list
+    mappedport:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: mappedport
+    max-embryonic-connections:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: max-embryonic-connections
+    monitor:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: monitor
+      cardinality: list
+    nat-source-vip:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: nat-source-vip
+    nat44:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: nat44
+    nat46:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: nat46
+    one-click-gslb-server:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: one-click-gslb-server
+    outlook-web-access:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: outlook-web-access
+    persistence:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: persistence
+    portforward:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: portforward
+    portmapping-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: portmapping-type
+    protocol:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: protocol
+    server-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: server-type
+    service:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: service
+      cardinality: list
+    src-filter:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: src-filter
+      cardinality: list
+    src-vip-filter:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: src-vip-filter
+    srcintf-filter:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: srcintf-filter
+      cardinality: list
+    ssl-accept-ffdhe-groups:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-accept-ffdhe-groups
+    ssl-algorithm:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-algorithm
+    ssl-certificate:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-certificate
+      cardinality: list
+    ssl-client-fallback:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-client-fallback
+    ssl-client-rekey-count:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-client-rekey-count
+    ssl-client-renegotiation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-client-renegotiation
+    ssl-client-session-state-max:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-client-session-state-max
+    ssl-client-session-state-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-client-session-state-timeout
+    ssl-client-session-state-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-client-session-state-type
+    ssl-dh-bits:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-dh-bits
+    ssl-hpkp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-hpkp
+    ssl-hpkp-age:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-hpkp-age
+    ssl-hpkp-backup:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-hpkp-backup
+    ssl-hpkp-include-subdomains:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-hpkp-include-subdomains
+    ssl-hpkp-primary:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-hpkp-primary
+    ssl-hpkp-report-uri:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-hpkp-report-uri
+    ssl-hsts:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-hsts
+    ssl-hsts-age:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-hsts-age
+    ssl-hsts-include-subdomains:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-hsts-include-subdomains
+    ssl-http-location-conversion:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-http-location-conversion
+    ssl-http-match-host:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-http-match-host
+    ssl-max-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-max-version
+    ssl-min-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-min-version
+    ssl-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-mode
+    ssl-pfs:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-pfs
+    ssl-send-empty-frags:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-send-empty-frags
+    ssl-server-algorithm:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-server-algorithm
+    ssl-server-max-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-server-max-version
+    ssl-server-min-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-server-min-version
+    ssl-server-renegotiation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-server-renegotiation
+    ssl-server-session-state-max:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-server-session-state-max
+    ssl-server-session-state-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-server-session-state-timeout
+    ssl-server-session-state-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: ssl-server-session-state-type
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: status
+    type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: type
+    uuid:
+      source_type: uuid
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: uuid
+    weblogic-server:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: weblogic-server
+    websphere-server:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          parameter: websphere-server
   nested:
   - name: gslb-public-ips
     mode: table
     key: <index>
     fields:
-      ip: ipv4-address-any
+      ip:
+        source_type: ipv4-address-any
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip gslb-public-ips
+            parameter: ip
+        address_family: ipv4
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall vip
+        nested_config_path: firewall vip gslb-public-ips
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          nested_config_path: firewall vip gslb-public-ips
   - name: quic
     mode: singleton
     fields:
-      ack-delay-exponent: integer
-      active-connection-id-limit: integer
-      active-migration: enum
-      grease-quic-bit: enum
-      max-ack-delay: integer
-      max-datagram-frame-size: integer
-      max-idle-timeout: integer
-      max-udp-payload-size: integer
+      ack-delay-exponent:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip quic
+            parameter: ack-delay-exponent
+      active-connection-id-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip quic
+            parameter: active-connection-id-limit
+      active-migration:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip quic
+            parameter: active-migration
+      grease-quic-bit:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip quic
+            parameter: grease-quic-bit
+      max-ack-delay:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip quic
+            parameter: max-ack-delay
+      max-datagram-frame-size:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip quic
+            parameter: max-datagram-frame-size
+      max-idle-timeout:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip quic
+            parameter: max-idle-timeout
+      max-udp-payload-size:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip quic
+            parameter: max-udp-payload-size
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall vip
+        nested_config_path: firewall vip quic
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          nested_config_path: firewall vip quic
   - name: realservers
     mode: table
     key: <id>
     fields:
-      address: string
-      client-ip: opaque-user
-      healthcheck: enum
-      holddown-interval: integer
-      http-host: string
-      ip: opaque-user
-      max-connections: integer
-      monitor: identifier-list
-      port: integer
-      status: enum
-      translate-host: enum
-      type: enum
-      weight: integer
+      address:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: address
+      client-ip:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: client-ip
+      healthcheck:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: healthcheck
+      holddown-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: holddown-interval
+      http-host:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: http-host
+      ip:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: ip
+      max-connections:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: max-connections
+      monitor:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: monitor
+        cardinality: list
+      port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: port
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: status
+      translate-host:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: translate-host
+      type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: type
+      weight:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip realservers
+            parameter: weight
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall vip
+        nested_config_path: firewall vip realservers
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          nested_config_path: firewall vip realservers
   - name: ssl-cipher-suites
     mode: table
     key: <priority>
     fields:
-      cipher: enum
-      versions: option-list
+      cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip ssl-cipher-suites
+            parameter: cipher
+      versions:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip ssl-cipher-suites
+            parameter: versions
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall vip
+        nested_config_path: firewall vip ssl-cipher-suites
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          nested_config_path: firewall vip ssl-cipher-suites
   - name: ssl-server-cipher-suites
     mode: table
     key: <priority>
     fields:
-      cipher: enum
-      versions: option-list
+      cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip ssl-server-cipher-suites
+            parameter: cipher
+      versions:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip
+            nested_config_path: firewall vip ssl-server-cipher-suites
+            parameter: versions
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall vip
+        nested_config_path: firewall vip ssl-server-cipher-suites
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip
+          nested_config_path: firewall vip ssl-server-cipher-suites
   evidence:
     status: documented
     source:
@@ -1757,120 +2888,997 @@ sections:
   key_type: string
   description: Configure virtual IP for IPv6.
   fields:
-    add-nat64-route: enum
-    color: integer
-    comment: var-string
-    embedded-ipv4-address: enum
-    extip: opaque-user
-    extport: opaque-user
-    h2-support: enum
-    h3-support: enum
-    http-cookie-age: integer
-    http-cookie-domain: string
-    http-cookie-domain-from-host: enum
-    http-cookie-generation: integer
-    http-cookie-path: string
-    http-cookie-share: enum
-    http-ip-header: enum
-    http-ip-header-name: string
-    http-multiplex: enum
-    http-redirect: enum
-    https-cookie-secure: enum
-    id: integer
-    ipv4-mappedip: opaque-user
-    ipv4-mappedport: opaque-user
-    ldb-method: enum
-    mappedip: opaque-user
-    mappedport: opaque-user
-    max-embryonic-connections: integer
-    monitor: identifier-list
-    nat-source-vip: enum
-    nat64: enum
-    nat66: enum
-    ndp-reply: enum
-    outlook-web-access: enum
-    persistence: enum
-    portforward: enum
-    protocol: enum
-    server-type: enum
-    src-filter: identifier-list
-    src-vip-filter: enum
-    ssl-accept-ffdhe-groups: enum
-    ssl-algorithm: enum
-    ssl-certificate: identifier-list
-    ssl-client-fallback: enum
-    ssl-client-rekey-count: integer
-    ssl-client-renegotiation: enum
-    ssl-client-session-state-max: integer
-    ssl-client-session-state-timeout: integer
-    ssl-client-session-state-type: enum
-    ssl-dh-bits: enum
-    ssl-hpkp: enum
-    ssl-hpkp-age: integer
-    ssl-hpkp-backup: string
-    ssl-hpkp-include-subdomains: enum
-    ssl-hpkp-primary: string
-    ssl-hpkp-report-uri: var-string
-    ssl-hsts: enum
-    ssl-hsts-age: integer
-    ssl-hsts-include-subdomains: enum
-    ssl-http-location-conversion: enum
-    ssl-http-match-host: enum
-    ssl-max-version: enum
-    ssl-min-version: enum
-    ssl-mode: enum
-    ssl-pfs: enum
-    ssl-send-empty-frags: enum
-    ssl-server-algorithm: enum
-    ssl-server-max-version: enum
-    ssl-server-min-version: enum
-    ssl-server-renegotiation: enum
-    ssl-server-session-state-max: integer
-    ssl-server-session-state-timeout: integer
-    ssl-server-session-state-type: enum
-    type: enum
-    uuid: uuid
-    weblogic-server: enum
-    websphere-server: enum
+    add-nat64-route:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: add-nat64-route
+    color:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: color
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: comment
+    embedded-ipv4-address:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: embedded-ipv4-address
+    extip:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: extip
+    extport:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: extport
+    h2-support:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: h2-support
+    h3-support:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: h3-support
+    http-cookie-age:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: http-cookie-age
+    http-cookie-domain:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: http-cookie-domain
+    http-cookie-domain-from-host:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: http-cookie-domain-from-host
+    http-cookie-generation:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: http-cookie-generation
+    http-cookie-path:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: http-cookie-path
+    http-cookie-share:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: http-cookie-share
+    http-ip-header:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: http-ip-header
+    http-ip-header-name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: http-ip-header-name
+    http-multiplex:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: http-multiplex
+    http-redirect:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: http-redirect
+    https-cookie-secure:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: https-cookie-secure
+    id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: id
+    ipv4-mappedip:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ipv4-mappedip
+    ipv4-mappedport:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ipv4-mappedport
+    ldb-method:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ldb-method
+    mappedip:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: mappedip
+    mappedport:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: mappedport
+    max-embryonic-connections:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: max-embryonic-connections
+    monitor:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: monitor
+      cardinality: list
+    nat-source-vip:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: nat-source-vip
+    nat64:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: nat64
+    nat66:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: nat66
+    ndp-reply:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ndp-reply
+    outlook-web-access:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: outlook-web-access
+    persistence:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: persistence
+    portforward:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: portforward
+    protocol:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: protocol
+    server-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: server-type
+    src-filter:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: src-filter
+      cardinality: list
+    src-vip-filter:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: src-vip-filter
+    ssl-accept-ffdhe-groups:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-accept-ffdhe-groups
+    ssl-algorithm:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-algorithm
+    ssl-certificate:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-certificate
+      cardinality: list
+    ssl-client-fallback:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-client-fallback
+    ssl-client-rekey-count:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-client-rekey-count
+    ssl-client-renegotiation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-client-renegotiation
+    ssl-client-session-state-max:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-client-session-state-max
+    ssl-client-session-state-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-client-session-state-timeout
+    ssl-client-session-state-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-client-session-state-type
+    ssl-dh-bits:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-dh-bits
+    ssl-hpkp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-hpkp
+    ssl-hpkp-age:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-hpkp-age
+    ssl-hpkp-backup:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-hpkp-backup
+    ssl-hpkp-include-subdomains:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-hpkp-include-subdomains
+    ssl-hpkp-primary:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-hpkp-primary
+    ssl-hpkp-report-uri:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-hpkp-report-uri
+    ssl-hsts:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-hsts
+    ssl-hsts-age:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-hsts-age
+    ssl-hsts-include-subdomains:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-hsts-include-subdomains
+    ssl-http-location-conversion:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-http-location-conversion
+    ssl-http-match-host:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-http-match-host
+    ssl-max-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-max-version
+    ssl-min-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-min-version
+    ssl-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-mode
+    ssl-pfs:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-pfs
+    ssl-send-empty-frags:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-send-empty-frags
+    ssl-server-algorithm:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-server-algorithm
+    ssl-server-max-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-server-max-version
+    ssl-server-min-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-server-min-version
+    ssl-server-renegotiation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-server-renegotiation
+    ssl-server-session-state-max:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-server-session-state-max
+    ssl-server-session-state-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-server-session-state-timeout
+    ssl-server-session-state-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: ssl-server-session-state-type
+    type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: type
+    uuid:
+      source_type: uuid
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: uuid
+    weblogic-server:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: weblogic-server
+    websphere-server:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          parameter: websphere-server
   nested:
   - name: quic
     mode: singleton
     fields:
-      ack-delay-exponent: integer
-      active-connection-id-limit: integer
-      active-migration: enum
-      grease-quic-bit: enum
-      max-ack-delay: integer
-      max-datagram-frame-size: integer
-      max-idle-timeout: integer
-      max-udp-payload-size: integer
+      ack-delay-exponent:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 quic
+            parameter: ack-delay-exponent
+      active-connection-id-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 quic
+            parameter: active-connection-id-limit
+      active-migration:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 quic
+            parameter: active-migration
+      grease-quic-bit:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 quic
+            parameter: grease-quic-bit
+      max-ack-delay:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 quic
+            parameter: max-ack-delay
+      max-datagram-frame-size:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 quic
+            parameter: max-datagram-frame-size
+      max-idle-timeout:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 quic
+            parameter: max-idle-timeout
+      max-udp-payload-size:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 quic
+            parameter: max-udp-payload-size
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall vip6
+        nested_config_path: firewall vip6 quic
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          nested_config_path: firewall vip6 quic
   - name: realservers
     mode: table
     key: <id>
     fields:
-      client-ip: opaque-user
-      healthcheck: enum
-      holddown-interval: integer
-      http-host: string
-      ip: opaque-user
-      max-connections: integer
-      monitor: identifier-list
-      port: integer
-      status: enum
-      translate-host: enum
-      weight: integer
+      client-ip:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 realservers
+            parameter: client-ip
+      healthcheck:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 realservers
+            parameter: healthcheck
+      holddown-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 realservers
+            parameter: holddown-interval
+      http-host:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 realservers
+            parameter: http-host
+      ip:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 realservers
+            parameter: ip
+      max-connections:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 realservers
+            parameter: max-connections
+      monitor:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 realservers
+            parameter: monitor
+        cardinality: list
+      port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 realservers
+            parameter: port
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 realservers
+            parameter: status
+      translate-host:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 realservers
+            parameter: translate-host
+      weight:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 realservers
+            parameter: weight
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall vip6
+        nested_config_path: firewall vip6 realservers
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          nested_config_path: firewall vip6 realservers
   - name: ssl-cipher-suites
     mode: table
     key: <priority>
     fields:
-      cipher: enum
-      versions: option-list
+      cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 ssl-cipher-suites
+            parameter: cipher
+      versions:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 ssl-cipher-suites
+            parameter: versions
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall vip6
+        nested_config_path: firewall vip6 ssl-cipher-suites
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          nested_config_path: firewall vip6 ssl-cipher-suites
   - name: ssl-server-cipher-suites
     mode: table
     key: <priority>
     fields:
-      cipher: enum
-      versions: option-list
+      cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 ssl-server-cipher-suites
+            parameter: cipher
+      versions:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall vip6
+            nested_config_path: firewall vip6 ssl-server-cipher-suites
+            parameter: versions
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall vip6
+        nested_config_path: firewall vip6 ssl-server-cipher-suites
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vip6
+          nested_config_path: firewall vip6 ssl-server-cipher-suites
   evidence:
     status: documented
     source:
@@ -2087,15 +4095,108 @@ sections:
   mode: table
   key: <name>
   fields:
-    color: integer
-    comment: var-string
-    uuid: uuid
-    wildcard-fqdn: string
+    color:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall wildcard-fqdn custom
+          parameter: color
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall wildcard-fqdn custom
+          parameter: comment
+    uuid:
+      source_type: uuid
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall wildcard-fqdn custom
+          parameter: uuid
+    wildcard-fqdn:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall wildcard-fqdn custom
+          parameter: wildcard-fqdn
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall wildcard-fqdn custom
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall wildcard-fqdn custom
 - path: firewall wildcard-fqdn group
   mode: table
   key: <name>
   fields:
-    color: integer
-    comment: var-string
-    member: identifier-list
-    uuid: uuid
+    color:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall wildcard-fqdn group
+          parameter: color
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall wildcard-fqdn group
+          parameter: comment
+    member:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall wildcard-fqdn group
+          parameter: member
+      cardinality: list
+    uuid:
+      source_type: uuid
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall wildcard-fqdn group
+          parameter: uuid
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall wildcard-fqdn group
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall wildcard-fqdn group
