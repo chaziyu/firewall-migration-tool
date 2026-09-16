@@ -219,6 +219,8 @@ sections:
 - path: firewall vip
   mode: table
   key: <name>
+  key_type: string
+  description: Configure virtual IP for IPv4.
   fields:
     add-nat46-route: enum
     arp-reply: enum
@@ -355,9 +357,24 @@ sections:
     fields:
       cipher: enum
       versions: option-list
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall vip
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall vip
 - path: firewall vip6
   mode: table
   key: <name>
+  key_type: string
+  description: Configure virtual IP for IPv6.
   fields:
     add-nat64-route: enum
     color: integer
@@ -473,23 +490,218 @@ sections:
     fields:
       cipher: enum
       versions: option-list
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall vip6
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall vip6
 - path: firewall vipgrp
   mode: table
   key: <name>
+  key_type: string
+  description: Configure IPv4 virtual IP groups.
   fields:
-    color: integer
-    comments: var-string
-    interface: string
-    member: identifier-list
-    uuid: uuid
+    color:
+      source_type: integer
+      fortios_type: integer
+      description: Integer value to determine the color of the icon in the GUI.
+      range:
+        min: 0
+        max: 32
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vipgrp
+          parameter: color
+    comments:
+      source_type: var-string
+      fortios_type: var-string
+      description: Comment.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vipgrp
+          parameter: comments
+    interface:
+      source_type: string
+      fortios_type: string
+      description: Interface.
+      length:
+        max: 35
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vipgrp
+          parameter: interface
+      semantic:
+        reference:
+          kind: interface
+          target_paths:
+          - system interface
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall vipgrp
+            parameter: interface
+    member:
+      source_type: identifier-list
+      fortios_type: string
+      description: Member VIP objects of the group. VIP name.
+      length:
+        max: 79
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vipgrp
+          parameter: member
+      semantic:
+        reference:
+          kind: ipv4-vip-group-member
+          target_paths:
+          - firewall vip
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall vipgrp
+            parameter: member
+    uuid:
+      source_type: uuid
+      fortios_type: uuid
+      description: Universally Unique Identifier (UUID; automatically assigned but can be manually reset).
+      default:
+        value: 00000000-0000-0000-0000-000000000000
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vipgrp
+          parameter: uuid
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall vipgrp
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall vipgrp
 - path: firewall vipgrp6
   mode: table
   key: <name>
+  key_type: string
+  description: Configure IPv6 virtual IP groups.
   fields:
-    color: integer
-    comments: var-string
-    member: identifier-list
-    uuid: uuid
+    color:
+      source_type: integer
+      fortios_type: integer
+      description: Integer value to determine the color of the icon in the GUI.
+      range:
+        min: 0
+        max: 32
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vipgrp6
+          parameter: color
+    comments:
+      source_type: var-string
+      fortios_type: var-string
+      description: Comment.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vipgrp6
+          parameter: comments
+    member:
+      source_type: identifier-list
+      fortios_type: string
+      description: Member VIP objects of the group. IPv6 VIP name.
+      length:
+        max: 79
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vipgrp6
+          parameter: member
+      semantic:
+        reference:
+          kind: ipv6-vip-group-member
+          target_paths:
+          - firewall vip6
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall vipgrp6
+            parameter: member
+    uuid:
+      source_type: uuid
+      fortios_type: uuid
+      description: Universally Unique Identifier (UUID; automatically assigned but can be manually reset).
+      default:
+        value: 00000000-0000-0000-0000-000000000000
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall vipgrp6
+          parameter: uuid
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall vipgrp6
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall vipgrp6
 - path: firewall wildcard-fqdn custom
   mode: table
   key: <name>
