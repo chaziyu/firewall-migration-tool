@@ -87,8 +87,40 @@ sections:
 - path: router bgp
   mode: singleton
   fields:
-    additional-path: enum
-    additional-path-select: integer
+    additional-path:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable selection of BGP IPv4 additional paths.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: additional-path
+    additional-path-select:
+      source_type: integer
+      fortios_type: integer
+      description: Number of additional paths to be selected for each IPv4 NLRI.
+      range:
+        min: 2
+        max: 255
+      default:
+        value: 2
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: additional-path-select
     additional-path-select-vpnv4: integer
     additional-path-select-vpnv6: integer
     additional-path-select6: integer
@@ -96,14 +128,37 @@ sections:
     additional-path-vpnv6: enum
     additional-path6: enum
     always-compare-med: enum
-    as: opaque-user
+    as:
+      source_type: opaque-user
+      fortios_type: user
+      description: Router AS number, asplain/asdot/asdot+ format, 0 to disable BGP.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: as
     bestpath-as-path-ignore: enum
     bestpath-cmp-confed-aspath: enum
     bestpath-cmp-routerid: enum
     bestpath-med-confed: enum
     bestpath-med-missing-as-worst: enum
     client-to-client-reflection: enum
-    cluster-id: ipv4-address-any
+    cluster-id:
+      source_type: ipv4-address-any
+      fortios_type: ipv4-address-any
+      description: Route reflector cluster ID.
+      address_family: ipv4
+      default:
+        value: 0.0.0.0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: cluster-id
     confederation-identifier: integer
     confederation-peers: identifier-list
     cross-family-conditional-adv: enum
@@ -111,35 +166,325 @@ sections:
     dampening-max-suppress-time: integer
     dampening-reachability-half-life: integer
     dampening-reuse: integer
-    dampening-route-map: string
+    dampening-route-map:
+      source_type: string
+      fortios_type: string
+      description: Criteria for dampening.
+      length:
+        max: 35
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: dampening-route-map
+      semantic:
+        reference:
+          kind: route_map
+          target_paths:
+          - router route-map
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router bgp
+            parameter: dampening-route-map
+            note: Fortinet documents this field as a route map; the concrete target config path is a project classification.
     dampening-suppress: integer
     dampening-unreachability-half-life: integer
-    default-local-preference: integer
+    default-local-preference:
+      source_type: integer
+      fortios_type: integer
+      description: Default local preference.
+      range:
+        min: 0
+        max: 4294967295
+      default:
+        value: 100
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: default-local-preference
     deterministic-med: enum
-    distance-external: integer
-    distance-internal: integer
-    distance-local: integer
-    ebgp-multipath: enum
+    distance-external:
+      source_type: integer
+      fortios_type: integer
+      description: Distance for routes external to the AS.
+      range:
+        min: 1
+        max: 255
+      default:
+        value: 20
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: distance-external
+    distance-internal:
+      source_type: integer
+      fortios_type: integer
+      description: Distance for routes internal to the AS.
+      range:
+        min: 1
+        max: 255
+      default:
+        value: 200
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: distance-internal
+    distance-local:
+      source_type: integer
+      fortios_type: integer
+      description: Distance for routes local to the AS.
+      range:
+        min: 1
+        max: 255
+      default:
+        value: 200
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: distance-local
+    ebgp-multipath:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable EBGP multi-path.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: ebgp-multipath
     enforce-first-as: enum
     fast-external-failover: enum
     graceful-end-on-timer: enum
-    graceful-restart: enum
-    graceful-restart-time: integer
-    graceful-stalepath-time: integer
-    graceful-update-delay: integer
-    holdtime-timer: integer
-    ibgp-multipath: enum
+    graceful-restart:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable BGP graceful restart capabilities.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: graceful-restart
+    graceful-restart-time:
+      source_type: integer
+      fortios_type: integer
+      description: Time needed for neighbors to restart (sec).
+      range:
+        min: 1
+        max: 3600
+      default:
+        value: 120
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: graceful-restart-time
+    graceful-stalepath-time:
+      source_type: integer
+      fortios_type: integer
+      description: Time to hold stale paths of restarting neighbor (sec).
+      range:
+        min: 1
+        max: 3600
+      default:
+        value: 360
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: graceful-stalepath-time
+    graceful-update-delay:
+      source_type: integer
+      fortios_type: integer
+      description: Route advertisement/selection delay after restart (sec).
+      range:
+        min: 1
+        max: 3600
+      default:
+        value: 120
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: graceful-update-delay
+    holdtime-timer:
+      source_type: integer
+      fortios_type: integer
+      description: Number of seconds to mark peer as dead.
+      range:
+        min: 3
+        max: 65535
+      default:
+        value: 180
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: holdtime-timer
+    ibgp-multipath:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable IBGP multi-path.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: ibgp-multipath
     ignore-optional-capability: enum
-    keepalive-timer: integer
+    keepalive-timer:
+      source_type: integer
+      fortios_type: integer
+      description: Frequency to send keep alive requests.
+      range:
+        min: 0
+        max: 65535
+      default:
+        value: 60
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: keepalive-timer
     log-neighbour-changes: enum
     multipath-recursive-distance: enum
-    network-import-check: enum
+    network-import-check:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable ensure BGP network route exists in IGP.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: enable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: network-import-check
     recursive-inherit-priority: enum
     recursive-next-hop: enum
-    router-id: ipv4-address-any
-    scan-time: integer
-    synchronization: enum
-    tag-resolve-mode: enum
+    router-id:
+      source_type: ipv4-address-any
+      fortios_type: ipv4-address-any
+      description: Router ID.
+      address_family: ipv4
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: router-id
+    scan-time:
+      source_type: integer
+      fortios_type: integer
+      description: Background scanner interval (sec), 0 to disable it.
+      range:
+        min: 5
+        max: 60
+      default:
+        value: 60
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: scan-time
+    synchronization:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable only advertise routes from iBGP if routes present in an IGP.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: synchronization
+    tag-resolve-mode:
+      source_type: enum
+      fortios_type: option
+      description: Configure tag-match mode. Resolves BGP routes with other routes containing the same tag.
+      options:
+      - value: disable
+        description: Disable tag-match mode.
+      - value: preferred
+        description: Use tag-match if a BGP route resolution with another route containing the same tag is successful.
+      - value: merge
+        description: Merge tag-match with best-match when they use different routes.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+          parameter: tag-resolve-mode
   nested:
   - name: admin-distance
     mode: table
@@ -566,6 +911,21 @@ sections:
       fields:
         interface: string
         route-map: string
+  description: Configure BGP.
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: router bgp
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: router bgp
+        note: BGP is treated as migration-relevant by the firewall-migration project; this classification is not a Fortinet documentation claim.
 - path: router community-list
   mode: table
   key: <name>
