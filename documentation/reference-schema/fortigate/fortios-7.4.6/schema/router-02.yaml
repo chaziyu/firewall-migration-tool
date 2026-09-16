@@ -240,266 +240,2139 @@ sections:
 - path: router ospf
   mode: singleton
   fields:
-    abr-type: enum
-    auto-cost-ref-bandwidth: integer
-    bfd: enum
-    database-overflow: enum
-    database-overflow-max-lsas: integer
-    database-overflow-time-to-recover: integer
-    default-information-metric: integer
-    default-information-metric-type: enum
-    default-information-originate: enum
-    default-information-route-map: string
-    default-metric: integer
-    distance: integer
-    distance-external: integer
-    distance-inter-area: integer
-    distance-intra-area: integer
-    distribute-list-in: string
-    distribute-route-map-in: string
-    log-neighbour-changes: enum
-    passive-interface: identifier-list
-    restart-mode: enum
-    restart-on-topology-change: enum
-    restart-period: integer
-    rfc1583-compatible: enum
-    router-id: ipv4-address-any
-    spf-timers: opaque-user
+    abr-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: abr-type
+    auto-cost-ref-bandwidth:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: auto-cost-ref-bandwidth
+    bfd:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: bfd
+    database-overflow:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: database-overflow
+    database-overflow-max-lsas:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: database-overflow-max-lsas
+    database-overflow-time-to-recover:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: database-overflow-time-to-recover
+    default-information-metric:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: default-information-metric
+    default-information-metric-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: default-information-metric-type
+    default-information-originate:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: default-information-originate
+    default-information-route-map:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: default-information-route-map
+      semantic:
+        reference:
+          kind: route_map
+          target_paths:
+          - router route-map
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router ospf
+            parameter: default-information-route-map
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    default-metric:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: default-metric
+    distance:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: distance
+    distance-external:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: distance-external
+    distance-inter-area:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: distance-inter-area
+    distance-intra-area:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: distance-intra-area
+    distribute-list-in:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: distribute-list-in
+      semantic:
+        reference:
+          kind: access_list
+          target_paths:
+          - router access-list
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router ospf
+            parameter: distribute-list-in
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    distribute-route-map-in:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: distribute-route-map-in
+      semantic:
+        reference:
+          kind: route_map
+          target_paths:
+          - router route-map
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router ospf
+            parameter: distribute-route-map-in
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    log-neighbour-changes:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: log-neighbour-changes
+    passive-interface:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: passive-interface
+      cardinality: list
+    restart-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: restart-mode
+    restart-on-topology-change:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: restart-on-topology-change
+    restart-period:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: restart-period
+    rfc1583-compatible:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: rfc1583-compatible
+    router-id:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: router-id
+      address_family: ipv4
+    spf-timers:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          parameter: spf-timers
   nested:
   - name: area
     mode: table
     key: <id>
     fields:
-      authentication: enum
-      comments: var-string
-      default-cost: integer
-      nssa-default-information-originate: enum
-      nssa-default-information-originate-metric: integer
-      nssa-default-information-originate-metric-type: enum
-      nssa-redistribution: enum
-      nssa-translator-role: enum
-      shortcut: enum
-      stub-type: enum
-      type: enum
+      authentication:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area
+            parameter: authentication
+      comments:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area
+            parameter: comments
+      default-cost:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area
+            parameter: default-cost
+      nssa-default-information-originate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area
+            parameter: nssa-default-information-originate
+      nssa-default-information-originate-metric:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area
+            parameter: nssa-default-information-originate-metric
+      nssa-default-information-originate-metric-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area
+            parameter: nssa-default-information-originate-metric-type
+      nssa-redistribution:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area
+            parameter: nssa-redistribution
+      nssa-translator-role:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area
+            parameter: nssa-translator-role
+      shortcut:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area
+            parameter: shortcut
+      stub-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area
+            parameter: stub-type
+      type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area
+            parameter: type
     nested:
     - name: filter-list
       mode: table
       key: <id>
       fields:
-        direction: enum
-        list: string
+        direction:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > filter-list
+              parameter: direction
+        list:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > filter-list
+              parameter: list
+          semantic:
+            reference:
+              kind: access_list
+              target_paths:
+              - router access-list
+              cardinality: one
+            evidence:
+              status: project_semantic
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                config_path: router ospf
+                parameter: list
+                nested_config_path: area > filter-list
+                note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          nested_config_path: area > filter-list
     - name: range
       mode: table
       key: <id>
       fields:
-        advertise: enum
-        prefix: ipv4-classnet-any
-        substitute: ipv4-classnet-any
-        substitute-status: enum
+        advertise:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > range
+              parameter: advertise
+        prefix:
+          source_type: ipv4-classnet-any
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > range
+              parameter: prefix
+          address_family: ipv4
+        substitute:
+          source_type: ipv4-classnet-any
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > range
+              parameter: substitute
+          address_family: ipv4
+        substitute-status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > range
+              parameter: substitute-status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          nested_config_path: area > range
     - name: virtual-link
       mode: table
       key: <name>
       fields:
-        authentication: enum
-        authentication-key: password!sensitive
-        dead-interval: integer
-        hello-interval: integer
-        keychain: string
-        peer: ipv4-address-any
-        retransmit-interval: integer
-        transmit-delay: integer
+        authentication:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > virtual-link
+              parameter: authentication
+        authentication-key:
+          source_type: password
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > virtual-link
+              parameter: authentication-key
+          semantic:
+            sensitive: true
+            evidence:
+              status: project_semantic
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                config_path: router ospf
+                parameter: authentication-key
+                nested_config_path: area > virtual-link
+                note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+        dead-interval:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > virtual-link
+              parameter: dead-interval
+        hello-interval:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > virtual-link
+              parameter: hello-interval
+        keychain:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > virtual-link
+              parameter: keychain
+          semantic:
+            reference:
+              kind: key_chain
+              target_paths:
+              - router key-chain
+              cardinality: one
+            evidence:
+              status: project_semantic
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                config_path: router ospf
+                parameter: keychain
+                nested_config_path: area > virtual-link
+                note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+        peer:
+          source_type: ipv4-address-any
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > virtual-link
+              parameter: peer
+          address_family: ipv4
+        retransmit-interval:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > virtual-link
+              parameter: retransmit-interval
+        transmit-delay:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: area > virtual-link
+              parameter: transmit-delay
       nested:
       - name: md5-keys
         mode: table
         key: <id>
         fields:
-          key-string: password!sensitive
+          key-string:
+            source_type: password
+            evidence:
+              status: documented
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                document_id: 01-746-912654-20241212
+                config_path: router ospf
+                nested_config_path: area > virtual-link > md5-keys
+                parameter: key-string
+            semantic:
+              sensitive: true
+              evidence:
+                status: project_semantic
+                source:
+                  document: FortiOS 7.4.6 CLI Reference
+                  config_path: router ospf
+                  parameter: key-string
+                  nested_config_path: area > virtual-link > md5-keys
+                  note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: area > virtual-link > md5-keys
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          nested_config_path: area > virtual-link
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: router ospf
+        nested_config_path: area
   - name: distribute-list
     mode: table
     key: <id>
     fields:
-      access-list: string
-      protocol: enum
+      access-list:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: distribute-list
+            parameter: access-list
+        semantic:
+          reference:
+            kind: access_list
+            target_paths:
+            - router access-list
+            cardinality: one
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: router ospf
+              parameter: access-list
+              nested_config_path: distribute-list
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      protocol:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: distribute-list
+            parameter: protocol
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: router ospf
+        nested_config_path: distribute-list
   - name: neighbor
     mode: table
     key: <id>
     fields:
-      cost: integer
-      ip: ipv4-address
-      poll-interval: integer
-      priority: integer
+      cost:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: neighbor
+            parameter: cost
+      ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: neighbor
+            parameter: ip
+        address_family: ipv4
+      poll-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: neighbor
+            parameter: poll-interval
+      priority:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: neighbor
+            parameter: priority
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: router ospf
+        nested_config_path: neighbor
   - name: network
     mode: table
     key: <id>
     fields:
-      area: ipv4-address-any
-      comments: var-string
-      prefix: ipv4-classnet
+      area:
+        source_type: ipv4-address-any
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: network
+            parameter: area
+        address_family: ipv4
+      comments:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: network
+            parameter: comments
+      prefix:
+        source_type: ipv4-classnet
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: network
+            parameter: prefix
+        address_family: ipv4
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: router ospf
+        nested_config_path: network
   - name: ospf-interface
     mode: table
     key: <name>
     fields:
-      authentication: enum
-      authentication-key: password!sensitive
-      bfd: enum
-      comments: var-string
-      cost: integer
-      database-filter-out: enum
-      dead-interval: integer
-      hello-interval: integer
-      hello-multiplier: integer
-      interface: string
-      ip: ipv4-address
-      keychain: string
-      mtu: integer
-      mtu-ignore: enum
-      network-type: enum
-      prefix-length: integer
-      priority: integer
-      resync-timeout: integer
-      retransmit-interval: integer
-      status: enum
-      transmit-delay: integer
+      authentication:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: authentication
+      authentication-key:
+        source_type: password
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: authentication-key
+        semantic:
+          sensitive: true
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: router ospf
+              parameter: authentication-key
+              nested_config_path: ospf-interface
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      bfd:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: bfd
+      comments:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: comments
+      cost:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: cost
+      database-filter-out:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: database-filter-out
+      dead-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: dead-interval
+      hello-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: hello-interval
+      hello-multiplier:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: hello-multiplier
+      interface:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: interface
+        semantic:
+          reference:
+            kind: interface
+            target_paths:
+            - system interface
+            cardinality: one
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: router ospf
+              parameter: interface
+              nested_config_path: ospf-interface
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: ip
+        address_family: ipv4
+      keychain:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: keychain
+        semantic:
+          reference:
+            kind: key_chain
+            target_paths:
+            - router key-chain
+            cardinality: one
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: router ospf
+              parameter: keychain
+              nested_config_path: ospf-interface
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      mtu:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: mtu
+      mtu-ignore:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: mtu-ignore
+      network-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: network-type
+      prefix-length:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: prefix-length
+      priority:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: priority
+      resync-timeout:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: resync-timeout
+      retransmit-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: retransmit-interval
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: status
+      transmit-delay:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: ospf-interface
+            parameter: transmit-delay
     nested:
     - name: md5-keys
       mode: table
       key: <id>
       fields:
-        key-string: password!sensitive
+        key-string:
+          source_type: password
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf
+              nested_config_path: ospf-interface > md5-keys
+              parameter: key-string
+          semantic:
+            sensitive: true
+            evidence:
+              status: project_semantic
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                config_path: router ospf
+                parameter: key-string
+                nested_config_path: ospf-interface > md5-keys
+                note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf
+          nested_config_path: ospf-interface > md5-keys
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: router ospf
+        nested_config_path: ospf-interface
   - name: redistribute
     mode: table
     key: <name>
     fields:
-      metric: integer
-      metric-type: enum
-      routemap: string
-      status: enum
-      tag: integer
+      metric:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: redistribute
+            parameter: metric
+      metric-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: redistribute
+            parameter: metric-type
+      routemap:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: redistribute
+            parameter: routemap
+        semantic:
+          reference:
+            kind: route_map
+            target_paths:
+            - router route-map
+            cardinality: one
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: router ospf
+              parameter: routemap
+              nested_config_path: redistribute
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: redistribute
+            parameter: status
+      tag:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: redistribute
+            parameter: tag
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: router ospf
+        nested_config_path: redistribute
   - name: summary-address
     mode: table
     key: <id>
     fields:
-      advertise: enum
-      prefix: ipv4-classnet
-      tag: integer
+      advertise:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: summary-address
+            parameter: advertise
+      prefix:
+        source_type: ipv4-classnet
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: summary-address
+            parameter: prefix
+        address_family: ipv4
+      tag:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf
+            nested_config_path: summary-address
+            parameter: tag
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: router ospf
+        nested_config_path: summary-address
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: router ospf
+  description: Configure OSPF.
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: router ospf
+        note: Migration relevance is a project classification, not a Fortinet documentation claim.
 - path: router ospf6
   mode: singleton
   fields:
-    abr-type: enum
-    auto-cost-ref-bandwidth: integer
-    bfd: enum
-    default-information-metric: integer
-    default-information-metric-type: enum
-    default-information-originate: enum
-    default-information-route-map: string
-    default-metric: integer
-    log-neighbour-changes: enum
-    passive-interface: identifier-list
-    restart-mode: enum
-    restart-on-topology-change: enum
-    restart-period: integer
-    router-id: ipv4-address-any
-    spf-timers: opaque-user
+    abr-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: abr-type
+    auto-cost-ref-bandwidth:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: auto-cost-ref-bandwidth
+    bfd:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: bfd
+    default-information-metric:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: default-information-metric
+    default-information-metric-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: default-information-metric-type
+    default-information-originate:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: default-information-originate
+    default-information-route-map:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: default-information-route-map
+      semantic:
+        reference:
+          kind: route_map
+          target_paths:
+          - router route-map
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router ospf6
+            parameter: default-information-route-map
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    default-metric:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: default-metric
+    log-neighbour-changes:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: log-neighbour-changes
+    passive-interface:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: passive-interface
+      cardinality: list
+    restart-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: restart-mode
+    restart-on-topology-change:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: restart-on-topology-change
+    restart-period:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: restart-period
+    router-id:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: router-id
+      address_family: ipv4
+    spf-timers:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          parameter: spf-timers
   nested:
   - name: area
     mode: table
     key: <id>
     fields:
-      authentication: enum
-      default-cost: integer
-      ipsec-auth-alg: enum
-      ipsec-enc-alg: enum
-      key-rollover-interval: integer
-      nssa-default-information-originate: enum
-      nssa-default-information-originate-metric: integer
-      nssa-default-information-originate-metric-type: enum
-      nssa-redistribution: enum
-      nssa-translator-role: enum
-      stub-type: enum
-      type: enum
+      authentication:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: authentication
+      default-cost:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: default-cost
+      ipsec-auth-alg:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: ipsec-auth-alg
+      ipsec-enc-alg:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: ipsec-enc-alg
+      key-rollover-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: key-rollover-interval
+      nssa-default-information-originate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: nssa-default-information-originate
+      nssa-default-information-originate-metric:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: nssa-default-information-originate-metric
+      nssa-default-information-originate-metric-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: nssa-default-information-originate-metric-type
+      nssa-redistribution:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: nssa-redistribution
+      nssa-translator-role:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: nssa-translator-role
+      stub-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: stub-type
+      type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area
+            parameter: type
     nested:
     - name: ipsec-keys
       mode: table
       key: <spi>
       fields:
-        auth-key: password!sensitive
-        enc-key: password!sensitive
+        auth-key:
+          source_type: password
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > ipsec-keys
+              parameter: auth-key
+          semantic:
+            sensitive: true
+            evidence:
+              status: project_semantic
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                config_path: router ospf6
+                parameter: auth-key
+                nested_config_path: area > ipsec-keys
+                note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+        enc-key:
+          source_type: password
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > ipsec-keys
+              parameter: enc-key
+          semantic:
+            sensitive: true
+            evidence:
+              status: project_semantic
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                config_path: router ospf6
+                parameter: enc-key
+                nested_config_path: area > ipsec-keys
+                note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          nested_config_path: area > ipsec-keys
     - name: range
       mode: table
       key: <id>
       fields:
-        advertise: enum
-        prefix6: ipv6-network
+        advertise:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > range
+              parameter: advertise
+        prefix6:
+          source_type: ipv6-network
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > range
+              parameter: prefix6
+          address_family: ipv6
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          nested_config_path: area > range
     - name: virtual-link
       mode: table
       key: <name>
       fields:
-        authentication: enum
-        dead-interval: integer
-        hello-interval: integer
-        ipsec-auth-alg: enum
-        ipsec-enc-alg: enum
-        key-rollover-interval: integer
-        peer: ipv4-address-any
-        retransmit-interval: integer
-        transmit-delay: integer
+        authentication:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > virtual-link
+              parameter: authentication
+        dead-interval:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > virtual-link
+              parameter: dead-interval
+        hello-interval:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > virtual-link
+              parameter: hello-interval
+        ipsec-auth-alg:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > virtual-link
+              parameter: ipsec-auth-alg
+        ipsec-enc-alg:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > virtual-link
+              parameter: ipsec-enc-alg
+        key-rollover-interval:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > virtual-link
+              parameter: key-rollover-interval
+        peer:
+          source_type: ipv4-address-any
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > virtual-link
+              parameter: peer
+          address_family: ipv4
+        retransmit-interval:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > virtual-link
+              parameter: retransmit-interval
+        transmit-delay:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: area > virtual-link
+              parameter: transmit-delay
       nested:
       - name: ipsec-keys
         mode: table
         key: <spi>
         fields:
-          auth-key: password!sensitive
-          enc-key: password!sensitive
+          auth-key:
+            source_type: password
+            evidence:
+              status: documented
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                document_id: 01-746-912654-20241212
+                config_path: router ospf6
+                nested_config_path: area > virtual-link > ipsec-keys
+                parameter: auth-key
+            semantic:
+              sensitive: true
+              evidence:
+                status: project_semantic
+                source:
+                  document: FortiOS 7.4.6 CLI Reference
+                  config_path: router ospf6
+                  parameter: auth-key
+                  nested_config_path: area > virtual-link > ipsec-keys
+                  note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+          enc-key:
+            source_type: password
+            evidence:
+              status: documented
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                document_id: 01-746-912654-20241212
+                config_path: router ospf6
+                nested_config_path: area > virtual-link > ipsec-keys
+                parameter: enc-key
+            semantic:
+              sensitive: true
+              evidence:
+                status: project_semantic
+                source:
+                  document: FortiOS 7.4.6 CLI Reference
+                  config_path: router ospf6
+                  parameter: enc-key
+                  nested_config_path: area > virtual-link > ipsec-keys
+                  note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: area > virtual-link > ipsec-keys
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          nested_config_path: area > virtual-link
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: router ospf6
+        nested_config_path: area
   - name: ospf6-interface
     mode: table
     key: <name>
     fields:
-      area-id: ipv4-address-any
-      authentication: enum
-      bfd: enum
-      cost: integer
-      dead-interval: integer
-      hello-interval: integer
-      interface: string
-      ipsec-auth-alg: enum
-      ipsec-enc-alg: enum
-      key-rollover-interval: integer
-      mtu: integer
-      mtu-ignore: enum
-      network-type: enum
-      priority: integer
-      retransmit-interval: integer
-      status: enum
-      transmit-delay: integer
+      area-id:
+        source_type: ipv4-address-any
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: area-id
+        address_family: ipv4
+      authentication:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: authentication
+      bfd:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: bfd
+      cost:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: cost
+      dead-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: dead-interval
+      hello-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: hello-interval
+      interface:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: interface
+        semantic:
+          reference:
+            kind: interface
+            target_paths:
+            - system interface
+            cardinality: one
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: router ospf6
+              parameter: interface
+              nested_config_path: ospf6-interface
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      ipsec-auth-alg:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: ipsec-auth-alg
+      ipsec-enc-alg:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: ipsec-enc-alg
+      key-rollover-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: key-rollover-interval
+      mtu:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: mtu
+      mtu-ignore:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: mtu-ignore
+      network-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: network-type
+      priority:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: priority
+      retransmit-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: retransmit-interval
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: status
+      transmit-delay:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: ospf6-interface
+            parameter: transmit-delay
     nested:
     - name: ipsec-keys
       mode: table
       key: <spi>
       fields:
-        auth-key: password!sensitive
-        enc-key: password!sensitive
+        auth-key:
+          source_type: password
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: ospf6-interface > ipsec-keys
+              parameter: auth-key
+          semantic:
+            sensitive: true
+            evidence:
+              status: project_semantic
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                config_path: router ospf6
+                parameter: auth-key
+                nested_config_path: ospf6-interface > ipsec-keys
+                note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+        enc-key:
+          source_type: password
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: ospf6-interface > ipsec-keys
+              parameter: enc-key
+          semantic:
+            sensitive: true
+            evidence:
+              status: project_semantic
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                config_path: router ospf6
+                parameter: enc-key
+                nested_config_path: ospf6-interface > ipsec-keys
+                note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          nested_config_path: ospf6-interface > ipsec-keys
     - name: neighbor
       mode: table
       key: <ip6>
       fields:
-        cost: integer
-        poll-interval: integer
-        priority: integer
+        cost:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: ospf6-interface > neighbor
+              parameter: cost
+        poll-interval:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: ospf6-interface > neighbor
+              parameter: poll-interval
+        priority:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: router ospf6
+              nested_config_path: ospf6-interface > neighbor
+              parameter: priority
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router ospf6
+          nested_config_path: ospf6-interface > neighbor
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: router ospf6
+        nested_config_path: ospf6-interface
   - name: redistribute
     mode: table
     key: <name>
     fields:
-      metric: integer
-      metric-type: enum
-      routemap: string
-      status: enum
+      metric:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: redistribute
+            parameter: metric
+      metric-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: redistribute
+            parameter: metric-type
+      routemap:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: redistribute
+            parameter: routemap
+        semantic:
+          reference:
+            kind: route_map
+            target_paths:
+            - router route-map
+            cardinality: one
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: router ospf6
+              parameter: routemap
+              nested_config_path: redistribute
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: redistribute
+            parameter: status
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: router ospf6
+        nested_config_path: redistribute
   - name: summary-address
     mode: table
     key: <id>
     fields:
-      advertise: enum
-      prefix6: ipv6-network
-      tag: integer
+      advertise:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: summary-address
+            parameter: advertise
+      prefix6:
+        source_type: ipv6-network
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: summary-address
+            parameter: prefix6
+        address_family: ipv6
+      tag:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: router ospf6
+            nested_config_path: summary-address
+            parameter: tag
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: router ospf6
+        nested_config_path: summary-address
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: router ospf6
+  description: Configure IPv6 OSPF.
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: router ospf6
+        note: Migration relevance is a project classification, not a Fortinet documentation claim.
 - path: router policy
   mode: table
   key: <seq-num>
