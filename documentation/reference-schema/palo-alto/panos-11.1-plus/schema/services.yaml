@@ -1,0 +1,41 @@
+phase: 3
+family: service-objects
+nodes:
+- id: service
+  kind: list
+  xpath: '{scope}/service'
+  scope: [shared, device-group, vsys]
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/service/entry'
+      repository_path: src/fwmigrate/parsers/palo_alto/transformer.py
+  entry_key: name
+  fields:
+    protocol:
+      xml: protocol/*
+      type: enum
+      values: [tcp, udp]
+    destination_port:
+      xml: protocol/{tcp|udp}/port
+      type: port-spec
+    source_port:
+      xml: protocol/{tcp|udp}/source-port
+      type: port-spec
+    override_timeout:
+      xml: protocol/{tcp|udp}/override/*
+      type: xml-subtree
+      migration_relevance: source_evidence_only
+    description:
+      xml: description
+      type: string
+    tags:
+      xml: tag/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds: [tag]
+        cardinality: many
+        scope_resolution: current->ancestors->shared
+  custom_handler: true

@@ -1,0 +1,98 @@
+phase: 21
+family: external-and-dynamic-objects
+nodes:
+- id: external-dynamic-list
+  kind: list
+  xpath: '{scope}/external-list'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/external-list'
+      repository_path: src/fwmigrate/parsers/palo_alto/external_lists.py
+  entry_key: name
+  fields:
+    type:
+      xml: type
+      type: xml-subtree
+      custom_handler: true
+    url:
+      xml: type/*/url
+      type: string
+    certificate_profile:
+      xml: type/*/certificate-profile
+      type: string
+      reference:
+        kinds:
+        - certificate-profile
+        cardinality: one
+    recurring:
+      xml: type/*/recurring
+      type: xml-subtree
+      custom_handler: true
+    auth:
+      xml: type/*/auth
+      type: xml-subtree
+      sensitive: true
+      custom_handler: true
+  custom_handler: true
+  sensitive: true
+- id: dynamic-address-group
+  kind: list
+  xpath: '{scope}/address-group'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/address-group'
+      repository_path: src/fwmigrate/parsers/palo_alto/network.py
+  entry_key: name
+  fields:
+    filter:
+      xml: dynamic/filter
+      type: string
+    tags:
+      xml: tag/member
+      type: member-list
+      cardinality: list
+  custom_handler: true
+- id: registered-ip-tag
+  kind: container
+  xpath: runtime/registered-ip
+  scope:
+  - device
+  migration_relevance: operational_only
+  evidence:
+    status: project_semantic
+    source:
+      xpath: runtime/registered-ip
+      note: Runtime registered-IP/tag state is not configuration source schema.
+- id: vm-information-source
+  kind: list
+  xpath: '{scope}/vm-info-source'
+  scope:
+  - template
+  - device
+  migration_relevance: needs_review
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/vm-info-source'
+      repository_path: src/fwmigrate/parsers/palo_alto/advanced_settings.py
+  entry_key: name
+  fields:
+    source:
+      xml: '*'
+      type: xml-subtree
+      sensitive: true
+      custom_handler: true
+  custom_handler: true
+  sensitive: true

@@ -1,0 +1,165 @@
+phase: 17
+family: ipsec-vpn
+nodes:
+- id: ike-crypto-profile
+  kind: list
+  xpath: '{network-scope}/network/ike/crypto-profiles/ike-crypto-profiles'
+  scope:
+  - template
+  - template-stack
+  - device
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{network-scope}/network/ike/crypto-profiles/ike-crypto-profiles'
+      repository_path: src/fwmigrate/parsers/palo_alto/vpn.py
+  entry_key: name
+  fields:
+    dh_group:
+      xml: dh-group/member
+      type: member-list
+      cardinality: list
+    authentication:
+      xml: authentication/member
+      type: member-list
+      cardinality: list
+    encryption:
+      xml: encryption/member
+      type: member-list
+      cardinality: list
+    lifetime:
+      xml: lifetime
+      type: xml-subtree
+      custom_handler: true
+  custom_handler: true
+- id: ipsec-crypto-profile
+  kind: list
+  xpath: '{network-scope}/network/ike/crypto-profiles/ipsec-crypto-profiles'
+  scope:
+  - template
+  - template-stack
+  - device
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{network-scope}/network/ike/crypto-profiles/ipsec-crypto-profiles'
+      repository_path: src/fwmigrate/parsers/palo_alto/vpn.py
+  entry_key: name
+  fields:
+    esp:
+      xml: esp
+      type: xml-subtree
+      custom_handler: true
+    ah:
+      xml: ah
+      type: xml-subtree
+      custom_handler: true
+    dh_group:
+      xml: dh-group
+      type: string
+    lifetime:
+      xml: lifetime
+      type: xml-subtree
+      custom_handler: true
+    lifesize:
+      xml: lifesize
+      type: xml-subtree
+      custom_handler: true
+  custom_handler: true
+- id: ike-gateway
+  kind: list
+  xpath: '{network-scope}/network/ike/gateway'
+  scope:
+  - template
+  - template-stack
+  - device
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{network-scope}/network/ike/gateway'
+      repository_path: src/fwmigrate/parsers/palo_alto/vpn.py
+  entry_key: name
+  fields:
+    protocol:
+      xml: protocol
+      type: xml-subtree
+      custom_handler: true
+    local_address:
+      xml: local-address
+      type: xml-subtree
+      custom_handler: true
+    peer_address:
+      xml: peer-address
+      type: xml-subtree
+      custom_handler: true
+    authentication:
+      xml: authentication
+      type: xml-subtree
+      sensitive: true
+      custom_handler: true
+    local_id:
+      xml: local-id
+      type: xml-subtree
+      custom_handler: true
+    peer_id:
+      xml: peer-id
+      type: xml-subtree
+      custom_handler: true
+  custom_handler: true
+  sensitive: true
+- id: ipsec-tunnel
+  kind: list
+  xpath: '{network-scope}/network/tunnel/ipsec'
+  scope:
+  - template
+  - template-stack
+  - device
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{network-scope}/network/tunnel/ipsec'
+      repository_path: src/fwmigrate/parsers/palo_alto/vpn.py
+  entry_key: name
+  fields:
+    tunnel_interface:
+      xml: tunnel-interface
+      type: string
+      reference:
+        kinds:
+        - interface
+        cardinality: one
+    auto_key:
+      xml: auto-key
+      type: xml-subtree
+      custom_handler: true
+    manual_key:
+      xml: manual-key
+      type: xml-subtree
+      sensitive: true
+      custom_handler: true
+    proxy_id_ipv4:
+      xml: auto-key/proxy-id/entry
+      type: entry-list
+      cardinality: list
+      custom_handler: true
+    proxy_id_ipv6:
+      xml: auto-key/proxy-id-v6/entry
+      type: entry-list
+      cardinality: list
+      custom_handler: true
+    anti_replay:
+      xml: anti-replay
+      type: boolean
+    copy_tos:
+      xml: copy-tos
+      type: boolean
+  custom_handler: true
+  sensitive: true

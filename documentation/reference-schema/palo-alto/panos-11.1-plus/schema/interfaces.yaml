@@ -1,0 +1,168 @@
+phase: 6
+family: interfaces
+nodes:
+- id: ethernet-interface
+  kind: list
+  xpath: '{network-scope}/network/interface/ethernet'
+  scope:
+  - template
+  - template-stack
+  - device
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{network-scope}/network/interface/ethernet'
+      repository_path: src/fwmigrate/parsers/palo_alto/interfaces.py
+  entry_key: name
+  fields:
+    comment:
+      xml: comment
+      type: string
+    layer3_ips:
+      xml: layer3/ip/entry/@name
+      type: entry-list
+      cardinality: list
+    layer3_ipv6:
+      xml: layer3/ipv6/address/entry/@name
+      type: entry-list
+      cardinality: list
+    layer2:
+      xml: layer2
+      type: xml-subtree
+    virtual_wire:
+      xml: virtual-wire
+      type: xml-subtree
+    tap:
+      xml: tap
+      type: xml-subtree
+    ha:
+      xml: ha
+      type: xml-subtree
+    management_profile:
+      xml: layer3/interface-management-profile
+      type: string
+      reference:
+        kinds:
+        - interface-management-profile
+        cardinality: one
+        scope_resolution: template/device
+    subinterfaces:
+      xml: layer3/units/entry
+      type: entry-list
+      cardinality: list
+      custom_handler: true
+  custom_handler: true
+- id: aggregate-ethernet
+  kind: list
+  xpath: '{network-scope}/network/interface/aggregate-ethernet'
+  scope:
+  - template
+  - template-stack
+  - device
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{network-scope}/network/interface/aggregate-ethernet'
+      repository_path: src/fwmigrate/parsers/palo_alto/interfaces.py
+  entry_key: name
+  fields:
+    layer3:
+      xml: layer3
+      type: xml-subtree
+    layer2:
+      xml: layer2
+      type: xml-subtree
+    comment:
+      xml: comment
+      type: string
+  custom_handler: true
+- id: loopback-interface
+  kind: list
+  xpath: '{network-scope}/network/interface/loopback/units'
+  scope:
+  - template
+  - template-stack
+  - device
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{network-scope}/network/interface/loopback/units'
+      repository_path: src/fwmigrate/parsers/palo_alto/interfaces.py
+  entry_key: name
+  fields:
+    ip:
+      xml: ip/entry/@name
+      type: entry-list
+      cardinality: list
+    ipv6:
+      xml: ipv6/address/entry/@name
+      type: entry-list
+      cardinality: list
+    management_profile:
+      xml: interface-management-profile
+      type: string
+      reference:
+        kinds:
+        - interface-management-profile
+        cardinality: one
+- id: tunnel-interface
+  kind: list
+  xpath: '{network-scope}/network/interface/tunnel/units'
+  scope:
+  - template
+  - template-stack
+  - device
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{network-scope}/network/interface/tunnel/units'
+      repository_path: src/fwmigrate/parsers/palo_alto/interfaces.py
+  entry_key: name
+  fields:
+    ip:
+      xml: ip/entry/@name
+      type: entry-list
+      cardinality: list
+    ipv6:
+      xml: ipv6/address/entry/@name
+      type: entry-list
+      cardinality: list
+    management_profile:
+      xml: interface-management-profile
+      type: string
+      reference:
+        kinds:
+        - interface-management-profile
+        cardinality: one
+- id: vlan-interface
+  kind: list
+  xpath: '{network-scope}/network/interface/vlan/units'
+  scope:
+  - template
+  - template-stack
+  - device
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{network-scope}/network/interface/vlan/units'
+      repository_path: src/fwmigrate/parsers/palo_alto/interfaces.py
+  entry_key: name
+  fields:
+    ip:
+      xml: ip/entry/@name
+      type: entry-list
+      cardinality: list
+    ipv6:
+      xml: ipv6/address/entry/@name
+      type: entry-list
+      cardinality: list

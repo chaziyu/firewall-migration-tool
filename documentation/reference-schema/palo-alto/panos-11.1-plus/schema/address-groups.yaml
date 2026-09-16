@@ -1,0 +1,40 @@
+phase: 2
+family: address-groups
+nodes:
+- id: address-group
+  kind: list
+  xpath: '{scope}/address-group'
+  scope: [shared, device-group, vsys]
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/address-group/entry'
+      repository_path: src/fwmigrate/parsers/palo_alto/transformer.py
+      note: Static and dynamic group forms are semantically distinct; static members share the address/address-group reference namespace.
+  entry_key: name
+  fields:
+    static_members:
+      xml: static/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds: [address, address-group]
+        cardinality: many
+        scope_resolution: current->ancestors->shared
+        allow_literal: false
+    dynamic_filter:
+      xml: dynamic/filter
+      type: string
+    description:
+      xml: description
+      type: string
+    tags:
+      xml: tag/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds: [tag]
+        cardinality: many
+        scope_resolution: current->ancestors->shared
+  custom_handler: true

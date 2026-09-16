@@ -1,0 +1,123 @@
+format_version: 1
+applies_to:
+  vendor: Palo Alto Networks
+  products:
+  - PAN-OS
+  - Panorama
+  reference_profile: panos-11.1-plus
+purpose: Metadata contract for a source-first PAN-OS/Panorama XML reference schema. XML structure, XPath, scope, inheritance,
+  references, and source semantics remain separate from IR mapping.
+source_model:
+  root: config
+  accepted_wrapper: response/result/config
+  configuration_medium: XML
+  primary_selector: XPath
+  entry_identity: entry/@name unless overridden
+evidence:
+  statuses:
+    documented: Explicitly supported by Palo Alto Networks documentation.
+    repository_observed: XPath/shape is exercised by the current repository implementation or fixtures; not by itself a vendor documentation
+      claim.
+    project_semantic: Migration-tool interpretation/classification.
+    needs_review: Insufficient evidence for a stronger claim.
+  required:
+  - status
+  - source
+  source_fields:
+  - document
+  - url
+  - xpath
+  - repository_path
+  - note
+scope_model:
+  kinds:
+  - shared
+  - device-group
+  - vsys
+  - template
+  - template-stack
+  - device
+  - global
+  rules:
+  - Objects and policies must retain scope as part of source identity.
+  - A VSYS may be mapped to a Panorama device group through managed-device metadata.
+  - Device-group inheritance resolves current device group, then ancestors, then shared.
+  - Template-stack resolution is priority ordered and is distinct from device-group inheritance.
+  - Pre/local/post rulebase ownership and order must be retained explicitly.
+node:
+  required:
+  - id
+  - kind
+  - xpath
+  - scope
+  - migration_relevance
+  - evidence
+  kind:
+  - list
+  - singleton
+  - container
+  - rulebase
+  properties:
+    entry_key: XML attribute used as list identity; normally name
+    fields: mapping of field definitions
+    references: outbound reference definitions
+    inheritance: inheritance/override metadata
+    custom_handler: true when generic scalar/list extraction is insufficient
+    read_only: source node is not a configurable migration input
+    sensitive: node or field may contain secrets/private material
+field:
+  required:
+  - xml
+  - type
+  types:
+  - string
+  - boolean
+  - integer
+  - enum
+  - ip
+  - cidr
+  - ip-or-cidr
+  - ip-range
+  - fqdn
+  - port-spec
+  - member-list
+  - entry-list
+  - xml-subtree
+  - secret
+  - datetime
+  cardinality:
+  - scalar
+  - list
+  properties:
+  - description
+  - values
+  - default
+  - reference
+  - sensitive
+  - read_only
+  - migration_relevance
+  - evidence
+reference:
+  properties:
+  - kinds
+  - cardinality
+  - scope_resolution
+  - allow_literal
+  - special_values
+  - note
+migration_relevance:
+- migration_relevant
+- source_evidence_only
+- operational_only
+- read_only
+- sensitive
+- needs_review
+normalization_rules:
+- Do not infer unsupported semantics from element names alone.
+- Preserve unknown XML as source evidence rather than treating schema absence as parse failure.
+- Do not materialize documentation defaults as explicit source configuration.
+- Preserve order for policy/rule lists and template-stack members.
+- Keep IR mapping in ir-v2-mapping.yaml, not in source schema files.
+- Mark encrypted values, private keys, shared secrets, bind passwords, and authentication secrets sensitive.
+- Use custom_handler for variant/choice subtrees such as NAT translation, interface type, next-hop, authentication, and crypto
+  proposal structures.

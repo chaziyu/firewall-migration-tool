@@ -1,0 +1,123 @@
+phase: 12
+family: applications
+nodes:
+- id: application
+  kind: list
+  xpath: '{scope}/application'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/application'
+      repository_path: src/fwmigrate/parsers/palo_alto/completeness.py
+  entry_key: name
+  fields:
+    category:
+      xml: category
+      type: string
+    subcategory:
+      xml: subcategory
+      type: string
+    technology:
+      xml: technology
+      type: string
+    risk:
+      xml: risk
+      type: integer
+    description:
+      xml: description
+      type: string
+    default:
+      xml: default
+      type: xml-subtree
+      custom_handler: true
+    depends_on:
+      xml: depends-on/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds:
+        - application
+        cardinality: many
+    tags:
+      xml: tag/member
+      type: member-list
+      cardinality: list
+  custom_handler: true
+- id: application-group
+  kind: list
+  xpath: '{scope}/application-group'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/application-group'
+      repository_path: src/fwmigrate/parsers/palo_alto/completeness.py
+  entry_key: name
+  fields:
+    members:
+      xml: members/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds:
+        - application
+        - application-group
+        cardinality: many
+- id: application-filter
+  kind: list
+  xpath: '{scope}/application-filter'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/application-filter'
+      repository_path: src/fwmigrate/parsers/palo_alto/completeness.py
+  entry_key: name
+  fields:
+    category:
+      xml: category/member
+      type: member-list
+      cardinality: list
+    subcategory:
+      xml: subcategory/member
+      type: member-list
+      cardinality: list
+    technology:
+      xml: technology/member
+      type: member-list
+      cardinality: list
+    risk:
+      xml: risk/member
+      type: member-list
+      cardinality: list
+    tagging:
+      xml: tagging
+      type: xml-subtree
+      custom_handler: true
+  custom_handler: true
+- id: predefined-application
+  kind: list
+  xpath: predefined/application
+  scope:
+  - global
+  migration_relevance: read_only
+  evidence:
+    status: repository_observed
+    source:
+      xpath: predefined/application
+      repository_path: src/fwmigrate/parsers/palo_alto/predefined_apps.py
+  entry_key: name
+  read_only: true
