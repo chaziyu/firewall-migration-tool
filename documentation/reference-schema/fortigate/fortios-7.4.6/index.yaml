@@ -12,7 +12,7 @@ coverage:
   domains: 42
   top_level_config_sections: 595
   config_nodes_including_nested: 1232
-  documented_set_fields: 11667
+  documented_set_fields: 11669
   sensitive_fields_detected_from_syntax: 170
 rules:
   reference_is_runtime_truth: false
