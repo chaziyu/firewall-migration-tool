@@ -42,7 +42,9 @@ PBF_ACTION_FIELDS = ["forward", "forward-to-vsys", "discard", "no-pbf"]
 PBF_FORWARD_FIELDS = ["egress-interface", "nexthop", "next-vr", "monitor"]
 PBF_NEXTHOP_FIELDS = ["ip-address", "fqdn", "none"]
 PBF_MONITOR_FIELDS = ["profile", "ip-address", "disable-if-unreachable", "enabled"]
-PBF_SYMMETRIC_RETURN_ADDRESS_FIELDS = ("nexthop-address", "next-hop-address")
+PBF_SYMMETRIC_RETURN_ADDRESS_FIELDS = (
+    "nexthop-address-list", "nexthop-address", "next-hop-address",
+)
 PBF_SYMMETRIC_RETURN_FIELDS = ["enabled", *PBF_SYMMETRIC_RETURN_ADDRESS_FIELDS]
 PBF_ACTIVE_ACTIVE_BINDINGS = {"primary", "both", "0", "1"}
 
@@ -115,14 +117,22 @@ def _extract_symmetric_return(node: ET.Element | None) -> tuple[Dict[str, Any] |
         return None, None
     enabled, issue = _strict_yes_no(node, "./enabled")
     addresses: list[str] = []
-    for child in node:
-        if child.tag not in PBF_SYMMETRIC_RETURN_ADDRESS_FIELDS:
-            continue
-        values = member_texts(child, "./member")
-        if not values:
-            value = (child.text or "").strip()
-            values = [value] if value else []
-        addresses.extend(values)
+    address_list = node.find("./nexthop-address-list")
+    if address_list is not None:
+        addresses.extend(
+            entry.get("name") for entry in address_list.findall("./entry")
+            if entry.get("name")
+        )
+        addresses.extend(member_texts(address_list, "./member"))
+    else:
+        for child in node:
+            if child.tag not in PBF_SYMMETRIC_RETURN_ADDRESS_FIELDS:
+                continue
+            values = member_texts(child, "./member")
+            if not values:
+                value = (child.text or "").strip()
+                values = [value] if value else []
+            addresses.extend(values)
     return {
         "enabled": enabled,
         "next_hop_addresses": addresses,

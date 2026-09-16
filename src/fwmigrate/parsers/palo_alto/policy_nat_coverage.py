@@ -13,6 +13,7 @@ from fwmigrate.extraction.models import ExtractionStatus
 
 from .extraction import add_inventory_section_accounting
 from .policy_order import apply_effective_policy_order, sync_effective_order_to_ir
+from .completeness import PANOSSourceParser as _CompletenessPANOSSourceParser
 from .safe_completeness import PANOSSourceParser as _SafePANOSSourceParser
 from .source_model import PANScope
 from .xml_utils import member_texts, structured_xml_capture, text_or_none
@@ -49,7 +50,9 @@ class PANOSSourceParser(_SafePANOSSourceParser):
         return configured, members
 
     def _enhance_zones(self, scope: PANScope, search_root: ET.Element, extraction, zones: List[Any]) -> None:
-        super()._enhance_zones(scope, search_root, extraction, zones)
+        _SafePANOSSourceParser._enhance_zones(
+            self, scope, search_root, extraction, zones
+        )
         by_name = {zone.name: zone for zone in zones}
         for entry in search_root.findall("./zone/entry"):
             name = entry.get("name")
@@ -115,7 +118,7 @@ class PANOSSourceParser(_SafePANOSSourceParser):
                 item.notes = list(zone.review_reasons)
 
     def _extract_template_interfaces(self, content: str, extraction) -> None:
-        super()._extract_template_interfaces(content, extraction)
+        _SafePANOSSourceParser._extract_template_interfaces(self, content, extraction)
         root = self._unwrap_config(content)
         if root is None:
             return
@@ -166,7 +169,9 @@ class PANOSSourceParser(_SafePANOSSourceParser):
                 yield entry
 
     def _enhance_nat_rule(self, scope: PANScope, entry: ET.Element, extraction, rule) -> None:
-        super()._enhance_nat_rule(scope, entry, extraction, rule)
+        _CompletenessPANOSSourceParser._enhance_nat_rule(
+            self, scope, entry, extraction, rule
+        )
         attrs = rule.source_attributes
 
         target = self._target_details(entry.find("./target"))

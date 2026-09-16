@@ -205,7 +205,11 @@ class PANOSNATInterfaceAddressCoverageMixin:
         )
 
     def _enhance_nat_rule(self, scope: PANScope, entry: ET.Element, extraction, rule) -> None:
-        super()._enhance_nat_rule(scope, entry, extraction, rule)
+        from .policy_nat_coverage import PANOSSourceParser as _CoveragePANOSSourceParser
+
+        _CoveragePANOSSourceParser._enhance_nat_rule(
+            self, scope, entry, extraction, rule
+        )
 
         snat = entry.find("./source-translation")
         if snat is None or len(list(snat)) != 1:

@@ -19,55 +19,48 @@ def _interface_pat_selection(source: Any) -> IRNATTranslationAddressSelection:
     )
 
 
+def apply_remaining_nat_fixes(ir: Any, config: Any) -> Any:
+    """Apply source-preserving dynamic NAT semantics to canonical IR."""
+    source_by_key = {
+        (rule.source_context, rule.name): rule for rule in config.nat_rules
+    }
+    for rule in ir.nat_rules:
+        source = source_by_key.get((rule.source_context, rule.name))
+        if source is None or source.source_mode != "dynamic":
+            continue
+        if source.mapped_source_mode == "interface":
+            rule.source_translation_mode = NATTranslationMode.DYNAMIC_IP_AND_PORT
+            rule.source_translation_address_selection = _interface_pat_selection(source)
+            rule.translated_sources = [
+                value for value in rule.translated_sources
+                if value.casefold() != "interface"
+            ]
+            rule.source_attributes["asa_translation_semantics"] = "dynamic-pat-interface"
+        elif source.mapped_source_mode == "pat_pool":
+            rule.source_translation_mode = NATTranslationMode.DYNAMIC_IP_AND_PORT
+            rule.source_attributes["asa_translation_semantics"] = "dynamic-pat-pool"
+        else:
+            rule.source_translation_mode = NATTranslationMode.DYNAMIC_IP
+            rule.source_attributes["asa_translation_semantics"] = "dynamic-nat"
+            rule.review_reasons = [
+                reason for reason in rule.review_reasons
+                if reason != _DYNAMIC_IP_REVIEW
+            ]
+            if not source.requires_manual_review and not rule.review_reasons:
+                rule.requires_manual_review = False
+                rule.migration_status = "NORMALIZED"
+        if source.source_attributes.get("interface_pat_fallback"):
+            if rule.source_translation_fallback is not None:
+                rule.source_translation_fallback.mode = NATTranslationMode.DYNAMIC_IP_AND_PORT
+                if rule.source_translation_fallback.address_selection is None:
+                    rule.source_translation_fallback.address_selection = _interface_pat_selection(source)
+            rule.source_attributes["fallback_translation_semantics"] = "dynamic-pat-interface"
+    return ir
+
+
 def _wrap_transform_to_ir(original: Any):
     def transform(self: Any):
-        ir = original(self)
-        source_by_key = {
-            (rule.source_context, rule.name): rule
-            for rule in self.config.nat_rules
-        }
-        for rule in ir.nat_rules:
-            source = source_by_key.get((rule.source_context, rule.name))
-            if source is None or source.source_mode != "dynamic":
-                continue
-
-            if source.mapped_source_mode == "interface":
-                rule.source_translation_mode = NATTranslationMode.DYNAMIC_IP_AND_PORT
-                rule.source_translation_address_selection = _interface_pat_selection(source)
-                rule.translated_sources = [
-                    value for value in rule.translated_sources
-                    if value.casefold() != "interface"
-                ]
-                rule.source_attributes["asa_translation_semantics"] = "dynamic-pat-interface"
-            elif source.mapped_source_mode == "pat_pool":
-                rule.source_translation_mode = NATTranslationMode.DYNAMIC_IP_AND_PORT
-                rule.source_attributes["asa_translation_semantics"] = "dynamic-pat-pool"
-            else:
-                # Dynamic NAT translates only the source address. It is distinct
-                # from PAT, where the source port is also translated.
-                rule.source_translation_mode = NATTranslationMode.DYNAMIC_IP
-                rule.source_attributes["asa_translation_semantics"] = "dynamic-nat"
-                rule.review_reasons = [
-                    reason for reason in rule.review_reasons
-                    if reason != _DYNAMIC_IP_REVIEW
-                ]
-
-                # PR #40 had to mark this partial because the canonical enum did
-                # not yet have an address-only dynamic mode. Once the mode exists,
-                # that review state is no longer necessary unless another source
-                # semantic (for example interface PAT fallback) still requires review.
-                if not source.requires_manual_review and not rule.review_reasons:
-                    rule.requires_manual_review = False
-                    rule.migration_status = "NORMALIZED"
-
-            if source.source_attributes.get("interface_pat_fallback"):
-                if rule.source_translation_fallback is not None:
-                    rule.source_translation_fallback.mode = NATTranslationMode.DYNAMIC_IP_AND_PORT
-                    if rule.source_translation_fallback.address_selection is None:
-                        rule.source_translation_fallback.address_selection = _interface_pat_selection(source)
-                rule.source_attributes["fallback_translation_semantics"] = "dynamic-pat-interface"
-
-        return ir
+        return apply_remaining_nat_fixes(original(self), self.config)
 
     return transform
 

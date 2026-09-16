@@ -319,51 +319,54 @@ def _wrap_parse_raw(original: Any):
     return parse
 
 
+def apply_audit_ir_fixes(ir: Any, config: Any) -> Any:
+    """Apply ASA audit semantics after canonical transformation."""
+    nat_by_name = {(rule.source_context, rule.name): rule for rule in config.nat_rules}
+    for ir_rule in ir.nat_rules:
+        source_rule = nat_by_name.get((ir_rule.source_context, ir_rule.name))
+        if source_rule is None or source_rule.source_mode != "dynamic":
+            continue
+        ir_rule.source_attributes["asa_translation_semantics"] = source_rule.source_attributes.get(
+            "translation_semantics"
+        )
+        if source_rule.mapped_source_mode not in {"interface", "pat_pool"}:
+            ir_rule.source_translation_mode = None
+            ir_rule.requires_manual_review = True
+            if ir_rule.migration_status == "NORMALIZED":
+                ir_rule.migration_status = "PARTIALLY_NORMALIZED"
+            reason = "ASA dynamic NAT address-only translation is source-preserved; canonical IR has no address-only dynamic mode"
+            if reason not in ir_rule.review_reasons:
+                ir_rule.review_reasons.append(reason)
+        if source_rule.source_attributes.get("interface_pat_fallback"):
+            ir_rule.source_translation_fallback = _build_nat_translation_fallback(source_rule)
+            ir_rule.source_attributes["interface_pat_fallback"] = True
+            ir_rule.source_attributes["fallback_translation_mode"] = "interface-address"
+            ir_rule.requires_manual_review = True
+            if ir_rule.migration_status == "NORMALIZED":
+                ir_rule.migration_status = "PARTIALLY_NORMALIZED"
+            reason = "Dynamic NAT interface PAT fallback requires target-specific handling"
+            if reason not in ir_rule.review_reasons:
+                ir_rule.review_reasons.append(reason)
+
+    members_by_channel: dict[int, List[str]] = {}
+    for interface in config.interfaces:
+        if interface.channel_group is not None:
+            members_by_channel.setdefault(interface.channel_group, []).append(interface.name)
+    for interface in ir.interfaces:
+        match = re.fullmatch(r"Port-channel(\d+)", interface.name, re.I)
+        if not match:
+            continue
+        for member in members_by_channel.get(int(match.group(1)), []):
+            if member not in interface.members:
+                interface.members.append(member)
+        if interface.members:
+            interface.source_attributes["port_channel_members"] = list(interface.members)
+    return ir
+
+
 def _wrap_transform_to_ir(original: Any):
     def transform(self: Any):
-        ir = original(self)
-        config = self.config
-        nat_by_name = {(rule.source_context, rule.name): rule for rule in config.nat_rules}
-        for ir_rule in ir.nat_rules:
-            source_rule = nat_by_name.get((ir_rule.source_context, ir_rule.name))
-            if source_rule is None or source_rule.source_mode != "dynamic":
-                continue
-            ir_rule.source_attributes["asa_translation_semantics"] = source_rule.source_attributes.get("translation_semantics")
-            if source_rule.mapped_source_mode not in {"interface", "pat_pool"}:
-                # Canonical IR does not currently have an address-only dynamic
-                # NAT mode. Do not lie by coercing this to dynamic PAT.
-                ir_rule.source_translation_mode = None
-                ir_rule.requires_manual_review = True
-                if ir_rule.migration_status == "NORMALIZED":
-                    ir_rule.migration_status = "PARTIALLY_NORMALIZED"
-                reason = "ASA dynamic NAT address-only translation is source-preserved; canonical IR has no address-only dynamic mode"
-                if reason not in ir_rule.review_reasons:
-                    ir_rule.review_reasons.append(reason)
-            if source_rule.source_attributes.get("interface_pat_fallback"):
-                ir_rule.source_translation_fallback = _build_nat_translation_fallback(source_rule)
-                ir_rule.source_attributes["interface_pat_fallback"] = True
-                ir_rule.source_attributes["fallback_translation_mode"] = "interface-address"
-                ir_rule.requires_manual_review = True
-                if ir_rule.migration_status == "NORMALIZED":
-                    ir_rule.migration_status = "PARTIALLY_NORMALIZED"
-                reason = "Dynamic NAT interface PAT fallback requires target-specific handling"
-                if reason not in ir_rule.review_reasons:
-                    ir_rule.review_reasons.append(reason)
-
-        members_by_channel: dict[int, List[str]] = {}
-        for interface in config.interfaces:
-            if interface.channel_group is not None:
-                members_by_channel.setdefault(interface.channel_group, []).append(interface.name)
-        for interface in ir.interfaces:
-            match = re.fullmatch(r"Port-channel(\d+)", interface.name, re.I)
-            if not match:
-                continue
-            for member in members_by_channel.get(int(match.group(1)), []):
-                if member not in interface.members:
-                    interface.members.append(member)
-            if interface.members:
-                interface.source_attributes["port_channel_members"] = list(interface.members)
-        return ir
+        return apply_audit_ir_fixes(original(self), self.config)
 
     return transform
 

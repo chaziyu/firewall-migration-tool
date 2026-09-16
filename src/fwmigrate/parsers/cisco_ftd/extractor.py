@@ -41,10 +41,20 @@ def _bundle_items(value: Any) -> list[dict]:
 
 
 def _classify_ftd_input_source(text: str) -> str:
-    return "fmc-rest-bundle" if is_fmc_bundle(text) else "ftd-text-evidence"
+    if is_fmc_bundle(text):
+        return "fmc-rest-bundle"
+    if is_fdm_bundle(text):
+        return "fdm-rest-bundle"
+    return "ftd-text-evidence"
 
 
-def _extract_fmc_bundle(text: str) -> ExtractionResult:
+def _extract_fmc_bundle(
+    text: str,
+    *,
+    zone_mapping: dict[str, str] | None = None,
+) -> ExtractionResult:
+    # FMC zones are authoritative source objects; caller mappings apply only
+    # to the text evidence adapter.
     parser = CiscoFMCBundleParser(text)
     ir = parser.parse()
     inventory: list[SourceInventoryItem] = []
@@ -236,7 +246,13 @@ def _extract_fmc_bundle(text: str) -> ExtractionResult:
     ))
 
 
-def _extract_fdm_bundle(text: str) -> ExtractionResult:
+def _extract_fdm_bundle(
+    text: str,
+    *,
+    zone_mapping: dict[str, str] | None = None,
+) -> ExtractionResult:
+    # FDM zones are authoritative source objects; caller mappings apply only
+    # to the text evidence adapter.
     parser = CiscoFDMBundleParser(text)
     ir = parser.parse()
     inventory: list[SourceInventoryItem] = []
@@ -328,15 +344,19 @@ def _extract_fdm_bundle(text: str) -> ExtractionResult:
     ))
 
 
-def extract_cisco_ftd_config(text: str) -> ExtractionResult:
-    if is_fmc_bundle(text):
-        return _extract_fmc_bundle(text)
-    if is_fdm_bundle(text):
-        return _extract_fdm_bundle(text)
+def extract_cisco_ftd_config(
+    text: str,
+    zone_mapping: dict[str, str] | None = None,
+) -> ExtractionResult:
+    input_source = _classify_ftd_input_source(text)
+    if input_source == "fmc-rest-bundle":
+        return _extract_fmc_bundle(text, zone_mapping=zone_mapping)
+    if input_source == "fdm-rest-bundle":
+        return _extract_fdm_bundle(text, zone_mapping=zone_mapping)
 
     sections = scan_cisco_ftd_sections(text)
     classify_cisco_ftd_coverage(sections)
-    ir = CiscoFTDParser(text).parse()
+    ir = CiscoFTDParser(text, zone_mapping=zone_mapping).parse()
     inventory = []
     unsupported = []
     for number, raw in enumerate(text.splitlines(), 1):
@@ -389,7 +409,7 @@ def extract_cisco_ftd_config(text: str) -> ExtractionResult:
         migration_complete=False,
         generation_safe=False,
         blocking_reasons=list(ir.generation_blocking_reasons),
-        input_source_type=_classify_ftd_input_source(text),
+        input_source_type=input_source,
         policy_extraction_supported=False,
         nat_extraction_supported=False,
         object_extraction_supported=False,

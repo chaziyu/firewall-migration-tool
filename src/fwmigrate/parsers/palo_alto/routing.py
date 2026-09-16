@@ -207,6 +207,8 @@ class PANRouteExtractor:
 
     @staticmethod
     def _path_monitor_int(node: ET.Element, paths: tuple[str, ...], reasons: list[str]) -> Optional[int]:
+        is_count = any("count" in path for path in paths)
+        minimum, maximum = (3, 10) if is_count else (1, 60)
         for path in paths:
             raw = text_or_none(node, path)
             if raw is None:
@@ -216,8 +218,10 @@ class PANRouteExtractor:
             except ValueError:
                 reasons.append(f"{path} must be an integer, found {raw!r}")
                 return None
-            if value < 1:
-                reasons.append(f"{path} must be positive, found {raw!r}")
+            if not minimum <= value <= maximum:
+                reasons.append(
+                    f"{path} must be between {minimum} and {maximum}, found {raw!r}"
+                )
                 return None
             return value
         return None
@@ -226,7 +230,7 @@ class PANRouteExtractor:
     def _path_monitor_entries(path_monitor: ET.Element) -> list[ET.Element]:
         entries: list[ET.Element] = []
         seen: set[int] = set()
-        for path in ("./destination/entry", "./monitor-dest/entry",
+        for path in ("./monitor-destinations/entry", "./destination/entry", "./monitor-dest/entry",
                      "./monitor-destination/entry", "./destinations/entry", "./entry"):
             for entry in path_monitor.findall(path):
                 if id(entry) not in seen:

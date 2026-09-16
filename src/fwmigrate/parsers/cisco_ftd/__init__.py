@@ -21,7 +21,9 @@ class CiscoFTDSourceParser(BaseSourceParser):
         return [".cfg", ".txt", ".conf", ".json"]
 
     def extract(self, content: str, zone_mapping: Optional[Dict[str, str]] = None):
-        return finalize_extraction(extract_cisco_ftd_config(content))
+        return finalize_extraction(
+            extract_cisco_ftd_config(content, zone_mapping=zone_mapping)
+        )
 
 
 from fwmigrate.parsers.cisco_ftd.parser import CiscoFTDParser

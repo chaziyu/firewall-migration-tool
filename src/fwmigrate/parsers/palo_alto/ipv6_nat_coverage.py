@@ -334,7 +334,11 @@ class PANOSIPv6NATSemanticsCoverageMixin:
         return semantics, reasons
 
     def _enhance_nat_rule(self, scope: PANScope, entry: ET.Element, extraction, rule) -> None:
-        super()._enhance_nat_rule(scope, entry, extraction, rule)
+        from .nat_interface_address_coverage import PANOSNATInterfaceAddressCoverageMixin
+
+        PANOSNATInterfaceAddressCoverageMixin._enhance_nat_rule(
+            self, scope, entry, extraction, rule
+        )
 
         family = self._nat_family_value(entry)
         if family not in {"nat64", "nptv6"}:

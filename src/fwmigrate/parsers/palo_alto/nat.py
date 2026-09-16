@@ -112,6 +112,8 @@ def _yes_no(entry: ET.Element, path: str) -> Tuple[Optional[bool], Optional[str]
 
 def _resolve(resolver, values: List[str], namespace: str, scope: PANScope,
              builtins: set[str] | None = None) -> Tuple[List[str], List[str]]:
+    # Direct IP literals are valid NAT match selectors even when no source
+    # object with that name exists. References remain unresolved and visible.
     output, unresolved = [], []
     for value in values:
         if value.lower() in (builtins or set()):
@@ -119,6 +121,13 @@ def _resolve(resolver, values: List[str], namespace: str, scope: PANScope,
             continue
         obj = resolver.resolve(value, namespace, scope)
         if obj is None:
+            if namespace == "address-reference":
+                try:
+                    ipaddress.ip_network(value, strict=False)
+                    output.append(value)
+                    continue
+                except ValueError:
+                    pass
             unresolved.append(value)
             output.append(value)
         else:
