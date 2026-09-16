@@ -2510,6 +2510,7 @@ sections:
           document_id: 01-746-912654-20241212
           config_path: router policy
           parameter: gateway
+      address_family: ipv4
     input-device:
       source_type: identifier-list
       fortios_type: string
@@ -2911,6 +2912,7 @@ sections:
           document_id: 01-746-912654-20241212
           config_path: router policy6
           parameter: gateway
+      address_family: ipv6
     input-device:
       source_type: identifier-list
       fortios_type: string

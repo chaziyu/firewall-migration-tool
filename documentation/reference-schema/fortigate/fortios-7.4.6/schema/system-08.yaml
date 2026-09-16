@@ -562,6 +562,15 @@ sections:
         document_id: 01-746-912654-20241212
         config_path: system zone
         nested_config_path: tagging
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system zone
+          nested_config_path: system zone tagging
   evidence:
     status: documented
     source:

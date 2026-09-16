@@ -794,6 +794,15 @@ sections:
         document_id: 01-746-912654-20241212
         config_path: system sdwan
         nested_config_path: duplication
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          nested_config_path: system sdwan duplication
   - name: health-check
     mode: table
     key: <name>
@@ -1335,6 +1344,15 @@ sections:
           document_id: 01-746-912654-20241212
           config_path: system sdwan
           nested_config_path: health-check > sla
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: system sdwan health-check sla
     evidence:
       status: documented
       source:
@@ -1342,6 +1360,15 @@ sections:
         document_id: 01-746-912654-20241212
         config_path: system sdwan
         nested_config_path: health-check
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          nested_config_path: system sdwan health-check
   - name: members
     mode: table
     key: <seq-num>
@@ -1556,6 +1583,15 @@ sections:
         document_id: 01-746-912654-20241212
         config_path: system sdwan
         nested_config_path: members
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          nested_config_path: system sdwan members
   - name: neighbor
     mode: table
     key: <ip>
@@ -1638,6 +1674,15 @@ sections:
         document_id: 01-746-912654-20241212
         config_path: system sdwan
         nested_config_path: neighbor
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          nested_config_path: system sdwan neighbor
   - name: service
     mode: table
     key: <id>
@@ -2394,6 +2439,15 @@ sections:
           document_id: 01-746-912654-20241212
           config_path: system sdwan
           nested_config_path: service > sla
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: system sdwan service sla
     evidence:
       status: documented
       source:
@@ -2401,6 +2455,15 @@ sections:
         document_id: 01-746-912654-20241212
         config_path: system sdwan
         nested_config_path: service
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          nested_config_path: system sdwan service
   - name: zone
     mode: table
     key: <name>
@@ -2452,6 +2515,15 @@ sections:
         document_id: 01-746-912654-20241212
         config_path: system sdwan
         nested_config_path: zone
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          nested_config_path: system sdwan zone
   evidence:
     status: documented
     source:

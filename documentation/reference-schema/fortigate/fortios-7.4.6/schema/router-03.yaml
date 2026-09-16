@@ -169,6 +169,7 @@ sections:
           document_id: 01-746-912654-20241212
           config_path: router static
           parameter: dst
+      address_family: ipv4
     dstaddr:
       source_type: string
       fortios_type: string
@@ -224,6 +225,7 @@ sections:
           document_id: 01-746-912654-20241212
           config_path: router static
           parameter: gateway
+      address_family: ipv4
     internet-service:
       source_type: integer
       fortios_type: integer
@@ -282,6 +284,7 @@ sections:
           document_id: 01-746-912654-20241212
           config_path: router static
           parameter: preferred-source
+      address_family: ipv4
     priority:
       source_type: integer
       fortios_type: integer
@@ -337,6 +340,7 @@ sections:
           document_id: 01-746-912654-20241212
           config_path: router static
           parameter: src
+      address_family: ipv4
     status:
       source_type: enum
       fortios_type: option
@@ -535,6 +539,7 @@ sections:
           document_id: 01-746-912654-20241212
           config_path: router static6
           parameter: dst
+      address_family: ipv6
     dstaddr:
       source_type: string
       fortios_type: string
@@ -590,6 +595,7 @@ sections:
           document_id: 01-746-912654-20241212
           config_path: router static6
           parameter: gateway
+      address_family: ipv6
     link-monitor-exempt:
       source_type: enum
       fortios_type: option
