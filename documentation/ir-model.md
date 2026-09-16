@@ -1,8 +1,8 @@
 # Canonical IR Model
 
 **Status:** Current executable model snapshot<br>
-**Verified:** 2026-09-15<br>
-**Schema version:** `1.68`
+**Verified:** 2026-09-16<br>
+**Schema version:** `2`
 
 This document records the implemented canonical intermediate representation
 (IR). The Pydantic models and serialization code remain authoritative if this
@@ -16,36 +16,50 @@ The migration path is:
 source configuration
         |
         v
-vendor parser -> ExtractionResult + IRConfig
-                         |
-                         v
-                validation / normalization
-                         |
-                         v
-                    target generator
+vendor parser -> ExtractionResult
+                 |         |
+                 |         +-> source inventory, coverage, unsupported/residual evidence
+                 v
+       canonical_ir: IRConfig
+                 |
+                 +-> validation / optimization -> target generator
+                 |
+                 +-> Excel / reporting (with ExtractionResult accounting)
 ```
 
-`IRConfig` is the vendor-neutral contract used by validators, optimizers,
-reports, and target generators. `ExtractionResult` is separate: it accounts
-for source data that was normalized, partially normalized, retained as
-extract-only evidence, unsupported, ignored, or affected by a parse error.
+`IRConfig` is the shared contract used by validators, optimizers, reports, and
+target generators. Its canonical V2 collections are vendor-neutral; the root
+also retains transitional source/vendor-specific collections until their data
+is moved without loss. `ExtractionResult` is separate: it accounts for source
+data that was normalized, partially normalized, retained as extract-only
+evidence, unsupported, ignored, or affected by a parse error.
+
+This is the implemented snapshot. `ir-schema-v2-plan.md` remains the target
+design and must not be read as proof that a planned separation is complete.
 
 Parsers must produce IR; generators must consume IR. Vendor syntax must not be
 implemented as a direct source-to-target converter.
 
 ## Aggregate root: `IRConfig`
 
-`IRConfig` is a flat Pydantic model. `metadata` is required. Collection fields
-default to an empty list; optional singleton fields default to `null`.
+`IRConfig` is the serialized aggregate root. `metadata` is required. Collection
+fields default to an empty list; optional singleton fields default to `null`.
+The V2-named canonical collections coexist with transitional source/vendor-
+specific top-level collections, and some canonical model classes still retain
+source/vendor evidence fields. New vendor-only semantics should be stored in
+typed `vendor_extensions`, but the remaining top-level source collections are
+still part of the current schema and cannot yet be described as extensions.
 
 ### Root control fields
 
 | Field | Type | Default | Meaning |
 |---|---|---:|---|
+| `schema_version` | literal `2` | `2` | Serialized schema discriminator. Only V2 can be constructed after loading/migration. |
 | `generation_safe` | `boolean` | `true` | Whole-IR generation gate. |
 | `generation_blocking_reasons` | `list[string]` | `[]` | Reasons generation is blocked. |
 | `requires_manual_review` | `boolean` | `false` | Whole-IR review flag. |
 | `metadata` | `IRMetadata` | required | Source and migration metadata. |
+| `vendor_extensions` | `IRVendorExtensions` | empty typed containers | Vendor-only V2 data. Currently only `fortios.security_policies` has a modeled payload; the PAN-OS, Check Point, ASA, FTD, and Junos containers are empty and forbid undeclared fields. |
 
 ### Root collections
 
@@ -61,7 +75,8 @@ default to an empty list; optional singleton fields default to `null`.
 | Network | `management_service_routes` | `list[IRManagementServiceRoute]` |
 | Network | `routes` | `list[IRRoute]` |
 | Network | `dhcp_servers` | `list[IRDHCPServer]` |
-| Network | `dhcp6_servers` | `list[IRFortiGateSourceRule]` |
+| Network | `virtual_firewall_contexts` | `list[IRVirtualFirewallContext]` |
+| Network | `dhcp6_servers` | `list[IRFortiGateSourceRule]` (transitional source record) |
 | Network | `sdwans` | `list[IRSDWAN]` |
 | Address | `addresses` | `list[IRAddress]` |
 | Address | `address_groups` | `list[IRAddressGroup]` |
@@ -74,8 +89,8 @@ default to an empty list; optional singleton fields default to `null`.
 | Service | `application_groups` | `list[IRApplicationGroup]` |
 | Service | `application_categories` | `list[IRApplicationCategory]` |
 | Service | `traffic_shapers` | `list[IRTrafficShaper]` |
-| Service | `proxy_addresses` | `list[IRProxyAddress]` |
-| Service | `web_proxy_settings` | `IRWebProxySettings \| null` |
+| Service | `proxy_request_matches` | `list[IRProxyRequestMatch]` |
+| Service | `web_proxies` | `list[IRWebProxy]` |
 | Service | `internet_services` | `list[IRInternetService]` |
 | Service | `internet_service_definitions` | `list[IRInternetServiceDefinition]` |
 | Service | `internet_service_additions` | `list[IRInternetServiceAddition]` |
@@ -84,35 +99,45 @@ default to an empty list; optional singleton fields default to `null`.
 | Service | `custom_internet_service_groups` | `list[IRInternetServiceCustomGroup]` |
 | Service | `internet_service_extensions` | `list[IRInternetServiceExtension]` |
 | Service | `internet_service_groups` | `list[IRInternetServiceGroup]` |
-| Policy | `policies` | `list[IRPolicy]` |
+| Policy | `security_policies` | `list[IRSecurityPolicy]` |
 | Policy | `default_security_rules` | `list[IRDefaultSecurityRule]` |
 | Policy | `multicast_policies` | `list[IRMulticastPolicy]` |
 | Policy | `firewall_filters` | `list[IRFirewallFilter]` |
 | Policy | `security_profile_groups` | `list[IRSecurityProfileGroup]` |
 | Policy | `security_profile_definitions` | `list[IRSecurityProfileDefinition]` |
+| Policy | `identity_sources` | `list[IRIdentitySource]` |
+| Policy | `identity_mapping_providers` | `list[IRIdentityMappingProvider]` |
+| Policy | `access_roles` | `list[IRAccessRole]` |
+| Policy | `management_access_policies` | `list[IRManagementAccessPolicy]` |
 | Policy | `https_inspection_rules` | `list[IRHTTPSInspectionRule]` |
 | Policy | `custom_url_categories` | `list[IRCustomURLCategory]` |
 | Policy | `ips_sensors` | `list[IRIPSSensor]` |
-| Policy | `ztna_providers` | `list[IRZTNAProvider]` |
+| Policy | `endpoint_context_providers` | `list[IREndpointContextProvider]` |
 | Policy | `session_helpers` | `list[IRSessionHelper]` |
 | Policy | `session_ttl_overrides` | `list[IRSessionTTLOverride]` |
 | Policy | `session_ttl_settings` | `IRSessionTTLSettings \| null` |
-| NAT | `ip_pools` | `list[IRIPPool]` |
-| NAT | `virtual_ips` | `list[IRVirtualIP]` |
-| NAT | `virtual_ip_groups` | `list[IRVirtualIPGroup]` |
+| NAT | `nat_pools` | `list[IRNATPool]` |
+| NAT | `published_services` | `list[IRPublishedService]` |
+| NAT | `published_service_groups` | `list[IRPublishedServiceGroup]` |
 | NAT | `nat_rules` | `list[IRNATRule]` |
-| Routing | `pbf_rules` | `list[IRPolicyBasedForwardingRule]` |
+| Routing | `forwarding_policies` | `list[IRForwardingPolicy]` |
 | Routing | `policy_route_rules` | `list[IRPolicyRoute]` |
+| Routing | `path_monitors` | `list[IRPathMonitor]` |
 | VPN | `vpn_tunnels` | `list[IRVPNTunnel]` |
 | VPN | `vpn_phase2` | `list[IRVPNPhase2]` |
 | VPN | `vpn_communities` | `list[IRVPNCommunity]` |
 | VPN | `vpn_gateways` | `list[IRVPNGateway]` |
+| VPN | `remote_access_vpns` | `list[IRRemoteAccessVPN]` |
 | Security | `certificates` | `list[IRCertificate]` |
 | Security | `ssh_keys` | `list[IRSSHKey]` |
 | Audit | `audit_entries` | `list[IRAuditEntry]` |
-| Context | `execution_contexts` | `list[IRExecutionContext]` |
+| Observability | `log_destination_profiles` | `list[IRLogDestinationProfile]` |
+| Observability | `log_forwarding_policies` | `list[IRLogForwardingPolicy]` |
+| Observability | `dns_proxies` | `list[IRDNSProxy]` |
+| Observability | `monitor_profiles` | `list[IRMonitorProfile]` |
+| Observability | `qos_profiles` | `list[IRQoSProfile]` |
+| Observability | `report_definitions` | `list[IRReportDefinition]` |
 | FortiGate | `central_snat_rules` | `list[IRFortiGateSourceRule]` |
-| FortiGate | `security_policies` | `list[IRFortiGateSourceRule]` |
 | FortiGate | `policy_routes` | `list[IRFortiGatePolicyRoute]` |
 | FortiGate | `local_in_policies` | `list[IRLocalDeviceAccessRule]` |
 | FortiGate | `proxy_policies` | `list[IRFortiGateSourceRule]` |
@@ -123,10 +148,10 @@ default to an empty list; optional singleton fields default to `null`.
 | FortiGate | `ssl_vpn_settings` | `IRSSLVPNSettings \| null` |
 | FortiGate | `dos_policies` | `list[IRDoSPolicy]` |
 | FortiGate | `firewall_sniffers` | `list[IRFirewallSniffer]` |
-| FortiGate | `authentication_schemes` | `list[IRAuthenticationScheme]` |
+| Authentication | `authentication_profiles` | `list[IRAuthenticationProfile]` |
 | FortiGate | `authentication_sequences` | `list[IRAuthenticationSequence]` |
 | FortiGate | `ssl_tls_service_profiles` | `list[IRSSLTLSServiceProfile]` |
-| FortiGate | `authentication_rules` | `list[IRAuthenticationRule]` |
+| Authentication | `authentication_policies` | `list[IRAuthenticationPolicy]` |
 | FortiGate | `user_authentication_settings` | `IRUserAuthenticationSettings \| null` |
 | FortiGate | `user_quarantine_settings` | `IRUserQuarantineSettings \| null` |
 | FortiGate | `user_ldap_servers` | `list[IRUserLDAP]` |
@@ -167,16 +192,16 @@ default to an empty list; optional singleton fields default to `null`.
 | Check Point | `checkpoint_access_layers` | `list[IRCheckpointAccessLayer]` |
 | Check Point | `checkpoint_domains` | `list[IRCheckpointDomain]` |
 | Check Point | `checkpoint_global_assignments` | `list[IRCheckpointGlobalAssignment]` |
-| Check Point | `checkpoint_identity_sources` | `list[IRCheckpointIdentitySource]` |
-| Check Point | `checkpoint_access_roles` | `list[IRCheckpointAccessRole]` |
 | Check Point | `checkpoint_access_rules` | `list[IRCheckpointAccessRule]` |
 | Check Point | `checkpoint_threat_prevention_rules` | `list[IRCheckpointThreatPreventionRule]` |
 | Check Point | `checkpoint_threat_prevention_profiles` | `list[IRCheckpointThreatPreventionProfile]` |
 | Check Point | `checkpoint_sic_metadata` | `list[IRCheckpointSICMetadata]` |
 
-The root currently exposes 127 Pydantic fields. The complete field names and
-types above are the serialization surface, not a claim that every field is
-portable to every target.
+The root currently exposes 137 Pydantic fields. The names and types above are
+the serialization surface, not a claim that every field is portable to every
+target. Legacy names such as `policies`, `ip_pools`, and `pbf_rules` are input
+aliases and Python compatibility properties; they are not serialized V2 root
+fields.
 
 ## Shared model conventions
 
@@ -202,53 +227,89 @@ broadened into a target value such as `any`, `allow`, `/0`, or an enabled rule.
 ## Core mapping surface
 
 These are the models that vendor mapping tables should normally reference.
-They are followed by the model catalog so source-specific models remain visible
-without pretending they are portable.
+Compatibility names are shown separately and should not be used for new
+serialized output.
 
 | Model | Main fields used by mappings | Related IR objects |
 |---|---|---|
-| `IRZone` | `name`, `zone_type`, `source_context`, `interfaces`, `description`, `disabled`, status/review fields | `IRInterface`, `IRPolicy`, `IRNATRule` |
+| `IRZone` | `name`, `zone_type`, `source_context`, `interfaces`, `description`, `disabled`, status/review fields | `IRInterface`, `IRSecurityPolicy`, `IRNATRule` |
 | `IRInterface` | `name`, `zone`, `ip`, `ipv6_address`, `interface_type`, `members`, `role`, `addressing_mode`, `management_access`, `parent`, status/review fields | `IRZone`, `IRInterfaceGroup`, routes |
-| `IRAddress` | `name`, `type`, `address_family`, `subnet`, `ip_range_start`, `ip_range_end`, `fqdn`, `mac`, `geo_code`, `wildcard_mask`, `dynamic_filter`, `tag_name`, `description`, `tags` | `IRAddressGroup`, `IRPolicy`, `IRNATRule` |
+| `IRVirtualFirewallContext` | `context_id`, `context_type`, `parent_context`, interfaces, routing instances, administrators, limits, mode, status/review fields | scoped objects and metadata |
+| `IRAddress` | `name`, `type`, `address_family`, `subnet`, `ip_range_start`, `ip_range_end`, `fqdn`, `mac`, `geo_code`, `wildcard_mask`, `dynamic_filter`, `tag_name`, `description`, `tags` | `IRAddressGroup`, `IRSecurityPolicy`, `IRNATRule` |
 | `IRAddressGroup` | `name`, `members`, `exclude_members`, `is_dynamic`, `dynamic_filter`, `description`, `tags` | `IRAddress` |
-| `IRService` | `name`, `ports`, `source_protocol`, `source_protocol_number`, `match_for_any`, `description` | `IRServicePort`, `IRServiceGroup`, `IRPolicy` |
+| `IRService` | `name`, `ports`, `source_protocol`, `source_protocol_number`, `match_for_any`, `description` | `IRServicePort`, `IRServiceGroup`, `IRSecurityPolicy` |
 | `IRServicePort` | `protocol`, `port`, `source_port`, `icmptype`, `icmpcode` | `IRService` |
 | `IRServiceGroup` | `name`, `members`, `unsafe_members`, `description` | `IRService` |
-| `IRSchedule` | `name`, `start`, `end`, `days`, `windows`, `schedule_type`, `start_utc`, `end_utc`, `recurrence`, `timezone` | `IRPolicy` |
-| `IRApplication` | `name`, `category`, `urls`, `description`, `risk`, `metadata` | `IRPolicy` |
-| `IRSecurityProfileGroup` | profile lists and references for antivirus, vulnerability, antispyware, URL, file, WildFire, data filtering, and SSL decryption | `IRPolicy` |
-| `IRPolicy` | `name`, `from_zone`, `to_zone`, `source`, `destination`, `service`, `source_ports`, `action`, `schedule`, `applications`, security-profile fields, `disabled`, logging fields | addresses, services, zones, schedules, applications, NAT |
-| `IRIPPool` | `name`, `address_family`, `addresses`, `address_ranges`, `start_ip`, `end_ip`, port range, exclusions, NAT46/NAT64 settings | `IRNATRule` |
-| `IRVirtualIP` | `name`, `external_ip`, `external_addresses`, `mapped_ips`, `port_forward`, `protocol`, ports, interface filters, services, real servers, SSL/GSLB fields | `IRNATRule`, `IRVirtualIPGroup` |
-| `IRNATRule` | match zones/interfaces, `source`, `destination`, `services`, address families, source/destination translation modes, translated addresses/services/ports, pool references, sequence, enabled, status/review fields | addresses, services, zones, `IRIPPool`, `IRVirtualIP` |
+| `IRSchedule` | `name`, `start`, `end`, `days`, `windows`, `schedule_type`, `start_utc`, `end_utc`, `recurrence`, `timezone` | `IRSecurityPolicy` |
+| `IRApplication` | `name`, `category`, `urls`, `description`, `risk`, `metadata` | `IRSecurityPolicy` |
+| `IRSecurityProfileGroup` | profile lists and references for antivirus, vulnerability, antispyware, URL, file, WildFire, data filtering, and SSL decryption | `IRSecurityPolicy` |
+| `IRSecurityPolicy` | `name`, zones, addresses, services, ports, `action`, schedules, applications, users, security profiles, NAT evidence, logging, status/review fields | addresses, services, zones, schedules, applications |
+| `IRNATPool` | `name`, `address_family`, `routing_instance`, addresses/ranges, port range, exclusions, status/review fields; the current class also retains source-specific pool evidence | `IRNATRule` |
+| `IRPublishedService` | frontend/external and backend/mapped addresses and ports, protocol, interfaces, source filters, real servers, load balancing, persistence, monitors, TLS, status/review fields | `IRNATRule`, `IRPublishedServiceGroup` |
+| `IRNATRule` | match zones/interfaces/routing instances, addresses, services, families and protocol, source/destination address and port translation, pools, identity/exemption, sequence, enabled, status/review fields | addresses, services, zones, `IRNATPool`, `IRPublishedService` |
 | `IRRoute` | `name`, `address_family`, `destination`, `interface`, `next_hop`, `next_hops`, `next_hop_type`, route metrics, `vrf`, `sdwan_zone`, enabled/status fields | `IRInterface`, `IRSDWAN` |
-| `IRPolicyBasedForwardingRule` | match zones/interfaces, source/destination/application/service, action, egress/next hop, monitor, symmetric return, priority, enabled/status fields | addresses, services, zones, routes |
+| `IRPathMonitor` | enabled state, failure condition, hold/recovery time, preemption, destinations, review/source fields | routes and forwarding policies |
+| `IRForwardingPolicy` | match zones/interfaces, source/destination/user/application/service/schedule, action, egress/next hop, monitor, symmetric return, priority, enabled/status fields | addresses, services, zones, routes |
 | `IRPolicyRoute` | ACL match evidence, ingress/output interface, next hops, action, enabled/status fields | interfaces, source ACL evidence |
 | `IRVPNTunnel` | `name`, `peer_address`, `local_interface`, IKE/IPsec profiles, PSK presence, certificates, DH groups, split include/exclude, unresolved references, status/review fields | `IRVPNPhase2`, `IRCertificate`, interfaces |
 | `IRVPNPhase2` | `name`, `phase1_name`, proposals, source/destination names and subnets/ranges, PFS, lifetimes, protocol/ports, status/review fields | `IRVPNTunnel`, addresses |
 | `IRVPNCommunity` | gateway membership/topology, IKE/IPsec settings, authentication, users/groups, client settings | `IRVPNGateway`, `IRVPNTunnel` |
 | `IRVPNGateway` | `name`, `uid`, `main_ip`, VPN status, topology, encryption domain, certificates, community membership | `IRVPNCommunity`, `IRCertificate` |
+| `IRRemoteAccessVPN` | protocols, listeners, client pools, DNS/WINS, split include/exclude, authentication, certificate, timeouts, client settings | identity, certificates, interfaces |
+| `IRIdentitySource` | source type, servers, port, TLS/certificate, credential presence, directory lookup settings | authentication and access roles |
+| `IRIdentityMappingProvider` | provider type, endpoints, domain/groups, polling and mapping timeouts, source interfaces | policies and access roles |
+| `IRAccessRole` | users, groups, machines, networks, remote-access roles, conditions | security and authentication policies |
+| `IRAuthenticationProfile` | method, identity source, servers, realm/domain, user database, certificate/MFA, timeout, resolved dependencies | `IRAuthenticationPolicy` |
+| `IRAuthenticationPolicy` | sources, destinations, interfaces/zones, services/users/schedule, profile/sequence, action | identity and authentication objects |
+| `IRManagementAccessPolicy` | services, interfaces, sources, administrators, roles, enabled/status fields | management-plane settings |
+| `IRProxyRequestMatch` / `IRWebProxy` | portable proxy request matching and listener/upstream/authentication settings | policies, interfaces, DNS |
+| `IREndpointContextProvider` | provider/endpoints/tenant, certificate trust, attributes, capabilities, connection status | policies and identity |
+| `IRLogDestinationProfile` / `IRLogForwardingPolicy` | portable log destination and forwarding/filter/action settings | policies and system settings |
+| `IRDNSProxy` / `IRMonitorProfile` / `IRQoSProfile` / `IRReportDefinition` | portable DNS proxy, monitoring, QoS, and reporting settings | network and policy objects |
 | `IRCertificate` | identity/status, public certificate metadata, validity, fingerprints, CA/usage references, secret-presence flags, status/review fields | VPN, interfaces, authentication, SSL inspection |
 
-## Complete model catalog
+## Model module catalog
 
-The implementation currently exports 218 Pydantic IR classes. Field counts are
-included to make changes easy to spot; the Python modules remain the detailed
-field authority.
+The package currently exports 248 Pydantic model names. This count includes
+compatibility aliases that refer to the same class, so it is not a count of
+distinct schemas. Exact fields are defined by each class's `model_fields` and
+generated JSON schema; fixed field counts are intentionally not duplicated
+here because they become stale whenever a field is added.
 
-| Module | Models |
+| Module | Responsibility |
 |---|---|
-| `common.py` | `IRExecutionContext` (8) |
-| `metadata.py` | `IRMetadata` (9), `IRCheckpointManagementAccess` (20), `IRCheckpointPerformanceSettings` (11), `IRCheckpointSecureXLSettings` (11), `IRCheckpointCoreXLSettings` (11), `IRAuditEntry` (5) |
-| `provenance.py` | `IRSourceConfigCommand` (3), `IRSourceConfigNode` (4) |
-| `network.py` | `IRZoneTaggingEntry` (4), `IRZone` (18), `IRInterfaceGroup` (8), `IRInterfaceSecondaryIP` (7), `IRInterfaceIPv6Address` (7), `IRInterfaceIPv4Address` (5), `IRInterfaceIPv6PrefixAdvertisement` (8), `IRInterfaceIPv6DelegatedPrefix` (9), `IRInterfaceDHCPv6IAPD` (5), `IRInterfaceVRRP6` (14), `IRCheckpointInterfaceContext` (8), `IRInterface` (103), `IRClusterInterface` (9), `IRHighAvailability` (18), `IRDHCPIPRange` (12), `IRDHCPExcludeRange` (12), `IRDHCPReservation` (14), `IRDHCPOption` (14), `IRDHCPServer` (51), `IRSystemSettings` (6), `IRCheckpointSICMetadata` (12), `IRManagementPlaneSettings` (12), `IRNTPServer` (4), `IRNTPSettings` (4), `IRDNSSettings` (6) |
-| `address.py` | `IRAddressTaggingEntry` (4), `IRMACAddressEntry` (2), `IRAddress` (70), `IRAddressGroupTaggingEntry` (6), `IRAddressGroup` (31) |
-| `service.py` | `IRServicePort` (6), `IRServiceCategory` (8), `IRService` (35), `IRServiceGroup` (13), `IRSchedule` (30), `IRTrafficShaper` (10), `IRProxyAddress` (11), `IRWebProxySettings` (4), `IRApplication` (18), `IRApplicationGroup` (19), `IRApplicationCategory` (19), `IRInternetService` (8), `IRInternetServiceDefinitionPortRange` (4), `IRInternetServiceDefinitionEntry` (6), `IRInternetServiceDefinition` (5), `IRInternetServiceCustomPortRange` (4), `IRInternetServiceCustomEntry` (7), `IRInternetServiceCustom` (8), `IRInternetServiceCustomGroup` (7), `IRInternetServiceAdditionPortRange` (4), `IRInternetServiceAdditionEntry` (5), `IRInternetServiceAddition` (7), `IRInternetServiceAppend` (7), `IRInternetServiceExtensionIPv4Range` (4), `IRInternetServiceExtensionIPv6Range` (4), `IRInternetServiceExtensionPortRange` (4), `IRInternetServiceExtensionDisableEntry` (7), `IRInternetServiceExtensionEntry` (7), `IRInternetServiceExtension` (8), `IRInternetServiceGroup` (8), `IRScheduleGroup` (16) |
-| `policy.py` | `IRSecurityProfileGroup` (23), `IRHTTPSInspectionRule` (16), `IRCheckpointIdentitySource` (8), `IRCheckpointAccessRole` (12), `IRCheckpointAccessRule` (32), `IRCheckpointThreatPreventionRule` (17), `IRCheckpointThreatPreventionProfile` (12), `IRCustomURLCategory` (10), `IRIPSSensorExemptIP` (3), `IRIPSSensorEntry` (25), `IRIPSSensor` (11), `IRCheckpointPolicyPackage` (17), `IRCheckpointAccessLayer` (18), `IRCheckpointDomain` (16), `IRCheckpointGlobalAssignment` (17), `IRMulticastPolicy` (28), `IRPolicy` (140), `IRDefaultSecurityRule` (33), `IRFirewallFilterTerm` (9), `IRFirewallFilter` (9), `IRZTNAProvider` (15), `IRSessionHelper` (9), `IRSessionTTLOverride` (11), `IRSessionTTLSettings` (5), `IRFortiGateSourceRule` (11), `IRLocalDeviceAccessRule` (19) |
-| `nat.py` | `IRIPPool` (64), `IRIPPoolRange` (2), `IRVirtualIPRealServer` (18), `IRVirtualIPGSLBPublicIP` (3), `IRVirtualIPQUICSettings` (9), `IRVirtualIPSSLCipherSuite` (4), `IRVirtualIP` (69), `IRNATPortRange` (2), `IRNATServiceMatch` (4), `IRNATDestinationDistribution` (2), `IRNATDestinationDNSRewrite` (3), `IRNATAddressRangeMapping` (4), `IRNATRuntimeBehavior` (12), `IRNATTranslationAddressSelection` (5), `IRNATSourceTranslationFallback` (6), `IRNATRule` (92), `IRVirtualIPGroup` (13) |
-| `routing.py` | `IRRoutePathMonitorDestination` (13), `IRRoutePathMonitor` (8), `IRRoute` (42), `IRPBFSymmetricReturn` (3), `IRPolicyBasedForwardingRule` (40), `IRPolicyRoute` (20), `IRFortiGatePolicyRoute` (40), `IRManagementServiceRoute` (8), `IRSDWANZone` (7), `IRSDWANMember` (24), `IRSDWANSLA` (14), `IRSDWANHealthCheck` (54), `IRSDWANRuleSLA` (7), `IRSDWANRule` (72), `IRSDWANDuplicationRule` (16), `IRSDWANNeighbor` (5), `IRSDWAN` (12) |
-| `vpn.py` | `IRVPNTunnel` (58), `IRVPNPhase2` (39), `IRVPNCommunity` (25), `IRVPNGateway` (12) |
-| `security_profiles.py` | Identity, certificate, administrator, SSL VPN, authentication, DoS, GlobalProtect, PAN logging/DNS/SD-WAN/HA/report models; 83 exported classes in total. See the module and `IRConfig` fields for the exact current names. |
+| `config.py` | `IRConfig`, its 137 serialized fields, legacy input normalization, and compatibility properties. |
+| `extensions.py` | Typed per-vendor extension containers. Extension models forbid undeclared fields. |
+| `common.py` | Canonical virtual-firewall context and the legacy `IRExecutionContext` alias. |
+| `metadata.py` | Source metadata, audit entries, and Check Point management/performance records. |
+| `provenance.py` | Source configuration commands and nodes. |
+| `network.py` | Zones, interfaces, HA, DHCP, system, DNS, NTP, and related source evidence. |
+| `address.py` | Addresses and address groups. |
+| `service.py` | Services, schedules, applications, proxy models, and Internet Service families. |
+| `policy.py` | Canonical security/identity/access models plus source-specific policy records. |
+| `nat.py` | Canonical NAT pools, published services, NAT rules, and legacy aliases. |
+| `routing.py` | Routes, path monitors, forwarding policies, policy routing, SD-WAN, and legacy aliases. |
+| `vpn.py` | Site-to-site VPN, remote-access VPN, phases, communities, and gateways. |
+| `security_profiles.py` | Security definitions, certificates, identity/authentication, SSL VPN, DoS, GlobalProtect, logging, DNS, monitoring, QoS, reporting, and retained vendor records. |
+
+Current Python compatibility aliases are:
+
+| Legacy name | Canonical class |
+|---|---|
+| `IRExecutionContext` | `IRVirtualFirewallContext` |
+| `IRPolicy` | `IRSecurityPolicy` |
+| `IRCheckpointIdentitySource` | `IRIdentitySource` |
+| `IRCheckpointAccessRole` | `IRAccessRole` |
+| `IRAuthenticationScheme` | `IRAuthenticationProfile` |
+| `IRAuthenticationRule` | `IRAuthenticationPolicy` |
+| `IRIPPool` | `IRNATPool` |
+| `IRVirtualIP` | `IRPublishedService` |
+| `IRVirtualIPGroup` | `IRPublishedServiceGroup` |
+| `IRPolicyBasedForwardingRule` | `IRForwardingPolicy` |
+| `IRRoutePathMonitor` | `IRPathMonitor` |
+| `IRProxyAddress` | `IRProxyRequestMatch` |
+| `IRWebProxySettings` | `IRWebProxy` |
+| `IRZTNAProvider` | `IREndpointContextProvider` |
 
 ## Enums
 
@@ -262,8 +323,13 @@ field authority.
 | `NATSourcePortBehavior` | `dynamic`, `preserve-if-available`, `preserve-strict`, `always-translate`, `explicit-range` |
 | `NATTranslationMode` | `none`, `interface-address`, `pool`, `static`, `dynamic-ip`, `dynamic-ip-and-port`, `persistent-dynamic-ip-and-port` |
 | `NATTranslationAddressSource` | `translated-address`, `interface-address` |
-| `IRRouteNextHopType` | `ip-address`, `fqdn`, `next-vr`, `next-lr`, `discard`, `none` |
+| `IRRouteNextHopType` | `ip-address`, `fqdn`, `next-vr`, `next-lr`, `next-routing-instance`, `discard`, `none` |
 | `MigrationConfidence` | `full`, `partial`, `manual`, `unsupported` |
+
+`NATType.SERVICE`, `NATType.CENTRAL`, `IRRouteNextHopType.NEXT_VR`, and
+`IRRouteNextHopType.NEXT_LR` remain for compatibility/source fidelity. New V2
+output should use independent service/port translation dimensions, source
+provenance for central rulebases, and `next-routing-instance` where applicable.
 
 ## References and dependency behavior
 
@@ -285,11 +351,14 @@ This graph is derived data. It does not replace the IR or mutate it.
 ## Serialization and schema changes
 
 - `dump_ir_json()` serializes `IRConfig` through Pydantic.
-- `load_ir_payload()` requires a JSON object, applies explicit migrations, validates the resulting schema version, and constructs `IRConfig`.
-- Future or malformed versions are rejected. Older versions require an explicit migration path.
-- Unversioned legacy payloads are handled only by the explicit legacy migration path.
-- `IRConfig` accepts the pre-VDOM `sdwan` input and normalizes it to `sdwans`; the `sdwan` property remains only for an unambiguous single-SD-WAN configuration.
-- Compatibility properties expose Check Point identity sources, access roles, and threat-prevention collections under their shorter legacy names.
+- `load_ir_payload()` requires a JSON object. It treats a missing version or version `1` as legacy, migrates it to V2, and rejects booleans, non-integers, and versions other than `1` or `2`.
+- V2 metadata requires an explicit `source_vendor`. The legacy loader supplies the historical `fortinet` default only for unversioned/V1 payloads.
+- In a legacy payload, `policies` becomes canonical `security_policies`; the old top-level `security_policies` source-record collection moves to `vendor_extensions.fortios.security_policies`.
+- Legacy NAT rules with `type: central` load as source NAT with `source_origin: central-snat-map`.
+- `IRConfig` input normalization maps `execution_contexts`, `ip_pools`, `virtual_ips`, `virtual_ip_groups`, `pbf_rules`, `checkpoint_identity_sources`, `checkpoint_access_roles`, `authentication_schemes`, `authentication_rules`, `proxy_addresses`, `ztna_providers`, and `policies` to their V2 field names.
+- A legacy singleton `web_proxy_settings` becomes zero or one `web_proxies` entry. A pre-VDOM singleton `sdwan` becomes `sdwans`; the corresponding compatibility properties return a value only when the collection contains exactly one item.
+- Python properties retain the legacy names above. `threat_prevention_rules` and `threat_prevention_profiles` are read-only shorthand for their `checkpoint_` collections.
+- `IRConfig` and the `IRVendorExtensions` wrapper currently use Pydantic's default handling for extra keys, so undeclared keys at those two levels are ignored. Each per-vendor extension model uses `extra="forbid"`.
 
 Any serialized field addition, removal, rename, or meaning change requires a
 schema-version update, migration handling, and regression tests.
@@ -297,17 +366,18 @@ schema-version update, migration handling, and regression tests.
 ## Source authority
 
 - `src/fwmigrate/ir/config.py` — aggregate root
-- `src/fwmigrate/ir/common.py` — execution context
+- `src/fwmigrate/ir/extensions.py` — typed vendor extensions
+- `src/fwmigrate/ir/common.py` — virtual-firewall context and legacy alias
 - `src/fwmigrate/ir/metadata.py` — metadata, audit, Check Point management records
 - `src/fwmigrate/ir/provenance.py` — source configuration evidence
 - `src/fwmigrate/ir/network.py` — zones, interfaces, DHCP, system/network settings
 - `src/fwmigrate/ir/address.py` — addresses and address groups
-- `src/fwmigrate/ir/service.py` — services, schedules, applications, Internet services
-- `src/fwmigrate/ir/policy.py` — policies, security profiles, source-specific policy records
-- `src/fwmigrate/ir/nat.py` — pools, VIPs, and NAT rules
-- `src/fwmigrate/ir/routing.py` — routes, PBF, policy routing, SD-WAN
-- `src/fwmigrate/ir/vpn.py` — VPN tunnels, phases, communities, gateways
+- `src/fwmigrate/ir/service.py` — services, schedules, applications, proxies, Internet services
+- `src/fwmigrate/ir/policy.py` — security, identity, access, profile, and source-policy models
+- `src/fwmigrate/ir/nat.py` — NAT pools, published services, NAT rules, and legacy aliases
+- `src/fwmigrate/ir/routing.py` — routes, path monitors, forwarding/policy routing, SD-WAN
+- `src/fwmigrate/ir/vpn.py` — site-to-site and remote-access VPN models
 - `src/fwmigrate/ir/security_profiles.py` — certificates, identity, remote access, authentication, PAN-specific records
 - `src/fwmigrate/extraction/models.py` and `src/fwmigrate/extraction/` — source accounting and extraction statuses
 - `src/fwmigrate/ir/enums.py` — shared enum values
-- `src/fwmigrate/ir/version.py`, `io.py`, and `migrations*.py` — schema and serialization behavior
+- `src/fwmigrate/ir/version.py` and `io.py` — schema version and serialized-payload migration behavior
