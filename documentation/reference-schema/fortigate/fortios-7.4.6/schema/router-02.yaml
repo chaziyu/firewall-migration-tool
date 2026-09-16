@@ -503,55 +503,347 @@ sections:
 - path: router policy
   mode: table
   key: <seq-num>
+  key_type: integer
+  description: Configure IPv4 routing policies.
   fields:
-    action: enum
-    comments: var-string
-    dst: identifier-list
-    dst-negate: enum
-    dstaddr: identifier-list
-    end-port: integer
-    end-source-port: integer
-    gateway: ipv4-address
-    input-device: identifier-list
-    input-device-negate: enum
-    internet-service-custom: identifier-list
-    internet-service-id: identifier-list
-    output-device: string
-    protocol: integer
-    src: identifier-list
-    src-negate: enum
-    srcaddr: identifier-list
-    start-port: integer
-    start-source-port: integer
-    status: enum
-    tos: opaque-user
-    tos-mask: opaque-user
+    action:
+      source_type: enum
+      fortios_type: option
+      description: Action of the policy route.
+      options: [{value: deny}, {value: permit}]
+      default: {value: permit}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: action}}
+    comments:
+      source_type: var-string
+      fortios_type: var-string
+      description: Optional comments.
+      length: {max: 255}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: comments}}
+    dst:
+      source_type: identifier-list
+      fortios_type: string
+      description: Destination IP and mask (x.x.x.x/x).
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: dst}}
+    dst-negate:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable negating destination address match.
+      options: [{value: enable}, {value: disable}]
+      default: {value: disable}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: dst-negate}}
+    dstaddr:
+      source_type: identifier-list
+      fortios_type: string
+      description: Destination address name. Address/group name.
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: dstaddr}}
+      semantic:
+        reference: {kind: ipv4-address-reference, target_paths: [firewall address, firewall addrgrp], cardinality: many}
+        evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy, parameter: dstaddr}}
+    end-port:
+      source_type: integer
+      fortios_type: integer
+      description: End destination port number.
+      range: {min: 0, max: 65535}
+      default: {value: 65535}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: end-port}}
+    end-source-port:
+      source_type: integer
+      fortios_type: integer
+      description: End source port number.
+      range: {min: 0, max: 65535}
+      default: {value: 65535}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: end-source-port}}
+    gateway:
+      source_type: ipv4-address
+      fortios_type: ipv4-address
+      description: IP address of the gateway.
+      default: {value: 0.0.0.0}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: gateway}}
+    input-device:
+      source_type: identifier-list
+      fortios_type: string
+      description: Incoming interface name.
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: input-device}}
+      semantic:
+        reference: {kind: incoming-interface, target_paths: [system interface], cardinality: many}
+        evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy, parameter: input-device}}
+    input-device-negate:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable negation of input device match.
+      options: [{value: enable}, {value: disable}]
+      default: {value: disable}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: input-device-negate}}
+    internet-service-custom:
+      source_type: identifier-list
+      fortios_type: string
+      description: Custom Destination Internet Service name.
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: internet-service-custom}}
+      semantic:
+        reference: {kind: internet-service-custom, target_paths: [firewall internet-service-custom], cardinality: many}
+        evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy, parameter: internet-service-custom}}
+    internet-service-id:
+      source_type: identifier-list
+      fortios_type: integer
+      description: Destination Internet Service ID.
+      range: {min: 0, max: 4294967295}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: internet-service-id}}
+    output-device:
+      source_type: string
+      fortios_type: string
+      description: Outgoing interface name.
+      length: {max: 35}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: output-device}}
+      semantic:
+        reference: {kind: outgoing-interface, target_paths: [system interface], cardinality: one}
+        evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy, parameter: output-device}}
+    protocol:
+      source_type: integer
+      fortios_type: integer
+      description: Protocol number.
+      range: {min: 0, max: 255}
+      default: {value: 0}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: protocol}}
+    src:
+      source_type: identifier-list
+      fortios_type: string
+      description: Source IP and mask (x.x.x.x/x).
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: src}}
+    src-negate:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable negating source address match.
+      options: [{value: enable}, {value: disable}]
+      default: {value: disable}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: src-negate}}
+    srcaddr:
+      source_type: identifier-list
+      fortios_type: string
+      description: Source address name. Address/group name.
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: srcaddr}}
+      semantic:
+        reference: {kind: ipv4-address-reference, target_paths: [firewall address, firewall addrgrp], cardinality: many}
+        evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy, parameter: srcaddr}}
+    start-port:
+      source_type: integer
+      fortios_type: integer
+      description: Start destination port number.
+      range: {min: 0, max: 65535}
+      default: {value: 0}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: start-port}}
+    start-source-port:
+      source_type: integer
+      fortios_type: integer
+      description: Start source port number.
+      range: {min: 0, max: 65535}
+      default: {value: 0}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: start-source-port}}
+    status:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable this policy route.
+      options: [{value: enable}, {value: disable}]
+      default: {value: enable}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: status}}
+    tos:
+      source_type: opaque-user
+      fortios_type: user
+      description: Type of service bit pattern.
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: tos}}
+    tos-mask:
+      source_type: opaque-user
+      fortios_type: user
+      description: Type of service evaluated bits.
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy, parameter: tos-mask}}
+  evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy}}
+  semantic:
+    migration_relevance: migration_relevant
+    evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy}}
 - path: router policy6
   mode: table
   key: <seq-num>
+  key_type: integer
+  description: Configure IPv6 routing policies.
   fields:
-    action: enum
-    comments: var-string
-    dst: identifier-list
-    dst-negate: enum
-    dstaddr: identifier-list
-    end-port: integer
-    end-source-port: integer
-    gateway: ipv6-address
-    input-device: identifier-list
-    input-device-negate: enum
-    internet-service-custom: identifier-list
-    internet-service-id: identifier-list
-    output-device: string
-    protocol: integer
-    src: identifier-list
-    src-negate: enum
-    srcaddr: identifier-list
-    start-port: integer
-    start-source-port: integer
-    status: enum
-    tos: opaque-user
-    tos-mask: opaque-user
+    action:
+      source_type: enum
+      fortios_type: option
+      description: Action of the policy route.
+      options: [{value: deny}, {value: permit}]
+      default: {value: permit}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: action}}
+    comments:
+      source_type: var-string
+      fortios_type: var-string
+      description: Optional comments.
+      length: {max: 255}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: comments}}
+    dst:
+      source_type: identifier-list
+      fortios_type: string
+      description: Destination IPv6 prefix.
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: dst}}
+    dst-negate:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable negating destination address match.
+      options: [{value: enable}, {value: disable}]
+      default: {value: disable}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: dst-negate}}
+    dstaddr:
+      source_type: identifier-list
+      fortios_type: string
+      description: Destination address name. Address/group name.
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: dstaddr}}
+      semantic:
+        reference: {kind: ipv6-address-reference, target_paths: [firewall address6, firewall addrgrp6], cardinality: many}
+        evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy6, parameter: dstaddr}}
+    end-port:
+      source_type: integer
+      fortios_type: integer
+      description: End destination port number.
+      range: {min: 1, max: 65535}
+      default: {value: 65535}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: end-port}}
+    end-source-port:
+      source_type: integer
+      fortios_type: integer
+      description: End source port number.
+      range: {min: 1, max: 65535}
+      default: {value: 65535}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: end-source-port}}
+    gateway:
+      source_type: ipv6-address
+      fortios_type: ipv6-address
+      description: IPv6 address of the gateway.
+      default: {value: '::'}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: gateway}}
+    input-device:
+      source_type: identifier-list
+      fortios_type: string
+      description: Incoming interface name.
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: input-device}}
+      semantic:
+        reference: {kind: incoming-interface, target_paths: [system interface], cardinality: many}
+        evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy6, parameter: input-device}}
+    input-device-negate:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable negation of input device match.
+      options: [{value: enable}, {value: disable}]
+      default: {value: disable}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: input-device-negate}}
+    internet-service-custom:
+      source_type: identifier-list
+      fortios_type: string
+      description: Custom Destination Internet Service name.
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: internet-service-custom}}
+      semantic:
+        reference: {kind: internet-service-custom, target_paths: [firewall internet-service-custom], cardinality: many}
+        evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy6, parameter: internet-service-custom}}
+    internet-service-id:
+      source_type: identifier-list
+      fortios_type: integer
+      description: Destination Internet Service ID.
+      range: {min: 0, max: 4294967295}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: internet-service-id}}
+    output-device:
+      source_type: string
+      fortios_type: string
+      description: Outgoing interface name.
+      length: {max: 35}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: output-device}}
+      semantic:
+        reference: {kind: outgoing-interface, target_paths: [system interface], cardinality: one}
+        evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy6, parameter: output-device}}
+    protocol:
+      source_type: integer
+      fortios_type: integer
+      description: Protocol number.
+      range: {min: 0, max: 255}
+      default: {value: 0}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: protocol}}
+    src:
+      source_type: identifier-list
+      fortios_type: string
+      description: Source IPv6 prefix.
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: src}}
+    src-negate:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable negating source address match.
+      options: [{value: enable}, {value: disable}]
+      default: {value: disable}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: src-negate}}
+    srcaddr:
+      source_type: identifier-list
+      fortios_type: string
+      description: Source address name. Address/group name.
+      length: {max: 79}
+      cardinality: list
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: srcaddr}}
+      semantic:
+        reference: {kind: ipv6-address-reference, target_paths: [firewall address6, firewall addrgrp6], cardinality: many}
+        evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy6, parameter: srcaddr}}
+    start-port:
+      source_type: integer
+      fortios_type: integer
+      description: Start destination port number.
+      range: {min: 1, max: 65535}
+      default: {value: 1}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: start-port}}
+    start-source-port:
+      source_type: integer
+      fortios_type: integer
+      description: Start source port number.
+      range: {min: 1, max: 65535}
+      default: {value: 1}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: start-source-port}}
+    status:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable this policy route.
+      options: [{value: enable}, {value: disable}]
+      default: {value: enable}
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: status}}
+    tos:
+      source_type: opaque-user
+      fortios_type: user
+      description: Type of service bit pattern.
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: tos}}
+    tos-mask:
+      source_type: opaque-user
+      fortios_type: user
+      description: Type of service evaluated bits.
+      evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6, parameter: tos-mask}}
+  evidence: {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router policy6}}
+  semantic:
+    migration_relevance: migration_relevant
+    evidence: {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router policy6}}
 - path: router prefix-list
   mode: table
   key: <name>
