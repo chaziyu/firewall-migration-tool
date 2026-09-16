@@ -1857,27 +1857,422 @@ sections:
 - path: firewall central-snat-map
   mode: table
   key: <policyid>
+  key_type: integer
+  description: Configure IPv4 and IPv6 central SNAT policies.
   fields:
-    comments: var-string
-    dst-addr: identifier-list
-    dst-addr6: identifier-list
-    dst-port: opaque-user
-    dstintf: identifier-list
-    nat: enum
-    nat-ippool: identifier-list
-    nat-ippool6: identifier-list
-    nat-port: opaque-user
-    nat46: enum
-    nat64: enum
-    orig-addr: identifier-list
-    orig-addr6: identifier-list
-    orig-port: opaque-user
-    port-preserve: enum
-    protocol: integer
-    srcintf: identifier-list
-    status: enum
-    type: enum
-    uuid: uuid
+    comments:
+      source_type: var-string
+      fortios_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: comments
+      description: Comment.
+      length:
+        max: 1023
+    dst-addr:
+      source_type: identifier-list
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: dst-addr
+      fortios_type: string
+      description: IPv4 destination address names.
+      length:
+        max: 79
+      semantic:
+        reference:
+          kind: ipv4-address
+          target_paths:
+          - firewall address
+          - firewall addrgrp
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall central-snat-map
+            parameter: dst-addr
+    dst-addr6:
+      source_type: identifier-list
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: dst-addr6
+      fortios_type: string
+      description: IPv6 destination address names.
+      length:
+        max: 79
+      semantic:
+        reference:
+          kind: ipv6-address
+          target_paths:
+          - firewall address6
+          - firewall addrgrp6
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall central-snat-map
+            parameter: dst-addr6
+    dst-port:
+      source_type: opaque-user
+      fortios_type: user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: dst-port
+      description: Destination port or port range (1 to 65535; 0 means any port).
+    dstintf:
+      source_type: identifier-list
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: dstintf
+      fortios_type: string
+      description: Destination interface names.
+      length:
+        max: 79
+      semantic:
+        reference:
+          kind: interface-or-zone
+          target_paths:
+          - system interface
+          - system zone
+          cardinality: many
+          note: FortiOS policy interface selectors can resolve to interfaces or zones; target paths are project semantic classification.
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall central-snat-map
+            parameter: dstintf
+    nat:
+      source_type: enum
+      fortios_type: option
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: nat
+      description: Enable/disable source NAT.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: enable
+    nat-ippool:
+      source_type: identifier-list
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: nat-ippool
+      fortios_type: string
+      description: IPv4 IP pools used to translate source addresses.
+      length:
+        max: 79
+      semantic:
+        reference:
+          kind: ipv4-ip-pool
+          target_paths:
+          - firewall ippool
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall central-snat-map
+            parameter: nat-ippool
+    nat-ippool6:
+      source_type: identifier-list
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: nat-ippool6
+      fortios_type: string
+      description: IPv6 IP pools used for source NAT.
+      length:
+        max: 79
+      semantic:
+        reference:
+          kind: ipv6-ip-pool
+          target_paths:
+          - firewall ippool6
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall central-snat-map
+            parameter: nat-ippool6
+    nat-port:
+      source_type: opaque-user
+      fortios_type: user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: nat-port
+      description: Translated port or port range (1 to 65535; 0 means any port).
+    nat46:
+      source_type: enum
+      fortios_type: option
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: nat46
+      description: Enable/disable NAT46.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: disable
+    nat64:
+      source_type: enum
+      fortios_type: option
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: nat64
+      description: Enable/disable NAT64.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: disable
+    orig-addr:
+      source_type: identifier-list
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: orig-addr
+      fortios_type: string
+      description: IPv4 original address names.
+      length:
+        max: 79
+      semantic:
+        reference:
+          kind: ipv4-address
+          target_paths:
+          - firewall address
+          - firewall addrgrp
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall central-snat-map
+            parameter: orig-addr
+    orig-addr6:
+      source_type: identifier-list
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: orig-addr6
+      fortios_type: string
+      description: IPv6 original address names.
+      length:
+        max: 79
+      semantic:
+        reference:
+          kind: ipv6-address
+          target_paths:
+          - firewall address6
+          - firewall addrgrp6
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall central-snat-map
+            parameter: orig-addr6
+    orig-port:
+      source_type: opaque-user
+      fortios_type: user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: orig-port
+      description: Original TCP port (1 to 65535; 0 means any port).
+    port-preserve:
+      source_type: enum
+      fortios_type: option
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: port-preserve
+      description: Preserve original source port for source NAT if unused.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: enable
+    protocol:
+      source_type: integer
+      fortios_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: protocol
+      description: Integer protocol number.
+      range:
+        min: 0
+        max: 255
+      default:
+        value: 0
+    srcintf:
+      source_type: identifier-list
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: srcintf
+      fortios_type: string
+      description: Source interface names.
+      length:
+        max: 79
+      semantic:
+        reference:
+          kind: interface-or-zone
+          target_paths:
+          - system interface
+          - system zone
+          cardinality: many
+          note: FortiOS policy interface selectors can resolve to interfaces or zones; target paths are project semantic classification.
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall central-snat-map
+            parameter: srcintf
+    status:
+      source_type: enum
+      fortios_type: option
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: status
+      description: Enable/disable the active status of this policy.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: enable
+    type:
+      source_type: enum
+      fortios_type: option
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: type
+      description: IPv4/IPv6 source NAT type.
+      options:
+      - value: ipv4
+        description: Perform IPv4 source NAT.
+      - value: ipv6
+        description: Perform IPv6 source NAT.
+      default:
+        value: ipv4
+    uuid:
+      source_type: uuid
+      fortios_type: uuid
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          config_path: firewall central-snat-map
+          document_id: 01-746-912654-20241212
+          parameter: uuid
+      description: Universally Unique Identifier (UUID; automatically assigned but can be manually reset).
+      default:
+        value: 00000000-0000-0000-0000-000000000000
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      config_path: firewall central-snat-map
+      document_id: 01-746-912654-20241212
+      note: The edit key policyid is documented as integer 0..4294967295 with default 0.
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall central-snat-map
 - path: firewall city
   mode: table
   key: <id>
