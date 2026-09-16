@@ -12,13 +12,6 @@ documentation/
 ├── README.md
 ├── ir-model.md
 ├── ir-schema-v2-plan.md
-├── reference-schema/
-│   └── fortigate/
-│       └── fortios-7.4.6/
-│           ├── README.md
-│           ├── index.yaml
-│           ├── ir-v2-mapping.yaml
-│           └── schema/
 └── vendor-mapping/
     ├── fortigate.md
     ├── palo-alto.md
@@ -31,8 +24,7 @@ documentation/
 | File | Purpose |
 |---|---|
 | [`ir-model.md`](ir-model.md) | Current executable canonical IR model, fields, relationships, safety flags, and serialization behavior. |
-| [`ir-schema-v2-plan.md`](ir-schema-v2-plan.md) | Planned IR V2 target contract and generic/vendor-extension boundary. |
-| [`reference-schema/fortigate/fortios-7.4.6/`](reference-schema/fortigate/fortios-7.4.6/) | Machine-readable FortiOS 7.4.6 source syntax/reference schema. It is not an implementation-support claim. |
+| [`ir-schema-v2-plan.md`](ir-schema-v2-plan.md) | Historical IR V2 design rationale and generic/vendor-extension boundary. |
 | [`vendor-mapping/fortigate.md`](vendor-mapping/fortigate.md) | FortiGate configuration to canonical IR mapping. |
 | [`vendor-mapping/palo-alto.md`](vendor-mapping/palo-alto.md) | Palo Alto configuration to canonical IR mapping. |
 | [`vendor-mapping/cisco-asa.md`](vendor-mapping/cisco-asa.md) | Cisco ASA configuration to canonical IR mapping. |
@@ -61,7 +53,7 @@ independently from normalization.
 
 - Executable source code and regression tests define implementation behavior.
 - Official vendor documentation defines vendor behavior.
-- `ir-schema-v2-plan.md` defines the intended V2 contract but does not imply it is implemented.
+- `ir-schema-v2-plan.md` records the implemented V2 contract's design rationale.
 - Reference schemas derived from official documentation describe documented source syntax, not runtime availability or parser support.
 - Vendor mapping documents describe implemented mappings and must not claim support without parser, IR, generator, or test evidence.
 

@@ -120,8 +120,8 @@ def _parse_family(root: ET.Element, scope: PANScope, extraction, family: str) ->
                     reasons.append("invalid-disabled")
                     disabled = None
                 profile_checks = (
-                    (attributes.get("pan_path_quality_profile"), extraction.canonical_ir.pan_sdwan_path_quality_profiles),
-                    (attributes.get("pan_traffic_distribution_profile"), extraction.canonical_ir.pan_sdwan_traffic_distribution_profiles),
+                    (attributes.get("pan_path_quality_profile"), extraction.canonical_ir.vendor_extensions.panos.pan_sdwan_path_quality_profiles),
+                    (attributes.get("pan_traffic_distribution_profile"), extraction.canonical_ir.vendor_extensions.panos.pan_sdwan_traffic_distribution_profiles),
                 )
                 for reference, profiles in profile_checks:
                     if reference and not any(profile.name == reference for profile in profiles):
@@ -129,7 +129,7 @@ def _parse_family(root: ET.Element, scope: PANScope, extraction, family: str) ->
                 if attributes.get("pan_sdwan_failover") is not None:
                     reasons.append("pan-sdwan-failover-review")
                 reasons = list(dict.fromkeys(reasons))
-                extraction.canonical_ir.pan_sdwan_rules.append(IRPANSDWANRule(
+                extraction.canonical_ir.vendor_extensions.panos.pan_sdwan_rules.append(IRPANSDWANRule(
                     name=name, source_context=pan_scope_identity(scope),
                     source_rule_id=source_rule_id, source_order=index,
                     rulebase_position=position,

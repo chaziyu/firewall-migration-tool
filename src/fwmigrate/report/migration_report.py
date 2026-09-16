@@ -58,7 +58,7 @@ class MigrationReporter:
                 "nat_rules": len(self.ir.nat_rules),
                 "vpn_tunnels": len(self.ir.vpn_tunnels),
                 "routes": len(self.ir.routes),
-                "internet_services": len(self.ir.internet_services)
+                "internet_services": len(self.ir.vendor_extensions.fortios.internet_services)
             },
             "extraction_safety": self._extraction_safety_counts() if self.extraction_result else {},
             "migration_critical_configuration": (
@@ -287,7 +287,7 @@ class MigrationReporter:
             len(self.ir.interfaces) + len(self.ir.addresses) + len(self.ir.address_groups) +
             len(self.ir.services) + len(self.ir.service_groups) + len(self.ir.security_profile_groups) +
             len(self.ir.policies) + len(self.ir.nat_rules) + len(self.ir.vpn_tunnels) + len(self.ir.routes) +
-            len(self.ir.internet_services)
+            len(self.ir.vendor_extensions.fortios.internet_services)
         )
         
         confidence_counts = defaultdict(int)
@@ -319,7 +319,7 @@ class MigrationReporter:
             f"| **Address Groups** | {len(self.ir.address_groups)} | Grouped address collections |",
             f"| **Service Objects** | {len(self.ir.services)} | Custom TCP/UDP/ICMP protocol definitions |",
             f"| **Service Groups** | {len(self.ir.service_groups)} | Grouped port and service collections |",
-            f"| **Internet Services (ISDB)** | {len(self.ir.internet_services)} | Built-in SaaS objects |",
+            f"| **Internet Services (ISDB)** | {len(self.ir.vendor_extensions.fortios.internet_services)} | Built-in SaaS objects |",
             f"| **Threat Profile Groups** | {len(self.ir.security_profile_groups)} | Unified threat inspection bundles (AV, IPS, URL, etc.) |",
             f"| **Security Policies** | {len(self.ir.policies)} | Firewall access control rules |",
             f"| **NAT Rules** | {len(self.ir.nat_rules)} | Source, destination, and static NAT translations |",
@@ -563,7 +563,7 @@ class MigrationReporter:
                 lines.append(f"| `{sg.name}` | {members} | {desc} |")
 
         # Internet Services (ISDB)
-        if self.ir.internet_services:
+        if self.ir.vendor_extensions.fortios.internet_services:
             lines.extend([
                 "",
                 "### Internet Services (ISDB)",
@@ -571,7 +571,7 @@ class MigrationReporter:
                 "| Service Name | Description |",
                 "| :--- | :--- |",
             ])
-            for isdb in self.ir.internet_services:
+            for isdb in self.ir.vendor_extensions.fortios.internet_services:
                 desc = isdb.description or "-"
                 lines.append(f"| `{isdb.name}` | {desc} |")
 
@@ -696,7 +696,7 @@ class MigrationReporter:
             len(self.ir.interfaces) + len(self.ir.addresses) + len(self.ir.address_groups) +
             len(self.ir.services) + len(self.ir.service_groups) + len(self.ir.security_profile_groups) +
             len(self.ir.policies) + len(self.ir.nat_rules) + len(self.ir.vpn_tunnels) + len(self.ir.routes) +
-            len(self.ir.internet_services)
+            len(self.ir.vendor_extensions.fortios.internet_services)
         )
         
         confidence_counts = defaultdict(int)
@@ -903,7 +903,7 @@ class MigrationReporter:
 
         # 9.5 ISDB
         isdb_rows = []
-        for isdb in self.ir.internet_services:
+        for isdb in self.ir.vendor_extensions.fortios.internet_services:
             isdb_rows.append(f"<tr><td><code>{html.escape(isdb.name)}</code></td><td>{html.escape(isdb.description or '-')}</td></tr>")
         isdb_html = "".join(isdb_rows) if isdb_rows else "<tr><td colspan='2' class='text-muted'>No internet services (ISDB) configured.</td></tr>"
 

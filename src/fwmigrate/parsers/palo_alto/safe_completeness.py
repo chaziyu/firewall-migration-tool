@@ -156,9 +156,9 @@ class PANOSSourceParser(_CompletenessPANOSSourceParser):
                 saas_quality = scalar("saas-quality-profile")
                 reasons = []
                 checks = (
-                    (interface_profile, extraction.canonical_ir.pan_sdwan_interface_profiles),
-                    (path_quality, extraction.canonical_ir.pan_sdwan_path_quality_profiles),
-                    (traffic_distribution, extraction.canonical_ir.pan_sdwan_traffic_distribution_profiles),
+                    (interface_profile, extraction.canonical_ir.vendor_extensions.panos.pan_sdwan_interface_profiles),
+                    (path_quality, extraction.canonical_ir.vendor_extensions.panos.pan_sdwan_path_quality_profiles),
+                    (traffic_distribution, extraction.canonical_ir.vendor_extensions.panos.pan_sdwan_traffic_distribution_profiles),
                 )
                 for reference, profiles in checks:
                     if reference and not any(profile.name == reference for profile in profiles):
@@ -171,7 +171,7 @@ class PANOSSourceParser(_CompletenessPANOSSourceParser):
                     source_attributes=settings,
                 )
                 link.requires_manual_review = True
-                extraction.canonical_ir.pan_sdwan_link_settings.append(link)
+                extraction.canonical_ir.vendor_extensions.panos.pan_sdwan_link_settings.append(link)
             if len(ipv4) > 1:
                 interface.secondary_ips = []
                 interface.source_attributes["pan_additional_ipv4_addresses"] = ipv4[1:]

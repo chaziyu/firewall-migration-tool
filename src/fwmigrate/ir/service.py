@@ -2,8 +2,14 @@
 
 from datetime import timezone
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.enums import ServiceProtocol
+from .extension_models import (
+    IRCheckPointObjectExtension,
+    get_object_extension_value,
+    move_object_extension,
+    set_object_extension_value,
+)
 
 
 class IRServicePort(BaseModel):
@@ -27,27 +33,7 @@ class IRService(BaseModel):
     source_context: Optional[str] = None
     ports: List[IRServicePort] = Field(default_factory=list)
     source_uuid: Optional[str] = None
-    checkpoint_domain_uid: Optional[str] = None
-    checkpoint_domain_name: Optional[str] = None
-    checkpoint_origin_scope: Optional[str] = None
-    global_source_uid: Optional[str] = None
-    global_source_name: Optional[str] = None
-    local_override_uid: Optional[str] = None
-    assignment_uid: Optional[str] = None
-    checkpoint_domain_uid: Optional[str] = None
-    checkpoint_domain_name: Optional[str] = None
-    checkpoint_origin_scope: Optional[str] = None
-    global_source_uid: Optional[str] = None
-    global_source_name: Optional[str] = None
-    local_override_uid: Optional[str] = None
-    assignment_uid: Optional[str] = None
-    checkpoint_domain_uid: Optional[str] = None
-    checkpoint_domain_name: Optional[str] = None
-    checkpoint_origin_scope: Optional[str] = None
-    global_source_uid: Optional[str] = None
-    global_source_name: Optional[str] = None
-    local_override_uid: Optional[str] = None
-    assignment_uid: Optional[str] = None
+    vendor_extension: Optional[IRCheckPointObjectExtension] = None
     source_category: Optional[str] = None
     source_protocol_configured: Optional[str] = None
     source_protocol: Optional[str] = None
@@ -72,6 +58,14 @@ class IRService(BaseModel):
     requires_manual_review: bool = False
     audit_note: Optional[str] = None
     description: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def move_legacy_vendor_fields(cls, data: Any) -> Any:
+        return move_object_extension(data, (
+            "checkpoint_domain_uid", "checkpoint_domain_name", "checkpoint_origin_scope",
+            "global_source_uid", "global_source_name", "local_override_uid", "assignment_uid",
+        ))
 class IRServiceGroup(BaseModel):
     name: str
     source_context: Optional[str] = None
@@ -95,13 +89,7 @@ class IRSchedule(BaseModel):
     windows: List[Dict[str, Any]] = Field(default_factory=list)
     schedule_type: str = "recurring"
     source_color: Optional[int] = None
-    checkpoint_domain_uid: Optional[str] = None
-    checkpoint_domain_name: Optional[str] = None
-    checkpoint_origin_scope: Optional[str] = None
-    global_source_uid: Optional[str] = None
-    global_source_name: Optional[str] = None
-    local_override_uid: Optional[str] = None
-    assignment_uid: Optional[str] = None
+    vendor_extension: Optional[IRCheckPointObjectExtension] = None
     expiration_days: Optional[int] = None
     source_fabric_object: Optional[str] = None
     start_utc: Optional[str] = None
@@ -117,6 +105,14 @@ class IRSchedule(BaseModel):
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def move_legacy_vendor_fields(cls, data: Any) -> Any:
+        return move_object_extension(data, (
+            "checkpoint_domain_uid", "checkpoint_domain_name", "checkpoint_origin_scope",
+            "global_source_uid", "global_source_name", "local_override_uid", "assignment_uid",
+        ))
 class IRTrafficShaper(BaseModel):
     name: str
     source_context: Optional[str] = None
@@ -164,27 +160,7 @@ class IRWebProxy(BaseModel):
 class IRApplication(BaseModel):
     name: str
     source_uuid: Optional[str] = None
-    checkpoint_domain_uid: Optional[str] = None
-    checkpoint_domain_name: Optional[str] = None
-    checkpoint_origin_scope: Optional[str] = None
-    global_source_uid: Optional[str] = None
-    global_source_name: Optional[str] = None
-    local_override_uid: Optional[str] = None
-    assignment_uid: Optional[str] = None
-    checkpoint_domain_uid: Optional[str] = None
-    checkpoint_domain_name: Optional[str] = None
-    checkpoint_origin_scope: Optional[str] = None
-    global_source_uid: Optional[str] = None
-    global_source_name: Optional[str] = None
-    local_override_uid: Optional[str] = None
-    assignment_uid: Optional[str] = None
-    checkpoint_domain_uid: Optional[str] = None
-    checkpoint_domain_name: Optional[str] = None
-    checkpoint_origin_scope: Optional[str] = None
-    global_source_uid: Optional[str] = None
-    global_source_name: Optional[str] = None
-    local_override_uid: Optional[str] = None
-    assignment_uid: Optional[str] = None
+    vendor_extension: Optional[IRCheckPointObjectExtension] = None
     source_context: Optional[str] = None
     category: Optional[str] = None
     urls: List[str] = Field(default_factory=list)
@@ -194,6 +170,14 @@ class IRApplication(BaseModel):
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def move_legacy_vendor_fields(cls, data: Any) -> Any:
+        return move_object_extension(data, (
+            "checkpoint_domain_uid", "checkpoint_domain_name", "checkpoint_origin_scope",
+            "global_source_uid", "global_source_name", "local_override_uid", "assignment_uid",
+        ))
 class IRApplicationGroup(IRApplication):
     members: List[str] = Field(default_factory=list)
 class IRApplicationCategory(IRApplication):
@@ -336,22 +320,41 @@ class IRScheduleGroup(BaseModel):
     source_context: Optional[str] = None
     members: List[str] = Field(default_factory=list)
     source_uuid: Optional[str] = None
-    checkpoint_domain_uid: Optional[str] = None
-    checkpoint_domain_name: Optional[str] = None
-    checkpoint_origin_scope: Optional[str] = None
-    global_source_uid: Optional[str] = None
-    global_source_name: Optional[str] = None
-    local_override_uid: Optional[str] = None
-    assignment_uid: Optional[str] = None
+    vendor_extension: Optional[IRCheckPointObjectExtension] = None
     description: Optional[str] = None
     unresolved_members: List[str] = Field(default_factory=list)
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def move_legacy_vendor_fields(cls, data: Any) -> Any:
+        return move_object_extension(data, (
+            "checkpoint_domain_uid", "checkpoint_domain_name", "checkpoint_origin_scope",
+            "global_source_uid", "global_source_name", "local_override_uid", "assignment_uid",
+        ))
+
 
 IRProxyAddress = IRProxyRequestMatch
 IRWebProxySettings = IRWebProxy
+
+
+def _checkpoint_property(field: str):
+    return property(
+        lambda self: get_object_extension_value(self, field),
+        lambda self, value: set_object_extension_value(
+            self, IRCheckPointObjectExtension, field, value
+        ),
+    )
+
+
+for _model in (IRService, IRSchedule, IRScheduleGroup, IRApplication):
+    for _field in (
+        "checkpoint_domain_uid", "checkpoint_domain_name", "checkpoint_origin_scope",
+        "global_source_uid", "global_source_name", "local_override_uid", "assignment_uid",
+    ):
+        setattr(_model, _field, _checkpoint_property(_field))
 
 
 __all__ = [

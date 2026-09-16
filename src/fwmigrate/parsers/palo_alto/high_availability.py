@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+from fwmigrate.ir.network import IRHighAvailability
 from fwmigrate.ir.security_profiles import (
     IRPANHighAvailability,
     IRPANHAInterface,
@@ -74,7 +75,14 @@ def extract_pan_high_availability(scope: PANScope, device: ET.Element, extractio
         if e is not None:
             record_unknown_children(extraction, e, {'ip-address', 'netmask'}, scope, f'deviceconfig/high-availability/interface/{tag}', 'pan_high_availability', 'Unknown PAN HA interface child.')
             p.interfaces.append(IRPANHAInterface(name=tag,ip_address=text_or_none(e,'./ip-address'),netmask=text_or_none(e,'./netmask'),source_attributes=sanitize_source_attributes({"pan_source_entry": structured_xml_capture(e), "pan_ipv6_address": text_or_none(e,'./ipv6-address'), "pan_ipv6_prefix": text_or_none(e,'./ipv6-prefix')})))
-    extraction.canonical_ir.pan_high_availability=p
+    extraction.canonical_ir.vendor_extensions.panos.pan_high_availability=p
+    extraction.canonical_ir.high_availability.append(IRHighAvailability(
+        name=pan_scope_identity(scope),
+        cluster_type="panos-high-availability",
+        mode="enabled" if p.enabled else "disabled" if p.enabled is False else None,
+        member_references=[p.peer_ip] if p.peer_ip else [],
+        source_attributes=dict(p.source_attributes),
+    ))
     for group in p.link_groups:
         for name in group.interfaces:
             obj = resolver.resolve(name, "interface", scope)

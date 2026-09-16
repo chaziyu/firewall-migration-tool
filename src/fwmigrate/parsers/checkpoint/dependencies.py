@@ -46,6 +46,7 @@ def build_checkpoint_dependencies(
     ir: IRConfig, resolver: CheckPointObjectResolver,
 ) -> list[DependencyRecord]:
     dependencies: list[DependencyRecord] = []
+    checkpoint = ir.vendor_extensions.checkpoint
     interfaces = {item.name for item in ir.interfaces}
     zones = {item.name for item in ir.zones}
 
@@ -92,7 +93,7 @@ def build_checkpoint_dependencies(
         "time": {SemanticKind.TIME, SemanticKind.TIME_GROUP, SemanticKind.SPECIAL_ANY},
         "install-on": {SemanticKind.INSTALL_TARGET, SemanticKind.SPECIAL_ANY},
     }
-    for rule in ir.checkpoint_access_rules:
+    for rule in checkpoint.checkpoint_access_rules:
         for field, refs in (
             ("source", rule.source), ("destination", rule.destination),
             ("service", [*rule.services, *rule.applications]),

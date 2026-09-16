@@ -3,6 +3,13 @@
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.enums import AddressType
+from .extension_models import (
+    IRCheckPointObjectExtension,
+    IRFortiOSAddressExtension,
+    get_object_extension_value,
+    move_object_extension,
+    set_object_extension_value,
+)
 
 
 class IRAddressTaggingEntry(BaseModel):
@@ -21,13 +28,7 @@ class IRAddress(BaseModel):
     # Source provenance and extraction-only metadata. Target generators must
     # not interpret source-only fields as portable address semantics.
     source_uuid: Optional[str] = None
-    checkpoint_domain_uid: Optional[str] = None
-    checkpoint_domain_name: Optional[str] = None
-    checkpoint_origin_scope: Optional[str] = None
-    global_source_uid: Optional[str] = None
-    global_source_name: Optional[str] = None
-    local_override_uid: Optional[str] = None
-    assignment_uid: Optional[str] = None
+    vendor_extension: Optional[IRCheckPointObjectExtension | IRFortiOSAddressExtension] = None
     source_section: Optional[str] = None
     address_family: Optional[str] = None
     source_type: Optional[str] = None
@@ -39,13 +40,11 @@ class IRAddress(BaseModel):
     source_interface: Optional[str] = None
     resolved_interface_subnet: Optional[str] = None
     interface_reference_resolved: Optional[bool] = None
-    source_fsso_group: Optional[str] = None
     source_hw_model: Optional[str] = None
     source_hw_vendor: Optional[str] = None
     source_cache_ttl: Optional[int] = None
     source_clearpass_spt: Optional[str] = None
     source_epg_name: Optional[str] = None
-    source_fabric_object_setting: Optional[str] = None
     source_organization: Optional[str] = None
     source_os: Optional[str] = None
     source_policy_group: Optional[str] = None
@@ -85,6 +84,26 @@ class IRAddress(BaseModel):
     # Stub & manual review fields
     original_type: Optional[str] = None
     original_value: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def move_legacy_vendor_fields(cls, data: Any) -> Any:
+        data = move_object_extension(
+            data,
+            (
+                "checkpoint_domain_uid", "checkpoint_domain_name",
+                "checkpoint_origin_scope", "global_source_uid",
+                "global_source_name", "local_override_uid", "assignment_uid",
+            ),
+        )
+        return move_object_extension(
+            data,
+            (
+                "source_fsso_group", "source_fabric_object_setting",
+                "source_effective_defaults", "source_template",
+                "source_template_reference_resolved",
+            ),
+        )
     
     @model_validator(mode="before")
     @classmethod
@@ -226,6 +245,7 @@ class IRAddressGroup(BaseModel):
     tags: List[str] = Field(default_factory=list)
     # Source metadata used for partially normalized dynamic/EMS objects.
     source_uuid: Optional[str] = None
+    vendor_extension: Optional[IRFortiOSAddressExtension] = None
     associated_interface: Optional[str] = None
     allow_routing: Optional[bool] = None
     source_color: Optional[int] = None
@@ -234,7 +254,6 @@ class IRAddressGroup(BaseModel):
     address_family: Optional[str] = None
     source_group_type: Optional[str] = None
     source_exclude_setting: Optional[str] = None
-    source_fabric_object_setting: Optional[str] = None
     exclusion_enabled: bool = False
     exclude_members: List[str] = Field(default_factory=list)
     source_tagging_entries: List[IRAddressGroupTaggingEntry] = Field(default_factory=list)
@@ -247,6 +266,54 @@ class IRAddressGroup(BaseModel):
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
     audit_note: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def move_legacy_vendor_fields(cls, data: Any) -> Any:
+        return move_object_extension(data, ("source_fabric_object_setting",))
+
+
+def _checkpoint_property(field: str):
+    return property(
+        lambda self: get_object_extension_value(self, field),
+        lambda self, value: set_object_extension_value(
+            self, IRCheckPointObjectExtension, field, value
+        ),
+    )
+
+
+for _field in (
+    "checkpoint_domain_uid", "checkpoint_domain_name", "checkpoint_origin_scope",
+    "global_source_uid", "global_source_name", "local_override_uid", "assignment_uid",
+):
+    setattr(IRAddress, _field, _checkpoint_property(_field))
+
+
+for _field in (
+    "source_fsso_group", "source_fabric_object_setting", "source_effective_defaults",
+    "source_template", "source_template_reference_resolved",
+):
+    setattr(
+        IRAddress,
+        _field,
+        property(
+            lambda self, field=_field: get_object_extension_value(self, field),
+            lambda self, value, field=_field: set_object_extension_value(
+                self, IRFortiOSAddressExtension, field, value
+            ),
+        ),
+    )
+
+setattr(
+    IRAddressGroup,
+    "source_fabric_object_setting",
+    property(
+        lambda self: get_object_extension_value(self, "source_fabric_object_setting"),
+        lambda self, value: set_object_extension_value(
+            self, IRFortiOSAddressExtension, "source_fabric_object_setting", value
+        ),
+    ),
+)
 
 
 __all__ = [

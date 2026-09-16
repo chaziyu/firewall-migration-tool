@@ -660,7 +660,7 @@ def extract_fortigate_config(
     ):
         blocking_reasons.append("One or more traffic-affecting canonical objects require manual review")
 
-    if any(sdwan.health_checks for sdwan in ir_config.sdwans):
+    if any(sdwan.health_checks for sdwan in ir_config.vendor_extensions.fortios.sdwans):
         blocking_reasons.append("FortiGate SD-WAN health checks are extract-only and require manual review")
 
     # These rule families are intentionally retained outside portable canonical
@@ -670,12 +670,12 @@ def extract_fortigate_config(
     # source-only traffic construct could coexist with generation_safe=True.
     source_only_rule_collections = (
         ir_config.vendor_extensions.fortios.security_policies,
-        ir_config.policy_routes,
-        ir_config.local_in_policies,
-        ir_config.proxy_policies,
-        ir_config.shaping_policies,
-        ir_config.dhcp6_servers,
-        ir_config.source_only_rules,
+        ir_config.vendor_extensions.fortios.policy_routes,
+        ir_config.vendor_extensions.fortios.local_in_policies,
+        ir_config.vendor_extensions.fortios.proxy_policies,
+        ir_config.vendor_extensions.fortios.shaping_policies,
+        ir_config.vendor_extensions.fortios.dhcp6_servers,
+        ir_config.vendor_extensions.fortios.source_only_rules,
     )
     for collection in source_only_rule_collections:
         for rule in collection:

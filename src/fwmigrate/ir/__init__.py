@@ -7,6 +7,7 @@ from .semantics import (
 )
 from .config import IRConfig
 from .extensions import IRCiscoASAExtensions, IRCiscoFTDExtensions, IRCheckPointExtensions, IRFortiOSExtensions, IRJunosExtensions, IRPANOSExtensions, IRVendorExtensions
+from .extension_models import IRCheckPointInterfaceExtension, IRCheckPointNATPoolExtension, IRCheckPointNATRuleExtension, IRCheckPointObjectExtension, IRCheckPointPolicyExtension, IRFortiOSAddressExtension, IRFortiOSNATPoolExtension, IRFortiOSNATRuleExtension, IRFortiOSPolicyExtension, IRVendorExtensionIdentity
 from .version import CURRENT_IR_SCHEMA_VERSION, LEGACY_IR_SCHEMA_VERSION
 from .index import IRIndex
 from .dependency import DependencyEdge, DependencyGraph, DependencyIssue
@@ -46,6 +47,16 @@ __all__ = [
     "IRCiscoASAExtensions",
     "IRCiscoFTDExtensions",
     "IRJunosExtensions",
+    "IRVendorExtensionIdentity",
+    "IRCheckPointObjectExtension",
+    "IRCheckPointPolicyExtension",
+    "IRCheckPointNATPoolExtension",
+    "IRCheckPointNATRuleExtension",
+    "IRCheckPointInterfaceExtension",
+    "IRFortiOSAddressExtension",
+    "IRFortiOSNATPoolExtension",
+    "IRFortiOSNATRuleExtension",
+    "IRFortiOSPolicyExtension",
     "IRIndex",
     "DependencyEdge",
     "DependencyGraph",

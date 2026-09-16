@@ -31,6 +31,7 @@ from .security_profiles import IRAuthenticationPolicy, IRAuthenticationProfile
 from .security_profiles import IRSecurityProfileRule, IRSecurityProfileCredentialEnforcement, IRSecurityProfileDefinition, IRCertificate, IRSSHKey, IRIdentityServerEndpoint, IRUserLDAP, IRUserRADIUSAccountingServer, IRUserRADIUS, IRFSSOEndpoint, IRFSSOProvider, IRUserTACACS, IRFSSOADGroup, IRUserSAML, IRLocalUser, IRUserGroupMatch, IRUserGroupGuest, IRIdentityDependency, IRUserGroup, IRAdministrator, IRAdminProfilePermissionBlock, IRAdminProfile, IRFortiToken, IRSSLVPNHostCheckItem, IRSSLVPNHostCheck, IRFSSOPollingADGroup, IRFSSOPolling, IRSSLVPNPortalSplitDNS, IRSSLVPNPortalBookmarkFormData, IRSSLVPNPortalBookmark, IRSSLVPNPortalBookmarkGroup, IRSSLVPNPortalLandingPageFormData, IRSSLVPNPortalLandingPage, IRSSLVPNPortalMACAddressRule, IRSSLVPNPortalOSCheck, IRSSLVPNPortal, IRSSLVPNAuthenticationRule, IRSSLVPNSettings, IRDoSAnomaly, IRDoSPolicy, IRFirewallSniffer, IRAuthenticationScheme, IRAuthenticationSequence, IRSSLTLSServiceProfile, IRAuthenticationRule, IRUserAuthenticationSettings, IRUserQuarantineSettings, IRGlobalProtectClientAuthentication, IRGlobalProtectGatewayPriorityRule, IRGlobalProtectExternalGateway, IRGlobalProtectAppSetting, IRGlobalProtectPortalClientConfig, IRGlobalProtectPortalRootCA, IRGlobalProtectPortal, IRGlobalProtectGatewayRole, IRGlobalProtectRemoteUserTunnelConfig, IRGlobalProtectGateway, IRGlobalProtectNetworkGateway, IRPANLogServerEndpoint, IRPANLogServerProfile, IRPANLogForwardingMatch, IRPANLogForwardingProfile, IRPANManagementLogSetting, IRPANDNSProxyDomainServer, IRPANDNSProxy, IRPANMonitorProfile, IRPANQoSClass, IRPANQoSProfile, IRPANSDWANInterfaceProfile, IRPANSDWANLinkSettings, IRPANSDWANPathQualityProfile, IRPANSDWANTrafficDistributionProfile, IRPANSDWANRule, IRPANHAInterface, IRPANHALinkMonitorGroup, IRPANHAPathMonitorGroup, IRPANVirtualWire, IRPANHighAvailability, IRPANDeviceOperationalSettings, IRPANVsysSettings, IRPANBotnetUnknownApplicationThreshold, IRPANBotnetReportSettings, IRPANCustomReport
 from .config import IRConfig
 from .extensions import IRCiscoASAExtensions, IRCiscoFTDExtensions, IRCheckPointExtensions, IRFortiOSExtensions, IRJunosExtensions, IRPANOSExtensions, IRVendorExtensions
+from .extension_models import IRCheckPointInterfaceExtension, IRCheckPointNATPoolExtension, IRCheckPointNATRuleExtension, IRCheckPointObjectExtension, IRCheckPointPolicyExtension, IRFortiOSAddressExtension, IRFortiOSNATPoolExtension, IRFortiOSNATRuleExtension, IRFortiOSPolicyExtension, IRVendorExtensionIdentity
 from .version import CURRENT_IR_SCHEMA_VERSION, LEGACY_IR_SCHEMA_VERSION
 
 
@@ -295,4 +296,14 @@ __all__ = [
     "IRCiscoASAExtensions",
     "IRCiscoFTDExtensions",
     "IRJunosExtensions",
+    "IRVendorExtensionIdentity",
+    "IRCheckPointObjectExtension",
+    "IRCheckPointPolicyExtension",
+    "IRCheckPointNATPoolExtension",
+    "IRCheckPointNATRuleExtension",
+    "IRCheckPointInterfaceExtension",
+    "IRFortiOSAddressExtension",
+    "IRFortiOSNATPoolExtension",
+    "IRFortiOSNATRuleExtension",
+    "IRFortiOSPolicyExtension",
 ]

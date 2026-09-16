@@ -2,8 +2,14 @@
 
 from datetime import timezone
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from .provenance import IRSourceConfigNode
+from .extension_models import (
+    IRCheckPointInterfaceExtension,
+    get_object_extension_value,
+    move_object_extension,
+    set_object_extension_value,
+)
 
 
 class IRZoneTaggingEntry(BaseModel):
@@ -115,7 +121,7 @@ class IRCheckpointInterfaceContext(BaseModel):
 class IRInterface(BaseModel):
     name: str
     source_context: Optional[str] = None
-    checkpoint_context: Optional[IRCheckpointInterfaceContext] = None
+    vendor_extension: Optional[IRCheckPointInterfaceExtension] = None
     zone: Optional[str] = None
     ip: Optional[str] = None
     # IPv6 interface addressing is kept separate from the legacy IPv4 scalar.
@@ -262,6 +268,11 @@ class IRClusterInterface(BaseModel):
     sync: Optional[bool] = None
     anti_spoofing: Optional[Any] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def move_legacy_vendor_fields(cls, data: Any) -> Any:
+        return move_object_extension(data, ("checkpoint_context",))
 class IRHighAvailability(BaseModel):
     """Source-preserved cluster topology; target generation is not implied."""
     source_uuid: Optional[str] = None
@@ -280,8 +291,23 @@ class IRHighAvailability(BaseModel):
     topology: Dict[str, Any] = Field(default_factory=dict)
     ha_settings: Dict[str, Any] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
+
+
+def _checkpoint_interface_property(field: str):
+    return property(
+        lambda self: get_object_extension_value(self, field),
+        lambda self, value: set_object_extension_value(
+            self, IRCheckPointInterfaceExtension, field, value
+        ),
+    )
+
+
+setattr(IRInterface, "checkpoint_context", _checkpoint_interface_property("checkpoint_context"))
+
+
 class IRDHCPIPRange(BaseModel):
     source_id: int
     source_context: Optional[str] = None

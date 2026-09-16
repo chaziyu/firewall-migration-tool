@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 from typing import Iterable
 from fwmigrate.ir.network import IRDHCPServer
+from fwmigrate.ir.security_profiles import IRDNSProxy, IRMonitorProfile, IRQoSProfile
 from fwmigrate.ir.security_profiles import (
     IRPANDNSProxy,
     IRPANDNSProxyDomainServer,
@@ -88,6 +89,8 @@ def _extract_dhcp(scope, net, extraction):
                                 notes=[f"PAN-OS {family} DHCP relay is source-only; IP-version lists remain separate."], requires_manual_review=True)
 
 def extract_pan_advanced_network(scope: PANScope, root: ET.Element, extraction, resolver) -> None:
+    ir = extraction.canonical_ir
+    pan_ext = ir.vendor_extensions.panos
     net=root if root.tag == "network" else root.find("./network")
     if net is None:return
     _extract_dhcp(scope, net, extraction)
@@ -107,7 +110,17 @@ def extract_pan_advanced_network(scope: PANScope, root: ET.Element, extraction, 
                 continue
             p.domain_servers.append(IRPANDNSProxyDomainServer(name=name,domain_names=member_texts(d,"./domain-name/member") or member_texts(d,"./domain/member"),primary=text_or_none(d,"./primary"),secondary=text_or_none(d,"./secondary"),cacheable=_b(d,"./cacheable",d_reasons),review_reasons=d_reasons,source_attributes=sanitize_source_attributes(structured_xml_capture(d))))
             record_unknown_children(extraction, d, {'name', 'domain-name', 'domain', 'primary', 'secondary', 'cacheable'}, scope, f'network/dns-proxy/entry[@name="{e.get("name")}"]/domain-servers/entry[@name="{name}"]', 'pan_dns_proxies', 'Unknown PAN DNS Proxy domain-server child.')
-        ir=extraction.canonical_ir; ir.pan_dns_proxies.append(p)
+        pan_ext.pan_dns_proxies.append(p)
+        ir.dns_proxies.append(IRDNSProxy(
+            name=p.name,
+            interfaces=list(p.interfaces),
+            default_servers=[value for value in (p.default_primary, p.default_secondary) if value],
+            domain_rules=[domain.model_dump(mode="json") for domain in p.domain_servers],
+            cache_enabled=p.cache_enabled,
+            tcp_enabled=p.tcp_queries_enabled,
+            conditional_forwarding=bool(p.domain_servers),
+            source_attributes=dict(p.source_attributes),
+        ))
         for name in p.interfaces:
             obj = resolver.resolve(name, "interface", scope)
             if obj:
@@ -126,7 +139,12 @@ def extract_pan_advanced_network(scope: PANScope, root: ET.Element, extraction, 
                 continue
             p=IRPANMonitorProfile(name=e.get("name"),source_context=pan_scope_identity(scope),interval_seconds=_n(e,"./interval"),threshold=_n(e,"./threshold"),action=text_or_none(e,"./action"),source_attributes=sanitize_source_attributes(structured_xml_capture(e)))
             record_unknown_children(extraction, e, {'name', 'interval', 'threshold', 'action'}, scope, f'network/profiles/monitor-profile/entry[@name="{e.get("name")}"]', 'pan_monitor_profiles', 'Unknown PAN monitor profile child.')
-            extraction.canonical_ir.pan_monitor_profiles.append(p); record_extract_only(extraction,"pan_monitor_profiles","network/profiles/monitor-profile/entry",scope,p.name,p.source_attributes,notes=["PAN monitor profile is source-only."],requires_manual_review=True)
+            pan_ext.pan_monitor_profiles.append(p)
+            ir.monitor_profiles.append(IRMonitorProfile(
+                name=p.name, interval=p.interval_seconds, failure_threshold=p.threshold,
+                action=p.action, source_attributes=dict(p.source_attributes),
+            ))
+            record_extract_only(extraction,"pan_monitor_profiles","network/profiles/monitor-profile/entry",scope,p.name,p.source_attributes,notes=["PAN monitor profile is source-only."],requires_manual_review=True)
     qos_entries=net.findall("./qos/profile/entry") or (profiles.findall("./qos/entry") if profiles is not None else [])
     for e in qos_entries:
         record_unknown_children(extraction, e, {'name', 'class-bandwidth-type', 'egress-max', 'egress-guaranteed'}, scope, f'network/profiles/qos/entry[@name="{e.get("name")}"]', 'pan_qos_profiles', 'Unknown PAN QoS profile child.')
@@ -142,7 +160,14 @@ def extract_pan_advanced_network(scope: PANScope, root: ET.Element, extraction, 
             p.classes.append(IRPANQoSClass(name=c.get("name") or "<unnamed>",priority=priority,egress_max=_f(c,"./egress-max"),egress_guaranteed=_f(c,"./egress-guaranteed"),source_attributes=attrs))
         if base is not e:
             record_unknown_children(extraction, base, {'mbps', 'percentage'}, scope, f'network/profiles/qos/entry[@name="{e.get("name")}"]/class-bandwidth-type', 'pan_qos_profiles', 'Unknown PAN QoS bandwidth type.')
-        extraction.canonical_ir.pan_qos_profiles.append(p); record_extract_only(extraction,"pan_qos_profiles","network/profiles/qos/entry",scope,p.name,p.source_attributes,notes=["PAN QoS profile is source-only."],requires_manual_review=True)
+        pan_ext.pan_qos_profiles.append(p)
+        ir.qos_profiles.append(IRQoSProfile(
+            name=p.name, guaranteed_bandwidth=p.egress_guaranteed,
+            maximum_bandwidth=p.egress_max,
+            classes=[item.model_dump(mode="json") for item in p.classes],
+            source_attributes=dict(p.source_attributes),
+        ))
+        record_extract_only(extraction,"pan_qos_profiles","network/profiles/qos/entry",scope,p.name,p.source_attributes,notes=["PAN QoS profile is source-only."],requires_manual_review=True)
 
     qos_interfaces = net.findall("./qos/interface/entry")
     for entry in qos_interfaces:
@@ -192,7 +217,7 @@ def extract_pan_advanced_network(scope: PANScope, root: ET.Element, extraction, 
                     probe_settings=attrs.get("pan_probe_settings"),
                     source_attributes=attrs,
                 )
-                ir.pan_sdwan_interface_profiles.append(profile)
+                pan_ext.pan_sdwan_interface_profiles.append(profile)
                 object_type = "pan-sdwan-interface-profile"
             elif domain == "pan_sdwan_path_quality_profiles":
                 profile = IRPANSDWANPathQualityProfile(
@@ -201,7 +226,7 @@ def extract_pan_advanced_network(scope: PANScope, root: ET.Element, extraction, 
                     packet_loss=attrs.get("pan_packet_loss"), sensitivity=attrs.get("pan_sensitivity"),
                     source_attributes=attrs,
                 )
-                ir.pan_sdwan_path_quality_profiles.append(profile)
+                pan_ext.pan_sdwan_path_quality_profiles.append(profile)
                 object_type = "pan-sdwan-path-quality-profile"
             else:
                 profile = IRPANSDWANTrafficDistributionProfile(
@@ -210,7 +235,7 @@ def extract_pan_advanced_network(scope: PANScope, root: ET.Element, extraction, 
                     link_tags=attrs.get("pan_link_tags", []), weights=attrs.get("pan_weights", []),
                     source_attributes=attrs,
                 )
-                ir.pan_sdwan_traffic_distribution_profiles.append(profile)
+                pan_ext.pan_sdwan_traffic_distribution_profiles.append(profile)
                 object_type = "pan-sdwan-traffic-distribution-profile"
             resolver.register_object(PANSourceObject(
                 name=name, kind=object_type, domain=domain, source_path=path,

@@ -28,14 +28,14 @@ vendor parser -> ExtractionResult
 ```
 
 `IRConfig` is the shared contract used by validators, optimizers, reports, and
-target generators. Its canonical V2 collections are vendor-neutral; the root
-also retains transitional source/vendor-specific collections until their data
-is moved without loss. `ExtractionResult` is separate: it accounts for source
+target generators. Its serialized root contains only canonical collections plus
+typed `vendor_extensions`; source-only and vendor-specific data is not a second
+canonical root surface. `ExtractionResult` is separate: it accounts for source
 data that was normalized, partially normalized, retained as extract-only
 evidence, unsupported, ignored, or affected by a parse error.
 
-This is the implemented snapshot. `ir-schema-v2-plan.md` remains the target
-design and must not be read as proof that a planned separation is complete.
+This is the implemented final V2 snapshot. `ir-schema-v2-plan.md` is historical
+design rationale and compatibility guidance.
 
 Parsers must produce IR; generators must consume IR. Vendor syntax must not be
 implemented as a direct source-to-target converter.
@@ -44,11 +44,9 @@ implemented as a direct source-to-target converter.
 
 `IRConfig` is the serialized aggregate root. `metadata` is required. Collection
 fields default to an empty list; optional singleton fields default to `null`.
-The V2-named canonical collections coexist with transitional source/vendor-
-specific top-level collections, and some canonical model classes still retain
-source/vendor evidence fields. New vendor-only semantics should be stored in
-typed `vendor_extensions`, but the remaining top-level source collections are
-still part of the current schema and cannot yet be described as extensions.
+The V2 canonical collections are the only serialized root collections. Legacy
+root names remain accepted as input and Python compatibility projections, but
+they are normalized into canonical collections or typed vendor extensions.
 
 ### Root control fields
 
@@ -59,7 +57,7 @@ still part of the current schema and cannot yet be described as extensions.
 | `generation_blocking_reasons` | `list[string]` | `[]` | Reasons generation is blocked. |
 | `requires_manual_review` | `boolean` | `false` | Whole-IR review flag. |
 | `metadata` | `IRMetadata` | required | Source and migration metadata. |
-| `vendor_extensions` | `IRVendorExtensions` | empty typed containers | Vendor-only V2 data. Currently only `fortios.security_policies` has a modeled payload; the PAN-OS, Check Point, ASA, FTD, and Junos containers are empty and forbid undeclared fields. |
+| `vendor_extensions` | `IRVendorExtensions` | empty typed containers | Typed nonportable vendor semantics. Each vendor container forbids undeclared fields. |
 
 ### Root collections
 
@@ -76,8 +74,6 @@ still part of the current schema and cannot yet be described as extensions.
 | Network | `routes` | `list[IRRoute]` |
 | Network | `dhcp_servers` | `list[IRDHCPServer]` |
 | Network | `virtual_firewall_contexts` | `list[IRVirtualFirewallContext]` |
-| Network | `dhcp6_servers` | `list[IRFortiGateSourceRule]` (transitional source record) |
-| Network | `sdwans` | `list[IRSDWAN]` |
 | Address | `addresses` | `list[IRAddress]` |
 | Address | `address_groups` | `list[IRAddressGroup]` |
 | Service | `service_categories` | `list[IRServiceCategory]` |
@@ -88,17 +84,8 @@ still part of the current schema and cannot yet be described as extensions.
 | Service | `applications` | `list[IRApplication]` |
 | Service | `application_groups` | `list[IRApplicationGroup]` |
 | Service | `application_categories` | `list[IRApplicationCategory]` |
-| Service | `traffic_shapers` | `list[IRTrafficShaper]` |
 | Service | `proxy_request_matches` | `list[IRProxyRequestMatch]` |
 | Service | `web_proxies` | `list[IRWebProxy]` |
-| Service | `internet_services` | `list[IRInternetService]` |
-| Service | `internet_service_definitions` | `list[IRInternetServiceDefinition]` |
-| Service | `internet_service_additions` | `list[IRInternetServiceAddition]` |
-| Service | `internet_service_appends` | `list[IRInternetServiceAppend]` |
-| Service | `custom_internet_services` | `list[IRInternetServiceCustom]` |
-| Service | `custom_internet_service_groups` | `list[IRInternetServiceCustomGroup]` |
-| Service | `internet_service_extensions` | `list[IRInternetServiceExtension]` |
-| Service | `internet_service_groups` | `list[IRInternetServiceGroup]` |
 | Policy | `security_policies` | `list[IRSecurityPolicy]` |
 | Policy | `default_security_rules` | `list[IRDefaultSecurityRule]` |
 | Policy | `multicast_policies` | `list[IRMulticastPolicy]` |
@@ -113,9 +100,6 @@ still part of the current schema and cannot yet be described as extensions.
 | Policy | `custom_url_categories` | `list[IRCustomURLCategory]` |
 | Policy | `ips_sensors` | `list[IRIPSSensor]` |
 | Policy | `endpoint_context_providers` | `list[IREndpointContextProvider]` |
-| Policy | `session_helpers` | `list[IRSessionHelper]` |
-| Policy | `session_ttl_overrides` | `list[IRSessionTTLOverride]` |
-| Policy | `session_ttl_settings` | `IRSessionTTLSettings \| null` |
 | NAT | `nat_pools` | `list[IRNATPool]` |
 | NAT | `published_services` | `list[IRPublishedService]` |
 | NAT | `published_service_groups` | `list[IRPublishedServiceGroup]` |
@@ -137,71 +121,9 @@ still part of the current schema and cannot yet be described as extensions.
 | Observability | `monitor_profiles` | `list[IRMonitorProfile]` |
 | Observability | `qos_profiles` | `list[IRQoSProfile]` |
 | Observability | `report_definitions` | `list[IRReportDefinition]` |
-| FortiGate | `central_snat_rules` | `list[IRFortiGateSourceRule]` |
-| FortiGate | `policy_routes` | `list[IRFortiGatePolicyRoute]` |
-| FortiGate | `local_in_policies` | `list[IRLocalDeviceAccessRule]` |
-| FortiGate | `proxy_policies` | `list[IRFortiGateSourceRule]` |
-| FortiGate | `shaping_policies` | `list[IRFortiGateSourceRule]` |
-| FortiGate | `source_only_rules` | `list[IRFortiGateSourceRule]` |
-| FortiGate | `ssl_vpn_portals` | `list[IRSSLVPNPortal]` |
-| FortiGate | `ssl_vpn_host_checks` | `list[IRSSLVPNHostCheck]` |
-| FortiGate | `ssl_vpn_settings` | `IRSSLVPNSettings \| null` |
-| FortiGate | `dos_policies` | `list[IRDoSPolicy]` |
-| FortiGate | `firewall_sniffers` | `list[IRFirewallSniffer]` |
-| Authentication | `authentication_profiles` | `list[IRAuthenticationProfile]` |
-| FortiGate | `authentication_sequences` | `list[IRAuthenticationSequence]` |
-| FortiGate | `ssl_tls_service_profiles` | `list[IRSSLTLSServiceProfile]` |
-| Authentication | `authentication_policies` | `list[IRAuthenticationPolicy]` |
-| FortiGate | `user_authentication_settings` | `IRUserAuthenticationSettings \| null` |
-| FortiGate | `user_quarantine_settings` | `IRUserQuarantineSettings \| null` |
-| FortiGate | `user_ldap_servers` | `list[IRUserLDAP]` |
-| FortiGate | `user_radius_servers` | `list[IRUserRADIUS]` |
-| FortiGate | `user_tacacs_servers` | `list[IRUserTACACS]` |
-| FortiGate | `fsso_providers` | `list[IRFSSOProvider]` |
-| FortiGate | `fsso_ad_groups` | `list[IRFSSOADGroup]` |
-| FortiGate | `fsso_polling` | `list[IRFSSOPolling]` |
-| FortiGate | `user_saml_servers` | `list[IRUserSAML]` |
-| FortiGate | `local_users` | `list[IRLocalUser]` |
-| FortiGate | `user_groups` | `list[IRUserGroup]` |
-| FortiGate | `administrators` | `list[IRAdministrator]` |
-| FortiGate | `admin_profiles` | `list[IRAdminProfile]` |
-| FortiGate | `fortitokens` | `list[IRFortiToken]` |
-| Palo Alto | `global_protect_portals` | `list[IRGlobalProtectPortal]` |
-| Palo Alto | `global_protect_gateways` | `list[IRGlobalProtectGateway]` |
-| Palo Alto | `global_protect_network_gateways` | `list[IRGlobalProtectNetworkGateway]` |
-| Palo Alto | `pan_log_server_profiles` | `list[IRPANLogServerProfile]` |
-| Palo Alto | `pan_log_forwarding_profiles` | `list[IRPANLogForwardingProfile]` |
-| Palo Alto | `pan_management_log_settings` | `list[IRPANManagementLogSetting]` |
-| Palo Alto | `pan_dns_proxies` | `list[IRPANDNSProxy]` |
-| Palo Alto | `pan_monitor_profiles` | `list[IRPANMonitorProfile]` |
-| Palo Alto | `pan_qos_profiles` | `list[IRPANQoSProfile]` |
-| Palo Alto | `pan_sdwan_interface_profiles` | `list[IRPANSDWANInterfaceProfile]` |
-| Palo Alto | `pan_sdwan_link_settings` | `list[IRPANSDWANLinkSettings]` |
-| Palo Alto | `pan_sdwan_path_quality_profiles` | `list[IRPANSDWANPathQualityProfile]` |
-| Palo Alto | `pan_sdwan_traffic_distribution_profiles` | `list[IRPANSDWANTrafficDistributionProfile]` |
-| Palo Alto | `pan_sdwan_rules` | `list[IRPANSDWANRule]` |
-| Palo Alto | `pan_high_availability` | `IRPANHighAvailability \| null` |
-| Palo Alto | `pan_virtual_wires` | `list[IRPANVirtualWire]` |
-| Palo Alto | `pan_device_operational_settings` | `IRPANDeviceOperationalSettings \| null` |
-| Palo Alto | `pan_vsys_settings` | `list[IRPANVsysSettings]` |
-| Palo Alto | `pan_botnet_report_settings` | `IRPANBotnetReportSettings \| null` |
-| Palo Alto | `pan_custom_reports` | `list[IRPANCustomReport]` |
-| Check Point | `checkpoint_management_access` | `list[IRCheckpointManagementAccess]` |
-| Check Point | `checkpoint_performance` | `list[IRCheckpointPerformanceSettings]` |
-| Check Point | `checkpoint_policy_packages` | `list[IRCheckpointPolicyPackage]` |
-| Check Point | `checkpoint_access_layers` | `list[IRCheckpointAccessLayer]` |
-| Check Point | `checkpoint_domains` | `list[IRCheckpointDomain]` |
-| Check Point | `checkpoint_global_assignments` | `list[IRCheckpointGlobalAssignment]` |
-| Check Point | `checkpoint_access_rules` | `list[IRCheckpointAccessRule]` |
-| Check Point | `checkpoint_threat_prevention_rules` | `list[IRCheckpointThreatPreventionRule]` |
-| Check Point | `checkpoint_threat_prevention_profiles` | `list[IRCheckpointThreatPreventionProfile]` |
-| Check Point | `checkpoint_sic_metadata` | `list[IRCheckpointSICMetadata]` |
-
-The root currently exposes 137 Pydantic fields. The names and types above are
-the serialization surface, not a claim that every field is portable to every
-target. Legacy names such as `policies`, `ip_pools`, and `pbf_rules` are input
-aliases and Python compatibility properties; they are not serialized V2 root
-fields.
+The root exposes 67 Pydantic fields. Legacy names such as `policies`, `ip_pools`,
+`pbf_rules`, and vendor-specific roots are input aliases or Python compatibility
+projections; they are not serialized V2 root fields.
 
 ## Shared model conventions
 
@@ -244,7 +166,7 @@ serialized output.
 | `IRApplication` | `name`, `category`, `urls`, `description`, `risk`, `metadata` | `IRSecurityPolicy` |
 | `IRSecurityProfileGroup` | profile lists and references for antivirus, vulnerability, antispyware, URL, file, WildFire, data filtering, and SSL decryption | `IRSecurityPolicy` |
 | `IRSecurityPolicy` | `name`, zones, addresses, services, ports, `action`, schedules, applications, users, security profiles, NAT evidence, logging, status/review fields | addresses, services, zones, schedules, applications |
-| `IRNATPool` | `name`, `address_family`, `routing_instance`, addresses/ranges, port range, exclusions, status/review fields; the current class also retains source-specific pool evidence | `IRNATRule` |
+| `IRNATPool` | `name`, `address_family`, `routing_instance`, addresses/ranges, port range, exclusions, status/review fields | `IRNATRule`; FortiOS PBA/CGN/NAT64 pool evidence is in `vendor_extensions.fortios.nat_pool_extensions` |
 | `IRPublishedService` | frontend/external and backend/mapped addresses and ports, protocol, interfaces, source filters, real servers, load balancing, persistence, monitors, TLS, status/review fields | `IRNATRule`, `IRPublishedServiceGroup` |
 | `IRNATRule` | match zones/interfaces/routing instances, addresses, services, families and protocol, source/destination address and port translation, pools, identity/exemption, sequence, enabled, status/review fields | addresses, services, zones, `IRNATPool`, `IRPublishedService` |
 | `IRRoute` | `name`, `address_family`, `destination`, `interface`, `next_hop`, `next_hops`, `next_hop_type`, route metrics, `vrf`, `sdwan_zone`, enabled/status fields | `IRInterface`, `IRSDWAN` |
@@ -278,7 +200,7 @@ here because they become stale whenever a field is added.
 
 | Module | Responsibility |
 |---|---|
-| `config.py` | `IRConfig`, its 137 serialized fields, legacy input normalization, and compatibility properties. |
+| `config.py` | `IRConfig`, its 67 serialized fields, legacy input normalization, and compatibility properties. |
 | `extensions.py` | Typed per-vendor extension containers. Extension models forbid undeclared fields. |
 | `common.py` | Canonical virtual-firewall context and the legacy `IRExecutionContext` alias. |
 | `metadata.py` | Source metadata, audit entries, and Check Point management/performance records. |
@@ -358,7 +280,7 @@ This graph is derived data. It does not replace the IR or mutate it.
 - `IRConfig` input normalization maps `execution_contexts`, `ip_pools`, `virtual_ips`, `virtual_ip_groups`, `pbf_rules`, `checkpoint_identity_sources`, `checkpoint_access_roles`, `authentication_schemes`, `authentication_rules`, `proxy_addresses`, `ztna_providers`, and `policies` to their V2 field names.
 - A legacy singleton `web_proxy_settings` becomes zero or one `web_proxies` entry. A pre-VDOM singleton `sdwan` becomes `sdwans`; the corresponding compatibility properties return a value only when the collection contains exactly one item.
 - Python properties retain the legacy names above. `threat_prevention_rules` and `threat_prevention_profiles` are read-only shorthand for their `checkpoint_` collections.
-- `IRConfig` and the `IRVendorExtensions` wrapper currently use Pydantic's default handling for extra keys, so undeclared keys at those two levels are ignored. Each per-vendor extension model uses `extra="forbid"`.
+- `IRConfig` and the `IRVendorExtensions` wrapper retain compatible handling for unknown outer keys. Each per-vendor extension model uses `extra="forbid"`.
 
 Any serialized field addition, removal, rename, or meaning change requires a
 schema-version update, migration handling, and regression tests.

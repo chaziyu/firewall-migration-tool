@@ -1,117 +1,152 @@
 # AGENTS.md
 
-## Scope
+## Core Pipeline
 
-Firewall Migration Tool is a Python 3.10+ multi-vendor firewall extraction and migration platform.
-
-Current engineering priority:
+All source extraction MUST follow this pipeline:
 
 ```text
-vendor source -> ExtractionResult -> IR V2 -> Excel
+Raw Source
+→ Input Adapter / Normalization
+→ Vendor Parser / Loader
+→ Vendor Source Model
+→ Scope / Context / Inheritance Resolution
+→ Reference / Dependency Resolution
+→ Source Inventory + Coverage Accounting
+→ IR V2 Transformation
+   ├── Canonical vendor-neutral IR
+   └── Typed vendor extensions
+→ Semantic Validation
+→ Extraction Safety / Finalization
+→ ExtractionResult
+→ Reporting / Target Generation
 ```
 
-Target generation remains supported, but parser, extraction, IR, source-accounting, and Excel correctness take priority.
+Do not create alternate source-to-report or source-to-target paths.
 
-Do not add direct source-to-target converters. Parsers must not contain target-vendor generation logic. Excel/reporting must not parse vendor source independently.
+`extract()` is the authoritative parser API.
 
-## Required Source Extraction Pipeline
+`parse()` is compatibility only and MUST return or project `extract(...).canonical_ir`.
 
-All built-in vendors must converge on the same lifecycle:
+## IR Rules
+
+Canonical IR MUST contain only portable cross-vendor semantics.
+
+Vendor-specific semantics MUST go into typed `vendor_extensions` unless a portable equivalent is proven.
+
+Source-only evidence, unsupported data, parse failures, unresolved dependencies, and extraction accounting belong in `ExtractionResult`, not in canonical IR merely for convenience.
+
+Do not force unlike vendor concepts into one generic model.
+
+Do not add new vendor-specific fields to canonical IR.
+
+If portability is uncertain, preserve the source semantics and keep them vendor-specific.
+
+## Extraction Rules
+
+Zero silent loss.
+
+Every meaningful source item MUST end in an explicit state such as:
 
 ```text
-1. Input detection / format adapter
-2. Source normalization
-3. Parse / tokenize / load
-4. Vendor source model
-5. Context / scope / inheritance resolution
-6. Reference and dependency resolution
-7. Source inventory and coverage accounting
-8. Transform to IR V2
-   - canonical generic IR
-   - typed vendor extensions
-9. Semantic validation
-10. Extraction safety / completeness evaluation
-11. Finalize ExtractionResult
-12. Excel / reporting
+NORMALIZED
+PARTIALLY_NORMALIZED
+VENDOR_EXTENSION
+EXTRACT_ONLY
+UNSUPPORTED
+IGNORED_BY_POLICY
+PARSE_ERROR
 ```
 
-Rules:
+Unknown, malformed, unresolved, or unsupported semantics MUST fail closed.
 
-- `extract()` is the authoritative source-parser entry point.
-- `parse()` is compatibility only and should project `extract(...).canonical_ir`.
-- Vendor syntax handling may differ internally, but all vendors must return the same `ExtractionResult` contract.
-- Every meaningful source item must be accounted for. Nothing may disappear silently.
-- Source items should end in an explicit state such as normalized, partially normalized, vendor extension, extract-only, unsupported, ignored-by-policy, or parse error.
-- Vendor-specific semantics belong in typed vendor extensions or source evidence unless they are genuinely portable canonical concepts.
-- Excel/reporting consumes `ExtractionResult` and IR only. Do not add a separate vendor-to-Excel parser path.
+Never silently convert uncertainty into values such as:
 
-## Read Before Changing Semantics
+```text
+any
+allow
+0.0.0.0/0
+::/0
+enabled
+fabricated objects
+fabricated interfaces or zones
+```
 
-- `documentation/ir-schema-v2-plan.md` — planned IR V2 target contract and generic/vendor-extension boundary.
-- `documentation/ir-model.md` — currently implemented IR schema.
-- `documentation/vendor-mapping/<vendor>.md` — maintained source-to-IR mapping and coverage notes.
-- Relevant official vendor documentation — authority for vendor syntax and semantics.
-- Implementation and regression tests — authority for what the repository currently supports.
+Preserve source context, ordering, inheritance, references, provenance, and vendor-only behavior when required for correctness.
 
-If the planned IR document conflicts with proven vendor semantics or safe implementation behavior, do not guess. Preserve the source semantics and report the discrepancy.
+## Vendor Parser Rules
 
-If serialized IR changes, update models, compatibility/migration handling, tests, and schema version together.
+Vendor syntax handling remains vendor-specific.
 
-## Important Areas
+Do not force FortiOS CLI, Junos hierarchy, PAN-OS XML, Cisco CLI, and Check Point management/Gaia syntax through one generic grammar.
 
-- `src/fwmigrate/ir/` — canonical IR and vendor-extension models.
-- `src/fwmigrate/extraction/` — `ExtractionResult`, coverage, inventory, unsupported/residual accounting, safety finalization.
-- `src/fwmigrate/parsers/` — vendor adapters, source models, resolvers, transformers, and extractors.
-- `src/fwmigrate/report/` — Excel and report generation from extraction/IR data.
-- `src/fwmigrate/core/` — shared parser interfaces, registry, and cross-vendor logic.
-- `src/fwmigrate/application/` — application pipeline orchestration.
-- `src/fwmigrate/generators/` — target generators; secondary to the current extraction-first milestone.
-- `tests/fixtures/` — sanitized source fixtures.
-- `documentation/` — maintained architecture, IR, and vendor-mapping documentation.
+Parsers MAY use different internal implementations but MUST converge on the same `ExtractionResult` and IR V2 contracts.
 
-Plugin registration is import-driven. Built-in vendor packages register with `PluginRegistry`. Do not hard-code vendor routing in shared CLI/UI/application code.
+Official vendor documentation is authoritative for source syntax and semantics.
 
-## Extraction and IR Rules
+Implementation and regression tests are authoritative for what the repository currently supports.
 
-- **Zero silent loss:** recognized or migration-relevant source data must be normalized or explicitly accounted for.
-- **Fail closed:** unresolved, malformed, ambiguous, or unsupported semantics must not become broader values such as `any`, `allow`, `/0`, `/32`, fabricated interfaces/zones, or enabled rules.
-- Preserve source context, ordering, inheritance, provenance, unresolved references, and vendor-only behavior when needed for auditability.
-- Keep canonical IR vendor-neutral. Do not place a vendor field in the generic core merely because only one parser currently uses it.
-- Do not force unlike concepts into one generic model. Use vendor extensions when portability is not proven.
-- Do not let a generic normalizer guess intent from names or other weak heuristics unless that behavior is explicit, audited, and separately tested.
-- Do not remove source-only/vendor-specific models until equivalent extraction evidence is preserved elsewhere.
+Do not guess undocumented semantics.
 
-## Excel and Reporting Rules
+## Runtime Mutation
 
-Excel is the primary near-term verification output.
+Do not monkey patch classes, functions, modules, parser entry points, registries, or model methods at runtime.
 
-It should make extraction behavior auditable by exposing, where relevant:
+Do not rebind imported functions to change behavior after import.
 
-- canonical objects and rules
-- vendor-extension data
-- source context/provenance
-- extraction/migration status
-- review reasons
-- unresolved dependencies
-- unsupported items
-- parse errors
-- source versus normalized/accounted counts
+Behavior changes MUST be implemented through explicit code paths, typed extension points, subclassing/composition, or the existing plugin/registry interfaces.
 
-A reviewer should be able to trace important Excel output back to the source configuration.
+Tests may use temporary patching/mocking only when scoped to the test and automatically restored afterward.
 
-Never expose passwords, usable PSKs, private keys, tokens, API keys, or real customer secrets in reports, fixtures, logs, or generated artifacts.
+If existing production code relies on monkey patching, replace it with an explicit implementation rather than adding more runtime mutation.
 
-## Testing Expectations
+## Change Rules
 
-- Parser changes: add/update sanitized fixtures and assert source-model behavior, canonical IR, vendor extensions, dependencies, coverage, and safety accounting.
-- A parser test is incomplete if it only proves that parsing did not crash.
-- A successful parse with silently dropped source data is a failure.
-- IR changes: test legacy payload compatibility, serialization round-trip, aliases/migrations, and all affected vendors.
-- Reporting changes: test both canonical data and extraction/accounting output; preserve secret redaction.
-- Shared extraction changes: run affected vendor suites and the full suite because they cross vendor boundaries.
-- Generator changes, when required: consume canonical IR and preserve fail-closed behavior; do not depend on parser-private models.
+Before changing parser or IR semantics:
 
-Run focused tests first, then full validation for shared or semantic changes:
+1. Inspect the existing parser, source model, transformer, consumers, and tests.
+2. Trace all readers and writers of fields being changed.
+3. Check the relevant vendor mapping and official CLI/API reference.
+4. Make the smallest change that preserves current supported behavior.
+5. Add or update tests for semantics, coverage, dependencies, and safety.
+
+Do not combine semantic changes with unrelated architecture cleanup.
+
+Do not remove source/vendor-specific data until equivalent information is preserved in canonical IR, typed vendor extensions, or `ExtractionResult`.
+
+## Compatibility
+
+Serialized IR compatibility MUST be preserved through the IR loader.
+
+When changing serialized IR:
+
+- update the model;
+- update migration/compatibility handling;
+- update round-trip tests;
+- update affected vendor tests.
+
+Do not introduce a new IR schema version unless the current V2 contract cannot safely represent the required change.
+
+## Secrets
+
+Never expose usable passwords, PSKs, private keys, tokens, API keys, or customer secrets in:
+
+```text
+IR output
+ExtractionResult
+reports
+logs
+fixtures
+tests
+generated artifacts
+```
+
+Preserve only safe presence/status metadata where required.
+
+## Required Validation
+
+Run focused tests first.
+
+For shared, IR, extraction, or semantic changes, run:
 
 ```bash
 python -m pytest -q
@@ -121,22 +156,4 @@ python scripts/docs/validate_docs.py
 python scripts/docs/generate_docs.py --check
 ```
 
-CI currently runs the full test suite on Python 3.11, 3.12, and 3.13. Do not invent additional lint/type-check gates that are not configured.
-
-## Documentation Rules
-
-- Official vendor documentation and release notes are authoritative for vendor behavior.
-- Code and regression tests are authoritative for implementation claims.
-- `documentation/ir-schema-v2-plan.md` describes the planned target contract; do not present unimplemented V2 behavior as current implementation.
-- `documentation/ir-model.md` describes the currently implemented IR until V2 migration is complete.
-- Keep vendor-specific mapping and support notes in `documentation/vendor-mapping/`.
-- Do not create new phase/fix-plan documents as long-term authority. Historical plans belong in archive/history only.
-- Do not manually edit generated documentation under `documentation/generated/`.
-
-## Repository Hygiene
-
-Keep changes focused. Do not mix unrelated refactoring with parser, IR, extraction, or reporting fixes.
-
-Do not refactor solely to reduce file count. Split or merge modules only when it clarifies pipeline ownership, removes obsolete patch layering, or reduces duplicated logic without changing semantics.
-
-Do not contact real firewalls from ordinary automated tests. Only sanitized fixtures under `tests/fixtures/` should contain representative source configuration.
+Do not claim validation passed unless the commands were actually run successfully.
