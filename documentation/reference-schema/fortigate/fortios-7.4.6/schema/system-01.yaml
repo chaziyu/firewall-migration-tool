@@ -1551,138 +1551,1162 @@ sections:
   mode: table
   key: <id>
   fields:
-    delegated-prefix-iaid: integer
-    dns-search-list: enum
-    dns-server1: ipv6-address
-    dns-server2: ipv6-address
-    dns-server3: ipv6-address
-    dns-server4: ipv6-address
-    dns-service: enum
-    domain: string
-    interface: string
-    ip-mode: enum
-    lease-time: integer
-    option1: opaque-user
-    option2: opaque-user
-    option3: opaque-user
-    prefix-mode: enum
-    rapid-commit: enum
-    status: enum
-    subnet: ipv6-prefix
-    upstream-interface: string
+    delegated-prefix-iaid:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: delegated-prefix-iaid
+    dns-search-list:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: dns-search-list
+    dns-server1:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: dns-server1
+      address_family: ipv6
+    dns-server2:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: dns-server2
+      address_family: ipv6
+    dns-server3:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: dns-server3
+      address_family: ipv6
+    dns-server4:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: dns-server4
+      address_family: ipv6
+    dns-service:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: dns-service
+    domain:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: domain
+    interface:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: interface
+    ip-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: ip-mode
+    lease-time:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: lease-time
+    option1:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: option1
+    option2:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: option2
+    option3:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: option3
+    prefix-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: prefix-mode
+    rapid-commit:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: rapid-commit
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: status
+    subnet:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: subnet
+      address_family: ipv6
+    upstream-interface:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          parameter: upstream-interface
   nested:
   - name: ip-range
     mode: table
     key: <id>
     fields:
-      end-ip: ipv6-address
-      start-ip: ipv6-address
+      end-ip:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp6 server
+            nested_config_path: system dhcp6 server ip-range
+            parameter: end-ip
+        address_family: ipv6
+      start-ip:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp6 server
+            nested_config_path: system dhcp6 server ip-range
+            parameter: start-ip
+        address_family: ipv6
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system dhcp6 server
+        nested_config_path: system dhcp6 server ip-range
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          nested_config_path: system dhcp6 server ip-range
   - name: prefix-range
     mode: table
     key: <id>
     fields:
-      end-prefix: ipv6-address
-      prefix-length: integer
-      start-prefix: ipv6-address
+      end-prefix:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp6 server
+            nested_config_path: system dhcp6 server prefix-range
+            parameter: end-prefix
+        address_family: ipv6
+      prefix-length:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp6 server
+            nested_config_path: system dhcp6 server prefix-range
+            parameter: prefix-length
+      start-prefix:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp6 server
+            nested_config_path: system dhcp6 server prefix-range
+            parameter: start-prefix
+        address_family: ipv6
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system dhcp6 server
+        nested_config_path: system dhcp6 server prefix-range
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp6 server
+          nested_config_path: system dhcp6 server prefix-range
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system dhcp6 server
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system dhcp6 server
 - path: system dhcp server
   mode: table
   key: <id>
   fields:
-    auto-configuration: enum
-    auto-managed-status: enum
-    conflicted-ip-timeout: integer
-    ddns-auth: enum
-    ddns-key: password_aes256!sensitive
-    ddns-keyname: string
-    ddns-server-ip: ipv4-address
-    ddns-ttl: integer
-    ddns-update: enum
-    ddns-update-override: enum
-    ddns-zone: string
-    default-gateway: ipv4-address
-    dhcp-settings-from-fortiipam: enum
-    dns-server1: ipv4-address
-    dns-server2: ipv4-address
-    dns-server3: ipv4-address
-    dns-server4: ipv4-address
-    dns-service: enum
-    domain: string
-    filename: string
-    forticlient-on-net-status: enum
-    interface: string
-    ip-mode: enum
-    ipsec-lease-hold: integer
-    lease-time: integer
-    mac-acl-default-action: enum
-    netmask: ipv4-netmask
-    next-server: ipv4-address
-    ntp-server1: ipv4-address
-    ntp-server2: ipv4-address
-    ntp-server3: ipv4-address
-    ntp-service: enum
-    relay-agent: ipv4-address
-    server-type: enum
-    shared-subnet: enum
-    status: enum
-    tftp-server: identifier-list
-    timezone: string
-    timezone-option: enum
-    vci-match: enum
-    vci-string: identifier-list
-    wifi-ac-service: enum
-    wifi-ac1: ipv4-address
-    wifi-ac2: ipv4-address
-    wifi-ac3: ipv4-address
-    wins-server1: ipv4-address
-    wins-server2: ipv4-address
+    auto-configuration:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: auto-configuration
+    auto-managed-status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: auto-managed-status
+    conflicted-ip-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: conflicted-ip-timeout
+    ddns-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ddns-auth
+    ddns-key:
+      source_type: password_aes256
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ddns-key
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            parameter: ddns-key
+    ddns-keyname:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ddns-keyname
+    ddns-server-ip:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ddns-server-ip
+      address_family: ipv4
+    ddns-ttl:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ddns-ttl
+    ddns-update:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ddns-update
+    ddns-update-override:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ddns-update-override
+    ddns-zone:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ddns-zone
+    default-gateway:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: default-gateway
+      address_family: ipv4
+    dhcp-settings-from-fortiipam:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: dhcp-settings-from-fortiipam
+    dns-server1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: dns-server1
+      address_family: ipv4
+    dns-server2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: dns-server2
+      address_family: ipv4
+    dns-server3:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: dns-server3
+      address_family: ipv4
+    dns-server4:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: dns-server4
+      address_family: ipv4
+    dns-service:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: dns-service
+    domain:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: domain
+    filename:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: filename
+    forticlient-on-net-status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: forticlient-on-net-status
+    interface:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: interface
+    ip-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ip-mode
+    ipsec-lease-hold:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ipsec-lease-hold
+    lease-time:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: lease-time
+    mac-acl-default-action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: mac-acl-default-action
+    netmask:
+      source_type: ipv4-netmask
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: netmask
+      address_family: ipv4
+    next-server:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: next-server
+      address_family: ipv4
+    ntp-server1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ntp-server1
+      address_family: ipv4
+    ntp-server2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ntp-server2
+      address_family: ipv4
+    ntp-server3:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ntp-server3
+      address_family: ipv4
+    ntp-service:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: ntp-service
+    relay-agent:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: relay-agent
+      address_family: ipv4
+    server-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: server-type
+    shared-subnet:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: shared-subnet
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: status
+    tftp-server:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: tftp-server
+      cardinality: list
+    timezone:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: timezone
+    timezone-option:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: timezone-option
+    vci-match:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: vci-match
+    vci-string:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: vci-string
+      cardinality: list
+    wifi-ac-service:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: wifi-ac-service
+    wifi-ac1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: wifi-ac1
+      address_family: ipv4
+    wifi-ac2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: wifi-ac2
+      address_family: ipv4
+    wifi-ac3:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: wifi-ac3
+      address_family: ipv4
+    wins-server1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: wins-server1
+      address_family: ipv4
+    wins-server2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          parameter: wins-server2
+      address_family: ipv4
   nested:
   - name: exclude-range
     mode: table
     key: <id>
     fields:
-      end-ip: ipv4-address
-      lease-time: integer
-      start-ip: ipv4-address
-      uci-match: enum
-      uci-string: identifier-list
-      vci-match: enum
-      vci-string: identifier-list
+      end-ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server exclude-range
+            parameter: end-ip
+        address_family: ipv4
+      lease-time:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server exclude-range
+            parameter: lease-time
+      start-ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server exclude-range
+            parameter: start-ip
+        address_family: ipv4
+      uci-match:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server exclude-range
+            parameter: uci-match
+      uci-string:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server exclude-range
+            parameter: uci-string
+        cardinality: list
+      vci-match:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server exclude-range
+            parameter: vci-match
+      vci-string:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server exclude-range
+            parameter: vci-string
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system dhcp server
+        nested_config_path: system dhcp server exclude-range
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          nested_config_path: system dhcp server exclude-range
   - name: ip-range
     mode: table
     key: <id>
     fields:
-      end-ip: ipv4-address
-      lease-time: integer
-      start-ip: ipv4-address
-      uci-match: enum
-      uci-string: identifier-list
-      vci-match: enum
-      vci-string: identifier-list
+      end-ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server ip-range
+            parameter: end-ip
+        address_family: ipv4
+      lease-time:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server ip-range
+            parameter: lease-time
+      start-ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server ip-range
+            parameter: start-ip
+        address_family: ipv4
+      uci-match:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server ip-range
+            parameter: uci-match
+      uci-string:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server ip-range
+            parameter: uci-string
+        cardinality: list
+      vci-match:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server ip-range
+            parameter: vci-match
+      vci-string:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server ip-range
+            parameter: vci-string
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system dhcp server
+        nested_config_path: system dhcp server ip-range
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          nested_config_path: system dhcp server ip-range
   - name: options
     mode: table
     key: <id>
     fields:
-      code: integer
-      ip: opaque-user
-      type: enum
-      uci-match: enum
-      uci-string: identifier-list
-      value: string
-      vci-match: enum
-      vci-string: identifier-list
+      code:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server options
+            parameter: code
+      ip:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server options
+            parameter: ip
+      type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server options
+            parameter: type
+      uci-match:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server options
+            parameter: uci-match
+      uci-string:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server options
+            parameter: uci-string
+        cardinality: list
+      value:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server options
+            parameter: value
+      vci-match:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server options
+            parameter: vci-match
+      vci-string:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server options
+            parameter: vci-string
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system dhcp server
+        nested_config_path: system dhcp server options
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          nested_config_path: system dhcp server options
   - name: reserved-address
     mode: table
     key: <id>
     fields:
-      action: enum
-      circuit-id: string
-      circuit-id-type: enum
-      description: var-string
-      ip: ipv4-address
-      mac: mac-address
-      remote-id: string
-      remote-id-type: enum
-      type: enum
+      action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server reserved-address
+            parameter: action
+      circuit-id:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server reserved-address
+            parameter: circuit-id
+      circuit-id-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server reserved-address
+            parameter: circuit-id-type
+      description:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server reserved-address
+            parameter: description
+      ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server reserved-address
+            parameter: ip
+        address_family: ipv4
+      mac:
+        source_type: mac-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server reserved-address
+            parameter: mac
+      remote-id:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server reserved-address
+            parameter: remote-id
+      remote-id-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server reserved-address
+            parameter: remote-id-type
+      type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system dhcp server
+            nested_config_path: system dhcp server reserved-address
+            parameter: type
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system dhcp server
+        nested_config_path: system dhcp server reserved-address
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dhcp server
+          nested_config_path: system dhcp server reserved-address
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system dhcp server
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system dhcp server
 - path: system digital-io
   mode: singleton
   fields:
@@ -1737,8 +2761,62 @@ sections:
   mode: table
   key: <name>
   fields:
-    dnsfilter-profile: string
-    doh: enum
-    doh3: enum
-    doq: enum
-    mode: enum
+    dnsfilter-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dns-server
+          parameter: dnsfilter-profile
+    doh:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dns-server
+          parameter: doh
+    doh3:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dns-server
+          parameter: doh3
+    doq:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dns-server
+          parameter: doq
+    mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system dns-server
+          parameter: mode
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system dns-server
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system dns-server

@@ -139,25 +139,183 @@ sections:
 - path: system resource-limits
   mode: singleton
   fields:
-    custom-service: integer
-    dialup-tunnel: integer
-    firewall-address: integer
-    firewall-addrgrp: integer
-    firewall-policy: integer
-    ipsec-phase1: integer
-    ipsec-phase1-interface: integer
-    ipsec-phase2: integer
-    ipsec-phase2-interface: integer
-    log-disk-quota: integer
-    onetime-schedule: integer
-    proxy: integer
-    recurring-schedule: integer
-    service-group: integer
-    session: integer
-    sslvpn: integer
-    user: integer
-    user-group: integer
+    custom-service:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: custom-service
+    dialup-tunnel:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: dialup-tunnel
+    firewall-address:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: firewall-address
+    firewall-addrgrp:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: firewall-addrgrp
+    firewall-policy:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: firewall-policy
+    ipsec-phase1:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: ipsec-phase1
+    ipsec-phase1-interface:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: ipsec-phase1-interface
+    ipsec-phase2:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: ipsec-phase2
+    ipsec-phase2-interface:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: ipsec-phase2-interface
+    log-disk-quota:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: log-disk-quota
+    onetime-schedule:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: onetime-schedule
+    proxy:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: proxy
+    recurring-schedule:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: recurring-schedule
+    service-group:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: service-group
+    session:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: session
+    sslvpn:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: sslvpn
+    user:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: user
+    user-group:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system resource-limits
+          parameter: user-group
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system resource-limits
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system resource-limits
 - path: system saml
   mode: singleton
   fields:
@@ -2318,166 +2476,1421 @@ sections:
   mode: table
   key: <id>
   fields:
-    name: enum
-    port: integer
-    protocol: integer
+    name:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system session-helper
+          parameter: name
+    port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system session-helper
+          parameter: port
+    protocol:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system session-helper
+          parameter: protocol
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system session-helper
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system session-helper
 - path: system session-ttl
   mode: singleton
   fields:
-    default: opaque-user
+    default:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system session-ttl
+          parameter: default
   nested:
   - name: port
     mode: table
     key: <id>
     fields:
-      end-port: integer
-      protocol: integer
-      refresh-direction: enum
-      start-port: integer
-      timeout: opaque-user
+      end-port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system session-ttl
+            nested_config_path: system session-ttl port
+            parameter: end-port
+      protocol:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system session-ttl
+            nested_config_path: system session-ttl port
+            parameter: protocol
+      refresh-direction:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system session-ttl
+            nested_config_path: system session-ttl port
+            parameter: refresh-direction
+      start-port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system session-ttl
+            nested_config_path: system session-ttl port
+            parameter: start-port
+      timeout:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system session-ttl
+            nested_config_path: system session-ttl port
+            parameter: timeout
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system session-ttl
+        nested_config_path: system session-ttl port
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system session-ttl
+          nested_config_path: system session-ttl port
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system session-ttl
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system session-ttl
 - path: system settings
   mode: singleton
   fields:
-    allow-linkdown-path: enum
-    allow-subnet-overlap: enum
-    application-bandwidth-tracking: enum
-    asymroute: enum
-    asymroute-icmp: enum
-    asymroute6: enum
-    asymroute6-icmp: enum
-    auxiliary-session: enum
-    bfd: enum
-    bfd-desired-min-tx: integer
-    bfd-detect-mult: integer
-    bfd-dont-enforce-src-port: enum
-    bfd-required-min-rx: integer
-    block-land-attack: enum
-    central-nat: enum
-    comments: var-string
-    default-app-port-as-service: enum
-    default-policy-expiry-days: integer
-    default-voip-alg-mode: enum
-    deny-tcp-with-icmp: enum
-    detect-unknown-esp: enum
-    device: string
-    dhcp-proxy: enum
-    dhcp-proxy-interface: string
-    dhcp-proxy-interface-select-method: enum
-    dhcp-server-ip: opaque-user
-    dhcp6-server-ip: opaque-user
-    discovered-device-timeout: integer
-    dyn-addr-session-check: enum
-    ecmp-max-paths: integer
-    email-portal-check-dns: enum
-    ext-resource-session-check: enum
-    firewall-session-dirty: enum
-    fqdn-session-check: enum
-    fw-session-hairpin: enum
-    gateway: ipv4-address
-    gateway6: ipv6-address
-    gui-advanced-policy: enum
-    gui-advanced-wireless-features: enum
-    gui-allow-unnamed-policy: enum
-    gui-antivirus: enum
-    gui-ap-profile: enum
-    gui-application-control: enum
-    gui-casb: enum
-    gui-default-policy-columns: identifier-list
-    gui-dhcp-advanced: enum
-    gui-dlp-profile: enum
-    gui-dns-database: enum
-    gui-dnsfilter: enum
-    gui-dos-policy: enum
-    gui-dynamic-device-os-id: enum
-    gui-dynamic-routing: enum
-    gui-email-collection: enum
-    gui-enforce-change-summary: enum
-    gui-explicit-proxy: enum
-    gui-file-filter: enum
-    gui-fortiap-split-tunneling: enum
-    gui-fortiextender-controller: enum
-    gui-icap: enum
-    gui-implicit-policy: enum
-    gui-ips: enum
-    gui-load-balance: enum
-    gui-local-in-policy: enum
-    gui-multicast-policy: enum
-    gui-multiple-interface-policy: enum
-    gui-object-colors: enum
-    gui-ot: enum
-    gui-policy-based-ipsec: enum
-    gui-policy-disclaimer: enum
-    gui-proxy-inspection: enum
-    gui-route-tag-address-creation: enum
-    gui-security-profile-group: enum
-    gui-spamfilter: enum
-    gui-sslvpn: enum
-    gui-sslvpn-personal-bookmarks: enum
-    gui-sslvpn-realms: enum
-    gui-switch-controller: enum
-    gui-threat-weight: enum
-    gui-traffic-shaping: enum
-    gui-videofilter: enum
-    gui-virtual-patch-profile: enum
-    gui-voip-profile: enum
-    gui-vpn: enum
-    gui-waf-profile: enum
-    gui-wan-load-balancing: enum
-    gui-wanopt-cache: enum
-    gui-webfilter: enum
-    gui-webfilter-advanced: enum
-    gui-wireless-controller: enum
-    gui-ztna: enum
-    h323-direct-model: enum
-    http-external-dest: enum
-    ike-dn-format: enum
-    ike-policy-route: enum
-    ike-port: integer
-    ike-quick-crash-detect: enum
-    ike-session-resume: enum
-    ike-tcp-port: integer
-    internet-service-app-ctrl-size: integer
-    internet-service-database-cache: enum
-    ip: ipv4-classnet-host
-    ip6: ipv6-prefix
-    lan-extension-controller-addr: string
-    link-down-access: enum
-    lldp-reception: enum
-    lldp-transmission: enum
-    location-id: ipv4-address
-    mac-ttl: integer
-    manageip: opaque-user
-    manageip6: ipv6-prefix
-    multicast-forward: enum
-    multicast-skip-policy: enum
-    multicast-ttl-notchange: enum
-    nat46-force-ipv4-packet-forwarding: enum
-    nat46-generate-ipv6-fragment-header: enum
-    nat64-force-ipv6-packet-forwarding: enum
-    ngfw-mode: enum
-    opmode: enum
-    policy-offload-level: enum
-    prp-trailer-action: enum
-    sccp-port: integer
-    sctp-session-without-init: enum
-    ses-denied-multicast-traffic: enum
-    ses-denied-traffic: enum
-    sip-expectation: enum
-    sip-nat-trace: enum
-    sip-ssl-port: integer
-    sip-tcp-port: integer
-    sip-udp-port: integer
-    snat-hairpin-traffic: enum
-    status: enum
-    strict-src-check: enum
-    tcp-session-without-syn: enum
-    utf8-spam-tagging: enum
-    v4-ecmp-mode: enum
-    vdom-type: enum
-    vpn-stats-log: option-list
-    vpn-stats-period: integer
-    wccp-cache-engine: enum
+    allow-linkdown-path:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: allow-linkdown-path
+    allow-subnet-overlap:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: allow-subnet-overlap
+    application-bandwidth-tracking:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: application-bandwidth-tracking
+    asymroute:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: asymroute
+    asymroute-icmp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: asymroute-icmp
+    asymroute6:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: asymroute6
+    asymroute6-icmp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: asymroute6-icmp
+    auxiliary-session:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: auxiliary-session
+    bfd:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: bfd
+    bfd-desired-min-tx:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: bfd-desired-min-tx
+    bfd-detect-mult:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: bfd-detect-mult
+    bfd-dont-enforce-src-port:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: bfd-dont-enforce-src-port
+    bfd-required-min-rx:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: bfd-required-min-rx
+    block-land-attack:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: block-land-attack
+    central-nat:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: central-nat
+    comments:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: comments
+    default-app-port-as-service:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: default-app-port-as-service
+    default-policy-expiry-days:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: default-policy-expiry-days
+    default-voip-alg-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: default-voip-alg-mode
+    deny-tcp-with-icmp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: deny-tcp-with-icmp
+    detect-unknown-esp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: detect-unknown-esp
+    device:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: device
+    dhcp-proxy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: dhcp-proxy
+    dhcp-proxy-interface:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: dhcp-proxy-interface
+    dhcp-proxy-interface-select-method:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: dhcp-proxy-interface-select-method
+    dhcp-server-ip:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: dhcp-server-ip
+    dhcp6-server-ip:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: dhcp6-server-ip
+    discovered-device-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: discovered-device-timeout
+    dyn-addr-session-check:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: dyn-addr-session-check
+    ecmp-max-paths:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ecmp-max-paths
+    email-portal-check-dns:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: email-portal-check-dns
+    ext-resource-session-check:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ext-resource-session-check
+    firewall-session-dirty:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: firewall-session-dirty
+    fqdn-session-check:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: fqdn-session-check
+    fw-session-hairpin:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: fw-session-hairpin
+    gateway:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gateway
+      address_family: ipv4
+    gateway6:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gateway6
+      address_family: ipv6
+    gui-advanced-policy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-advanced-policy
+    gui-advanced-wireless-features:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-advanced-wireless-features
+    gui-allow-unnamed-policy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-allow-unnamed-policy
+    gui-antivirus:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-antivirus
+    gui-ap-profile:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-ap-profile
+    gui-application-control:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-application-control
+    gui-casb:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-casb
+    gui-default-policy-columns:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-default-policy-columns
+      cardinality: list
+    gui-dhcp-advanced:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-dhcp-advanced
+    gui-dlp-profile:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-dlp-profile
+    gui-dns-database:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-dns-database
+    gui-dnsfilter:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-dnsfilter
+    gui-dos-policy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-dos-policy
+    gui-dynamic-device-os-id:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-dynamic-device-os-id
+    gui-dynamic-routing:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-dynamic-routing
+    gui-email-collection:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-email-collection
+    gui-enforce-change-summary:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-enforce-change-summary
+    gui-explicit-proxy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-explicit-proxy
+    gui-file-filter:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-file-filter
+    gui-fortiap-split-tunneling:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-fortiap-split-tunneling
+    gui-fortiextender-controller:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-fortiextender-controller
+    gui-icap:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-icap
+    gui-implicit-policy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-implicit-policy
+    gui-ips:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-ips
+    gui-load-balance:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-load-balance
+    gui-local-in-policy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-local-in-policy
+    gui-multicast-policy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-multicast-policy
+    gui-multiple-interface-policy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-multiple-interface-policy
+    gui-object-colors:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-object-colors
+    gui-ot:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-ot
+    gui-policy-based-ipsec:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-policy-based-ipsec
+    gui-policy-disclaimer:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-policy-disclaimer
+    gui-proxy-inspection:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-proxy-inspection
+    gui-route-tag-address-creation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-route-tag-address-creation
+    gui-security-profile-group:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-security-profile-group
+    gui-spamfilter:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-spamfilter
+    gui-sslvpn:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-sslvpn
+    gui-sslvpn-personal-bookmarks:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-sslvpn-personal-bookmarks
+    gui-sslvpn-realms:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-sslvpn-realms
+    gui-switch-controller:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-switch-controller
+    gui-threat-weight:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-threat-weight
+    gui-traffic-shaping:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-traffic-shaping
+    gui-videofilter:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-videofilter
+    gui-virtual-patch-profile:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-virtual-patch-profile
+    gui-voip-profile:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-voip-profile
+    gui-vpn:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-vpn
+    gui-waf-profile:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-waf-profile
+    gui-wan-load-balancing:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-wan-load-balancing
+    gui-wanopt-cache:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-wanopt-cache
+    gui-webfilter:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-webfilter
+    gui-webfilter-advanced:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-webfilter-advanced
+    gui-wireless-controller:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-wireless-controller
+    gui-ztna:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: gui-ztna
+    h323-direct-model:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: h323-direct-model
+    http-external-dest:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: http-external-dest
+    ike-dn-format:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ike-dn-format
+    ike-policy-route:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ike-policy-route
+    ike-port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ike-port
+    ike-quick-crash-detect:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ike-quick-crash-detect
+    ike-session-resume:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ike-session-resume
+    ike-tcp-port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ike-tcp-port
+    internet-service-app-ctrl-size:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: internet-service-app-ctrl-size
+    internet-service-database-cache:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: internet-service-database-cache
+    ip:
+      source_type: ipv4-classnet-host
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ip
+      address_family: ipv4
+    ip6:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ip6
+      address_family: ipv6
+    lan-extension-controller-addr:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: lan-extension-controller-addr
+    link-down-access:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: link-down-access
+    lldp-reception:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: lldp-reception
+    lldp-transmission:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: lldp-transmission
+    location-id:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: location-id
+      address_family: ipv4
+    mac-ttl:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: mac-ttl
+    manageip:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: manageip
+    manageip6:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: manageip6
+      address_family: ipv6
+    multicast-forward:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: multicast-forward
+    multicast-skip-policy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: multicast-skip-policy
+    multicast-ttl-notchange:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: multicast-ttl-notchange
+    nat46-force-ipv4-packet-forwarding:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: nat46-force-ipv4-packet-forwarding
+    nat46-generate-ipv6-fragment-header:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: nat46-generate-ipv6-fragment-header
+    nat64-force-ipv6-packet-forwarding:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: nat64-force-ipv6-packet-forwarding
+    ngfw-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ngfw-mode
+    opmode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: opmode
+    policy-offload-level:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: policy-offload-level
+    prp-trailer-action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: prp-trailer-action
+    sccp-port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: sccp-port
+    sctp-session-without-init:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: sctp-session-without-init
+    ses-denied-multicast-traffic:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ses-denied-multicast-traffic
+    ses-denied-traffic:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: ses-denied-traffic
+    sip-expectation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: sip-expectation
+    sip-nat-trace:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: sip-nat-trace
+    sip-ssl-port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: sip-ssl-port
+    sip-tcp-port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: sip-tcp-port
+    sip-udp-port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: sip-udp-port
+    snat-hairpin-traffic:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: snat-hairpin-traffic
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: status
+    strict-src-check:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: strict-src-check
+    tcp-session-without-syn:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: tcp-session-without-syn
+    utf8-spam-tagging:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: utf8-spam-tagging
+    v4-ecmp-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: v4-ecmp-mode
+    vdom-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: vdom-type
+    vpn-stats-log:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: vpn-stats-log
+      cardinality: list
+    vpn-stats-period:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: vpn-stats-period
+    wccp-cache-engine:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system settings
+          parameter: wccp-cache-engine
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system settings
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system settings
 - path: system sflow
   mode: singleton
   nested:
