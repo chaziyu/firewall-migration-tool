@@ -456,14 +456,124 @@ sections:
 - path: system zone
   mode: table
   key: <name>
+  key_type: string
+  description: >-
+    Configure zones to group two or more interfaces. When a zone is created you
+    can configure policies for the zone instead of individual interfaces in the zone.
   fields:
-    description: string
-    interface: identifier-list
-    intrazone: enum
+    description:
+      source_type: string
+      fortios_type: string
+      description: Description.
+      length:
+        max: 127
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system zone
+          parameter: description
+    interface:
+      source_type: identifier-list
+      fortios_type: string
+      description: >-
+        Add interfaces to this zone. Interfaces must not be assigned to another
+        zone or have firewall policies defined.
+      length:
+        max: 79
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system zone
+          parameter: interface
+      semantic:
+        reference:
+          kind: interface-member
+          target_paths:
+          - system interface
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: system zone
+            parameter: interface
+    intrazone:
+      source_type: enum
+      fortios_type: option
+      description: Allow or deny traffic routing between different interfaces in the same zone.
+      options:
+      - value: allow
+        description: Allow traffic between interfaces in the zone.
+      - value: deny
+        description: Deny traffic between interfaces in the zone.
+      default:
+        value: deny
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system zone
+          parameter: intrazone
   nested:
   - name: tagging
+    full_path: system zone tagging
     mode: table
     key: <name>
+    key_type: string
+    description: Config object tagging.
     fields:
-      category: string
-      tags: identifier-list
+      category:
+        source_type: string
+        fortios_type: string
+        description: Tag category.
+        length:
+          max: 63
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system zone
+            nested_config_path: tagging
+            parameter: category
+      tags:
+        source_type: identifier-list
+        fortios_type: string
+        description: Tags. Tag name.
+        length:
+          max: 79
+        cardinality: list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system zone
+            nested_config_path: tagging
+            parameter: tags
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system zone
+        nested_config_path: tagging
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system zone
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: system zone
