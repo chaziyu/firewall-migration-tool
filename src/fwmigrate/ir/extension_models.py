@@ -378,6 +378,24 @@ def get_object_extension_value(obj: Any, field: str) -> Any:
     return getattr(extension, field, None) if extension is not None else None
 
 
+def _coerce_extension_type(extension: BaseModel, extension_type: type[BaseModel]) -> BaseModel:
+    if isinstance(extension, extension_type):
+        return extension
+
+    existing_type = type(extension)
+    if not (
+        issubclass(extension_type, existing_type)
+        or issubclass(existing_type, extension_type)
+    ):
+        raise ValueError(
+            f"Cannot assign incompatible extension {existing_type.__name__} "
+            f"to {extension_type.__name__}."
+        )
+    if issubclass(existing_type, extension_type):
+        return extension
+    return extension_type.model_validate(extension.model_dump(mode="python"))
+
+
 def set_object_extension_value(obj: Any, extension_type: type[BaseModel], field: str, value: Any) -> None:
     extension = getattr(obj, "vendor_extension", None)
     if extension is None:
@@ -393,6 +411,9 @@ def set_object_extension_value(obj: Any, extension_type: type[BaseModel], field:
                 object_value = getattr(obj, "source_policy_uuid", None)
             if object_value is not None and extension_field in type(extension).model_fields:
                 setattr(extension, extension_field, object_value)
+        object.__setattr__(obj, "vendor_extension", extension)
+    else:
+        extension = _coerce_extension_type(extension, extension_type)
         object.__setattr__(obj, "vendor_extension", extension)
     setattr(extension, field, value)
 
