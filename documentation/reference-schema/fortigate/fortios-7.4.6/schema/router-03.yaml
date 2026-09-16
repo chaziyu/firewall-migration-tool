@@ -81,7 +81,11 @@ sections:
         value: disable
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: bfd}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: bfd
     blackhole:
       source_type: enum
       fortios_type: option
@@ -93,61 +97,104 @@ sections:
         value: disable
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: blackhole}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: blackhole
     comment:
       source_type: var-string
       fortios_type: var-string
       description: Optional comments.
-      length: {max: 255}
+      length:
+        max: 255
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: comment}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: comment
     device:
       source_type: string
       fortios_type: string
       description: Gateway out interface or tunnel.
-      length: {max: 35}
+      length:
+        max: 35
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: device}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: device
       semantic:
-        reference: {kind: interface, target_paths: [system interface], cardinality: one}
+        reference:
+          kind: interface
+          target_paths:
+          - system interface
+          cardinality: one
         evidence:
           status: project_semantic
-          source: {document: FortiOS 7.4.6 CLI Reference, config_path: router static, parameter: device}
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router static
+            parameter: device
     distance:
       source_type: integer
       fortios_type: integer
       description: Administrative distance.
-      range: {min: 1, max: 255}
-      default: {value: 10}
+      range:
+        min: 1
+        max: 255
+      default:
+        value: 10
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: distance}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: distance
     dst:
       source_type: ipv4-classnet
       fortios_type: ipv4-classnet
       description: Destination IP and mask for this route.
-      default: {value: 0.0.0.0 0.0.0.0}
+      default:
+        value: 0.0.0.0 0.0.0.0
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: dst}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: dst
     dstaddr:
       source_type: string
       fortios_type: string
       description: Name of firewall address or address group.
-      length: {max: 79}
+      length:
+        max: 79
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: dstaddr}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: dstaddr
       semantic:
         reference:
           kind: ipv4-address-reference
-          target_paths: [firewall address, firewall addrgrp]
+          target_paths:
+          - firewall address
+          - firewall addrgrp
           cardinality: one
         evidence:
           status: project_semantic
-          source: {document: FortiOS 7.4.6 CLI Reference, config_path: router static, parameter: dstaddr}
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router static
+            parameter: dstaddr
     dynamic-gateway:
       source_type: enum
       fortios_type: option
@@ -155,35 +202,57 @@ sections:
       options:
       - value: enable
       - value: disable
-      default: {value: disable}
+      default:
+        value: disable
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: dynamic-gateway}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: dynamic-gateway
     gateway:
       source_type: ipv4-address
       fortios_type: ipv4-address
       description: Gateway IP for this route.
-      default: {value: 0.0.0.0}
+      default:
+        value: 0.0.0.0
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: gateway}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: gateway
     internet-service:
       source_type: integer
       fortios_type: integer
       description: Application ID in the Internet service database.
-      range: {min: 0, max: 4294967295}
-      default: {value: 0}
+      range:
+        min: 0
+        max: 4294967295
+      default:
+        value: 0
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: internet-service}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: internet-service
     internet-service-custom:
       source_type: string
       fortios_type: string
       description: Application name in the Internet service custom database.
-      length: {max: 64}
+      length:
+        max: 64
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: internet-service-custom}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: internet-service-custom
     link-monitor-exempt:
       source_type: enum
       fortios_type: option
@@ -191,49 +260,83 @@ sections:
       options:
       - value: enable
       - value: disable
-      default: {value: disable}
+      default:
+        value: disable
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: link-monitor-exempt}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: link-monitor-exempt
     preferred-source:
       source_type: ipv4-address
       fortios_type: ipv4-address
       description: Preferred source IP for this route.
-      default: {value: 0.0.0.0}
+      default:
+        value: 0.0.0.0
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: preferred-source}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: preferred-source
     priority:
       source_type: integer
       fortios_type: integer
       description: Administrative priority.
-      range: {min: 1, max: 65535}
-      default: {value: 1}
+      range:
+        min: 1
+        max: 65535
+      default:
+        value: 1
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: priority}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: priority
     sdwan-zone:
       source_type: identifier-list
       fortios_type: string
       description: Choose SD-WAN Zone. SD-WAN zone name.
-      length: {max: 79}
+      length:
+        max: 79
       cardinality: list
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: sdwan-zone}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: sdwan-zone
       semantic:
-        reference: {kind: sdwan-zone, target_paths: [system sdwan zone], cardinality: many}
+        reference:
+          kind: sdwan-zone
+          target_paths:
+          - system sdwan zone
+          cardinality: many
         evidence:
           status: project_semantic
-          source: {document: FortiOS 7.4.6 CLI Reference, config_path: router static, parameter: sdwan-zone}
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router static
+            parameter: sdwan-zone
     src:
       source_type: ipv4-classnet
       fortios_type: ipv4-classnet
       description: Source prefix for this route.
-      default: {value: 0.0.0.0 0.0.0.0}
+      default:
+        value: 0.0.0.0 0.0.0.0
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: src}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: src
     status:
       source_type: enum
       fortios_type: option
@@ -241,45 +344,76 @@ sections:
       options:
       - value: enable
       - value: disable
-      default: {value: enable}
+      default:
+        value: enable
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: status}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: status
     tag:
       source_type: integer
       fortios_type: integer
       description: Route tag.
-      range: {min: 0, max: 4294967295}
-      default: {value: 0}
+      range:
+        min: 0
+        max: 4294967295
+      default:
+        value: 0
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: tag}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: tag
     vrf:
       source_type: integer
       fortios_type: integer
       description: Virtual Routing Forwarding ID.
-      range: {min: 0, max: 251}
-      default: {value: unspecified}
+      range:
+        min: 0
+        max: 251
+      default:
+        value: unspecified
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: vrf}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: vrf
     weight:
       source_type: integer
       fortios_type: integer
       description: Administrative weight.
-      range: {min: 0, max: 255}
-      default: {value: 0}
+      range:
+        min: 0
+        max: 255
+      default:
+        value: 0
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static, parameter: weight}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static
+          parameter: weight
   evidence:
     status: documented
-    source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static}
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: router static
   semantic:
     migration_relevance: migration_relevant
     evidence:
       status: project_semantic
-      source: {document: FortiOS 7.4.6 CLI Reference, config_path: router static}
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: router static
 - path: router static6
   mode: table
   key: <seq-num>
@@ -293,10 +427,15 @@ sections:
       options:
       - value: enable
       - value: disable
-      default: {value: disable}
+      default:
+        value: disable
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: bfd}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: bfd
     blackhole:
       source_type: enum
       fortios_type: option
@@ -304,73 +443,124 @@ sections:
       options:
       - value: enable
       - value: disable
-      default: {value: disable}
+      default:
+        value: disable
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: blackhole}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: blackhole
     comment:
       source_type: var-string
       fortios_type: var-string
       description: Optional comments.
-      length: {max: 255}
+      length:
+        max: 255
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: comment}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: comment
     device:
       source_type: string
       fortios_type: string
       description: Gateway out interface or tunnel.
-      length: {max: 35}
+      length:
+        max: 35
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: device}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: device
       semantic:
-        reference: {kind: interface, target_paths: [system interface], cardinality: one}
+        reference:
+          kind: interface
+          target_paths:
+          - system interface
+          cardinality: one
         evidence:
           status: project_semantic
-          source: {document: FortiOS 7.4.6 CLI Reference, config_path: router static6, parameter: device}
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router static6
+            parameter: device
     devindex:
       source_type: integer
       fortios_type: integer
       description: Device index.
-      range: {min: 0, max: 4294967295}
-      default: {value: 0}
+      range:
+        min: 0
+        max: 4294967295
+      default:
+        value: 0
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: devindex}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: devindex
     distance:
       source_type: integer
       fortios_type: integer
       description: Administrative distance.
-      range: {min: 1, max: 255}
-      default: {value: 10}
+      range:
+        min: 1
+        max: 255
+      default:
+        value: 10
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: distance}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: distance
     dst:
       source_type: ipv6-network
       fortios_type: ipv6-network
       description: Destination IPv6 prefix.
-      default: {value: '::/0'}
+      default:
+        value: ::/0
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: dst}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: dst
     dstaddr:
       source_type: string
       fortios_type: string
       description: Name of firewall address or address group.
-      length: {max: 79}
+      length:
+        max: 79
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: dstaddr}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: dstaddr
       semantic:
         reference:
           kind: ipv6-address-reference
-          target_paths: [firewall address6, firewall addrgrp6]
+          target_paths:
+          - firewall address6
+          - firewall addrgrp6
           cardinality: one
         evidence:
           status: project_semantic
-          source: {document: FortiOS 7.4.6 CLI Reference, config_path: router static6, parameter: dstaddr}
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router static6
+            parameter: dstaddr
     dynamic-gateway:
       source_type: enum
       fortios_type: option
@@ -378,18 +568,28 @@ sections:
       options:
       - value: enable
       - value: disable
-      default: {value: disable}
+      default:
+        value: disable
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: dynamic-gateway}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: dynamic-gateway
     gateway:
       source_type: ipv6-address
       fortios_type: ipv6-address
       description: IPv6 address of the gateway.
-      default: {value: '::'}
+      default:
+        value: '::'
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: gateway}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: gateway
     link-monitor-exempt:
       source_type: enum
       fortios_type: option
@@ -397,33 +597,57 @@ sections:
       options:
       - value: enable
       - value: disable
-      default: {value: disable}
+      default:
+        value: disable
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: link-monitor-exempt}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: link-monitor-exempt
     priority:
       source_type: integer
       fortios_type: integer
       description: Administrative priority.
-      range: {min: 1, max: 65535}
-      default: {value: 1024}
+      range:
+        min: 1
+        max: 65535
+      default:
+        value: 1024
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: priority}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: priority
     sdwan-zone:
       source_type: identifier-list
       fortios_type: string
       description: Choose SD-WAN Zone. SD-WAN zone name.
-      length: {max: 79}
+      length:
+        max: 79
       cardinality: list
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: sdwan-zone}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: sdwan-zone
       semantic:
-        reference: {kind: sdwan-zone, target_paths: [system sdwan zone], cardinality: many}
+        reference:
+          kind: sdwan-zone
+          target_paths:
+          - system sdwan zone
+          cardinality: many
         evidence:
           status: project_semantic
-          source: {document: FortiOS 7.4.6 CLI Reference, config_path: router static6, parameter: sdwan-zone}
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router static6
+            parameter: sdwan-zone
     status:
       source_type: enum
       fortios_type: option
@@ -431,33 +655,57 @@ sections:
       options:
       - value: enable
       - value: disable
-      default: {value: enable}
+      default:
+        value: enable
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: status}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: status
     vrf:
       source_type: integer
       fortios_type: integer
       description: Virtual Routing Forwarding ID.
-      range: {min: 0, max: 251}
-      default: {value: unspecified}
+      range:
+        min: 0
+        max: 251
+      default:
+        value: unspecified
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: vrf}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: vrf
     weight:
       source_type: integer
       fortios_type: integer
       description: Administrative weight.
-      range: {min: 0, max: 255}
-      default: {value: 0}
+      range:
+        min: 0
+        max: 255
+      default:
+        value: 0
       evidence:
         status: documented
-        source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6, parameter: weight}
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router static6
+          parameter: weight
   evidence:
     status: documented
-    source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router static6}
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: router static6
   semantic:
     migration_relevance: migration_relevant
     evidence:
       status: project_semantic
-      source: {document: FortiOS 7.4.6 CLI Reference, config_path: router static6}
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: router static6

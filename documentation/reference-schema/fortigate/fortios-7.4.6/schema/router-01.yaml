@@ -1,1 +1,1010 @@
-{domain: router, part: 1, parts: 3, sections: [{path: router access-list, mode: table, key: <name>, fields: {comments: string}, nested: [{name: rule, mode: table, key: <id>, fields: {action: enum, exact-match: enum, prefix: opaque-user, wildcard: opaque-user}}]}, {path: router access-list6, mode: table, key: <name>, fields: {comments: string}, nested: [{name: rule, mode: table, key: <id>, fields: {action: enum, exact-match: enum, flags: integer, prefix6: opaque-user}}]}, {path: router aspath-list, mode: table, key: <name>, nested: [{name: rule, mode: table, key: <id>, fields: {action: enum, regexp: string}}]}, {path: router auth-path, mode: table, key: <name>, fields: {device: string, gateway: ipv4-address}}, {path: router bfd, mode: singleton, nested: [{name: multihop-template, mode: table, key: <id>, fields: {auth-mode: enum, bfd-desired-min-tx: integer, bfd-detect-mult: integer, bfd-required-min-rx: integer, dst: ipv4-classnet, md5-key: password!sensitive, src: ipv4-classnet}}, {name: neighbor, mode: table, key: <ip>, fields: {interface: string}}]}, {path: router bfd6, mode: singleton, nested: [{name: multihop-template, mode: table, key: <id>, fields: {auth-mode: enum, bfd-desired-min-tx: integer, bfd-detect-mult: integer, bfd-required-min-rx: integer, dst: ipv6-network, md5-key: password!sensitive, src: ipv6-network}}, {name: neighbor, mode: table, key: <ip6-address>, fields: {interface: string}}]}, {path: router bgp, mode: singleton, fields: {additional-path: &id004 {source_type: enum, options: &id005 [{value: enable}, {value: disable}], default: {value: disable}, evidence: &id001 {status: documented, source: {document: FortiOS 7.4.6 CLI Reference, document_id: 01-746-912654-20241212, config_path: router bgp}}}, additional-path-select: &id002 {source_type: integer, range: {min: 2, max: 255}, default: {value: 2}, evidence: *id001}, additional-path-select-vpnv4: *id002, additional-path-select-vpnv6: *id002, additional-path-select6: *id002, additional-path-vpnv4: &id003 {source_type: enum, options: [{value: send}, {value: receive}, {value: both}, {value: disable}], default: {value: disable}, evidence: *id001}, additional-path-vpnv6: *id003, additional-path6: *id003, always-compare-med: *id004, as: &id018 {source_type: opaque-user, evidence: *id001}, bestpath-as-path-ignore: *id004, bestpath-cmp-confed-aspath: *id004, bestpath-cmp-routerid: *id004, bestpath-med-confed: *id004, bestpath-med-missing-as-worst: *id004, client-to-client-reflection: &id008 {source_type: enum, options: *id005, default: {value: enable}, evidence: *id001}, cluster-id: {source_type: ipv4-address-any, address_family: ipv4, default: {value: 0.0.0.0}, evidence: *id001}, confederation-identifier: &id019 {source_type: integer, range: {min: 1, max: 4294967295, note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.}, default: {value: 0}, evidence: *id001}, confederation-peers: &id036 {source_type: identifier-list, length: {max: 79}, cardinality: list, evidence: *id001}, cross-family-conditional-adv: *id004, dampening: *id004, dampening-max-suppress-time: {source_type: integer, range: {min: 1, max: 255}, default: {value: 60}, evidence: *id001}, dampening-reachability-half-life: &id006 {source_type: integer, range: {min: 1, max: 45}, default: {value: 15}, evidence: *id001}, dampening-reuse: {source_type: integer, range: {min: 1, max: 20000}, default: {value: 750}, evidence: *id001}, dampening-route-map: &id014 {source_type: string, length: {max: 35}, evidence: *id001, semantic: {reference: {kind: route_map, target_paths: &id026 [router route-map], cardinality: one}, evidence: &id010 {status: project_semantic, source: {document: FortiOS 7.4.6 CLI Reference, config_path: router bgp}}}}, dampening-suppress: {source_type: integer, range: {min: 1, max: 20000}, default: {value: 2000}, evidence: *id001}, dampening-unreachability-half-life: *id006, default-local-preference: {source_type: integer, range: {min: 0, max: 4294967295}, default: {value: 100}, evidence: *id001}, deterministic-med: *id004, distance-external: {source_type: integer, range: {min: 1, max: 255}, default: {value: 20}, evidence: *id001}, distance-internal: &id007 {source_type: integer, range: {min: 1, max: 255}, default: {value: 200}, evidence: *id001}, distance-local: *id007, ebgp-multipath: *id004, enforce-first-as: *id008, fast-external-failover: *id008, graceful-end-on-timer: *id004, graceful-restart: *id004, graceful-restart-time: &id009 {source_type: integer, range: {min: 1, max: 3600}, default: {value: 120}, evidence: *id001}, graceful-stalepath-time: {source_type: integer, range: {min: 1, max: 3600}, default: {value: 360}, evidence: *id001}, graceful-update-delay: *id009, holdtime-timer: {source_type: integer, range: {min: 3, max: 65535}, default: {value: 180}, evidence: *id001}, ibgp-multipath: *id004, ignore-optional-capability: *id008, keepalive-timer: {source_type: integer, range: {min: 0, max: 65535}, default: {value: 60}, evidence: *id001}, log-neighbour-changes: *id008, multipath-recursive-distance: *id004, network-import-check: *id008, recursive-inherit-priority: *id004, recursive-next-hop: *id004, router-id: {source_type: ipv4-address-any, address_family: ipv4, evidence: *id001}, scan-time: {source_type: integer, range: {min: 5, max: 60}, default: {value: 60}, evidence: *id001}, synchronization: *id004, tag-resolve-mode: {source_type: enum, options: [{value: disable}, {value: preferred}, {value: merge}], default: {value: disable}, evidence: *id001}}, nested: [{name: admin-distance, mode: table, key: <id>, fields: {distance: {source_type: integer, range: {min: 1, max: 255, note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.}, default: {value: 0}, evidence: *id001}, neighbour-prefix: &id030 {source_type: ipv4-classnet, address_family: ipv4, evidence: *id001, default: {value: 0.0.0.0 0.0.0.0}}, route-list: &id015 {source_type: string, length: {max: 35}, evidence: *id001, semantic: {reference: {kind: access_list, target_paths: [router access-list], cardinality: one}, evidence: *id010}}}}, {name: aggregate-address, mode: table, key: <id>, fields: {as-set: *id004, prefix: {source_type: ipv4-classnet-any, address_family: ipv4, evidence: *id001, default: {value: 0.0.0.0 0.0.0.0}}, summary-only: *id004}}, {name: aggregate-address6, mode: table, key: <id>, fields: {as-set: *id004, prefix6: {source_type: ipv6-prefix, address_family: ipv6, evidence: *id001, default: {value: '::/0'}}, summary-only: *id004}}, {name: neighbor, mode: table, key: <ip>, fields: &id028 {activate: *id008, activate-evpn: *id008, activate-vpnv4: *id008, activate-vpnv6: *id008, activate6: *id008, additional-path: *id003, additional-path-vpnv4: *id003, additional-path-vpnv6: *id003, additional-path6: *id003, adv-additional-path: *id002, adv-additional-path-vpnv4: *id002, adv-additional-path-vpnv6: *id002, adv-additional-path6: *id002, advertisement-interval: {source_type: integer, range: {min: 0, max: 600}, default: {value: 30}, evidence: *id001}, allowas-in: &id011 {source_type: integer, range: {min: 1, max: 10}, default: {value: 3}, evidence: *id001}, allowas-in-enable: *id004, allowas-in-enable-evpn: *id004, allowas-in-enable-vpnv4: *id004, allowas-in-enable-vpnv6: *id004, allowas-in-enable6: *id004, allowas-in-evpn: *id011, allowas-in-vpnv4: *id011, allowas-in-vpnv6: *id011, allowas-in6: *id011, as-override: *id004, as-override6: *id004, attribute-unchanged: &id012 {source_type: option-list, options: [{value: as-path}, {value: med}, {value: next-hop}], cardinality: list, evidence: *id001}, attribute-unchanged-vpnv4: *id012, attribute-unchanged-vpnv6: *id012, attribute-unchanged6: *id012, auth-options: &id029 {source_type: string, length: {max: 35}, evidence: *id001}, bfd: *id004, capability-default-originate: *id004, capability-default-originate6: *id004, capability-dynamic: *id004, capability-graceful-restart: *id004, capability-graceful-restart-evpn: *id004, capability-graceful-restart-vpnv4: *id004, capability-graceful-restart-vpnv6: *id004, capability-graceful-restart6: *id004, capability-orf: &id013 {source_type: enum, options: [{value: none}, {value: receive}, {value: send}, {value: both}], default: {value: none}, evidence: *id001}, capability-orf6: *id013, capability-route-refresh: *id008, connect-timer: {source_type: integer, range: {min: 1, max: 65535, note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.}, default: {value: 4294967295}, evidence: *id001}, default-originate-routemap: *id014, default-originate-routemap6: *id014, description: {source_type: string, length: {max: 63}, evidence: *id001}, distribute-list-in: *id015, distribute-list-in-vpnv4: *id015, distribute-list-in-vpnv6: &id016 {source_type: string, length: {max: 35}, evidence: *id001, semantic: {reference: {kind: access_list, target_paths: [router access-list6], cardinality: one}, evidence: *id010}}, distribute-list-in6: *id016, distribute-list-out: *id015, distribute-list-out-vpnv4: *id015, distribute-list-out-vpnv6: *id016, distribute-list-out6: *id016, dont-capability-negotiate: *id004, ebgp-enforce-multihop: *id004, ebgp-multihop-ttl: {source_type: integer, range: {min: 1, max: 255}, default: {value: 255}, evidence: *id001}, filter-list-in: &id017 {source_type: string, length: {max: 35}, evidence: *id001, semantic: {reference: {kind: as_path_filter, target_paths: [router aspath-list], cardinality: one}, evidence: *id010}}, filter-list-in-vpnv4: *id017, filter-list-in-vpnv6: *id017, filter-list-in6: *id017, filter-list-out: *id017, filter-list-out-vpnv4: *id017, filter-list-out-vpnv6: *id017, filter-list-out6: *id017, holdtime-timer: {source_type: integer, range: {min: 3, max: 65535, note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.}, default: {value: 4294967295}, evidence: *id001}, interface: &id024 {source_type: string, length: {max: 15}, evidence: *id001, semantic: {reference: {kind: interface, target_paths: [system interface], cardinality: one}, evidence: *id010}}, keep-alive-timer: &id025 {source_type: integer, range: {min: 0, max: 65535, note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.}, default: {value: 4294967295}, evidence: *id001}, link-down-failover: *id004, local-as: *id018, local-as-no-prepend: *id004, local-as-replace-as: *id004, maximum-prefix: *id019, maximum-prefix-evpn: *id019, maximum-prefix-threshold: &id020 {source_type: integer, range: {min: 1, max: 100}, default: {value: 75}, evidence: *id001}, maximum-prefix-threshold-evpn: *id020, maximum-prefix-threshold-vpnv4: *id020, maximum-prefix-threshold-vpnv6: *id020, maximum-prefix-threshold6: *id020, maximum-prefix-vpnv4: *id019, maximum-prefix-vpnv6: *id019, maximum-prefix-warning-only: *id004, maximum-prefix-warning-only-evpn: *id004, maximum-prefix-warning-only-vpnv4: *id004, maximum-prefix-warning-only-vpnv6: *id004, maximum-prefix-warning-only6: *id004, maximum-prefix6: *id019, next-hop-self: *id004, next-hop-self-rr: *id004, next-hop-self-rr6: *id004, next-hop-self-vpnv4: *id004, next-hop-self-vpnv6: *id004, next-hop-self6: *id004, override-capability: *id004, passive: *id004, password: {source_type: password, evidence: *id001, semantic: {sensitive: true, evidence: *id010}}, prefix-list-in: &id021 {source_type: string, length: {max: 35}, evidence: *id001, semantic: {reference: {kind: prefix_list, target_paths: [router prefix-list], cardinality: one}, evidence: *id010}}, prefix-list-in-vpnv4: *id021, prefix-list-in-vpnv6: &id022 {source_type: string, length: {max: 35}, evidence: *id001, semantic: {reference: {kind: prefix_list, target_paths: [router prefix-list6], cardinality: one}, evidence: *id010}}, prefix-list-in6: *id022, prefix-list-out: *id021, prefix-list-out-vpnv4: *id021, prefix-list-out-vpnv6: *id022, prefix-list-out6: *id022, remote-as: *id018, remove-private-as: *id004, remove-private-as-evpn: *id004, remove-private-as-vpnv4: *id004, remove-private-as-vpnv6: *id004, remove-private-as6: *id004, restart-time: {source_type: integer, range: {min: 0, max: 3600}, default: {value: 0}, evidence: *id001}, retain-stale-time: {source_type: integer, range: {min: 0, max: 65535}, default: {value: 0}, evidence: *id001}, route-map-in: *id014, route-map-in-evpn: *id014, route-map-in-vpnv4: *id014, route-map-in-vpnv6: *id014, route-map-in6: *id014, route-map-out: *id014, route-map-out-evpn: *id014, route-map-out-preferable: *id014, route-map-out-vpnv4: *id014, route-map-out-vpnv4-preferable: *id014, route-map-out-vpnv6: *id014, route-map-out-vpnv6-preferable: *id014, route-map-out6: *id014, route-map-out6-preferable: *id014, route-reflector-client: *id004, route-reflector-client-evpn: *id004, route-reflector-client-vpnv4: *id004, route-reflector-client-vpnv6: *id004, route-reflector-client6: *id004, route-server-client: *id004, route-server-client-evpn: *id004, route-server-client-vpnv4: *id004, route-server-client-vpnv6: *id004, route-server-client6: *id004, send-community: &id023 {source_type: enum, options: [{value: standard}, {value: extended}, {value: both}, {value: disable}], default: {value: both}, evidence: *id001}, send-community-evpn: *id023, send-community-vpnv4: *id023, send-community-vpnv6: *id023, send-community6: *id023, shutdown: *id004, soft-reconfiguration: *id004, soft-reconfiguration-evpn: *id004, soft-reconfiguration-vpnv4: *id004, soft-reconfiguration-vpnv6: *id004, soft-reconfiguration6: *id004, stale-route: *id004, strict-capability-match: *id004, unsuppress-map: *id014, unsuppress-map6: *id014, update-source: *id024, weight: *id025}, nested: [{name: conditional-advertise, mode: table, key: <advertise-routemap>, fields: &id027 {condition-routemap: {source_type: identifier-list, length: {max: 79}, cardinality: list, evidence: *id001, semantic: {reference: {kind: route_map, target_paths: *id026, cardinality: many}, evidence: *id010}}, condition-type: {source_type: enum, options: [{value: exist}, {value: non-exist}], default: {value: exist}, evidence: *id001}}}, {name: conditional-advertise6, mode: table, key: <advertise-routemap>, fields: *id027}]}, {name: neighbor-group, mode: table, key: <name>, fields: {<<: *id028, passive: *id008, remote-as-filter: *id029}}, {name: neighbor-range, mode: table, key: <id>, fields: {max-neighbor-num: &id031 {source_type: integer, range: {min: 1, max: 1000, note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.}, default: {value: 0}, evidence: *id001}, neighbor-group: &id032 {source_type: string, length: {max: 63}, evidence: *id001, semantic: {reference: {kind: bgp_neighbor_group, target_paths: [router bgp / neighbor-group], cardinality: one}, evidence: *id010}}, prefix: *id030}}, {name: neighbor-range6, mode: table, key: <id>, fields: {max-neighbor-num: *id031, neighbor-group: *id032, prefix6: &id034 {source_type: ipv6-network, address_family: ipv6, evidence: *id001, default: {value: '::/0'}}}}, {name: network, mode: table, key: <id>, fields: {backdoor: *id004, network-import-check: &id033 {source_type: enum, options: [{value: global}, {value: enable}, {value: disable}], default: {value: global}, evidence: *id001}, prefix: *id030, route-map: *id014}}, {name: network6, mode: table, key: <id>, fields: {backdoor: *id004, network-import-check: *id033, prefix6: *id034, route-map: *id014}}, {name: redistribute, mode: table, key: <name>, fields: &id035 {route-map: *id014, status: *id004}, read_only: true}, {name: redistribute6, mode: table, key: <name>, fields: *id035, read_only: true}, {name: vrf, mode: table, key: <vrf>, fields: &id037 {export-rt: *id036, import-route-map: *id014, import-rt: *id036, rd: {source_type: string, length: {max: 79}, evidence: *id001}, role: {source_type: enum, options: [{value: standalone}, {value: ce}, {value: pe}], default: {value: standalone}, evidence: *id001}}, nested: [{name: leak-target, mode: table, key: <vrf>, fields: {interface: *id024, route-map: *id014}}]}, {name: vrf6, mode: table, key: <vrf>, fields: *id037, nested: [{name: leak-target, mode: table, key: <vrf>, fields: {interface: *id024, route-map: *id014}}]}], evidence: *id001, semantic: {migration_relevance: migration_relevant, evidence: *id010}}, {path: router community-list, mode: table, key: <name>, fields: {type: enum}, nested: [{name: rule, mode: table, key: <id>, fields: {action: enum, match: string, regexp: string}}]}, {path: router extcommunity-list, mode: table, key: <name>, fields: {type: enum}, nested: [{name: rule, mode: table, key: <id>, fields: {action: enum, match: string, regexp: string, type: enum}}]}]}
+domain: router
+part: 1
+parts: 3
+sections:
+- path: router access-list
+  mode: table
+  key: <name>
+  fields:
+    comments: string
+  nested:
+  - name: rule
+    mode: table
+    key: <id>
+    fields:
+      action: enum
+      exact-match: enum
+      prefix: opaque-user
+      wildcard: opaque-user
+- path: router access-list6
+  mode: table
+  key: <name>
+  fields:
+    comments: string
+  nested:
+  - name: rule
+    mode: table
+    key: <id>
+    fields:
+      action: enum
+      exact-match: enum
+      flags: integer
+      prefix6: opaque-user
+- path: router aspath-list
+  mode: table
+  key: <name>
+  nested:
+  - name: rule
+    mode: table
+    key: <id>
+    fields:
+      action: enum
+      regexp: string
+- path: router auth-path
+  mode: table
+  key: <name>
+  fields:
+    device: string
+    gateway: ipv4-address
+- path: router bfd
+  mode: singleton
+  nested:
+  - name: multihop-template
+    mode: table
+    key: <id>
+    fields:
+      auth-mode: enum
+      bfd-desired-min-tx: integer
+      bfd-detect-mult: integer
+      bfd-required-min-rx: integer
+      dst: ipv4-classnet
+      md5-key: password!sensitive
+      src: ipv4-classnet
+  - name: neighbor
+    mode: table
+    key: <ip>
+    fields:
+      interface: string
+- path: router bfd6
+  mode: singleton
+  nested:
+  - name: multihop-template
+    mode: table
+    key: <id>
+    fields:
+      auth-mode: enum
+      bfd-desired-min-tx: integer
+      bfd-detect-mult: integer
+      bfd-required-min-rx: integer
+      dst: ipv6-network
+      md5-key: password!sensitive
+      src: ipv6-network
+  - name: neighbor
+    mode: table
+    key: <ip6-address>
+    fields:
+      interface: string
+- path: router bgp
+  mode: singleton
+  fields:
+    additional-path: &id004
+      source_type: enum
+      options: &id005
+      - value: enable
+      - value: disable
+      default:
+        value: disable
+      evidence: &id001
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: router bgp
+    additional-path-select: &id002
+      source_type: integer
+      range:
+        min: 2
+        max: 255
+      default:
+        value: 2
+      evidence: *id001
+    additional-path-select-vpnv4: *id002
+    additional-path-select-vpnv6: *id002
+    additional-path-select6: *id002
+    additional-path-vpnv4: &id003
+      source_type: enum
+      options:
+      - value: send
+      - value: receive
+      - value: both
+      - value: disable
+      default:
+        value: disable
+      evidence: *id001
+    additional-path-vpnv6: *id003
+    additional-path6: *id003
+    always-compare-med: *id004
+    as: &id018
+      source_type: opaque-user
+      evidence: *id001
+    bestpath-as-path-ignore: *id004
+    bestpath-cmp-confed-aspath: *id004
+    bestpath-cmp-routerid: *id004
+    bestpath-med-confed: *id004
+    bestpath-med-missing-as-worst: *id004
+    client-to-client-reflection: &id008
+      source_type: enum
+      options: *id005
+      default:
+        value: enable
+      evidence: *id001
+    cluster-id:
+      source_type: ipv4-address-any
+      address_family: ipv4
+      default:
+        value: 0.0.0.0
+      evidence: *id001
+    confederation-identifier: &id019
+      source_type: integer
+      range:
+        min: 1
+        max: 4294967295
+        note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.
+      default:
+        value: 0
+      evidence: *id001
+    confederation-peers: &id043
+      source_type: identifier-list
+      length:
+        max: 79
+      cardinality: list
+      evidence: *id001
+    cross-family-conditional-adv: *id004
+    dampening: *id004
+    dampening-max-suppress-time:
+      source_type: integer
+      range:
+        min: 1
+        max: 255
+      default:
+        value: 60
+      evidence: *id001
+    dampening-reachability-half-life: &id006
+      source_type: integer
+      range:
+        min: 1
+        max: 45
+      default:
+        value: 15
+      evidence: *id001
+    dampening-reuse:
+      source_type: integer
+      range:
+        min: 1
+        max: 20000
+      default:
+        value: 750
+      evidence: *id001
+    dampening-route-map: &id014
+      source_type: string
+      length:
+        max: 35
+      evidence: *id001
+      semantic:
+        reference:
+          kind: route_map
+          target_paths: &id026
+          - router route-map
+          cardinality: one
+        evidence: &id010
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: router bgp
+    dampening-suppress:
+      source_type: integer
+      range:
+        min: 1
+        max: 20000
+      default:
+        value: 2000
+      evidence: *id001
+    dampening-unreachability-half-life: *id006
+    default-local-preference:
+      source_type: integer
+      range:
+        min: 0
+        max: 4294967295
+      default:
+        value: 100
+      evidence: *id001
+    deterministic-med: *id004
+    distance-external:
+      source_type: integer
+      range:
+        min: 1
+        max: 255
+      default:
+        value: 20
+      evidence: *id001
+    distance-internal: &id007
+      source_type: integer
+      range:
+        min: 1
+        max: 255
+      default:
+        value: 200
+      evidence: *id001
+    distance-local: *id007
+    ebgp-multipath: *id004
+    enforce-first-as: *id008
+    fast-external-failover: *id008
+    graceful-end-on-timer: *id004
+    graceful-restart: *id004
+    graceful-restart-time: &id009
+      source_type: integer
+      range:
+        min: 1
+        max: 3600
+      default:
+        value: 120
+      evidence: *id001
+    graceful-stalepath-time:
+      source_type: integer
+      range:
+        min: 1
+        max: 3600
+      default:
+        value: 360
+      evidence: *id001
+    graceful-update-delay: *id009
+    holdtime-timer:
+      source_type: integer
+      range:
+        min: 3
+        max: 65535
+      default:
+        value: 180
+      evidence: *id001
+    ibgp-multipath: *id004
+    ignore-optional-capability: *id008
+    keepalive-timer:
+      source_type: integer
+      range:
+        min: 0
+        max: 65535
+      default:
+        value: 60
+      evidence: *id001
+    log-neighbour-changes: *id008
+    multipath-recursive-distance: *id004
+    network-import-check: *id008
+    recursive-inherit-priority: *id004
+    recursive-next-hop: *id004
+    router-id:
+      source_type: ipv4-address-any
+      address_family: ipv4
+      evidence: *id001
+    scan-time:
+      source_type: integer
+      range:
+        min: 5
+        max: 60
+      default:
+        value: 60
+      evidence: *id001
+    synchronization: *id004
+    tag-resolve-mode:
+      source_type: enum
+      options:
+      - value: disable
+      - value: preferred
+      - value: merge
+      default:
+        value: disable
+      evidence: *id001
+  nested:
+  - name: admin-distance
+    mode: table
+    key: <id>
+    fields:
+      distance:
+        source_type: integer
+        range:
+          min: 1
+          max: 255
+          note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.
+        default:
+          value: 0
+        evidence: *id001
+      neighbour-prefix: &id037
+        source_type: ipv4-classnet
+        address_family: ipv4
+        evidence: *id001
+        default:
+          value: 0.0.0.0 0.0.0.0
+      route-list: &id015
+        source_type: string
+        length:
+          max: 35
+        evidence: *id001
+        semantic:
+          reference:
+            kind: access_list
+            target_paths:
+            - router access-list
+            cardinality: one
+          evidence: *id010
+  - name: aggregate-address
+    mode: table
+    key: <id>
+    fields:
+      as-set: *id004
+      prefix:
+        source_type: ipv4-classnet-any
+        address_family: ipv4
+        evidence: *id001
+        default:
+          value: 0.0.0.0 0.0.0.0
+      summary-only: *id004
+  - name: aggregate-address6
+    mode: table
+    key: <id>
+    fields:
+      as-set: *id004
+      prefix6:
+        source_type: ipv6-prefix
+        address_family: ipv6
+        evidence: *id001
+        default:
+          value: ::/0
+      summary-only: *id004
+  - name: neighbor
+    mode: table
+    key: <ip>
+    fields:
+      activate: *id008
+      activate-evpn: *id008
+      activate-vpnv4: *id008
+      activate-vpnv6: *id008
+      activate6: *id008
+      additional-path: *id003
+      additional-path-vpnv4: *id003
+      additional-path-vpnv6: *id003
+      additional-path6: *id003
+      adv-additional-path: *id002
+      adv-additional-path-vpnv4: *id002
+      adv-additional-path-vpnv6: *id002
+      adv-additional-path6: *id002
+      advertisement-interval: &id028
+        source_type: integer
+        range:
+          min: 0
+          max: 600
+        default:
+          value: 30
+        evidence: *id001
+      allowas-in: &id011
+        source_type: integer
+        range:
+          min: 1
+          max: 10
+        default:
+          value: 3
+        evidence: *id001
+      allowas-in-enable: *id004
+      allowas-in-enable-evpn: *id004
+      allowas-in-enable-vpnv4: *id004
+      allowas-in-enable-vpnv6: *id004
+      allowas-in-enable6: *id004
+      allowas-in-evpn: *id011
+      allowas-in-vpnv4: *id011
+      allowas-in-vpnv6: *id011
+      allowas-in6: *id011
+      as-override: *id004
+      as-override6: *id004
+      attribute-unchanged: &id012
+        source_type: option-list
+        options:
+        - value: as-path
+        - value: med
+        - value: next-hop
+        cardinality: list
+        evidence: *id001
+      attribute-unchanged-vpnv4: *id012
+      attribute-unchanged-vpnv6: *id012
+      attribute-unchanged6: *id012
+      auth-options: &id029
+        source_type: string
+        length:
+          max: 35
+        evidence: *id001
+      bfd: *id004
+      capability-default-originate: *id004
+      capability-default-originate6: *id004
+      capability-dynamic: *id004
+      capability-graceful-restart: *id004
+      capability-graceful-restart-evpn: *id004
+      capability-graceful-restart-vpnv4: *id004
+      capability-graceful-restart-vpnv6: *id004
+      capability-graceful-restart6: *id004
+      capability-orf: &id013
+        source_type: enum
+        options:
+        - value: none
+        - value: receive
+        - value: send
+        - value: both
+        default:
+          value: none
+        evidence: *id001
+      capability-orf6: *id013
+      capability-route-refresh: *id008
+      connect-timer: &id030
+        source_type: integer
+        range:
+          min: 1
+          max: 65535
+          note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.
+        default:
+          value: 4294967295
+        evidence: *id001
+      default-originate-routemap: *id014
+      default-originate-routemap6: *id014
+      description: &id031
+        source_type: string
+        length:
+          max: 63
+        evidence: *id001
+      distribute-list-in: *id015
+      distribute-list-in-vpnv4: *id015
+      distribute-list-in-vpnv6: &id016
+        source_type: string
+        length:
+          max: 35
+        evidence: *id001
+        semantic:
+          reference:
+            kind: access_list
+            target_paths:
+            - router access-list6
+            cardinality: one
+          evidence: *id010
+      distribute-list-in6: *id016
+      distribute-list-out: *id015
+      distribute-list-out-vpnv4: *id015
+      distribute-list-out-vpnv6: *id016
+      distribute-list-out6: *id016
+      dont-capability-negotiate: *id004
+      ebgp-enforce-multihop: *id004
+      ebgp-multihop-ttl: &id032
+        source_type: integer
+        range:
+          min: 1
+          max: 255
+        default:
+          value: 255
+        evidence: *id001
+      filter-list-in: &id017
+        source_type: string
+        length:
+          max: 35
+        evidence: *id001
+        semantic:
+          reference:
+            kind: as_path_filter
+            target_paths:
+            - router aspath-list
+            cardinality: one
+          evidence: *id010
+      filter-list-in-vpnv4: *id017
+      filter-list-in-vpnv6: *id017
+      filter-list-in6: *id017
+      filter-list-out: *id017
+      filter-list-out-vpnv4: *id017
+      filter-list-out-vpnv6: *id017
+      filter-list-out6: *id017
+      holdtime-timer: &id033
+        source_type: integer
+        range:
+          min: 3
+          max: 65535
+          note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.
+        default:
+          value: 4294967295
+        evidence: *id001
+      interface: &id024
+        source_type: string
+        length:
+          max: 15
+        evidence: *id001
+        semantic:
+          reference:
+            kind: interface
+            target_paths:
+            - system interface
+            cardinality: one
+          evidence: *id010
+      keep-alive-timer: &id025
+        source_type: integer
+        range:
+          min: 0
+          max: 65535
+          note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.
+        default:
+          value: 4294967295
+        evidence: *id001
+      link-down-failover: *id004
+      local-as: *id018
+      local-as-no-prepend: *id004
+      local-as-replace-as: *id004
+      maximum-prefix: *id019
+      maximum-prefix-evpn: *id019
+      maximum-prefix-threshold: &id020
+        source_type: integer
+        range:
+          min: 1
+          max: 100
+        default:
+          value: 75
+        evidence: *id001
+      maximum-prefix-threshold-evpn: *id020
+      maximum-prefix-threshold-vpnv4: *id020
+      maximum-prefix-threshold-vpnv6: *id020
+      maximum-prefix-threshold6: *id020
+      maximum-prefix-vpnv4: *id019
+      maximum-prefix-vpnv6: *id019
+      maximum-prefix-warning-only: *id004
+      maximum-prefix-warning-only-evpn: *id004
+      maximum-prefix-warning-only-vpnv4: *id004
+      maximum-prefix-warning-only-vpnv6: *id004
+      maximum-prefix-warning-only6: *id004
+      maximum-prefix6: *id019
+      next-hop-self: *id004
+      next-hop-self-rr: *id004
+      next-hop-self-rr6: *id004
+      next-hop-self-vpnv4: *id004
+      next-hop-self-vpnv6: *id004
+      next-hop-self6: *id004
+      override-capability: *id004
+      passive: *id004
+      password: &id034
+        source_type: password
+        evidence: *id001
+        semantic:
+          sensitive: true
+          evidence: *id010
+      prefix-list-in: &id021
+        source_type: string
+        length:
+          max: 35
+        evidence: *id001
+        semantic:
+          reference:
+            kind: prefix_list
+            target_paths:
+            - router prefix-list
+            cardinality: one
+          evidence: *id010
+      prefix-list-in-vpnv4: *id021
+      prefix-list-in-vpnv6: &id022
+        source_type: string
+        length:
+          max: 35
+        evidence: *id001
+        semantic:
+          reference:
+            kind: prefix_list
+            target_paths:
+            - router prefix-list6
+            cardinality: one
+          evidence: *id010
+      prefix-list-in6: *id022
+      prefix-list-out: *id021
+      prefix-list-out-vpnv4: *id021
+      prefix-list-out-vpnv6: *id022
+      prefix-list-out6: *id022
+      remote-as: *id018
+      remove-private-as: *id004
+      remove-private-as-evpn: *id004
+      remove-private-as-vpnv4: *id004
+      remove-private-as-vpnv6: *id004
+      remove-private-as6: *id004
+      restart-time: &id035
+        source_type: integer
+        range:
+          min: 0
+          max: 3600
+        default:
+          value: 0
+        evidence: *id001
+      retain-stale-time: &id036
+        source_type: integer
+        range:
+          min: 0
+          max: 65535
+        default:
+          value: 0
+        evidence: *id001
+      route-map-in: *id014
+      route-map-in-evpn: *id014
+      route-map-in-vpnv4: *id014
+      route-map-in-vpnv6: *id014
+      route-map-in6: *id014
+      route-map-out: *id014
+      route-map-out-evpn: *id014
+      route-map-out-preferable: *id014
+      route-map-out-vpnv4: *id014
+      route-map-out-vpnv4-preferable: *id014
+      route-map-out-vpnv6: *id014
+      route-map-out-vpnv6-preferable: *id014
+      route-map-out6: *id014
+      route-map-out6-preferable: *id014
+      route-reflector-client: *id004
+      route-reflector-client-evpn: *id004
+      route-reflector-client-vpnv4: *id004
+      route-reflector-client-vpnv6: *id004
+      route-reflector-client6: *id004
+      route-server-client: *id004
+      route-server-client-evpn: *id004
+      route-server-client-vpnv4: *id004
+      route-server-client-vpnv6: *id004
+      route-server-client6: *id004
+      send-community: &id023
+        source_type: enum
+        options:
+        - value: standard
+        - value: extended
+        - value: both
+        - value: disable
+        default:
+          value: both
+        evidence: *id001
+      send-community-evpn: *id023
+      send-community-vpnv4: *id023
+      send-community-vpnv6: *id023
+      send-community6: *id023
+      shutdown: *id004
+      soft-reconfiguration: *id004
+      soft-reconfiguration-evpn: *id004
+      soft-reconfiguration-vpnv4: *id004
+      soft-reconfiguration-vpnv6: *id004
+      soft-reconfiguration6: *id004
+      stale-route: *id004
+      strict-capability-match: *id004
+      unsuppress-map: *id014
+      unsuppress-map6: *id014
+      update-source: *id024
+      weight: *id025
+    nested:
+    - name: conditional-advertise
+      mode: table
+      key: <advertise-routemap>
+      fields: &id027
+        condition-routemap:
+          source_type: identifier-list
+          length:
+            max: 79
+          cardinality: list
+          evidence: *id001
+          semantic:
+            reference:
+              kind: route_map
+              target_paths: *id026
+              cardinality: many
+            evidence: *id010
+        condition-type:
+          source_type: enum
+          options:
+          - value: exist
+          - value: non-exist
+          default:
+            value: exist
+          evidence: *id001
+    - name: conditional-advertise6
+      mode: table
+      key: <advertise-routemap>
+      fields: *id027
+  - name: neighbor-group
+    mode: table
+    key: <name>
+    fields:
+      activate: *id008
+      activate-evpn: *id008
+      activate-vpnv4: *id008
+      activate-vpnv6: *id008
+      activate6: *id008
+      additional-path: *id003
+      additional-path-vpnv4: *id003
+      additional-path-vpnv6: *id003
+      additional-path6: *id003
+      adv-additional-path: *id002
+      adv-additional-path-vpnv4: *id002
+      adv-additional-path-vpnv6: *id002
+      adv-additional-path6: *id002
+      advertisement-interval: *id028
+      allowas-in: *id011
+      allowas-in-enable: *id004
+      allowas-in-enable-evpn: *id004
+      allowas-in-enable-vpnv4: *id004
+      allowas-in-enable-vpnv6: *id004
+      allowas-in-enable6: *id004
+      allowas-in-evpn: *id011
+      allowas-in-vpnv4: *id011
+      allowas-in-vpnv6: *id011
+      allowas-in6: *id011
+      as-override: *id004
+      as-override6: *id004
+      attribute-unchanged: *id012
+      attribute-unchanged-vpnv4: *id012
+      attribute-unchanged-vpnv6: *id012
+      attribute-unchanged6: *id012
+      auth-options: *id029
+      bfd: *id004
+      capability-default-originate: *id004
+      capability-default-originate6: *id004
+      capability-dynamic: *id004
+      capability-graceful-restart: *id004
+      capability-graceful-restart-evpn: *id004
+      capability-graceful-restart-vpnv4: *id004
+      capability-graceful-restart-vpnv6: *id004
+      capability-graceful-restart6: *id004
+      capability-orf: *id013
+      capability-orf6: *id013
+      capability-route-refresh: *id008
+      connect-timer: *id030
+      default-originate-routemap: *id014
+      default-originate-routemap6: *id014
+      description: *id031
+      distribute-list-in: *id015
+      distribute-list-in-vpnv4: *id015
+      distribute-list-in-vpnv6: *id016
+      distribute-list-in6: *id016
+      distribute-list-out: *id015
+      distribute-list-out-vpnv4: *id015
+      distribute-list-out-vpnv6: *id016
+      distribute-list-out6: *id016
+      dont-capability-negotiate: *id004
+      ebgp-enforce-multihop: *id004
+      ebgp-multihop-ttl: *id032
+      filter-list-in: *id017
+      filter-list-in-vpnv4: *id017
+      filter-list-in-vpnv6: *id017
+      filter-list-in6: *id017
+      filter-list-out: *id017
+      filter-list-out-vpnv4: *id017
+      filter-list-out-vpnv6: *id017
+      filter-list-out6: *id017
+      holdtime-timer: *id033
+      interface: *id024
+      keep-alive-timer: *id025
+      link-down-failover: *id004
+      local-as: *id018
+      local-as-no-prepend: *id004
+      local-as-replace-as: *id004
+      maximum-prefix: *id019
+      maximum-prefix-evpn: *id019
+      maximum-prefix-threshold: *id020
+      maximum-prefix-threshold-evpn: *id020
+      maximum-prefix-threshold-vpnv4: *id020
+      maximum-prefix-threshold-vpnv6: *id020
+      maximum-prefix-threshold6: *id020
+      maximum-prefix-vpnv4: *id019
+      maximum-prefix-vpnv6: *id019
+      maximum-prefix-warning-only: *id004
+      maximum-prefix-warning-only-evpn: *id004
+      maximum-prefix-warning-only-vpnv4: *id004
+      maximum-prefix-warning-only-vpnv6: *id004
+      maximum-prefix-warning-only6: *id004
+      maximum-prefix6: *id019
+      next-hop-self: *id004
+      next-hop-self-rr: *id004
+      next-hop-self-rr6: *id004
+      next-hop-self-vpnv4: *id004
+      next-hop-self-vpnv6: *id004
+      next-hop-self6: *id004
+      override-capability: *id004
+      passive: *id008
+      password: *id034
+      prefix-list-in: *id021
+      prefix-list-in-vpnv4: *id021
+      prefix-list-in-vpnv6: *id022
+      prefix-list-in6: *id022
+      prefix-list-out: *id021
+      prefix-list-out-vpnv4: *id021
+      prefix-list-out-vpnv6: *id022
+      prefix-list-out6: *id022
+      remote-as: *id018
+      remove-private-as: *id004
+      remove-private-as-evpn: *id004
+      remove-private-as-vpnv4: *id004
+      remove-private-as-vpnv6: *id004
+      remove-private-as6: *id004
+      restart-time: *id035
+      retain-stale-time: *id036
+      route-map-in: *id014
+      route-map-in-evpn: *id014
+      route-map-in-vpnv4: *id014
+      route-map-in-vpnv6: *id014
+      route-map-in6: *id014
+      route-map-out: *id014
+      route-map-out-evpn: *id014
+      route-map-out-preferable: *id014
+      route-map-out-vpnv4: *id014
+      route-map-out-vpnv4-preferable: *id014
+      route-map-out-vpnv6: *id014
+      route-map-out-vpnv6-preferable: *id014
+      route-map-out6: *id014
+      route-map-out6-preferable: *id014
+      route-reflector-client: *id004
+      route-reflector-client-evpn: *id004
+      route-reflector-client-vpnv4: *id004
+      route-reflector-client-vpnv6: *id004
+      route-reflector-client6: *id004
+      route-server-client: *id004
+      route-server-client-evpn: *id004
+      route-server-client-vpnv4: *id004
+      route-server-client-vpnv6: *id004
+      route-server-client6: *id004
+      send-community: *id023
+      send-community-evpn: *id023
+      send-community-vpnv4: *id023
+      send-community-vpnv6: *id023
+      send-community6: *id023
+      shutdown: *id004
+      soft-reconfiguration: *id004
+      soft-reconfiguration-evpn: *id004
+      soft-reconfiguration-vpnv4: *id004
+      soft-reconfiguration-vpnv6: *id004
+      soft-reconfiguration6: *id004
+      stale-route: *id004
+      strict-capability-match: *id004
+      unsuppress-map: *id014
+      unsuppress-map6: *id014
+      update-source: *id024
+      weight: *id025
+      remote-as-filter: *id029
+  - name: neighbor-range
+    mode: table
+    key: <id>
+    fields:
+      max-neighbor-num: &id038
+        source_type: integer
+        range:
+          min: 1
+          max: 1000
+          note: Documented default is outside the documented configurable range; preserved exactly from the CLI reference.
+        default:
+          value: 0
+        evidence: *id001
+      neighbor-group: &id039
+        source_type: string
+        length:
+          max: 63
+        evidence: *id001
+        semantic:
+          reference:
+            kind: bgp_neighbor_group
+            target_paths:
+            - router bgp / neighbor-group
+            cardinality: one
+          evidence: *id010
+      prefix: *id037
+  - name: neighbor-range6
+    mode: table
+    key: <id>
+    fields:
+      max-neighbor-num: *id038
+      neighbor-group: *id039
+      prefix6: &id041
+        source_type: ipv6-network
+        address_family: ipv6
+        evidence: *id001
+        default:
+          value: ::/0
+  - name: network
+    mode: table
+    key: <id>
+    fields:
+      backdoor: *id004
+      network-import-check: &id040
+        source_type: enum
+        options:
+        - value: global
+        - value: enable
+        - value: disable
+        default:
+          value: global
+        evidence: *id001
+      prefix: *id037
+      route-map: *id014
+  - name: network6
+    mode: table
+    key: <id>
+    fields:
+      backdoor: *id004
+      network-import-check: *id040
+      prefix6: *id041
+      route-map: *id014
+  - name: redistribute
+    mode: table
+    key: <name>
+    fields: &id042
+      route-map: *id014
+      status: *id004
+    read_only: true
+  - name: redistribute6
+    mode: table
+    key: <name>
+    fields: *id042
+    read_only: true
+  - name: vrf
+    mode: table
+    key: <vrf>
+    fields: &id044
+      export-rt: *id043
+      import-route-map: *id014
+      import-rt: *id043
+      rd:
+        source_type: string
+        length:
+          max: 79
+        evidence: *id001
+      role:
+        source_type: enum
+        options:
+        - value: standalone
+        - value: ce
+        - value: pe
+        default:
+          value: standalone
+        evidence: *id001
+    nested:
+    - name: leak-target
+      mode: table
+      key: <vrf>
+      fields:
+        interface: *id024
+        route-map: *id014
+  - name: vrf6
+    mode: table
+    key: <vrf>
+    fields: *id044
+    nested:
+    - name: leak-target
+      mode: table
+      key: <vrf>
+      fields:
+        interface: *id024
+        route-map: *id014
+  evidence: *id001
+  semantic:
+    migration_relevance: migration_relevant
+    evidence: *id010
+- path: router community-list
+  mode: table
+  key: <name>
+  fields:
+    type: enum
+  nested:
+  - name: rule
+    mode: table
+    key: <id>
+    fields:
+      action: enum
+      match: string
+      regexp: string
+- path: router extcommunity-list
+  mode: table
+  key: <name>
+  fields:
+    type: enum
+  nested:
+  - name: rule
+    mode: table
+    key: <id>
+    fields:
+      action: enum
+      match: string
+      regexp: string
+      type: enum
