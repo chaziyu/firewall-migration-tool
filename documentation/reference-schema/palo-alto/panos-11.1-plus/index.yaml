@@ -1,0 +1,79 @@
+schema_version: 1
+vendor: Palo Alto Networks
+products:
+- PAN-OS
+- Panorama
+reference_profile: panos-11.1-plus
+source:
+  official_documents:
+  - title: PAN-OS and Panorama API Usage Guide — About the PAN-OS XML API
+    url: https://docs.paloaltonetworks.com/pan-os/11-1/pan-os-panorama-api/about-the-pan-os-xml-api
+  - title: PAN-OS and Panorama API Usage Guide — XML and XPath
+    url: https://docs.paloaltonetworks.com/pan-os/11-1/pan-os-panorama-api/about-the-pan-os-xml-api/structure-of-a-pan-os-xml-api-request/xml-and-xpath
+  - title: Panorama — Device Groups
+    url: https://docs.paloaltonetworks.com/panorama/getting-started/panorama-overview/centrally-manage-firewall-configuration-and-updates-with-panorama/device-groups
+  - title: Panorama — Templates and Template Stacks
+    url: https://docs.paloaltonetworks.com/panorama/getting-started/panorama-overview/centrally-manage-firewall-configuration-and-updates-with-panorama/templates-and-template-stacks
+  repository_cross_check: src/fwmigrate/parsers/palo_alto/
+  uploaded_reference_status: not_visible_in_active_project_file_index; re-verify needs_review entries when available
+rules:
+  reference_is_runtime_truth: false
+  unknown_runtime_xml: preserve as source evidence; absence from this schema alone is not PARSE_ERROR
+  scope_identity: scope and managed-device identity are part of source identity
+  inheritance: resolve source scope before reference resolution and IR transformation
+  ir_mapping: See ir-v2-mapping.yaml; source schema and IR mapping are intentionally separate
+phases:
+  0:
+    file: schema-format.yaml
+  1:
+    file: schema/addresses.yaml
+  2:
+    file: schema/address-groups.yaml
+  3:
+    file: schema/services.yaml
+  4:
+    file: schema/service-groups.yaml
+  5:
+    file: schema/tags-schedules.yaml
+  6:
+    file: schema/interfaces.yaml
+  7:
+    file: schema/zones.yaml
+  8:
+    file: schema/virtual-routers-static-routes.yaml
+  9:
+    file: schema/dynamic-routing.yaml
+  10:
+    file: schema/security-rules.yaml
+  11:
+    file: schema/nat-rules.yaml
+  12:
+    file: schema/applications.yaml
+  13:
+    file: schema/security-profile-groups.yaml
+  14:
+    file: schema/security-profiles.yaml
+  15:
+    file: schema/decryption.yaml
+  16:
+    file: schema/certificates-pki.yaml
+  17:
+    file: schema/ipsec-vpn.yaml
+  18:
+    file: schema/globalprotect.yaml
+  19:
+    file: schema/authentication-identity.yaml
+  20:
+    file: schema/panorama-hierarchy.yaml
+  21:
+    file: schema/external-dynamic.yaml
+  22:
+    file: schema/traffic-policy-families.yaml
+  23:
+    file: schema/ha-system.yaml
+  24:
+    file: schema/remaining-sections.yaml
+  25:
+    file: schema-audit.yaml
+  26:
+    file: ir-v2-mapping.yaml

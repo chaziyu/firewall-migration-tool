@@ -1,0 +1,76 @@
+phase: 13
+family: security-profile-groups
+nodes:
+- id: profile-group
+  kind: list
+  xpath: '{scope}/profile-group'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/profile-group'
+      repository_path: src/fwmigrate/parsers/palo_alto/security_profiles.py
+  entry_key: name
+  fields:
+    virus:
+      xml: virus
+      type: string
+      reference:
+        kinds:
+        - security-profile:virus
+        cardinality: one
+    spyware:
+      xml: spyware
+      type: string
+      reference:
+        kinds:
+        - security-profile:spyware
+        cardinality: one
+    vulnerability:
+      xml: vulnerability
+      type: string
+      reference:
+        kinds:
+        - security-profile:vulnerability
+        cardinality: one
+    url_filtering:
+      xml: url-filtering
+      type: string
+      reference:
+        kinds:
+        - security-profile:url-filtering
+        cardinality: one
+    file_blocking:
+      xml: file-blocking
+      type: string
+      reference:
+        kinds:
+        - security-profile:file-blocking
+        cardinality: one
+    wildfire_analysis:
+      xml: wildfire-analysis
+      type: string
+      reference:
+        kinds:
+        - security-profile:wildfire-analysis
+        cardinality: one
+    data_filtering:
+      xml: data-filtering
+      type: string
+      reference:
+        kinds:
+        - security-profile:data-filtering
+        cardinality: one
+    dns_security:
+      xml: dns-security
+      type: string
+      reference:
+        kinds:
+        - security-profile:dns-security
+        cardinality: one
+  inheritance:
+    device_group: current->ancestors->shared

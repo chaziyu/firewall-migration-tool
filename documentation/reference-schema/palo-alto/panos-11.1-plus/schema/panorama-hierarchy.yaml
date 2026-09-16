@@ -1,0 +1,148 @@
+phase: 20
+family: panorama-hierarchy-and-inheritance
+scope_roots:
+  shared: /config/shared
+  device_group: /config/devices/entry/device-group/entry
+  template: /config/devices/entry/template/entry
+  template_stack: /config/devices/entry/template-stack/entry
+  managed_devices: /config/mgt-config/devices/entry
+  local_vsys: /config/devices/entry/vsys/entry
+nodes:
+- id: device-group
+  kind: list
+  xpath: /config/devices/entry/device-group
+  scope:
+  - global
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: /config/devices/entry/device-group
+      repository_path: src/fwmigrate/parsers/palo_alto/panorama.py
+  entry_key: name
+  fields:
+    parent:
+      xml: parent-dg
+      type: string
+      reference:
+        kinds:
+        - device-group
+        cardinality: one
+    devices:
+      xml: devices/entry
+      type: entry-list
+      cardinality: list
+      custom_handler: true
+  custom_handler: true
+  inheritance:
+    objects: child shadows ancestor; search child->ancestors->shared
+    pre_rules: shared/high ancestors before lower descendants
+    post_rules: lower descendants before ancestors/shared
+- id: template
+  kind: list
+  xpath: /config/devices/entry/template
+  scope:
+  - global
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: /config/devices/entry/template
+      repository_path: src/fwmigrate/parsers/palo_alto/panorama.py
+  entry_key: name
+  fields:
+    config:
+      xml: config
+      type: xml-subtree
+      custom_handler: true
+  custom_handler: true
+- id: template-stack
+  kind: list
+  xpath: /config/devices/entry/template-stack
+  scope:
+  - global
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: /config/devices/entry/template-stack
+      repository_path: src/fwmigrate/parsers/palo_alto/panorama.py
+  entry_key: name
+  fields:
+    templates:
+      xml: templates/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds:
+        - template
+        cardinality: many
+    devices:
+      xml: devices/entry
+      type: entry-list
+      cardinality: list
+      custom_handler: true
+  custom_handler: true
+  inheritance:
+    priority: higher template in stack wins duplicate settings
+  order_sensitive: true
+- id: managed-device
+  kind: list
+  xpath: /config/mgt-config/devices
+  scope:
+  - global
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: /config/mgt-config/devices
+      repository_path: src/fwmigrate/parsers/palo_alto/panorama.py
+  entry_key: name
+  fields:
+    device_group:
+      xml: device-group
+      type: string
+      reference:
+        kinds:
+        - device-group
+        cardinality: one
+    vsys:
+      xml: vsys/entry
+      type: entry-list
+      cardinality: list
+      custom_handler: true
+    template:
+      xml: template
+      type: string
+    template_stack:
+      xml: template-stack
+      type: string
+  custom_handler: true
+resolver_contract:
+  object_search_order:
+  - current scope
+  - parent device-groups in order
+  - shared
+  vsys_identity:
+  - device_serial
+  - vsys_name
+  collision_rule: same-name objects in different scopes/devices must not collapse before resolution
+  policy_ownership:
+  - shared-pre
+  - device-group-pre
+  - local
+  - device-group-post
+  - shared-post
+  - default
+official_semantics:
+  device_group_hierarchy: Lower-level device groups inherit settings from higher-level groups; Shared is above all device groups.
+  template_stack_priority: Template stacks layer templates; higher entries take precedence for duplicate settings.
+  evidence:
+  - status: documented
+    source:
+      document: Panorama Device Groups
+      url: https://docs.paloaltonetworks.com/panorama/getting-started/panorama-overview/centrally-manage-firewall-configuration-and-updates-with-panorama/device-groups
+  - status: documented
+    source:
+      document: Templates and Template Stacks
+      url: https://docs.paloaltonetworks.com/panorama/getting-started/panorama-overview/centrally-manage-firewall-configuration-and-updates-with-panorama/templates-and-template-stacks

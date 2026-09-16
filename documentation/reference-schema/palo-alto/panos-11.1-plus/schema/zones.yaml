@@ -1,0 +1,52 @@
+phase: 7
+family: zones
+nodes:
+- id: zone
+  kind: list
+  xpath: '{scope}/zone'
+  scope: [vsys, template, device]
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/zone/entry'
+      repository_path: src/fwmigrate/parsers/palo_alto/transformer.py
+  entry_key: name
+  fields:
+    layer3_interfaces:
+      xml: network/layer3/member
+      type: member-list
+      cardinality: list
+      reference: {kinds: [interface], cardinality: many, scope_resolution: device/template}
+    layer2_interfaces:
+      xml: network/layer2/member
+      type: member-list
+      cardinality: list
+      reference: {kinds: [interface], cardinality: many}
+    virtual_wire_interfaces:
+      xml: network/virtual-wire/member
+      type: member-list
+      cardinality: list
+      reference: {kinds: [interface], cardinality: many}
+    tap_interfaces:
+      xml: network/tap/member
+      type: member-list
+      cardinality: list
+      reference: {kinds: [interface], cardinality: many}
+    tunnel_interfaces:
+      xml: network/tunnel/member
+      type: member-list
+      cardinality: list
+      reference: {kinds: [interface], cardinality: many}
+    enable_user_identification:
+      xml: enable-user-identification
+      type: boolean
+    zone_protection_profile:
+      xml: network/zone-protection-profile
+      type: string
+      reference: {kinds: [zone-protection-profile], cardinality: one}
+    log_setting:
+      xml: log-setting
+      type: string
+      reference: {kinds: [log-forwarding-profile], cardinality: one}
+  custom_handler: true

@@ -1,0 +1,225 @@
+phase: 22
+family: qos-pbf-dos-and-other-traffic-policy
+nodes:
+- id: pbf-rule
+  kind: rulebase
+  xpath: '{policy-scope}/{pre-rulebase|rulebase|post-rulebase}/pbf/rules'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{policy-scope}/{pre-rulebase|rulebase|post-rulebase}/pbf/rules'
+      repository_path: src/fwmigrate/parsers/palo_alto/pbf.py
+  entry_key: name
+  fields:
+    from:
+      xml: from/member
+      type: member-list
+      cardinality: list
+    source:
+      xml: source/member
+      type: member-list
+      cardinality: list
+    destination:
+      xml: destination/member
+      type: member-list
+      cardinality: list
+    application:
+      xml: application/member
+      type: member-list
+      cardinality: list
+    service:
+      xml: service/member
+      type: member-list
+      cardinality: list
+    action:
+      xml: action
+      type: xml-subtree
+      custom_handler: true
+    forward:
+      xml: forward
+      type: xml-subtree
+      custom_handler: true
+    monitor:
+      xml: monitor
+      type: xml-subtree
+      custom_handler: true
+    symmetric_return:
+      xml: symmetric-return
+      type: boolean
+    disabled:
+      xml: disabled
+      type: boolean
+  custom_handler: true
+  order_sensitive: true
+- id: qos-rule
+  kind: rulebase
+  xpath: '{policy-scope}/{pre-rulebase|rulebase|post-rulebase}/qos/rules'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: needs_review
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{policy-scope}/{pre-rulebase|rulebase|post-rulebase}/qos/rules'
+      repository_path: src/fwmigrate/parsers/palo_alto/policy_families.py
+  entry_key: name
+  fields:
+    from:
+      xml: from/member
+      type: member-list
+      cardinality: list
+    to:
+      xml: to/member
+      type: member-list
+      cardinality: list
+    source:
+      xml: source/member
+      type: member-list
+      cardinality: list
+    destination:
+      xml: destination/member
+      type: member-list
+      cardinality: list
+    application:
+      xml: application/member
+      type: member-list
+      cardinality: list
+    service:
+      xml: service/member
+      type: member-list
+      cardinality: list
+    class:
+      xml: class
+      type: integer
+    dscp_tos:
+      xml: dscp-tos
+      type: xml-subtree
+      custom_handler: true
+  custom_handler: true
+  order_sensitive: true
+- id: qos-profile
+  kind: list
+  xpath: '{network-scope}/network/qos/profile'
+  scope:
+  - template
+  - template-stack
+  - device
+  - vsys
+  migration_relevance: needs_review
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{network-scope}/network/qos/profile'
+      repository_path: src/fwmigrate/parsers/palo_alto/advanced_network.py
+  entry_key: name
+  fields:
+    class:
+      xml: class/entry
+      type: entry-list
+      cardinality: list
+      custom_handler: true
+    aggregate_bandwidth:
+      xml: aggregate-bandwidth
+      type: xml-subtree
+      custom_handler: true
+  custom_handler: true
+- id: dos-rule
+  kind: rulebase
+  xpath: '{policy-scope}/{pre-rulebase|rulebase|post-rulebase}/dos/rules'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: needs_review
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{policy-scope}/{pre-rulebase|rulebase|post-rulebase}/dos/rules'
+      repository_path: src/fwmigrate/parsers/palo_alto/policy_families.py
+  entry_key: name
+  fields:
+    from:
+      xml: from/member
+      type: member-list
+      cardinality: list
+    to:
+      xml: to/member
+      type: member-list
+      cardinality: list
+    source:
+      xml: source/member
+      type: member-list
+      cardinality: list
+    destination:
+      xml: destination/member
+      type: member-list
+      cardinality: list
+    action:
+      xml: action
+      type: xml-subtree
+      custom_handler: true
+    protection:
+      xml: protection
+      type: xml-subtree
+      custom_handler: true
+  custom_handler: true
+  order_sensitive: true
+- id: dos-protection-profile
+  kind: list
+  xpath: '{scope}/profiles/dos-protection'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: needs_review
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/profiles/dos-protection'
+      repository_path: src/fwmigrate/parsers/palo_alto/security_profile_coverage.py
+  entry_key: name
+  fields:
+    classified:
+      xml: classified
+      type: xml-subtree
+      custom_handler: true
+    aggregate:
+      xml: aggregate
+      type: xml-subtree
+      custom_handler: true
+  custom_handler: true
+- id: tunnel-inspection-rule
+  kind: rulebase
+  xpath: '{policy-scope}/{pre-rulebase|rulebase|post-rulebase}/tunnel-inspect/rules'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: needs_review
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{policy-scope}/{pre-rulebase|rulebase|post-rulebase}/tunnel-inspect/rules'
+      repository_path: src/fwmigrate/parsers/palo_alto/policy_families.py
+  entry_key: name
+  fields:
+    source:
+      xml: source/member
+      type: member-list
+      cardinality: list
+    destination:
+      xml: destination/member
+      type: member-list
+      cardinality: list
+    action:
+      xml: action
+      type: enum
+  custom_handler: true
+  order_sensitive: true

@@ -1,0 +1,96 @@
+phase: 26
+purpose: Review-only mapping layer between PAN source concepts and the current/v2 IR. This file does not redefine source XML.
+sources:
+- documentation/ir-schema-v2-plan.md
+- documentation/ir-model.md
+- src/fwmigrate/ir/
+- documentation/vendor-mapping/palo-alto.md
+classifications:
+- canonical_ir
+- generic_core_plus_pan_extension
+- vendor_extension
+- extract_only
+- unsupported
+- needs_review
+mappings:
+- source: address
+  classification: canonical_ir
+  ir: IRAddress
+- source: address-group
+  classification: canonical_ir
+  ir: IRAddressGroup
+  notes: Dynamic group filter may require generic-core + PAN evidence depending on IR v2 finalization.
+- source: service
+  classification: canonical_ir
+  ir: IRService / IRServicePort
+- source: service-group
+  classification: canonical_ir
+  ir: IRServiceGroup
+- source: schedule
+  classification: canonical_ir
+  ir: IRSchedule
+- source: tag
+  classification: canonical_ir
+  ir: IRTag
+- source: interface
+  classification: canonical_ir
+  ir: IRInterface
+  notes: PAN interface subtype/details may remain source evidence/extensions.
+- source: zone
+  classification: canonical_ir
+  ir: IRZone
+- source: virtual-router/static-route
+  classification: canonical_ir
+  ir: IRRoutingInstance / IRRoute
+- source: BGP/OSPF/redistribution
+  classification: generic_core_plus_pan_extension
+  ir: routing protocol IR families
+- source: security-rule
+  classification: canonical_ir
+  ir: IRPolicy
+  notes: Pre/local/post ownership and target applicability must remain provenance/scope metadata.
+- source: NAT rule
+  classification: generic_core_plus_pan_extension
+  ir: IRNATRule
+  notes: PAN translation variants need source evidence for lossless accounting.
+- source: application/application-group/filter
+  classification: generic_core_plus_pan_extension
+  ir: application IR families
+- source: security-profile-group
+  classification: generic_core_plus_pan_extension
+  ir: IRSecurityProfileGroup
+- source: security profiles
+  classification: generic_core_plus_pan_extension
+  ir: security profile IR families
+- source: decryption
+  classification: generic_core_plus_pan_extension
+  ir: decryption policy/profile IR families
+- source: certificate/PKI
+  classification: canonical_ir
+  ir: IRCertificate and authentication/PKI IR families
+- source: IPsec/IKE
+  classification: canonical_ir
+  ir: IRVPNTunnel / IRVPNPhase2
+- source: GlobalProtect
+  classification: vendor_extension
+  ir: PAN-specific GlobalProtect IR collections
+- source: authentication/identity
+  classification: generic_core_plus_pan_extension
+  ir: identity/authentication IR families
+- source: Panorama hierarchy
+  classification: extract_only
+  ir: source_context/provenance/resolver metadata
+- source: external dynamic lists/DAG
+  classification: generic_core_plus_pan_extension
+  ir: dynamic/external object IR families
+- source: PBF/QoS/DoS
+  classification: generic_core_plus_pan_extension
+  ir: policy-specific IR families
+- source: HA/system
+  classification: generic_core_plus_pan_extension
+  ir: system/HA IR families
+- source: unknown residual XML
+  classification: extract_only
+  ir: none
+  notes: Retain source evidence and accounting.
+boundary: Do not make executable IR-model changes as part of source-schema construction.

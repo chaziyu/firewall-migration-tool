@@ -1,0 +1,50 @@
+phase: 5
+family: tags-and-schedules
+nodes:
+- id: tag
+  kind: list
+  xpath: '{scope}/tag'
+  scope: [shared, device-group, vsys]
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/tag/entry'
+      repository_path: src/fwmigrate/parsers/palo_alto/transformer.py
+  entry_key: name
+  fields:
+    color:
+      xml: color
+      type: string
+    comments:
+      xml: comments
+      type: string
+- id: schedule
+  kind: list
+  xpath: '{scope}/schedule'
+  scope: [shared, device-group, vsys]
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/schedule/entry'
+      repository_path: src/fwmigrate/parsers/palo_alto/transformer.py
+  entry_key: name
+  fields:
+    non_recurring:
+      xml: schedule-type/non-recurring/member
+      type: member-list
+      cardinality: list
+    daily:
+      xml: schedule-type/recurring/daily/member
+      type: member-list
+      cardinality: list
+    weekly:
+      xml: schedule-type/recurring/weekly/*/member
+      type: xml-subtree
+      cardinality: list
+    disable_override:
+      xml: disable-override
+      type: boolean
+      migration_relevance: source_evidence_only
+  custom_handler: true

@@ -1,0 +1,231 @@
+phase: 10
+family: security-rules
+rule_order:
+- shared-pre
+- ancestor-device-group-pre
+- device-group-pre
+- local
+- device-group-post
+- ancestor-device-group-post
+- shared-post
+- default
+nodes:
+- id: security-pre-rule
+  kind: rulebase
+  xpath: '{policy-scope}/pre-rulebase/security/rules'
+  scope:
+  - shared
+  - device-group
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{policy-scope}/pre-rulebase/security/rules'
+      repository_path: src/fwmigrate/parsers/palo_alto/policy_order.py
+  entry_key: name
+  fields: &id001
+    from:
+      xml: from/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds:
+        - zone
+        cardinality: many
+        special_values:
+        - any
+    to:
+      xml: to/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds:
+        - zone
+        cardinality: many
+        special_values:
+        - any
+    source:
+      xml: source/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds:
+        - address
+        - address-group
+        cardinality: many
+        scope_resolution: current->ancestors->shared
+        allow_literal: true
+        special_values:
+        - any
+    destination:
+      xml: destination/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds:
+        - address
+        - address-group
+        cardinality: many
+        scope_resolution: current->ancestors->shared
+        allow_literal: true
+        special_values:
+        - any
+    source_user:
+      xml: source-user/member
+      type: member-list
+      cardinality: list
+    application:
+      xml: application/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds:
+        - application
+        - application-group
+        - application-filter
+        cardinality: many
+        scope_resolution: current->ancestors->shared
+        special_values:
+        - any
+    service:
+      xml: service/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds:
+        - service
+        - service-group
+        cardinality: many
+        scope_resolution: current->ancestors->shared
+        special_values:
+        - any
+        - application-default
+    category:
+      xml: category/member
+      type: member-list
+      cardinality: list
+    action:
+      xml: action
+      type: enum
+    disabled:
+      xml: disabled
+      type: boolean
+    schedule:
+      xml: schedule
+      type: string
+      reference:
+        kinds:
+        - schedule
+        cardinality: one
+        scope_resolution: current->ancestors->shared
+    tags:
+      xml: tag/member
+      type: member-list
+      cardinality: list
+      reference:
+        kinds:
+        - tag
+        cardinality: many
+        scope_resolution: current->ancestors->shared
+    description:
+      xml: description
+      type: string
+    log_start:
+      xml: log-start
+      type: boolean
+    log_end:
+      xml: log-end
+      type: boolean
+    log_setting:
+      xml: log-setting
+      type: string
+      reference:
+        kinds:
+        - log-forwarding-profile
+        cardinality: one
+    profile_setting:
+      xml: profile-setting
+      type: xml-subtree
+      custom_handler: true
+    target:
+      xml: target
+      type: xml-subtree
+      custom_handler: true
+    rule_type:
+      xml: rule-type
+      type: enum
+      values:
+      - universal
+      - interzone
+      - intrazone
+  custom_handler: true
+  inheritance:
+    device_group: highest ancestor to current for pre-rules
+  order_sensitive: true
+- id: security-local-rule
+  kind: rulebase
+  xpath: '{vsys}/rulebase/security/rules'
+  scope:
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{vsys}/rulebase/security/rules'
+      repository_path: src/fwmigrate/parsers/palo_alto/policy_families.py
+  entry_key: name
+  fields: *id001
+  custom_handler: true
+  order_sensitive: true
+- id: security-post-rule
+  kind: rulebase
+  xpath: '{policy-scope}/post-rulebase/security/rules'
+  scope:
+  - shared
+  - device-group
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{policy-scope}/post-rulebase/security/rules'
+      repository_path: src/fwmigrate/parsers/palo_alto/policy_order.py
+  entry_key: name
+  fields: *id001
+  custom_handler: true
+  inheritance:
+    device_group: current to highest ancestor for post-rules
+  order_sensitive: true
+- id: security-default-rule
+  kind: rulebase
+  xpath: '{policy-scope}/rulebase/default-security-rules/rules'
+  scope:
+  - vsys
+  - shared
+  - device-group
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{policy-scope}/rulebase/default-security-rules/rules'
+      repository_path: src/fwmigrate/parsers/palo_alto/policy_families.py
+  entry_key: name
+  fields:
+    action:
+      xml: action
+      type: enum
+    log_start:
+      xml: log-start
+      type: boolean
+    log_end:
+      xml: log-end
+      type: boolean
+    profile_setting:
+      xml: profile-setting
+      type: xml-subtree
+      custom_handler: true
+    tags:
+      xml: tag/member
+      type: member-list
+      cardinality: list
+  custom_handler: true
+  order_sensitive: true

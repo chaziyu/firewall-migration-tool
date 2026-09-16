@@ -1,0 +1,112 @@
+phase: 24
+family: remaining-migration-relevant-audit
+classifications:
+- section: administrators/role profiles
+  classification: migration_relevant
+  repository_path: src/fwmigrate/parsers/palo_alto/administration.py
+- section: management access and interface management profiles
+  classification: migration_relevant
+  repository_path: src/fwmigrate/parsers/palo_alto/management_access.py
+- section: log forwarding profiles and server profiles
+  classification: migration_relevant
+  repository_path: src/fwmigrate/parsers/palo_alto/logging.py
+- section: virtual wires/VLANs/advanced network
+  classification: migration_relevant
+  repository_path: src/fwmigrate/parsers/palo_alto/advanced_network.py
+- section: routing instances/logical routers
+  classification: migration_relevant
+  repository_path: src/fwmigrate/parsers/palo_alto/routing_instances.py
+- section: audit/source semantics
+  classification: source_evidence_only
+  repository_path: src/fwmigrate/parsers/palo_alto/audit_semantics.py
+- section: residual unknown XML
+  classification: source_evidence_only
+  repository_path: src/fwmigrate/parsers/palo_alto/residual.py
+- section: operational runtime state
+  classification: operational_only
+- section: passwords/private keys/shared secrets/API keys
+  classification: sensitive
+- section: version/plugin/cloud-specific branches without verified reference
+  classification: needs_review
+nodes:
+- id: log-forwarding-profile
+  kind: list
+  xpath: '{scope}/log-settings'
+  scope:
+  - shared
+  - device-group
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{scope}/log-settings'
+      repository_path: src/fwmigrate/parsers/palo_alto/logging.py
+  entry_key: name
+  fields:
+    match_list:
+      xml: match-list/entry
+      type: entry-list
+      cardinality: list
+      custom_handler: true
+  custom_handler: true
+- id: interface-management-profile
+  kind: list
+  xpath: '{network-scope}/network/profiles/interface-management-profile'
+  scope:
+  - template
+  - template-stack
+  - device
+  - vsys
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{network-scope}/network/profiles/interface-management-profile'
+      repository_path: src/fwmigrate/parsers/palo_alto/management_access.py
+  entry_key: name
+  fields:
+    ping:
+      xml: ping
+      type: boolean
+    https:
+      xml: https
+      type: boolean
+    ssh:
+      xml: ssh
+      type: boolean
+    snmp:
+      xml: snmp
+      type: boolean
+    permitted_ip:
+      xml: permitted-ip/entry
+      type: entry-list
+      cardinality: list
+  custom_handler: true
+- id: administrator
+  kind: list
+  xpath: '{device-scope}/mgt-config/users'
+  scope:
+  - device
+  - global
+  migration_relevance: migration_relevant
+  evidence:
+    status: repository_observed
+    source:
+      xpath: '{device-scope}/mgt-config/users'
+      repository_path: src/fwmigrate/parsers/palo_alto/administration.py
+  entry_key: name
+  fields:
+    phash:
+      xml: phash
+      type: secret
+      sensitive: true
+    permissions:
+      xml: permissions
+      type: xml-subtree
+      custom_handler: true
+    authentication_profile:
+      xml: authentication-profile
+      type: string
+  custom_handler: true
+  sensitive: true
