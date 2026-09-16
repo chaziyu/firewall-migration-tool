@@ -58,6 +58,8 @@ class MigrationPipeline:
                 metrics.add(stage, (perf_counter() - stage_started) * 1000)
 
         def finish(result: MigrationAnalysisResult) -> MigrationAnalysisResult:
+            result._ir_index = context.ir_index
+            result._dependency_graph = context.dependency_graph
             if metrics is not None:
                 metrics.total_duration_ms = (perf_counter() - started) * 1000
                 result.metrics = metrics

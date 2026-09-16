@@ -1,8 +1,57 @@
+from dataclasses import dataclass, field
 from typing import Dict, List, Any
 from fwmigrate.ir import IRConfig
 from fwmigrate.core.normalizer import IRNormalizer
 from fwmigrate.ir.dependency import DependencyGraph
 from fwmigrate.ir.index import IRIndex
+
+
+@dataclass(frozen=True)
+class _ShadowRule:
+    source: frozenset[str]
+    destination: frozenset[str]
+    service: frozenset[str]
+    from_zone: frozenset[str]
+    to_zone: frozenset[str]
+    from_zone_any: bool
+    to_zone_any: bool
+
+
+@dataclass
+class _ShadowDimensionIndex:
+    any_keywords: frozenset[str]
+    broad: set[int] = field(default_factory=set)
+    by_value: Dict[str, set[int]] = field(default_factory=dict)
+
+    def add(self, index: int, values: frozenset[str]) -> None:
+        if not values or self.any_keywords.intersection(values):
+            self.broad.add(index)
+        for value in values:
+            self.by_value.setdefault(value, set()).add(index)
+
+    def candidates(self, values: frozenset[str]) -> set[int] | None:
+        if not values:
+            return None
+        specific: set[int] | None = None
+        for value in values:
+            matching = self.by_value.get(value, set())
+            specific = set(matching) if specific is None else specific.intersection(matching)
+        return self.broad | (specific or set())
+
+
+def _is_subset(
+    current: frozenset[str],
+    preceding: frozenset[str],
+    any_keywords: frozenset[str],
+) -> bool:
+    if not current:
+        return True
+    if not preceding:
+        return False
+    if any_keywords.intersection(preceding):
+        return True
+    return current.issubset(preceding)
+
 
 class RuleOptimizer:
     """Security rulebase and object optimization engine."""
@@ -68,47 +117,81 @@ class RuleOptimizer:
     def find_shadowed_rules(self) -> List[Dict[str, Any]]:
         """Identify rules shadowed by preceding broad rules."""
         shadowed = []
-        # Check rulebase sequentially
-        for i in range(len(self.ir.policies)):
-            current = self.ir.policies[i]
-            if not current.safe_for_target_generation:
-                continue
-            for j in range(i):
-                preceding = self.ir.policies[j]
-                if not preceding.safe_for_target_generation:
-                    continue
-                same_action = (preceding.action == current.action)
-                
-                def is_subset(curr_list, prec_list, any_keywords):
-                    if not curr_list:
-                        return True
-                    if not prec_list:
-                        return False
-                    if any(kw in prec_list for kw in any_keywords):
-                        return True
-                    return set(curr_list).issubset(set(prec_list))
-                
-                preceding_broad_src = is_subset(current.source, preceding.source, ["any", "all"])
-                preceding_broad_dst = is_subset(current.destination, preceding.destination, ["any", "all"])
-                preceding_broad_svc = is_subset(current.service, preceding.service, ["any", "ALL"])
-                
-                prec_from_any = not preceding.from_zone or "any" in preceding.from_zone
-                prec_to_any = not preceding.to_zone or "any" in preceding.to_zone
-                
-                preceding_broad_zones = (
-                    (prec_from_any or set(current.from_zone).issubset(set(preceding.from_zone))) and
-                    (prec_to_any or set(current.to_zone).issubset(set(preceding.to_zone)))
-                )
+        indexes = (
+            _ShadowDimensionIndex(frozenset({"any", "all"})),
+            _ShadowDimensionIndex(frozenset({"any", "all"})),
+            _ShadowDimensionIndex(frozenset({"any", "ALL"})),
+            _ShadowDimensionIndex(frozenset({"any"})),
+            _ShadowDimensionIndex(frozenset({"any"})),
+        )
+        safe_indices: set[int] = set()
+        rules = [
+            _ShadowRule(
+                source=frozenset(policy.source),
+                destination=frozenset(policy.destination),
+                service=frozenset(policy.service),
+                from_zone=frozenset(policy.from_zone),
+                to_zone=frozenset(policy.to_zone),
+                from_zone_any=not policy.from_zone or "any" in policy.from_zone,
+                to_zone_any=not policy.to_zone or "any" in policy.to_zone,
+            )
+            for policy in self.ir.policies
+        ]
 
-                if preceding_broad_src and preceding_broad_dst and preceding_broad_svc and preceding_broad_zones:
-                    shadowed.append({
-                        "rule": current.name,
-                        "rule_index": i + 1,
-                        "shadowed_by": preceding.name,
-                        "shadowed_by_index": j + 1,
-                        "action_match": same_action
-                    })
-                    break
+        for i, current_policy in enumerate(self.ir.policies):
+            current = rules[i]
+            if not current_policy.safe_for_target_generation:
+                continue
+
+            candidates = None
+            for index, values in zip(indexes, (
+                current.source,
+                current.destination,
+                current.service,
+                current.from_zone,
+                current.to_zone,
+            )):
+                possible = index.candidates(values)
+                if possible is not None:
+                    candidates = possible if candidates is None else candidates.intersection(possible)
+            candidate_indices = safe_indices if candidates is None else candidates
+
+            # ponytail: broad-rule buckets can still be O(P²); add subset indexes if profiling large rulebases requires it.
+            for j in sorted(candidate_indices):
+                preceding_policy = self.ir.policies[j]
+                preceding = rules[j]
+                if not (
+                    _is_subset(current.source, preceding.source, frozenset({"any", "all"}))
+                    and _is_subset(current.destination, preceding.destination, frozenset({"any", "all"}))
+                    and _is_subset(current.service, preceding.service, frozenset({"any", "ALL"}))
+                    and (
+                        preceding.from_zone_any
+                        or current.from_zone.issubset(preceding.from_zone)
+                    )
+                    and (
+                        preceding.to_zone_any
+                        or current.to_zone.issubset(preceding.to_zone)
+                    )
+                ):
+                    continue
+                shadowed.append({
+                    "rule": current_policy.name,
+                    "rule_index": i + 1,
+                    "shadowed_by": preceding_policy.name,
+                    "shadowed_by_index": j + 1,
+                    "action_match": preceding_policy.action == current_policy.action,
+                })
+                break
+
+            safe_indices.add(i)
+            for index, values in zip(indexes, (
+                current.source,
+                current.destination,
+                current.service,
+                current.from_zone,
+                current.to_zone,
+            )):
+                index.add(i, values)
         return shadowed
 
     def prune_unused_objects(self) -> IRConfig:

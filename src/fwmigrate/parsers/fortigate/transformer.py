@@ -772,6 +772,7 @@ class FGToIRTransformer:
                 ).append(parent.name)
 
         self._sdwan_zone_names: Set[Tuple[str, str]] = set()
+        self._identity_dependency_indexes: Optional[Dict[str, Set[str]]] = None
 
         for sdwan in self.fg.sdwans:
             source_context = sdwan.source_context or "root"
@@ -2299,22 +2300,24 @@ class FGToIRTransformer:
         self._validate_identity_dependencies()
 
     def _build_identity_dependency_indexes(self) -> Dict[str, Set[str]]:
-        return {
-            "local_users": {item.name for item in self._fortios.local_users},
-            "user_groups": {item.name for item in self._fortios.user_groups},
-            "ldap_servers": {item.name for item in self._fortios.user_ldap_servers},
-            "radius_servers": {item.name for item in self._fortios.user_radius_servers},
-            "tacacs_servers": {item.name for item in self._fortios.user_tacacs_servers},
-            "saml_servers": {item.name for item in self._fortios.user_saml_servers},
-            "fsso_providers": {item.name for item in self._fortios.fsso_providers},
-            "fsso_ad_groups": {item.name for item in self._fortios.fsso_ad_groups},
-            "fortitokens": {item.serial for item in self._fortios.fortitokens},
-            "admin_profiles": {item.name for item in self._fortios.admin_profiles},
-            "certificates": {item.name for item in self.ir.certificates},
-            "authentication_schemes": {item.name for item in self._fortios.authentication_profiles},
-            "addresses": {item.name for item in self.ir.addresses},
-            "address_groups": {item.name for item in self.ir.address_groups},
-        }
+        if self._identity_dependency_indexes is None:
+            self._identity_dependency_indexes = {
+                "local_users": {item.name for item in self._fortios.local_users},
+                "user_groups": {item.name for item in self._fortios.user_groups},
+                "ldap_servers": {item.name for item in self._fortios.user_ldap_servers},
+                "radius_servers": {item.name for item in self._fortios.user_radius_servers},
+                "tacacs_servers": {item.name for item in self._fortios.user_tacacs_servers},
+                "saml_servers": {item.name for item in self._fortios.user_saml_servers},
+                "fsso_providers": {item.name for item in self._fortios.fsso_providers},
+                "fsso_ad_groups": {item.name for item in self._fortios.fsso_ad_groups},
+                "fortitokens": {item.serial for item in self._fortios.fortitokens},
+                "admin_profiles": {item.name for item in self._fortios.admin_profiles},
+                "certificates": {item.name for item in self.ir.certificates},
+                "authentication_schemes": {item.name for item in self._fortios.authentication_profiles},
+                "addresses": {item.name for item in self.ir.addresses},
+                "address_groups": {item.name for item in self.ir.address_groups},
+            }
+        return self._identity_dependency_indexes
 
     def _add_identity_audit(self, audit_id: str, message: str) -> None:
         if any(entry.id == audit_id for entry in self.ir.audit_entries):

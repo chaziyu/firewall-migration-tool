@@ -382,13 +382,18 @@ def extract_fortigate_config(
     parser = FortiGateParser(FortiGateTokenizer(text))
     fg_config = parser.parse()
     ir_config = FGToIRTransformer(fg_config, zone_mapping=zone_mapping or {}).transform()
+    policy_inventory: Dict[tuple[str, str], list[SourceInventoryItem]] = {}
+    for item in parser.source_inventory_items:
+        if item.source_path == "firewall policy":
+            policy_inventory.setdefault(
+                (item.source_context or "root", str(item.source_id)),
+                [],
+            ).append(item)
     for policy in ir_config.policies:
-        matches = [
-            item for item in parser.source_inventory_items
-            if item.source_path == "firewall policy"
-            and (item.source_context or "root") == (policy.source_context or "root")
-            and str(item.source_id) == str(policy.source_rule_id)
-        ]
+        matches = policy_inventory.get(
+            (policy.source_context or "root", str(policy.source_rule_id)),
+            [],
+        )
         extra_keys = {
             str(key).replace("-", "_")
             for key in policy.source_extra_settings
