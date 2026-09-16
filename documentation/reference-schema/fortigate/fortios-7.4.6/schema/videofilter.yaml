@@ -6,40 +6,276 @@ sections:
   mode: table
   key: <id>
   fields:
-    comment: var-string
-    match: enum
-    name: string
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: videofilter keyword
+          parameter: comment
+    match:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: videofilter keyword
+          parameter: match
+    name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: videofilter keyword
+          parameter: name
   nested:
   - name: word
     mode: table
     key: <name>
     fields:
-      comment: var-string
-      pattern-type: enum
-      status: enum
+      comment:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: videofilter keyword
+            nested_config_path: videofilter keyword word
+            parameter: comment
+      pattern-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: videofilter keyword
+            nested_config_path: videofilter keyword word
+            parameter: pattern-type
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: videofilter keyword
+            nested_config_path: videofilter keyword word
+            parameter: status
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: videofilter keyword
+        nested_config_path: videofilter keyword word
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: videofilter keyword
+          nested_config_path: videofilter keyword word
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: videofilter keyword
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: videofilter keyword
 - path: videofilter profile
   mode: table
   key: <name>
   fields:
-    comment: var-string
-    dailymotion: enum
-    replacemsg-group: string
-    vimeo: enum
-    youtube: enum
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: videofilter profile
+          parameter: comment
+    dailymotion:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: videofilter profile
+          parameter: dailymotion
+    replacemsg-group:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: videofilter profile
+          parameter: replacemsg-group
+    vimeo:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: videofilter profile
+          parameter: vimeo
+    youtube:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: videofilter profile
+          parameter: youtube
   nested:
   - name: filters
     mode: table
     key: <id>
     fields:
-      action: enum
-      category: string
-      channel: string
-      comment: var-string
-      keyword: integer
-      log: enum
-      type: enum
+      action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: videofilter profile
+            nested_config_path: videofilter profile filters
+            parameter: action
+      category:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: videofilter profile
+            nested_config_path: videofilter profile filters
+            parameter: category
+      channel:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: videofilter profile
+            nested_config_path: videofilter profile filters
+            parameter: channel
+      comment:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: videofilter profile
+            nested_config_path: videofilter profile filters
+            parameter: comment
+      keyword:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: videofilter profile
+            nested_config_path: videofilter profile filters
+            parameter: keyword
+      log:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: videofilter profile
+            nested_config_path: videofilter profile filters
+            parameter: log
+      type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: videofilter profile
+            nested_config_path: videofilter profile filters
+            parameter: type
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: videofilter profile
+        nested_config_path: videofilter profile filters
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: videofilter profile
+          nested_config_path: videofilter profile filters
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: videofilter profile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: videofilter profile
 - path: videofilter youtube-key
   mode: table
   key: <id>
   fields:
-    key: string
+    key:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: videofilter youtube-key
+          parameter: key
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: videofilter youtube-key
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: videofilter youtube-key

@@ -6,15 +6,107 @@ sections:
   mode: table
   key: <name>
   fields:
-    action: enum
-    comment: var-string
-    log: enum
-    severity: option-list
+    action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: virtual-patch profile
+          parameter: action
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: virtual-patch profile
+          parameter: comment
+    log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: virtual-patch profile
+          parameter: log
+    severity:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: virtual-patch profile
+          parameter: severity
+      cardinality: list
   nested:
   - name: exemption
     mode: table
     key: <id>
     fields:
-      device: identifier-list
-      rule: identifier-list
-      status: enum
+      device:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: virtual-patch profile
+            nested_config_path: virtual-patch profile exemption
+            parameter: device
+        cardinality: list
+      rule:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: virtual-patch profile
+            nested_config_path: virtual-patch profile exemption
+            parameter: rule
+        cardinality: list
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: virtual-patch profile
+            nested_config_path: virtual-patch profile exemption
+            parameter: status
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: virtual-patch profile
+        nested_config_path: virtual-patch profile exemption
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: virtual-patch profile
+          nested_config_path: virtual-patch profile exemption
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: virtual-patch profile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: virtual-patch profile

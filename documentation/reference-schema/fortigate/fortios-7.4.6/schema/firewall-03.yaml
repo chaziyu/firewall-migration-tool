@@ -6,176 +6,1557 @@ sections:
   mode: table
   key: <name>
   fields:
-    comment: var-string
-    oversize-log: enum
-    replacemsg-group: string
-    rpc-over-http: enum
-    switching-protocols-log: enum
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          parameter: comment
+    oversize-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          parameter: oversize-log
+    replacemsg-group:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          parameter: replacemsg-group
+    rpc-over-http:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          parameter: rpc-over-http
+    switching-protocols-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          parameter: switching-protocols-log
   nested:
   - name: cifs
     mode: singleton
     fields:
-      domain-controller: string
-      options: option-list
-      oversize-limit: integer
-      ports: integer
-      scan-bzip2: enum
-      server-credential-type: enum
-      status: enum
-      tcp-window-maximum: integer
-      tcp-window-minimum: integer
-      tcp-window-size: integer
-      tcp-window-type: enum
-      uncompressed-nest-limit: integer
-      uncompressed-oversize-limit: integer
+      domain-controller:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: domain-controller
+      options:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: options
+        cardinality: list
+      oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: oversize-limit
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: ports
+      scan-bzip2:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: scan-bzip2
+      server-credential-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: server-credential-type
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: status
+      tcp-window-maximum:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: tcp-window-maximum
+      tcp-window-minimum:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: tcp-window-minimum
+      tcp-window-size:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: tcp-window-size
+      tcp-window-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: tcp-window-type
+      uncompressed-nest-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: uncompressed-nest-limit
+      uncompressed-oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs
+            parameter: uncompressed-oversize-limit
     nested:
     - name: server-keytab
       mode: table
       key: <principal>
       fields:
-        keytab: string
+        keytab:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: firewall profile-protocol-options
+              nested_config_path: firewall profile-protocol-options cifs server-keytab
+              parameter: keytab
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options cifs server-keytab
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options cifs server-keytab
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
+        nested_config_path: firewall profile-protocol-options cifs
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options cifs
   - name: dns
     mode: singleton
     fields:
-      ports: integer
-      status: enum
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options dns
+            parameter: ports
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options dns
+            parameter: status
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
+        nested_config_path: firewall profile-protocol-options dns
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options dns
   - name: ftp
     mode: singleton
     fields:
-      comfort-amount: integer
-      comfort-interval: integer
-      explicit-ftp-tls: enum
-      inspect-all: enum
-      options: option-list
-      oversize-limit: integer
-      ports: integer
-      scan-bzip2: enum
-      ssl-offloaded: enum
-      status: enum
-      stream-based-uncompressed-limit: integer
-      tcp-window-maximum: integer
-      tcp-window-minimum: integer
-      tcp-window-size: integer
-      tcp-window-type: enum
-      uncompressed-nest-limit: integer
-      uncompressed-oversize-limit: integer
+      comfort-amount:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: comfort-amount
+      comfort-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: comfort-interval
+      explicit-ftp-tls:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: explicit-ftp-tls
+      inspect-all:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: inspect-all
+      options:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: options
+        cardinality: list
+      oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: oversize-limit
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: ports
+      scan-bzip2:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: scan-bzip2
+      ssl-offloaded:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: ssl-offloaded
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: status
+      stream-based-uncompressed-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: stream-based-uncompressed-limit
+      tcp-window-maximum:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: tcp-window-maximum
+      tcp-window-minimum:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: tcp-window-minimum
+      tcp-window-size:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: tcp-window-size
+      tcp-window-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: tcp-window-type
+      uncompressed-nest-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: uncompressed-nest-limit
+      uncompressed-oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ftp
+            parameter: uncompressed-oversize-limit
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
+        nested_config_path: firewall profile-protocol-options ftp
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options ftp
   - name: http
     mode: singleton
     fields:
-      address-ip-rating: enum
-      block-page-status-code: integer
-      comfort-amount: integer
-      comfort-interval: integer
-      h2c: enum
-      inspect-all: enum
-      options: option-list
-      oversize-limit: integer
-      ports: integer
-      post-lang: option-list
-      proxy-after-tcp-handshake: enum
-      range-block: enum
-      retry-count: integer
-      scan-bzip2: enum
-      ssl-offloaded: enum
-      status: enum
-      stream-based-uncompressed-limit: integer
-      streaming-content-bypass: enum
-      strip-x-forwarded-for: enum
-      switching-protocols: enum
-      tcp-window-maximum: integer
-      tcp-window-minimum: integer
-      tcp-window-size: integer
-      tcp-window-type: enum
-      tunnel-non-http: enum
-      uncompressed-nest-limit: integer
-      uncompressed-oversize-limit: integer
-      unknown-content-encoding: enum
-      unknown-http-version: enum
-      verify-dns-for-policy-matching: enum
+      address-ip-rating:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: address-ip-rating
+      block-page-status-code:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: block-page-status-code
+      comfort-amount:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: comfort-amount
+      comfort-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: comfort-interval
+      h2c:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: h2c
+      inspect-all:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: inspect-all
+      options:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: options
+        cardinality: list
+      oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: oversize-limit
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: ports
+      post-lang:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: post-lang
+        cardinality: list
+      proxy-after-tcp-handshake:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: proxy-after-tcp-handshake
+      range-block:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: range-block
+      retry-count:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: retry-count
+      scan-bzip2:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: scan-bzip2
+      ssl-offloaded:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: ssl-offloaded
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: status
+      stream-based-uncompressed-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: stream-based-uncompressed-limit
+      streaming-content-bypass:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: streaming-content-bypass
+      strip-x-forwarded-for:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: strip-x-forwarded-for
+      switching-protocols:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: switching-protocols
+      tcp-window-maximum:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: tcp-window-maximum
+      tcp-window-minimum:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: tcp-window-minimum
+      tcp-window-size:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: tcp-window-size
+      tcp-window-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: tcp-window-type
+      tunnel-non-http:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: tunnel-non-http
+      uncompressed-nest-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: uncompressed-nest-limit
+      uncompressed-oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: uncompressed-oversize-limit
+      unknown-content-encoding:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: unknown-content-encoding
+      unknown-http-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: unknown-http-version
+      verify-dns-for-policy-matching:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options http
+            parameter: verify-dns-for-policy-matching
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
+        nested_config_path: firewall profile-protocol-options http
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options http
   - name: imap
     mode: singleton
     fields:
-      inspect-all: enum
-      options: option-list
-      oversize-limit: integer
-      ports: integer
-      proxy-after-tcp-handshake: enum
-      scan-bzip2: enum
-      ssl-offloaded: enum
-      status: enum
-      uncompressed-nest-limit: integer
-      uncompressed-oversize-limit: integer
+      inspect-all:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options imap
+            parameter: inspect-all
+      options:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options imap
+            parameter: options
+        cardinality: list
+      oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options imap
+            parameter: oversize-limit
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options imap
+            parameter: ports
+      proxy-after-tcp-handshake:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options imap
+            parameter: proxy-after-tcp-handshake
+      scan-bzip2:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options imap
+            parameter: scan-bzip2
+      ssl-offloaded:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options imap
+            parameter: ssl-offloaded
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options imap
+            parameter: status
+      uncompressed-nest-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options imap
+            parameter: uncompressed-nest-limit
+      uncompressed-oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options imap
+            parameter: uncompressed-oversize-limit
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
+        nested_config_path: firewall profile-protocol-options imap
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options imap
   - name: mail-signature
     mode: singleton
     fields:
-      signature: string
-      status: enum
+      signature:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options mail-signature
+            parameter: signature
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options mail-signature
+            parameter: status
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
+        nested_config_path: firewall profile-protocol-options mail-signature
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options mail-signature
   - name: mapi
     mode: singleton
     fields:
-      options: option-list
-      oversize-limit: integer
-      ports: integer
-      scan-bzip2: enum
-      status: enum
-      uncompressed-nest-limit: integer
-      uncompressed-oversize-limit: integer
+      options:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options mapi
+            parameter: options
+        cardinality: list
+      oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options mapi
+            parameter: oversize-limit
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options mapi
+            parameter: ports
+      scan-bzip2:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options mapi
+            parameter: scan-bzip2
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options mapi
+            parameter: status
+      uncompressed-nest-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options mapi
+            parameter: uncompressed-nest-limit
+      uncompressed-oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options mapi
+            parameter: uncompressed-oversize-limit
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
+        nested_config_path: firewall profile-protocol-options mapi
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options mapi
   - name: nntp
     mode: singleton
     fields:
-      inspect-all: enum
-      options: option-list
-      oversize-limit: integer
-      ports: integer
-      proxy-after-tcp-handshake: enum
-      scan-bzip2: enum
-      status: enum
-      uncompressed-nest-limit: integer
-      uncompressed-oversize-limit: integer
+      inspect-all:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options nntp
+            parameter: inspect-all
+      options:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options nntp
+            parameter: options
+        cardinality: list
+      oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options nntp
+            parameter: oversize-limit
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options nntp
+            parameter: ports
+      proxy-after-tcp-handshake:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options nntp
+            parameter: proxy-after-tcp-handshake
+      scan-bzip2:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options nntp
+            parameter: scan-bzip2
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options nntp
+            parameter: status
+      uncompressed-nest-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options nntp
+            parameter: uncompressed-nest-limit
+      uncompressed-oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options nntp
+            parameter: uncompressed-oversize-limit
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
+        nested_config_path: firewall profile-protocol-options nntp
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options nntp
   - name: pop3
     mode: singleton
     fields:
-      inspect-all: enum
-      options: option-list
-      oversize-limit: integer
-      ports: integer
-      proxy-after-tcp-handshake: enum
-      scan-bzip2: enum
-      ssl-offloaded: enum
-      status: enum
-      uncompressed-nest-limit: integer
-      uncompressed-oversize-limit: integer
+      inspect-all:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options pop3
+            parameter: inspect-all
+      options:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options pop3
+            parameter: options
+        cardinality: list
+      oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options pop3
+            parameter: oversize-limit
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options pop3
+            parameter: ports
+      proxy-after-tcp-handshake:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options pop3
+            parameter: proxy-after-tcp-handshake
+      scan-bzip2:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options pop3
+            parameter: scan-bzip2
+      ssl-offloaded:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options pop3
+            parameter: ssl-offloaded
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options pop3
+            parameter: status
+      uncompressed-nest-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options pop3
+            parameter: uncompressed-nest-limit
+      uncompressed-oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options pop3
+            parameter: uncompressed-oversize-limit
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
+        nested_config_path: firewall profile-protocol-options pop3
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options pop3
   - name: smtp
     mode: singleton
     fields:
-      inspect-all: enum
-      options: option-list
-      oversize-limit: integer
-      ports: integer
-      proxy-after-tcp-handshake: enum
-      scan-bzip2: enum
-      server-busy: enum
-      ssl-offloaded: enum
-      status: enum
-      uncompressed-nest-limit: integer
-      uncompressed-oversize-limit: integer
+      inspect-all:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options smtp
+            parameter: inspect-all
+      options:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options smtp
+            parameter: options
+        cardinality: list
+      oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options smtp
+            parameter: oversize-limit
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options smtp
+            parameter: ports
+      proxy-after-tcp-handshake:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options smtp
+            parameter: proxy-after-tcp-handshake
+      scan-bzip2:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options smtp
+            parameter: scan-bzip2
+      server-busy:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options smtp
+            parameter: server-busy
+      ssl-offloaded:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options smtp
+            parameter: ssl-offloaded
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options smtp
+            parameter: status
+      uncompressed-nest-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options smtp
+            parameter: uncompressed-nest-limit
+      uncompressed-oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options smtp
+            parameter: uncompressed-oversize-limit
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
+        nested_config_path: firewall profile-protocol-options smtp
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options smtp
   - name: ssh
     mode: singleton
     fields:
-      comfort-amount: integer
-      comfort-interval: integer
-      options: option-list
-      oversize-limit: integer
-      scan-bzip2: enum
-      ssl-offloaded: enum
-      stream-based-uncompressed-limit: integer
-      tcp-window-maximum: integer
-      tcp-window-minimum: integer
-      tcp-window-size: integer
-      tcp-window-type: enum
-      uncompressed-nest-limit: integer
-      uncompressed-oversize-limit: integer
+      comfort-amount:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: comfort-amount
+      comfort-interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: comfort-interval
+      options:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: options
+        cardinality: list
+      oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: oversize-limit
+      scan-bzip2:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: scan-bzip2
+      ssl-offloaded:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: ssl-offloaded
+      stream-based-uncompressed-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: stream-based-uncompressed-limit
+      tcp-window-maximum:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: tcp-window-maximum
+      tcp-window-minimum:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: tcp-window-minimum
+      tcp-window-size:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: tcp-window-size
+      tcp-window-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: tcp-window-type
+      uncompressed-nest-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: uncompressed-nest-limit
+      uncompressed-oversize-limit:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall profile-protocol-options
+            nested_config_path: firewall profile-protocol-options ssh
+            parameter: uncompressed-oversize-limit
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
+        nested_config_path: firewall profile-protocol-options ssh
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-protocol-options
+          nested_config_path: firewall profile-protocol-options ssh
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall profile-protocol-options
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-protocol-options
 - path: firewall proxy-address
   mode: table
   key: <name>

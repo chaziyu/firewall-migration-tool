@@ -6,177 +6,1558 @@ sections:
   mode: table
   key: <name>
   fields:
-    allowlist: enum
-    block-blocklisted-certificates: enum
-    caname: string
-    comment: var-string
-    mapi-over-https: enum
-    rpc-over-https: enum
-    server-cert: identifier-list
-    server-cert-mode: enum
-    ssl-anomaly-log: enum
-    ssl-exemption-ip-rating: enum
-    ssl-exemption-log: enum
-    ssl-handshake-log: enum
-    ssl-negotiation-log: enum
-    ssl-server-cert-log: enum
-    supported-alpn: enum
-    untrusted-caname: string
-    use-ssl-server: enum
+    allowlist:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: allowlist
+    block-blocklisted-certificates:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: block-blocklisted-certificates
+    caname:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: caname
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: comment
+    mapi-over-https:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: mapi-over-https
+    rpc-over-https:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: rpc-over-https
+    server-cert:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: server-cert
+      cardinality: list
+    server-cert-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: server-cert-mode
+    ssl-anomaly-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: ssl-anomaly-log
+    ssl-exemption-ip-rating:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: ssl-exemption-ip-rating
+    ssl-exemption-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: ssl-exemption-log
+    ssl-handshake-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: ssl-handshake-log
+    ssl-negotiation-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: ssl-negotiation-log
+    ssl-server-cert-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: ssl-server-cert-log
+    supported-alpn:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: supported-alpn
+    untrusted-caname:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: untrusted-caname
+    use-ssl-server:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          parameter: use-ssl-server
   nested:
   - name: dot
     mode: singleton
     fields:
-      cert-validation-failure: enum
-      cert-validation-timeout: enum
-      client-certificate: enum
-      expired-server-cert: enum
-      proxy-after-tcp-handshake: enum
-      quic: enum
-      revoked-server-cert: enum
-      sni-server-cert-check: enum
-      status: enum
-      unsupported-ssl-cipher: enum
-      unsupported-ssl-negotiation: enum
-      unsupported-ssl-version: enum
-      untrusted-server-cert: enum
+      cert-validation-failure:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: cert-validation-failure
+      cert-validation-timeout:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: cert-validation-timeout
+      client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: client-certificate
+      expired-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: expired-server-cert
+      proxy-after-tcp-handshake:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: proxy-after-tcp-handshake
+      quic:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: quic
+      revoked-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: revoked-server-cert
+      sni-server-cert-check:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: sni-server-cert-check
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: status
+      unsupported-ssl-cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: unsupported-ssl-cipher
+      unsupported-ssl-negotiation:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: unsupported-ssl-negotiation
+      unsupported-ssl-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: unsupported-ssl-version
+      untrusted-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile dot
+            parameter: untrusted-server-cert
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
+        nested_config_path: firewall ssl-ssh-profile dot
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          nested_config_path: firewall ssl-ssh-profile dot
   - name: ech-outer-sni
     mode: table
     key: <name>
     fields:
-      sni: string
+      sni:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ech-outer-sni
+            parameter: sni
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
+        nested_config_path: firewall ssl-ssh-profile ech-outer-sni
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          nested_config_path: firewall ssl-ssh-profile ech-outer-sni
   - name: ftps
     mode: singleton
     fields:
-      cert-validation-failure: enum
-      cert-validation-timeout: enum
-      client-certificate: enum
-      expired-server-cert: enum
-      min-allowed-ssl-version: enum
-      ports: integer
-      revoked-server-cert: enum
-      sni-server-cert-check: enum
-      status: enum
-      unsupported-ssl-cipher: enum
-      unsupported-ssl-negotiation: enum
-      unsupported-ssl-version: enum
-      untrusted-server-cert: enum
+      cert-validation-failure:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: cert-validation-failure
+      cert-validation-timeout:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: cert-validation-timeout
+      client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: client-certificate
+      expired-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: expired-server-cert
+      min-allowed-ssl-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: min-allowed-ssl-version
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: ports
+      revoked-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: revoked-server-cert
+      sni-server-cert-check:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: sni-server-cert-check
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: status
+      unsupported-ssl-cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: unsupported-ssl-cipher
+      unsupported-ssl-negotiation:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: unsupported-ssl-negotiation
+      unsupported-ssl-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: unsupported-ssl-version
+      untrusted-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ftps
+            parameter: untrusted-server-cert
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
+        nested_config_path: firewall ssl-ssh-profile ftps
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          nested_config_path: firewall ssl-ssh-profile ftps
   - name: https
     mode: singleton
     fields:
-      cert-probe-failure: enum
-      cert-validation-failure: enum
-      cert-validation-timeout: enum
-      client-certificate: enum
-      encrypted-client-hello: enum
-      expired-server-cert: enum
-      min-allowed-ssl-version: enum
-      ports: integer
-      proxy-after-tcp-handshake: enum
-      quic: enum
-      revoked-server-cert: enum
-      sni-server-cert-check: enum
-      status: enum
-      unsupported-ssl-cipher: enum
-      unsupported-ssl-negotiation: enum
-      unsupported-ssl-version: enum
-      untrusted-server-cert: enum
+      cert-probe-failure:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: cert-probe-failure
+      cert-validation-failure:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: cert-validation-failure
+      cert-validation-timeout:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: cert-validation-timeout
+      client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: client-certificate
+      encrypted-client-hello:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: encrypted-client-hello
+      expired-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: expired-server-cert
+      min-allowed-ssl-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: min-allowed-ssl-version
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: ports
+      proxy-after-tcp-handshake:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: proxy-after-tcp-handshake
+      quic:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: quic
+      revoked-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: revoked-server-cert
+      sni-server-cert-check:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: sni-server-cert-check
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: status
+      unsupported-ssl-cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: unsupported-ssl-cipher
+      unsupported-ssl-negotiation:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: unsupported-ssl-negotiation
+      unsupported-ssl-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: unsupported-ssl-version
+      untrusted-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile https
+            parameter: untrusted-server-cert
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
+        nested_config_path: firewall ssl-ssh-profile https
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          nested_config_path: firewall ssl-ssh-profile https
   - name: imaps
     mode: singleton
     fields:
-      cert-validation-failure: enum
-      cert-validation-timeout: enum
-      client-certificate: enum
-      expired-server-cert: enum
-      ports: integer
-      proxy-after-tcp-handshake: enum
-      revoked-server-cert: enum
-      sni-server-cert-check: enum
-      status: enum
-      unsupported-ssl-cipher: enum
-      unsupported-ssl-negotiation: enum
-      unsupported-ssl-version: enum
-      untrusted-server-cert: enum
+      cert-validation-failure:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: cert-validation-failure
+      cert-validation-timeout:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: cert-validation-timeout
+      client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: client-certificate
+      expired-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: expired-server-cert
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: ports
+      proxy-after-tcp-handshake:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: proxy-after-tcp-handshake
+      revoked-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: revoked-server-cert
+      sni-server-cert-check:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: sni-server-cert-check
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: status
+      unsupported-ssl-cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: unsupported-ssl-cipher
+      unsupported-ssl-negotiation:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: unsupported-ssl-negotiation
+      unsupported-ssl-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: unsupported-ssl-version
+      untrusted-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile imaps
+            parameter: untrusted-server-cert
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
+        nested_config_path: firewall ssl-ssh-profile imaps
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          nested_config_path: firewall ssl-ssh-profile imaps
   - name: pop3s
     mode: singleton
     fields:
-      cert-validation-failure: enum
-      cert-validation-timeout: enum
-      client-certificate: enum
-      expired-server-cert: enum
-      ports: integer
-      proxy-after-tcp-handshake: enum
-      revoked-server-cert: enum
-      sni-server-cert-check: enum
-      status: enum
-      unsupported-ssl-cipher: enum
-      unsupported-ssl-negotiation: enum
-      unsupported-ssl-version: enum
-      untrusted-server-cert: enum
+      cert-validation-failure:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: cert-validation-failure
+      cert-validation-timeout:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: cert-validation-timeout
+      client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: client-certificate
+      expired-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: expired-server-cert
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: ports
+      proxy-after-tcp-handshake:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: proxy-after-tcp-handshake
+      revoked-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: revoked-server-cert
+      sni-server-cert-check:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: sni-server-cert-check
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: status
+      unsupported-ssl-cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: unsupported-ssl-cipher
+      unsupported-ssl-negotiation:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: unsupported-ssl-negotiation
+      unsupported-ssl-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: unsupported-ssl-version
+      untrusted-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile pop3s
+            parameter: untrusted-server-cert
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
+        nested_config_path: firewall ssl-ssh-profile pop3s
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          nested_config_path: firewall ssl-ssh-profile pop3s
   - name: smtps
     mode: singleton
     fields:
-      cert-validation-failure: enum
-      cert-validation-timeout: enum
-      client-certificate: enum
-      expired-server-cert: enum
-      ports: integer
-      proxy-after-tcp-handshake: enum
-      revoked-server-cert: enum
-      sni-server-cert-check: enum
-      status: enum
-      unsupported-ssl-cipher: enum
-      unsupported-ssl-negotiation: enum
-      unsupported-ssl-version: enum
-      untrusted-server-cert: enum
+      cert-validation-failure:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: cert-validation-failure
+      cert-validation-timeout:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: cert-validation-timeout
+      client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: client-certificate
+      expired-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: expired-server-cert
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: ports
+      proxy-after-tcp-handshake:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: proxy-after-tcp-handshake
+      revoked-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: revoked-server-cert
+      sni-server-cert-check:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: sni-server-cert-check
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: status
+      unsupported-ssl-cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: unsupported-ssl-cipher
+      unsupported-ssl-negotiation:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: unsupported-ssl-negotiation
+      unsupported-ssl-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: unsupported-ssl-version
+      untrusted-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile smtps
+            parameter: untrusted-server-cert
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
+        nested_config_path: firewall ssl-ssh-profile smtps
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          nested_config_path: firewall ssl-ssh-profile smtps
   - name: ssh
     mode: singleton
     fields:
-      inspect-all: enum
-      ports: integer
-      proxy-after-tcp-handshake: enum
-      ssh-algorithm: enum
-      ssh-tun-policy-check: enum
-      status: enum
-      unsupported-version: enum
+      inspect-all:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssh
+            parameter: inspect-all
+      ports:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssh
+            parameter: ports
+      proxy-after-tcp-handshake:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssh
+            parameter: proxy-after-tcp-handshake
+      ssh-algorithm:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssh
+            parameter: ssh-algorithm
+      ssh-tun-policy-check:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssh
+            parameter: ssh-tun-policy-check
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssh
+            parameter: status
+      unsupported-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssh
+            parameter: unsupported-version
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
+        nested_config_path: firewall ssl-ssh-profile ssh
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          nested_config_path: firewall ssl-ssh-profile ssh
   - name: ssl
     mode: singleton
     fields:
-      cert-probe-failure: enum
-      cert-validation-failure: enum
-      cert-validation-timeout: enum
-      client-certificate: enum
-      encrypted-client-hello: enum
-      expired-server-cert: enum
-      inspect-all: enum
-      min-allowed-ssl-version: enum
-      revoked-server-cert: enum
-      sni-server-cert-check: enum
-      unsupported-ssl-cipher: enum
-      unsupported-ssl-negotiation: enum
-      unsupported-ssl-version: enum
-      untrusted-server-cert: enum
+      cert-probe-failure:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: cert-probe-failure
+      cert-validation-failure:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: cert-validation-failure
+      cert-validation-timeout:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: cert-validation-timeout
+      client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: client-certificate
+      encrypted-client-hello:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: encrypted-client-hello
+      expired-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: expired-server-cert
+      inspect-all:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: inspect-all
+      min-allowed-ssl-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: min-allowed-ssl-version
+      revoked-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: revoked-server-cert
+      sni-server-cert-check:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: sni-server-cert-check
+      unsupported-ssl-cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: unsupported-ssl-cipher
+      unsupported-ssl-negotiation:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: unsupported-ssl-negotiation
+      unsupported-ssl-version:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: unsupported-ssl-version
+      untrusted-server-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl
+            parameter: untrusted-server-cert
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
+        nested_config_path: firewall ssl-ssh-profile ssl
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          nested_config_path: firewall ssl-ssh-profile ssl
   - name: ssl-exempt
     mode: table
     key: <id>
     fields:
-      address: string
-      address6: string
-      fortiguard-category: integer
-      regex: string
-      type: enum
-      wildcard-fqdn: string
+      address:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-exempt
+            parameter: address
+      address6:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-exempt
+            parameter: address6
+      fortiguard-category:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-exempt
+            parameter: fortiguard-category
+      regex:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-exempt
+            parameter: regex
+      type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-exempt
+            parameter: type
+      wildcard-fqdn:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-exempt
+            parameter: wildcard-fqdn
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
+        nested_config_path: firewall ssl-ssh-profile ssl-exempt
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          nested_config_path: firewall ssl-ssh-profile ssl-exempt
   - name: ssl-server
     mode: table
     key: <id>
     fields:
-      ftps-client-certificate: enum
-      https-client-certificate: enum
-      imaps-client-certificate: enum
-      ip: ipv4-address-any
-      pop3s-client-certificate: enum
-      smtps-client-certificate: enum
-      ssl-other-client-certificate: enum
+      ftps-client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-server
+            parameter: ftps-client-certificate
+      https-client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-server
+            parameter: https-client-certificate
+      imaps-client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-server
+            parameter: imaps-client-certificate
+      ip:
+        source_type: ipv4-address-any
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-server
+            parameter: ip
+        address_family: ipv4
+      pop3s-client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-server
+            parameter: pop3s-client-certificate
+      smtps-client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-server
+            parameter: smtps-client-certificate
+      ssl-other-client-certificate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall ssl-ssh-profile
+            nested_config_path: firewall ssl-ssh-profile ssl-server
+            parameter: ssl-other-client-certificate
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
+        nested_config_path: firewall ssl-ssh-profile ssl-server
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall ssl-ssh-profile
+          nested_config_path: firewall ssl-ssh-profile ssl-server
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall ssl-ssh-profile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall ssl-ssh-profile
 - path: firewall ssl setting
   mode: singleton
   fields:

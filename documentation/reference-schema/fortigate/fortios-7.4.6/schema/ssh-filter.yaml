@@ -6,17 +6,127 @@ sections:
   mode: table
   key: <name>
   fields:
-    block: option-list
-    default-command-log: enum
-    log: option-list
+    block:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ssh-filter profile
+          parameter: block
+      cardinality: list
+    default-command-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ssh-filter profile
+          parameter: default-command-log
+    log:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ssh-filter profile
+          parameter: log
+      cardinality: list
   nested:
   - name: shell-commands
     mode: table
     key: <id>
     fields:
-      action: enum
-      alert: enum
-      log: enum
-      pattern: string
-      severity: enum
-      type: enum
+      action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ssh-filter profile
+            nested_config_path: ssh-filter profile shell-commands
+            parameter: action
+      alert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ssh-filter profile
+            nested_config_path: ssh-filter profile shell-commands
+            parameter: alert
+      log:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ssh-filter profile
+            nested_config_path: ssh-filter profile shell-commands
+            parameter: log
+      pattern:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ssh-filter profile
+            nested_config_path: ssh-filter profile shell-commands
+            parameter: pattern
+      severity:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ssh-filter profile
+            nested_config_path: ssh-filter profile shell-commands
+            parameter: severity
+      type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ssh-filter profile
+            nested_config_path: ssh-filter profile shell-commands
+            parameter: type
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ssh-filter profile
+        nested_config_path: ssh-filter profile shell-commands
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ssh-filter profile
+          nested_config_path: ssh-filter profile shell-commands
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: ssh-filter profile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ssh-filter profile

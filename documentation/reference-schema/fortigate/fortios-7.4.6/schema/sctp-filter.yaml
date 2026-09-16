@@ -6,12 +6,77 @@ sections:
   mode: table
   key: <name>
   fields:
-    comment: var-string
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: sctp-filter profile
+          parameter: comment
   nested:
   - name: ppid-filters
     mode: table
     key: <id>
     fields:
-      action: enum
-      comment: var-string
-      ppid: integer
+      action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: sctp-filter profile
+            nested_config_path: sctp-filter profile ppid-filters
+            parameter: action
+      comment:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: sctp-filter profile
+            nested_config_path: sctp-filter profile ppid-filters
+            parameter: comment
+      ppid:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: sctp-filter profile
+            nested_config_path: sctp-filter profile ppid-filters
+            parameter: ppid
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: sctp-filter profile
+        nested_config_path: sctp-filter profile ppid-filters
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: sctp-filter profile
+          nested_config_path: sctp-filter profile ppid-filters
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: sctp-filter profile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: sctp-filter profile

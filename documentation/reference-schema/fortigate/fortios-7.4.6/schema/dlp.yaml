@@ -6,141 +6,1020 @@ sections:
   mode: table
   key: <name>
   fields:
-    comment: var-string
-    look-ahead: integer
-    look-back: integer
-    match-ahead: integer
-    match-around: string
-    match-back: integer
-    pattern: string
-    transform: string
-    verify: string
-    verify-transformed-pattern: enum
-    verify2: string
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp data-type
+          parameter: comment
+    look-ahead:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp data-type
+          parameter: look-ahead
+    look-back:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp data-type
+          parameter: look-back
+    match-ahead:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp data-type
+          parameter: match-ahead
+    match-around:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp data-type
+          parameter: match-around
+    match-back:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp data-type
+          parameter: match-back
+    pattern:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp data-type
+          parameter: pattern
+    transform:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp data-type
+          parameter: transform
+    verify:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp data-type
+          parameter: verify
+    verify-transformed-pattern:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp data-type
+          parameter: verify-transformed-pattern
+    verify2:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp data-type
+          parameter: verify2
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: dlp data-type
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp data-type
 - path: dlp dictionary
   mode: table
   key: <name>
   fields:
-    comment: var-string
-    match-around: enum
-    match-type: enum
-    uuid: uuid
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp dictionary
+          parameter: comment
+    match-around:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp dictionary
+          parameter: match-around
+    match-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp dictionary
+          parameter: match-type
+    uuid:
+      source_type: uuid
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp dictionary
+          parameter: uuid
   nested:
   - name: entries
     mode: table
     key: <id>
     fields:
-      comment: var-string
-      ignore-case: enum
-      pattern: string
-      repeat: enum
-      status: enum
-      type: string
+      comment:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp dictionary
+            nested_config_path: dlp dictionary entries
+            parameter: comment
+      ignore-case:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp dictionary
+            nested_config_path: dlp dictionary entries
+            parameter: ignore-case
+      pattern:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp dictionary
+            nested_config_path: dlp dictionary entries
+            parameter: pattern
+      repeat:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp dictionary
+            nested_config_path: dlp dictionary entries
+            parameter: repeat
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp dictionary
+            nested_config_path: dlp dictionary entries
+            parameter: status
+      type:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp dictionary
+            nested_config_path: dlp dictionary entries
+            parameter: type
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp dictionary
+        nested_config_path: dlp dictionary entries
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp dictionary
+          nested_config_path: dlp dictionary entries
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: dlp dictionary
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp dictionary
 - path: dlp exact-data-match
   mode: table
   key: <name>
   fields:
-    data: string
-    optional: integer
+    data:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp exact-data-match
+          parameter: data
+    optional:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp exact-data-match
+          parameter: optional
   nested:
   - name: columns
     mode: table
     key: <index>
     fields:
-      optional: enum
-      type: string
+      optional:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp exact-data-match
+            nested_config_path: dlp exact-data-match columns
+            parameter: optional
+      type:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp exact-data-match
+            nested_config_path: dlp exact-data-match columns
+            parameter: type
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp exact-data-match
+        nested_config_path: dlp exact-data-match columns
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp exact-data-match
+          nested_config_path: dlp exact-data-match columns
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: dlp exact-data-match
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp exact-data-match
 - path: dlp filepattern
   mode: table
   key: <id>
   fields:
-    comment: var-string
-    name: string
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp filepattern
+          parameter: comment
+    name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp filepattern
+          parameter: name
   nested:
   - name: entries
     mode: table
     key: <pattern>
     fields:
-      file-type: enum
-      filter-type: enum
+      file-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp filepattern
+            nested_config_path: dlp filepattern entries
+            parameter: file-type
+      filter-type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp filepattern
+            nested_config_path: dlp filepattern entries
+            parameter: filter-type
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp filepattern
+        nested_config_path: dlp filepattern entries
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp filepattern
+          nested_config_path: dlp filepattern entries
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: dlp filepattern
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp filepattern
 - path: dlp fp-doc-source
   mode: table
   key: <name>
   fields:
-    date: integer
-    file-path: string
-    file-pattern: string
-    keep-modified: enum
-    password: password!sensitive
-    period: enum
-    remove-deleted: enum
-    scan-on-creation: enum
-    scan-subdirectories: enum
-    sensitivity: string
-    server: string
-    server-type: option
-    tod-hour: integer
-    tod-min: integer
-    username: string
-    vdom: enum
-    weekday: enum
+    date:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: date
+    file-path:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: file-path
+    file-pattern:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: file-pattern
+    keep-modified:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: keep-modified
+    password:
+      source_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: password
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp fp-doc-source
+            parameter: password
+    period:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: period
+    remove-deleted:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: remove-deleted
+    scan-on-creation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: scan-on-creation
+    scan-subdirectories:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: scan-subdirectories
+    sensitivity:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: sensitivity
+    server:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: server
+    server-type:
+      source_type: option
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: server-type
+    tod-hour:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: tod-hour
+    tod-min:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: tod-min
+    username:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: username
+    vdom:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: vdom
+    weekday:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp fp-doc-source
+          parameter: weekday
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: dlp fp-doc-source
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp fp-doc-source
 - path: dlp profile
   mode: table
   key: <name>
   fields:
-    comment: var-string
-    dlp-log: enum
-    extended-log: enum
-    feature-set: enum
-    full-archive-proto: option-list
-    nac-quar-log: enum
-    replacemsg-group: string
-    summary-proto: option-list
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp profile
+          parameter: comment
+    dlp-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp profile
+          parameter: dlp-log
+    extended-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp profile
+          parameter: extended-log
+    feature-set:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp profile
+          parameter: feature-set
+    full-archive-proto:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp profile
+          parameter: full-archive-proto
+      cardinality: list
+    nac-quar-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp profile
+          parameter: nac-quar-log
+    replacemsg-group:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp profile
+          parameter: replacemsg-group
+    summary-proto:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp profile
+          parameter: summary-proto
+      cardinality: list
   nested:
   - name: rule
     mode: table
     key: <id>
     fields:
-      action: enum
-      archive: enum
-      expiry: opaque-user
-      file-size: integer
-      file-type: integer
-      filter-by: enum
-      label: string
-      match-percentage: integer
-      name: string
-      proto: option-list
-      sensitivity: identifier-list
-      sensor: identifier-list
-      severity: enum
-      type: enum
+      action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: action
+      archive:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: archive
+      expiry:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: expiry
+      file-size:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: file-size
+      file-type:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: file-type
+      filter-by:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: filter-by
+      label:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: label
+      match-percentage:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: match-percentage
+      name:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: name
+      proto:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: proto
+        cardinality: list
+      sensitivity:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: sensitivity
+        cardinality: list
+      sensor:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: sensor
+        cardinality: list
+      severity:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: severity
+      type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp profile
+            nested_config_path: dlp profile rule
+            parameter: type
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp profile
+        nested_config_path: dlp profile rule
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp profile
+          nested_config_path: dlp profile rule
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: dlp profile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp profile
 - path: dlp sensitivity
   mode: table
   key: <name>
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: dlp sensitivity
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp sensitivity
 - path: dlp sensor
   mode: table
   key: <name>
   fields:
-    comment: var-string
-    eval: string
-    match-type: enum
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp sensor
+          parameter: comment
+    eval:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp sensor
+          parameter: eval
+    match-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp sensor
+          parameter: match-type
   nested:
   - name: entries
     mode: table
     key: <id>
     fields:
-      count: integer
-      dictionary: string
-      status: enum
+      count:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp sensor
+            nested_config_path: dlp sensor entries
+            parameter: count
+      dictionary:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp sensor
+            nested_config_path: dlp sensor entries
+            parameter: dictionary
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: dlp sensor
+            nested_config_path: dlp sensor entries
+            parameter: status
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp sensor
+        nested_config_path: dlp sensor entries
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp sensor
+          nested_config_path: dlp sensor entries
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: dlp sensor
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp sensor
 - path: dlp settings
   mode: singleton
   fields:
-    cache-mem-percent: integer
-    chunk-size: integer
-    db-mode: enum
-    size: integer
-    storage-device: string
+    cache-mem-percent:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp settings
+          parameter: cache-mem-percent
+    chunk-size:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp settings
+          parameter: chunk-size
+    db-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp settings
+          parameter: db-mode
+    size:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp settings
+          parameter: size
+    storage-device:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: dlp settings
+          parameter: storage-device
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: dlp settings
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: dlp settings

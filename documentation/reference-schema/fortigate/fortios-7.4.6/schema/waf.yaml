@@ -6,214 +6,1710 @@ sections:
   mode: table
   key: <id>
   fields:
-    name: string
+    name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf main-class
+          parameter: name
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: waf main-class
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: waf main-class
 - path: waf profile
   mode: table
   key: <name>
   fields:
-    comment: var-string
-    extended-log: enum
-    external: enum
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          parameter: comment
+    extended-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          parameter: extended-log
+    external:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          parameter: external
   nested:
   - name: address-list
     mode: singleton
     fields:
-      blocked-address: identifier-list
-      blocked-log: enum
-      severity: enum
-      status: enum
-      trusted-address: identifier-list
+      blocked-address:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile address-list
+            parameter: blocked-address
+        cardinality: list
+      blocked-log:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile address-list
+            parameter: blocked-log
+      severity:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile address-list
+            parameter: severity
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile address-list
+            parameter: status
+      trusted-address:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile address-list
+            parameter: trusted-address
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: waf profile
+        nested_config_path: waf profile address-list
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile address-list
   - name: constraint
     mode: singleton
     nested:
     - name: content-length
       mode: singleton
       fields:
-        action: enum
-        length: integer
-        log: enum
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint content-length
+              parameter: action
+        length:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint content-length
+              parameter: length
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint content-length
+              parameter: log
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint content-length
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint content-length
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint content-length
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint content-length
     - name: exception
       mode: table
       key: <id>
       fields:
-        address: string
-        content-length: enum
-        header-length: enum
-        hostname: enum
-        line-length: enum
-        malformed: enum
-        max-cookie: enum
-        max-header-line: enum
-        max-range-segment: enum
-        max-url-param: enum
-        method: enum
-        param-length: enum
-        pattern: string
-        regex: enum
-        url-param-length: enum
-        version: enum
+        address:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: address
+        content-length:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: content-length
+        header-length:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: header-length
+        hostname:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: hostname
+        line-length:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: line-length
+        malformed:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: malformed
+        max-cookie:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: max-cookie
+        max-header-line:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: max-header-line
+        max-range-segment:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: max-range-segment
+        max-url-param:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: max-url-param
+        method:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: method
+        param-length:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: param-length
+        pattern:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: pattern
+        regex:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: regex
+        url-param-length:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: url-param-length
+        version:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint exception
+              parameter: version
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint exception
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint exception
     - name: header-length
       mode: singleton
       fields:
-        action: enum
-        length: integer
-        log: enum
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint header-length
+              parameter: action
+        length:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint header-length
+              parameter: length
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint header-length
+              parameter: log
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint header-length
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint header-length
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint header-length
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint header-length
     - name: hostname
       mode: singleton
       fields:
-        action: enum
-        log: enum
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint hostname
+              parameter: action
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint hostname
+              parameter: log
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint hostname
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint hostname
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint hostname
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint hostname
     - name: line-length
       mode: singleton
       fields:
-        action: enum
-        length: integer
-        log: enum
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint line-length
+              parameter: action
+        length:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint line-length
+              parameter: length
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint line-length
+              parameter: log
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint line-length
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint line-length
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint line-length
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint line-length
     - name: malformed
       mode: singleton
       fields:
-        action: enum
-        log: enum
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint malformed
+              parameter: action
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint malformed
+              parameter: log
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint malformed
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint malformed
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint malformed
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint malformed
     - name: max-cookie
       mode: singleton
       fields:
-        action: enum
-        log: enum
-        max-cookie: integer
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-cookie
+              parameter: action
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-cookie
+              parameter: log
+        max-cookie:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-cookie
+              parameter: max-cookie
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-cookie
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-cookie
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint max-cookie
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint max-cookie
     - name: max-header-line
       mode: singleton
       fields:
-        action: enum
-        log: enum
-        max-header-line: integer
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-header-line
+              parameter: action
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-header-line
+              parameter: log
+        max-header-line:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-header-line
+              parameter: max-header-line
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-header-line
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-header-line
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint max-header-line
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint max-header-line
     - name: max-range-segment
       mode: singleton
       fields:
-        action: enum
-        log: enum
-        max-range-segment: integer
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-range-segment
+              parameter: action
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-range-segment
+              parameter: log
+        max-range-segment:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-range-segment
+              parameter: max-range-segment
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-range-segment
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-range-segment
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint max-range-segment
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint max-range-segment
     - name: max-url-param
       mode: singleton
       fields:
-        action: enum
-        log: enum
-        max-url-param: integer
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-url-param
+              parameter: action
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-url-param
+              parameter: log
+        max-url-param:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-url-param
+              parameter: max-url-param
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-url-param
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint max-url-param
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint max-url-param
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint max-url-param
     - name: method
       mode: singleton
       fields:
-        action: enum
-        log: enum
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint method
+              parameter: action
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint method
+              parameter: log
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint method
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint method
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint method
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint method
     - name: param-length
       mode: singleton
       fields:
-        action: enum
-        length: integer
-        log: enum
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint param-length
+              parameter: action
+        length:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint param-length
+              parameter: length
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint param-length
+              parameter: log
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint param-length
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint param-length
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint param-length
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint param-length
     - name: url-param-length
       mode: singleton
       fields:
-        action: enum
-        length: integer
-        log: enum
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint url-param-length
+              parameter: action
+        length:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint url-param-length
+              parameter: length
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint url-param-length
+              parameter: log
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint url-param-length
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint url-param-length
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint url-param-length
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint url-param-length
     - name: version
       mode: singleton
       fields:
-        action: enum
-        log: enum
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint version
+              parameter: action
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint version
+              parameter: log
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint version
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile constraint version
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint version
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile constraint version
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: waf profile
+        nested_config_path: waf profile constraint
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile constraint
   - name: method
     mode: singleton
     fields:
-      default-allowed-methods: option-list
-      log: enum
-      severity: enum
-      status: enum
+      default-allowed-methods:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile method
+            parameter: default-allowed-methods
+        cardinality: list
+      log:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile method
+            parameter: log
+      severity:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile method
+            parameter: severity
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile method
+            parameter: status
     nested:
     - name: method-policy
       mode: table
       key: <id>
       fields:
-        address: string
-        allowed-methods: option-list
-        pattern: string
-        regex: enum
+        address:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile method method-policy
+              parameter: address
+        allowed-methods:
+          source_type: option-list
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile method method-policy
+              parameter: allowed-methods
+          cardinality: list
+        pattern:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile method method-policy
+              parameter: pattern
+        regex:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile method method-policy
+              parameter: regex
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile method method-policy
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile method method-policy
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: waf profile
+        nested_config_path: waf profile method
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile method
   - name: signature
     mode: singleton
     fields:
-      credit-card-detection-threshold: integer
-      disabled-signature: identifier-list
-      disabled-sub-class: identifier-list
+      credit-card-detection-threshold:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile signature
+            parameter: credit-card-detection-threshold
+      disabled-signature:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile signature
+            parameter: disabled-signature
+        cardinality: list
+      disabled-sub-class:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile signature
+            parameter: disabled-sub-class
+        cardinality: list
     nested:
     - name: custom-signature
       mode: table
       key: <name>
       fields:
-        action: enum
-        case-sensitivity: enum
-        direction: enum
-        log: enum
-        pattern: string
-        severity: enum
-        status: enum
-        target: option-list
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature custom-signature
+              parameter: action
+        case-sensitivity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature custom-signature
+              parameter: case-sensitivity
+        direction:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature custom-signature
+              parameter: direction
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature custom-signature
+              parameter: log
+        pattern:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature custom-signature
+              parameter: pattern
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature custom-signature
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature custom-signature
+              parameter: status
+        target:
+          source_type: option-list
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature custom-signature
+              parameter: target
+          cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile signature custom-signature
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile signature custom-signature
     - name: main-class
       mode: table
       key: <id>
       fields:
-        action: enum
-        log: enum
-        severity: enum
-        status: enum
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature main-class
+              parameter: action
+        log:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature main-class
+              parameter: log
+        severity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature main-class
+              parameter: severity
+        status:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile signature main-class
+              parameter: status
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile signature main-class
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile signature main-class
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: waf profile
+        nested_config_path: waf profile signature
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile signature
   - name: url-access
     mode: table
     key: <id>
     fields:
-      action: enum
-      address: string
-      log: enum
-      severity: enum
+      action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile url-access
+            parameter: action
+      address:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile url-access
+            parameter: address
+      log:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile url-access
+            parameter: log
+      severity:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile url-access
+            parameter: severity
     nested:
     - name: access-pattern
       mode: table
       key: <id>
       fields:
-        negate: enum
-        pattern: string
-        regex: enum
-        srcaddr: string
+        negate:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile url-access access-pattern
+              parameter: negate
+        pattern:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile url-access access-pattern
+              parameter: pattern
+        regex:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile url-access access-pattern
+              parameter: regex
+        srcaddr:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: waf profile
+              nested_config_path: waf profile url-access access-pattern
+              parameter: srcaddr
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile url-access access-pattern
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: waf profile
+            nested_config_path: waf profile url-access access-pattern
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: waf profile
+        nested_config_path: waf profile url-access
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf profile
+          nested_config_path: waf profile url-access
   read_only: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: waf profile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: waf profile
 - path: waf signature
   mode: table
   key: <id>
   fields:
-    desc: string
+    desc:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf signature
+          parameter: desc
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: waf signature
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: waf signature
 - path: waf sub-class
   mode: table
   key: <id>
   fields:
-    name: string
+    name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: waf sub-class
+          parameter: name
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: waf sub-class
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: waf sub-class

@@ -6,78 +6,584 @@ sections:
   mode: table
   key: <name>
   fields:
-    204-response: enum
-    204-size-limit: integer
-    chunk-encap: enum
-    comment: var-string
-    extension-feature: option-list
-    file-transfer: option-list
-    file-transfer-failure: enum
-    file-transfer-path: string
-    file-transfer-server: string
-    icap-block-log: enum
-    methods: option-list
-    preview: enum
-    preview-data-length: integer
-    replacemsg-group: string
-    request: enum
-    request-failure: enum
-    request-path: string
-    request-server: string
-    respmod-default-action: enum
-    response: enum
-    response-failure: enum
-    response-path: string
-    response-req-hdr: enum
-    response-server: string
-    scan-progress-interval: integer
-    streaming-content-bypass: enum
-    timeout: integer
+    204-response:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: 204-response
+    204-size-limit:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: 204-size-limit
+    chunk-encap:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: chunk-encap
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: comment
+    extension-feature:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: extension-feature
+      cardinality: list
+    file-transfer:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: file-transfer
+      cardinality: list
+    file-transfer-failure:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: file-transfer-failure
+    file-transfer-path:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: file-transfer-path
+    file-transfer-server:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: file-transfer-server
+    icap-block-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: icap-block-log
+    methods:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: methods
+      cardinality: list
+    preview:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: preview
+    preview-data-length:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: preview-data-length
+    replacemsg-group:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: replacemsg-group
+    request:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: request
+    request-failure:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: request-failure
+    request-path:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: request-path
+    request-server:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: request-server
+    respmod-default-action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: respmod-default-action
+    response:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: response
+    response-failure:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: response-failure
+    response-path:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: response-path
+    response-req-hdr:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: response-req-hdr
+    response-server:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: response-server
+    scan-progress-interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: scan-progress-interval
+    streaming-content-bypass:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: streaming-content-bypass
+    timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          parameter: timeout
   nested:
   - name: icap-headers
     mode: table
     key: <id>
     fields:
-      base64-encoding: enum
-      content: string
-      name: string
+      base64-encoding:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: icap profile
+            nested_config_path: icap profile icap-headers
+            parameter: base64-encoding
+      content:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: icap profile
+            nested_config_path: icap profile icap-headers
+            parameter: content
+      name:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: icap profile
+            nested_config_path: icap profile icap-headers
+            parameter: name
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: icap profile
+        nested_config_path: icap profile icap-headers
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          nested_config_path: icap profile icap-headers
   - name: respmod-forward-rules
     mode: table
     key: <name>
     fields:
-      action: enum
-      host: string
-      http-resp-status-code: identifier-list
+      action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: icap profile
+            nested_config_path: icap profile respmod-forward-rules
+            parameter: action
+      host:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: icap profile
+            nested_config_path: icap profile respmod-forward-rules
+            parameter: host
+      http-resp-status-code:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: icap profile
+            nested_config_path: icap profile respmod-forward-rules
+            parameter: http-resp-status-code
+        cardinality: list
     nested:
     - name: header-group
       mode: table
       key: <id>
       fields:
-        case-sensitivity: enum
-        header: string
-        header-name: string
+        case-sensitivity:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: icap profile
+              nested_config_path: icap profile respmod-forward-rules header-group
+              parameter: case-sensitivity
+        header:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: icap profile
+              nested_config_path: icap profile respmod-forward-rules header-group
+              parameter: header
+        header-name:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: icap profile
+              nested_config_path: icap profile respmod-forward-rules header-group
+              parameter: header-name
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          nested_config_path: icap profile respmod-forward-rules header-group
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: icap profile
+            nested_config_path: icap profile respmod-forward-rules header-group
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: icap profile
+        nested_config_path: icap profile respmod-forward-rules
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap profile
+          nested_config_path: icap profile respmod-forward-rules
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: icap profile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: icap profile
 - path: icap server-group
   mode: table
   key: <name>
   fields:
-    ldb-method: enum
+    ldb-method:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server-group
+          parameter: ldb-method
   nested:
   - name: server-list
     mode: table
     key: <name>
     fields:
-      weight: integer
+      weight:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: icap server-group
+            nested_config_path: icap server-group server-list
+            parameter: weight
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: icap server-group
+        nested_config_path: icap server-group server-list
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server-group
+          nested_config_path: icap server-group server-list
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: icap server-group
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: icap server-group
 - path: icap server
   mode: table
   key: <name>
   fields:
-    addr-type: enum
-    fqdn: string
-    healthcheck: enum
-    healthcheck-service: string
-    ip-address: ipv4-address-any
-    ip6-address: ipv6-address
-    max-connections: integer
-    port: integer
-    secure: enum
-    ssl-cert: string
+    addr-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server
+          parameter: addr-type
+    fqdn:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server
+          parameter: fqdn
+    healthcheck:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server
+          parameter: healthcheck
+    healthcheck-service:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server
+          parameter: healthcheck-service
+    ip-address:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server
+          parameter: ip-address
+      address_family: ipv4
+    ip6-address:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server
+          parameter: ip6-address
+      address_family: ipv6
+    max-connections:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server
+          parameter: max-connections
+    port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server
+          parameter: port
+    secure:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server
+          parameter: secure
+    ssl-cert:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: icap server
+          parameter: ssl-cert
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: icap server
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: icap server
