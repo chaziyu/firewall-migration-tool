@@ -6,60 +6,514 @@ sections:
   mode: table
   key: <name>
   fields:
-    active-auth-method: string
-    cert-auth-cookie: enum
-    comments: var-string
-    cors-depth: integer
-    cors-stateful: enum
-    dstaddr: identifier-list
-    dstaddr6: identifier-list
-    ip-based: enum
-    protocol: enum
-    srcaddr: identifier-list
-    srcaddr6: identifier-list
-    srcintf: identifier-list
-    sso-auth-method: string
-    status: enum
-    transaction-based: enum
-    web-auth-cookie: enum
-    web-portal: enum
+    active-auth-method:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: active-auth-method
+    cert-auth-cookie:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: cert-auth-cookie
+    comments:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: comments
+    cors-depth:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: cors-depth
+    cors-stateful:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: cors-stateful
+    dstaddr:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: dstaddr
+      cardinality: list
+    dstaddr6:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: dstaddr6
+      cardinality: list
+    ip-based:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: ip-based
+    protocol:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: protocol
+    srcaddr:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: srcaddr
+      cardinality: list
+    srcaddr6:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: srcaddr6
+      cardinality: list
+    srcintf:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: srcintf
+      cardinality: list
+    sso-auth-method:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: sso-auth-method
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: status
+    transaction-based:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: transaction-based
+    web-auth-cookie:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: web-auth-cookie
+    web-portal:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication rule
+          parameter: web-portal
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: authentication rule
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: authentication rule
 - path: authentication scheme
   mode: table
   key: <name>
   fields:
-    domain-controller: string
-    fsso-agent-for-ntlm: string
-    fsso-guest: enum
-    kerberos-keytab: string
-    method: option-list
-    negotiate-ntlm: enum
-    require-tfa: enum
-    saml-server: string
-    saml-timeout: integer
-    ssh-ca: string
-    user-cert: enum
-    user-database: identifier-list
+    domain-controller:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: domain-controller
+    fsso-agent-for-ntlm:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: fsso-agent-for-ntlm
+    fsso-guest:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: fsso-guest
+    kerberos-keytab:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: kerberos-keytab
+    method:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: method
+      cardinality: list
+    negotiate-ntlm:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: negotiate-ntlm
+    require-tfa:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: require-tfa
+    saml-server:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: saml-server
+    saml-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: saml-timeout
+    ssh-ca:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: ssh-ca
+    user-cert:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: user-cert
+    user-database:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication scheme
+          parameter: user-database
+      cardinality: list
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: authentication scheme
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: authentication scheme
 - path: authentication setting
   mode: singleton
   fields:
-    active-auth-scheme: string
-    auth-https: enum
-    captive-portal: string
-    captive-portal-ip: ipv4-address-any
-    captive-portal-ip6: ipv6-address
-    captive-portal-port: integer
-    captive-portal-ssl-port: integer
-    captive-portal-type: enum
-    captive-portal6: string
-    cert-auth: enum
-    cert-captive-portal: string
-    cert-captive-portal-ip: ipv4-address-any
-    cert-captive-portal-port: integer
-    cookie-max-age: integer
-    cookie-refresh-div: integer
-    dev-range: identifier-list
-    ip-auth-cookie: enum
-    persistent-cookie: enum
-    sso-auth-scheme: string
-    update-time: opaque-user
-    user-cert-ca: identifier-list
+    active-auth-scheme:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: active-auth-scheme
+    auth-https:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: auth-https
+    captive-portal:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: captive-portal
+    captive-portal-ip:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: captive-portal-ip
+      address_family: ipv4
+    captive-portal-ip6:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: captive-portal-ip6
+      address_family: ipv6
+    captive-portal-port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: captive-portal-port
+    captive-portal-ssl-port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: captive-portal-ssl-port
+    captive-portal-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: captive-portal-type
+    captive-portal6:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: captive-portal6
+    cert-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: cert-auth
+    cert-captive-portal:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: cert-captive-portal
+    cert-captive-portal-ip:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: cert-captive-portal-ip
+      address_family: ipv4
+    cert-captive-portal-port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: cert-captive-portal-port
+    cookie-max-age:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: cookie-max-age
+    cookie-refresh-div:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: cookie-refresh-div
+    dev-range:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: dev-range
+      cardinality: list
+    ip-auth-cookie:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: ip-auth-cookie
+    persistent-cookie:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: persistent-cookie
+    sso-auth-scheme:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: sso-auth-scheme
+    update-time:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: update-time
+    user-cert-ca:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: authentication setting
+          parameter: user-cert-ca
+      cardinality: list
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: authentication setting
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: authentication setting

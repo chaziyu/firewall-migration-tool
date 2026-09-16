@@ -18,76 +18,625 @@ sections:
   mode: table
   key: <name>
   fields:
-    admintimeout: integer
-    admintimeout-override: enum
-    authgrp: enum
-    cli-config: enum
-    cli-diagnose: enum
-    cli-exec: enum
-    cli-get: enum
-    cli-show: enum
-    comments: var-string
-    ftviewgrp: enum
-    fwgrp: enum
-    loggrp: enum
-    netgrp: enum
-    scope: enum
-    secfabgrp: enum
-    sysgrp: enum
-    system-execute-ssh: enum
-    system-execute-telnet: enum
-    utmgrp: enum
-    vpngrp: enum
-    wanoptgrp: enum
-    wifi: enum
+    admintimeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: admintimeout
+    admintimeout-override:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: admintimeout-override
+    authgrp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: authgrp
+    cli-config:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: cli-config
+    cli-diagnose:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: cli-diagnose
+    cli-exec:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: cli-exec
+    cli-get:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: cli-get
+    cli-show:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: cli-show
+    comments:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: comments
+    ftviewgrp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: ftviewgrp
+    fwgrp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: fwgrp
+    loggrp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: loggrp
+    netgrp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: netgrp
+    scope:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: scope
+    secfabgrp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: secfabgrp
+    sysgrp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: sysgrp
+    system-execute-ssh:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: system-execute-ssh
+    system-execute-telnet:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: system-execute-telnet
+    utmgrp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: utmgrp
+    vpngrp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: vpngrp
+    wanoptgrp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: wanoptgrp
+    wifi:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          parameter: wifi
   nested:
   - name: fwgrp-permission
     mode: singleton
     fields:
-      address: enum
-      others: enum
-      policy: enum
-      schedule: enum
-      service: enum
+      address:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile fwgrp-permission
+            parameter: address
+      others:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile fwgrp-permission
+            parameter: others
+      policy:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile fwgrp-permission
+            parameter: policy
+      schedule:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile fwgrp-permission
+            parameter: schedule
+      service:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile fwgrp-permission
+            parameter: service
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system accprofile
+        nested_config_path: system accprofile fwgrp-permission
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          nested_config_path: system accprofile fwgrp-permission
   - name: loggrp-permission
     mode: singleton
     fields:
-      config: enum
-      data-access: enum
-      report-access: enum
-      threat-weight: enum
+      config:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile loggrp-permission
+            parameter: config
+      data-access:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile loggrp-permission
+            parameter: data-access
+      report-access:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile loggrp-permission
+            parameter: report-access
+      threat-weight:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile loggrp-permission
+            parameter: threat-weight
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system accprofile
+        nested_config_path: system accprofile loggrp-permission
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          nested_config_path: system accprofile loggrp-permission
   - name: netgrp-permission
     mode: singleton
     fields:
-      cfg: enum
-      packet-capture: enum
-      route-cfg: enum
+      cfg:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile netgrp-permission
+            parameter: cfg
+      packet-capture:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile netgrp-permission
+            parameter: packet-capture
+      route-cfg:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile netgrp-permission
+            parameter: route-cfg
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system accprofile
+        nested_config_path: system accprofile netgrp-permission
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          nested_config_path: system accprofile netgrp-permission
   - name: sysgrp-permission
     mode: singleton
     fields:
-      admin: enum
-      cfg: enum
-      mnt: enum
-      upd: enum
+      admin:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile sysgrp-permission
+            parameter: admin
+      cfg:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile sysgrp-permission
+            parameter: cfg
+      mnt:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile sysgrp-permission
+            parameter: mnt
+      upd:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile sysgrp-permission
+            parameter: upd
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system accprofile
+        nested_config_path: system accprofile sysgrp-permission
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          nested_config_path: system accprofile sysgrp-permission
   - name: utmgrp-permission
     mode: singleton
     fields:
-      antivirus: enum
-      application-control: enum
-      casb: enum
-      dlp: enum
-      dnsfilter: enum
-      emailfilter: enum
-      endpoint-control: enum
-      file-filter: enum
-      icap: enum
-      ips: enum
-      videofilter: enum
-      virtual-patch: enum
-      voip: enum
-      waf: enum
-      webfilter: enum
+      antivirus:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: antivirus
+      application-control:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: application-control
+      casb:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: casb
+      dlp:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: dlp
+      dnsfilter:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: dnsfilter
+      emailfilter:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: emailfilter
+      endpoint-control:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: endpoint-control
+      file-filter:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: file-filter
+      icap:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: icap
+      ips:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: ips
+      videofilter:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: videofilter
+      virtual-patch:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: virtual-patch
+      voip:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: voip
+      waf:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: waf
+      webfilter:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system accprofile
+            nested_config_path: system accprofile utmgrp-permission
+            parameter: webfilter
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system accprofile
+        nested_config_path: system accprofile utmgrp-permission
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system accprofile
+          nested_config_path: system accprofile utmgrp-permission
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system accprofile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system accprofile
 - path: system acme
   mode: singleton
   fields:
@@ -109,56 +658,501 @@ sections:
   mode: table
   key: <name>
   fields:
-    accprofile: string
-    accprofile-override: enum
-    allow-remove-admin-session: enum
-    comments: var-string
-    email-to: string
-    force-password-change: enum
-    fortitoken: string
-    guest-auth: enum
-    guest-lang: string
-    guest-usergroups: identifier-list
-    ip6-trusthost1: ipv6-prefix
-    ip6-trusthost10: ipv6-prefix
-    ip6-trusthost2: ipv6-prefix
-    ip6-trusthost3: ipv6-prefix
-    ip6-trusthost4: ipv6-prefix
-    ip6-trusthost5: ipv6-prefix
-    ip6-trusthost6: ipv6-prefix
-    ip6-trusthost7: ipv6-prefix
-    ip6-trusthost8: ipv6-prefix
-    ip6-trusthost9: ipv6-prefix
-    password: password-2!sensitive
-    password-expire: opaque-user
-    peer-auth: enum
-    peer-group: string
-    remote-auth: enum
-    remote-group: string
-    schedule: string
-    sms-custom-server: string
-    sms-phone: string
-    sms-server: enum
-    ssh-certificate: string
-    ssh-public-key1: opaque-user
-    ssh-public-key2: opaque-user
-    ssh-public-key3: opaque-user
-    trusthost1: ipv4-classnet
-    trusthost10: ipv4-classnet
-    trusthost2: ipv4-classnet
-    trusthost3: ipv4-classnet
-    trusthost4: ipv4-classnet
-    trusthost5: ipv4-classnet
-    trusthost6: ipv4-classnet
-    trusthost7: ipv4-classnet
-    trusthost8: ipv4-classnet
-    trusthost9: ipv4-classnet
-    two-factor: enum
-    two-factor-authentication: enum
-    two-factor-notification: enum
-    vdom: identifier-list
-    vdom-override: enum
-    wildcard: enum
+    accprofile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: accprofile
+    accprofile-override:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: accprofile-override
+    allow-remove-admin-session:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: allow-remove-admin-session
+    comments:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: comments
+    email-to:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: email-to
+    force-password-change:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: force-password-change
+    fortitoken:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: fortitoken
+    guest-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: guest-auth
+    guest-lang:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: guest-lang
+    guest-usergroups:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: guest-usergroups
+      cardinality: list
+    ip6-trusthost1:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ip6-trusthost1
+      address_family: ipv6
+    ip6-trusthost10:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ip6-trusthost10
+      address_family: ipv6
+    ip6-trusthost2:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ip6-trusthost2
+      address_family: ipv6
+    ip6-trusthost3:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ip6-trusthost3
+      address_family: ipv6
+    ip6-trusthost4:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ip6-trusthost4
+      address_family: ipv6
+    ip6-trusthost5:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ip6-trusthost5
+      address_family: ipv6
+    ip6-trusthost6:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ip6-trusthost6
+      address_family: ipv6
+    ip6-trusthost7:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ip6-trusthost7
+      address_family: ipv6
+    ip6-trusthost8:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ip6-trusthost8
+      address_family: ipv6
+    ip6-trusthost9:
+      source_type: ipv6-prefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ip6-trusthost9
+      address_family: ipv6
+    password:
+      source_type: password-2
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: password
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system admin
+            parameter: password
+    password-expire:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: password-expire
+    peer-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: peer-auth
+    peer-group:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: peer-group
+    remote-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: remote-auth
+    remote-group:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: remote-group
+    schedule:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: schedule
+    sms-custom-server:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: sms-custom-server
+    sms-phone:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: sms-phone
+    sms-server:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: sms-server
+    ssh-certificate:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ssh-certificate
+    ssh-public-key1:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ssh-public-key1
+    ssh-public-key2:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ssh-public-key2
+    ssh-public-key3:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: ssh-public-key3
+    trusthost1:
+      source_type: ipv4-classnet
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: trusthost1
+      address_family: ipv4
+    trusthost10:
+      source_type: ipv4-classnet
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: trusthost10
+      address_family: ipv4
+    trusthost2:
+      source_type: ipv4-classnet
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: trusthost2
+      address_family: ipv4
+    trusthost3:
+      source_type: ipv4-classnet
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: trusthost3
+      address_family: ipv4
+    trusthost4:
+      source_type: ipv4-classnet
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: trusthost4
+      address_family: ipv4
+    trusthost5:
+      source_type: ipv4-classnet
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: trusthost5
+      address_family: ipv4
+    trusthost6:
+      source_type: ipv4-classnet
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: trusthost6
+      address_family: ipv4
+    trusthost7:
+      source_type: ipv4-classnet
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: trusthost7
+      address_family: ipv4
+    trusthost8:
+      source_type: ipv4-classnet
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: trusthost8
+      address_family: ipv4
+    trusthost9:
+      source_type: ipv4-classnet
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: trusthost9
+      address_family: ipv4
+    two-factor:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: two-factor
+    two-factor-authentication:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: two-factor-authentication
+    two-factor-notification:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: two-factor-notification
+    vdom:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: vdom
+      cardinality: list
+    vdom-override:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: vdom-override
+    wildcard:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system admin
+          parameter: wildcard
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system admin
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system admin
 - path: system affinity-interrupt
   mode: table
   key: <id>
