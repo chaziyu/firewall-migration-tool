@@ -1,0 +1,413 @@
+name: Apply FortiOS schema phases 8-13
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fortios-phase8-13.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pyyaml
+      - name: Enrich remaining reviewed FortiOS families
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import yaml
+
+          DOC = "FortiOS 7.4.6 CLI Reference"
+          DOC_ID = "01-746-912654-20241212"
+          ZERO_UUID = "00000000-0000-0000-0000-000000000000"
+          BASE = Path("documentation/reference-schema/fortigate/fortios-7.4.6/schema")
+
+          def evidence(path, parameter=None, note=None, status="documented"):
+              source = {"document": DOC, "config_path": path}
+              if status == "documented":
+                  source["document_id"] = DOC_ID
+              if parameter:
+                  source["parameter"] = parameter
+              if note:
+                  source["note"] = note
+              return {"status": status, "source": source}
+
+          def project_evidence(path, parameter=None, note=None):
+              return evidence(path, parameter, note, "project_semantic")
+
+          def deep_merge(dst, src):
+              for key, value in src.items():
+                  if isinstance(value, dict) and isinstance(dst.get(key), dict):
+                      deep_merge(dst[key], value)
+                  else:
+                      dst[key] = value
+              return dst
+
+          def toggle(description, default="disable"):
+              return {
+                  "fortios_type": "option",
+                  "description": description,
+                  "options": [
+                      {"value": "enable", "description": "Enable setting."},
+                      {"value": "disable", "description": "Disable setting."},
+                  ],
+                  "default": {"value": default},
+              }
+
+          def opt(description, values, default=None):
+              data = {
+                  "fortios_type": "option",
+                  "description": description,
+                  "options": [{"value": value, "description": desc} for value, desc in values],
+              }
+              if default is not None:
+                  data["default"] = {"value": default}
+              return data
+
+          def text_meta(description, max_len=None, fortios_type="string"):
+              data = {"fortios_type": fortios_type, "description": description}
+              if max_len is not None:
+                  data["length"] = {"max": max_len}
+              return data
+
+          def int_meta(description, minimum=None, maximum=None, default=None, note=None):
+              data = {"fortios_type": "integer", "description": description}
+              if minimum is not None or maximum is not None:
+                  data["range"] = {}
+                  if minimum is not None:
+                      data["range"]["min"] = minimum
+                  if maximum is not None:
+                      data["range"]["max"] = maximum
+                  if note:
+                      data["range"]["note"] = note
+              if default is not None:
+                  data["default"] = {"value": default}
+              return data
+
+          def list_meta(description, max_len=None, fortios_type="string"):
+              data = text_meta(description, max_len, fortios_type)
+              data["cardinality"] = "list"
+              return data
+
+          def ref_sem(path, parameter, kind, targets, cardinality="many", note=None):
+              ref = {"kind": kind, "target_paths": targets, "cardinality": cardinality}
+              if note:
+                  ref["note"] = note
+              return {"reference": ref, "evidence": project_evidence(path, parameter)}
+
+          def schedule_sem(path, parameter="schedule"):
+              return ref_sem(
+                  path,
+                  parameter,
+                  "schedule",
+                  ["firewall schedule recurring", "firewall schedule onetime", "firewall schedule group"],
+                  "one",
+                  "FortiOS also supports predefined schedule names; target paths model configurable schedule objects.",
+              )
+
+          def service_sem(path, parameter="service"):
+              return ref_sem(
+                  path,
+                  parameter,
+                  "service",
+                  ["firewall service custom", "firewall service group"],
+                  "many",
+                  "FortiOS also has predefined service names not represented by custom-service config entries.",
+              )
+
+          def address_sem(path, parameter, ipv6=False):
+              targets = ["firewall address6", "firewall addrgrp6"] if ipv6 else ["firewall address", "firewall addrgrp"]
+              return ref_sem(path, parameter, "ipv6-address" if ipv6 else "ipv4-address", targets)
+
+          def interface_sem(path, parameter, many=True):
+              return ref_sem(
+                  path,
+                  parameter,
+                  "interface-or-zone",
+                  ["system interface", "system zone"],
+                  "many" if many else "one",
+                  "FortiOS policy interface selectors can resolve to interfaces or zones; target paths are project semantic classification.",
+              )
+
+          def generic_field(path, parameter, value):
+              if isinstance(value, dict):
+                  data = dict(value)
+                  data.setdefault("evidence", evidence(path, parameter))
+                  return data
+              data = {"source_type": value}
+              same = {
+                  "integer", "string", "var-string", "uuid", "ipv4-address", "ipv4-address-any",
+                  "ipv4-classnet", "ipv6-address", "ipv6-network", "datetime", "mac-address",
+              }
+              if value in same:
+                  data["fortios_type"] = value
+              elif value == "enum":
+                  data["fortios_type"] = "option"
+              elif value == "opaque-user":
+                  data["fortios_type"] = "user"
+              elif value == "option-list":
+                  data["fortios_type"] = "option"
+              if value.endswith("-list"):
+                  data["cardinality"] = "list"
+              data["evidence"] = evidence(path, parameter)
+              return data
+
+          def splice(path_obj, section_path, description, expected_count, key_type, updates, *, custom_handler=False, node_note=None):
+              text = path_obj.read_text(encoding="utf-8")
+              pattern = re.compile(rf"(?ms)^- path: {re.escape(section_path)}\n.*?(?=^- path: |\Z)")
+              match = pattern.search(text)
+              if not match:
+                  raise SystemExit(f"missing schema section: {section_path}")
+              node = yaml.safe_load(match.group(0))[0]
+              fields = node.get("fields", {})
+              if len(fields) != expected_count:
+                  raise SystemExit(f"{section_path}: expected {expected_count} fields, found {len(fields)}")
+              fields = {name: generic_field(section_path, name, spec) for name, spec in fields.items()}
+              for name, override in updates.items():
+                  if name not in fields:
+                      raise SystemExit(f"{section_path}: override field missing: {name}")
+                  deep_merge(fields[name], override)
+              rebuilt = {"path": section_path, "mode": node["mode"]}
+              if "key" in node:
+                  rebuilt["key"] = node["key"]
+              if key_type:
+                  rebuilt["key_type"] = key_type
+              rebuilt["description"] = description
+              rebuilt["fields"] = fields
+              if "nested" in node:
+                  rebuilt["nested"] = node["nested"]
+              for flag in ("read_only", "model_dependent", "availability", "scope"):
+                  if flag in node:
+                      rebuilt[flag] = node[flag]
+              rebuilt["evidence"] = evidence(section_path, note=node_note)
+              semantic = {"migration_relevance": "migration_relevant"}
+              if custom_handler:
+                  semantic["requires_custom_handler"] = True
+              semantic["evidence"] = project_evidence(section_path)
+              rebuilt["semantic"] = semantic
+              replacement = yaml.safe_dump([rebuilt], sort_keys=False, width=1000).rstrip() + "\n"
+              path_obj.write_text(text[:match.start()] + replacement + text[match.end():], encoding="utf-8")
+
+          def common_policy_updates(path, ipv6=False):
+              return {
+                  "comments": {**text_meta("Comment.", 1023, "var-string")},
+                  "status": toggle("Enable or disable this policy.", "enable"),
+                  "uuid": {"fortios_type": "uuid", "description": "Universally Unique Identifier (UUID; automatically assigned but can be manually reset).", "default": {"value": ZERO_UUID}},
+              }
+
+          f2 = BASE / "firewall-02.yaml"
+          f3 = BASE / "firewall-03.yaml"
+          f1 = BASE / "firewall-01.yaml"
+
+          # Phase 8: config firewall policy (176 documented set fields).
+          p = "firewall policy"
+          updates = common_policy_updates(p)
+          updates.update({
+              "action": opt("Policy action (accept/deny/ipsec).", [("accept", "Allow matching sessions."), ("deny", "Block matching sessions."), ("ipsec", "Use policy-based IPsec VPN policy behavior.")], "deny"),
+              "anti-replay": toggle("Enable/disable anti-replay check.", "enable"),
+              "name": text_meta("Policy name.", 35),
+              "srcintf": {**list_meta("Incoming (ingress) interface.", 79), "semantic": interface_sem(p, "srcintf")},
+              "dstintf": {**list_meta("Outgoing (egress) interface.", 79), "semantic": interface_sem(p, "dstintf")},
+              "srcaddr": {**list_meta("Source IPv4 address and address group names.", 79), "semantic": address_sem(p, "srcaddr")},
+              "dstaddr": {**list_meta("Destination IPv4 address and address group names.", 79), "semantic": address_sem(p, "dstaddr")},
+              "srcaddr6": {**list_meta("Source IPv6 address and address group names.", 79), "semantic": address_sem(p, "srcaddr6", True)},
+              "dstaddr6": {**list_meta("Destination IPv6 address and address group names.", 79), "semantic": address_sem(p, "dstaddr6", True)},
+              "service": {**list_meta("Service and service group names.", 79), "semantic": service_sem(p)},
+              "schedule": {**text_meta("Schedule name.", 35), "semantic": schedule_sem(p)},
+              "srcaddr-negate": toggle("When enabled, srcaddr specifies what the source address must NOT be.", "disable"),
+              "dstaddr-negate": toggle("When enabled, dstaddr specifies what the destination address must NOT be.", "disable"),
+              "srcaddr6-negate": toggle("When enabled, srcaddr6 specifies what the source address must NOT be.", "disable"),
+              "dstaddr6-negate": toggle("When enabled, dstaddr6 specifies what the destination address must NOT be.", "disable"),
+              "service-negate": toggle("When enabled, service specifies what the service must NOT be.", "disable"),
+              "nat": toggle("Enable/disable source NAT.", "disable"),
+              "ippool": toggle("Enable use of IP pools for source NAT.", "disable"),
+              "poolname": {**list_meta("IP pool names.", 79), "semantic": ref_sem(p, "poolname", "ipv4-ip-pool", ["firewall ippool"])},
+              "poolname6": {**list_meta("IPv6 pool names.", 79), "semantic": ref_sem(p, "poolname6", "ipv6-ip-pool", ["firewall ippool6"])},
+              "logtraffic": opt("Enable or disable logging; log all sessions or security-profile sessions.", [("all", "Log all sessions accepted or denied by this policy."), ("utm", "Log traffic with a security profile applied."), ("disable", "Disable all logging for this policy.")], "utm"),
+              "inspection-mode": opt("Policy inspection mode.", [("proxy", "Proxy-based inspection."), ("flow", "Flow-based inspection.")], "flow"),
+              "profile-type": opt("Whether policy uses individual security profiles or a profile group.", [("single", "Use individual profiles."), ("group", "Allow security profile groups.")], "single"),
+              "utm-status": toggle("Enable one or more security profiles on the policy.", "disable"),
+              "fixedport": toggle("Prevent source NAT from changing a session source port.", "disable"),
+              "port-preserve": toggle("Preserve the original source port for source NAT if unused.", "enable"),
+              "policy-expiry": toggle("Enable/disable policy expiry.", "disable"),
+              "policy-expiry-date": {"fortios_type": "datetime", "description": "Policy expiry date (YYYY-MM-DD HH:MM:SS).", "default": {"value": "0000-00-00 00:00:00"}},
+              "policy-expiry-date-utc": {"fortios_type": "user", "description": "Policy expiry date and time in epoch format."},
+              "tcp-mss-receiver": int_meta("Receiver TCP maximum segment size (MSS).", 0, 65535, 0),
+              "tcp-mss-sender": int_meta("Sender TCP maximum segment size (MSS).", 0, 65535, 0),
+              "vlan-cos-fwd": int_meta("VLAN forward direction user priority; reference documents 255 as passthrough.", 0, 7, 255, "Fortinet documents default 255 although configurable range is 0..7."),
+              "vlan-cos-rev": int_meta("VLAN reverse direction user priority; reference documents 255 as passthrough.", 0, 7, 255, "Fortinet documents default 255 although configurable range is 0..7."),
+              "session-ttl": {"fortios_type": "user", "description": "TTL in seconds for sessions accepted by this policy."},
+          })
+          splice(f2, p, "Configure IPv4/IPv6 policies.", 176, "integer", updates, node_note="The edit key policyid is documented as integer 0..4294967294 with default 0. Command availability may vary by model/features.")
+
+          # Phase 9: local-in, multicast, and NGFW security-policy families.
+          for p, ipv6, count in [("firewall local-in-policy", False, 20), ("firewall local-in-policy6", True, 19)]:
+              u = common_policy_updates(p, ipv6)
+              u.update({
+                  "action": opt("Action performed on traffic matching the policy.", [("accept", "Allow matching local-in traffic."), ("deny", "Deny matching local-in traffic.")], "deny"),
+                  "srcaddr": {**list_meta("Source address object from available options.", 79), "semantic": address_sem(p, "srcaddr", ipv6)},
+                  "dstaddr": {**list_meta("Destination address object from available options.", 79), "semantic": address_sem(p, "dstaddr", ipv6)},
+                  "srcaddr-negate": toggle("When enabled, srcaddr specifies what the source address must NOT be.", "disable"),
+                  "dstaddr-negate": toggle("When enabled, dstaddr specifies what the destination address must NOT be.", "disable"),
+                  "intf": {**list_meta("Incoming interface name from available options.", 79), "semantic": ref_sem(p, "intf", "interface", ["system interface"])},
+                  "schedule": {**text_meta("Schedule object from available options.", 35), "semantic": schedule_sem(p)},
+                  "service": {**list_meta("Service object from available options.", 79), "semantic": service_sem(p)},
+                  "service-negate": toggle("When enabled, service specifies what the service must NOT be.", "disable"),
+                  "virtual-patch": toggle("Enable/disable virtual patching.", "disable"),
+              })
+              splice(f2, p, "Configure user defined IPv6 local-in policies." if ipv6 else "Configure user defined IPv4 local-in policies.", count, "integer", u, custom_handler=True, node_note="The edit key policyid is documented as integer 0..4294967295 with default 0.")
+
+          for p, ipv6, count in [("firewall multicast-policy", False, 20), ("firewall multicast-policy6", True, 16)]:
+              u = common_policy_updates(p, ipv6)
+              u.update({
+                  "action": opt("Accept or deny traffic matching the policy.", [("accept", "Accept matching traffic."), ("deny", "Deny matching traffic.")], "accept"),
+                  "auto-asic-offload": toggle("Enable/disable offloading policy traffic for hardware acceleration.", "enable"),
+                  "name": text_meta("Policy name.", 35),
+                  "srcaddr": {**list_meta("IPv6 source address name." if ipv6 else "Source address objects.", 79), "semantic": address_sem(p, "srcaddr", ipv6)},
+                  "dstaddr": {**list_meta("IPv6 destination address name." if ipv6 else "Destination address objects.", 79), "semantic": address_sem(p, "dstaddr", ipv6)},
+                  "srcintf": {**text_meta("IPv6 source interface name." if ipv6 else "Source interface name.", 35), "semantic": ref_sem(p, "srcintf", "interface", ["system interface"], "one")},
+                  "dstintf": {**text_meta("IPv6 destination interface name." if ipv6 else "Destination interface name.", 35), "semantic": ref_sem(p, "dstintf", "interface", ["system interface"], "one")},
+                  "protocol": int_meta("Protocol number as defined by IANA.", 0, 255, 0),
+                  "start-port": int_meta("Starting TCP/UDP/SCTP destination port in range.", 0, 65535, 1),
+                  "end-port": int_meta("Ending TCP/UDP/SCTP destination port in range.", 0, 65535, 65535),
+                  "logtraffic": opt("Enable or disable logging.", [("all", "Enable logging traffic accepted by this policy."), ("utm", "Log traffic with a security profile applied."), ("disable", "Disable logging for this policy.")], "utm"),
+                  "utm-status": toggle("Enable an IPS security profile on the policy.", "disable"),
+              })
+              if not ipv6:
+                  u.update({
+                      "dnat": {"fortios_type": "ipv4-address-any", "description": "IPv4 DNAT address used for multicast destination addresses.", "default": {"value": "0.0.0.0"}},
+                      "snat": toggle("Enable/disable source NAT for multicast traffic.", "disable"),
+                      "snat-ip": {"fortios_type": "ipv4-address", "description": "IPv4 source address for NATed traffic.", "default": {"value": "0.0.0.0"}},
+                      "traffic-shaper": text_meta("Traffic shaper applied to traffic forwarded by the multicast policy.", 35),
+                  })
+              splice(f2, p, "Configure IPv6 multicast NAT policies." if ipv6 else "Configure multicast NAT policies.", count, "integer", u, custom_handler=True, node_note="The edit key id is documented as integer 0..4294967294. Some fields are model-dependent.")
+
+          p = "firewall security-policy"
+          u = common_policy_updates(p)
+          u.update({
+              "action": opt("Policy action (accept/deny).", [("accept", "Allow matching sessions."), ("deny", "Block matching sessions.")], "deny"),
+              "name": text_meta("Policy name.", 35),
+              "srcintf": {**list_meta("Incoming (ingress) interface.", 79), "semantic": interface_sem(p, "srcintf")},
+              "dstintf": {**list_meta("Outgoing (egress) interface.", 79), "semantic": interface_sem(p, "dstintf")},
+              "srcaddr": {**list_meta("Source IPv4 address and address group names.", 79), "semantic": address_sem(p, "srcaddr")},
+              "dstaddr": {**list_meta("Destination IPv4 address and address group names.", 79), "semantic": address_sem(p, "dstaddr")},
+              "srcaddr6": {**list_meta("Source IPv6 address and address group names.", 79), "semantic": address_sem(p, "srcaddr6", True)},
+              "dstaddr6": {**list_meta("Destination IPv6 address and address group names.", 79), "semantic": address_sem(p, "dstaddr6", True)},
+              "service": {**list_meta("Service and service group names.", 79), "semantic": service_sem(p)},
+              "schedule": {**text_meta("Schedule name.", 35), "semantic": schedule_sem(p)},
+              "srcaddr-negate": toggle("Negate source IPv4 address matching.", "disable"),
+              "dstaddr-negate": toggle("Negate destination IPv4 address matching.", "disable"),
+              "srcaddr6-negate": toggle("Negate source IPv6 address matching.", "disable"),
+              "dstaddr6-negate": toggle("Negate destination IPv6 address matching.", "disable"),
+              "service-negate": toggle("Negate service matching.", "disable"),
+              "nat46": toggle("Enable/disable NAT46.", "disable"),
+              "nat64": toggle("Enable/disable NAT64.", "disable"),
+              "logtraffic": opt("Enable or disable logging.", [("all", "Log all sessions accepted or denied by this policy."), ("utm", "Log traffic with a security profile applied."), ("disable", "Disable all logging for this policy.")], "utm"),
+              "profile-type": opt("Whether policy uses individual security profiles or a profile group.", [("single", "Use individual profiles."), ("group", "Allow security profile groups.")], "single"),
+              "url-category": {"fortios_type": "user", "description": "URL categories or groups."},
+          })
+          splice(f3, p, "Configure NGFW IPv4/IPv6 application policies.", 77, "integer", u, custom_handler=True, node_note="The edit key policyid is documented as integer 0..4294967294 with default 0. This is FortiOS policy-based NGFW source behavior, not assumed portable firewall-policy intent.")
+
+          # Phase 12: IPv4 and IPv6 IP pools.
+          p = "firewall ippool"
+          u = {
+              "add-nat64-route": toggle("Enable/disable adding NAT64 route.", "enable"),
+              "arp-intf": {**text_meta("Interface that replies to ARP requests; blank means any.", 15), "semantic": ref_sem(p, "arp-intf", "interface", ["system interface"], "one")},
+              "arp-reply": toggle("Enable/disable replying to ARP requests when an IP pool is added to a policy.", "enable"),
+              "associated-interface": {**text_meta("Associated interface name.", 15), "semantic": ref_sem(p, "associated-interface", "interface", ["system interface"], "one")},
+              "block-size": int_meta("Number of addresses in a block.", 64, 4096, 128),
+              "cgn-block-size": int_meta("Number of ports in a block.", 64, 4096, 128),
+              "cgn-client-endip": text_meta("Final client IPv4 address (inclusive).", 255, "var-string"),
+              "cgn-client-ipv6shift": int_meta("IPv6 shift for fixed allocation.", 0, 127, 0),
+              "cgn-client-startip": text_meta("First client IPv4 address (inclusive).", 255, "var-string"),
+              "cgn-fixedalloc": toggle("Enable/disable fixed-allocation mode.", "disable"),
+              "cgn-overload": toggle("Enable/disable overload mode.", "disable"),
+              "cgn-port-end": int_meta("Ending public port that can be allocated.", 1024, 65535, 65530),
+              "cgn-port-start": int_meta("Starting public port that can be allocated.", 1024, 65535, 5117),
+              "cgn-spa": toggle("Enable/disable single port allocation mode.", "disable"),
+              "comments": text_meta("Comment.", 255, "var-string"),
+              "endip": {"fortios_type": "ipv4-address-any", "description": "Final IPv4 address (inclusive) in the pool.", "default": {"value": "0.0.0.0"}},
+              "endport": int_meta("Final port number (inclusive) in the pool range.", 5117, 65533, 65533),
+              "exclude-ip": {**list_meta("Excluded IPv4 addresses.", 79), "fortios_type": "string"},
+              "nat64": toggle("Enable/disable NAT64.", "disable"),
+              "num-blocks-per-user": int_meta("Number of address blocks that can be used by a user.", 1, 128, 8),
+              "pba-interim-log": int_meta("Port block allocation interim logging interval.", 600, 86400, 0, "Fortinet documents default 0 although configurable range starts at 600."),
+              "pba-timeout": int_meta("Port block allocation timeout in seconds.", 3, 86400, 30),
+              "permit-any-host": toggle("Enable/disable full cone NAT.", "disable"),
+              "port-per-user": int_meta("Number of ports for each user.", 32, 60417, 0, "Fortinet documents default 0 although configurable range starts at 32."),
+              "source-endip": {"fortios_type": "ipv4-address-any", "description": "Final IPv4 source address to be translated.", "default": {"value": "0.0.0.0"}},
+              "source-startip": {"fortios_type": "ipv4-address-any", "description": "First IPv4 source address to be translated.", "default": {"value": "0.0.0.0"}},
+              "startip": {"fortios_type": "ipv4-address-any", "description": "First IPv4 address (inclusive) in the pool.", "default": {"value": "0.0.0.0"}},
+              "startport": int_meta("First port number (inclusive) in the pool range.", 5117, 65533, 5117),
+              "subnet-broadcast-in-ippool": toggle("Include the subnetwork and broadcast addresses in the NAT64 IP pool.", "enable"),
+              "type": {"fortios_type": "option", "description": "IP pool type: overload, one-to-one, fixed-port-range, port-block-allocation, or cgn-resource-allocation where supported.", "default": {"value": "overload"}},
+              "utilization-alarm-clear": int_meta("Pool utilization alarm clear threshold.", 40, 100, 80),
+              "utilization-alarm-raise": int_meta("Pool utilization alarm raise threshold.", 50, 100, 100),
+          }
+          splice(f2, p, "Configure IPv4 IP pools.", 32, "string", u, node_note="The edit key name is documented as a string with maximum length 79. Starred parameters may differ by model.")
+
+          p = "firewall ippool6"
+          u = {
+              "add-nat46-route": toggle("Enable/disable adding NAT46 route.", "enable"),
+              "comments": text_meta("Comment.", 255, "var-string"),
+              "endip": {"fortios_type": "ipv6-address", "description": "Final IPv6 address.", "default": {"value": "::"}},
+              "nat46": toggle("Enable/disable NAT46.", "disable"),
+              "startip": {"fortios_type": "ipv6-address", "description": "First IPv6 address.", "default": {"value": "::"}},
+          }
+          splice(f2, p, "Configure IPv6 IP pools.", 5, "string", u, node_note="The edit key name is documented as a string with maximum length 79.")
+
+          # Phase 13: central SNAT map.
+          p = "firewall central-snat-map"
+          u = {
+              "comments": text_meta("Comment.", 1023, "var-string"),
+              "dst-addr": {**list_meta("IPv4 destination address names.", 79), "semantic": address_sem(p, "dst-addr")},
+              "dst-addr6": {**list_meta("IPv6 destination address names.", 79), "semantic": address_sem(p, "dst-addr6", True)},
+              "dst-port": {"fortios_type": "user", "description": "Destination port or port range (1 to 65535; 0 means any port)."},
+              "dstintf": {**list_meta("Destination interface names.", 79), "semantic": interface_sem(p, "dstintf")},
+              "nat": toggle("Enable/disable source NAT.", "enable"),
+              "nat-ippool": {**list_meta("IPv4 IP pools used to translate source addresses.", 79), "semantic": ref_sem(p, "nat-ippool", "ipv4-ip-pool", ["firewall ippool"])},
+              "nat-ippool6": {**list_meta("IPv6 IP pools used for source NAT.", 79), "semantic": ref_sem(p, "nat-ippool6", "ipv6-ip-pool", ["firewall ippool6"])},
+              "nat-port": {"fortios_type": "user", "description": "Translated port or port range (1 to 65535; 0 means any port)."},
+              "nat46": toggle("Enable/disable NAT46.", "disable"),
+              "nat64": toggle("Enable/disable NAT64.", "disable"),
+              "orig-addr": {**list_meta("IPv4 original address names.", 79), "semantic": address_sem(p, "orig-addr")},
+              "orig-addr6": {**list_meta("IPv6 original address names.", 79), "semantic": address_sem(p, "orig-addr6", True)},
+              "orig-port": {"fortios_type": "user", "description": "Original TCP port (1 to 65535; 0 means any port)."},
+              "port-preserve": toggle("Preserve original source port for source NAT if unused.", "enable"),
+              "protocol": int_meta("Integer protocol number.", 0, 255, 0),
+              "srcintf": {**list_meta("Source interface names.", 79), "semantic": interface_sem(p, "srcintf")},
+              "status": toggle("Enable/disable the active status of this policy.", "enable"),
+              "type": opt("IPv4/IPv6 source NAT type.", [("ipv4", "Perform IPv4 source NAT."), ("ipv6", "Perform IPv6 source NAT.")], "ipv4"),
+              "uuid": {"fortios_type": "uuid", "description": "Universally Unique Identifier (UUID; automatically assigned but can be manually reset).", "default": {"value": ZERO_UUID}},
+          }
+          splice(f1, p, "Configure IPv4 and IPv6 central SNAT policies.", 20, "integer", u, node_note="The edit key policyid is documented as integer 0..4294967295 with default 0.")
+
+          # Final structural validation of modified YAML files.
+          for path_obj in (f1, f2, f3):
+              yaml.safe_load(path_obj.read_text(encoding="utf-8"))
+          PY
+      - name: Validate scoped changes
+        run: |
+          git diff --check
+          python scripts/docs/validate_docs.py
+          python scripts/docs/generate_docs.py --check
+      - name: Commit schema phases
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add documentation/reference-schema/fortigate/fortios-7.4.6/schema/firewall-01.yaml \
+                  documentation/reference-schema/fortigate/fortios-7.4.6/schema/firewall-02.yaml \
+                  documentation/reference-schema/fortigate/fortios-7.4.6/schema/firewall-03.yaml
+          git commit -m "docs: verify FortiOS policy and NAT schemas"
+          git push origin HEAD:main
