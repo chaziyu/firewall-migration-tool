@@ -6,6 +6,7 @@ from typing import Any, Iterable
 
 from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.generators.target_helpers import is_generation_safe_object
+from fwmigrate.ir.extension_models import get_object_extension_value
 
 
 _ADVANCED_POOL_TYPES = {
@@ -113,11 +114,13 @@ def _emit_ipv6_pool(pool: Any) -> list[str]:
         lines.append(f"        set startip {pool.start_ip}")
     if getattr(pool, "end_ip", None):
         lines.append(f"        set endip {pool.end_ip}")
-    if getattr(pool, "nat46", None) is not None and _explicit(pool, "nat46"):
-        lines.append(f"        set nat46 {'enable' if pool.nat46 else 'disable'}")
-    if getattr(pool, "add_nat46_route", None) is not None and _explicit(pool, "add-nat46-route"):
+    nat46 = get_object_extension_value(pool, "nat46")
+    add_nat46_route = get_object_extension_value(pool, "add_nat46_route")
+    if nat46 is not None and _explicit(pool, "nat46"):
+        lines.append(f"        set nat46 {'enable' if nat46 else 'disable'}")
+    if add_nat46_route is not None and _explicit(pool, "add-nat46-route"):
         lines.append(
-            f"        set add-nat46-route {'enable' if pool.add_nat46_route else 'disable'}"
+            f"        set add-nat46-route {'enable' if add_nat46_route else 'disable'}"
         )
     if getattr(pool, "description", None):
         lines.append(f"        set comments {_quoted(pool.description)}")
@@ -129,7 +132,7 @@ def _simple_ipv6_vip(vip: Any) -> bool:
     return bool(
         getattr(vip, "address_family", None) == "ipv6"
         and is_generation_safe_object(vip)
-        and getattr(vip, "vip_type", None) in {None, "static-nat"}
+        and get_object_extension_value(vip, "vip_type") in {None, "static-nat"}
         and not getattr(vip, "real_servers", [])
         and not getattr(vip, "load_balance_method", None)
     )
@@ -151,12 +154,15 @@ def _emit_ipv6_vip(vip: Any) -> list[str]:
             lines.append(f"        set extport {vip.external_port}")
         if getattr(vip, "mapped_port", None):
             lines.append(f"        set mappedport {vip.mapped_port}")
-    if getattr(vip, "nat46", None) is not None:
-        lines.append(f"        set nat46 {'enable' if vip.nat46 else 'disable'}")
-    if getattr(vip, "nat64", None) is not None:
-        lines.append(f"        set nat64 {'enable' if vip.nat64 else 'disable'}")
-    if getattr(vip, "nat66", None) is not None:
-        lines.append(f"        set nat66 {'enable' if vip.nat66 else 'disable'}")
+    nat46 = get_object_extension_value(vip, "nat46")
+    nat64 = get_object_extension_value(vip, "nat64")
+    nat66 = get_object_extension_value(vip, "nat66")
+    if nat46 is not None:
+        lines.append(f"        set nat46 {'enable' if nat46 else 'disable'}")
+    if nat64 is not None:
+        lines.append(f"        set nat64 {'enable' if nat64 else 'disable'}")
+    if nat66 is not None:
+        lines.append(f"        set nat66 {'enable' if nat66 else 'disable'}")
     if getattr(vip, "description", None):
         lines.append(f"        set comment {_quoted(vip.description)}")
     lines.append("    next")
@@ -181,12 +187,12 @@ def _safe_vip_group(group: Any, vip_index: dict[tuple[str, str, str], Any]) -> b
         if family == "ipv6" and not _simple_ipv6_vip(vip):
             return False
         if family == "ipv4" and (
-            getattr(vip, "vip_type", None) not in {None, "static-nat"}
+            get_object_extension_value(vip, "vip_type") not in {None, "static-nat"}
             or getattr(vip, "real_servers", [])
             or getattr(vip, "load_balance_method", None)
             or getattr(vip, "source_filters", [])
-            or getattr(vip, "nat46", None)
-            or getattr(vip, "nat64", None)
+            or get_object_extension_value(vip, "nat46")
+            or get_object_extension_value(vip, "nat64")
         ):
             return False
     return True
@@ -235,7 +241,7 @@ def _supplemental_cli(ir: Any) -> str:
         if getattr(vip, "address_family", "ipv4") == "ipv4"
         and is_generation_safe_object(vip)
         and _source_vip_filter(vip) is not None
-        and getattr(vip, "vip_type", None) in {None, "static-nat"}
+        and get_object_extension_value(vip, "vip_type") in {None, "static-nat"}
         and not getattr(vip, "real_servers", [])
         and not getattr(vip, "load_balance_method", None)
     ]

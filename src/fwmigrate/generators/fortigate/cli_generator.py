@@ -12,6 +12,7 @@ from fwmigrate.generators.nat_capabilities import (
 )
 from fwmigrate.generators.policy_capabilities import policy_capabilities
 from fwmigrate.ir import IRConfig
+from fwmigrate.ir.extension_models import get_object_extension_value
 from fwmigrate.ir.nat import IRNATRule
 from fwmigrate.ir.enums import AddressType, NATTranslationMode, NATType, PolicyAction, ServiceProtocol
 from fwmigrate.ir.semantics import (
@@ -611,6 +612,12 @@ class FortiGateCLIGenerator:
         if ir.ip_pools:
             lines.append("config firewall ippool")
             for pool in ir.ip_pools:
+                pba_timeout = get_object_extension_value(pool, "pba_timeout")
+                block_size = get_object_extension_value(pool, "block_size")
+                cgn_block_size = get_object_extension_value(pool, "cgn_block_size")
+                nat64 = get_object_extension_value(pool, "nat64")
+                nat46 = get_object_extension_value(pool, "nat46")
+                arp_reply = get_object_extension_value(pool, "arp_reply")
                 if pool.address_family != "ipv4" or not is_generation_safe_object(pool):
                     lines.append(
                         f"    # IP pool {pool.name} withheld: unsupported address family or requires review"
@@ -627,11 +634,11 @@ class FortiGateCLIGenerator:
                     )
                     continue
                 if (
-                    pool.pba_timeout
-                    or pool.block_size
-                    or pool.cgn_block_size
-                    or pool.nat64
-                    or pool.nat46
+                    pba_timeout
+                    or block_size
+                    or cgn_block_size
+                    or nat64
+                    or nat46
                 ):
                     lines.append(
                         f"    # IP pool {pool.name} withheld: advanced PBA/CGN/NAT64 semantics"
@@ -647,8 +654,8 @@ class FortiGateCLIGenerator:
                     lines.append(f"        set endip {pool.end_ip}")
                 if pool.associated_interface:
                     lines.append(f'        set associated-interface "{pool.associated_interface}"')
-                if pool.arp_reply is not None:
-                    lines.append(f"        set arp-reply {'enable' if pool.arp_reply else 'disable'}")
+                if arp_reply is not None:
+                    lines.append(f"        set arp-reply {'enable' if arp_reply else 'disable'}")
                 if pool.description:
                     lines.append(f'        set comments "{pool.description}"')
                 lines.append("    next")
@@ -659,17 +666,20 @@ class FortiGateCLIGenerator:
         if ir.virtual_ips:
             lines.append("config firewall vip")
             for vip in ir.virtual_ips:
+                vip_type = get_object_extension_value(vip, "vip_type")
+                nat46 = get_object_extension_value(vip, "nat46")
+                nat64 = get_object_extension_value(vip, "nat64")
                 if vip.address_family != "ipv4" or not is_generation_safe_object(vip):
                     lines.append(
                         f"    # VIP {vip.name} withheld: unsupported address family or requires review"
                     )
                     continue
-                if vip.vip_type not in (None, "static-nat"):
+                if vip_type not in (None, "static-nat"):
                     lines.append(
-                        f"    # VIP {vip.name} withheld: advanced VIP type '{vip.vip_type}'"
+                        f"    # VIP {vip.name} withheld: advanced VIP type '{vip_type}'"
                     )
                     continue
-                if vip.real_servers or vip.load_balance_method or vip.source_filters or vip.nat46 or vip.nat64:
+                if vip.real_servers or vip.load_balance_method or vip.source_filters or nat46 or nat64:
                     lines.append(
                         f"    # VIP {vip.name} withheld: real-server or load-balancing semantics"
                     )

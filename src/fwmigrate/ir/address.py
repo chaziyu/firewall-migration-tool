@@ -4,11 +4,12 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.enums import AddressType
 from .extension_models import (
+    IRCheckPointObjectCompatibilityMixin,
     IRCheckPointObjectExtension,
+    IRFortiOSAddressCompatibilityMixin,
+    IRFortiOSAddressGroupCompatibilityMixin,
     IRFortiOSAddressExtension,
-    get_object_extension_value,
     move_object_extension,
-    set_object_extension_value,
 )
 
 
@@ -20,7 +21,7 @@ class IRAddressTaggingEntry(BaseModel):
 class IRMACAddressEntry(BaseModel):
     start: str
     end: Optional[str] = None
-class IRAddress(BaseModel):
+class IRAddress(IRCheckPointObjectCompatibilityMixin, IRFortiOSAddressCompatibilityMixin, BaseModel):
     name: str
     type: AddressType
     source_context: Optional[str] = None
@@ -40,29 +41,6 @@ class IRAddress(BaseModel):
     source_interface: Optional[str] = None
     resolved_interface_subnet: Optional[str] = None
     interface_reference_resolved: Optional[bool] = None
-    source_hw_model: Optional[str] = None
-    source_hw_vendor: Optional[str] = None
-    source_cache_ttl: Optional[int] = None
-    source_clearpass_spt: Optional[str] = None
-    source_epg_name: Optional[str] = None
-    source_organization: Optional[str] = None
-    source_os: Optional[str] = None
-    source_policy_group: Optional[str] = None
-    source_route_tag: Optional[int] = None
-    source_sdn: Optional[str] = None
-    source_sdn_addr_type: Optional[str] = None
-    source_sdn_tag: Optional[str] = None
-    source_node_ip_only: Optional[bool] = None
-    source_obj_id: Optional[str] = None
-    source_sub_type: Optional[str] = None
-    source_obj_tag: Optional[str] = None
-    source_tag_type: Optional[str] = None
-    source_obj_type: Optional[str] = None
-    source_dirty: Optional[str] = None
-    source_subnet_name: Optional[str] = None
-    source_sw_version: Optional[str] = None
-    source_tag_detection_level: Optional[str] = None
-    source_tenant: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
@@ -99,6 +77,13 @@ class IRAddress(BaseModel):
         return move_object_extension(
             data,
             (
+                "source_hw_model", "source_hw_vendor", "source_cache_ttl",
+                "source_clearpass_spt", "source_epg_name", "source_organization",
+                "source_os", "source_policy_group", "source_route_tag", "source_sdn",
+                "source_sdn_addr_type", "source_sdn_tag", "source_node_ip_only",
+                "source_obj_id", "source_sub_type", "source_obj_tag", "source_tag_type",
+                "source_obj_type", "source_dirty", "source_subnet_name", "source_sw_version",
+                "source_tag_detection_level", "source_tenant",
                 "source_fsso_group", "source_fabric_object_setting",
                 "source_effective_defaults", "source_template",
                 "source_template_reference_resolved",
@@ -233,7 +218,7 @@ class IRAddressGroupTaggingEntry(BaseModel):
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRAddressGroup(BaseModel):
+class IRAddressGroup(IRFortiOSAddressGroupCompatibilityMixin, BaseModel):
     name: str
     source_context: Optional[str] = None
     members: List[str] = Field(default_factory=list)
@@ -252,16 +237,9 @@ class IRAddressGroup(BaseModel):
     source_category: Optional[str] = None
     source_section: Optional[str] = None
     address_family: Optional[str] = None
-    source_group_type: Optional[str] = None
-    source_exclude_setting: Optional[str] = None
     exclusion_enabled: bool = False
     exclude_members: List[str] = Field(default_factory=list)
     source_tagging_entries: List[IRAddressGroupTaggingEntry] = Field(default_factory=list)
-    source_sub_type: Optional[str] = None
-    source_obj_tag: Optional[str] = None
-    source_tag_type: Optional[str] = None
-    source_obj_type: Optional[str] = None
-    source_dirty: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
@@ -270,51 +248,11 @@ class IRAddressGroup(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def move_legacy_vendor_fields(cls, data: Any) -> Any:
-        return move_object_extension(data, ("source_fabric_object_setting",))
-
-
-def _checkpoint_property(field: str):
-    return property(
-        lambda self: get_object_extension_value(self, field),
-        lambda self, value: set_object_extension_value(
-            self, IRCheckPointObjectExtension, field, value
-        ),
-    )
-
-
-for _field in (
-    "checkpoint_domain_uid", "checkpoint_domain_name", "checkpoint_origin_scope",
-    "global_source_uid", "global_source_name", "local_override_uid", "assignment_uid",
-):
-    setattr(IRAddress, _field, _checkpoint_property(_field))
-
-
-for _field in (
-    "source_fsso_group", "source_fabric_object_setting", "source_effective_defaults",
-    "source_template", "source_template_reference_resolved",
-):
-    setattr(
-        IRAddress,
-        _field,
-        property(
-            lambda self, field=_field: get_object_extension_value(self, field),
-            lambda self, value, field=_field: set_object_extension_value(
-                self, IRFortiOSAddressExtension, field, value
-            ),
-        ),
-    )
-
-setattr(
-    IRAddressGroup,
-    "source_fabric_object_setting",
-    property(
-        lambda self: get_object_extension_value(self, "source_fabric_object_setting"),
-        lambda self, value: set_object_extension_value(
-            self, IRFortiOSAddressExtension, "source_fabric_object_setting", value
-        ),
-    ),
-)
-
+        return move_object_extension(data, (
+            "source_fabric_object_setting", "source_group_type", "source_exclude_setting",
+            "source_sub_type", "source_obj_tag", "source_tag_type", "source_obj_type",
+            "source_dirty",
+        ))
 
 __all__ = [
     "IRAddressTaggingEntry",

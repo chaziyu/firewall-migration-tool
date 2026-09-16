@@ -132,6 +132,10 @@ from fwmigrate.ir.extension_models import (
     IRAddress6TemplateSegment,
     IRAddress6TemplateValue,
     IRIPPoolGroup,
+    IRFortiOSAddressExtension,
+    IRFortiOSNATRuleExtension,
+    IRFortiOSPublishedServiceExtension,
+    set_object_extension_value,
 )
 from fwmigrate.ir.service import (
     IRServiceCategory,
@@ -4551,10 +4555,8 @@ class FGToIRTransformer:
             item = by_name.get((source.source_context, source.name))
             if item is None:
                 continue
-            item.source_subnet_name = source.subnet_name
-            item.source_sw_version = source.sw_version
-            item.source_tag_detection_level = source.tag_detection_level
-            item.source_tenant = source.tenant
+            for field in ("source_subnet_name", "source_sw_version", "source_tag_detection_level", "source_tenant"):
+                set_object_extension_value(item, IRFortiOSAddressExtension, field, getattr(source, field[7:]))
 
     @staticmethod
     def _address_metadata_review_reasons(addr) -> List[str]:
@@ -4594,8 +4596,8 @@ class FGToIRTransformer:
             for item in items:
                 if item.name != addr.name or item.source_context != addr.source_context:
                     continue
-                item.source_node_ip_only = node_ip_only
-                item.source_obj_id = addr.obj_id
+                set_object_extension_value(item, IRFortiOSAddressExtension, "source_node_ip_only", node_ip_only)
+                set_object_extension_value(item, IRFortiOSAddressExtension, "source_obj_id", addr.obj_id)
                 item.requires_manual_review |= bool(reasons)
                 if reasons:
                     item.migration_status = "PARTIALLY_NORMALIZED"
@@ -5543,13 +5545,17 @@ class FGToIRTransformer:
                 continue
             defaults = dict(source.source_effective_defaults or {})
             if defaults:
-                address.source_effective_defaults = defaults
+                set_object_extension_value(
+                    address, IRFortiOSAddressExtension, "source_effective_defaults", defaults
+                )
             template_name = source.template
             if not template_name:
                 continue
             resolved = (source.source_context, template_name) in template_keys
-            address.source_template = template_name
-            address.source_template_reference_resolved = resolved
+            set_object_extension_value(address, IRFortiOSAddressExtension, "source_template", template_name)
+            set_object_extension_value(
+                address, IRFortiOSAddressExtension, "source_template_reference_resolved", resolved
+            )
             address.source_attributes["template_reference_resolved"] = resolved
             if not resolved:
                 address.requires_manual_review = True
@@ -8651,7 +8657,44 @@ class FGToIRTransformer:
                     address_family="ipv4",
                     source_id=vip.id,
                     source_uuid=vip.uuid,
-                    vip_type=vip.type,
+                    vendor_extension=IRFortiOSPublishedServiceExtension(
+                        canonical_name=vip.name,
+                        source_context=vip.source_context,
+                        source_id=vip.id,
+                        source_uuid=vip.uuid,
+                        vip_type=vip.type,
+                        port_mapping_type=(
+                            effective["portmapping_type"]
+                            if effective["port_forward"] or vip.portmapping_type is not None
+                            else None
+                        ),
+                        arp_reply=self._fortios_enabled(vip.arp_reply),
+                        gratuitous_arp_interval=vip.gratuitous_arp_interval,
+                        nat_source_vip=self._fortios_enabled(vip.nat_source_vip),
+                        nat44=effective["nat44"],
+                        nat46=effective["nat46"],
+                        add_nat46_route=effective["add_nat46_route"],
+                        ipv6_mapped_ip=vip.ipv6_mappedip,
+                        ipv6_mapped_port=vip.ipv6_mappedport,
+                        server_type=vip.server_type,
+                        http_redirect=self._fortios_enabled(vip.http_redirect),
+                        h2_support=vip.h2_support,
+                        h3_support=vip.h3_support,
+                        http_multiplex=vip.http_multiplex,
+                        ssl_mode=vip.ssl_mode,
+                        ssl_algorithm=vip.ssl_algorithm,
+                        ssl_min_version=vip.ssl_min_version,
+                        ssl_max_version=vip.ssl_max_version,
+                        ssl_server_algorithm=vip.ssl_server_algorithm,
+                        ssl_server_min_version=vip.ssl_server_min_version,
+                        ssl_server_max_version=vip.ssl_server_max_version,
+                        ssl_pfs=vip.ssl_pfs,
+                        gslb_domain_name=vip.gslb_domain_name,
+                        gslb_hostname=vip.gslb_hostname,
+                        max_embryonic_connections=vip.max_embryonic_connections,
+                        source_attributes=dict(vip.extra_settings),
+                        **typed_nested,
+                    ),
                     enabled=(
                         vip.status != "disable"
                     ),
@@ -8679,29 +8722,6 @@ class FGToIRTransformer:
                     ),
                     external_port=vip.extport,
                     mapped_port=vip.mappedport,
-                    port_mapping_type=(
-                        effective["portmapping_type"]
-                        if effective["port_forward"] or vip.portmapping_type is not None
-                        else None
-                    ),
-                    arp_reply=(
-                        self._fortios_enabled(
-                            vip.arp_reply
-                        )
-                    ),
-                    gratuitous_arp_interval=(
-                        vip.gratuitous_arp_interval
-                    ),
-                    nat_source_vip=(
-                        self._fortios_enabled(
-                            vip.nat_source_vip
-                        )
-                    ),
-                    nat44=effective["nat44"],
-                    nat46=effective["nat46"],
-                    add_nat46_route=effective["add_nat46_route"],
-                    ipv6_mapped_ip=vip.ipv6_mappedip,
-                    ipv6_mapped_port=vip.ipv6_mappedport,
                     source_filters=list(
                         vip.src_filter
                     ),
@@ -8714,36 +8734,12 @@ class FGToIRTransformer:
                     load_balance_method=(
                         vip.ldb_method
                     ),
-                    server_type=(
-                        vip.server_type
-                    ),
                     persistence=(
                         vip.persistence
                     ),
-                    http_redirect=(
-                        self._fortios_enabled(
-                            vip.http_redirect
-                        )
-                    ),
-                    h2_support=vip.h2_support,
-                    h3_support=vip.h3_support,
-                    http_multiplex=vip.http_multiplex,
-                    ssl_mode=vip.ssl_mode,
                     ssl_certificate=vip.ssl_certificate,
-                    ssl_algorithm=vip.ssl_algorithm,
-                    ssl_min_version=vip.ssl_min_version,
-                    ssl_max_version=vip.ssl_max_version,
-                    ssl_server_algorithm=vip.ssl_server_algorithm,
-                    ssl_server_min_version=vip.ssl_server_min_version,
-                    ssl_server_max_version=vip.ssl_server_max_version,
-                    ssl_pfs=vip.ssl_pfs,
-                    gslb_domain_name=vip.gslb_domain_name,
-                    gslb_hostname=vip.gslb_hostname,
                     monitors=list(
                         vip.monitor
-                    ),
-                    max_embryonic_connections=(
-                        vip.max_embryonic_connections
                     ),
                     real_servers=real_servers,
                     source_explicit_fields=effective["explicit_fields"],
@@ -8758,7 +8754,6 @@ class FGToIRTransformer:
                         self._transform_source_config_node(node)
                         for node in vip.nested_configs
                     ],
-                    **typed_nested,
                     color=vip.color,
                     description=vip.comment,
                     extra_settings=dict(
@@ -8816,7 +8811,39 @@ class FGToIRTransformer:
                     address_family="ipv6",
                     source_id=vip.id,
                     source_uuid=vip.uuid,
-                    vip_type=vip.type,
+                    vendor_extension=IRFortiOSPublishedServiceExtension(
+                        canonical_name=vip.name,
+                        source_context=vip.source_context,
+                        source_id=vip.id,
+                        source_uuid=vip.uuid,
+                        vip_type=vip.type,
+                        nat_source_vip=self._fortios_explicit_flag(vip.nat_source_vip),
+                        nat64=self._fortios_explicit_flag(vip.nat64),
+                        nat66=self._fortios_explicit_flag(vip.nat66),
+                        add_nat64_route=self._fortios_explicit_flag(vip.add_nat64_route),
+                        ndp_reply=self._fortios_explicit_flag(vip.ndp_reply),
+                        ipv4_mapped_ip=vip.ipv4_mappedip,
+                        ipv4_mapped_port=vip.ipv4_mappedport,
+                        embedded_ipv4_address=vip.embedded_ipv4_address,
+                        server_type=vip.server_type,
+                        http_redirect=self._fortios_explicit_flag(vip.http_redirect),
+                        h2_support=vip.h2_support,
+                        h3_support=vip.h3_support,
+                        http_multiplex=vip.http_multiplex,
+                        ssl_mode=vip.ssl_mode,
+                        ssl_algorithm=vip.ssl_algorithm,
+                        ssl_min_version=vip.ssl_min_version,
+                        ssl_max_version=vip.ssl_max_version,
+                        ssl_server_algorithm=vip.ssl_server_algorithm,
+                        ssl_server_min_version=vip.ssl_server_min_version,
+                        ssl_server_max_version=vip.ssl_server_max_version,
+                        ssl_pfs=vip.ssl_pfs,
+                        gslb_domain_name=vip.gslb_domain_name,
+                        gslb_hostname=vip.gslb_hostname,
+                        max_embryonic_connections=vip.max_embryonic_connections,
+                        source_attributes=dict(vip.extra_settings),
+                        **typed_nested,
+                    ),
                     enabled=vip.status != "disable",
                     external_ip=vip.extip,
                     external_interface=vip.extintf,
@@ -8825,33 +8852,9 @@ class FGToIRTransformer:
                     protocol=self._vip_protocol(vip.protocol),
                     external_port=vip.extport,
                     mapped_port=vip.mappedport,
-                    nat_source_vip=self._fortios_explicit_flag(vip.nat_source_vip),
-                    nat64=self._fortios_explicit_flag(vip.nat64),
-                    nat66=self._fortios_explicit_flag(vip.nat66),
-                    add_nat64_route=self._fortios_explicit_flag(vip.add_nat64_route),
-                    ndp_reply=self._fortios_explicit_flag(vip.ndp_reply),
-                    ipv4_mapped_ip=vip.ipv4_mappedip,
-                    ipv4_mapped_port=vip.ipv4_mappedport,
-                    embedded_ipv4_address=vip.embedded_ipv4_address,
                     load_balance_method=vip.ldb_method,
-                    server_type=vip.server_type,
                     persistence=vip.persistence,
-                    http_redirect=self._fortios_explicit_flag(vip.http_redirect),
-                    h2_support=vip.h2_support,
-                    h3_support=vip.h3_support,
-                    http_multiplex=vip.http_multiplex,
-                    ssl_mode=vip.ssl_mode,
                     ssl_certificate=vip.ssl_certificate,
-                    ssl_algorithm=vip.ssl_algorithm,
-                    ssl_min_version=vip.ssl_min_version,
-                    ssl_max_version=vip.ssl_max_version,
-                    ssl_server_algorithm=vip.ssl_server_algorithm,
-                    ssl_server_min_version=vip.ssl_server_min_version,
-                    ssl_server_max_version=vip.ssl_server_max_version,
-                    ssl_pfs=vip.ssl_pfs,
-                    gslb_domain_name=vip.gslb_domain_name,
-                    gslb_hostname=vip.gslb_hostname,
-                    max_embryonic_connections=vip.max_embryonic_connections,
                     monitors=list(vip.monitor),
                     source_filters=list(vip.src_filter),
                     real_servers=real_servers,
@@ -8861,7 +8864,6 @@ class FGToIRTransformer:
                         self._transform_source_config_node(node)
                         for node in vip.nested_configs
                     ],
-                    **typed_nested,
                     color=vip.color,
                     description=vip.comment,
                     extra_settings=dict(vip.extra_settings),
@@ -10272,7 +10274,12 @@ class FGToIRTransformer:
             if not group_refs:
                 continue
 
-            rule.source_pool_group_references = list(dict.fromkeys(group_refs))
+            set_object_extension_value(
+                rule,
+                IRFortiOSNATRuleExtension,
+                "source_pool_group_references",
+                list(dict.fromkeys(group_refs)),
+            )
             direct_refs = list(rule.source_pool_references)
             if ambiguous_refs:
                 reason = (

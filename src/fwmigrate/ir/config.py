@@ -22,6 +22,7 @@ from .extensions import (
     IRFortiOSNATPoolExtension,
     IRFortiOSNATRuleExtension,
     IRFortiOSPolicyExtension,
+    IRFortiOSPublishedServiceExtension,
     IRVendorExtensions,
     normalize_transitional_v2_payload,
 )
@@ -242,11 +243,54 @@ class IRConfig(BaseModel):
             if not any(record.model_dump(mode="json") == extension.model_dump(mode="json") for record in fortios.nat_rule_extensions):
                 fortios.nat_rule_extensions.append(extension)
 
+        for item in self.published_services:
+            embedded = getattr(item, "vendor_extension", None)
+            if not isinstance(embedded, IRFortiOSPublishedServiceExtension):
+                continue
+            matching = next(
+                (
+                    record for record in fortios.published_service_extensions
+                    if record.canonical_name == embedded.canonical_name
+                    and record.source_context == embedded.source_context
+                    and (
+                        record.source_uuid is None
+                        or embedded.source_uuid is None
+                        or record.source_uuid == embedded.source_uuid
+                    )
+                    and (
+                        record.source_id is None
+                        or embedded.source_id is None
+                        or record.source_id == embedded.source_id
+                    )
+                ),
+                None,
+            )
+            if matching is None:
+                fortios.published_service_extensions.append(embedded)
+            else:
+                for field in embedded.model_fields_set | matching.model_fields_set:
+                    if field in {"canonical_name", "source_context", "source_id", "source_uuid"}:
+                        continue
+                    embedded_set = field in embedded.model_fields_set
+                    matching_set = field in matching.model_fields_set
+                    if embedded_set and matching_set:
+                        if getattr(embedded, field) != getattr(matching, field):
+                            raise ValueError(
+                                f"Conflicting published-service extension values for {embedded.canonical_name}.{field}."
+                            )
+                    elif embedded_set:
+                        setattr(matching, field, getattr(embedded, field))
+                    else:
+                        setattr(embedded, field, getattr(matching, field))
+            if clear_embedded:
+                object.__setattr__(item, "vendor_extension", None)
+
         def bind_extensions(collection: list[Any], records: list[Any], extension_type: type[BaseModel]) -> None:
             for item in collection:
                 extension = getattr(item, "vendor_extension", None)
                 if extension is None:
                     item_uuid = getattr(item, "source_uuid", None) or getattr(item, "source_policy_uuid", None)
+                    item_id = getattr(item, "source_id", None)
                     extension = next(
                         (
                             record for record in records
@@ -254,6 +298,7 @@ class IRConfig(BaseModel):
                             and record.canonical_name == getattr(item, "name", None)
                             and record.source_context == getattr(item, "source_context", None)
                             and (record.source_uuid is None or record.source_uuid == item_uuid)
+                            and (record.source_id is None or item_id is None or record.source_id == item_id)
                         ),
                         None,
                     )
@@ -267,6 +312,11 @@ class IRConfig(BaseModel):
         bind_extensions(self.security_policies, fortios.policy_extensions, IRFortiOSPolicyExtension)
         bind_extensions(self.nat_pools, fortios.nat_pool_extensions, IRFortiOSNATPoolExtension)
         bind_extensions(self.nat_rules, fortios.nat_rule_extensions, IRFortiOSNATRuleExtension)
+        bind_extensions(
+            self.published_services,
+            fortios.published_service_extensions,
+            IRFortiOSPublishedServiceExtension,
+        )
         for collection, destination, extension_type in destinations:
             bind_extensions(getattr(self, collection), getattr(checkpoint, destination), extension_type)
 
