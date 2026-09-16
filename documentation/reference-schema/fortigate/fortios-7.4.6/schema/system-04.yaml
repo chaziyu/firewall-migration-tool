@@ -5,13 +5,81 @@ sections:
 - path: system interface
   mode: table
   key: <name>
+  key_type: string
+  description: Configure interfaces.
   fields:
     ac-name: string
-    aggregate: string
-    aggregate-type: enum
+    aggregate:
+      source_type: string
+      fortios_type: string
+      description: Aggregate interface. Read-only.
+      length:
+        max: 15
+      read_only: true
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: aggregate
+    aggregate-type:
+      source_type: enum
+      fortios_type: option
+      description: Type of aggregation.
+      options:
+      - value: physical
+        description: Physical interface aggregation.
+      - value: vxlan
+        description: VXLAN interface aggregation.
+      default:
+        value: physical
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: aggregate-type
     algorithm: enum
-    alias: string
-    allowaccess: option-list
+    alias:
+      source_type: string
+      fortios_type: string
+      description: Alias displayed with the interface name.
+      length:
+        max: 25
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: alias
+    allowaccess:
+      source_type: option-list
+      fortios_type: option
+      description: Permitted types of management access to this interface.
+      options:
+      - value: ping
+      - value: https
+      - value: ssh
+      - value: snmp
+      - value: http
+      - value: telnet
+      - value: fgfm
+      - value: radius-acct
+      - value: probe-response
+      - value: fabric
+      - value: ftm
+      - value: speed-test
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: allowaccess
     annex: enum
     ap-discover: enum
     arpforward: enum
@@ -30,8 +98,35 @@ sections:
     color: integer
     dedicated-to: enum
     default-purdue-level: enum
-    defaultgw: enum
-    description: var-string
+    defaultgw:
+      source_type: enum
+      fortios_type: option
+      description: Enable to get the gateway IP from the DHCP or PPPoE server.
+      options:
+      - value: enable
+      - value: disable
+      default:
+        value: enable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: defaultgw
+    description:
+      source_type: var-string
+      fortios_type: var-string
+      description: Description.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: description
     detected-peer-mtu: integer
     detectprotocol: option-list
     detectserver: opaque-user
@@ -44,26 +139,127 @@ sections:
     dhcp-relay-agent-option: enum
     dhcp-relay-allow-no-end-option: enum
     dhcp-relay-circuit-id: string
-    dhcp-relay-interface: string
-    dhcp-relay-interface-select-method: enum
-    dhcp-relay-ip: opaque-user
+    dhcp-relay-interface:
+      source_type: string
+      fortios_type: string
+      description: Specify outgoing interface to reach server.
+      length:
+        max: 15
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: dhcp-relay-interface
+    dhcp-relay-interface-select-method:
+      source_type: enum
+      fortios_type: option
+      description: Specify how to select outgoing interface to reach server.
+      options:
+      - value: auto
+      - value: sdwan
+      - value: specify
+      default:
+        value: auto
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: dhcp-relay-interface-select-method
+    dhcp-relay-ip:
+      source_type: opaque-user
+      fortios_type: user
+      description: DHCP relay IP address.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: dhcp-relay-ip
     dhcp-relay-link-selection: ipv4-address
     dhcp-relay-request-all-server: enum
-    dhcp-relay-service: enum
+    dhcp-relay-service:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable allowing this interface to act as a DHCP relay.
+      options:
+      - value: disable
+      - value: enable
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: dhcp-relay-service
     dhcp-relay-source-ip: ipv4-address
     dhcp-relay-type: enum
     dhcp-renew-time: integer
     dhcp-smart-relay: enum
     disc-retry-timeout: integer
-    distance: integer
-    dns-server-override: enum
+    distance:
+      source_type: integer
+      fortios_type: integer
+      description: Distance for routes learned through this interface.
+      range:
+        min: 1
+        max: 255
+      default:
+        value: 5
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: distance
+    dns-server-override:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable use of DNS server acquired from DHCP or PPPoE.
+      options:
+      - value: enable
+      - value: disable
+      default:
+        value: enable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: dns-server-override
     dns-server-protocol: option-list
     drop-fragment: enum
     drop-overlapped-fragment: enum
     eap-ca-cert: string
     eap-identity: string
     eap-method: enum
-    eap-password: password!sensitive
+    eap-password:
+      source_type: password
+      fortios_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: eap-password
+      semantic:
+        sensitive: true
+        migration_relevance: source_evidence_only
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: system interface
+            parameter: eap-password
     eap-supplicant: enum
     eap-user-cert: string
     egress-cos: enum
@@ -99,13 +295,63 @@ sections:
     ingress-shaping-profile: string
     ingress-spillover-threshold: integer
     interconnect-profile: enum
-    interface: string
+    interface:
+      source_type: string
+      fortios_type: string
+      description: Interface name.
+      length:
+        max: 15
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: interface
+      semantic:
+        reference:
+          kind: interface
+          target_paths:
+          - system interface
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: system interface
+            parameter: interface
     internal: integer
-    ip: ipv4-classnet-host
+    ip:
+      source_type: ipv4-classnet-host
+      fortios_type: ipv4-classnet-host
+      description: Interface IPv4 address and subnet mask, syntax X.X.X.X/24.
+      address_family: ipv4
+      default:
+        value: 0.0.0.0 0.0.0.0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: ip
     ip-managed-by-fortiipam: enum
     ipmac: enum
     ips-sniffer-mode: enum
-    ipunnumbered: ipv4-address
+    ipunnumbered:
+      source_type: ipv4-address
+      fortios_type: ipv4-address
+      description: Unnumbered IP used for PPPoE interfaces for which no unique local address is provided.
+      address_family: ipv4
+      default:
+        value: 0.0.0.0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: ipunnumbered
     l2forward: enum
     l2tp-client: enum
     lacp-ha-secondary: enum
@@ -117,21 +363,122 @@ sections:
     lldp-network-policy: string
     lldp-reception: enum
     lldp-transmission: enum
-    macaddr: mac-address
+    macaddr:
+      source_type: mac-address
+      fortios_type: mac-address
+      description: Change the interface's MAC address.
+      default:
+        value: 00:00:00:00:00:00
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: macaddr
     managed-subnetwork-size: enum
     management-ip: ipv4-classnet-host
     measured-downstream-bandwidth: integer
     measured-upstream-bandwidth: integer
     mediatype: enum
-    member: identifier-list
-    min-links: integer
+    member:
+      source_type: identifier-list
+      fortios_type: string
+      description: Physical interfaces that belong to the aggregate or redundant interface.
+      length:
+        max: 79
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: member
+      semantic:
+        reference:
+          kind: interface-member
+          target_paths:
+          - system interface
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: system interface
+            parameter: member
+    min-links:
+      source_type: integer
+      fortios_type: integer
+      description: Minimum number of aggregated ports that must be up.
+      range:
+        min: 1
+        max: 32
+      default:
+        value: 1
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: min-links
     min-links-down: enum
     mirroring-direction: enum
     mirroring-port: string
-    mode: enum
+    mode:
+      source_type: enum
+      fortios_type: option
+      description: Addressing mode (static, DHCP, PPPoE).
+      options:
+      - value: static
+        description: Static setting.
+      - value: dhcp
+        description: External DHCP client mode.
+      - value: pppoe
+        description: External PPPoE mode.
+      default:
+        value: static
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: mode
     monitor-bandwidth: enum
-    mtu: integer
-    mtu-override: enum
+    mtu:
+      source_type: integer
+      fortios_type: integer
+      description: MTU value for this interface.
+      range:
+        min: 0
+        max: 4294967295
+      default:
+        value: 1500
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: mtu
+    mtu-override:
+      source_type: enum
+      fortios_type: option
+      description: Enable to set a custom MTU for this interface.
+      options:
+      - value: enable
+      - value: disable
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: mtu-override
     mux-type: enum
     ndiscforward: enum
     netbios-forward: enum
@@ -139,7 +486,25 @@ sections:
     np-qos-profile: integer
     outbandwidth: integer
     padt-retry-timeout: integer
-    password: password!sensitive
+    password:
+      source_type: password
+      fortios_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: password
+      semantic:
+        sensitive: true
+        migration_relevance: source_evidence_only
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: system interface
+            parameter: password
     phy-mode: enum
     ping-serv-status: integer
     poe: enum
@@ -149,7 +514,25 @@ sections:
     pppoe-unnumbered-negotiate: enum
     pptp-auth-type: enum
     pptp-client: enum
-    pptp-password: password!sensitive
+    pptp-password:
+      source_type: password
+      fortios_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: pptp-password
+      semantic:
+        sensitive: true
+        migration_relevance: source_evidence_only
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: system interface
+            parameter: pptp-password
     pptp-server-ip: ipv4-address
     pptp-timeout: integer
     pptp-user: string
@@ -174,10 +557,46 @@ sections:
     retransmission: enum
     ring-rx: integer
     ring-tx: integer
-    role: enum
+    role:
+      source_type: enum
+      fortios_type: option
+      description: Interface role.
+      options:
+      - value: lan
+        description: Connected to local network of endpoints.
+      - value: wan
+        description: Connected to Internet.
+      - value: dmz
+        description: Connected to server zone.
+      - value: undefined
+        description: Interface has no specific role.
+      default:
+        value: undefined
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: role
     sample-direction: enum
     sample-rate: integer
-    secondary-IP: enum
+    secondary-IP:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable adding a secondary IP to this interface.
+      options:
+      - value: enable
+      - value: disable
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: secondary-IP
     security-8021x-dynamic-vlan-id: integer
     security-8021x-master: string
     security-8021x-member-mode: enum
@@ -200,7 +619,24 @@ sections:
     speed: enum
     spillover-threshold: integer
     src-check: enum
-    status: enum
+    status:
+      source_type: enum
+      fortios_type: option
+      description: Bring the interface up or shut the interface down.
+      options:
+      - value: up
+        description: Bring the interface up.
+      - value: down
+        description: Shut the interface down.
+      default:
+        value: up
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: status
     stp: enum
     stp-edge: enum
     stp-ha-secondary: enum
@@ -244,20 +680,138 @@ sections:
     trust-ip6-1: ipv6-prefix
     trust-ip6-2: ipv6-prefix
     trust-ip6-3: ipv6-prefix
-    type: enum
-    username: string
+    type:
+      source_type: enum
+      fortios_type: option
+      description: Interface type.
+      options:
+      - value: physical
+      - value: vlan
+      - value: aggregate
+      - value: redundant
+      - value: tunnel
+      - value: vdom-link
+      - value: loopback
+      - value: switch
+      - value: vap-switch
+      - value: wl-mesh
+      - value: fext-wan
+      - value: vxlan
+      - value: geneve
+      - value: hdlc
+      - value: switch-vlan
+      - value: emac-vlan
+      - value: ssl
+      - value: lan-extension
+      default:
+        value: vlan
+      model_dependent: true
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: type
+    username:
+      source_type: string
+      fortios_type: string
+      description: Username of the PPPoE account, provided by the ISP.
+      length:
+        max: 64
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: username
     vci: integer
-    vdom: string
+    vdom:
+      source_type: string
+      fortios_type: string
+      description: Interface is in this virtual domain (VDOM).
+      length:
+        max: 31
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: vdom
     vectoring: enum
     vindex: integer
     vlan-id: integer
     vlan-op-mode: enum
-    vlan-protocol: enum
+    vlan-protocol:
+      source_type: enum
+      fortios_type: option
+      description: Ethernet protocol of VLAN.
+      options:
+      - value: 8021q
+        description: IEEE 802.1Q.
+      - value: 8021ad
+        description: IEEE 802.1AD.
+      default:
+        value: 8021q
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: vlan-protocol
     vlanforward: enum
-    vlanid: integer
+    vlanid:
+      source_type: integer
+      fortios_type: integer
+      description: VLAN ID.
+      range:
+        min: 1
+        max: 4094
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: vlanid
     vpi: integer
-    vrf: integer
-    vrrp-virtual-mac: enum
+    vrf:
+      source_type: integer
+      fortios_type: integer
+      description: Virtual Routing Forwarding ID.
+      range:
+        min: 0
+        max: 251
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: vrf
+    vrrp-virtual-mac:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable use of virtual MAC for VRRP.
+      options:
+      - value: enable
+      - value: disable
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: vrrp-virtual-mac
     wccp: enum
     weight: integer
     wifi-5g-threshold: string
@@ -272,10 +826,46 @@ sections:
     wifi-encrypt: enum
     wifi-fragment-threshold: integer
     wifi-gateway: ipv4-address
-    wifi-key: password!sensitive
+    wifi-key:
+      source_type: password
+      fortios_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: wifi-key
+      semantic:
+        sensitive: true
+        migration_relevance: source_evidence_only
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: system interface
+            parameter: wifi-key
     wifi-keyindex: integer
     wifi-mac-filter: enum
-    wifi-passphrase: password!sensitive
+    wifi-passphrase:
+      source_type: password
+      fortios_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          parameter: wifi-passphrase
+      semantic:
+        sensitive: true
+        migration_relevance: source_evidence_only
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: system interface
+            parameter: wifi-passphrase
     wifi-radius-server: string
     wifi-rts-threshold: integer
     wifi-security: enum
@@ -285,17 +875,37 @@ sections:
   nested:
   - name: client-options
     mode: table
-    key: <id>
     fields:
       code: integer
       ip: opaque-user
       type: enum
       value: string
+    nested: []
+    description: DHCP client options.
+    key: <id>
+    full_path: system interface client-options
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface client-options
   - name: dhcp-snooping-server-list
     mode: table
-    key: <name>
     fields:
       server-ip: ipv4-address
+    nested: []
+    description: Configure DHCP server access list.
+    key: <name>
+    full_path: system interface dhcp-snooping-server-list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface dhcp-snooping-server-list
   - name: egress-queues
     mode: singleton
     fields:
@@ -307,14 +917,56 @@ sections:
       cos5: string
       cos6: string
       cos7: string
+    nested: []
+    description: Configure queues of NP port on egress path.
+    full_path: system interface egress-queues
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface egress-queues
   - name: ipv6
     mode: singleton
     fields:
-      autoconf: enum
+      autoconf:
+        source_type: enum
+        fortios_type: option
+        description: Enable/disable address auto-configuration.
+        options:
+        - value: enable
+        - value: disable
+        default:
+          value: disable
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system interface
+            parameter: autoconf
+            nested_config_path: ipv6
       cli-conn6-status: integer
       dhcp6-client-options: option-list
       dhcp6-information-request: enum
-      dhcp6-prefix-delegation: enum
+      dhcp6-prefix-delegation:
+        source_type: enum
+        fortios_type: option
+        description: Enable/disable DHCPv6 prefix delegation.
+        options:
+        - value: enable
+        - value: disable
+        default:
+          value: disable
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system interface
+            parameter: dhcp6-prefix-delegation
+            nested_config_path: ipv6
       dhcp6-relay-interface-id: string
       dhcp6-relay-ip: opaque-user
       dhcp6-relay-service: enum
@@ -323,8 +975,34 @@ sections:
       dhcp6-relay-type: option
       icmp6-send-redirect: enum
       interface-identifier: ipv6-address
-      ip6-address: ipv6-prefix
-      ip6-allowaccess: option-list
+      ip6-address:
+        source_type: ipv6-prefix
+        fortios_type: ipv6-prefix
+        description: Primary IPv6 address prefix of interface.
+        address_family: ipv6
+        default:
+          value: ::/0
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system interface
+            parameter: ip6-address
+            nested_config_path: ipv6
+      ip6-allowaccess:
+        source_type: option-list
+        fortios_type: option
+        description: Permitted management access over IPv6.
+        cardinality: list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system interface
+            parameter: ip6-allowaccess
+            nested_config_path: ipv6
       ip6-default-life: integer
       ip6-delegated-prefix-iaid: integer
       ip6-dns-server-override: enum
@@ -333,13 +1011,45 @@ sections:
       ip6-manage-flag: enum
       ip6-max-interval: integer
       ip6-min-interval: integer
-      ip6-mode: enum
+      ip6-mode:
+        source_type: enum
+        fortios_type: option
+        description: Addressing mode (static, DHCP, delegated).
+        options:
+        - value: static
+        - value: dhcp
+        - value: pppoe
+        - value: delegated
+        default:
+          value: static
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system interface
+            parameter: ip6-mode
+            nested_config_path: ipv6
       ip6-other-flag: enum
       ip6-prefix-mode: enum
       ip6-reachable-time: integer
       ip6-retrans-time: integer
       ip6-send-adv: enum
-      ip6-subnet: ipv6-prefix
+      ip6-subnet:
+        source_type: ipv6-prefix
+        fortios_type: ipv6-prefix
+        description: Subnet to routing prefix.
+        address_family: ipv6
+        default:
+          value: ::/0
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system interface
+            parameter: ip6-subnet
+            nested_config_path: ipv6
       ip6-upstream-interface: string
       nd-cert: string
       nd-cga-modifier: opaque-user
@@ -354,14 +1064,23 @@ sections:
     nested:
     - name: dhcp6-iapd-list
       mode: table
-      key: <iaid>
       fields:
         prefix-hint: ipv6-network
         prefix-hint-plt: integer
         prefix-hint-vlt: integer
+      nested: []
+      description: DHCPv6 IA-PD list.
+      key: <iaid>
+      full_path: system interface ipv6 dhcp6-iapd-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          nested_config_path: system interface ipv6 dhcp6-iapd-list
     - name: ip6-delegated-prefix-list
       mode: table
-      key: <prefix-id>
       fields:
         autonomous-flag: enum
         delegated-prefix-iaid: integer
@@ -370,12 +1089,33 @@ sections:
         rdnss-service: enum
         subnet: ipv6-network
         upstream-interface: string
+      nested: []
+      description: Advertised IPv6 delegated prefix list.
+      key: <prefix-id>
+      full_path: system interface ipv6 ip6-delegated-prefix-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          nested_config_path: system interface ipv6 ip6-delegated-prefix-list
     - name: ip6-extra-addr
       mode: table
+      fields: {}
+      nested: []
+      description: Extra IPv6 address prefixes of interface.
       key: <prefix>
+      full_path: system interface ipv6 ip6-extra-addr
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          nested_config_path: system interface ipv6 ip6-extra-addr
     - name: ip6-prefix-list
       mode: table
-      key: <prefix>
       fields:
         autonomous-flag: enum
         dnssl: identifier-list
@@ -383,9 +1123,19 @@ sections:
         preferred-life-time: integer
         rdnss: opaque-user
         valid-life-time: integer
+      nested: []
+      description: Advertised prefix list.
+      key: <prefix>
+      full_path: system interface ipv6 ip6-prefix-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          nested_config_path: system interface ipv6 ip6-prefix-list
     - name: vrrp6
       mode: table
-      key: <vrid>
       fields:
         accept-mode: enum
         adv-interval: integer
@@ -397,6 +1147,26 @@ sections:
         vrdst6: ipv6-address
         vrgrp: integer
         vrip6: ipv6-address
+      nested: []
+      description: IPv6 VRRP configuration.
+      key: <vrid>
+      full_path: system interface ipv6 vrrp6
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          nested_config_path: system interface ipv6 vrrp6
+    description: IPv6 of interface.
+    full_path: system interface ipv6
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface ipv6
   - name: l2tp-client-settings
     mode: singleton
     fields:
@@ -406,12 +1176,42 @@ sections:
       hello-interval: integer
       ip: ipv4-classnet-host
       mtu: integer
-      password: password!sensitive
+      password:
+        source_type: password
+        fortios_type: password
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system interface
+            parameter: password
+            nested_config_path: l2tp-client-settings
+        semantic:
+          sensitive: true
+          migration_relevance: source_evidence_only
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system interface
+              parameter: password
+              nested_config_path: l2tp-client-settings
       peer-host: string
       peer-mask: ipv4-netmask
       peer-port: integer
       priority: integer
       user: string
+    nested: []
+    description: L2TP client settings.
+    full_path: system interface l2tp-client-settings
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface l2tp-client-settings
   - name: mirroring-filter
     mode: singleton
     fields:
@@ -420,31 +1220,82 @@ sections:
       filter-protocol: integer
       filter-sport: integer
       filter-srcip: ipv4-classnet-host
+    nested: []
+    description: Mirroring filter.
+    full_path: system interface mirroring-filter
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface mirroring-filter
   - name: phy-setting
     mode: singleton
     fields:
       signal-ok-threshold-value: integer
+    nested: []
+    description: PHY settings
+    full_path: system interface phy-setting
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface phy-setting
   - name: secondaryip
     mode: table
-    key: <id>
     fields:
       allowaccess: option-list
       detectprotocol: option-list
       detectserver: opaque-user
       gwdetect: enum
       ha-priority: integer
-      ip: ipv4-classnet-host
+      ip:
+        source_type: ipv4-classnet-host
+        fortios_type: ipv4-classnet-host
+        description: Secondary IPv4 address and subnet mask.
+        address_family: ipv4
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system interface
+            parameter: ip
+            nested_config_path: secondaryip
       ping-serv-status: integer
       secip-relay-ip: opaque-user
+    nested: []
+    description: Second IP address of interface.
+    key: <id>
+    full_path: system interface secondaryip
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface secondaryip
   - name: tagging
     mode: table
-    key: <name>
     fields:
       category: string
       tags: identifier-list
+    nested: []
+    description: Config object tagging.
+    key: <name>
+    full_path: system interface tagging
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface tagging
   - name: vrrp
     mode: table
-    key: <vrid>
     fields:
       accept-mode: enum
       adv-interval: integer
@@ -461,31 +1312,147 @@ sections:
     nested:
     - name: proxy-arp
       mode: table
-      key: <id>
       fields:
         ip: opaque-user
+      nested: []
+      description: VRRP Proxy ARP configuration.
+      key: <id>
+      full_path: system interface vrrp proxy-arp
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system interface
+          nested_config_path: system interface vrrp proxy-arp
+    description: VRRP configuration.
+    key: <vrid>
+    full_path: system interface vrrp
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface vrrp
   - name: wifi-mac-list
     mode: table
-    key: <id>
     fields:
       mac: mac-address
+    nested: []
+    description: MAC filter list.
+    key: <id>
+    full_path: system interface wifi-mac-list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface wifi-mac-list
   - name: wifi-networks
     mode: table
-    key: <id>
     fields:
       wifi-ca-certificate: string
       wifi-client-certificate: string
       wifi-eap-type: enum
       wifi-encrypt: enum
-      wifi-key: password!sensitive
+      wifi-key:
+        source_type: password
+        fortios_type: password
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system interface
+            parameter: wifi-key
+            nested_config_path: wifi-networks
+        semantic:
+          sensitive: true
+          migration_relevance: source_evidence_only
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system interface
+              parameter: wifi-key
+              nested_config_path: wifi-networks
       wifi-keyindex: integer
-      wifi-passphrase: password!sensitive
+      wifi-passphrase:
+        source_type: password
+        fortios_type: password
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system interface
+            parameter: wifi-passphrase
+            nested_config_path: wifi-networks
+        semantic:
+          sensitive: true
+          migration_relevance: source_evidence_only
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system interface
+              parameter: wifi-passphrase
+              nested_config_path: wifi-networks
       wifi-private-key: string
-      wifi-private-key-password: password!sensitive
+      wifi-private-key-password:
+        source_type: password
+        fortios_type: password
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system interface
+            parameter: wifi-private-key-password
+            nested_config_path: wifi-networks
+        semantic:
+          sensitive: true
+          migration_relevance: source_evidence_only
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system interface
+              parameter: wifi-private-key-password
+              nested_config_path: wifi-networks
       wifi-security: enum
       wifi-ssid: string
       wifi-username: string
+    nested: []
+    description: WiFi network table.
+    key: <id>
+    full_path: system interface wifi-networks
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system interface
+        nested_config_path: system interface wifi-networks
   model_dependent: true
+  availability:
+    note: Fortinet documents that commands and options can vary by model, hardware configuration, and enabled features; absence from the reference does not establish runtime unsupported status.
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system interface
+      note: The edit key name is documented as a string with maximum length 15.
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: system interface
 - path: system ipam
   mode: singleton
   fields:
