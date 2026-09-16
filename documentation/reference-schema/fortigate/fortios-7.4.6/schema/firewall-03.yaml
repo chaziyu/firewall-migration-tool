@@ -365,7 +365,8 @@ sections:
           document_id: 01-746-912654-20241212
           config_path: firewall schedule group
           parameter: member
-          note: Fortinet documents each value only as a schedule name; this section does not state whether schedule groups can be nested.
+          note: Fortinet documents each value only as a schedule name; this section does not state whether schedule groups
+            can be nested.
   evidence:
     status: documented
     source:
@@ -1623,7 +1624,8 @@ sections:
       document: FortiOS 7.4.6 CLI Reference
       config_path: firewall security-policy
       document_id: 01-746-912654-20241212
-      note: The edit key policyid is documented as integer 0..4294967294 with default 0. This is FortiOS policy-based NGFW source behavior, not assumed portable firewall-policy intent.
+      note: The edit key policyid is documented as integer 0..4294967294 with default 0. This is FortiOS policy-based NGFW
+        source behavior, not assumed portable firewall-policy intent.
   semantic:
     migration_relevance: migration_relevant
     requires_custom_handler: true

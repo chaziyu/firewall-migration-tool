@@ -6,206 +6,1776 @@ sections:
   mode: table
   key: <name>
   fields:
-    certificate: string
-    class-id: integer
-    comment: var-string
-    distance: integer
-    interface: string
-    ipv4-subnets: string
-    ipv6-subnets: string
-    peer: string
-    port: integer
-    priority: integer
-    psk: password-3!sensitive
-    realm: string
-    server: string
-    source-ip: string
-    status: enum
-    user: string
+    certificate:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: certificate
+    class-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: class-id
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: comment
+    distance:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: distance
+    interface:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: interface
+    ipv4-subnets:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: ipv4-subnets
+    ipv6-subnets:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: ipv6-subnets
+    peer:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: peer
+    port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: port
+    priority:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: priority
+    psk:
+      source_type: password-3
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: psk
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl client
+            parameter: psk
+    realm:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: realm
+    server:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: server
+    source-ip:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: source-ip
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: status
+    user:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl client
+          parameter: user
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: vpn ssl client
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl client
 - path: vpn ssl settings
   mode: singleton
   fields:
-    algorithm: enum
-    auth-session-check-source-ip: enum
-    auth-timeout: integer
-    auto-tunnel-static-route: enum
-    banned-cipher: option-list
-    browser-language-detection: enum
-    check-referer: enum
-    ciphersuite: option-list
-    client-sigalgs: enum
-    default-portal: string
-    deflate-compression-level: integer
-    deflate-min-data-size: integer
-    dns-server1: ipv4-address
-    dns-server2: ipv4-address
-    dns-suffix: var-string
-    dtls-heartbeat-fail-count: integer
-    dtls-heartbeat-idle-timeout: integer
-    dtls-heartbeat-interval: integer
-    dtls-hello-timeout: integer
-    dtls-max-proto-ver: enum
-    dtls-min-proto-ver: enum
-    dtls-tunnel: enum
-    dual-stack-mode: enum
-    encode-2f-sequence: enum
-    encrypt-and-store-password: enum
-    force-two-factor-auth: enum
-    header-x-forwarded-for: enum
-    hsts-include-subdomains: enum
-    http-compression: enum
-    http-only-cookie: enum
-    http-request-body-timeout: integer
-    http-request-header-timeout: integer
-    https-redirect: enum
-    idle-timeout: integer
-    ipv6-dns-server1: ipv6-address
-    ipv6-dns-server2: ipv6-address
-    ipv6-wins-server1: ipv6-address
-    ipv6-wins-server2: ipv6-address
-    login-attempt-limit: integer
-    login-block-time: integer
-    login-timeout: integer
-    port: integer
-    port-precedence: enum
-    reqclientcert: enum
-    saml-redirect-port: integer
-    server-hostname: string
-    servercert: string
-    source-address: identifier-list
-    source-address-negate: enum
-    source-address6: identifier-list
-    source-address6-negate: enum
-    source-interface: identifier-list
-    ssl-client-renegotiation: enum
-    ssl-insert-empty-fragment: enum
-    ssl-max-proto-ver: enum
-    ssl-min-proto-ver: enum
-    status: enum
-    transform-backward-slashes: enum
-    tunnel-addr-assigned-method: enum
-    tunnel-connect-without-reauth: enum
-    tunnel-ip-pools: identifier-list
-    tunnel-ipv6-pools: identifier-list
-    tunnel-user-session-timeout: integer
-    unsafe-legacy-renegotiation: enum
-    url-obscuration: enum
-    user-peer: string
-    wins-server1: ipv4-address
-    wins-server2: ipv4-address
-    x-content-type-options: enum
-    ztna-trusted-client: enum
+    algorithm:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: algorithm
+    auth-session-check-source-ip:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: auth-session-check-source-ip
+    auth-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: auth-timeout
+    auto-tunnel-static-route:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: auto-tunnel-static-route
+    banned-cipher:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: banned-cipher
+      cardinality: list
+    browser-language-detection:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: browser-language-detection
+    check-referer:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: check-referer
+    ciphersuite:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: ciphersuite
+      cardinality: list
+    client-sigalgs:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: client-sigalgs
+    default-portal:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: default-portal
+    deflate-compression-level:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: deflate-compression-level
+    deflate-min-data-size:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: deflate-min-data-size
+    dns-server1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: dns-server1
+      address_family: ipv4
+    dns-server2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: dns-server2
+      address_family: ipv4
+    dns-suffix:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: dns-suffix
+    dtls-heartbeat-fail-count:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: dtls-heartbeat-fail-count
+    dtls-heartbeat-idle-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: dtls-heartbeat-idle-timeout
+    dtls-heartbeat-interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: dtls-heartbeat-interval
+    dtls-hello-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: dtls-hello-timeout
+    dtls-max-proto-ver:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: dtls-max-proto-ver
+    dtls-min-proto-ver:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: dtls-min-proto-ver
+    dtls-tunnel:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: dtls-tunnel
+    dual-stack-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: dual-stack-mode
+    encode-2f-sequence:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: encode-2f-sequence
+    encrypt-and-store-password:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: encrypt-and-store-password
+    force-two-factor-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: force-two-factor-auth
+    header-x-forwarded-for:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: header-x-forwarded-for
+    hsts-include-subdomains:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: hsts-include-subdomains
+    http-compression:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: http-compression
+    http-only-cookie:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: http-only-cookie
+    http-request-body-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: http-request-body-timeout
+    http-request-header-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: http-request-header-timeout
+    https-redirect:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: https-redirect
+    idle-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: idle-timeout
+    ipv6-dns-server1:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: ipv6-dns-server1
+      address_family: ipv6
+    ipv6-dns-server2:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: ipv6-dns-server2
+      address_family: ipv6
+    ipv6-wins-server1:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: ipv6-wins-server1
+      address_family: ipv6
+    ipv6-wins-server2:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: ipv6-wins-server2
+      address_family: ipv6
+    login-attempt-limit:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: login-attempt-limit
+    login-block-time:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: login-block-time
+    login-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: login-timeout
+    port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: port
+    port-precedence:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: port-precedence
+    reqclientcert:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: reqclientcert
+    saml-redirect-port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: saml-redirect-port
+    server-hostname:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: server-hostname
+    servercert:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: servercert
+    source-address:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: source-address
+      cardinality: list
+    source-address-negate:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: source-address-negate
+    source-address6:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: source-address6
+      cardinality: list
+    source-address6-negate:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: source-address6-negate
+    source-interface:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: source-interface
+      cardinality: list
+    ssl-client-renegotiation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: ssl-client-renegotiation
+    ssl-insert-empty-fragment:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: ssl-insert-empty-fragment
+    ssl-max-proto-ver:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: ssl-max-proto-ver
+    ssl-min-proto-ver:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: ssl-min-proto-ver
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: status
+    transform-backward-slashes:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: transform-backward-slashes
+    tunnel-addr-assigned-method:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: tunnel-addr-assigned-method
+    tunnel-connect-without-reauth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: tunnel-connect-without-reauth
+    tunnel-ip-pools:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: tunnel-ip-pools
+      cardinality: list
+    tunnel-ipv6-pools:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: tunnel-ipv6-pools
+      cardinality: list
+    tunnel-user-session-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: tunnel-user-session-timeout
+    unsafe-legacy-renegotiation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: unsafe-legacy-renegotiation
+    url-obscuration:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: url-obscuration
+    user-peer:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: user-peer
+    wins-server1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: wins-server1
+      address_family: ipv4
+    wins-server2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: wins-server2
+      address_family: ipv4
+    x-content-type-options:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: x-content-type-options
+    ztna-trusted-client:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          parameter: ztna-trusted-client
   nested:
   - name: authentication-rule
     mode: table
     key: <id>
     fields:
-      auth: enum
-      cipher: enum
-      client-cert: enum
-      groups: identifier-list
-      portal: string
-      realm: string
-      source-address: identifier-list
-      source-address-negate: enum
-      source-address6: identifier-list
-      source-address6-negate: enum
-      source-interface: identifier-list
-      user-peer: string
-      users: identifier-list
+      auth:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: auth
+      cipher:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: cipher
+      client-cert:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: client-cert
+      groups:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: groups
+        cardinality: list
+      portal:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: portal
+      realm:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: realm
+      source-address:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: source-address
+        cardinality: list
+      source-address-negate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: source-address-negate
+      source-address6:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: source-address6
+        cardinality: list
+      source-address6-negate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: source-address6-negate
+      source-interface:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: source-interface
+        cardinality: list
+      user-peer:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: user-peer
+      users:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl settings
+            nested_config_path: vpn ssl settings authentication-rule
+            parameter: users
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl settings
+        nested_config_path: vpn ssl settings authentication-rule
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl settings
+          nested_config_path: vpn ssl settings authentication-rule
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: vpn ssl settings
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl settings
 - path: vpn ssl web host-check-software
   mode: table
   key: <name>
   fields:
-    guid: opaque-user
-    os-type: enum
-    type: enum
-    version: string
+    guid:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web host-check-software
+          parameter: guid
+    os-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web host-check-software
+          parameter: os-type
+    type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web host-check-software
+          parameter: type
+    version:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web host-check-software
+          parameter: version
   nested:
   - name: check-item-list
     mode: table
     key: <id>
     fields:
-      action: enum
-      md5s: identifier-list
-      target: string
-      type: enum
-      version: string
+      action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web host-check-software
+            nested_config_path: vpn ssl web host-check-software check-item-list
+            parameter: action
+      md5s:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web host-check-software
+            nested_config_path: vpn ssl web host-check-software check-item-list
+            parameter: md5s
+        cardinality: list
+      target:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web host-check-software
+            nested_config_path: vpn ssl web host-check-software check-item-list
+            parameter: target
+      type:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web host-check-software
+            nested_config_path: vpn ssl web host-check-software check-item-list
+            parameter: type
+      version:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web host-check-software
+            nested_config_path: vpn ssl web host-check-software check-item-list
+            parameter: version
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web host-check-software
+        nested_config_path: vpn ssl web host-check-software check-item-list
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web host-check-software
+          nested_config_path: vpn ssl web host-check-software check-item-list
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: vpn ssl web host-check-software
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web host-check-software
 - path: vpn ssl web portal
   mode: table
   key: <name>
   fields:
-    allow-user-access: option-list
-    auto-connect: enum
-    client-src-range: enum
-    clipboard: enum
-    custom-lang: string
-    customize-forticlient-download-url: enum
-    default-protocol: enum
-    default-window-height: integer
-    default-window-width: integer
-    dhcp-ip-overlap: enum
-    dhcp-ra-giaddr: ipv4-address
-    dhcp6-ra-linkaddr: ipv6-address
-    display-bookmark: enum
-    display-connection-tools: enum
-    display-history: enum
-    display-status: enum
-    dns-server1: ipv4-address
-    dns-server2: ipv4-address
-    dns-suffix: var-string
-    exclusive-routing: enum
-    focus-bookmark: enum
-    forticlient-download: enum
-    forticlient-download-method: enum
-    heading: string
-    hide-sso-credential: enum
-    host-check: enum
-    host-check-interval: integer
-    host-check-policy: identifier-list
-    ip-mode: enum
-    ip-pools: identifier-list
-    ipv6-dns-server1: ipv6-address
-    ipv6-dns-server2: ipv6-address
-    ipv6-exclusive-routing: enum
-    ipv6-pools: identifier-list
-    ipv6-service-restriction: enum
-    ipv6-split-tunneling: enum
-    ipv6-split-tunneling-routing-address: identifier-list
-    ipv6-split-tunneling-routing-negate: enum
-    ipv6-tunnel-mode: enum
-    ipv6-wins-server1: ipv6-address
-    ipv6-wins-server2: ipv6-address
-    keep-alive: enum
-    landing-page-mode: enum
-    limit-user-logins: enum
-    mac-addr-action: enum
-    mac-addr-check: enum
-    macos-forticlient-download-url: var-string
-    os-check: enum
-    prefer-ipv6-dns: enum
-    redir-url: var-string
-    rewrite-ip-uri-ui: enum
-    save-password: enum
-    service-restriction: enum
-    skip-check-for-browser: enum
-    skip-check-for-unsupported-os: enum
-    smb-max-version: enum
-    smb-min-version: enum
-    smb-ntlmv1-auth: enum
-    smbv1: enum
-    split-tunneling: enum
-    split-tunneling-routing-address: identifier-list
-    split-tunneling-routing-negate: enum
-    theme: enum
-    tunnel-mode: enum
-    use-sdwan: enum
-    user-bookmark: enum
-    user-group-bookmark: enum
-    web-mode: enum
-    windows-forticlient-download-url: var-string
-    wins-server1: ipv4-address
-    wins-server2: ipv4-address
+    allow-user-access:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: allow-user-access
+      cardinality: list
+    auto-connect:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: auto-connect
+    client-src-range:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: client-src-range
+    clipboard:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: clipboard
+    custom-lang:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: custom-lang
+    customize-forticlient-download-url:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: customize-forticlient-download-url
+    default-protocol:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: default-protocol
+    default-window-height:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: default-window-height
+    default-window-width:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: default-window-width
+    dhcp-ip-overlap:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: dhcp-ip-overlap
+    dhcp-ra-giaddr:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: dhcp-ra-giaddr
+      address_family: ipv4
+    dhcp6-ra-linkaddr:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: dhcp6-ra-linkaddr
+      address_family: ipv6
+    display-bookmark:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: display-bookmark
+    display-connection-tools:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: display-connection-tools
+    display-history:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: display-history
+    display-status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: display-status
+    dns-server1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: dns-server1
+      address_family: ipv4
+    dns-server2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: dns-server2
+      address_family: ipv4
+    dns-suffix:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: dns-suffix
+    exclusive-routing:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: exclusive-routing
+    focus-bookmark:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: focus-bookmark
+    forticlient-download:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: forticlient-download
+    forticlient-download-method:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: forticlient-download-method
+    heading:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: heading
+    hide-sso-credential:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: hide-sso-credential
+    host-check:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: host-check
+    host-check-interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: host-check-interval
+    host-check-policy:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: host-check-policy
+      cardinality: list
+    ip-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ip-mode
+    ip-pools:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ip-pools
+      cardinality: list
+    ipv6-dns-server1:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ipv6-dns-server1
+      address_family: ipv6
+    ipv6-dns-server2:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ipv6-dns-server2
+      address_family: ipv6
+    ipv6-exclusive-routing:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ipv6-exclusive-routing
+    ipv6-pools:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ipv6-pools
+      cardinality: list
+    ipv6-service-restriction:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ipv6-service-restriction
+    ipv6-split-tunneling:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ipv6-split-tunneling
+    ipv6-split-tunneling-routing-address:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ipv6-split-tunneling-routing-address
+      cardinality: list
+    ipv6-split-tunneling-routing-negate:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ipv6-split-tunneling-routing-negate
+    ipv6-tunnel-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ipv6-tunnel-mode
+    ipv6-wins-server1:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ipv6-wins-server1
+      address_family: ipv6
+    ipv6-wins-server2:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: ipv6-wins-server2
+      address_family: ipv6
+    keep-alive:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: keep-alive
+    landing-page-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: landing-page-mode
+    limit-user-logins:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: limit-user-logins
+    mac-addr-action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: mac-addr-action
+    mac-addr-check:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: mac-addr-check
+    macos-forticlient-download-url:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: macos-forticlient-download-url
+    os-check:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: os-check
+    prefer-ipv6-dns:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: prefer-ipv6-dns
+    redir-url:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: redir-url
+    rewrite-ip-uri-ui:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: rewrite-ip-uri-ui
+    save-password:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: save-password
+    service-restriction:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: service-restriction
+    skip-check-for-browser:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: skip-check-for-browser
+    skip-check-for-unsupported-os:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: skip-check-for-unsupported-os
+    smb-max-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: smb-max-version
+    smb-min-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: smb-min-version
+    smb-ntlmv1-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: smb-ntlmv1-auth
+    smbv1:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: smbv1
+    split-tunneling:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: split-tunneling
+    split-tunneling-routing-address:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: split-tunneling-routing-address
+      cardinality: list
+    split-tunneling-routing-negate:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: split-tunneling-routing-negate
+    theme:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: theme
+    tunnel-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: tunnel-mode
+    use-sdwan:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: use-sdwan
+    user-bookmark:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: user-bookmark
+    user-group-bookmark:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: user-group-bookmark
+    web-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: web-mode
+    windows-forticlient-download-url:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: windows-forticlient-download-url
+    wins-server1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: wins-server1
+      address_family: ipv4
+    wins-server2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          parameter: wins-server2
+      address_family: ipv4
   nested:
   - name: bookmark-group
     mode: table
@@ -215,129 +1785,1089 @@ sections:
       mode: table
       key: <name>
       fields:
-        additional-params: var-string
-        apptype: enum
-        color-depth: enum
-        description: var-string
-        domain: var-string
-        folder: var-string
-        height: integer
-        host: var-string
-        keyboard-layout: enum
-        load-balancing-info: var-string
-        logon-password: password!sensitive
-        logon-user: var-string
-        port: integer
-        preconnection-blob: var-string
-        preconnection-id: integer
-        restricted-admin: enum
-        security: enum
-        send-preconnection-id: enum
-        sso: enum
-        sso-credential: enum
-        sso-credential-sent-once: enum
-        sso-password: password!sensitive
-        sso-username: var-string
-        url: var-string
-        vnc-keyboard-layout: enum
-        width: integer
+        additional-params:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: additional-params
+        apptype:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: apptype
+        color-depth:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: color-depth
+        description:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: description
+        domain:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: domain
+        folder:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: folder
+        height:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: height
+        host:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: host
+        keyboard-layout:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: keyboard-layout
+        load-balancing-info:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: load-balancing-info
+        logon-password:
+          source_type: password
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: logon-password
+          semantic:
+            sensitive: true
+            evidence:
+              status: project_semantic
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                document_id: 01-746-912654-20241212
+                config_path: vpn ssl web portal
+                nested_config_path: vpn ssl web portal bookmark-group bookmarks
+                parameter: logon-password
+        logon-user:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: logon-user
+        port:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: port
+        preconnection-blob:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: preconnection-blob
+        preconnection-id:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: preconnection-id
+        restricted-admin:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: restricted-admin
+        security:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: security
+        send-preconnection-id:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: send-preconnection-id
+        sso:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: sso
+        sso-credential:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: sso-credential
+        sso-credential-sent-once:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: sso-credential-sent-once
+        sso-password:
+          source_type: password
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: sso-password
+          semantic:
+            sensitive: true
+            evidence:
+              status: project_semantic
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                document_id: 01-746-912654-20241212
+                config_path: vpn ssl web portal
+                nested_config_path: vpn ssl web portal bookmark-group bookmarks
+                parameter: sso-password
+        sso-username:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: sso-username
+        url:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: url
+        vnc-keyboard-layout:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: vnc-keyboard-layout
+        width:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks
+              parameter: width
       nested:
       - name: form-data
         mode: table
         key: <name>
         fields:
-          value: var-string
+          value:
+            source_type: var-string
+            evidence:
+              status: documented
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                document_id: 01-746-912654-20241212
+                config_path: vpn ssl web portal
+                nested_config_path: vpn ssl web portal bookmark-group bookmarks form-data
+                parameter: value
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal bookmark-group bookmarks form-data
+        semantic:
+          migration_relevance: migration_relevant
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal bookmark-group bookmarks form-data
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          nested_config_path: vpn ssl web portal bookmark-group bookmarks
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal bookmark-group bookmarks
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web portal
+        nested_config_path: vpn ssl web portal bookmark-group
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          nested_config_path: vpn ssl web portal bookmark-group
   - name: landing-page
     mode: singleton
     fields:
-      sso: enum
-      sso-credential: enum
-      sso-password: password!sensitive
-      sso-username: var-string
-      url: var-string
+      sso:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal landing-page
+            parameter: sso
+      sso-credential:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal landing-page
+            parameter: sso-credential
+      sso-password:
+        source_type: password
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal landing-page
+            parameter: sso-password
+        semantic:
+          sensitive: true
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal landing-page
+              parameter: sso-password
+      sso-username:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal landing-page
+            parameter: sso-username
+      url:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal landing-page
+            parameter: url
     nested:
     - name: form-data
       mode: table
       key: <name>
       fields:
-        value: var-string
+        value:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web portal
+              nested_config_path: vpn ssl web portal landing-page form-data
+              parameter: value
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          nested_config_path: vpn ssl web portal landing-page form-data
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal landing-page form-data
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web portal
+        nested_config_path: vpn ssl web portal landing-page
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          nested_config_path: vpn ssl web portal landing-page
   - name: mac-addr-check-rule
     mode: table
     key: <name>
     fields:
-      mac-addr-list: identifier-list
-      mac-addr-mask: integer
+      mac-addr-list:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal mac-addr-check-rule
+            parameter: mac-addr-list
+        cardinality: list
+      mac-addr-mask:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal mac-addr-check-rule
+            parameter: mac-addr-mask
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web portal
+        nested_config_path: vpn ssl web portal mac-addr-check-rule
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          nested_config_path: vpn ssl web portal mac-addr-check-rule
   - name: os-check-list
     mode: table
     key: <name>
     fields:
-      action: enum
-      latest-patch-level: opaque-user
-      tolerance: integer
+      action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal os-check-list
+            parameter: action
+      latest-patch-level:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal os-check-list
+            parameter: latest-patch-level
+      tolerance:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal os-check-list
+            parameter: tolerance
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web portal
+        nested_config_path: vpn ssl web portal os-check-list
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          nested_config_path: vpn ssl web portal os-check-list
   - name: split-dns
     mode: table
     key: <id>
     fields:
-      dns-server1: ipv4-address
-      dns-server2: ipv4-address
-      domains: var-string
-      ipv6-dns-server1: ipv6-address
-      ipv6-dns-server2: ipv6-address
+      dns-server1:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal split-dns
+            parameter: dns-server1
+        address_family: ipv4
+      dns-server2:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal split-dns
+            parameter: dns-server2
+        address_family: ipv4
+      domains:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal split-dns
+            parameter: domains
+      ipv6-dns-server1:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal split-dns
+            parameter: ipv6-dns-server1
+        address_family: ipv6
+      ipv6-dns-server2:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web portal
+            nested_config_path: vpn ssl web portal split-dns
+            parameter: ipv6-dns-server2
+        address_family: ipv6
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web portal
+        nested_config_path: vpn ssl web portal split-dns
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web portal
+          nested_config_path: vpn ssl web portal split-dns
   read_only: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: vpn ssl web portal
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web portal
 - path: vpn ssl web realm
   mode: table
   key: <url-path>
   fields:
-    login-page: var-string
-    max-concurrent-user: integer
-    nas-ip: ipv4-address
-    radius-port: integer
-    radius-server: string
-    virtual-host: var-string
-    virtual-host-only: enum
-    virtual-host-server-cert: string
+    login-page:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web realm
+          parameter: login-page
+    max-concurrent-user:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web realm
+          parameter: max-concurrent-user
+    nas-ip:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web realm
+          parameter: nas-ip
+      address_family: ipv4
+    radius-port:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web realm
+          parameter: radius-port
+    radius-server:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web realm
+          parameter: radius-server
+    virtual-host:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web realm
+          parameter: virtual-host
+    virtual-host-only:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web realm
+          parameter: virtual-host-only
+    virtual-host-server-cert:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web realm
+          parameter: virtual-host-server-cert
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: vpn ssl web realm
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web realm
 - path: vpn ssl web user-bookmark
   mode: table
   key: <name>
   fields:
-    custom-lang: string
+    custom-lang:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web user-bookmark
+          parameter: custom-lang
   nested:
   - name: bookmarks
     mode: table
     key: <name>
     fields:
-      additional-params: var-string
-      apptype: enum
-      color-depth: enum
-      description: var-string
-      domain: var-string
-      folder: var-string
-      height: integer
-      host: var-string
-      keyboard-layout: enum
-      load-balancing-info: var-string
-      logon-password: password!sensitive
-      logon-user: var-string
-      port: integer
-      preconnection-blob: var-string
-      preconnection-id: integer
-      restricted-admin: enum
-      security: enum
-      send-preconnection-id: enum
-      sso: enum
-      sso-credential: enum
-      sso-credential-sent-once: enum
-      sso-password: password!sensitive
-      sso-username: var-string
-      url: var-string
-      vnc-keyboard-layout: enum
-      width: integer
+      additional-params:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: additional-params
+      apptype:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: apptype
+      color-depth:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: color-depth
+      description:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: description
+      domain:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: domain
+      folder:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: folder
+      height:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: height
+      host:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: host
+      keyboard-layout:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: keyboard-layout
+      load-balancing-info:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: load-balancing-info
+      logon-password:
+        source_type: password
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: logon-password
+        semantic:
+          sensitive: true
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web user-bookmark
+              nested_config_path: vpn ssl web user-bookmark bookmarks
+              parameter: logon-password
+      logon-user:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: logon-user
+      port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: port
+      preconnection-blob:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: preconnection-blob
+      preconnection-id:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: preconnection-id
+      restricted-admin:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: restricted-admin
+      security:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: security
+      send-preconnection-id:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: send-preconnection-id
+      sso:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: sso
+      sso-credential:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: sso-credential
+      sso-credential-sent-once:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: sso-credential-sent-once
+      sso-password:
+        source_type: password
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: sso-password
+        semantic:
+          sensitive: true
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web user-bookmark
+              nested_config_path: vpn ssl web user-bookmark bookmarks
+              parameter: sso-password
+      sso-username:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: sso-username
+      url:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: url
+      vnc-keyboard-layout:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: vnc-keyboard-layout
+      width:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks
+            parameter: width
     nested:
     - name: form-data
       mode: table
       key: <name>
       fields:
-        value: var-string
+        value:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web user-bookmark
+              nested_config_path: vpn ssl web user-bookmark bookmarks form-data
+              parameter: value
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web user-bookmark
+          nested_config_path: vpn ssl web user-bookmark bookmarks form-data
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-bookmark
+            nested_config_path: vpn ssl web user-bookmark bookmarks form-data
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web user-bookmark
+        nested_config_path: vpn ssl web user-bookmark bookmarks
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web user-bookmark
+          nested_config_path: vpn ssl web user-bookmark bookmarks
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: vpn ssl web user-bookmark
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web user-bookmark
 - path: vpn ssl web user-group-bookmark
   mode: table
   key: <name>
@@ -346,35 +2876,344 @@ sections:
     mode: table
     key: <name>
     fields:
-      additional-params: var-string
-      apptype: enum
-      color-depth: enum
-      description: var-string
-      domain: var-string
-      folder: var-string
-      height: integer
-      host: var-string
-      keyboard-layout: enum
-      load-balancing-info: var-string
-      logon-password: password!sensitive
-      logon-user: var-string
-      port: integer
-      preconnection-blob: var-string
-      preconnection-id: integer
-      restricted-admin: enum
-      security: enum
-      send-preconnection-id: enum
-      sso: enum
-      sso-credential: enum
-      sso-credential-sent-once: enum
-      sso-password: password!sensitive
-      sso-username: var-string
-      url: var-string
-      vnc-keyboard-layout: enum
-      width: integer
+      additional-params:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: additional-params
+      apptype:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: apptype
+      color-depth:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: color-depth
+      description:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: description
+      domain:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: domain
+      folder:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: folder
+      height:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: height
+      host:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: host
+      keyboard-layout:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: keyboard-layout
+      load-balancing-info:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: load-balancing-info
+      logon-password:
+        source_type: password
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: logon-password
+        semantic:
+          sensitive: true
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web user-group-bookmark
+              nested_config_path: vpn ssl web user-group-bookmark bookmarks
+              parameter: logon-password
+      logon-user:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: logon-user
+      port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: port
+      preconnection-blob:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: preconnection-blob
+      preconnection-id:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: preconnection-id
+      restricted-admin:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: restricted-admin
+      security:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: security
+      send-preconnection-id:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: send-preconnection-id
+      sso:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: sso
+      sso-credential:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: sso-credential
+      sso-credential-sent-once:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: sso-credential-sent-once
+      sso-password:
+        source_type: password
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: sso-password
+        semantic:
+          sensitive: true
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web user-group-bookmark
+              nested_config_path: vpn ssl web user-group-bookmark bookmarks
+              parameter: sso-password
+      sso-username:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: sso-username
+      url:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: url
+      vnc-keyboard-layout:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: vnc-keyboard-layout
+      width:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks
+            parameter: width
     nested:
     - name: form-data
       mode: table
       key: <name>
       fields:
-        value: var-string
+        value:
+          source_type: var-string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: vpn ssl web user-group-bookmark
+              nested_config_path: vpn ssl web user-group-bookmark bookmarks form-data
+              parameter: value
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web user-group-bookmark
+          nested_config_path: vpn ssl web user-group-bookmark bookmarks form-data
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ssl web user-group-bookmark
+            nested_config_path: vpn ssl web user-group-bookmark bookmarks form-data
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web user-group-bookmark
+        nested_config_path: vpn ssl web user-group-bookmark bookmarks
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ssl web user-group-bookmark
+          nested_config_path: vpn ssl web user-group-bookmark bookmarks
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: vpn ssl web user-group-bookmark
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ssl web user-group-bookmark

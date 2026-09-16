@@ -1438,7 +1438,8 @@ sections:
         nested_config_path: system interface wifi-networks
   model_dependent: true
   availability:
-    note: Fortinet documents that commands and options can vary by model, hardware configuration, and enabled features; absence from the reference does not establish runtime unsupported status.
+    note: Fortinet documents that commands and options can vary by model, hardware configuration, and enabled features; absence
+      from the reference does not establish runtime unsupported status.
   evidence:
     status: documented
     source:

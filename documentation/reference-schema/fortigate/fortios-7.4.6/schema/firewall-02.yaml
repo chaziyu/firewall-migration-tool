@@ -655,7 +655,8 @@ sections:
           config_path: firewall ippool
           document_id: 01-746-912654-20241212
           parameter: type
-      description: 'IP pool type: overload, one-to-one, fixed-port-range, port-block-allocation, or cgn-resource-allocation where supported.'
+      description: 'IP pool type: overload, one-to-one, fixed-port-range, port-block-allocation, or cgn-resource-allocation
+        where supported.'
       default:
         value: overload
     utilization-alarm-clear:
@@ -4402,7 +4403,8 @@ sections:
       document: FortiOS 7.4.6 CLI Reference
       config_path: firewall policy
       document_id: 01-746-912654-20241212
-      note: The edit key policyid is documented as integer 0..4294967294 with default 0. Command availability may vary by model/features.
+      note: The edit key policyid is documented as integer 0..4294967294 with default 0. Command availability may vary by
+        model/features.
   semantic:
     migration_relevance: migration_relevant
     evidence:

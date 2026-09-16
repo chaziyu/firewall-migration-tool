@@ -457,9 +457,8 @@ sections:
   mode: table
   key: <name>
   key_type: string
-  description: >-
-    Configure zones to group two or more interfaces. When a zone is created you
-    can configure policies for the zone instead of individual interfaces in the zone.
+  description: Configure zones to group two or more interfaces. When a zone is created you can configure policies for the
+    zone instead of individual interfaces in the zone.
   fields:
     description:
       source_type: string
@@ -477,9 +476,8 @@ sections:
     interface:
       source_type: identifier-list
       fortios_type: string
-      description: >-
-        Add interfaces to this zone. Interfaces must not be assigned to another
-        zone or have firewall policies defined.
+      description: Add interfaces to this zone. Interfaces must not be assigned to another zone or have firewall policies
+        defined.
       length:
         max: 79
       cardinality: list

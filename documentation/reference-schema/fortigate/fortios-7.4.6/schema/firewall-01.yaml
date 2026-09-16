@@ -1034,7 +1034,7 @@ sections:
       description: Final IP address (inclusive) in the range for the address.
       address_family: ipv6
       default:
-        value: "::"
+        value: '::'
       evidence:
         status: documented
         source:
@@ -1081,7 +1081,7 @@ sections:
       description: Host Address.
       address_family: ipv6
       default:
-        value: "::"
+        value: '::'
       evidence:
         status: documented
         source:
@@ -1113,7 +1113,7 @@ sections:
       description: IPv6 address prefix.
       address_family: ipv6
       default:
-        value: "::/0"
+        value: ::/0
       evidence:
         status: documented
         source:
@@ -1193,7 +1193,7 @@ sections:
       description: First IP address (inclusive) in the range for the address.
       address_family: ipv6
       default:
-        value: "::"
+        value: '::'
       evidence:
         status: documented
         source:
@@ -1555,7 +1555,8 @@ sections:
         reference:
           kind: ipv4-address-group-member
           cardinality: many
-          note: Fortinet documents each value as an Address name. Category-specific membership restrictions are documented under category; exact referenced config path(s) are not explicitly stated here.
+          note: Fortinet documents each value as an Address name. Category-specific membership restrictions are documented
+            under category; exact referenced config path(s) are not explicitly stated here.
         evidence:
           status: needs_review
           source:
