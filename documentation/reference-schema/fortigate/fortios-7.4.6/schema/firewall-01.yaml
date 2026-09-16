@@ -420,57 +420,529 @@ sections:
 - path: firewall address
   mode: table
   key: <name>
+  key_type: string
+  description: Configure IPv4 addresses.
   fields:
-    allow-routing: enum
-    associated-interface: string
-    cache-ttl: integer
-    clearpass-spt: enum
-    color: integer
-    comment: var-string
-    country: string
-    end-ip: ipv4-address-any
+    allow-routing:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable use of this address in the static route configuration.
+      options:
+      - value: enable
+        description: Enable use of this address in the static route configuration.
+      - value: disable
+        description: Disable use of this address in the static route configuration.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: allow-routing
+    associated-interface:
+      source_type: string
+      fortios_type: string
+      description: Network interface associated with address.
+      length:
+        max: 35
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: associated-interface
+      semantic:
+        reference:
+          kind: interface
+          target_paths:
+          - system interface
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall address
+            parameter: associated-interface
+            note: Fortinet documents this as a network-interface association; the target config path is a project classification.
+    cache-ttl:
+      source_type: integer
+      fortios_type: integer
+      description: Defines the minimal TTL of individual IP addresses in FQDN cache measured in seconds.
+      range:
+        min: 0
+        max: 86400
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: cache-ttl
+    clearpass-spt:
+      source_type: enum
+      fortios_type: option
+      description: SPT (System Posture Token) value.
+      options:
+      - value: unknown
+        description: UNKNOWN.
+      - value: healthy
+        description: HEALTHY.
+      - value: quarantine
+        description: QUARANTINE.
+      - value: checkup
+        description: CHECKUP.
+      - value: transient
+        description: TRANSIENT.
+      - value: infected
+        description: INFECTED.
+      default:
+        value: unknown
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: clearpass-spt
+    color:
+      source_type: integer
+      fortios_type: integer
+      description: Color of icon on the GUI.
+      range:
+        min: 0
+        max: 32
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: color
+    comment:
+      source_type: var-string
+      fortios_type: var-string
+      description: Comment.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: comment
+    country:
+      source_type: string
+      fortios_type: string
+      description: IP addresses associated to a specific country.
+      length:
+        max: 2
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: country
+    end-ip:
+      source_type: ipv4-address-any
+      fortios_type: ipv4-address-any
+      description: Final IP address (inclusive) in the range for the address.
+      address_family: ipv4
+      default:
+        value: 0.0.0.0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: end-ip
     epg-name: string
-    fabric-object: enum
+    fabric-object:
+      source_type: enum
+      fortios_type: option
+      description: Security Fabric global object setting.
+      options:
+      - value: enable
+        description: Object is set as a security fabric-wide global object.
+      - value: disable
+        description: Object is local to this security fabric member.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: fabric-object
     filter: var-string
-    fqdn: string
+    fqdn:
+      source_type: string
+      fortios_type: string
+      description: Fully Qualified Domain Name address.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: fqdn
     fsso-group: identifier-list
     hw-model: string
     hw-vendor: string
-    interface: string
-    macaddr: identifier-list
-    node-ip-only: enum
+    interface:
+      source_type: string
+      fortios_type: string
+      description: Name of interface whose IP address is to be used.
+      length:
+        max: 35
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: interface
+      semantic:
+        reference:
+          kind: interface
+          target_paths:
+          - system interface
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall address
+            parameter: interface
+            note: Fortinet documents this as an interface name; the target config path is a project classification.
+    macaddr:
+      source_type: identifier-list
+      fortios_type: string
+      description: Multiple MAC address ranges; ranges are separated by space.
+      length:
+        max: 127
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: macaddr
+    node-ip-only:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable collection of node addresses only in Kubernetes.
+      options:
+      - value: enable
+        description: Enable collection of node addresses only in Kubernetes.
+      - value: disable
+        description: Disable collection of node addresses only in Kubernetes.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: node-ip-only
     obj-id: var-string
     obj-tag: string
-    obj-type: enum
+    obj-type:
+      source_type: enum
+      fortios_type: option
+      description: Object type.
+      options:
+      - value: ip
+        description: IP address.
+      - value: mac
+        description: MAC address.
+      default:
+        value: ip
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: obj-type
     organization: string
     os: string
     policy-group: string
-    route-tag: integer
+    route-tag:
+      source_type: integer
+      fortios_type: integer
+      description: route-tag address.
+      range:
+        min: 1
+        max: 4294967295
+        note: Fortinet documents default 0 even though the documented configurable range starts at 1.
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: route-tag
     sdn: string
-    sdn-addr-type: enum
+    sdn-addr-type:
+      source_type: enum
+      fortios_type: option
+      description: Type of addresses to collect.
+      options:
+      - value: private
+        description: Collect private addresses only.
+      - value: public
+        description: Collect public addresses only.
+      - value: all
+        description: Collect both public and private addresses.
+      default:
+        value: private
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: sdn-addr-type
     sdn-tag: string
-    start-ip: ipv4-address-any
-    sub-type: enum
-    subnet: ipv4-classnet-any
+    start-ip:
+      source_type: ipv4-address-any
+      fortios_type: ipv4-address-any
+      description: First IP address (inclusive) in the range for the address.
+      address_family: ipv4
+      default:
+        value: 0.0.0.0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: start-ip
+    sub-type:
+      source_type: enum
+      fortios_type: option
+      description: Sub-type of address.
+      options:
+      - value: sdn
+        description: SDN address.
+      - value: clearpass-spt
+        description: ClearPass SPT (System Posture Token) address.
+      - value: fsso
+        description: FSSO address.
+      - value: ems-tag
+        description: FortiClient EMS tag.
+      - value: fortivoice-tag
+        description: FortiVoice tag.
+      - value: fortinac-tag
+        description: FortiNAC tag.
+      - value: fortipolicy-tag
+        description: FortiPolicy tag.
+      - value: swc-tag
+        description: Switch Controller NAC policy tag.
+      - value: device-identification
+        description: Device address.
+      default:
+        value: sdn
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: sub-type
+    subnet:
+      source_type: ipv4-classnet-any
+      fortios_type: ipv4-classnet-any
+      description: IP address and subnet mask of address.
+      address_family: ipv4
+      default:
+        value: 0.0.0.0 0.0.0.0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: subnet
     subnet-name: string
     sw-version: string
     tag-detection-level: string
     tag-type: string
     tenant: string
-    type: enum
-    uuid: uuid
-    wildcard: ipv4-classnet-any
-    wildcard-fqdn: string
+    type:
+      source_type: enum
+      fortios_type: option
+      description: Type of address.
+      options:
+      - value: ipmask
+        description: Standard IPv4 address with subnet mask.
+      - value: iprange
+        description: Range of IPv4 addresses between two specified addresses (inclusive).
+      - value: fqdn
+        description: Fully Qualified Domain Name address.
+      - value: geography
+        description: IP addresses from a specified country.
+      - value: wildcard
+        description: Standard IPv4 using a wildcard subnet mask.
+      - value: dynamic
+        description: Dynamic address object.
+      - value: interface-subnet
+        description: IP and subnet of interface.
+      - value: mac
+        description: Range of MAC addresses.
+      - value: route-tag
+        description: route-tag addresses.
+      default:
+        value: ipmask
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: type
+    uuid:
+      source_type: uuid
+      fortios_type: uuid
+      description: Universally Unique Identifier (UUID; automatically assigned but can be manually reset).
+      default:
+        value: 00000000-0000-0000-0000-000000000000
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: uuid
+    wildcard:
+      source_type: ipv4-classnet-any
+      fortios_type: ipv4-classnet-any
+      description: IP address and wildcard netmask.
+      address_family: ipv4
+      default:
+        value: 0.0.0.0 0.0.0.0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: wildcard
+    wildcard-fqdn:
+      source_type: string
+      fortios_type: string
+      description: Fully Qualified Domain Name with wildcard characters.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address
+          parameter: wildcard-fqdn
   nested:
   - name: list
+    full_path: firewall address list
     mode: table
     key: <ip>
+    key_type: string
+    description: IP address list.
+    fields:
+      ip:
+        source_type: string
+        fortios_type: string
+        description: IP.
+        length:
+          max: 35
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall address
+            nested_config_path: list
+            parameter: ip
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall address
+        nested_config_path: list
   - name: tagging
+    full_path: firewall address tagging
     mode: table
     key: <name>
+    key_type: string
+    description: Config object tagging.
     fields:
-      category: string
-      tags: identifier-list
+      category:
+        source_type: string
+        fortios_type: string
+        description: Tag category.
+        length:
+          max: 63
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall address
+            nested_config_path: tagging
+            parameter: category
+      tags:
+        source_type: identifier-list
+        fortios_type: string
+        description: Tags; tag name.
+        length:
+          max: 79
+        cardinality: list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall address
+            nested_config_path: tagging
+            parameter: tags
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall address
+        nested_config_path: tagging
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall address
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall address
 - path: firewall address6-template
   mode: table
   key: <name>
@@ -495,46 +967,442 @@ sections:
 - path: firewall address6
   mode: table
   key: <name>
+  key_type: string
+  description: Configure IPv6 firewall addresses.
   fields:
-    cache-ttl: integer
-    color: integer
-    comment: var-string
-    country: string
-    end-ip: ipv6-address
+    cache-ttl:
+      source_type: integer
+      fortios_type: integer
+      description: Minimal TTL of individual IPv6 addresses in FQDN cache.
+      range:
+        min: 0
+        max: 86400
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: cache-ttl
+    color:
+      source_type: integer
+      fortios_type: integer
+      description: Integer value to determine the color of the icon in the GUI.
+      range:
+        min: 0
+        max: 32
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: color
+    comment:
+      source_type: var-string
+      fortios_type: var-string
+      description: Comment.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: comment
+    country:
+      source_type: string
+      fortios_type: string
+      description: IPv6 addresses associated to a specific country.
+      length:
+        max: 2
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: country
+    end-ip:
+      source_type: ipv6-address
+      fortios_type: ipv6-address
+      description: Final IP address (inclusive) in the range for the address.
+      address_family: ipv6
+      default:
+        value: "::"
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: end-ip
     epg-name: string
-    fabric-object: enum
+    fabric-object:
+      source_type: enum
+      fortios_type: option
+      description: Security Fabric global object setting.
+      options:
+      - value: enable
+        description: Object is set as a security fabric-wide global object.
+      - value: disable
+        description: Object is local to this security fabric member.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: fabric-object
     filter: var-string
-    fqdn: string
-    host: ipv6-address
-    host-type: enum
-    ip6: ipv6-network
-    macaddr: identifier-list
+    fqdn:
+      source_type: string
+      fortios_type: string
+      description: Fully qualified domain name.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: fqdn
+    host:
+      source_type: ipv6-address
+      fortios_type: ipv6-address
+      description: Host Address.
+      address_family: ipv6
+      default:
+        value: "::"
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: host
+    host-type:
+      source_type: enum
+      fortios_type: option
+      description: Host type.
+      options:
+      - value: any
+        description: Wildcard.
+      - value: specific
+        description: Specific host address.
+      default:
+        value: any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: host-type
+    ip6:
+      source_type: ipv6-network
+      fortios_type: ipv6-network
+      description: IPv6 address prefix.
+      address_family: ipv6
+      default:
+        value: "::/0"
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: ip6
+    macaddr:
+      source_type: identifier-list
+      fortios_type: string
+      description: Multiple MAC address ranges; ranges are separated by space.
+      length:
+        max: 127
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: macaddr
     obj-id: var-string
-    route-tag: integer
+    route-tag:
+      source_type: integer
+      fortios_type: integer
+      description: route-tag address.
+      range:
+        min: 1
+        max: 4294967295
+        note: Fortinet documents default 0 even though the documented configurable range starts at 1.
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: route-tag
     sdn: string
-    sdn-addr-type: enum
-    sdn-tag: string
-    start-ip: ipv6-address
-    template: string
+    sdn-addr-type:
+      source_type: enum
+      fortios_type: option
+      description: Type of addresses to collect.
+      options:
+      - value: private
+        description: Collect private addresses only.
+      - value: public
+        description: Collect public addresses only.
+      - value: all
+        description: Collect both public and private addresses.
+      default:
+        value: private
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: sdn-addr-type
+    sdn-tag:
+      source_type: string
+      fortios_type: string
+      description: SDN Tag.
+      length:
+        max: 15
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: sdn-tag
+    start-ip:
+      source_type: ipv6-address
+      fortios_type: ipv6-address
+      description: First IP address (inclusive) in the range for the address.
+      address_family: ipv6
+      default:
+        value: "::"
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: start-ip
+    template:
+      source_type: string
+      fortios_type: string
+      description: IPv6 address template.
+      length:
+        max: 63
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: template
+      semantic:
+        reference:
+          kind: ipv6-address-template
+          target_paths:
+          - firewall address6-template
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall address6
+            parameter: template
+            note: Fortinet identifies this as an IPv6 address template; the target config path is a project classification.
     tenant: string
-    type: enum
-    uuid: uuid
+    type:
+      source_type: enum
+      fortios_type: option
+      description: Type of IPv6 address object.
+      options:
+      - value: ipprefix
+        description: Uses the IP prefix to define a range of IPv6 addresses.
+      - value: iprange
+        description: Range of IPv6 addresses between two specified addresses (inclusive).
+      - value: fqdn
+        description: Fully qualified domain name.
+      - value: geography
+        description: IPv6 addresses from a specified country.
+      - value: dynamic
+        description: Dynamic address object for SDN.
+      - value: template
+        description: Template.
+      - value: mac
+        description: Range of MAC addresses.
+      - value: route-tag
+        description: route-tag addresses.
+      default:
+        value: ipprefix
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: type
+    uuid:
+      source_type: uuid
+      fortios_type: uuid
+      description: Universally Unique Identifier (UUID; automatically assigned but can be manually reset).
+      default:
+        value: 00000000-0000-0000-0000-000000000000
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall address6
+          parameter: uuid
   nested:
   - name: list
+    full_path: firewall address6 list
     mode: table
     key: <ip>
+    key_type: string
+    description: IP address list.
+    fields:
+      ip:
+        source_type: string
+        fortios_type: string
+        description: IP.
+        length:
+          max: 89
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall address6
+            nested_config_path: list
+            parameter: ip
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall address6
+        nested_config_path: list
   - name: subnet-segment
+    full_path: firewall address6 subnet-segment
     mode: table
     key: <name>
+    key_type: string
+    description: IPv6 subnet segments.
     fields:
-      type: enum
-      value: string
+      type:
+        source_type: enum
+        fortios_type: option
+        description: Subnet segment type.
+        options:
+        - value: any
+          description: Wildcard.
+        - value: specific
+          description: Specific subnet segment address.
+        default:
+          value: any
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall address6
+            nested_config_path: subnet-segment
+            parameter: type
+      value:
+        source_type: string
+        fortios_type: string
+        description: Subnet segment value.
+        length:
+          max: 35
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall address6
+            nested_config_path: subnet-segment
+            parameter: value
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall address6
+        nested_config_path: subnet-segment
   - name: tagging
+    full_path: firewall address6 tagging
     mode: table
     key: <name>
+    key_type: string
+    description: Config object tagging.
     fields:
-      category: string
-      tags: identifier-list
+      category:
+        source_type: string
+        fortios_type: string
+        description: Tag category.
+        length:
+          max: 63
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall address6
+            nested_config_path: tagging
+            parameter: category
+      tags:
+        source_type: identifier-list
+        fortios_type: string
+        description: Tags; tag name.
+        length:
+          max: 79
+        cardinality: list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall address6
+            nested_config_path: tagging
+            parameter: tags
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall address6
+        nested_config_path: tagging
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall address6
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall address6
 - path: firewall addrgrp
   mode: table
   key: <name>
