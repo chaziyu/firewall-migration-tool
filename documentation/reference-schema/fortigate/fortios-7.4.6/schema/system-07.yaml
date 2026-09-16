@@ -312,203 +312,2003 @@ sections:
 - path: system sdwan
   mode: singleton
   fields:
-    app-perf-log-period: integer
-    duplication-max-num: integer
-    fail-alert-interfaces: identifier-list
-    fail-detect: enum
-    load-balance-mode: enum
-    neighbor-hold-boot-time: integer
-    neighbor-hold-down: enum
-    neighbor-hold-down-time: integer
-    speedtest-bypass-routing: enum
-    status: enum
+    app-perf-log-period:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          parameter: app-perf-log-period
+    duplication-max-num:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          parameter: duplication-max-num
+    fail-alert-interfaces:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          parameter: fail-alert-interfaces
+      cardinality: list
+    fail-detect:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          parameter: fail-detect
+    load-balance-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          parameter: load-balance-mode
+    neighbor-hold-boot-time:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          parameter: neighbor-hold-boot-time
+    neighbor-hold-down:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          parameter: neighbor-hold-down
+    neighbor-hold-down-time:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          parameter: neighbor-hold-down-time
+    speedtest-bypass-routing:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          parameter: speedtest-bypass-routing
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          parameter: status
   nested:
   - name: duplication
     mode: table
     key: <id>
     fields:
-      dstaddr: identifier-list
-      dstaddr6: identifier-list
-      dstintf: identifier-list
-      packet-de-duplication: enum
-      packet-duplication: enum
-      service: identifier-list
-      service-id: identifier-list
-      sla-match-service: enum
-      srcaddr: identifier-list
-      srcaddr6: identifier-list
-      srcintf: identifier-list
+      dstaddr:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: duplication
+            parameter: dstaddr
+        cardinality: list
+        semantic:
+          reference:
+            kind: ipv4_address_reference
+            target_paths:
+            - firewall address
+            - firewall addrgrp
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: dstaddr
+              nested_config_path: duplication
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      dstaddr6:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: duplication
+            parameter: dstaddr6
+        cardinality: list
+        semantic:
+          reference:
+            kind: ipv6_address_reference
+            target_paths:
+            - firewall address6
+            - firewall addrgrp6
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: dstaddr6
+              nested_config_path: duplication
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      dstintf:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: duplication
+            parameter: dstintf
+        cardinality: list
+        semantic:
+          reference:
+            kind: interface
+            target_paths:
+            - system interface
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: dstintf
+              nested_config_path: duplication
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      packet-de-duplication:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: duplication
+            parameter: packet-de-duplication
+      packet-duplication:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: duplication
+            parameter: packet-duplication
+      service:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: duplication
+            parameter: service
+        cardinality: list
+        semantic:
+          reference:
+            kind: service_reference
+            target_paths:
+            - firewall service custom
+            - firewall service group
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: service
+              nested_config_path: duplication
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      service-id:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: duplication
+            parameter: service-id
+        cardinality: list
+      sla-match-service:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: duplication
+            parameter: sla-match-service
+      srcaddr:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: duplication
+            parameter: srcaddr
+        cardinality: list
+        semantic:
+          reference:
+            kind: ipv4_address_reference
+            target_paths:
+            - firewall address
+            - firewall addrgrp
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: srcaddr
+              nested_config_path: duplication
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      srcaddr6:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: duplication
+            parameter: srcaddr6
+        cardinality: list
+        semantic:
+          reference:
+            kind: ipv6_address_reference
+            target_paths:
+            - firewall address6
+            - firewall addrgrp6
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: srcaddr6
+              nested_config_path: duplication
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      srcintf:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: duplication
+            parameter: srcintf
+        cardinality: list
+        semantic:
+          reference:
+            kind: interface
+            target_paths:
+            - system interface
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: srcintf
+              nested_config_path: duplication
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system sdwan
+        nested_config_path: duplication
   - name: health-check
     mode: table
     key: <name>
     fields:
-      addr-mode: enum
-      class-id: integer
-      detect-mode: enum
-      diffservcode: opaque-user
-      dns-match-ip: ipv4-address
-      dns-request-domain: string
-      embed-measured-health: enum
-      failtime: integer
-      ftp-file: string
-      ftp-mode: enum
-      ha-priority: integer
-      http-agent: string
-      http-get: string
-      http-match: string
-      interval: integer
-      members: identifier-list
-      mos-codec: enum
-      packet-size: integer
-      password: password!sensitive
-      port: integer
-      probe-count: integer
-      probe-packets: enum
-      probe-timeout: integer
-      protocol: enum
-      quality-measured-method: enum
-      recoverytime: integer
-      security-mode: enum
-      server: string
-      sla-fail-log-period: integer
-      sla-id-redistribute: integer
-      sla-pass-log-period: integer
-      source: ipv4-address
-      source6: ipv6-address
-      system-dns: enum
-      threshold-alert-jitter: integer
-      threshold-alert-latency: integer
-      threshold-alert-packetloss: integer
-      threshold-warning-jitter: integer
-      threshold-warning-latency: integer
-      threshold-warning-packetloss: integer
-      update-cascade-interface: enum
-      update-static-route: enum
-      user: string
-      vrf: integer
+      addr-mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: addr-mode
+      class-id:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: class-id
+      detect-mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: detect-mode
+      diffservcode:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: diffservcode
+      dns-match-ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: dns-match-ip
+        address_family: ipv4
+      dns-request-domain:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: dns-request-domain
+      embed-measured-health:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: embed-measured-health
+      failtime:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: failtime
+      ftp-file:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: ftp-file
+      ftp-mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: ftp-mode
+      ha-priority:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: ha-priority
+      http-agent:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: http-agent
+      http-get:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: http-get
+      http-match:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: http-match
+      interval:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: interval
+      members:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: members
+        cardinality: list
+      mos-codec:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: mos-codec
+      packet-size:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: packet-size
+      password:
+        source_type: password
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: password
+        semantic:
+          sensitive: true
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: password
+              nested_config_path: health-check
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: port
+      probe-count:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: probe-count
+      probe-packets:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: probe-packets
+      probe-timeout:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: probe-timeout
+      protocol:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: protocol
+      quality-measured-method:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: quality-measured-method
+      recoverytime:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: recoverytime
+      security-mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: security-mode
+      server:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: server
+      sla-fail-log-period:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: sla-fail-log-period
+      sla-id-redistribute:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: sla-id-redistribute
+      sla-pass-log-period:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: sla-pass-log-period
+      source:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: source
+        address_family: ipv4
+      source6:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: source6
+        address_family: ipv6
+      system-dns:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: system-dns
+      threshold-alert-jitter:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: threshold-alert-jitter
+      threshold-alert-latency:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: threshold-alert-latency
+      threshold-alert-packetloss:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: threshold-alert-packetloss
+      threshold-warning-jitter:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: threshold-warning-jitter
+      threshold-warning-latency:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: threshold-warning-latency
+      threshold-warning-packetloss:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: threshold-warning-packetloss
+      update-cascade-interface:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: update-cascade-interface
+      update-static-route:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: update-static-route
+      user:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: user
+      vrf:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: health-check
+            parameter: vrf
     nested:
     - name: sla
       mode: table
       key: <id>
       fields:
-        jitter-threshold: integer
-        latency-threshold: integer
-        link-cost-factor: option-list
-        mos-threshold: string
-        packetloss-threshold: integer
-        priority-in-sla: integer
-        priority-out-sla: integer
+        jitter-threshold:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: system sdwan
+              nested_config_path: health-check > sla
+              parameter: jitter-threshold
+        latency-threshold:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: system sdwan
+              nested_config_path: health-check > sla
+              parameter: latency-threshold
+        link-cost-factor:
+          source_type: option-list
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: system sdwan
+              nested_config_path: health-check > sla
+              parameter: link-cost-factor
+          cardinality: list
+        mos-threshold:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: system sdwan
+              nested_config_path: health-check > sla
+              parameter: mos-threshold
+        packetloss-threshold:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: system sdwan
+              nested_config_path: health-check > sla
+              parameter: packetloss-threshold
+        priority-in-sla:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: system sdwan
+              nested_config_path: health-check > sla
+              parameter: priority-in-sla
+        priority-out-sla:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: system sdwan
+              nested_config_path: health-check > sla
+              parameter: priority-out-sla
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          nested_config_path: health-check > sla
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system sdwan
+        nested_config_path: health-check
   - name: members
     mode: table
     key: <seq-num>
     fields:
-      comment: var-string
-      cost: integer
-      gateway: ipv4-address
-      gateway6: ipv6-address
-      ingress-spillover-threshold: integer
-      interface: string
-      preferred-source: ipv4-address
-      priority: integer
-      priority6: integer
-      source: ipv4-address
-      source6: ipv6-address
-      spillover-threshold: integer
-      status: enum
-      transport-group: integer
-      volume-ratio: integer
-      weight: integer
-      zone: string
+      comment:
+        source_type: var-string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: comment
+      cost:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: cost
+      gateway:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: gateway
+        address_family: ipv4
+      gateway6:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: gateway6
+        address_family: ipv6
+      ingress-spillover-threshold:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: ingress-spillover-threshold
+      interface:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: interface
+        semantic:
+          reference:
+            kind: interface
+            target_paths:
+            - system interface
+            cardinality: one
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: interface
+              nested_config_path: members
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      preferred-source:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: preferred-source
+        address_family: ipv4
+      priority:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: priority
+      priority6:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: priority6
+      source:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: source
+        address_family: ipv4
+      source6:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: source6
+        address_family: ipv6
+      spillover-threshold:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: spillover-threshold
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: status
+      transport-group:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: transport-group
+      volume-ratio:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: volume-ratio
+      weight:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: weight
+      zone:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: members
+            parameter: zone
+        semantic:
+          reference:
+            kind: sdwan_zone
+            target_paths:
+            - system sdwan zone
+            cardinality: one
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: zone
+              nested_config_path: members
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system sdwan
+        nested_config_path: members
   - name: neighbor
     mode: table
     key: <ip>
     fields:
-      health-check: string
-      member: identifier-list
-      minimum-sla-meet-members: integer
-      mode: enum
-      role: enum
-      service-id: integer
-      sla-id: integer
+      health-check:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: neighbor
+            parameter: health-check
+      member:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: neighbor
+            parameter: member
+        cardinality: list
+      minimum-sla-meet-members:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: neighbor
+            parameter: minimum-sla-meet-members
+      mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: neighbor
+            parameter: mode
+      role:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: neighbor
+            parameter: role
+      service-id:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: neighbor
+            parameter: service-id
+      sla-id:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: neighbor
+            parameter: sla-id
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system sdwan
+        nested_config_path: neighbor
   - name: service
     mode: table
     key: <id>
     fields:
-      addr-mode: enum
-      agent-exclusive: enum
-      bandwidth-weight: integer
-      default: enum
-      dscp-forward: enum
-      dscp-forward-tag: opaque-user
-      dscp-reverse: enum
-      dscp-reverse-tag: opaque-user
-      dst: identifier-list
-      dst-negate: enum
-      dst6: identifier-list
-      end-port: integer
-      end-src-port: integer
-      gateway: enum
-      groups: identifier-list
-      hash-mode: enum
-      health-check: identifier-list
-      hold-down-time: integer
-      input-device: identifier-list
-      input-device-negate: enum
-      input-zone: identifier-list
-      internet-service: enum
-      internet-service-app-ctrl: identifier-list
-      internet-service-app-ctrl-category: identifier-list
-      internet-service-app-ctrl-group: identifier-list
-      internet-service-custom: identifier-list
-      internet-service-custom-group: identifier-list
-      internet-service-group: identifier-list
-      internet-service-name: identifier-list
-      jitter-weight: integer
-      latency-weight: integer
-      link-cost-factor: enum
-      link-cost-threshold: integer
-      load-balance: enum
-      minimum-sla-meet-members: integer
-      mode: enum
-      name: string
-      packet-loss-weight: integer
-      passive-measurement: enum
-      priority-members: identifier-list
-      priority-zone: identifier-list
-      protocol: integer
-      quality-link: integer
-      role: enum
-      shortcut: enum
-      shortcut-priority: enum
-      sla-compare-method: enum
-      sla-stickiness: enum
-      src: identifier-list
-      src-negate: enum
-      src6: identifier-list
-      standalone-action: enum
-      start-port: integer
-      start-src-port: integer
-      status: enum
-      tie-break: enum
-      tos: opaque-user
-      tos-mask: opaque-user
-      use-shortcut-sla: enum
-      users: identifier-list
-      zone-mode: enum
+      addr-mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: addr-mode
+      agent-exclusive:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: agent-exclusive
+      bandwidth-weight:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: bandwidth-weight
+      default:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: default
+      dscp-forward:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: dscp-forward
+      dscp-forward-tag:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: dscp-forward-tag
+      dscp-reverse:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: dscp-reverse
+      dscp-reverse-tag:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: dscp-reverse-tag
+      dst:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: dst
+        cardinality: list
+        semantic:
+          reference:
+            kind: ipv4_address_reference
+            target_paths:
+            - firewall address
+            - firewall addrgrp
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: dst
+              nested_config_path: service
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      dst-negate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: dst-negate
+      dst6:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: dst6
+        cardinality: list
+        semantic:
+          reference:
+            kind: ipv6_address_reference
+            target_paths:
+            - firewall address6
+            - firewall addrgrp6
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: dst6
+              nested_config_path: service
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      end-port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: end-port
+      end-src-port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: end-src-port
+      gateway:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: gateway
+      groups:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: groups
+        cardinality: list
+      hash-mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: hash-mode
+      health-check:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: health-check
+        cardinality: list
+      hold-down-time:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: hold-down-time
+      input-device:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: input-device
+        cardinality: list
+        semantic:
+          reference:
+            kind: interface
+            target_paths:
+            - system interface
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: input-device
+              nested_config_path: service
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      input-device-negate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: input-device-negate
+      input-zone:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: input-zone
+        cardinality: list
+        semantic:
+          reference:
+            kind: sdwan_zone
+            target_paths:
+            - system sdwan zone
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: input-zone
+              nested_config_path: service
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      internet-service:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: internet-service
+      internet-service-app-ctrl:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: internet-service-app-ctrl
+        cardinality: list
+      internet-service-app-ctrl-category:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: internet-service-app-ctrl-category
+        cardinality: list
+      internet-service-app-ctrl-group:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: internet-service-app-ctrl-group
+        cardinality: list
+      internet-service-custom:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: internet-service-custom
+        cardinality: list
+      internet-service-custom-group:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: internet-service-custom-group
+        cardinality: list
+      internet-service-group:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: internet-service-group
+        cardinality: list
+      internet-service-name:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: internet-service-name
+        cardinality: list
+      jitter-weight:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: jitter-weight
+      latency-weight:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: latency-weight
+      link-cost-factor:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: link-cost-factor
+      link-cost-threshold:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: link-cost-threshold
+      load-balance:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: load-balance
+      minimum-sla-meet-members:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: minimum-sla-meet-members
+      mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: mode
+      name:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: name
+      packet-loss-weight:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: packet-loss-weight
+      passive-measurement:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: passive-measurement
+      priority-members:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: priority-members
+        cardinality: list
+      priority-zone:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: priority-zone
+        cardinality: list
+        semantic:
+          reference:
+            kind: sdwan_zone
+            target_paths:
+            - system sdwan zone
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: priority-zone
+              nested_config_path: service
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      protocol:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: protocol
+      quality-link:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: quality-link
+      role:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: role
+      shortcut:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: shortcut
+      shortcut-priority:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: shortcut-priority
+      sla-compare-method:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: sla-compare-method
+      sla-stickiness:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: sla-stickiness
+      src:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: src
+        cardinality: list
+        semantic:
+          reference:
+            kind: ipv4_address_reference
+            target_paths:
+            - firewall address
+            - firewall addrgrp
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: src
+              nested_config_path: service
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      src-negate:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: src-negate
+      src6:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: src6
+        cardinality: list
+        semantic:
+          reference:
+            kind: ipv6_address_reference
+            target_paths:
+            - firewall address6
+            - firewall addrgrp6
+            cardinality: many
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              config_path: system sdwan
+              parameter: src6
+              nested_config_path: service
+              note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+      standalone-action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: standalone-action
+      start-port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: start-port
+      start-src-port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: start-src-port
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: status
+      tie-break:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: tie-break
+      tos:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: tos
+      tos-mask:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: tos-mask
+      use-shortcut-sla:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: use-shortcut-sla
+      users:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: users
+        cardinality: list
+      zone-mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: service
+            parameter: zone-mode
     nested:
     - name: sla
       mode: table
       key: <health-check>
       fields:
-        id: integer
+        id:
+          source_type: integer
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: system sdwan
+              nested_config_path: service > sla
+              parameter: id
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system sdwan
+          nested_config_path: service > sla
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system sdwan
+        nested_config_path: service
   - name: zone
     mode: table
     key: <name>
     fields:
-      advpn-health-check: string
-      advpn-select: enum
-      minimum-sla-meet-members: integer
-      service-sla-tie-break: enum
+      advpn-health-check:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: zone
+            parameter: advpn-health-check
+      advpn-select:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: zone
+            parameter: advpn-select
+      minimum-sla-meet-members:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: zone
+            parameter: minimum-sla-meet-members
+      service-sla-tie-break:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system sdwan
+            nested_config_path: zone
+            parameter: service-sla-tie-break
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system sdwan
+        nested_config_path: zone
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system sdwan
+  description: Configure redundant Internet connections with multiple outbound links and health-check profiles.
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: system sdwan
+        note: Migration relevance is a project classification, not a Fortinet documentation claim.
 - path: system serial-port
   mode: table
   key: <name>
