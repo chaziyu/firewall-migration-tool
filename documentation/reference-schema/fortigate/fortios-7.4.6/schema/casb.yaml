@@ -6,27 +6,145 @@ sections:
   mode: table
   key: <name>
   fields:
-    comment: var-string
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb profile
+          parameter: comment
   nested:
   - name: saas-application
     mode: table
     key: <name>
     fields:
-      domain-control: enum
-      domain-control-domains: identifier-list
-      log: enum
-      safe-search: enum
-      safe-search-control: identifier-list
-      status: enum
-      tenant-control: enum
-      tenant-control-tenants: identifier-list
+      domain-control:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb profile
+            nested_config_path: casb profile saas-application
+            parameter: domain-control
+      domain-control-domains:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb profile
+            nested_config_path: casb profile saas-application
+            parameter: domain-control-domains
+        cardinality: list
+      log:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb profile
+            nested_config_path: casb profile saas-application
+            parameter: log
+      safe-search:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb profile
+            nested_config_path: casb profile saas-application
+            parameter: safe-search
+      safe-search-control:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb profile
+            nested_config_path: casb profile saas-application
+            parameter: safe-search-control
+        cardinality: list
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb profile
+            nested_config_path: casb profile saas-application
+            parameter: status
+      tenant-control:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb profile
+            nested_config_path: casb profile saas-application
+            parameter: tenant-control
+      tenant-control-tenants:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb profile
+            nested_config_path: casb profile saas-application
+            parameter: tenant-control-tenants
+        cardinality: list
     nested:
     - name: access-rule
       mode: table
       key: <name>
       fields:
-        action: enum
-        bypass: option-list
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb profile
+              nested_config_path: casb profile saas-application access-rule
+              parameter: action
+        bypass:
+          source_type: option-list
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb profile
+              nested_config_path: casb profile saas-application access-rule
+              parameter: bypass
+          cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb profile
+          nested_config_path: casb profile saas-application access-rule
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb profile
+            nested_config_path: casb profile saas-application access-rule
     - name: custom-control
       mode: table
       key: <name>
@@ -35,64 +153,515 @@ sections:
         mode: table
         key: <name>
         fields:
-          user-input: identifier-list
+          user-input:
+            source_type: identifier-list
+            evidence:
+              status: documented
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                document_id: 01-746-912654-20241212
+                config_path: casb profile
+                nested_config_path: casb profile saas-application custom-control option
+                parameter: user-input
+            cardinality: list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb profile
+            nested_config_path: casb profile saas-application custom-control option
+        semantic:
+          migration_relevance: migration_relevant
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb profile
+              nested_config_path: casb profile saas-application custom-control option
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb profile
+          nested_config_path: casb profile saas-application custom-control
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb profile
+            nested_config_path: casb profile saas-application custom-control
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: casb profile
+        nested_config_path: casb profile saas-application
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb profile
+          nested_config_path: casb profile saas-application
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: casb profile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: casb profile
 - path: casb saas-application
   mode: table
   key: <name>
   fields:
-    casb-name: string
-    description: string
-    domains: identifier-list
-    status: enum
-    type: enum
-    uuid: string
+    casb-name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb saas-application
+          parameter: casb-name
+    description:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb saas-application
+          parameter: description
+    domains:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb saas-application
+          parameter: domains
+      cardinality: list
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb saas-application
+          parameter: status
+    type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb saas-application
+          parameter: type
+    uuid:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb saas-application
+          parameter: uuid
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: casb saas-application
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: casb saas-application
 - path: casb user-activity
   mode: table
   key: <name>
   fields:
-    application: string
-    casb-name: string
-    category: enum
-    description: string
-    match-strategy: enum
-    status: enum
-    type: enum
-    uuid: string
+    application:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          parameter: application
+    casb-name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          parameter: casb-name
+    category:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          parameter: category
+    description:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          parameter: description
+    match-strategy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          parameter: match-strategy
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          parameter: status
+    type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          parameter: type
+    uuid:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          parameter: uuid
   nested:
   - name: control-options
     mode: table
     key: <name>
     fields:
-      status: enum
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb user-activity
+            nested_config_path: casb user-activity control-options
+            parameter: status
     nested:
     - name: operations
       mode: table
       key: <name>
       fields:
-        action: enum
-        case-sensitive: enum
-        direction: option
-        header-name: string
-        search-key: string
-        search-pattern: enum
-        target: enum
-        value-from-input: enum
-        values: identifier-list
+        action:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity control-options operations
+              parameter: action
+        case-sensitive:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity control-options operations
+              parameter: case-sensitive
+        direction:
+          source_type: option
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity control-options operations
+              parameter: direction
+        header-name:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity control-options operations
+              parameter: header-name
+        search-key:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity control-options operations
+              parameter: search-key
+        search-pattern:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity control-options operations
+              parameter: search-pattern
+        target:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity control-options operations
+              parameter: target
+        value-from-input:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity control-options operations
+              parameter: value-from-input
+        values:
+          source_type: identifier-list
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity control-options operations
+              parameter: values
+          cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          nested_config_path: casb user-activity control-options operations
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb user-activity
+            nested_config_path: casb user-activity control-options operations
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: casb user-activity
+        nested_config_path: casb user-activity control-options
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          nested_config_path: casb user-activity control-options
   - name: match
     mode: table
     key: <id>
     fields:
-      strategy: enum
+      strategy:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb user-activity
+            nested_config_path: casb user-activity match
+            parameter: strategy
     nested:
     - name: rules
       mode: table
       key: <id>
       fields:
-        case-sensitive: enum
-        domains: identifier-list
-        header-name: string
-        match-pattern: enum
-        match-value: string
-        methods: identifier-list
-        negate: enum
-        type: enum
+        case-sensitive:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity match rules
+              parameter: case-sensitive
+        domains:
+          source_type: identifier-list
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity match rules
+              parameter: domains
+          cardinality: list
+        header-name:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity match rules
+              parameter: header-name
+        match-pattern:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity match rules
+              parameter: match-pattern
+        match-value:
+          source_type: string
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity match rules
+              parameter: match-value
+        methods:
+          source_type: identifier-list
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity match rules
+              parameter: methods
+          cardinality: list
+        negate:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity match rules
+              parameter: negate
+        type:
+          source_type: enum
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: casb user-activity
+              nested_config_path: casb user-activity match rules
+              parameter: type
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          nested_config_path: casb user-activity match rules
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: casb user-activity
+            nested_config_path: casb user-activity match rules
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: casb user-activity
+        nested_config_path: casb user-activity match
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: casb user-activity
+          nested_config_path: casb user-activity match
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: casb user-activity
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: casb user-activity

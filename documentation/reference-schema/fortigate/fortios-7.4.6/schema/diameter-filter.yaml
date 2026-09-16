@@ -6,14 +6,116 @@ sections:
   mode: table
   key: <name>
   fields:
-    cmd-flags-reserve-set: enum
-    command-code-invalid: enum
-    command-code-range: opaque-user
-    comment: var-string
-    log-packet: enum
-    message-length-invalid: enum
-    missing-request-action: enum
-    monitor-all-messages: enum
-    protocol-version-invalid: enum
-    request-error-flag-set: enum
-    track-requests-answers: enum
+    cmd-flags-reserve-set:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: diameter-filter profile
+          parameter: cmd-flags-reserve-set
+    command-code-invalid:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: diameter-filter profile
+          parameter: command-code-invalid
+    command-code-range:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: diameter-filter profile
+          parameter: command-code-range
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: diameter-filter profile
+          parameter: comment
+    log-packet:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: diameter-filter profile
+          parameter: log-packet
+    message-length-invalid:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: diameter-filter profile
+          parameter: message-length-invalid
+    missing-request-action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: diameter-filter profile
+          parameter: missing-request-action
+    monitor-all-messages:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: diameter-filter profile
+          parameter: monitor-all-messages
+    protocol-version-invalid:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: diameter-filter profile
+          parameter: protocol-version-invalid
+    request-error-flag-set:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: diameter-filter profile
+          parameter: request-error-flag-set
+    track-requests-answers:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: diameter-filter profile
+          parameter: track-requests-answers
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: diameter-filter profile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: diameter-filter profile

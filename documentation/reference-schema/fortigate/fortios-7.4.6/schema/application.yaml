@@ -6,81 +6,627 @@ sections:
   mode: table
   key: <tag>
   fields:
-    behavior: opaque-user
-    category: integer
-    comment: string
-    id: integer
-    protocol: opaque-user
-    signature: var-string
-    technology: opaque-user
-    vendor: opaque-user
+    behavior:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application custom
+          parameter: behavior
+    category:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application custom
+          parameter: category
+    comment:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application custom
+          parameter: comment
+    id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application custom
+          parameter: id
+    protocol:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application custom
+          parameter: protocol
+    signature:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application custom
+          parameter: signature
+    technology:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application custom
+          parameter: technology
+    vendor:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application custom
+          parameter: vendor
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: application custom
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: application custom
 - path: application group
   mode: table
   key: <name>
   fields:
-    application: identifier-list
-    behavior: opaque-user
-    category: identifier-list
-    comment: var-string
-    popularity: option-list
-    protocols: opaque-user
-    risk: identifier-list
-    technology: opaque-user
-    type: enum
-    vendor: opaque-user
+    application:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application group
+          parameter: application
+      cardinality: list
+    behavior:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application group
+          parameter: behavior
+    category:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application group
+          parameter: category
+      cardinality: list
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application group
+          parameter: comment
+    popularity:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application group
+          parameter: popularity
+      cardinality: list
+    protocols:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application group
+          parameter: protocols
+    risk:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application group
+          parameter: risk
+      cardinality: list
+    technology:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application group
+          parameter: technology
+    type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application group
+          parameter: type
+    vendor:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application group
+          parameter: vendor
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: application group
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: application group
 - path: application list
   mode: table
   key: <name>
   fields:
-    app-replacemsg: enum
-    comment: var-string
-    control-default-network-services: enum
-    deep-app-inspection: enum
-    enforce-default-app-port: enum
-    extended-log: enum
-    force-inclusion-ssl-di-sigs: enum
-    options: option-list
-    other-application-action: enum
-    other-application-log: enum
-    p2p-block-list: option-list
-    replacemsg-group: string
-    unknown-application-action: enum
-    unknown-application-log: enum
+    app-replacemsg:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: app-replacemsg
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: comment
+    control-default-network-services:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: control-default-network-services
+    deep-app-inspection:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: deep-app-inspection
+    enforce-default-app-port:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: enforce-default-app-port
+    extended-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: extended-log
+    force-inclusion-ssl-di-sigs:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: force-inclusion-ssl-di-sigs
+    options:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: options
+      cardinality: list
+    other-application-action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: other-application-action
+    other-application-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: other-application-log
+    p2p-block-list:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: p2p-block-list
+      cardinality: list
+    replacemsg-group:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: replacemsg-group
+    unknown-application-action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: unknown-application-action
+    unknown-application-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          parameter: unknown-application-log
   nested:
   - name: default-network-services
     mode: table
     key: <id>
     fields:
-      port: integer
-      services: option-list
-      violation-action: enum
+      port:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list default-network-services
+            parameter: port
+      services:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list default-network-services
+            parameter: services
+        cardinality: list
+      violation-action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list default-network-services
+            parameter: violation-action
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: application list
+        nested_config_path: application list default-network-services
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          nested_config_path: application list default-network-services
   - name: entries
     mode: table
     key: <id>
     fields:
-      action: enum
-      application: identifier-list
-      behavior: opaque-user
-      category: identifier-list
-      exclusion: identifier-list
-      log: enum
-      log-packet: enum
-      per-ip-shaper: string
-      popularity: option-list
-      protocols: opaque-user
-      quarantine: enum
-      quarantine-expiry: opaque-user
-      quarantine-log: enum
-      rate-count: integer
-      rate-duration: integer
-      rate-mode: enum
-      rate-track: enum
-      risk: identifier-list
-      session-ttl: integer
-      shaper: string
-      shaper-reverse: string
-      technology: opaque-user
-      vendor: opaque-user
+      action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: action
+      application:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: application
+        cardinality: list
+      behavior:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: behavior
+      category:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: category
+        cardinality: list
+      exclusion:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: exclusion
+        cardinality: list
+      log:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: log
+      log-packet:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: log-packet
+      per-ip-shaper:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: per-ip-shaper
+      popularity:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: popularity
+        cardinality: list
+      protocols:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: protocols
+      quarantine:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: quarantine
+      quarantine-expiry:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: quarantine-expiry
+      quarantine-log:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: quarantine-log
+      rate-count:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: rate-count
+      rate-duration:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: rate-duration
+      rate-mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: rate-mode
+      rate-track:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: rate-track
+      risk:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: risk
+        cardinality: list
+      session-ttl:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: session-ttl
+      shaper:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: shaper
+      shaper-reverse:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: shaper-reverse
+      technology:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: technology
+      vendor:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries
+            parameter: vendor
     nested:
     - name: parameters
       mode: table
@@ -90,35 +636,274 @@ sections:
         mode: table
         key: <id>
         fields:
-          name: string
-          value: string
+          name:
+            source_type: string
+            evidence:
+              status: documented
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                document_id: 01-746-912654-20241212
+                config_path: application list
+                nested_config_path: application list entries parameters members
+                parameter: name
+          value:
+            source_type: string
+            evidence:
+              status: documented
+              source:
+                document: FortiOS 7.4.6 CLI Reference
+                document_id: 01-746-912654-20241212
+                config_path: application list
+                nested_config_path: application list entries parameters members
+                parameter: value
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries parameters members
+        semantic:
+          migration_relevance: migration_relevant
+          evidence:
+            status: project_semantic
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: application list
+              nested_config_path: application list entries parameters members
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          nested_config_path: application list entries parameters
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application list
+            nested_config_path: application list entries parameters
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: application list
+        nested_config_path: application list entries
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application list
+          nested_config_path: application list entries
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: application list
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: application list
 - path: application name
   mode: table
   key: <name>
   fields:
-    behavior: opaque-user
-    category: integer
-    id: integer
-    popularity: integer
-    protocol: opaque-user
-    risk: integer
-    technology: opaque-user
-    vendor: opaque-user
-    weight: integer
+    behavior:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application name
+          parameter: behavior
+    category:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application name
+          parameter: category
+    id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application name
+          parameter: id
+    popularity:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application name
+          parameter: popularity
+    protocol:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application name
+          parameter: protocol
+    risk:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application name
+          parameter: risk
+    technology:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application name
+          parameter: technology
+    vendor:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application name
+          parameter: vendor
+    weight:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application name
+          parameter: weight
   nested:
   - name: metadata
     mode: table
     key: <id>
     fields:
-      metaid: integer
-      valueid: integer
+      metaid:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application name
+            nested_config_path: application name metadata
+            parameter: metaid
+      valueid:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application name
+            nested_config_path: application name metadata
+            parameter: valueid
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: application name
+        nested_config_path: application name metadata
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application name
+          nested_config_path: application name metadata
   - name: parameters
     mode: table
     key: <name>
     fields:
-      default: raw
+      default:
+        source_type: raw
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: application name
+            nested_config_path: application name parameters
+            parameter: default
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: application name
+        nested_config_path: application name parameters
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: application name
+          nested_config_path: application name parameters
   read_only: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: application name
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: application name
 - path: application rule-settings
   mode: table
   key: <id>
   read_only: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: application rule-settings
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: application rule-settings

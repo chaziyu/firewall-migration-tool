@@ -6,18 +6,128 @@ sections:
   mode: table
   key: <tag>
   fields:
-    action: enum
-    application: opaque-user
-    comment: string
-    location: opaque-user
-    log: enum
-    log-packet: enum
-    os: opaque-user
-    protocol: opaque-user
-    rule-id: integer
-    severity: opaque-user
-    signature: var-string
-    status: enum
+    action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: action
+    application:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: application
+    comment:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: comment
+    location:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: location
+    log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: log
+    log-packet:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: log-packet
+    os:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: os
+    protocol:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: protocol
+    rule-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: rule-id
+    severity:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: severity
+    signature:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: signature
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips custom
+          parameter: status
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: ips custom
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips custom
 - path: ips decoder
   mode: table
   key: <name>
@@ -26,107 +136,833 @@ sections:
     mode: table
     key: <name>
     fields:
-      value: string
+      value:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips decoder
+            nested_config_path: ips decoder parameter
+            parameter: value
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips decoder
+        nested_config_path: ips decoder parameter
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips decoder
+          nested_config_path: ips decoder parameter
   read_only: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: ips decoder
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips decoder
 - path: ips global
   mode: singleton
   fields:
-    anomaly-mode: enum
-    av-mem-limit: integer
-    cp-accel-mode: enum
-    database: enum
-    deep-app-insp-db-limit: integer
-    deep-app-insp-timeout: integer
-    engine-count: integer
-    exclude-signatures: enum
-    fail-open: enum
-    ips-reserve-cpu: enum
-    ngfw-max-scan-range: integer
-    np-accel-mode: enum
-    packet-log-queue-depth: integer
-    session-limit-mode: enum
-    socket-size: integer
-    sync-session-ttl: enum
-    traffic-submit: enum
+    anomaly-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: anomaly-mode
+    av-mem-limit:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: av-mem-limit
+    cp-accel-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: cp-accel-mode
+    database:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: database
+    deep-app-insp-db-limit:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: deep-app-insp-db-limit
+    deep-app-insp-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: deep-app-insp-timeout
+    engine-count:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: engine-count
+    exclude-signatures:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: exclude-signatures
+    fail-open:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: fail-open
+    ips-reserve-cpu:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: ips-reserve-cpu
+    ngfw-max-scan-range:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: ngfw-max-scan-range
+    np-accel-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: np-accel-mode
+    packet-log-queue-depth:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: packet-log-queue-depth
+    session-limit-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: session-limit-mode
+    socket-size:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: socket-size
+    sync-session-ttl:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: sync-session-ttl
+    traffic-submit:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          parameter: traffic-submit
   nested:
   - name: tls-active-probe
     mode: singleton
     fields:
-      interface: string
-      interface-select-method: enum
-      source-ip: ipv4-address
-      source-ip6: ipv6-address
-      vdom: string
+      interface:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips global
+            nested_config_path: ips global tls-active-probe
+            parameter: interface
+      interface-select-method:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips global
+            nested_config_path: ips global tls-active-probe
+            parameter: interface-select-method
+      source-ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips global
+            nested_config_path: ips global tls-active-probe
+            parameter: source-ip
+        address_family: ipv4
+      source-ip6:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips global
+            nested_config_path: ips global tls-active-probe
+            parameter: source-ip6
+        address_family: ipv6
+      vdom:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips global
+            nested_config_path: ips global tls-active-probe
+            parameter: vdom
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips global
+        nested_config_path: ips global tls-active-probe
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips global
+          nested_config_path: ips global tls-active-probe
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: ips global
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips global
 - path: ips rule-settings
   mode: table
   key: <id>
   read_only: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: ips rule-settings
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips rule-settings
 - path: ips rule
   mode: table
   key: <name>
   fields:
-    action: enum
-    application: opaque-user
-    date: integer
-    group: string
-    location: opaque-user
-    log: enum
-    log-packet: enum
-    os: opaque-user
-    rev: integer
-    rule-id: integer
-    service: opaque-user
-    severity: opaque-user
+    action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: action
+    application:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: application
+    date:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: date
+    group:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: group
+    location:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: location
+    log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: log
+    log-packet:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: log-packet
+    os:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: os
+    rev:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: rev
+    rule-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: rule-id
+    service:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: service
+    severity:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          parameter: severity
   nested:
   - name: metadata
     mode: table
     key: <id>
     fields:
-      metaid: integer
-      valueid: integer
+      metaid:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips rule
+            nested_config_path: ips rule metadata
+            parameter: metaid
+      valueid:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips rule
+            nested_config_path: ips rule metadata
+            parameter: valueid
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips rule
+        nested_config_path: ips rule metadata
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips rule
+          nested_config_path: ips rule metadata
   read_only: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: ips rule
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips rule
 - path: ips sensor
   mode: table
   key: <name>
   fields:
-    block-malicious-url: enum
-    comment: var-string
-    extended-log: enum
-    replacemsg-group: string
-    scan-botnet-connections: enum
+    block-malicious-url:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips sensor
+          parameter: block-malicious-url
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips sensor
+          parameter: comment
+    extended-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips sensor
+          parameter: extended-log
+    replacemsg-group:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips sensor
+          parameter: replacemsg-group
+    scan-botnet-connections:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips sensor
+          parameter: scan-botnet-connections
   nested:
   - name: entries
     mode: table
     key: <id>
     fields:
-      action: enum
-      application: opaque-user
-      cve: identifier-list
-      default-action: enum
-      default-status: enum
-      last-modified: opaque-user
-      location: opaque-user
-      log: enum
-      log-attack-context: enum
-      log-packet: enum
-      os: opaque-user
-      protocol: opaque-user
-      quarantine: enum
-      quarantine-expiry: opaque-user
-      quarantine-log: enum
-      rate-count: integer
-      rate-duration: integer
-      rate-mode: enum
-      rate-track: enum
-      rule: identifier-list
-      severity: opaque-user
-      status: enum
-      vuln-type: identifier-list
+      action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: action
+      application:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: application
+      cve:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: cve
+        cardinality: list
+      default-action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: default-action
+      default-status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: default-status
+      last-modified:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: last-modified
+      location:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: location
+      log:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: log
+      log-attack-context:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: log-attack-context
+      log-packet:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: log-packet
+      os:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: os
+      protocol:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: protocol
+      quarantine:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: quarantine
+      quarantine-expiry:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: quarantine-expiry
+      quarantine-log:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: quarantine-log
+      rate-count:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: rate-count
+      rate-duration:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: rate-duration
+      rate-mode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: rate-mode
+      rate-track:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: rate-track
+      rule:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: rule
+        cardinality: list
+      severity:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: severity
+      status:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: status
+      vuln-type:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries
+            parameter: vuln-type
+        cardinality: list
     nested:
     - name: exempt-ip
       mode: table
       key: <id>
       fields:
-        dst-ip: ipv4-classnet
-        src-ip: ipv4-classnet
+        dst-ip:
+          source_type: ipv4-classnet
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: ips sensor
+              nested_config_path: ips sensor entries exempt-ip
+              parameter: dst-ip
+          address_family: ipv4
+        src-ip:
+          source_type: ipv4-classnet
+          evidence:
+            status: documented
+            source:
+              document: FortiOS 7.4.6 CLI Reference
+              document_id: 01-746-912654-20241212
+              config_path: ips sensor
+              nested_config_path: ips sensor entries exempt-ip
+              parameter: src-ip
+          address_family: ipv4
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips sensor
+          nested_config_path: ips sensor entries exempt-ip
+      semantic:
+        migration_relevance: migration_relevant
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: ips sensor
+            nested_config_path: ips sensor entries exempt-ip
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips sensor
+        nested_config_path: ips sensor entries
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips sensor
+          nested_config_path: ips sensor entries
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: ips sensor
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips sensor

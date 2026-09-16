@@ -6,198 +6,1756 @@ sections:
   mode: table
   key: <name>
   fields:
-    comment: var-string
-    hash: string
-    hash-type: enum
-    status: enum
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus exempt-list
+          parameter: comment
+    hash:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus exempt-list
+          parameter: hash
+    hash-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus exempt-list
+          parameter: hash-type
+    status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus exempt-list
+          parameter: status
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: antivirus exempt-list
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus exempt-list
 - path: antivirus profile
   mode: table
   key: <name>
   fields:
-    analytics-accept-filetype: integer
-    analytics-db: enum
-    analytics-ignore-filetype: integer
-    av-virus-log: enum
-    comment: var-string
-    ems-threat-feed: enum
-    extended-log: enum
-    external-blocklist: identifier-list
-    external-blocklist-enable-all: enum
-    feature-set: enum
-    fortindr-error-action: enum
-    fortindr-timeout-action: enum
-    fortisandbox-error-action: enum
-    fortisandbox-max-upload: integer
-    fortisandbox-mode: enum
-    fortisandbox-timeout-action: enum
-    mobile-malware-db: enum
-    outbreak-prevention-archive-scan: enum
-    replacemsg-group: string
-    scan-mode: enum
+    analytics-accept-filetype:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: analytics-accept-filetype
+    analytics-db:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: analytics-db
+    analytics-ignore-filetype:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: analytics-ignore-filetype
+    av-virus-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: av-virus-log
+    comment:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: comment
+    ems-threat-feed:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: ems-threat-feed
+    extended-log:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: extended-log
+    external-blocklist:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: external-blocklist
+      cardinality: list
+    external-blocklist-enable-all:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: external-blocklist-enable-all
+    feature-set:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: feature-set
+    fortindr-error-action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: fortindr-error-action
+    fortindr-timeout-action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: fortindr-timeout-action
+    fortisandbox-error-action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: fortisandbox-error-action
+    fortisandbox-max-upload:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: fortisandbox-max-upload
+    fortisandbox-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: fortisandbox-mode
+    fortisandbox-timeout-action:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: fortisandbox-timeout-action
+    mobile-malware-db:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: mobile-malware-db
+    outbreak-prevention-archive-scan:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: outbreak-prevention-archive-scan
+    replacemsg-group:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: replacemsg-group
+    scan-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          parameter: scan-mode
   nested:
   - name: cifs
     mode: singleton
     fields:
-      archive-block: option-list
-      archive-log: option-list
-      av-scan: enum
-      emulator: enum
-      external-blocklist: enum
-      fortindr: enum
-      fortisandbox: enum
-      outbreak-prevention: enum
-      quarantine: enum
+      archive-block:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile cifs
+            parameter: archive-block
+        cardinality: list
+      archive-log:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile cifs
+            parameter: archive-log
+        cardinality: list
+      av-scan:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile cifs
+            parameter: av-scan
+      emulator:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile cifs
+            parameter: emulator
+      external-blocklist:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile cifs
+            parameter: external-blocklist
+      fortindr:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile cifs
+            parameter: fortindr
+      fortisandbox:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile cifs
+            parameter: fortisandbox
+      outbreak-prevention:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile cifs
+            parameter: outbreak-prevention
+      quarantine:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile cifs
+            parameter: quarantine
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
+        nested_config_path: antivirus profile cifs
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          nested_config_path: antivirus profile cifs
   - name: content-disarm
     mode: singleton
     fields:
-      cover-page: enum
-      detect-only: enum
-      error-action: enum
-      office-action: enum
-      office-dde: enum
-      office-embed: enum
-      office-hylink: enum
-      office-linked: enum
-      office-macro: enum
-      original-file-destination: enum
-      pdf-act-form: enum
-      pdf-act-gotor: enum
-      pdf-act-java: enum
-      pdf-act-launch: enum
-      pdf-act-movie: enum
-      pdf-act-sound: enum
-      pdf-embedfile: enum
-      pdf-hyperlink: enum
-      pdf-javacode: enum
+      cover-page:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: cover-page
+      detect-only:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: detect-only
+      error-action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: error-action
+      office-action:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: office-action
+      office-dde:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: office-dde
+      office-embed:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: office-embed
+      office-hylink:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: office-hylink
+      office-linked:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: office-linked
+      office-macro:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: office-macro
+      original-file-destination:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: original-file-destination
+      pdf-act-form:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: pdf-act-form
+      pdf-act-gotor:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: pdf-act-gotor
+      pdf-act-java:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: pdf-act-java
+      pdf-act-launch:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: pdf-act-launch
+      pdf-act-movie:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: pdf-act-movie
+      pdf-act-sound:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: pdf-act-sound
+      pdf-embedfile:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: pdf-embedfile
+      pdf-hyperlink:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: pdf-hyperlink
+      pdf-javacode:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile content-disarm
+            parameter: pdf-javacode
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
+        nested_config_path: antivirus profile content-disarm
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          nested_config_path: antivirus profile content-disarm
   - name: ftp
     mode: singleton
     fields:
-      archive-block: option-list
-      archive-log: option-list
-      av-scan: enum
-      emulator: enum
-      external-blocklist: enum
-      fortindr: enum
-      fortisandbox: enum
-      outbreak-prevention: enum
-      quarantine: enum
+      archive-block:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ftp
+            parameter: archive-block
+        cardinality: list
+      archive-log:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ftp
+            parameter: archive-log
+        cardinality: list
+      av-scan:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ftp
+            parameter: av-scan
+      emulator:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ftp
+            parameter: emulator
+      external-blocklist:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ftp
+            parameter: external-blocklist
+      fortindr:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ftp
+            parameter: fortindr
+      fortisandbox:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ftp
+            parameter: fortisandbox
+      outbreak-prevention:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ftp
+            parameter: outbreak-prevention
+      quarantine:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ftp
+            parameter: quarantine
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
+        nested_config_path: antivirus profile ftp
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          nested_config_path: antivirus profile ftp
   - name: http
     mode: singleton
     fields:
-      archive-block: option-list
-      archive-log: option-list
-      av-scan: enum
-      content-disarm: enum
-      emulator: enum
-      external-blocklist: enum
-      fortindr: enum
-      fortisandbox: enum
-      outbreak-prevention: enum
-      quarantine: enum
+      archive-block:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile http
+            parameter: archive-block
+        cardinality: list
+      archive-log:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile http
+            parameter: archive-log
+        cardinality: list
+      av-scan:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile http
+            parameter: av-scan
+      content-disarm:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile http
+            parameter: content-disarm
+      emulator:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile http
+            parameter: emulator
+      external-blocklist:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile http
+            parameter: external-blocklist
+      fortindr:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile http
+            parameter: fortindr
+      fortisandbox:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile http
+            parameter: fortisandbox
+      outbreak-prevention:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile http
+            parameter: outbreak-prevention
+      quarantine:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile http
+            parameter: quarantine
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
+        nested_config_path: antivirus profile http
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          nested_config_path: antivirus profile http
   - name: imap
     mode: singleton
     fields:
-      archive-block: option-list
-      archive-log: option-list
-      av-scan: enum
-      content-disarm: enum
-      emulator: enum
-      executables: enum
-      external-blocklist: enum
-      fortindr: enum
-      fortisandbox: enum
-      outbreak-prevention: enum
-      quarantine: enum
+      archive-block:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile imap
+            parameter: archive-block
+        cardinality: list
+      archive-log:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile imap
+            parameter: archive-log
+        cardinality: list
+      av-scan:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile imap
+            parameter: av-scan
+      content-disarm:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile imap
+            parameter: content-disarm
+      emulator:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile imap
+            parameter: emulator
+      executables:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile imap
+            parameter: executables
+      external-blocklist:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile imap
+            parameter: external-blocklist
+      fortindr:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile imap
+            parameter: fortindr
+      fortisandbox:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile imap
+            parameter: fortisandbox
+      outbreak-prevention:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile imap
+            parameter: outbreak-prevention
+      quarantine:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile imap
+            parameter: quarantine
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
+        nested_config_path: antivirus profile imap
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          nested_config_path: antivirus profile imap
   - name: mapi
     mode: singleton
     fields:
-      archive-block: option-list
-      archive-log: option-list
-      av-scan: enum
-      emulator: enum
-      executables: enum
-      external-blocklist: enum
-      fortindr: enum
-      fortisandbox: enum
-      outbreak-prevention: enum
-      quarantine: enum
+      archive-block:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile mapi
+            parameter: archive-block
+        cardinality: list
+      archive-log:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile mapi
+            parameter: archive-log
+        cardinality: list
+      av-scan:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile mapi
+            parameter: av-scan
+      emulator:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile mapi
+            parameter: emulator
+      executables:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile mapi
+            parameter: executables
+      external-blocklist:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile mapi
+            parameter: external-blocklist
+      fortindr:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile mapi
+            parameter: fortindr
+      fortisandbox:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile mapi
+            parameter: fortisandbox
+      outbreak-prevention:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile mapi
+            parameter: outbreak-prevention
+      quarantine:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile mapi
+            parameter: quarantine
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
+        nested_config_path: antivirus profile mapi
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          nested_config_path: antivirus profile mapi
   - name: nac-quar
     mode: singleton
     fields:
-      expiry: opaque-user
-      infected: enum
-      log: enum
+      expiry:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nac-quar
+            parameter: expiry
+      infected:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nac-quar
+            parameter: infected
+      log:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nac-quar
+            parameter: log
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
+        nested_config_path: antivirus profile nac-quar
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          nested_config_path: antivirus profile nac-quar
   - name: nntp
     mode: singleton
     fields:
-      archive-block: option-list
-      archive-log: option-list
-      av-scan: enum
-      emulator: enum
-      external-blocklist: enum
-      fortindr: enum
-      fortisandbox: enum
-      outbreak-prevention: enum
-      quarantine: enum
+      archive-block:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nntp
+            parameter: archive-block
+        cardinality: list
+      archive-log:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nntp
+            parameter: archive-log
+        cardinality: list
+      av-scan:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nntp
+            parameter: av-scan
+      emulator:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nntp
+            parameter: emulator
+      external-blocklist:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nntp
+            parameter: external-blocklist
+      fortindr:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nntp
+            parameter: fortindr
+      fortisandbox:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nntp
+            parameter: fortisandbox
+      outbreak-prevention:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nntp
+            parameter: outbreak-prevention
+      quarantine:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile nntp
+            parameter: quarantine
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
+        nested_config_path: antivirus profile nntp
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          nested_config_path: antivirus profile nntp
   - name: pop3
     mode: singleton
     fields:
-      archive-block: option-list
-      archive-log: option-list
-      av-scan: enum
-      content-disarm: enum
-      emulator: enum
-      executables: enum
-      external-blocklist: enum
-      fortindr: enum
-      fortisandbox: enum
-      outbreak-prevention: enum
-      quarantine: enum
+      archive-block:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile pop3
+            parameter: archive-block
+        cardinality: list
+      archive-log:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile pop3
+            parameter: archive-log
+        cardinality: list
+      av-scan:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile pop3
+            parameter: av-scan
+      content-disarm:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile pop3
+            parameter: content-disarm
+      emulator:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile pop3
+            parameter: emulator
+      executables:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile pop3
+            parameter: executables
+      external-blocklist:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile pop3
+            parameter: external-blocklist
+      fortindr:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile pop3
+            parameter: fortindr
+      fortisandbox:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile pop3
+            parameter: fortisandbox
+      outbreak-prevention:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile pop3
+            parameter: outbreak-prevention
+      quarantine:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile pop3
+            parameter: quarantine
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
+        nested_config_path: antivirus profile pop3
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          nested_config_path: antivirus profile pop3
   - name: smtp
     mode: singleton
     fields:
-      archive-block: option-list
-      archive-log: option-list
-      av-scan: enum
-      content-disarm: enum
-      emulator: enum
-      executables: enum
-      external-blocklist: enum
-      fortindr: enum
-      fortisandbox: enum
-      outbreak-prevention: enum
-      quarantine: enum
+      archive-block:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile smtp
+            parameter: archive-block
+        cardinality: list
+      archive-log:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile smtp
+            parameter: archive-log
+        cardinality: list
+      av-scan:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile smtp
+            parameter: av-scan
+      content-disarm:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile smtp
+            parameter: content-disarm
+      emulator:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile smtp
+            parameter: emulator
+      executables:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile smtp
+            parameter: executables
+      external-blocklist:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile smtp
+            parameter: external-blocklist
+      fortindr:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile smtp
+            parameter: fortindr
+      fortisandbox:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile smtp
+            parameter: fortisandbox
+      outbreak-prevention:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile smtp
+            parameter: outbreak-prevention
+      quarantine:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile smtp
+            parameter: quarantine
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
+        nested_config_path: antivirus profile smtp
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          nested_config_path: antivirus profile smtp
   - name: ssh
     mode: singleton
     fields:
-      archive-block: option-list
-      archive-log: option-list
-      av-scan: enum
-      emulator: enum
-      external-blocklist: enum
-      fortindr: enum
-      fortisandbox: enum
-      outbreak-prevention: enum
-      quarantine: enum
+      archive-block:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ssh
+            parameter: archive-block
+        cardinality: list
+      archive-log:
+        source_type: option-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ssh
+            parameter: archive-log
+        cardinality: list
+      av-scan:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ssh
+            parameter: av-scan
+      emulator:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ssh
+            parameter: emulator
+      external-blocklist:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ssh
+            parameter: external-blocklist
+      fortindr:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ssh
+            parameter: fortindr
+      fortisandbox:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ssh
+            parameter: fortisandbox
+      outbreak-prevention:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ssh
+            parameter: outbreak-prevention
+      quarantine:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: antivirus profile
+            nested_config_path: antivirus profile ssh
+            parameter: quarantine
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
+        nested_config_path: antivirus profile ssh
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus profile
+          nested_config_path: antivirus profile ssh
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: antivirus profile
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus profile
 - path: antivirus quarantine
   mode: singleton
   fields:
-    agelimit: integer
-    destination: enum
-    drop-infected: option-list
-    drop-machine-learning: option-list
-    lowspace: enum
-    maxfilesize: integer
-    quarantine-quota: integer
-    store-infected: option-list
-    store-machine-learning: option-list
+    agelimit:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus quarantine
+          parameter: agelimit
+    destination:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus quarantine
+          parameter: destination
+    drop-infected:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus quarantine
+          parameter: drop-infected
+      cardinality: list
+    drop-machine-learning:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus quarantine
+          parameter: drop-machine-learning
+      cardinality: list
+    lowspace:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus quarantine
+          parameter: lowspace
+    maxfilesize:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus quarantine
+          parameter: maxfilesize
+    quarantine-quota:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus quarantine
+          parameter: quarantine-quota
+    store-infected:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus quarantine
+          parameter: store-infected
+      cardinality: list
+    store-machine-learning:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus quarantine
+          parameter: store-machine-learning
+      cardinality: list
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: antivirus quarantine
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus quarantine
 - path: antivirus settings
   mode: singleton
   fields:
-    cache-infected-result: enum
-    grayware: enum
-    machine-learning-detection: enum
-    override-timeout: integer
-    use-extreme-db: enum
+    cache-infected-result:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus settings
+          parameter: cache-infected-result
+    grayware:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus settings
+          parameter: grayware
+    machine-learning-detection:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus settings
+          parameter: machine-learning-detection
+    override-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus settings
+          parameter: override-timeout
+    use-extreme-db:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: antivirus settings
+          parameter: use-extreme-db
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: antivirus settings
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: antivirus settings

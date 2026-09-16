@@ -4416,24 +4416,206 @@ sections:
   mode: table
   key: <name>
   fields:
-    application-list: string
-    av-profile: string
-    casb-profile: string
-    cifs-profile: string
-    diameter-filter-profile: string
-    dlp-profile: string
-    dnsfilter-profile: string
-    emailfilter-profile: string
-    file-filter-profile: string
-    icap-profile: string
-    ips-sensor: string
-    ips-voip-filter: string
-    profile-protocol-options: string
-    sctp-filter-profile: string
-    ssh-filter-profile: string
-    ssl-ssh-profile: string
-    videofilter-profile: string
-    virtual-patch-profile: string
-    voip-profile: string
-    waf-profile: string
-    webfilter-profile: string
+    application-list:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: application-list
+    av-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: av-profile
+    casb-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: casb-profile
+    cifs-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: cifs-profile
+    diameter-filter-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: diameter-filter-profile
+    dlp-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: dlp-profile
+    dnsfilter-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: dnsfilter-profile
+    emailfilter-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: emailfilter-profile
+    file-filter-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: file-filter-profile
+    icap-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: icap-profile
+    ips-sensor:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: ips-sensor
+    ips-voip-filter:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: ips-voip-filter
+    profile-protocol-options:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: profile-protocol-options
+    sctp-filter-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: sctp-filter-profile
+    ssh-filter-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: ssh-filter-profile
+    ssl-ssh-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: ssl-ssh-profile
+    videofilter-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: videofilter-profile
+    virtual-patch-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: virtual-patch-profile
+    voip-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: voip-profile
+    waf-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: waf-profile
+    webfilter-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall profile-group
+          parameter: webfilter-profile
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall profile-group
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall profile-group

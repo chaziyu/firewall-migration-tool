@@ -5,20 +5,120 @@ sections:
 - path: ips settings
   mode: singleton
   fields:
-    ips-packet-quota: integer
-    packet-log-history: integer
-    packet-log-memory: integer
-    packet-log-post-attack: integer
-    proxy-inline-ips: enum
+    ips-packet-quota:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips settings
+          parameter: ips-packet-quota
+    packet-log-history:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips settings
+          parameter: packet-log-history
+    packet-log-memory:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips settings
+          parameter: packet-log-memory
+    packet-log-post-attack:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips settings
+          parameter: packet-log-post-attack
+    proxy-inline-ips:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips settings
+          parameter: proxy-inline-ips
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: ips settings
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips settings
 - path: ips view-map
   mode: table
   key: <id>
   fields:
-    id-policy-id: integer
-    policy-id: integer
-    vdom-id: integer
-    which: enum
+    id-policy-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips view-map
+          parameter: id-policy-id
+    policy-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips view-map
+          parameter: policy-id
+    vdom-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips view-map
+          parameter: vdom-id
+    which:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: ips view-map
+          parameter: which
   read_only: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: ips view-map
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: ips view-map
 - path: log azure-security-center2 filter
   mode: singleton
   fields:
