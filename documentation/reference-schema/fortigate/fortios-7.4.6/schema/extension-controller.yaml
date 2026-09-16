@@ -1,0 +1,256 @@
+domain: extension-controller
+part: 1
+parts: 1
+sections:
+- path: extension-controller dataplan
+  mode: table
+  key: <name>
+  fields:
+    apn: string
+    auth-type: enum
+    billing-date: integer
+    capacity: integer
+    carrier: string
+    iccid: string
+    modem-id: enum
+    monthly-fee: integer
+    overage: enum
+    password: password!sensitive
+    pdn: enum
+    preferred-subnet: integer
+    private-network: enum
+    signal-period: integer
+    signal-threshold: integer
+    slot: enum
+    type: enum
+    username: string
+- path: extension-controller extender-profile
+  mode: table
+  key: <name>
+  fields:
+    allowaccess: option-list
+    bandwidth-limit: integer
+    enforce-bandwidth: enum
+    extension: enum
+    id: integer
+    login-password: password!sensitive
+    login-password-change: enum
+    model: enum
+  nested:
+  - name: cellular
+    mode: singleton
+    fields:
+      dataplan: identifier-list
+    nested:
+    - name: controller-report
+      mode: singleton
+      fields:
+        interval: integer
+        signal-threshold: integer
+        status: enum
+    - name: modem1
+      mode: singleton
+      fields:
+        conn-status: integer
+        default-sim: enum
+        gps: enum
+        preferred-carrier: string
+        redundant-intf: string
+        redundant-mode: enum
+        sim1-pin: enum
+        sim1-pin-code: password!sensitive
+        sim2-pin: enum
+        sim2-pin-code: password!sensitive
+      nested:
+      - name: auto-switch
+        mode: singleton
+        fields:
+          dataplan: enum
+          disconnect: enum
+          disconnect-period: integer
+          disconnect-threshold: integer
+          signal: enum
+          switch-back: option-list
+          switch-back-time: string
+          switch-back-timer: integer
+    - name: modem2
+      mode: singleton
+      fields:
+        conn-status: integer
+        default-sim: enum
+        gps: enum
+        preferred-carrier: string
+        redundant-intf: string
+        redundant-mode: enum
+        sim1-pin: enum
+        sim1-pin-code: password!sensitive
+        sim2-pin: enum
+        sim2-pin-code: password!sensitive
+      nested:
+      - name: auto-switch
+        mode: singleton
+        fields:
+          dataplan: enum
+          disconnect: enum
+          disconnect-period: integer
+          disconnect-threshold: integer
+          signal: enum
+          switch-back: option-list
+          switch-back-time: string
+          switch-back-timer: integer
+    - name: sms-notification
+      mode: singleton
+      fields:
+        status: enum
+      nested:
+      - name: alert
+        mode: singleton
+        fields:
+          data-exhausted: string
+          fgt-backup-mode-switch: string
+          low-signal-strength: string
+          mode-switch: string
+          os-image-fallback: string
+          session-disconnect: string
+          system-reboot: string
+      - name: receiver
+        mode: table
+        key: <name>
+        fields:
+          alert: option-list
+          phone-number: string
+          status: enum
+  - name: lan-extension
+    mode: singleton
+    fields:
+      backhaul-interface: string
+      backhaul-ip: string
+      ipsec-tunnel: string
+      link-loadbalance: enum
+    nested:
+    - name: backhaul
+      mode: table
+      key: <name>
+      fields:
+        port: enum
+        role: enum
+        weight: integer
+  - name: wifi
+    mode: singleton
+    fields:
+      country: enum
+    nested:
+    - name: radio-1
+      mode: singleton
+      fields:
+        80211d: enum
+        band: option
+        bandwidth: enum
+        beacon-interval: integer
+        bss-color: integer
+        bss-color-mode: enum
+        channel: option-list
+        extension-channel: enum
+        guard-interval: enum
+        lan-ext-vap: string
+        local-vaps: identifier-list
+        max-clients: integer
+        mode: enum
+        operating-standard: enum
+        power-level: integer
+        status: enum
+    - name: radio-2
+      mode: singleton
+      fields:
+        80211d: enum
+        band: option
+        bandwidth: enum
+        beacon-interval: integer
+        bss-color: integer
+        bss-color-mode: enum
+        channel: option-list
+        extension-channel: enum
+        guard-interval: enum
+        lan-ext-vap: string
+        local-vaps: identifier-list
+        max-clients: integer
+        mode: enum
+        operating-standard: enum
+        power-level: integer
+        status: enum
+  model_dependent: true
+- path: extension-controller extender-vap
+  mode: table
+  key: <name>
+  fields:
+    allowaccess: option-list
+    auth-server-address: string
+    auth-server-port: integer
+    auth-server-secret: string
+    broadcast-ssid: enum
+    bss-color-partial: enum
+    dtim: integer
+    end-ip: ipv4-address
+    ip-address: ipv4-classnet-host
+    max-clients: integer
+    mu-mimo: enum
+    passphrase: password!sensitive
+    pmf: enum
+    rts-threshold: integer
+    sae-password: password!sensitive
+    security: enum
+    ssid: string
+    start-ip: ipv4-address
+    target-wake-time: enum
+    type: enum
+- path: extension-controller extender
+  mode: table
+  key: <name>
+  fields:
+    allowaccess: option-list
+    authorized: enum
+    bandwidth-limit: integer
+    description: string
+    device-id: integer
+    enforce-bandwidth: enum
+    ext-name: string
+    extension-type: enum
+    firmware-provision-latest: enum
+    id: string
+    login-password: password!sensitive
+    login-password-change: enum
+    override-allowaccess: enum
+    override-enforce-bandwidth: enum
+    override-login-password-change: enum
+    profile: string
+    vdom: integer
+  nested:
+  - name: wan-extension
+    mode: singleton
+    fields:
+      modem1-extension: string
+      modem2-extension: string
+- path: extension-controller fortigate-profile
+  mode: table
+  key: <name>
+  fields:
+    extension: option
+    id: integer
+  nested:
+  - name: lan-extension
+    mode: singleton
+    fields:
+      backhaul-interface: string
+      backhaul-ip: string
+      ipsec-tunnel: string
+- path: extension-controller fortigate
+  mode: table
+  key: <name>
+  fields:
+    authorized: enum
+    description: string
+    device-id: integer
+    hostname: string
+    id: string
+    profile: string
+    vdom: integer

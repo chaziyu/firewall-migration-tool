@@ -1,0 +1,508 @@
+domain: firewall
+part: 4
+parts: 4
+sections:
+- path: firewall ssl-ssh-profile
+  mode: table
+  key: <name>
+  fields:
+    allowlist: enum
+    block-blocklisted-certificates: enum
+    caname: string
+    comment: var-string
+    mapi-over-https: enum
+    rpc-over-https: enum
+    server-cert: identifier-list
+    server-cert-mode: enum
+    ssl-anomaly-log: enum
+    ssl-exemption-ip-rating: enum
+    ssl-exemption-log: enum
+    ssl-handshake-log: enum
+    ssl-negotiation-log: enum
+    ssl-server-cert-log: enum
+    supported-alpn: enum
+    untrusted-caname: string
+    use-ssl-server: enum
+  nested:
+  - name: dot
+    mode: singleton
+    fields:
+      cert-validation-failure: enum
+      cert-validation-timeout: enum
+      client-certificate: enum
+      expired-server-cert: enum
+      proxy-after-tcp-handshake: enum
+      quic: enum
+      revoked-server-cert: enum
+      sni-server-cert-check: enum
+      status: enum
+      unsupported-ssl-cipher: enum
+      unsupported-ssl-negotiation: enum
+      unsupported-ssl-version: enum
+      untrusted-server-cert: enum
+  - name: ech-outer-sni
+    mode: table
+    key: <name>
+    fields:
+      sni: string
+  - name: ftps
+    mode: singleton
+    fields:
+      cert-validation-failure: enum
+      cert-validation-timeout: enum
+      client-certificate: enum
+      expired-server-cert: enum
+      min-allowed-ssl-version: enum
+      ports: integer
+      revoked-server-cert: enum
+      sni-server-cert-check: enum
+      status: enum
+      unsupported-ssl-cipher: enum
+      unsupported-ssl-negotiation: enum
+      unsupported-ssl-version: enum
+      untrusted-server-cert: enum
+  - name: https
+    mode: singleton
+    fields:
+      cert-probe-failure: enum
+      cert-validation-failure: enum
+      cert-validation-timeout: enum
+      client-certificate: enum
+      encrypted-client-hello: enum
+      expired-server-cert: enum
+      min-allowed-ssl-version: enum
+      ports: integer
+      proxy-after-tcp-handshake: enum
+      quic: enum
+      revoked-server-cert: enum
+      sni-server-cert-check: enum
+      status: enum
+      unsupported-ssl-cipher: enum
+      unsupported-ssl-negotiation: enum
+      unsupported-ssl-version: enum
+      untrusted-server-cert: enum
+  - name: imaps
+    mode: singleton
+    fields:
+      cert-validation-failure: enum
+      cert-validation-timeout: enum
+      client-certificate: enum
+      expired-server-cert: enum
+      ports: integer
+      proxy-after-tcp-handshake: enum
+      revoked-server-cert: enum
+      sni-server-cert-check: enum
+      status: enum
+      unsupported-ssl-cipher: enum
+      unsupported-ssl-negotiation: enum
+      unsupported-ssl-version: enum
+      untrusted-server-cert: enum
+  - name: pop3s
+    mode: singleton
+    fields:
+      cert-validation-failure: enum
+      cert-validation-timeout: enum
+      client-certificate: enum
+      expired-server-cert: enum
+      ports: integer
+      proxy-after-tcp-handshake: enum
+      revoked-server-cert: enum
+      sni-server-cert-check: enum
+      status: enum
+      unsupported-ssl-cipher: enum
+      unsupported-ssl-negotiation: enum
+      unsupported-ssl-version: enum
+      untrusted-server-cert: enum
+  - name: smtps
+    mode: singleton
+    fields:
+      cert-validation-failure: enum
+      cert-validation-timeout: enum
+      client-certificate: enum
+      expired-server-cert: enum
+      ports: integer
+      proxy-after-tcp-handshake: enum
+      revoked-server-cert: enum
+      sni-server-cert-check: enum
+      status: enum
+      unsupported-ssl-cipher: enum
+      unsupported-ssl-negotiation: enum
+      unsupported-ssl-version: enum
+      untrusted-server-cert: enum
+  - name: ssh
+    mode: singleton
+    fields:
+      inspect-all: enum
+      ports: integer
+      proxy-after-tcp-handshake: enum
+      ssh-algorithm: enum
+      ssh-tun-policy-check: enum
+      status: enum
+      unsupported-version: enum
+  - name: ssl
+    mode: singleton
+    fields:
+      cert-probe-failure: enum
+      cert-validation-failure: enum
+      cert-validation-timeout: enum
+      client-certificate: enum
+      encrypted-client-hello: enum
+      expired-server-cert: enum
+      inspect-all: enum
+      min-allowed-ssl-version: enum
+      revoked-server-cert: enum
+      sni-server-cert-check: enum
+      unsupported-ssl-cipher: enum
+      unsupported-ssl-negotiation: enum
+      unsupported-ssl-version: enum
+      untrusted-server-cert: enum
+  - name: ssl-exempt
+    mode: table
+    key: <id>
+    fields:
+      address: string
+      address6: string
+      fortiguard-category: integer
+      regex: string
+      type: enum
+      wildcard-fqdn: string
+  - name: ssl-server
+    mode: table
+    key: <id>
+    fields:
+      ftps-client-certificate: enum
+      https-client-certificate: enum
+      imaps-client-certificate: enum
+      ip: ipv4-address-any
+      pop3s-client-certificate: enum
+      smtps-client-certificate: enum
+      ssl-other-client-certificate: enum
+- path: firewall ssl setting
+  mode: singleton
+  fields:
+    abbreviate-handshake: enum
+    cert-cache-capacity: integer
+    cert-cache-timeout: integer
+    kxp-queue-threshold: integer
+    no-matching-cipher-action: enum
+    proxy-connect-timeout: integer
+    session-cache-capacity: integer
+    session-cache-timeout: integer
+    ssl-dh-bits: enum
+    ssl-queue-threshold: integer
+    ssl-send-empty-frags: enum
+  model_dependent: true
+- path: firewall traffic-class
+  mode: table
+  key: <class-id>
+  fields:
+    class-name: string
+- path: firewall ttl-policy
+  mode: table
+  key: <id>
+  fields:
+    action: enum
+    schedule: string
+    service: identifier-list
+    srcaddr: identifier-list
+    srcintf: string
+    status: enum
+    ttl: opaque-user
+- path: firewall vendor-mac
+  mode: table
+  key: <id>
+  fields:
+    mac-number: integer
+    name: string
+    obsolete: integer
+  read_only: true
+- path: firewall vip
+  mode: table
+  key: <name>
+  fields:
+    add-nat46-route: enum
+    arp-reply: enum
+    color: integer
+    comment: var-string
+    dns-mapping-ttl: integer
+    extaddr: identifier-list
+    extintf: string
+    extip: opaque-user
+    extport: opaque-user
+    gratuitous-arp-interval: integer
+    gslb-domain-name: string
+    gslb-hostname: string
+    h2-support: enum
+    h3-support: enum
+    http-cookie-age: integer
+    http-cookie-domain: string
+    http-cookie-domain-from-host: enum
+    http-cookie-generation: integer
+    http-cookie-path: string
+    http-cookie-share: enum
+    http-ip-header: enum
+    http-ip-header-name: string
+    http-multiplex: enum
+    http-multiplex-max-concurrent-request: integer
+    http-multiplex-max-request: integer
+    http-multiplex-ttl: integer
+    http-redirect: enum
+    https-cookie-secure: enum
+    id: integer
+    ipv6-mappedip: opaque-user
+    ipv6-mappedport: opaque-user
+    ldb-method: enum
+    mapped-addr: string
+    mappedip: identifier-list
+    mappedport: opaque-user
+    max-embryonic-connections: integer
+    monitor: identifier-list
+    nat-source-vip: enum
+    nat44: enum
+    nat46: enum
+    one-click-gslb-server: enum
+    outlook-web-access: enum
+    persistence: enum
+    portforward: enum
+    portmapping-type: enum
+    protocol: enum
+    server-type: enum
+    service: identifier-list
+    src-filter: identifier-list
+    src-vip-filter: enum
+    srcintf-filter: identifier-list
+    ssl-accept-ffdhe-groups: enum
+    ssl-algorithm: enum
+    ssl-certificate: identifier-list
+    ssl-client-fallback: enum
+    ssl-client-rekey-count: integer
+    ssl-client-renegotiation: enum
+    ssl-client-session-state-max: integer
+    ssl-client-session-state-timeout: integer
+    ssl-client-session-state-type: enum
+    ssl-dh-bits: enum
+    ssl-hpkp: enum
+    ssl-hpkp-age: integer
+    ssl-hpkp-backup: string
+    ssl-hpkp-include-subdomains: enum
+    ssl-hpkp-primary: string
+    ssl-hpkp-report-uri: var-string
+    ssl-hsts: enum
+    ssl-hsts-age: integer
+    ssl-hsts-include-subdomains: enum
+    ssl-http-location-conversion: enum
+    ssl-http-match-host: enum
+    ssl-max-version: enum
+    ssl-min-version: enum
+    ssl-mode: enum
+    ssl-pfs: enum
+    ssl-send-empty-frags: enum
+    ssl-server-algorithm: enum
+    ssl-server-max-version: enum
+    ssl-server-min-version: enum
+    ssl-server-renegotiation: enum
+    ssl-server-session-state-max: integer
+    ssl-server-session-state-timeout: integer
+    ssl-server-session-state-type: enum
+    status: enum
+    type: enum
+    uuid: uuid
+    weblogic-server: enum
+    websphere-server: enum
+  nested:
+  - name: gslb-public-ips
+    mode: table
+    key: <index>
+    fields:
+      ip: ipv4-address-any
+  - name: quic
+    mode: singleton
+    fields:
+      ack-delay-exponent: integer
+      active-connection-id-limit: integer
+      active-migration: enum
+      grease-quic-bit: enum
+      max-ack-delay: integer
+      max-datagram-frame-size: integer
+      max-idle-timeout: integer
+      max-udp-payload-size: integer
+  - name: realservers
+    mode: table
+    key: <id>
+    fields:
+      address: string
+      client-ip: opaque-user
+      healthcheck: enum
+      holddown-interval: integer
+      http-host: string
+      ip: opaque-user
+      max-connections: integer
+      monitor: identifier-list
+      port: integer
+      status: enum
+      translate-host: enum
+      type: enum
+      weight: integer
+  - name: ssl-cipher-suites
+    mode: table
+    key: <priority>
+    fields:
+      cipher: enum
+      versions: option-list
+  - name: ssl-server-cipher-suites
+    mode: table
+    key: <priority>
+    fields:
+      cipher: enum
+      versions: option-list
+- path: firewall vip6
+  mode: table
+  key: <name>
+  fields:
+    add-nat64-route: enum
+    color: integer
+    comment: var-string
+    embedded-ipv4-address: enum
+    extip: opaque-user
+    extport: opaque-user
+    h2-support: enum
+    h3-support: enum
+    http-cookie-age: integer
+    http-cookie-domain: string
+    http-cookie-domain-from-host: enum
+    http-cookie-generation: integer
+    http-cookie-path: string
+    http-cookie-share: enum
+    http-ip-header: enum
+    http-ip-header-name: string
+    http-multiplex: enum
+    http-redirect: enum
+    https-cookie-secure: enum
+    id: integer
+    ipv4-mappedip: opaque-user
+    ipv4-mappedport: opaque-user
+    ldb-method: enum
+    mappedip: opaque-user
+    mappedport: opaque-user
+    max-embryonic-connections: integer
+    monitor: identifier-list
+    nat-source-vip: enum
+    nat64: enum
+    nat66: enum
+    ndp-reply: enum
+    outlook-web-access: enum
+    persistence: enum
+    portforward: enum
+    protocol: enum
+    server-type: enum
+    src-filter: identifier-list
+    src-vip-filter: enum
+    ssl-accept-ffdhe-groups: enum
+    ssl-algorithm: enum
+    ssl-certificate: identifier-list
+    ssl-client-fallback: enum
+    ssl-client-rekey-count: integer
+    ssl-client-renegotiation: enum
+    ssl-client-session-state-max: integer
+    ssl-client-session-state-timeout: integer
+    ssl-client-session-state-type: enum
+    ssl-dh-bits: enum
+    ssl-hpkp: enum
+    ssl-hpkp-age: integer
+    ssl-hpkp-backup: string
+    ssl-hpkp-include-subdomains: enum
+    ssl-hpkp-primary: string
+    ssl-hpkp-report-uri: var-string
+    ssl-hsts: enum
+    ssl-hsts-age: integer
+    ssl-hsts-include-subdomains: enum
+    ssl-http-location-conversion: enum
+    ssl-http-match-host: enum
+    ssl-max-version: enum
+    ssl-min-version: enum
+    ssl-mode: enum
+    ssl-pfs: enum
+    ssl-send-empty-frags: enum
+    ssl-server-algorithm: enum
+    ssl-server-max-version: enum
+    ssl-server-min-version: enum
+    ssl-server-renegotiation: enum
+    ssl-server-session-state-max: integer
+    ssl-server-session-state-timeout: integer
+    ssl-server-session-state-type: enum
+    type: enum
+    uuid: uuid
+    weblogic-server: enum
+    websphere-server: enum
+  nested:
+  - name: quic
+    mode: singleton
+    fields:
+      ack-delay-exponent: integer
+      active-connection-id-limit: integer
+      active-migration: enum
+      grease-quic-bit: enum
+      max-ack-delay: integer
+      max-datagram-frame-size: integer
+      max-idle-timeout: integer
+      max-udp-payload-size: integer
+  - name: realservers
+    mode: table
+    key: <id>
+    fields:
+      client-ip: opaque-user
+      healthcheck: enum
+      holddown-interval: integer
+      http-host: string
+      ip: opaque-user
+      max-connections: integer
+      monitor: identifier-list
+      port: integer
+      status: enum
+      translate-host: enum
+      weight: integer
+  - name: ssl-cipher-suites
+    mode: table
+    key: <priority>
+    fields:
+      cipher: enum
+      versions: option-list
+  - name: ssl-server-cipher-suites
+    mode: table
+    key: <priority>
+    fields:
+      cipher: enum
+      versions: option-list
+- path: firewall vipgrp
+  mode: table
+  key: <name>
+  fields:
+    color: integer
+    comments: var-string
+    interface: string
+    member: identifier-list
+    uuid: uuid
+- path: firewall vipgrp6
+  mode: table
+  key: <name>
+  fields:
+    color: integer
+    comments: var-string
+    member: identifier-list
+    uuid: uuid
+- path: firewall wildcard-fqdn custom
+  mode: table
+  key: <name>
+  fields:
+    color: integer
+    comment: var-string
+    uuid: uuid
+    wildcard-fqdn: string
+- path: firewall wildcard-fqdn group
+  mode: table
+  key: <name>
+  fields:
+    color: integer
+    comment: var-string
+    member: identifier-list
+    uuid: uuid

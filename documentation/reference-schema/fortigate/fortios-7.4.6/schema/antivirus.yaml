@@ -1,0 +1,203 @@
+domain: antivirus
+part: 1
+parts: 1
+sections:
+- path: antivirus exempt-list
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    hash: string
+    hash-type: enum
+    status: enum
+- path: antivirus profile
+  mode: table
+  key: <name>
+  fields:
+    analytics-accept-filetype: integer
+    analytics-db: enum
+    analytics-ignore-filetype: integer
+    av-virus-log: enum
+    comment: var-string
+    ems-threat-feed: enum
+    extended-log: enum
+    external-blocklist: identifier-list
+    external-blocklist-enable-all: enum
+    feature-set: enum
+    fortindr-error-action: enum
+    fortindr-timeout-action: enum
+    fortisandbox-error-action: enum
+    fortisandbox-max-upload: integer
+    fortisandbox-mode: enum
+    fortisandbox-timeout-action: enum
+    mobile-malware-db: enum
+    outbreak-prevention-archive-scan: enum
+    replacemsg-group: string
+    scan-mode: enum
+  nested:
+  - name: cifs
+    mode: singleton
+    fields:
+      archive-block: option-list
+      archive-log: option-list
+      av-scan: enum
+      emulator: enum
+      external-blocklist: enum
+      fortindr: enum
+      fortisandbox: enum
+      outbreak-prevention: enum
+      quarantine: enum
+  - name: content-disarm
+    mode: singleton
+    fields:
+      cover-page: enum
+      detect-only: enum
+      error-action: enum
+      office-action: enum
+      office-dde: enum
+      office-embed: enum
+      office-hylink: enum
+      office-linked: enum
+      office-macro: enum
+      original-file-destination: enum
+      pdf-act-form: enum
+      pdf-act-gotor: enum
+      pdf-act-java: enum
+      pdf-act-launch: enum
+      pdf-act-movie: enum
+      pdf-act-sound: enum
+      pdf-embedfile: enum
+      pdf-hyperlink: enum
+      pdf-javacode: enum
+  - name: ftp
+    mode: singleton
+    fields:
+      archive-block: option-list
+      archive-log: option-list
+      av-scan: enum
+      emulator: enum
+      external-blocklist: enum
+      fortindr: enum
+      fortisandbox: enum
+      outbreak-prevention: enum
+      quarantine: enum
+  - name: http
+    mode: singleton
+    fields:
+      archive-block: option-list
+      archive-log: option-list
+      av-scan: enum
+      content-disarm: enum
+      emulator: enum
+      external-blocklist: enum
+      fortindr: enum
+      fortisandbox: enum
+      outbreak-prevention: enum
+      quarantine: enum
+  - name: imap
+    mode: singleton
+    fields:
+      archive-block: option-list
+      archive-log: option-list
+      av-scan: enum
+      content-disarm: enum
+      emulator: enum
+      executables: enum
+      external-blocklist: enum
+      fortindr: enum
+      fortisandbox: enum
+      outbreak-prevention: enum
+      quarantine: enum
+  - name: mapi
+    mode: singleton
+    fields:
+      archive-block: option-list
+      archive-log: option-list
+      av-scan: enum
+      emulator: enum
+      executables: enum
+      external-blocklist: enum
+      fortindr: enum
+      fortisandbox: enum
+      outbreak-prevention: enum
+      quarantine: enum
+  - name: nac-quar
+    mode: singleton
+    fields:
+      expiry: opaque-user
+      infected: enum
+      log: enum
+  - name: nntp
+    mode: singleton
+    fields:
+      archive-block: option-list
+      archive-log: option-list
+      av-scan: enum
+      emulator: enum
+      external-blocklist: enum
+      fortindr: enum
+      fortisandbox: enum
+      outbreak-prevention: enum
+      quarantine: enum
+  - name: pop3
+    mode: singleton
+    fields:
+      archive-block: option-list
+      archive-log: option-list
+      av-scan: enum
+      content-disarm: enum
+      emulator: enum
+      executables: enum
+      external-blocklist: enum
+      fortindr: enum
+      fortisandbox: enum
+      outbreak-prevention: enum
+      quarantine: enum
+  - name: smtp
+    mode: singleton
+    fields:
+      archive-block: option-list
+      archive-log: option-list
+      av-scan: enum
+      content-disarm: enum
+      emulator: enum
+      executables: enum
+      external-blocklist: enum
+      fortindr: enum
+      fortisandbox: enum
+      outbreak-prevention: enum
+      quarantine: enum
+  - name: ssh
+    mode: singleton
+    fields:
+      archive-block: option-list
+      archive-log: option-list
+      av-scan: enum
+      emulator: enum
+      external-blocklist: enum
+      fortindr: enum
+      fortisandbox: enum
+      outbreak-prevention: enum
+      quarantine: enum
+  model_dependent: true
+- path: antivirus quarantine
+  mode: singleton
+  fields:
+    agelimit: integer
+    destination: enum
+    drop-infected: option-list
+    drop-machine-learning: option-list
+    lowspace: enum
+    maxfilesize: integer
+    quarantine-quota: integer
+    store-infected: option-list
+    store-machine-learning: option-list
+  model_dependent: true
+- path: antivirus settings
+  mode: singleton
+  fields:
+    cache-infected-result: enum
+    grayware: enum
+    machine-learning-detection: enum
+    override-timeout: integer
+    use-extreme-db: enum

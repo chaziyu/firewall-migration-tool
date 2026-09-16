@@ -1,0 +1,525 @@
+domain: user
+part: 1
+parts: 1
+sections:
+- path: user adgrp
+  mode: table
+  key: <name>
+  fields:
+    connector-source: string
+    id: integer
+    server-name: string
+- path: user certificate
+  mode: table
+  key: <name>
+  fields:
+    common-name: string
+    id: integer
+    issuer: string
+    status: enum
+    type: enum
+- path: user domain-controller
+  mode: table
+  key: <name>
+  fields:
+    ad-mode: enum
+    adlds-dn: string
+    adlds-ip-address: ipv4-address
+    adlds-ip6: ipv6-address
+    adlds-port: integer
+    change-detection: enum
+    change-detection-period: integer
+    dns-srv-lookup: enum
+    domain-name: string
+    hostname: string
+    interface: string
+    interface-select-method: enum
+    ip-address: ipv4-address
+    ip6: ipv6-address
+    ldap-server: identifier-list
+    password: password!sensitive
+    port: integer
+    replication-port: integer
+    source-ip-address: ipv4-address
+    source-ip6: ipv6-address
+    source-port: integer
+    username: string
+  nested:
+  - name: extra-server
+    mode: table
+    key: <id>
+    fields:
+      ip-address: ipv4-address
+      port: integer
+      source-ip-address: ipv4-address
+      source-port: integer
+- path: user exchange
+  mode: table
+  key: <name>
+  fields:
+    auth-level: enum
+    auth-type: enum
+    auto-discover-kdc: enum
+    connect-protocol: enum
+    domain-name: string
+    http-auth-type: enum
+    ip: ipv4-address-any
+    kdc-ip: identifier-list
+    password: password!sensitive
+    server-name: string
+    ssl-min-proto-version: enum
+    username: string
+- path: user external-identity-provider
+  mode: table
+  key: <name>
+  fields:
+    group-attr-name: string
+    interface: string
+    interface-select-method: enum
+    port: integer
+    server-identity-check: enum
+    source-ip: string
+    timeout: integer
+    type: option
+    url: string
+    user-attr-name: string
+    version: enum
+- path: user fortitoken
+  mode: table
+  key: <serial-number>
+  fields:
+    activation-code: string
+    activation-expire: integer
+    comments: var-string
+    license: string
+    os-ver: string
+    reg-id: string
+    seed: string
+    status: enum
+- path: user fsso-polling
+  mode: table
+  key: <id>
+  fields:
+    default-domain: string
+    ldap-server: string
+    logon-history: integer
+    password: password!sensitive
+    polling-frequency: integer
+    port: integer
+    server: string
+    smb-ntlmv1-auth: enum
+    smbv1: enum
+    status: enum
+    user: string
+  nested:
+  - name: adgrp
+    mode: table
+    key: <name>
+- path: user fsso
+  mode: table
+  key: <name>
+  fields:
+    group-poll-interval: integer
+    interface: string
+    interface-select-method: enum
+    ldap-poll: enum
+    ldap-poll-filter: string
+    ldap-poll-interval: integer
+    ldap-server: string
+    logon-timeout: integer
+    password: password!sensitive
+    password2: password!sensitive
+    password3: password!sensitive
+    password4: password!sensitive
+    password5: password!sensitive
+    port: integer
+    port2: integer
+    port3: integer
+    port4: integer
+    port5: integer
+    server: string
+    server2: string
+    server3: string
+    server4: string
+    server5: string
+    sni: string
+    source-ip: ipv4-address
+    source-ip6: ipv6-address
+    ssl: enum
+    ssl-server-host-ip-check: enum
+    ssl-trusted-cert: string
+    type: enum
+    user-info-server: string
+- path: user group
+  mode: table
+  key: <name>
+  fields:
+    auth-concurrent-override: enum
+    auth-concurrent-value: integer
+    authtimeout: integer
+    company: enum
+    email: enum
+    expire: integer
+    expire-type: enum
+    group-type: enum
+    http-digest-realm: string
+    id: integer
+    max-accounts: integer
+    member: identifier-list
+    mobile-phone: enum
+    multiple-guest-add: enum
+    password: enum
+    sms-custom-server: string
+    sms-server: enum
+    sponsor: enum
+    sso-attribute-value: string
+    user-id: enum
+    user-name: enum
+  nested:
+  - name: guest
+    mode: table
+    key: <id>
+    fields:
+      comment: var-string
+      company: string
+      email: string
+      expiration: opaque-user
+      mobile-phone: string
+      name: string
+      password: password!sensitive
+      sponsor: string
+      user-id: string
+  - name: match
+    mode: table
+    key: <id>
+    fields:
+      group-name: string
+      server-name: string
+- path: user krb-keytab
+  mode: table
+  key: <name>
+  fields:
+    keytab: string
+    ldap-server: identifier-list
+    pac-data: enum
+    principal: string
+- path: user ldap
+  mode: table
+  key: <name>
+  fields:
+    account-key-cert-field: enum
+    account-key-filter: string
+    account-key-processing: enum
+    antiphish: enum
+    ca-cert: string
+    client-cert: string
+    client-cert-auth: enum
+    cnid: string
+    dn: string
+    group-filter: string
+    group-member-check: enum
+    group-object-filter: string
+    group-search-base: string
+    interface: string
+    interface-select-method: enum
+    member-attr: string
+    obtain-user-info: enum
+    password: password!sensitive
+    password-attr: string
+    password-expiry-warning: enum
+    password-renewal: enum
+    port: integer
+    search-type: option-list
+    secondary-server: string
+    secure: enum
+    server: string
+    server-identity-check: enum
+    source-ip: string
+    source-port: integer
+    ssl-min-proto-version: enum
+    status-ttl: integer
+    tertiary-server: string
+    two-factor: enum
+    two-factor-authentication: enum
+    two-factor-filter: string
+    two-factor-notification: enum
+    type: enum
+    user-info-exchange-server: string
+    username: string
+- path: user local
+  mode: table
+  key: <name>
+  fields:
+    auth-concurrent-override: enum
+    auth-concurrent-value: integer
+    authtimeout: integer
+    email-to: string
+    fortitoken: string
+    id: integer
+    ldap-server: string
+    passwd: password!sensitive
+    passwd-policy: string
+    passwd-time: opaque-user
+    ppk-identity: string
+    ppk-secret: password-3!sensitive
+    qkd-profile: string
+    radius-server: string
+    sms-custom-server: string
+    sms-phone: string
+    sms-server: enum
+    status: enum
+    tacacs+-server: string
+    two-factor: enum
+    two-factor-authentication: enum
+    two-factor-notification: enum
+    type: enum
+    username-sensitivity: enum
+    workstation: string
+- path: user nac-policy
+  mode: table
+  key: <name>
+  fields:
+    category: enum
+    description: string
+    ems-tag: string
+    family: string
+    firewall-address: string
+    fortivoice-tag: string
+    host: string
+    hw-vendor: string
+    hw-version: string
+    mac: string
+    match-period: integer
+    match-type: enum
+    os: string
+    severity: identifier-list
+    src: string
+    ssid-policy: string
+    status: enum
+    sw-version: string
+    switch-fortilink: string
+    switch-group: identifier-list
+    switch-mac-policy: string
+    type: string
+    user: string
+    user-group: string
+- path: user password-policy
+  mode: table
+  key: <name>
+  fields:
+    expire-days: integer
+    expire-status: enum
+    expired-password-renewal: enum
+    min-change-characters: integer
+    min-lower-case-letter: integer
+    min-non-alphanumeric: integer
+    min-number: integer
+    min-upper-case-letter: integer
+    minimum-length: integer
+    reuse-password: enum
+    warn-days: integer
+- path: user peer
+  mode: table
+  key: <name>
+  fields:
+    ca: string
+    cn: string
+    cn-type: enum
+    mandatory-ca-verify: enum
+    mfa-mode: enum
+    mfa-password: password!sensitive
+    mfa-server: string
+    mfa-username: string
+    ocsp-override-server: string
+    passwd: password!sensitive
+    subject: string
+    two-factor: enum
+- path: user peergrp
+  mode: table
+  key: <name>
+  fields:
+    member: identifier-list
+- path: user pop3
+  mode: table
+  key: <name>
+  fields:
+    port: integer
+    secure: enum
+    server: string
+    ssl-min-proto-version: enum
+- path: user quarantine
+  mode: singleton
+  fields:
+    firewall-groups: string
+    quarantine: enum
+    traffic-policy: string
+  nested:
+  - name: targets
+    mode: table
+    key: <entry>
+    fields:
+      description: string
+    nested:
+    - name: macs
+      mode: table
+      key: <mac>
+      fields:
+        description: string
+        drop: enum
+        parent: string
+- path: user radius
+  mode: table
+  key: <name>
+  fields:
+    account-key-cert-field: enum
+    account-key-processing: enum
+    acct-all-servers: enum
+    acct-interim-interval: integer
+    all-usergroup: enum
+    auth-type: enum
+    ca-cert: string
+    call-station-id-type: enum
+    class: identifier-list
+    client-cert: string
+    delimiter: enum
+    group-override-attr-type: enum
+    h3c-compatibility: enum
+    interface: string
+    interface-select-method: enum
+    mac-case: enum
+    mac-password-delimiter: enum
+    mac-username-delimiter: enum
+    nas-id: string
+    nas-id-type: enum
+    nas-ip: ipv4-address
+    password-encoding: enum
+    password-renewal: enum
+    radius-coa: enum
+    radius-port: integer
+    require-message-authenticator: enum
+    rsso: enum
+    rsso-context-timeout: integer
+    rsso-endpoint-attribute: enum
+    rsso-endpoint-block-attribute: enum
+    rsso-ep-one-ip-only: enum
+    rsso-flush-ip-session: enum
+    rsso-log-flags: option-list
+    rsso-log-period: integer
+    rsso-radius-response: enum
+    rsso-radius-server-port: integer
+    rsso-secret: password!sensitive
+    rsso-validate-request-secret: enum
+    secondary-secret: password!sensitive
+    secondary-server: string
+    secret: password!sensitive
+    server: string
+    server-identity-check: enum
+    source-ip: string
+    sso-attribute: enum
+    sso-attribute-key: string
+    sso-attribute-value-override: enum
+    status-ttl: integer
+    switch-controller-acct-fast-framedip-detect: integer
+    switch-controller-nas-ip-dynamic: enum
+    switch-controller-service-type: option-list
+    tertiary-secret: password!sensitive
+    tertiary-server: string
+    timeout: integer
+    tls-min-proto-version: enum
+    transport-protocol: enum
+    use-management-vdom: enum
+    username-case-sensitive: enum
+  nested:
+  - name: accounting-server
+    mode: table
+    key: <id>
+    fields:
+      interface: string
+      interface-select-method: enum
+      port: integer
+      secret: password!sensitive
+      server: string
+      source-ip: string
+      status: enum
+- path: user saml
+  mode: table
+  key: <name>
+  fields:
+    adfs-claim: enum
+    cert: string
+    clock-tolerance: integer
+    digest-method: enum
+    entity-id: string
+    group-claim-type: enum
+    group-name: string
+    idp-cert: string
+    idp-entity-id: string
+    idp-single-logout-url: string
+    idp-single-sign-on-url: string
+    limit-relaystate: enum
+    reauth: enum
+    single-logout-url: string
+    single-sign-on-url: string
+    user-claim-type: enum
+    user-name: string
+- path: user security-exempt-list
+  mode: table
+  key: <name>
+  fields:
+    description: string
+  nested:
+  - name: rule
+    mode: table
+    key: <id>
+    fields:
+      dstaddr: identifier-list
+      service: identifier-list
+      srcaddr: identifier-list
+- path: user setting
+  mode: singleton
+  fields:
+    auth-blackout-time: integer
+    auth-ca-cert: string
+    auth-cert: string
+    auth-http-basic: enum
+    auth-invalid-max: integer
+    auth-lockout-duration: integer
+    auth-lockout-threshold: integer
+    auth-on-demand: enum
+    auth-portal-timeout: integer
+    auth-secure-http: enum
+    auth-src-mac: enum
+    auth-ssl-allow-renegotiation: enum
+    auth-ssl-max-proto-version: enum
+    auth-ssl-min-proto-version: enum
+    auth-ssl-sigalgs: enum
+    auth-timeout: integer
+    auth-timeout-type: enum
+    auth-type: option-list
+    default-user-password-policy: string
+    per-policy-disclaimer: enum
+    radius-ses-timeout-act: enum
+  nested:
+  - name: auth-ports
+    mode: table
+    key: <id>
+    fields:
+      port: integer
+      type: enum
+- path: user tacacs+
+  mode: table
+  key: <name>
+  fields:
+    authen-type: enum
+    authorization: enum
+    interface: string
+    interface-select-method: enum
+    key: password!sensitive
+    port: integer
+    secondary-key: password!sensitive
+    secondary-server: string
+    server: string
+    source-ip: string
+    status-ttl: integer
+    tertiary-key: password!sensitive
+    tertiary-server: string

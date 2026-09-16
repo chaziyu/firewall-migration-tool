@@ -1,0 +1,22 @@
+domain: ssh-filter
+part: 1
+parts: 1
+sections:
+- path: ssh-filter profile
+  mode: table
+  key: <name>
+  fields:
+    block: option-list
+    default-command-log: enum
+    log: option-list
+  nested:
+  - name: shell-commands
+    mode: table
+    key: <id>
+    fields:
+      action: enum
+      alert: enum
+      log: enum
+      pattern: string
+      severity: enum
+      type: enum

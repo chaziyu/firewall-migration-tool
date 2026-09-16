@@ -1,0 +1,20 @@
+domain: virtual-patch
+part: 1
+parts: 1
+sections:
+- path: virtual-patch profile
+  mode: table
+  key: <name>
+  fields:
+    action: enum
+    comment: var-string
+    log: enum
+    severity: option-list
+  nested:
+  - name: exemption
+    mode: table
+    key: <id>
+    fields:
+      device: identifier-list
+      rule: identifier-list
+      status: enum

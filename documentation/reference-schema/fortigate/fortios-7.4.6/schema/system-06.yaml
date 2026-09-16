@@ -1,0 +1,805 @@
+domain: system
+part: 6
+parts: 8
+sections:
+- path: system npu
+  mode: singleton
+  fields:
+    capwap-offload: enum
+    dedicated-lacp-queue: enum
+    dedicated-management-affinity: string
+    dedicated-management-cpu: enum
+    default-qos-type: enum
+    double-level-mcast-offload: enum
+    fastpath: enum
+    gtp-enhanced-cpu-range: enum
+    gtp-enhanced-mode: enum
+    gtp-support: enum
+    hash-tbl-spread: enum
+    host-shortcut-mode: enum
+    htab-dedi-queue-nr: integer
+    htab-msg-queue: enum
+    htx-gtse-quota: enum
+    htx-icmp-csum-chk: enum
+    inbound-dscp-copy-port: identifier-list
+    intf-shaping-offload: enum
+    ip-fragment-offload: enum
+    iph-rsvd-re-cksum: enum
+    ipsec-STS-timeout: enum
+    ipsec-dec-subengine-mask: opaque-user
+    ipsec-enc-subengine-mask: opaque-user
+    ipsec-inbound-cache: enum
+    ipsec-mtu-override: enum
+    ipsec-ob-np-sel: enum
+    ipsec-over-vlink: enum
+    ipsec-throughput-msg-frequency: enum
+    ipt-STS-timeout: enum
+    ipt-throughput-msg-frequency: enum
+    lag-out-port-select: enum
+    max-receive-unit: integer
+    max-session-timeout: integer
+    mcast-session-accounting: enum
+    napi-break-interval: integer
+    np6-cps-optimization-mode: enum
+    per-policy-accounting: enum
+    per-session-accounting: enum
+    qos-mode: enum
+    qtm-buf-mode: enum
+    rdp-offload: enum
+    session-acct-interval: integer
+    session-denied-offload: enum
+    shaping-stats: enum
+    split-ipsec-engines: enum
+    sse-backpressure: enum
+    strip-clear-text-padding: enum
+    strip-esp-padding: enum
+    sw-np-bandwidth: enum
+    switch-np-hash: enum
+    tunnel-over-vlink: enum
+    uesp-offload: enum
+    ull-port-mode: enum
+    vlan-lookup-cache: enum
+    vxlan-offload: enum
+  nested:
+  - name: dos-options
+    mode: singleton
+    fields:
+      npu-dos-meter-mode: enum
+      npu-dos-tpe-mode: enum
+  - name: dsw-dts-profile
+    mode: table
+    key: <profile-id>
+    fields:
+      action: enum
+      min-limit: integer
+      step: integer
+  - name: dsw-queue-dts-profile
+    mode: table
+    key: <name>
+    fields:
+      iport: enum
+      oport: enum
+      profile-id: integer
+      queue-select: integer
+  - name: fp-anomaly
+    mode: singleton
+    fields:
+      icmp-csum-err: enum
+      icmp-frag: enum
+      icmp-land: enum
+      ipv4-csum-err: enum
+      ipv4-land: enum
+      ipv4-optlsrr: enum
+      ipv4-optrr: enum
+      ipv4-optsecurity: enum
+      ipv4-optssrr: enum
+      ipv4-optstream: enum
+      ipv4-opttimestamp: enum
+      ipv4-proto-err: enum
+      ipv4-unknopt: enum
+      ipv6-daddr-err: enum
+      ipv6-land: enum
+      ipv6-optendpid: enum
+      ipv6-opthomeaddr: enum
+      ipv6-optinvld: enum
+      ipv6-optjumbo: enum
+      ipv6-optnsap: enum
+      ipv6-optralert: enum
+      ipv6-opttunnel: enum
+      ipv6-proto-err: enum
+      ipv6-saddr-err: enum
+      ipv6-unknopt: enum
+      sctp-csum-err: enum
+      tcp-csum-err: enum
+      tcp-fin-noack: enum
+      tcp-fin-only: enum
+      tcp-land: enum
+      tcp-no-flag: enum
+      tcp-syn-data: enum
+      tcp-syn-fin: enum
+      tcp-winnuke: enum
+      udp-csum-err: enum
+      udp-land: enum
+  - name: hpe
+    mode: singleton
+    fields:
+      all-protocol: integer
+      arp-max: integer
+      enable-shaper: enum
+      esp-max: integer
+      high-priority: integer
+      icmp-max: integer
+      ip-frag-max: integer
+      ip-others-max: integer
+      l2-others-max: integer
+      sctp-max: integer
+      tcp-max: integer
+      tcpfin-rst-max: integer
+      tcpsyn-ack-max: integer
+      tcpsyn-max: integer
+      udp-max: integer
+  - name: ip-reassembly
+    mode: singleton
+    fields:
+      max-timeout: integer
+      min-timeout: integer
+      status: enum
+  - name: isf-np-queues
+    mode: singleton
+    fields:
+      cos0: string
+      cos1: string
+      cos2: string
+      cos3: string
+      cos4: string
+      cos5: string
+      cos6: string
+      cos7: string
+  - name: np-queues
+    mode: singleton
+    nested:
+    - name: ethernet-type
+      mode: table
+      key: <name>
+      fields:
+        queue: integer
+        type: ether-type
+        weight: integer
+    - name: ip-protocol
+      mode: table
+      key: <name>
+      fields:
+        protocol: integer
+        queue: integer
+        weight: integer
+    - name: ip-service
+      mode: table
+      key: <name>
+      fields:
+        dport: integer
+        protocol: integer
+        queue: integer
+        sport: integer
+        weight: integer
+    - name: profile
+      mode: table
+      key: <id>
+      fields:
+        cos0: enum
+        cos1: enum
+        cos2: enum
+        cos3: enum
+        cos4: enum
+        cos5: enum
+        cos6: enum
+        cos7: enum
+        dscp0: enum
+        dscp1: enum
+        dscp10: enum
+        dscp11: enum
+        dscp12: enum
+        dscp13: enum
+        dscp14: enum
+        dscp15: enum
+        dscp16: enum
+        dscp17: enum
+        dscp18: enum
+        dscp19: enum
+        dscp2: enum
+        dscp20: enum
+        dscp21: enum
+        dscp22: enum
+        dscp23: enum
+        dscp24: enum
+        dscp25: enum
+        dscp26: enum
+        dscp27: enum
+        dscp28: enum
+        dscp29: enum
+        dscp3: enum
+        dscp30: enum
+        dscp31: enum
+        dscp32: enum
+        dscp33: enum
+        dscp34: enum
+        dscp35: enum
+        dscp36: enum
+        dscp37: enum
+        dscp38: enum
+        dscp39: enum
+        dscp4: enum
+        dscp40: enum
+        dscp41: enum
+        dscp42: enum
+        dscp43: enum
+        dscp44: enum
+        dscp45: enum
+        dscp46: enum
+        dscp47: enum
+        dscp48: enum
+        dscp49: enum
+        dscp5: enum
+        dscp50: enum
+        dscp51: enum
+        dscp52: enum
+        dscp53: enum
+        dscp54: enum
+        dscp55: enum
+        dscp56: enum
+        dscp57: enum
+        dscp58: enum
+        dscp59: enum
+        dscp6: enum
+        dscp60: enum
+        dscp61: enum
+        dscp62: enum
+        dscp63: enum
+        dscp7: enum
+        dscp8: enum
+        dscp9: enum
+        type: enum
+        weight: integer
+    - name: scheduler
+      mode: table
+      key: <name>
+      fields:
+        mode: enum
+  - name: npu-tcam
+    mode: table
+    key: <name>
+    fields:
+      oid: integer
+      type: enum
+      vid: integer
+    nested:
+    - name: data
+      mode: singleton
+      fields:
+        df: enum
+        dstip: ipv4-address-any
+        dstipv6: ipv6-address
+        dstmac: mac-address
+        dstport: integer
+        ethertype: ether-type
+        ext-tag: enum
+        frag-off: integer
+        gen-buf-cnt: integer
+        gen-iv: enum
+        gen-l3-flags: integer
+        gen-l4-flags: integer
+        gen-pkt-ctrl: integer
+        gen-pri: integer
+        gen-pri-v: enum
+        gen-tv: enum
+        ihl: integer
+        ip4-id: integer
+        ip6-fl: integer
+        ipver: integer
+        l4-wd10: integer
+        l4-wd11: integer
+        l4-wd8: integer
+        l4-wd9: integer
+        mf: enum
+        protocol: integer
+        slink: integer
+        smac-change: enum
+        sp: integer
+        src-cfi: enum
+        src-prio: integer
+        src-updt: enum
+        srcip: ipv4-address-any
+        srcipv6: ipv6-address
+        srcmac: mac-address
+        srcport: integer
+        svid: integer
+        tcp-ack: enum
+        tcp-cwr: enum
+        tcp-ece: enum
+        tcp-fin: enum
+        tcp-push: enum
+        tcp-rst: enum
+        tcp-syn: enum
+        tcp-urg: enum
+        tgt-cfi: enum
+        tgt-prio: integer
+        tgt-updt: enum
+        tgt-v: enum
+        tos: integer
+        tp: integer
+        ttl: integer
+        tvid: integer
+        vdid: integer
+    - name: mask
+      mode: singleton
+      fields:
+        df: enum
+        dstip: ipv4-address-any
+        dstipv6: ipv6-address
+        dstmac: mac-address
+        dstport: integer
+        ethertype: ether-type
+        ext-tag: enum
+        frag-off: integer
+        gen-buf-cnt: integer
+        gen-iv: enum
+        gen-l3-flags: integer
+        gen-l4-flags: integer
+        gen-pkt-ctrl: integer
+        gen-pri: integer
+        gen-pri-v: enum
+        gen-tv: enum
+        ihl: integer
+        ip4-id: integer
+        ip6-fl: integer
+        ipver: integer
+        l4-wd10: integer
+        l4-wd11: integer
+        l4-wd8: integer
+        l4-wd9: integer
+        mf: enum
+        protocol: integer
+        slink: integer
+        smac-change: enum
+        sp: integer
+        src-cfi: enum
+        src-prio: integer
+        src-updt: enum
+        srcip: ipv4-address-any
+        srcipv6: ipv6-address
+        srcmac: mac-address
+        srcport: integer
+        svid: integer
+        tcp-ack: enum
+        tcp-cwr: enum
+        tcp-ece: enum
+        tcp-fin: enum
+        tcp-push: enum
+        tcp-rst: enum
+        tcp-syn: enum
+        tcp-urg: enum
+        tgt-cfi: enum
+        tgt-prio: integer
+        tgt-updt: enum
+        tgt-v: enum
+        tos: integer
+        tp: integer
+        ttl: integer
+        tvid: integer
+        vdid: integer
+    - name: mir-act
+      mode: singleton
+      fields:
+        vlif: integer
+    - name: pri-act
+      mode: singleton
+      fields:
+        priority: integer
+        weight: integer
+    - name: sact
+      mode: singleton
+      fields:
+        act: integer
+        act-v: enum
+        bmproc: integer
+        bmproc-v: enum
+        df-lif: integer
+        df-lif-v: enum
+        dfr: integer
+        dfr-v: enum
+        dmac-skip: integer
+        dmac-skip-v: enum
+        dosen: integer
+        dosen-v: enum
+        espff-proc: integer
+        espff-proc-v: enum
+        etype-pid: integer
+        etype-pid-v: enum
+        frag-proc: integer
+        frag-proc-v: enum
+        fwd: integer
+        fwd-lif: integer
+        fwd-lif-v: enum
+        fwd-tvid: integer
+        fwd-tvid-v: enum
+        fwd-v: enum
+        icpen: integer
+        icpen-v: enum
+        igmp-mld-snp: integer
+        igmp-mld-snp-v: enum
+        learn: integer
+        learn-v: enum
+        m-srh-ctrl: integer
+        m-srh-ctrl-v: enum
+        mac-id: integer
+        mac-id-v: enum
+        mss: integer
+        mss-v: enum
+        pleen: integer
+        pleen-v: enum
+        prio-pid: integer
+        prio-pid-v: enum
+        promis: integer
+        promis-v: enum
+        rfsh: integer
+        rfsh-v: enum
+        smac-skip: integer
+        smac-skip-v: enum
+        tp-smchk-v: enum
+        tp_smchk: integer
+        tpe-id: integer
+        tpe-id-v: enum
+        vdm: integer
+        vdm-v: enum
+        vdom-id: integer
+        vdom-id-v: enum
+        x-mode: integer
+        x-mode-v: enum
+    - name: tact
+      mode: singleton
+      fields:
+        act: integer
+        act-v: enum
+        fmtuv4-s: integer
+        fmtuv4-s-v: enum
+        fmtuv6-s: integer
+        fmtuv6-s-v: enum
+        lnkid: integer
+        lnkid-v: enum
+        mac-id: integer
+        mac-id-v: enum
+        mss-t: integer
+        mss-t-v: enum
+        mtuv4: integer
+        mtuv4-v: enum
+        mtuv6: integer
+        mtuv6-v: enum
+        slif-act: integer
+        slif-act-v: enum
+        sublnkid: integer
+        sublnkid-v: enum
+        tgtv-act: integer
+        tgtv-act-v: enum
+        tlif-act: integer
+        tlif-act-v: enum
+        tpeid: integer
+        tpeid-v: enum
+        v6fe: integer
+        v6fe-v: enum
+        vep-en-v: enum
+        vep-slid: integer
+        vep-slid-v: enum
+        vep_en: integer
+        xlt-lif: integer
+        xlt-lif-v: enum
+        xlt-vid: integer
+        xlt-vid-v: enum
+  - name: port-cpu-map
+    mode: table
+    key: <interface>
+    fields:
+      cpu-core: string
+  - name: port-npu-map
+    mode: table
+    key: <interface>
+    fields:
+      npu-group-index: integer
+  - name: port-path-option
+    mode: singleton
+    fields:
+      ports-using-npu: identifier-list
+  - name: priority-protocol
+    mode: singleton
+    fields:
+      bfd: enum
+      bgp: enum
+      slbc: enum
+  - name: sw-eh-hash
+    mode: singleton
+    fields:
+      computation: enum
+      destination-ip-lower-16: enum
+      destination-ip-upper-16: enum
+      destination-port: enum
+      ip-protocol: enum
+      netmask-length: integer
+      source-ip-lower-16: enum
+      source-ip-upper-16: enum
+      source-port: enum
+  - name: sw-tr-hash
+    mode: singleton
+    fields:
+      draco15: enum
+      tcp-udp-port: enum
+  model_dependent: true
+- path: system ntp
+  mode: singleton
+  fields:
+    authentication: enum
+    interface: identifier-list
+    key: password!sensitive
+    key-id: integer
+    key-type: enum
+    ntpsync: enum
+    server-mode: enum
+    source-ip: ipv4-address
+    source-ip6: ipv6-address
+    syncinterval: integer
+    type: enum
+  nested:
+  - name: ntpserver
+    mode: table
+    key: <id>
+    fields:
+      authentication: enum
+      interface: string
+      interface-select-method: enum
+      ip-type: enum
+      key: password!sensitive
+      key-id: integer
+      key-type: enum
+      ntpv3: enum
+      server: string
+- path: system object-tagging
+  mode: table
+  key: <category>
+  fields:
+    address: enum
+    color: integer
+    device: enum
+    interface: enum
+    multiple: enum
+    tags: identifier-list
+- path: system password-policy-guest-admin
+  mode: singleton
+  fields:
+    apply-to: option-list
+    expire-day: integer
+    expire-status: enum
+    min-change-characters: integer
+    min-lower-case-letter: integer
+    min-non-alphanumeric: integer
+    min-number: integer
+    min-upper-case-letter: integer
+    minimum-length: integer
+    reuse-password: enum
+    status: enum
+- path: system password-policy
+  mode: singleton
+  fields:
+    apply-to: option-list
+    expire-day: integer
+    expire-status: enum
+    min-change-characters: integer
+    min-lower-case-letter: integer
+    min-non-alphanumeric: integer
+    min-number: integer
+    min-upper-case-letter: integer
+    minimum-length: integer
+    reuse-password: enum
+    status: enum
+- path: system pcp-server
+  mode: singleton
+  fields:
+    status: enum
+  nested:
+  - name: pools
+    mode: table
+    key: <name>
+    fields:
+      allow-opcode: option-list
+      announcement-count: integer
+      arp-reply: enum
+      client-mapping-limit: integer
+      client-subnet: identifier-list
+      description: string
+      ext-intf: string
+      extip: opaque-user
+      extport: opaque-user
+      id: integer
+      intl-intf: identifier-list
+      mapping-filter-limit: integer
+      maximal-lifetime: integer
+      minimal-lifetime: integer
+      multicast-announcement: enum
+      recycle-delay: integer
+      third-party: enum
+      third-party-subnet: identifier-list
+- path: system physical-switch
+  mode: table
+  key: <name>
+  fields:
+    age-enable: enum
+    age-val: integer
+  model_dependent: true
+- path: system pppoe-interface
+  mode: table
+  key: <name>
+  fields:
+    ac-name: string
+    auth-type: enum
+    device: string
+    dial-on-demand: enum
+    disc-retry-timeout: integer
+    idle-timeout: integer
+    ipunnumbered: ipv4-address
+    ipv6: enum
+    lcp-echo-interval: integer
+    lcp-max-echo-fails: integer
+    padt-retry-timeout: integer
+    password: password!sensitive
+    pppoe-egress-cos: enum
+    pppoe-unnumbered-negotiate: enum
+    service-name: string
+    username: string
+- path: system probe-response
+  mode: singleton
+  fields:
+    http-probe-value: string
+    mode: enum
+    password: password!sensitive
+    port: integer
+    security-mode: enum
+    timeout: integer
+    ttl-mode: enum
+- path: system proxy-arp
+  mode: table
+  key: <id>
+  fields:
+    end-ip: ipv4-address
+    interface: string
+    ip: ipv4-address
+- path: system ptp
+  mode: singleton
+  fields:
+    delay-mechanism: enum
+    interface: string
+    mode: enum
+    request-interval: integer
+    server-mode: enum
+    status: enum
+  nested:
+  - name: server-interface
+    mode: table
+    key: <id>
+    fields:
+      delay-mechanism: enum
+      server-interface-name: string
+- path: system replacemsg-group
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    group-type: enum
+  nested:
+  - name: admin
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: alertmail
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: auth
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: automation
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: custom-message
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: fortiguard-wf
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: ftp
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: http
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: icap
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: mail
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: nac-quar
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: spam
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: sslvpn
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: traffic-quota
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: utm
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum
+  - name: webproxy
+    mode: table
+    key: <msg-type>
+    fields:
+      buffer: var-string
+      format: enum
+      header: enum

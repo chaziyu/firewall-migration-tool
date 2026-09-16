@@ -1,0 +1,586 @@
+domain: system
+part: 2
+parts: 8
+sections:
+- path: system dns
+  mode: singleton
+  fields:
+    alt-primary: ipv4-address
+    alt-secondary: ipv4-address
+    cache-notfound-responses: enum
+    dns-cache-limit: integer
+    dns-cache-ttl: integer
+    domain: identifier-list
+    fqdn-cache-ttl: integer
+    fqdn-max-refresh: integer
+    fqdn-min-refresh: integer
+    interface: string
+    interface-select-method: enum
+    ip6-primary: ipv6-address
+    ip6-secondary: ipv6-address
+    log: enum
+    primary: ipv4-address
+    protocol: option-list
+    retry: integer
+    secondary: ipv4-address
+    server-hostname: identifier-list
+    server-select-method: enum
+    source-ip: ipv4-address
+    ssl-certificate: string
+    timeout: integer
+- path: system dns64
+  mode: singleton
+  fields:
+    always-synthesize-aaaa-record: enum
+    dns64-prefix: ipv6-prefix
+    status: enum
+- path: system dscp-based-priority
+  mode: table
+  key: <id>
+  fields:
+    ds: integer
+    priority: enum
+- path: system elbc
+  mode: singleton
+  fields:
+    graceful-upgrade: enum
+    hb-device: identifier-list
+    inter-chassis-support: enum
+    mode: enum
+  model_dependent: true
+- path: system email-server
+  mode: singleton
+  fields:
+    authenticate: enum
+    interface: string
+    interface-select-method: enum
+    password: password!sensitive
+    port: integer
+    security: enum
+    server: string
+    source-ip: ipv4-address
+    source-ip6: ipv6-address
+    ssl-min-proto-version: enum
+    type: option
+    username: string
+    validate-server: enum
+- path: system evpn
+  mode: table
+  key: <id>
+  fields:
+    arp-suppression: enum
+    export-rt: identifier-list
+    import-rt: identifier-list
+    ip-local-learning: enum
+    rd: string
+- path: system external-resource
+  mode: table
+  key: <name>
+  fields:
+    category: integer
+    comments: var-string
+    interface: string
+    interface-select-method: enum
+    password: password!sensitive
+    refresh-rate: integer
+    resource: string
+    server-identity-check: enum
+    source-ip: ipv4-address
+    status: enum
+    type: enum
+    update-method: enum
+    user-agent: var-string
+    username: string
+    uuid: uuid
+- path: system fabric-vpn
+  mode: singleton
+  fields:
+    bgp-as: integer
+    branch-name: string
+    health-checks: string
+    loopback-address-block: ipv4-classnet-host
+    loopback-advertised-subnet: integer
+    loopback-interface: string
+    policy-rule: enum
+    psksecret: password-3!sensitive
+    sdwan-zone: string
+    status: enum
+    sync-mode: enum
+    vpn-role: enum
+  nested:
+  - name: advertised-subnets
+    mode: table
+    key: <id>
+    fields:
+      access: enum
+      bgp-network: integer
+      firewall-address: string
+      policies: integer
+      prefix: ipv4-classnet
+  - name: overlays
+    mode: table
+    key: <name>
+    fields:
+      bgp-neighbor: string
+      bgp-neighbor-group: string
+      bgp-neighbor-range: integer
+      bgp-network: integer
+      interface: string
+      ipsec-phase1: string
+      overlay-policy: integer
+      overlay-tunnel-block: ipv4-classnet-host
+      remote-gw: ipv4-address-any
+      route-policy: integer
+      sdwan-member: integer
+- path: system federated-upgrade
+  mode: singleton
+  fields:
+    failure-device: string
+    failure-reason: enum
+    ha-reboot-controller: string
+    next-path-index: integer
+    source: enum
+    status: enum
+    upgrade-id: integer
+  nested:
+  - name: known-ha-members
+    mode: table
+    key: <serial>
+  - name: node-list
+    mode: table
+    key: <serial>
+    fields:
+      coordinating-fortigate: string
+      device-type: enum
+      maximum-minutes: integer
+      setup-time: opaque-user
+      time: opaque-user
+      timing: enum
+      upgrade-path: opaque-user
+- path: system fips-cc
+  mode: singleton
+  fields:
+    key-generation-self-test: enum
+    self-test-period: integer
+    status: enum
+- path: system fortiguard
+  mode: singleton
+  fields:
+    FDS-license-expiring-days: integer
+    antispam-cache: enum
+    antispam-cache-mpermille: integer
+    antispam-cache-ttl: integer
+    antispam-expiration: integer
+    antispam-force-off: enum
+    antispam-license: integer
+    antispam-timeout: integer
+    anycast-sdns-server-ip: ipv4-address
+    anycast-sdns-server-port: integer
+    auto-firmware-upgrade: enum
+    auto-firmware-upgrade-day: option-list
+    auto-firmware-upgrade-delay: integer
+    auto-firmware-upgrade-end-hour: integer
+    auto-firmware-upgrade-start-hour: integer
+    auto-join-forticloud: enum
+    ddns-server-ip: ipv4-address
+    ddns-server-ip6: ipv6-address
+    ddns-server-port: integer
+    fortiguard-anycast: enum
+    fortiguard-anycast-source: enum
+    interface: string
+    interface-select-method: enum
+    load-balance-servers: integer
+    outbreak-prevention-cache: enum
+    outbreak-prevention-cache-mpermille: integer
+    outbreak-prevention-cache-ttl: integer
+    outbreak-prevention-expiration: integer
+    outbreak-prevention-force-off: enum
+    outbreak-prevention-license: integer
+    outbreak-prevention-timeout: integer
+    persistent-connection: enum
+    port: enum
+    protocol: enum
+    proxy-password: password!sensitive
+    proxy-server-ip: string
+    proxy-server-port: integer
+    proxy-username: string
+    sandbox-inline-scan: enum
+    sandbox-region: string
+    sdns-options: option-list
+    sdns-server-ip: opaque-user
+    sdns-server-port: integer
+    service-account-id: string
+    source-ip: ipv4-address
+    source-ip6: ipv6-address
+    update-build-proxy: enum
+    update-dldb: enum
+    update-extdb: enum
+    update-ffdb: enum
+    update-server-location: enum
+    update-uwdb: enum
+    vdom: string
+    webfilter-cache: enum
+    webfilter-cache-ttl: integer
+    webfilter-expiration: integer
+    webfilter-force-off: enum
+    webfilter-license: integer
+    webfilter-timeout: integer
+  model_dependent: true
+- path: system fortindr
+  mode: singleton
+  fields:
+    interface: string
+    interface-select-method: enum
+    source-ip: string
+    status: enum
+- path: system fortisandbox
+  mode: singleton
+  fields:
+    email: string
+    enc-algorithm: enum
+    forticloud: enum
+    inline-scan: enum
+    interface: string
+    interface-select-method: enum
+    server: string
+    source-ip: string
+    ssl-min-proto-version: enum
+    status: enum
+- path: system fsso-polling
+  mode: singleton
+  fields:
+    auth-password: password!sensitive
+    authentication: enum
+    listening-port: integer
+    status: enum
+- path: system ftm-push
+  mode: singleton
+  fields:
+    proxy: enum
+    server: string
+    server-cert: string
+    server-ip: ipv4-address
+    server-port: integer
+    status: enum
+- path: system geneve
+  mode: table
+  key: <name>
+  fields:
+    dstport: integer
+    interface: string
+    ip-version: enum
+    remote-ip: ipv4-address
+    remote-ip6: ipv6-address
+    type: enum
+    vni: integer
+- path: system geoip-override
+  mode: table
+  key: <name>
+  fields:
+    country-id: string
+    description: string
+  nested:
+  - name: ip-range
+    mode: table
+    key: <id>
+    fields:
+      end-ip: ipv4-address
+      start-ip: ipv4-address
+  - name: ip6-range
+    mode: table
+    key: <id>
+    fields:
+      end-ip: ipv6-address
+      start-ip: ipv6-address
+- path: system global
+  mode: singleton
+  fields:
+    admin-ble-button: enum
+    admin-concurrent: enum
+    admin-console-timeout: integer
+    admin-forticloud-sso-default-profile: string
+    admin-forticloud-sso-login: enum
+    admin-host: string
+    admin-hsts-max-age: integer
+    admin-https-pki-required: enum
+    admin-https-redirect: enum
+    admin-https-ssl-banned-ciphers: option-list
+    admin-https-ssl-ciphersuites: option-list
+    admin-https-ssl-versions: option-list
+    admin-lockout-duration: integer
+    admin-lockout-threshold: integer
+    admin-login-max: integer
+    admin-port: integer
+    admin-reset-button: enum
+    admin-restrict-local: enum
+    admin-scp: enum
+    admin-server-cert: string
+    admin-sport: integer
+    admin-ssh-grace-time: integer
+    admin-ssh-password: enum
+    admin-ssh-port: integer
+    admin-ssh-v1: enum
+    admin-telnet: enum
+    admin-telnet-port: integer
+    admintimeout: integer
+    alias: string
+    allow-traffic-redirect: enum
+    anti-replay: enum
+    arp-max-entry: integer
+    auth-cert: string
+    auth-http-port: integer
+    auth-https-port: integer
+    auth-ike-saml-port: integer
+    auth-keepalive: enum
+    auth-session-limit: enum
+    auto-auth-extension-device: enum
+    autorun-log-fsck: enum
+    av-affinity: string
+    av-failopen: enum
+    av-failopen-session: enum
+    batch-cmdb: enum
+    bfd-affinity: string
+    block-session-timer: integer
+    br-fdb-max-entry: integer
+    cert-chain-max: integer
+    cfg-revert-timeout: integer
+    cfg-save: enum
+    check-protocol-header: enum
+    check-reset-range: enum
+    cli-audit-log: enum
+    cloud-communication: enum
+    clt-cert-req: enum
+    cmdbsvr-affinity: string
+    cpu-use-threshold: integer
+    csr-ca-attribute: enum
+    daily-restart: enum
+    default-service-source-port: opaque-user
+    delay-tcp-npu-session: enum
+    device-idle-timeout: integer
+    dh-params: enum
+    dhcp-lease-backup-interval: integer
+    dnsproxy-worker-count: integer
+    early-tcp-npu-session: enum
+    edit-vdom-prompt: enum
+    extender-controller-reserved-network: ipv4-classnet-host
+    failtime: integer
+    faz-disk-buffer-size: integer
+    fds-statistics: enum
+    fds-statistics-period: integer
+    fgd-alert-subscription: option-list
+    forticontroller-proxy: enum
+    forticontroller-proxy-port: integer
+    forticonverter-config-upload: enum
+    forticonverter-integration: enum
+    fortiextender: enum
+    fortiextender-data-port: integer
+    fortiextender-discovery-lockdown: enum
+    fortiextender-provision-on-authorization: enum
+    fortiextender-vlan-mode: enum
+    fortigslb-integration: enum
+    fortiservice-port: integer
+    fortitoken-cloud: enum
+    fortitoken-cloud-push-status: enum
+    fortitoken-cloud-sync-interval: integer
+    gtpu-dynamic-source-port: enum
+    gui-allow-incompatible-fabric-fgt: enum
+    gui-app-detection-sdwan: enum
+    gui-auto-upgrade-setup-warning: enum
+    gui-cdn-domain-override: string
+    gui-cdn-usage: enum
+    gui-certificates: enum
+    gui-custom-language: enum
+    gui-date-format: enum
+    gui-date-time-source: enum
+    gui-device-latitude: string
+    gui-device-longitude: string
+    gui-display-hostname: enum
+    gui-firmware-upgrade-warning: enum
+    gui-forticare-registration-setup-warning: enum
+    gui-fortigate-cloud-sandbox: enum
+    gui-ipv6: enum
+    gui-local-out: enum
+    gui-replacement-message-groups: enum
+    gui-rest-api-cache: enum
+    gui-theme: enum
+    gui-wireless-opensecurity: enum
+    gui-workflow-management: enum
+    ha-affinity: string
+    honor-df: enum
+    hostname: string
+    hyper-scale-vdom-num: integer
+    igmp-state-limit: integer
+    interface-subnet-usage: enum
+    internal-switch-speed: option-list
+    internet-service-database: enum
+    internet-service-download-list: identifier-list
+    interval: integer
+    ip-fragment-mem-thresholds: integer
+    ip-src-port-range: opaque-user
+    ips-affinity: string
+    ipsec-asic-offload: enum
+    ipsec-ha-seqjump-rate: integer
+    ipsec-hmac-offload: enum
+    ipsec-qat-offload: enum
+    ipsec-round-robin: enum
+    ipv6-accept-dad: integer
+    ipv6-allow-anycast-probe: enum
+    ipv6-allow-local-in-silent-drop: enum
+    ipv6-allow-multicast-probe: enum
+    ipv6-allow-traffic-redirect: enum
+    irq-time-accounting: enum
+    language: enum
+    ldapconntimeout: integer
+    legacy-poe-device-support: enum
+    lldp-reception: enum
+    lldp-transmission: enum
+    log-single-cpu-high: enum
+    log-ssl-connection: enum
+    log-uuid-address: enum
+    login-timestamp: enum
+    long-vdom-name: enum
+    management-ip: string
+    management-port: integer
+    management-port-use-admin-sport: enum
+    management-vdom: string
+    max-route-cache-size: integer
+    memory-use-threshold-extreme: integer
+    memory-use-threshold-green: integer
+    memory-use-threshold-red: integer
+    miglog-affinity: string
+    miglogd-children: integer
+    multi-factor-authentication: enum
+    ndp-max-entry: integer
+    npu-neighbor-update: enum
+    per-user-bal: enum
+    pmtu-discovery: enum
+    policy-auth-concurrent: integer
+    post-login-banner: enum
+    pre-login-banner: enum
+    private-data-encryption: enum
+    proxy-auth-lifetime: enum
+    proxy-auth-lifetime-timeout: integer
+    proxy-auth-timeout: integer
+    proxy-cert-use-mgmt-vdom: enum
+    proxy-hardware-acceleration: enum
+    proxy-keep-alive-mode: enum
+    proxy-re-authentication-time: integer
+    proxy-resource-mode: enum
+    proxy-worker-count: integer
+    purdue-level: enum
+    quic-ack-thresold: integer
+    quic-congestion-control-algo: enum
+    quic-max-datagram-size: integer
+    quic-pmtud: enum
+    quic-tls-handshake-timeout: integer
+    quic-udp-payload-size-shaping-per-cid: enum
+    radius-port: integer
+    reboot-upon-config-restore: enum
+    refresh: integer
+    remoteauthtimeout: integer
+    reset-sessionless-tcp: enum
+    rest-api-key-url-query: enum
+    restart-time: opaque-user
+    revision-backup-on-logout: enum
+    revision-image-auto-backup: enum
+    scanunit-count: integer
+    security-rating-run-on-schedule: enum
+    send-pmtu-icmp: enum
+    sflowd-max-children-num: integer
+    show-backplane-intf: enum
+    snat-route-change: enum
+    special-file-23-support: enum
+    speedtest-server: enum
+    speedtestd-ctrl-port: integer
+    speedtestd-server-port: integer
+    split-port: string
+    ssd-trim-date: integer
+    ssd-trim-freq: enum
+    ssd-trim-hour: integer
+    ssd-trim-min: integer
+    ssd-trim-weekday: enum
+    ssl-min-proto-version: enum
+    ssl-static-key-ciphers: enum
+    sslvpn-max-worker-count: integer
+    sslvpn-web-mode: enum
+    strict-dirty-session-check: enum
+    strong-crypto: enum
+    switch-controller: enum
+    switch-controller-reserved-network: ipv4-classnet-host
+    sys-perf-log-interval: integer
+    syslog-affinity: string
+    tcp-halfclose-timer: integer
+    tcp-halfopen-timer: integer
+    tcp-option: enum
+    tcp-rst-timer: integer
+    tcp-timewait-timer: integer
+    tftp: enum
+    timezone: string
+    traffic-priority: enum
+    traffic-priority-level: enum
+    two-factor-email-expiry: integer
+    two-factor-fac-expiry: integer
+    two-factor-ftk-expiry: integer
+    two-factor-ftm-expiry: integer
+    two-factor-sms-expiry: integer
+    udp-idle-timer: integer
+    url-filter-affinity: string
+    url-filter-count: integer
+    user-device-store-max-devices: integer
+    user-device-store-max-unified-mem: integer
+    user-device-store-max-users: integer
+    vdom-mode: enum
+    vip-arp-range: enum
+    virtual-switch-vlan: enum
+    vpn-ems-sn-check: enum
+    wad-affinity: string
+    wad-csvc-cs-count: integer
+    wad-csvc-db-count: integer
+    wad-memory-change-granularity: integer
+    wad-restart-end-time: opaque-user
+    wad-restart-mode: enum
+    wad-restart-start-time: opaque-user
+    wad-source-affinity: enum
+    wad-worker-count: integer
+    wifi-ca-certificate: string
+    wifi-certificate: string
+    wimax-4g-usb: enum
+    wireless-controller: enum
+    wireless-controller-port: integer
+    wireless-mode: enum
+  nested:
+  - name: split-port-mode
+    mode: table
+    key: <interface>
+    fields:
+      split-mode: enum
+  model_dependent: true
+- path: system gre-tunnel
+  mode: table
+  key: <name>
+  fields:
+    auto-asic-offload: enum
+    checksum-reception: enum
+    checksum-transmission: enum
+    diffservcode: opaque-user
+    dscp-copying: enum
+    interface: string
+    ip-version: enum
+    keepalive-failtimes: integer
+    keepalive-interval: integer
+    key-inbound: integer
+    key-outbound: integer
+    local-gw: ipv4-address-any
+    local-gw6: ipv6-address
+    remote-gw: ipv4-address
+    remote-gw6: ipv6-address
+    sequence-number-reception: enum
+    sequence-number-transmission: enum
+    use-sdwan: enum
+  model_dependent: true
+- path: system ha-monitor
+  mode: singleton
+  fields:
+    monitor-vlan: enum
+    vlan-hb-interval: integer
+    vlan-hb-lost-threshold: integer

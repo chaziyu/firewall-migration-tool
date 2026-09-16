@@ -1,0 +1,45 @@
+domain: videofilter
+part: 1
+parts: 1
+sections:
+- path: videofilter keyword
+  mode: table
+  key: <id>
+  fields:
+    comment: var-string
+    match: enum
+    name: string
+  nested:
+  - name: word
+    mode: table
+    key: <name>
+    fields:
+      comment: var-string
+      pattern-type: enum
+      status: enum
+- path: videofilter profile
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    dailymotion: enum
+    replacemsg-group: string
+    vimeo: enum
+    youtube: enum
+  nested:
+  - name: filters
+    mode: table
+    key: <id>
+    fields:
+      action: enum
+      category: string
+      channel: string
+      comment: var-string
+      keyword: integer
+      log: enum
+      type: enum
+- path: videofilter youtube-key
+  mode: table
+  key: <id>
+  fields:
+    key: string

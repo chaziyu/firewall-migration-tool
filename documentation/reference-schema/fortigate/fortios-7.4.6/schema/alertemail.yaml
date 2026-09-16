@@ -1,0 +1,42 @@
+domain: alertemail
+part: 1
+parts: 1
+sections:
+- path: alertemail setting
+  mode: singleton
+  fields:
+    FDS-license-expiring-warning: enum
+    FDS-update-logs: enum
+    FIPS-CC-errors: enum
+    FSSO-disconnect-logs: enum
+    HA-logs: enum
+    IPS-logs: enum
+    IPsec-errors-logs: enum
+    PPP-errors-logs: enum
+    admin-login-logs: enum
+    alert-interval: integer
+    amc-interface-bypass-mode: enum
+    antivirus-logs: enum
+    configuration-changes-logs: enum
+    critical-interval: integer
+    debug-interval: integer
+    email-interval: integer
+    emergency-interval: integer
+    error-interval: integer
+    filter-mode: enum
+    firewall-authentication-failure-logs: enum
+    fortiguard-log-quota-warning: enum
+    information-interval: integer
+    local-disk-usage: integer
+    log-disk-usage-warning: enum
+    mailto1: string
+    mailto2: string
+    mailto3: string
+    notification-interval: integer
+    severity: enum
+    ssh-logs: enum
+    sslvpn-authentication-errors-logs: enum
+    username: string
+    violation-traffic-logs: enum
+    warning-interval: integer
+    webfilter-logs: enum

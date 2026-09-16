@@ -1,0 +1,380 @@
+domain: vpn
+part: 2
+parts: 2
+sections:
+- path: vpn ssl client
+  mode: table
+  key: <name>
+  fields:
+    certificate: string
+    class-id: integer
+    comment: var-string
+    distance: integer
+    interface: string
+    ipv4-subnets: string
+    ipv6-subnets: string
+    peer: string
+    port: integer
+    priority: integer
+    psk: password-3!sensitive
+    realm: string
+    server: string
+    source-ip: string
+    status: enum
+    user: string
+- path: vpn ssl settings
+  mode: singleton
+  fields:
+    algorithm: enum
+    auth-session-check-source-ip: enum
+    auth-timeout: integer
+    auto-tunnel-static-route: enum
+    banned-cipher: option-list
+    browser-language-detection: enum
+    check-referer: enum
+    ciphersuite: option-list
+    client-sigalgs: enum
+    default-portal: string
+    deflate-compression-level: integer
+    deflate-min-data-size: integer
+    dns-server1: ipv4-address
+    dns-server2: ipv4-address
+    dns-suffix: var-string
+    dtls-heartbeat-fail-count: integer
+    dtls-heartbeat-idle-timeout: integer
+    dtls-heartbeat-interval: integer
+    dtls-hello-timeout: integer
+    dtls-max-proto-ver: enum
+    dtls-min-proto-ver: enum
+    dtls-tunnel: enum
+    dual-stack-mode: enum
+    encode-2f-sequence: enum
+    encrypt-and-store-password: enum
+    force-two-factor-auth: enum
+    header-x-forwarded-for: enum
+    hsts-include-subdomains: enum
+    http-compression: enum
+    http-only-cookie: enum
+    http-request-body-timeout: integer
+    http-request-header-timeout: integer
+    https-redirect: enum
+    idle-timeout: integer
+    ipv6-dns-server1: ipv6-address
+    ipv6-dns-server2: ipv6-address
+    ipv6-wins-server1: ipv6-address
+    ipv6-wins-server2: ipv6-address
+    login-attempt-limit: integer
+    login-block-time: integer
+    login-timeout: integer
+    port: integer
+    port-precedence: enum
+    reqclientcert: enum
+    saml-redirect-port: integer
+    server-hostname: string
+    servercert: string
+    source-address: identifier-list
+    source-address-negate: enum
+    source-address6: identifier-list
+    source-address6-negate: enum
+    source-interface: identifier-list
+    ssl-client-renegotiation: enum
+    ssl-insert-empty-fragment: enum
+    ssl-max-proto-ver: enum
+    ssl-min-proto-ver: enum
+    status: enum
+    transform-backward-slashes: enum
+    tunnel-addr-assigned-method: enum
+    tunnel-connect-without-reauth: enum
+    tunnel-ip-pools: identifier-list
+    tunnel-ipv6-pools: identifier-list
+    tunnel-user-session-timeout: integer
+    unsafe-legacy-renegotiation: enum
+    url-obscuration: enum
+    user-peer: string
+    wins-server1: ipv4-address
+    wins-server2: ipv4-address
+    x-content-type-options: enum
+    ztna-trusted-client: enum
+  nested:
+  - name: authentication-rule
+    mode: table
+    key: <id>
+    fields:
+      auth: enum
+      cipher: enum
+      client-cert: enum
+      groups: identifier-list
+      portal: string
+      realm: string
+      source-address: identifier-list
+      source-address-negate: enum
+      source-address6: identifier-list
+      source-address6-negate: enum
+      source-interface: identifier-list
+      user-peer: string
+      users: identifier-list
+- path: vpn ssl web host-check-software
+  mode: table
+  key: <name>
+  fields:
+    guid: opaque-user
+    os-type: enum
+    type: enum
+    version: string
+  nested:
+  - name: check-item-list
+    mode: table
+    key: <id>
+    fields:
+      action: enum
+      md5s: identifier-list
+      target: string
+      type: enum
+      version: string
+- path: vpn ssl web portal
+  mode: table
+  key: <name>
+  fields:
+    allow-user-access: option-list
+    auto-connect: enum
+    client-src-range: enum
+    clipboard: enum
+    custom-lang: string
+    customize-forticlient-download-url: enum
+    default-protocol: enum
+    default-window-height: integer
+    default-window-width: integer
+    dhcp-ip-overlap: enum
+    dhcp-ra-giaddr: ipv4-address
+    dhcp6-ra-linkaddr: ipv6-address
+    display-bookmark: enum
+    display-connection-tools: enum
+    display-history: enum
+    display-status: enum
+    dns-server1: ipv4-address
+    dns-server2: ipv4-address
+    dns-suffix: var-string
+    exclusive-routing: enum
+    focus-bookmark: enum
+    forticlient-download: enum
+    forticlient-download-method: enum
+    heading: string
+    hide-sso-credential: enum
+    host-check: enum
+    host-check-interval: integer
+    host-check-policy: identifier-list
+    ip-mode: enum
+    ip-pools: identifier-list
+    ipv6-dns-server1: ipv6-address
+    ipv6-dns-server2: ipv6-address
+    ipv6-exclusive-routing: enum
+    ipv6-pools: identifier-list
+    ipv6-service-restriction: enum
+    ipv6-split-tunneling: enum
+    ipv6-split-tunneling-routing-address: identifier-list
+    ipv6-split-tunneling-routing-negate: enum
+    ipv6-tunnel-mode: enum
+    ipv6-wins-server1: ipv6-address
+    ipv6-wins-server2: ipv6-address
+    keep-alive: enum
+    landing-page-mode: enum
+    limit-user-logins: enum
+    mac-addr-action: enum
+    mac-addr-check: enum
+    macos-forticlient-download-url: var-string
+    os-check: enum
+    prefer-ipv6-dns: enum
+    redir-url: var-string
+    rewrite-ip-uri-ui: enum
+    save-password: enum
+    service-restriction: enum
+    skip-check-for-browser: enum
+    skip-check-for-unsupported-os: enum
+    smb-max-version: enum
+    smb-min-version: enum
+    smb-ntlmv1-auth: enum
+    smbv1: enum
+    split-tunneling: enum
+    split-tunneling-routing-address: identifier-list
+    split-tunneling-routing-negate: enum
+    theme: enum
+    tunnel-mode: enum
+    use-sdwan: enum
+    user-bookmark: enum
+    user-group-bookmark: enum
+    web-mode: enum
+    windows-forticlient-download-url: var-string
+    wins-server1: ipv4-address
+    wins-server2: ipv4-address
+  nested:
+  - name: bookmark-group
+    mode: table
+    key: <name>
+    nested:
+    - name: bookmarks
+      mode: table
+      key: <name>
+      fields:
+        additional-params: var-string
+        apptype: enum
+        color-depth: enum
+        description: var-string
+        domain: var-string
+        folder: var-string
+        height: integer
+        host: var-string
+        keyboard-layout: enum
+        load-balancing-info: var-string
+        logon-password: password!sensitive
+        logon-user: var-string
+        port: integer
+        preconnection-blob: var-string
+        preconnection-id: integer
+        restricted-admin: enum
+        security: enum
+        send-preconnection-id: enum
+        sso: enum
+        sso-credential: enum
+        sso-credential-sent-once: enum
+        sso-password: password!sensitive
+        sso-username: var-string
+        url: var-string
+        vnc-keyboard-layout: enum
+        width: integer
+      nested:
+      - name: form-data
+        mode: table
+        key: <name>
+        fields:
+          value: var-string
+  - name: landing-page
+    mode: singleton
+    fields:
+      sso: enum
+      sso-credential: enum
+      sso-password: password!sensitive
+      sso-username: var-string
+      url: var-string
+    nested:
+    - name: form-data
+      mode: table
+      key: <name>
+      fields:
+        value: var-string
+  - name: mac-addr-check-rule
+    mode: table
+    key: <name>
+    fields:
+      mac-addr-list: identifier-list
+      mac-addr-mask: integer
+  - name: os-check-list
+    mode: table
+    key: <name>
+    fields:
+      action: enum
+      latest-patch-level: opaque-user
+      tolerance: integer
+  - name: split-dns
+    mode: table
+    key: <id>
+    fields:
+      dns-server1: ipv4-address
+      dns-server2: ipv4-address
+      domains: var-string
+      ipv6-dns-server1: ipv6-address
+      ipv6-dns-server2: ipv6-address
+  read_only: true
+- path: vpn ssl web realm
+  mode: table
+  key: <url-path>
+  fields:
+    login-page: var-string
+    max-concurrent-user: integer
+    nas-ip: ipv4-address
+    radius-port: integer
+    radius-server: string
+    virtual-host: var-string
+    virtual-host-only: enum
+    virtual-host-server-cert: string
+- path: vpn ssl web user-bookmark
+  mode: table
+  key: <name>
+  fields:
+    custom-lang: string
+  nested:
+  - name: bookmarks
+    mode: table
+    key: <name>
+    fields:
+      additional-params: var-string
+      apptype: enum
+      color-depth: enum
+      description: var-string
+      domain: var-string
+      folder: var-string
+      height: integer
+      host: var-string
+      keyboard-layout: enum
+      load-balancing-info: var-string
+      logon-password: password!sensitive
+      logon-user: var-string
+      port: integer
+      preconnection-blob: var-string
+      preconnection-id: integer
+      restricted-admin: enum
+      security: enum
+      send-preconnection-id: enum
+      sso: enum
+      sso-credential: enum
+      sso-credential-sent-once: enum
+      sso-password: password!sensitive
+      sso-username: var-string
+      url: var-string
+      vnc-keyboard-layout: enum
+      width: integer
+    nested:
+    - name: form-data
+      mode: table
+      key: <name>
+      fields:
+        value: var-string
+- path: vpn ssl web user-group-bookmark
+  mode: table
+  key: <name>
+  nested:
+  - name: bookmarks
+    mode: table
+    key: <name>
+    fields:
+      additional-params: var-string
+      apptype: enum
+      color-depth: enum
+      description: var-string
+      domain: var-string
+      folder: var-string
+      height: integer
+      host: var-string
+      keyboard-layout: enum
+      load-balancing-info: var-string
+      logon-password: password!sensitive
+      logon-user: var-string
+      port: integer
+      preconnection-blob: var-string
+      preconnection-id: integer
+      restricted-admin: enum
+      security: enum
+      send-preconnection-id: enum
+      sso: enum
+      sso-credential: enum
+      sso-credential-sent-once: enum
+      sso-password: password!sensitive
+      sso-username: var-string
+      url: var-string
+      vnc-keyboard-layout: enum
+      width: integer
+    nested:
+    - name: form-data
+      mode: table
+      key: <name>
+      fields:
+        value: var-string

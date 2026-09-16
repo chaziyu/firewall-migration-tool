@@ -1,0 +1,146 @@
+domain: dlp
+part: 1
+parts: 1
+sections:
+- path: dlp data-type
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    look-ahead: integer
+    look-back: integer
+    match-ahead: integer
+    match-around: string
+    match-back: integer
+    pattern: string
+    transform: string
+    verify: string
+    verify-transformed-pattern: enum
+    verify2: string
+- path: dlp dictionary
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    match-around: enum
+    match-type: enum
+    uuid: uuid
+  nested:
+  - name: entries
+    mode: table
+    key: <id>
+    fields:
+      comment: var-string
+      ignore-case: enum
+      pattern: string
+      repeat: enum
+      status: enum
+      type: string
+- path: dlp exact-data-match
+  mode: table
+  key: <name>
+  fields:
+    data: string
+    optional: integer
+  nested:
+  - name: columns
+    mode: table
+    key: <index>
+    fields:
+      optional: enum
+      type: string
+- path: dlp filepattern
+  mode: table
+  key: <id>
+  fields:
+    comment: var-string
+    name: string
+  nested:
+  - name: entries
+    mode: table
+    key: <pattern>
+    fields:
+      file-type: enum
+      filter-type: enum
+- path: dlp fp-doc-source
+  mode: table
+  key: <name>
+  fields:
+    date: integer
+    file-path: string
+    file-pattern: string
+    keep-modified: enum
+    password: password!sensitive
+    period: enum
+    remove-deleted: enum
+    scan-on-creation: enum
+    scan-subdirectories: enum
+    sensitivity: string
+    server: string
+    server-type: option
+    tod-hour: integer
+    tod-min: integer
+    username: string
+    vdom: enum
+    weekday: enum
+  model_dependent: true
+- path: dlp profile
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    dlp-log: enum
+    extended-log: enum
+    feature-set: enum
+    full-archive-proto: option-list
+    nac-quar-log: enum
+    replacemsg-group: string
+    summary-proto: option-list
+  nested:
+  - name: rule
+    mode: table
+    key: <id>
+    fields:
+      action: enum
+      archive: enum
+      expiry: opaque-user
+      file-size: integer
+      file-type: integer
+      filter-by: enum
+      label: string
+      match-percentage: integer
+      name: string
+      proto: option-list
+      sensitivity: identifier-list
+      sensor: identifier-list
+      severity: enum
+      type: enum
+  model_dependent: true
+- path: dlp sensitivity
+  mode: table
+  key: <name>
+  model_dependent: true
+- path: dlp sensor
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    eval: string
+    match-type: enum
+  nested:
+  - name: entries
+    mode: table
+    key: <id>
+    fields:
+      count: integer
+      dictionary: string
+      status: enum
+- path: dlp settings
+  mode: singleton
+  fields:
+    cache-mem-percent: integer
+    chunk-size: integer
+    db-mode: enum
+    size: integer
+    storage-device: string
+  model_dependent: true

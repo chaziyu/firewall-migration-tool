@@ -1,0 +1,740 @@
+domain: switch-controller
+part: 1
+parts: 2
+sections:
+- path: switch-controller 802-1X-settings
+  mode: singleton
+  fields:
+    link-down-auth: enum
+    mab-reauth: enum
+    mac-called-station-delimiter: enum
+    mac-calling-station-delimiter: enum
+    mac-case: enum
+    mac-password-delimiter: enum
+    mac-username-delimiter: enum
+    max-reauth-attempt: integer
+    reauth-period: integer
+    tx-period: integer
+  model_dependent: true
+- path: switch-controller acl group
+  mode: table
+  key: <name>
+  fields:
+    ingress: identifier-list
+  model_dependent: true
+- path: switch-controller acl ingress
+  mode: table
+  key: <id>
+  fields:
+    description: string
+  nested:
+  - name: action
+    mode: singleton
+    fields:
+      count: enum
+      drop: enum
+  - name: classifier
+    mode: singleton
+    fields:
+      dst-ip-prefix: ipv4-classnet
+      dst-mac: mac-address
+      src-ip-prefix: ipv4-classnet
+      src-mac: mac-address
+      vlan: integer
+  model_dependent: true
+- path: switch-controller auto-config custom
+  mode: table
+  key: <name>
+  nested:
+  - name: switch-binding
+    mode: table
+    key: <switch-id>
+    fields:
+      policy: string
+  model_dependent: true
+- path: switch-controller auto-config default
+  mode: singleton
+  fields:
+    fgt-policy: string
+    icl-policy: string
+    isl-policy: string
+  model_dependent: true
+- path: switch-controller auto-config policy
+  mode: table
+  key: <name>
+  fields:
+    igmp-flood-report: enum
+    igmp-flood-traffic: enum
+    poe-status: enum
+    qos-policy: string
+    storm-control-policy: string
+  model_dependent: true
+- path: switch-controller custom-command
+  mode: table
+  key: <command-name>
+  fields:
+    command: var-string
+    description: string
+  model_dependent: true
+- path: switch-controller dsl policy
+  mode: table
+  key: <name>
+  fields:
+    append_padding: enum
+    cpe-aele: enum
+    cpe-aele-mode: enum
+    cs: option-list
+    ds-bitswap: enum
+    pause-frame: enum
+    profile: enum
+    type: option
+    us-bitswap: enum
+  model_dependent: true
+- path: switch-controller dynamic-port-policy
+  mode: table
+  key: <name>
+  fields:
+    description: string
+    fortilink: string
+  nested:
+  - name: policy
+    mode: table
+    key: <name>
+    fields:
+      802-1x: string
+      bounce-port-link: enum
+      category: enum
+      description: string
+      family: string
+      host: string
+      hw-vendor: string
+      interface-tags: identifier-list
+      lldp-profile: string
+      mac: string
+      match-period: integer
+      match-type: enum
+      qos-policy: string
+      status: enum
+      type: string
+      vlan-policy: string
+  model_dependent: true
+- path: switch-controller flow-tracking
+  mode: singleton
+  fields:
+    format: enum
+    level: enum
+    max-export-pkt-size: integer
+    sample-mode: enum
+    sample-rate: integer
+    template-export-period: integer
+    timeout-general: integer
+    timeout-icmp: integer
+    timeout-max: integer
+    timeout-tcp: integer
+    timeout-tcp-fin: integer
+    timeout-tcp-rst: integer
+    timeout-udp: integer
+  nested:
+  - name: aggregates
+    mode: table
+    key: <id>
+    fields:
+      ip: ipv4-classnet
+  - name: collectors
+    mode: table
+    key: <name>
+    fields:
+      ip: ipv4-address-any
+      port: integer
+      transport: enum
+  model_dependent: true
+- path: switch-controller fortilink-settings
+  mode: table
+  key: <name>
+  fields:
+    access-vlan-mode: enum
+    fortilink: string
+    inactive-timer: integer
+    link-down-flush: enum
+  nested:
+  - name: nac-ports
+    mode: singleton
+    fields:
+      lan-segment: enum
+      member-change: integer
+      nac-lan-interface: string
+      nac-segment-vlans: identifier-list
+      onboarding-vlan: string
+      parent-key: string
+  model_dependent: true
+- path: switch-controller global
+  mode: singleton
+  fields:
+    bounce-quarantined-link: enum
+    default-virtual-switch-vlan: string
+    dhcp-option82-circuit-id: option-list
+    dhcp-option82-format: enum
+    dhcp-option82-remote-id: option-list
+    dhcp-server-access-list: enum
+    dhcp-snoop-client-db-exp: integer
+    dhcp-snoop-client-req: enum
+    dhcp-snoop-db-per-port-learn-limit: integer
+    disable-discovery: identifier-list
+    fips-enforce: enum
+    firmware-provision-on-authorization: enum
+    https-image-push: enum
+    log-mac-limit-violations: enum
+    mac-aging-interval: integer
+    mac-event-logging: enum
+    mac-retention-period: integer
+    mac-violation-timer: integer
+    quarantine-mode: enum
+    sn-dns-resolution: enum
+    switch-on-deauth: enum
+    update-user-device: option-list
+    vlan-all-mode: enum
+    vlan-identity: enum
+    vlan-optimization: enum
+  nested:
+  - name: custom-command
+    mode: table
+    key: <command-entry>
+    fields:
+      command-name: string
+  model_dependent: true
+- path: switch-controller igmp-snooping
+  mode: singleton
+  fields:
+    aging-time: integer
+    flood-unknown-multicast: enum
+    query-interval: integer
+  model_dependent: true
+- path: switch-controller initial-config template
+  mode: table
+  key: <name>
+  fields:
+    allowaccess: option-list
+    auto-ip: enum
+    dhcp-server: enum
+    ip: ipv4-classnet-host
+    vlanid: integer
+  model_dependent: true
+- path: switch-controller initial-config vlans
+  mode: singleton
+  fields:
+    default-vlan: string
+    nac: string
+    nac-segment: string
+    quarantine: string
+    rspan: string
+    video: string
+    voice: string
+  model_dependent: true
+- path: switch-controller lldp-profile
+  mode: table
+  key: <name>
+  fields:
+    802 1-tlvs: option-list
+    802 3-tlvs: option-list
+    auto-isl: enum
+    auto-isl-auth: enum
+    auto-isl-auth-encrypt: enum
+    auto-isl-auth-identity: string
+    auto-isl-auth-macsec-profile: string
+    auto-isl-auth-reauth: integer
+    auto-isl-auth-user: string
+    auto-isl-hello-timer: integer
+    auto-isl-port-group: integer
+    auto-isl-receive-timeout: integer
+    auto-mclag-icl: enum
+    med-tlvs: option-list
+  nested:
+  - name: custom-tlvs
+    mode: table
+    key: <name>
+    fields:
+      information-string: opaque-user
+      oui: opaque-user
+      subtype: integer
+  - name: med-location-service
+    mode: table
+    key: <name>
+    fields:
+      status: enum
+      sys-location-id: string
+  - name: med-network-policy
+    mode: table
+    key: <name>
+    fields:
+      assign-vlan: enum
+      dscp: integer
+      priority: integer
+      status: enum
+      vlan-intf: string
+  model_dependent: true
+- path: switch-controller lldp-settings
+  mode: singleton
+  fields:
+    device-detection: enum
+    fast-start-interval: integer
+    management-interface: enum
+    tx-hold: integer
+    tx-interval: integer
+  model_dependent: true
+- path: switch-controller location
+  mode: table
+  key: <name>
+  nested:
+  - name: address-civic
+    mode: singleton
+    fields:
+      additional: string
+      additional-code: string
+      block: string
+      branch-road: string
+      building: string
+      city: string
+      city-division: string
+      country: string
+      country-subdivision: string
+      county: string
+      direction: string
+      floor: string
+      landmark: string
+      language: string
+      name: string
+      number: string
+      number-suffix: string
+      parent-key: string
+      place-type: string
+      post-office-box: string
+      postal-community: string
+      primary-road: string
+      road-section: string
+      room: string
+      script: string
+      seat: string
+      street: string
+      street-name-post-mod: string
+      street-name-pre-mod: string
+      street-suffix: string
+      sub-branch-road: string
+      trailing-str-suffix: string
+      unit: string
+      zip: string
+  - name: coordinates
+    mode: singleton
+    fields:
+      altitude: string
+      altitude-unit: enum
+      datum: enum
+      latitude: string
+      longitude: string
+      parent-key: string
+  - name: elin-number
+    mode: singleton
+    fields:
+      elin-num: string
+      parent-key: string
+  model_dependent: true
+- path: switch-controller mac-policy
+  mode: table
+  key: <name>
+  fields:
+    bounce-port-link: enum
+    count: enum
+    description: string
+    fortilink: string
+    traffic-policy: string
+    vlan: string
+  model_dependent: true
+- path: switch-controller managed-switch
+  mode: table
+  key: <switch-id>
+  fields:
+    access-profile: string
+    delayed-restart-trigger: integer
+    description: string
+    dhcp-server-access-list: enum
+    directly-connected: integer
+    dynamic-capability: opaque-user
+    dynamically-discovered: integer
+    firmware-provision: enum
+    firmware-provision-latest: enum
+    firmware-provision-version: string
+    flow-identity: opaque-user
+    fsw-wan1-admin: enum
+    fsw-wan1-peer: string
+    l3-discovered: integer
+    max-allowed-trunk-members: integer
+    mclag-igmp-snooping-aware: enum
+    mgmt-mode: integer
+    override-snmp-community: enum
+    override-snmp-sysinfo: enum
+    override-snmp-trap-threshold: enum
+    override-snmp-user: enum
+    owner-vdom: string
+    poe-detection-type: integer
+    poe-pre-standard-detection: enum
+    pre-provisioned: integer
+    ptp-profile: string
+    ptp-status: enum
+    purdue-level: enum
+    qos-drop-policy: enum
+    qos-red-probability: integer
+    radius-nas-ip: ipv4-address
+    radius-nas-ip-override: enum
+    route-offload: enum
+    route-offload-mclag: enum
+    sn: string
+    staged-image-version: string
+    switch-device-tag: string
+    switch-dhcp_opt43_key: string
+    switch-profile: string
+    tdr-supported: string
+    tunnel-discovered: integer
+    type: enum
+    version: integer
+  nested:
+  - name: 802-1X-settings
+    mode: singleton
+    fields:
+      link-down-auth: enum
+      local-override: enum
+      mab-reauth: enum
+      mac-called-station-delimiter: enum
+      mac-calling-station-delimiter: enum
+      mac-case: enum
+      mac-password-delimiter: enum
+      mac-username-delimiter: enum
+      max-reauth-attempt: integer
+      reauth-period: integer
+      tx-period: integer
+  - name: custom-command
+    mode: table
+    key: <command-entry>
+    fields:
+      command-name: string
+  - name: dhcp-snooping-static-client
+    mode: table
+    key: <name>
+    fields:
+      ip: ipv4-address
+      mac: mac-address
+      port: string
+      vlan: string
+  - name: igmp-snooping
+    mode: singleton
+    fields:
+      aging-time: integer
+      flood-unknown-multicast: enum
+      local-override: enum
+    nested:
+    - name: vlans
+      mode: table
+      key: <vlan-name>
+      fields:
+        proxy: enum
+        querier: enum
+        querier-addr: ipv4-address
+        version: integer
+  - name: ip-source-guard
+    mode: table
+    key: <port>
+    fields:
+      description: string
+    nested:
+    - name: binding-entry
+      mode: table
+      key: <entry-name>
+      fields:
+        ip: ipv4-address-any
+        mac: mac-address
+  - name: mirror
+    mode: table
+    key: <name>
+    fields:
+      dst: string
+      src-egress: identifier-list
+      src-ingress: identifier-list
+      status: enum
+      switching-packet: enum
+  - name: ports
+    mode: table
+    key: <port-name>
+    fields:
+      access-mode: enum
+      acl-group: identifier-list
+      aggregator-mode: enum
+      allow-arp-monitor: enum
+      allowed-vlans: identifier-list
+      allowed-vlans-all: enum
+      arp-inspection-trust: enum
+      authenticated-port: integer
+      bundle: enum
+      description: string
+      dhcp-snoop-option82-trust: enum
+      dhcp-snooping: enum
+      discard-mode: enum
+      edge-port: enum
+      encrypted-port: integer
+      export-to: string
+      export-to-pool: string
+      fallback-port: string
+      fec-capable: integer
+      fec-state: enum
+      fgt-peer-device-name: string
+      fgt-peer-port-name: string
+      fiber-port: integer
+      flags: integer
+      flap-duration: integer
+      flap-rate: integer
+      flap-timeout: integer
+      flapguard: enum
+      flow-control: enum
+      fortilink-port: integer
+      fortiswitch-acls: identifier-list
+      igmp-snooping-flood-reports: enum
+      interface-tags: identifier-list
+      ip-source-guard: enum
+      isl-local-trunk-name: string
+      isl-peer-device-name: string
+      isl-peer-device-sn: string
+      isl-peer-port-name: string
+      lacp-speed: enum
+      learning-limit: integer
+      lldp-profile: string
+      lldp-status: enum
+      loop-guard: enum
+      loop-guard-timeout: integer
+      mac-addr: mac-address
+      matched-dpp-intf-tags: string
+      matched-dpp-policy: string
+      max-bundle: integer
+      mcast-snooping-flood-traffic: enum
+      mclag: enum
+      mclag-icl-port: integer
+      media-type: string
+      member-withdrawal-behavior: enum
+      members: identifier-list
+      min-bundle: integer
+      mode: enum
+      p2p-port: integer
+      packet-sample-rate: integer
+      packet-sampler: enum
+      pause-meter: integer
+      pause-meter-resume: enum
+      pd-capable: integer
+      poe-capable: integer
+      poe-max-power: string
+      poe-mode-bt-cabable: integer
+      poe-port-mode: enum
+      poe-port-power: enum
+      poe-port-priority: enum
+      poe-pre-standard-detection: enum
+      poe-standard: string
+      poe-status: enum
+      port-number: integer
+      port-owner: string
+      port-policy: string
+      port-prefix-type: integer
+      port-security-policy: string
+      port-selection-criteria: enum
+      ptp-policy: string
+      ptp-status: enum
+      qos-policy: string
+      restricted-auth-port: integer
+      rpvst-port: enum
+      sample-direction: enum
+      sflow-counter-interval: integer
+      speed: enum
+      stacking-port: integer
+      status: enum
+      sticky-mac: enum
+      storm-control-policy: string
+      stp-bpdu-guard: enum
+      stp-bpdu-guard-timeout: integer
+      stp-root-guard: enum
+      stp-state: enum
+      switch-id: string
+      type: enum
+      untagged-vlans: identifier-list
+      vlan: string
+    nested:
+    - name: dhcp-snoop-option82-override
+      mode: table
+      key: <vlan-name>
+      fields:
+        circuit-id: string
+        remote-id: string
+  - name: remote-log
+    mode: table
+    key: <name>
+    fields:
+      csv: enum
+      facility: enum
+      port: integer
+      server: string
+      severity: enum
+      status: enum
+  - name: route-offload-router
+    mode: table
+    key: <vlan-name>
+    fields:
+      router-ip: ipv4-address
+  - name: snmp-community
+    mode: table
+    key: <id>
+    fields:
+      events: option-list
+      name: string
+      query-v1-port: integer
+      query-v1-status: enum
+      query-v2c-port: integer
+      query-v2c-status: enum
+      status: enum
+      trap-v1-lport: integer
+      trap-v1-rport: integer
+      trap-v1-status: enum
+      trap-v2c-lport: integer
+      trap-v2c-rport: integer
+      trap-v2c-status: enum
+    nested:
+    - name: hosts
+      mode: table
+      key: <id>
+      fields:
+        ip: opaque-user
+  - name: snmp-sysinfo
+    mode: singleton
+    fields:
+      contact-info: string
+      description: string
+      engine-id: string
+      location: string
+      status: enum
+  - name: snmp-trap-threshold
+    mode: singleton
+    fields:
+      trap-high-cpu-threshold: integer
+      trap-log-full-threshold: integer
+      trap-low-memory-threshold: integer
+  - name: snmp-user
+    mode: table
+    key: <name>
+    fields:
+      auth-proto: enum
+      auth-pwd: password!sensitive
+      priv-proto: enum
+      priv-pwd: password!sensitive
+      queries: enum
+      query-port: integer
+      security-level: enum
+  - name: static-mac
+    mode: table
+    key: <id>
+    fields:
+      description: string
+      interface: string
+      mac: mac-address
+      type: enum
+      vlan: string
+  - name: storm-control
+    mode: singleton
+    fields:
+      broadcast: enum
+      local-override: enum
+      rate: integer
+      unknown-multicast: enum
+      unknown-unicast: enum
+  - name: stp-instance
+    mode: table
+    key: <id>
+    fields:
+      priority: enum
+  - name: stp-settings
+    mode: singleton
+    fields:
+      forward-time: integer
+      hello-time: integer
+      local-override: enum
+      max-age: integer
+      max-hops: integer
+      name: string
+      pending-timer: integer
+      revision: integer
+  - name: switch-log
+    mode: singleton
+    fields:
+      local-override: enum
+      severity: enum
+      status: enum
+  - name: vlan
+    mode: table
+    key: <vlan-name>
+    fields:
+      assignment-priority: integer
+  model_dependent: true
+- path: switch-controller network-monitor-settings
+  mode: singleton
+  fields:
+    network-monitoring: enum
+  model_dependent: true
+- path: switch-controller ptp interface-policy
+  mode: table
+  key: <name>
+  fields:
+    description: string
+    vlan: string
+    vlan-pri: integer
+  model_dependent: true
+- path: switch-controller ptp profile
+  mode: table
+  key: <name>
+  fields:
+    description: string
+    domain: integer
+    mode: enum
+    pdelay-req-interval: enum
+    ptp-profile: option
+    transport: option
+  model_dependent: true
+- path: switch-controller qos dot1p-map
+  mode: table
+  key: <name>
+  fields:
+    description: string
+    egress-pri-tagging: enum
+    priority-0: enum
+    priority-1: enum
+    priority-2: enum
+    priority-3: enum
+    priority-4: enum
+    priority-5: enum
+    priority-6: enum
+    priority-7: enum
+  model_dependent: true
+- path: switch-controller qos ip-dscp-map
+  mode: table
+  key: <name>
+  fields:
+    description: string
+  nested:
+  - name: map
+    mode: table
+    key: <name>
+    fields:
+      cos-queue: integer
+      diffserv: option-list
+      ip-precedence: option-list
+      value: opaque-user
+  model_dependent: true
+- path: switch-controller qos qos-policy
+  mode: table
+  key: <name>
+  fields:
+    default-cos: integer
+    queue-policy: string
+    trust-dot1p-map: string
+    trust-ip-dscp-map: string
+  model_dependent: true

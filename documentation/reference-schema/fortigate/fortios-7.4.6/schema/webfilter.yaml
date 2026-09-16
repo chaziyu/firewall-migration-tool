@@ -1,0 +1,245 @@
+domain: webfilter
+part: 1
+parts: 1
+sections:
+- path: webfilter content-header
+  mode: table
+  key: <id>
+  fields:
+    comment: var-string
+    name: string
+  nested:
+  - name: entries
+    mode: table
+    key: <pattern>
+    fields:
+      action: enum
+      category: opaque-user
+- path: webfilter content
+  mode: table
+  key: <id>
+  fields:
+    comment: var-string
+    name: string
+  nested:
+  - name: entries
+    mode: table
+    key: <name>
+    fields:
+      action: enum
+      lang: enum
+      pattern-type: enum
+      score: integer
+      status: enum
+- path: webfilter fortiguard
+  mode: singleton
+  fields:
+    cache-mem-permille: integer
+    cache-mode: enum
+    cache-prefix-match: enum
+    close-ports: enum
+    embed-image: enum
+    ovrd-auth-https: enum
+    ovrd-auth-port-http: integer
+    ovrd-auth-port-https: integer
+    ovrd-auth-port-https-flow: integer
+    ovrd-auth-port-warning: integer
+    request-packet-size-limit: integer
+    warn-auth-https: enum
+- path: webfilter ftgd-local-cat
+  mode: table
+  key: <desc>
+  fields:
+    id: integer
+    status: enum
+- path: webfilter ftgd-local-rating
+  mode: table
+  key: <url>
+  fields:
+    comment: var-string
+    rating: opaque-user
+    status: enum
+- path: webfilter ips-urlfilter-cache-setting
+  mode: singleton
+  fields:
+    dns-retry-interval: integer
+    extended-ttl: integer
+- path: webfilter ips-urlfilter-setting
+  mode: singleton
+  fields:
+    device: string
+    distance: integer
+    gateway: ipv4-address
+    geo-filter: var-string
+- path: webfilter ips-urlfilter-setting6
+  mode: singleton
+  fields:
+    device: string
+    distance: integer
+    gateway6: ipv6-address
+    geo-filter: var-string
+- path: webfilter override
+  mode: table
+  key: <id>
+  fields:
+    expires: opaque-user
+    initiator: string
+    ip: ipv4-address
+    ip6: ipv6-address
+    new-profile: string
+    old-profile: string
+    scope: enum
+    status: enum
+    user: string
+    user-group: string
+- path: webfilter profile
+  mode: table
+  key: <name>
+  fields:
+    comment: var-string
+    extended-log: enum
+    feature-set: enum
+    https-replacemsg: enum
+    log-all-url: enum
+    options: option-list
+    ovrd-perm: option-list
+    post-action: enum
+    replacemsg-group: string
+    web-antiphishing-log: enum
+    web-content-log: enum
+    web-extended-all-action-log: enum
+    web-filter-activex-log: enum
+    web-filter-applet-log: enum
+    web-filter-command-block-log: enum
+    web-filter-cookie-log: enum
+    web-filter-cookie-removal-log: enum
+    web-filter-js-log: enum
+    web-filter-jscript-log: enum
+    web-filter-referer-log: enum
+    web-filter-unknown-log: enum
+    web-filter-vbs-log: enum
+    web-flow-log-encoding: enum
+    web-ftgd-err-log: enum
+    web-ftgd-quota-usage: enum
+    web-invalid-domain-log: enum
+    web-url-log: enum
+    wisp: enum
+    wisp-algorithm: enum
+    wisp-servers: identifier-list
+  nested:
+  - name: antiphish
+    mode: singleton
+    fields:
+      authentication: enum
+      check-basic-auth: enum
+      check-uri: enum
+      check-username-only: enum
+      default-action: enum
+      domain-controller: string
+      ldap: string
+      max-body-len: integer
+      status: enum
+    nested:
+    - name: custom-patterns
+      mode: table
+      key: <pattern>
+      fields:
+        category: enum
+        type: enum
+    - name: inspection-entries
+      mode: table
+      key: <name>
+      fields:
+        action: enum
+        fortiguard-category: opaque-user
+  - name: ftgd-wf
+    mode: singleton
+    fields:
+      exempt-quota: opaque-user
+      max-quota-timeout: integer
+      options: option-list
+      ovrd: opaque-user
+      rate-crl-urls: enum
+      rate-css-urls: enum
+      rate-javascript-urls: enum
+    nested:
+    - name: filters
+      mode: table
+      key: <id>
+      fields:
+        action: enum
+        auth-usr-grp: identifier-list
+        category: integer
+        log: enum
+        override-replacemsg: string
+        warn-duration: opaque-user
+        warning-duration-type: enum
+        warning-prompt: enum
+    - name: quota
+      mode: table
+      key: <id>
+      fields:
+        category: opaque-user
+        duration: opaque-user
+        override-replacemsg: string
+        type: enum
+        unit: enum
+        value: integer
+  - name: override
+    mode: singleton
+    fields:
+      ovrd-cookie: enum
+      ovrd-dur: opaque-user
+      ovrd-dur-mode: enum
+      ovrd-scope: enum
+      ovrd-user-group: identifier-list
+      profile: identifier-list
+      profile-attribute: enum
+      profile-type: enum
+  - name: web
+    mode: singleton
+    fields:
+      allowlist: option-list
+      blocklist: enum
+      bword-table: integer
+      bword-threshold: integer
+      content-header-list: integer
+      keyword-match: identifier-list
+      log-search: enum
+      safe-search: option-list
+      urlfilter-table: integer
+      vimeo-restrict: string
+      youtube-restrict: enum
+- path: webfilter search-engine
+  mode: table
+  key: <name>
+  fields:
+    charset: enum
+    hostname: string
+    query: string
+    safesearch: enum
+    safesearch-str: string
+    url: string
+- path: webfilter urlfilter
+  mode: table
+  key: <id>
+  fields:
+    comment: var-string
+    ip-addr-block: enum
+    ip4-mapped-ip6: enum
+    name: string
+    one-arm-ips-urlfilter: enum
+  nested:
+  - name: entries
+    mode: table
+    key: <id>
+    fields:
+      action: enum
+      antiphish-action: enum
+      dns-address-family: enum
+      exempt: option-list
+      referrer-host: string
+      status: enum
+      type: enum
+      url: string
+      web-proxy-profile: string

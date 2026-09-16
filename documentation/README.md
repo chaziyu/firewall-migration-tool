@@ -1,7 +1,9 @@
 # Firewall Migration Tool Documentation
 
 This directory uses one canonical IR reference and one standardized mapping
-file per source vendor.
+file per source vendor. Machine-readable vendor reference schemas may also be
+kept under `reference-schema/` when they are derived from official vendor
+documentation and are clearly separated from implementation-support claims.
 
 ## Documentation layout
 
@@ -9,6 +11,14 @@ file per source vendor.
 documentation/
 ├── README.md
 ├── ir-model.md
+├── ir-schema-v2-plan.md
+├── reference-schema/
+│   └── fortigate/
+│       └── fortios-7.4.6/
+│           ├── README.md
+│           ├── index.yaml
+│           ├── ir-v2-mapping.yaml
+│           └── schema/
 └── vendor-mapping/
     ├── fortigate.md
     ├── palo-alto.md
@@ -21,6 +31,8 @@ documentation/
 | File | Purpose |
 |---|---|
 | [`ir-model.md`](ir-model.md) | Current executable canonical IR model, fields, relationships, safety flags, and serialization behavior. |
+| [`ir-schema-v2-plan.md`](ir-schema-v2-plan.md) | Planned IR V2 target contract and generic/vendor-extension boundary. |
+| [`reference-schema/fortigate/fortios-7.4.6/`](reference-schema/fortigate/fortios-7.4.6/) | Machine-readable FortiOS 7.4.6 source syntax/reference schema. It is not an implementation-support claim. |
 | [`vendor-mapping/fortigate.md`](vendor-mapping/fortigate.md) | FortiGate configuration to canonical IR mapping. |
 | [`vendor-mapping/palo-alto.md`](vendor-mapping/palo-alto.md) | Palo Alto configuration to canonical IR mapping. |
 | [`vendor-mapping/cisco-asa.md`](vendor-mapping/cisco-asa.md) | Cisco ASA configuration to canonical IR mapping. |
@@ -40,20 +52,25 @@ Keep vendor-specific findings, support notes, and parser references in that
 vendor's mapping file. Do not create separate audit, findings, phase, NAT, or
 fix-plan documents for the same vendor.
 
+Reference schemas are source-document inventories for parser design and coverage.
+They must not be used to claim current parser support. Keep source syntax metadata
+separate from IR semantic mappings so extraction fidelity can be audited
+independently from normalization.
+
 ## Authority
 
 - Executable source code and regression tests define implementation behavior.
 - Official vendor documentation defines vendor behavior.
-- These documents describe the implemented mapping and must not claim support
-  without parser, IR, generator, or test evidence.
+- `ir-schema-v2-plan.md` defines the intended V2 contract but does not imply it is implemented.
+- Reference schemas derived from official documentation describe documented source syntax, not runtime availability or parser support.
+- Vendor mapping documents describe implemented mappings and must not claim support without parser, IR, generator, or test evidence.
 
 The architecture remains:
 
 ```text
-source config -> source parser -> ExtractionResult + canonical IR
-             -> validation / optimization -> target generator
+vendor source -> ExtractionResult -> IR V2 -> Excel
 ```
 
 When the IR changes, update the executable models, serialization/migrations,
-affected tests, and `ir-model.md` together. When a vendor parser changes,
-update only its mapping file unless the canonical IR contract also changes.
+affected tests, and `ir-model.md` together. When a vendor parser changes, update
+only its mapping file unless the canonical IR contract also changes.
