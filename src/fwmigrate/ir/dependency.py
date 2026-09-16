@@ -40,6 +40,7 @@ class DependencyGraph:
         self._built = False
 
     _UNIVERSAL = {"any", "all", "none", "ALL", "application-default"}
+    _UNIVERSAL_CASEFOLD = frozenset(value.casefold() for value in _UNIVERSAL)
 
     def build(self) -> "DependencyGraph":
         """Build reference edges once; this derived graph never mutates the IR."""
@@ -72,7 +73,7 @@ class DependencyGraph:
             return []
 
         def add(source_type: str, source_id: str, target_type: str, name: str, field: str) -> None:
-            if not name or name in self._UNIVERSAL or name.casefold() in {item.casefold() for item in self._UNIVERSAL}:
+            if not name or name in self._UNIVERSAL or name.casefold() in self._UNIVERSAL_CASEFOLD:
                 return
             targets = resolve(name, target_type)
             if not targets:

@@ -5,6 +5,8 @@ from fwmigrate.core.base_generator import MigrationArtifact
 from fwmigrate.core.normalizer import NormalizationResult
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.ir import IRConfig
+from fwmigrate.ir.dependency import DependencyGraph
+from fwmigrate.ir.index import IRIndex
 from fwmigrate.capabilities.schema import CapabilityAnalysisResult
 from fwmigrate.application.metrics import PipelineMetrics
 from fwmigrate.validation.models import ValidationResult
@@ -39,6 +41,9 @@ class MigrationAnalysisResult:
     unused_objects: Dict[str, List[str]] = field(default_factory=dict)
     capability_analysis: Optional[CapabilityAnalysisResult] = None
     metrics: Optional[PipelineMetrics] = None
+    # Runtime-only derived state for explicit analysis consumers.
+    _ir_index: Optional[IRIndex] = field(default=None, repr=False)
+    _dependency_graph: Optional[DependencyGraph] = field(default=None, repr=False)
 
 
 @dataclass

@@ -392,6 +392,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const statTotalObjects = document.getElementById("stat-total-objects");
   const statUnusedObjects = document.getElementById("stat-unused-objects");
   const statShadowedRules = document.getElementById("stat-shadowed-rules");
+  const btnAnalyze = document.getElementById("btn-analyze");
 
   // Mode A Components
   const btnGenerateBundle = document.getElementById("btn-generate-bundle");
@@ -442,6 +443,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (element) element.textContent = value;
   }
 
+  function count(value) {
+    return Math.max(0, Number(value) || 0);
+  }
+
   function supportsLiveIngestion(vendorId) {
     return vendorId === "fortigate";
   }
@@ -477,6 +482,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnPlanDryrun)
       btnPlanDryrun.disabled =
         !hasFile || !sourceReady || busyButtons.has(btnPlanDryrun) || liveOperationRunning;
+    if (btnAnalyze)
+      btnAnalyze.disabled =
+        !hasFile || !sourceReady || busyButtons.has(btnAnalyze) || liveOperationRunning;
     setText(
       "summary-source",
       VENDOR_CONFIGS[selectedSourceVendor]?.name || selectedSourceVendor,
@@ -614,6 +622,7 @@ document.addEventListener("DOMContentLoaded", () => {
       btnIngestApi,
       fileInput,
       btnApiExtract,
+      btnAnalyze,
       panHost,
       panPort,
       panApikey,
@@ -1290,21 +1299,13 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await readJson(resp, "Could not read this configuration");
       if (requestRevision !== sourceRevision) return;
       const stats = data.stats || {};
-      const optimization = data.optimization || {};
-      const count = (value) => Math.max(0, Number(value) || 0);
       if (optimizerPanel) optimizerPanel.classList.remove("hidden");
       if (statTotalRules) statTotalRules.textContent = count(stats.policies);
       if (statTotalObjects)
         statTotalObjects.textContent =
           count(stats.addresses) + count(stats.services);
-      if (statUnusedObjects)
-        statUnusedObjects.textContent =
-          count(optimization.unused_addresses_count) +
-          count(optimization.unused_services_count);
-      if (statShadowedRules)
-        statShadowedRules.textContent = count(
-          optimization.shadowed_rules_count,
-        );
+      if (statUnusedObjects) statUnusedObjects.textContent = "Not analyzed";
+      if (statShadowedRules) statShadowedRules.textContent = "Not analyzed";
       setText("inventory-interface-count", count(stats.interfaces));
       setText("inventory-policy-count", count(stats.policies));
       currentPolicies = Array.isArray(data.policies) ? data.policies : [];
@@ -1336,6 +1337,54 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
     }
+  }
+
+  if (btnAnalyze) {
+    btnAnalyze.addEventListener("click", async () => {
+      if (!currentFile || !sourceReady) return;
+      setBusy(btnAnalyze, true);
+      const originalText = btnAnalyze.textContent;
+      btnAnalyze.textContent = "Analyzing…";
+      const requestRevision = sourceRevision;
+      const formData = new FormData();
+      formData.append("file", currentFile);
+      formData.append("source_vendor", selectedSourceVendor);
+      formData.append("target_vendor", selectedTargetVendor);
+      formData.append("analyze_unused", "true");
+      formData.append("analyze_duplicates", "true");
+      formData.append("analyze_shadowing", "true");
+      formData.append("analyze_capabilities", "true");
+
+      try {
+        const resp = await fetch("/api/analyze", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await readJson(resp, "Could not analyze this configuration");
+        if (requestRevision !== sourceRevision) return;
+        const optimization = data.optimization || {};
+        if (optimization.status === "analyzed") {
+          if (statUnusedObjects)
+            statUnusedObjects.textContent =
+              count(optimization.unused_addresses_count) +
+              count(optimization.unused_services_count);
+          if (statShadowedRules)
+            statShadowedRules.textContent = count(
+              optimization.shadowed_rules_count,
+            );
+          setPreviewStatus("Analysis complete. Review the findings before continuing.", "ready");
+        } else {
+          setPreviewStatus("Analysis completed without optimizer findings.", "ready");
+        }
+      } catch (err) {
+        if (requestRevision !== sourceRevision) return;
+        showError(`Configuration analysis failed: ${err.message}`);
+        setPreviewStatus(err.message, "error");
+      } finally {
+        btnAnalyze.textContent = originalText;
+        setBusy(btnAnalyze, false);
+      }
+    });
   }
 
   // =========================================================================

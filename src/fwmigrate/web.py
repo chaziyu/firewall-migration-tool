@@ -5,7 +5,9 @@ import json
 import uuid
 import zipfile
 import re
+from collections import Counter
 from pathlib import Path
+from time import perf_counter
 from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
 
 from fwmigrate.builtin_plugins import register_builtin_plugins
@@ -15,6 +17,7 @@ register_builtin_plugins()
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
 from fwmigrate.application import MigrationPipeline, MigrationRequest
+from fwmigrate.application.metrics import PipelineMetrics
 from fwmigrate.report.migration_report import MigrationReporter
 from fwmigrate.report.excel_exporter import (
     ExcelExportUnavailableError,
@@ -42,16 +45,97 @@ def _decode_configuration(raw: bytes) -> str:
         ) from exc
 
 
+def _extract_source_result(source_vendor: str, content: str):
+    return PluginRegistry.get_parser(source_vendor).extract(content)
+
+
 def _extract_source_config(source_vendor: str, content: str):
     """Return canonical IR and optional authoritative source accounting."""
-    parser = PluginRegistry.get_parser(source_vendor)
-    extraction_result = parser.extract(content)
+    extraction_result = _extract_source_result(source_vendor, content)
     has_accounting = bool(
         extraction_result.source_sections
         or extraction_result.inventory_items
         or extraction_result.unsupported_items
     )
     return extraction_result.canonical_ir, (extraction_result if has_accounting else None)
+
+
+def _parse_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _timed(metrics, stage, operation):
+    if metrics is None:
+        return operation()
+    started = perf_counter()
+    try:
+        return operation()
+    finally:
+        metrics.add(stage, (perf_counter() - started) * 1000)
+
+
+def _ir_stats(ir_config):
+    return {
+        "zones": len(ir_config.zones),
+        "interfaces": len(ir_config.interfaces),
+        "addresses": len(ir_config.addresses),
+        "address_groups": len(ir_config.address_groups),
+        "services": len(ir_config.services),
+        "service_groups": len(ir_config.service_groups),
+        "policies": len(ir_config.policies),
+        "nat_rules": len(ir_config.nat_rules),
+        "routes": len(ir_config.routes),
+    }
+
+
+def _policy_preview(ir_config):
+    return [
+        {
+            "id": policy.name,
+            "index": index,
+            "from_zone": policy.from_zone,
+            "to_zone": policy.to_zone,
+            "source": policy.source,
+            "destination": policy.destination,
+            "service": policy.service,
+            "action": policy.action.value if policy.action else None,
+            "disabled": policy.disabled,
+            "description": policy.description or "",
+        }
+        for index, policy in enumerate(ir_config.policies[:50], 1)
+    ]
+
+
+def _extraction_summary(extraction):
+    statuses = Counter(
+        getattr(item.status, "value", item.status)
+        for item in extraction.inventory_items
+    )
+    return {
+        "generation_safe": extraction.generation_safe,
+        "requires_manual_review": extraction.requires_manual_review,
+        "migration_complete": extraction.migration_complete,
+        "blocking_reasons": extraction.blocking_reasons,
+        "accounting": {
+            "source_sections": len(extraction.source_sections),
+            "coverage_sections": len(extraction.coverage),
+            "inventory_items": len(extraction.inventory_items),
+            "unsupported_items": len(extraction.unsupported_items),
+            "dependencies": len(extraction.dependencies),
+            "inventory_status": dict(statuses),
+        },
+    }
+
+
+def _ir_preview_fields(ir_config):
+    return {
+        "hostname": ir_config.metadata.hostname,
+        "source_vendor": ir_config.metadata.source_vendor,
+        "stats": _ir_stats(ir_config),
+        "policies": _policy_preview(ir_config),
+    }
 
 
 def _safe_vendor_filename(vendor_id: str) -> str:
@@ -98,74 +182,129 @@ def create_app(test_config=None):
 
     @app.route('/api/preview', methods=['POST'])
     def preview_migration():
-        """Returns transformation analysis, rule mapping preview, and optimization stats."""
+        """Read a source configuration and return a cheap, source-only preview."""
         try:
             source_vendor = request.form.get('source_vendor', 'fortigate')
             if 'file' not in request.files or request.files['file'].filename == '':
                 return jsonify({'success': False, 'error': 'A configuration file is required'}), 400
 
+            metrics = PipelineMetrics() if _parse_bool(request.form.get('collect_metrics')) else None
+            started = perf_counter()
             file = request.files['file']
-            file_content = _decode_configuration(file.read())
-            analysis = MigrationPipeline().analyze(MigrationRequest(
-                source_vendor=source_vendor,
-                target_vendor=request.form.get('target_vendor') or None,
-                target_version=request.form.get('target_version') or None,
-                source_content=file_content,
-                target_format='all',
-                source_name=file.filename,
-            ))
-            ir_config = analysis.final_ir or analysis.source_ir
+            file_content = _timed(metrics, 'decode', lambda: _decode_configuration(file.read()))
+            extraction = _timed(
+                metrics,
+                'extraction',
+                lambda: _extract_source_result(source_vendor, file_content),
+            )
+            ir_config = extraction.canonical_ir
 
             if not ir_config:
                 return jsonify({'success': False, 'error': 'Failed to extract configuration from file'}), 400
 
-            # Preview analysis is read-only; it never requests pruning.
-            optimizer = RuleOptimizer(ir_config)
-            unused = analysis.unused_objects or optimizer.find_unused_objects()
-            duplicates = optimizer.find_duplicate_objects()
-            shadowed = optimizer.find_shadowed_rules()
-
-            policies_preview = []
-            for idx, p in enumerate(ir_config.policies[:50], 1):
-                policies_preview.append({
-                    "id": p.name,
-                    "index": idx,
-                    "from_zone": p.from_zone,
-                    "to_zone": p.to_zone,
-                    "source": p.source,
-                    "destination": p.destination,
-                    "service": p.service,
-                    "action": p.action.value,
-                    "disabled": p.disabled,
-                    "description": p.description or ""
-                })
-
             response = {
                 'success': True,
-                'hostname': ir_config.metadata.hostname,
-                'source_vendor': ir_config.metadata.source_vendor,
-                'stats': {
-                    'zones': len(ir_config.zones),
-                    'interfaces': len(ir_config.interfaces),
-                    'addresses': len(ir_config.addresses),
-                    'address_groups': len(ir_config.address_groups),
-                    'services': len(ir_config.services),
-                    'service_groups': len(ir_config.service_groups),
-                    'policies': len(ir_config.policies),
-                    'nat_rules': len(ir_config.nat_rules),
-                    'routes': len(ir_config.routes)
-                },
-                'optimization': {
-                    'unused_addresses_count': len(unused['unused_addresses']),
-                    'unused_services_count': len(unused['unused_services']),
-                    'duplicate_address_groups_count': len(duplicates['duplicate_addresses']),
+                **_ir_preview_fields(ir_config),
+                'extraction': _extraction_summary(extraction),
+                'optimization': {'status': 'not_analyzed'},
+                'generation_allowed': 'not_evaluated',
+                'blocking_reasons': extraction.blocking_reasons,
+                'requires_manual_review': extraction.requires_manual_review,
+            }
+            if metrics is not None:
+                metrics.add('preview_total', (perf_counter() - started) * 1000)
+                response['diagnostics'] = {'metrics': metrics.as_dict()}
+            return jsonify(response)
+        except ConfigurationDecodeError as e:
+            return jsonify({'success': False, 'error': str(e), 'stage': 'decode'}), 400
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/analyze', methods=['POST'])
+    def analyze_migration():
+        """Run full migration and optional optimizer analysis on explicit request."""
+        try:
+            source_vendor = request.form.get('source_vendor', 'fortigate')
+            if 'file' not in request.files or request.files['file'].filename == '':
+                return jsonify({'success': False, 'error': 'A configuration file is required'}), 400
+
+            analyze_unused = _parse_bool(request.form.get('analyze_unused'))
+            analyze_duplicates = _parse_bool(request.form.get('analyze_duplicates'))
+            analyze_shadowing = _parse_bool(request.form.get('analyze_shadowing'))
+            target_vendor = request.form.get('target_vendor') or None
+            analyze_capabilities = _parse_bool(
+                request.form.get('analyze_capabilities'),
+                default=bool(target_vendor),
+            )
+            analysis_started = perf_counter()
+            file = request.files['file']
+            file_content = _decode_configuration(file.read())
+            analysis = MigrationPipeline().analyze(MigrationRequest(
+                source_vendor=source_vendor,
+                target_vendor=target_vendor if analyze_capabilities else None,
+                target_version=request.form.get('target_version') or None,
+                source_content=file_content,
+                target_format='all',
+                source_name=file.filename,
+                collect_metrics=True,
+            ))
+            ir_config = analysis.final_ir or analysis.source_ir
+            if not ir_config:
+                return jsonify({'success': False, 'error': 'Failed to analyze configuration'}), 400
+
+            optimization = {'status': 'not_analyzed'}
+            if any((
+                analyze_unused,
+                analyze_duplicates,
+                analyze_shadowing,
+            )):
+                optimizer = RuleOptimizer(
+                    ir_config,
+                    ir_index=analysis._ir_index,
+                    dependency_graph=analysis._dependency_graph,
+                )
+                optimizer_started = perf_counter()
+
+                def run_optimizer(stage, operation):
+                    started = perf_counter()
+                    try:
+                        return operation()
+                    finally:
+                        analysis.metrics.add(stage, (perf_counter() - started) * 1000)
+
+                unused = run_optimizer(
+                    'preview_unused', optimizer.find_unused_objects,
+                ) if analyze_unused else {}
+                duplicates = run_optimizer(
+                    'preview_duplicates', optimizer.find_duplicate_objects,
+                ) if analyze_duplicates else {}
+                shadowed = run_optimizer(
+                    'preview_shadowed', optimizer.find_shadowed_rules,
+                ) if analyze_shadowing else []
+                optimizer_ms = (perf_counter() - optimizer_started) * 1000
+                analysis.metrics.add('preview_total', optimizer_ms)
+                analysis.metrics.total_duration_ms += optimizer_ms
+                optimization = {
+                    'status': 'analyzed',
+                    'unused_addresses_count': len(unused.get('unused_addresses', [])),
+                    'unused_services_count': len(unused.get('unused_services', [])),
+                    'duplicate_address_groups_count': len(duplicates.get('duplicate_addresses', [])),
                     'shadowed_rules_count': len(shadowed),
-                    'shadowed_rules': shadowed
-                },
-                'policies': policies_preview,
+                    'shadowed_rules': shadowed,
+                }
+
+            analysis_total_ms = (perf_counter() - analysis_started) * 1000
+            analysis.metrics.add('analysis_total', analysis_total_ms)
+            analysis.metrics.total_duration_ms = analysis_total_ms
+            response = {
+                'success': True,
+                **_ir_preview_fields(ir_config),
+                'extraction': _extraction_summary(analysis.extraction),
+                'optimization': optimization,
                 'generation_allowed': analysis.generation_allowed,
                 'blocking_reasons': analysis.blocking_reasons,
                 'requires_manual_review': analysis.requires_manual_review,
+                'diagnostics': {'metrics': analysis.metrics.as_dict()},
             }
             if analysis.capability_analysis is not None:
                 response['capability_analysis'] = analysis.capability_analysis.to_dict()

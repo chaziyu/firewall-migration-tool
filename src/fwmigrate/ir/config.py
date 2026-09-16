@@ -1,5 +1,6 @@
 # Canonical IR aggregate root
 
+import json
 from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 from .common import IRExecutionContext
@@ -141,6 +142,26 @@ class IRConfig(BaseModel):
 
     def sync_vendor_extensions(self, *, clear_embedded: bool = False) -> None:
         """Promote embedded typed extensions into the aggregate extension store."""
+        record_keys: dict[int, set[str]] = {}
+
+        def extension_key(extension: BaseModel) -> str:
+            return json.dumps(
+                extension.model_dump(mode="json"),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+
+        def append_unique(records: list[Any], extension: BaseModel) -> None:
+            records_id = id(records)
+            keys = record_keys.get(records_id)
+            if keys is None:
+                keys = {extension_key(record) for record in records}
+                record_keys[records_id] = keys
+            key = extension_key(extension)
+            if key not in keys:
+                records.append(extension)
+                keys.add(key)
+
         destinations = (
             ("addresses", "object_extensions", IRCheckPointObjectExtension),
             ("services", "object_extensions", IRCheckPointObjectExtension),
@@ -161,11 +182,7 @@ class IRConfig(BaseModel):
                 extension = getattr(item, "vendor_extension", None)
                 if not isinstance(extension, extension_type):
                     continue
-                if not any(
-                    record.model_dump(mode="json") == extension.model_dump(mode="json")
-                    for record in records
-                ):
-                    records.append(extension)
+                append_unique(records, extension)
                 if clear_embedded:
                     object.__setattr__(item, "vendor_extension", None)
 
@@ -173,8 +190,7 @@ class IRConfig(BaseModel):
         for item in self.addresses:
             embedded = getattr(item, "vendor_extension", None)
             if isinstance(embedded, IRFortiOSAddressExtension):
-                if not any(record.model_dump(mode="json") == embedded.model_dump(mode="json") for record in fortios.address_extensions):
-                    fortios.address_extensions.append(embedded)
+                append_unique(fortios.address_extensions, embedded)
                 if clear_embedded:
                     object.__setattr__(item, "vendor_extension", None)
                 continue
@@ -197,37 +213,32 @@ class IRConfig(BaseModel):
                 source_template=source_template,
                 source_template_reference_resolved=template_resolved,
             )
-            if not any(record.model_dump(mode="json") == extension.model_dump(mode="json") for record in fortios.address_extensions):
-                fortios.address_extensions.append(extension)
+            append_unique(fortios.address_extensions, extension)
         for item in self.address_groups:
             extension = getattr(item, "vendor_extension", None)
             if not isinstance(extension, IRFortiOSAddressExtension):
                 continue
-            if not any(record.model_dump(mode="json") == extension.model_dump(mode="json") for record in fortios.address_group_extensions):
-                fortios.address_group_extensions.append(extension)
+            append_unique(fortios.address_group_extensions, extension)
             if clear_embedded:
                 object.__setattr__(item, "vendor_extension", None)
         for item in self.security_policies:
             extension = getattr(item, "vendor_extension", None)
             if not isinstance(extension, IRFortiOSPolicyExtension):
                 continue
-            if not any(record.model_dump(mode="json") == extension.model_dump(mode="json") for record in fortios.policy_extensions):
-                fortios.policy_extensions.append(extension)
+            append_unique(fortios.policy_extensions, extension)
             if clear_embedded:
                 object.__setattr__(item, "vendor_extension", None)
         for item in self.nat_pools:
             extension = getattr(item, "vendor_extension", None)
             if not isinstance(extension, IRFortiOSNATPoolExtension):
                 continue
-            if not any(record.model_dump(mode="json") == extension.model_dump(mode="json") for record in fortios.nat_pool_extensions):
-                fortios.nat_pool_extensions.append(extension)
+            append_unique(fortios.nat_pool_extensions, extension)
             if clear_embedded:
                 object.__setattr__(item, "vendor_extension", None)
         for item in self.nat_rules:
             embedded = getattr(item, "vendor_extension", None)
             if isinstance(embedded, IRFortiOSNATRuleExtension):
-                if not any(record.model_dump(mode="json") == embedded.model_dump(mode="json") for record in fortios.nat_rule_extensions):
-                    fortios.nat_rule_extensions.append(embedded)
+                append_unique(fortios.nat_rule_extensions, embedded)
                 if clear_embedded:
                     object.__setattr__(item, "vendor_extension", None)
                 continue
@@ -240,8 +251,7 @@ class IRConfig(BaseModel):
                 source_uuid=item.source_policy_uuid,
                 source_pool_group_references=references,
             )
-            if not any(record.model_dump(mode="json") == extension.model_dump(mode="json") for record in fortios.nat_rule_extensions):
-                fortios.nat_rule_extensions.append(extension)
+            append_unique(fortios.nat_rule_extensions, extension)
 
         for item in self.published_services:
             embedded = getattr(item, "vendor_extension", None)
@@ -286,6 +296,12 @@ class IRConfig(BaseModel):
                 object.__setattr__(item, "vendor_extension", None)
 
         def bind_extensions(collection: list[Any], records: list[Any], extension_type: type[BaseModel]) -> None:
+            by_identity: dict[tuple[Any, Any], list[Any]] = {}
+            for record in records:
+                if isinstance(record, extension_type):
+                    by_identity.setdefault(
+                        (record.canonical_name, record.source_context), []
+                    ).append(record)
             for item in collection:
                 extension = getattr(item, "vendor_extension", None)
                 if extension is None:
@@ -293,11 +309,11 @@ class IRConfig(BaseModel):
                     item_id = getattr(item, "source_id", None)
                     extension = next(
                         (
-                            record for record in records
-                            if isinstance(record, extension_type)
-                            and record.canonical_name == getattr(item, "name", None)
-                            and record.source_context == getattr(item, "source_context", None)
-                            and (record.source_uuid is None or record.source_uuid == item_uuid)
+                            record for record in by_identity.get(
+                                (getattr(item, "name", None), getattr(item, "source_context", None)),
+                                [],
+                            )
+                            if (record.source_uuid is None or record.source_uuid == item_uuid)
                             and (record.source_id is None or item_id is None or record.source_id == item_id)
                         ),
                         None,
