@@ -26,6 +26,8 @@ from fwmigrate.ir import (
     IRService,
     IRServiceGroup,
     IRFortiOSPublishedServiceExtension,
+    IRCheckPointPolicyExtension,
+    IRFortiOSPolicyExtension,
 )
 from fwmigrate.ir.enums import AddressType, NATType
 from fwmigrate.ir.errors import IRSchemaError
@@ -393,6 +395,72 @@ def test_compatibility_setter_keeps_extension_identity():
     assert address.vendor_extension.source_context == "root"
     assert address.vendor_extension.source_uuid == "addr-1"
     assert address.vendor_extension.source_hw_model == "model"
+
+
+@pytest.mark.parametrize(
+    "first, second",
+    [
+        ("checkpoint_domain_uid", "policy_package_uid"),
+        ("policy_package_uid", "checkpoint_domain_uid"),
+    ],
+)
+def test_checkpoint_policy_compatibility_setters_promote_in_any_order(first, second):
+    policy = IRSecurityPolicy(
+        name="allow-web",
+        source_context="domain-a",
+        source_uuid="policy-1",
+    )
+    values = {
+        "checkpoint_domain_uid": "domain-1",
+        "policy_package_uid": "package-1",
+    }
+
+    setattr(policy, first, values[first])
+    setattr(policy, second, values[second])
+
+    assert isinstance(policy.vendor_extension, IRCheckPointPolicyExtension)
+    assert policy.checkpoint_domain_uid == "domain-1"
+    assert policy.policy_package_uid == "package-1"
+    assert policy.vendor_extension.canonical_name == "allow-web"
+    assert policy.vendor_extension.source_context == "domain-a"
+    assert policy.vendor_extension.source_uuid == "policy-1"
+
+
+def test_checkpoint_compatibility_setter_rejects_incompatible_extension():
+    policy = IRSecurityPolicy(name="allow-web")
+    object.__setattr__(policy, "vendor_extension", IRFortiOSPolicyExtension())
+
+    with pytest.raises(ValueError, match="incompatible extension"):
+        policy.checkpoint_domain_uid = "domain-1"
+
+
+def test_checkpoint_policy_extension_round_trips_after_compatibility_promotion():
+    policy = IRSecurityPolicy(
+        name="allow-web",
+        source_context="domain-a",
+        source_uuid="policy-1",
+    )
+    policy.checkpoint_domain_uid = "domain-1"
+    policy.policy_package_uid = "package-1"
+    ir = IRConfig(
+        metadata={"source_vendor": "checkpoint"},
+        security_policies=[policy],
+    )
+
+    payload = json.loads(dump_ir_json(ir))
+    extension_payload = payload["vendor_extensions"]["checkpoint"]["policy_extensions"][0]
+    assert payload["security_policies"][0]["vendor_extension"] is None
+    assert extension_payload["checkpoint_domain_uid"] == "domain-1"
+    assert extension_payload["policy_package_uid"] == "package-1"
+
+    reloaded = load_ir_payload(payload)
+    extension = reloaded.security_policies[0].vendor_extension
+    assert isinstance(extension, IRCheckPointPolicyExtension)
+    assert extension.checkpoint_domain_uid == "domain-1"
+    assert extension.policy_package_uid == "package-1"
+    assert extension.canonical_name == "allow-web"
+    assert extension.source_context == "domain-a"
+    assert extension.source_uuid == "policy-1"
 
 
 def test_legacy_published_service_fields_move_to_fortios_extension():
