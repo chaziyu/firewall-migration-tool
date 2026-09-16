@@ -901,13 +901,128 @@ sections:
 - path: firewall service group
   mode: table
   key: <name>
+  key_type: string
+  description: Configure service groups.
   fields:
-    color: integer
-    comment: var-string
-    fabric-object: enum
-    member: identifier-list
-    proxy: enum
-    uuid: uuid
+    color:
+      source_type: integer
+      fortios_type: integer
+      description: Color of icon on the GUI.
+      range:
+        min: 0
+        max: 32
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service group
+          parameter: color
+    comment:
+      source_type: var-string
+      fortios_type: var-string
+      description: Comment.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service group
+          parameter: comment
+    fabric-object:
+      source_type: enum
+      fortios_type: option
+      description: Security Fabric global object setting.
+      options:
+      - value: enable
+        description: Object is set as a security fabric-wide global object.
+      - value: disable
+        description: Object is local to this security fabric member.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service group
+          parameter: fabric-object
+    member:
+      source_type: identifier-list
+      fortios_type: string
+      description: Service objects contained within the group; service or service group name.
+      length:
+        max: 79
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service group
+          parameter: member
+      semantic:
+        reference:
+          kind: service-group-member
+          target_paths:
+          - firewall service custom
+          - firewall service group
+          cardinality: many
+          note: Fortinet explicitly documents member values as service or service group names.
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall service group
+            parameter: member
+    proxy:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable web proxy service group.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service group
+          parameter: proxy
+    uuid:
+      source_type: uuid
+      fortios_type: uuid
+      description: Universally Unique Identifier (UUID; automatically assigned but can be manually reset).
+      default:
+        value: 00000000-0000-0000-0000-000000000000
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service group
+          parameter: uuid
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall service group
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall service group
 - path: firewall shaper per-ip-shaper
   mode: table
   key: <name>
