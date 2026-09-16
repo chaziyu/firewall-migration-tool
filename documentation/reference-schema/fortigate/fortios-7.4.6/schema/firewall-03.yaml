@@ -428,33 +428,476 @@ sections:
 - path: firewall service custom
   mode: table
   key: <name>
+  key_type: string
+  description: Configure custom services.
   fields:
-    app-category: identifier-list
-    app-service-type: enum
-    application: identifier-list
-    category: string
-    check-reset-range: enum
-    color: integer
-    comment: var-string
-    fabric-object: enum
-    fqdn: string
-    helper: enum
-    icmpcode: integer
-    icmptype: integer
-    iprange: opaque-user
-    protocol: enum
-    protocol-number: integer
-    proxy: enum
-    sctp-portrange: opaque-user
-    session-ttl: opaque-user
-    tcp-halfclose-timer: integer
-    tcp-halfopen-timer: integer
-    tcp-portrange: opaque-user
-    tcp-rst-timer: integer
-    tcp-timewait-timer: integer
-    udp-idle-timer: integer
-    udp-portrange: opaque-user
-    uuid: uuid
+    app-category:
+      source_type: identifier-list
+      fortios_type: integer
+      description: Application category ID.
+      range:
+        min: 0
+        max: 4294967295
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: app-category
+    app-service-type:
+      source_type: enum
+      fortios_type: option
+      description: Application service type.
+      options:
+      - value: disable
+        description: Disable application type.
+      - value: app-id
+        description: Application ID.
+      - value: app-category
+        description: Application category.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: app-service-type
+    application:
+      source_type: identifier-list
+      fortios_type: integer
+      description: Application ID.
+      range:
+        min: 0
+        max: 4294967295
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: application
+    category:
+      source_type: string
+      fortios_type: string
+      description: Service category.
+      length:
+        max: 63
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: category
+      semantic:
+        reference:
+          kind: service-category
+          target_paths:
+          - firewall service category
+          cardinality: one
+          note: Fortinet documents this as a service category; the target config path is a project classification.
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall service custom
+            parameter: category
+    check-reset-range:
+      source_type: enum
+      fortios_type: option
+      description: Configure the type of ICMP error message verification.
+      options:
+      - value: disable
+        description: Disable RST range check.
+      - value: strict
+        description: Check RST range strictly.
+      - value: default
+        description: Use system default setting.
+      default:
+        value: default
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: check-reset-range
+    color:
+      source_type: integer
+      fortios_type: integer
+      description: Color of icon on the GUI.
+      range:
+        min: 0
+        max: 32
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: color
+    comment:
+      source_type: var-string
+      fortios_type: var-string
+      description: Comment.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: comment
+    fabric-object:
+      source_type: enum
+      fortios_type: option
+      description: Security Fabric global object setting.
+      options:
+      - value: enable
+        description: Object is set as a security fabric-wide global object.
+      - value: disable
+        description: Object is local to this security fabric member.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: fabric-object
+    fqdn:
+      source_type: string
+      fortios_type: string
+      description: Fully qualified domain name.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: fqdn
+    helper:
+      source_type: enum
+      fortios_type: option
+      description: Helper name.
+      options:
+      - value: auto
+        description: Automatically select helper based on protocol and port.
+      - value: disable
+        description: Disable helper.
+      - value: ftp
+        description: FTP.
+      - value: tftp
+        description: TFTP.
+      - value: ras
+        description: RAS.
+      - value: h323
+        description: H323.
+      - value: tns
+        description: TNS.
+      - value: mms
+        description: MMS.
+      - value: sip
+        description: SIP.
+      - value: pptp
+        description: PPTP.
+      - value: rtsp
+        description: RTSP.
+      - value: dns-udp
+        description: DNS UDP.
+      - value: dns-tcp
+        description: DNS TCP.
+      - value: pmap
+        description: PMAP.
+      - value: rsh
+        description: RSH.
+      - value: dcerpc
+        description: DCERPC.
+      - value: mgcp
+        description: MGCP.
+      default:
+        value: auto
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: helper
+    icmpcode:
+      source_type: integer
+      fortios_type: integer
+      description: ICMP code.
+      range:
+        min: 0
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: icmpcode
+    icmptype:
+      source_type: integer
+      fortios_type: integer
+      description: ICMP type.
+      range:
+        min: 0
+        max: 4294967295
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: icmptype
+    iprange:
+      source_type: opaque-user
+      fortios_type: user
+      description: Start and end of the IP range associated with service.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: iprange
+          note: Fortinet documents this as type user and does not specify a grammar in this section.
+    protocol:
+      source_type: enum
+      fortios_type: option
+      description: Protocol type based on IANA numbers.
+      options:
+      - value: TCP/UDP/SCTP
+        description: TCP, UDP and SCTP.
+      - value: ICMP
+        description: ICMP.
+      - value: ICMP6
+        description: ICMP6.
+      - value: IP
+        description: IP.
+      - value: HTTP
+        description: HTTP - for web proxy.
+      - value: FTP
+        description: FTP - for web proxy.
+      - value: CONNECT
+        description: Connect - for web proxy.
+      - value: SOCKS-TCP
+        description: Socks TCP - for web proxy.
+      - value: SOCKS-UDP
+        description: Socks UDP - for web proxy.
+      - value: ALL
+        description: All - for web proxy.
+      default:
+        value: TCP/UDP/SCTP
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: protocol
+    protocol-number:
+      source_type: integer
+      fortios_type: integer
+      description: IP protocol number.
+      range:
+        min: 0
+        max: 254
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: protocol-number
+    proxy:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable web proxy service.
+      options:
+      - value: enable
+        description: Enable setting.
+      - value: disable
+        description: Disable setting.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: proxy
+    sctp-portrange:
+      source_type: opaque-user
+      fortios_type: user
+      description: Multiple SCTP port ranges.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: sctp-portrange
+          note: Fortinet documents this as type user and does not specify a grammar in this section.
+    session-ttl:
+      source_type: opaque-user
+      fortios_type: user
+      description: Session TTL.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: session-ttl
+          note: Fortinet documents this as type user and does not specify a grammar in this section.
+    tcp-halfclose-timer:
+      source_type: integer
+      fortios_type: integer
+      description: Wait time to close a TCP session waiting for an unanswered FIN packet.
+      range:
+        min: 0
+        max: 86400
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: tcp-halfclose-timer
+    tcp-halfopen-timer:
+      source_type: integer
+      fortios_type: integer
+      description: Wait time to close a TCP session waiting for an unanswered open session packet.
+      range:
+        min: 0
+        max: 86400
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: tcp-halfopen-timer
+    tcp-portrange:
+      source_type: opaque-user
+      fortios_type: user
+      description: Multiple TCP port ranges.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: tcp-portrange
+          note: Fortinet documents this as type user and does not specify a grammar in this section.
+    tcp-rst-timer:
+      source_type: integer
+      fortios_type: integer
+      description: Set the length of the TCP CLOSE state in seconds.
+      range:
+        min: 5
+        max: 300
+        note: Fortinet documents default 0 even though the documented configurable range starts at 5.
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: tcp-rst-timer
+    tcp-timewait-timer:
+      source_type: integer
+      fortios_type: integer
+      description: Set the length of the TCP TIME-WAIT state in seconds.
+      range:
+        min: 0
+        max: 300
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: tcp-timewait-timer
+    udp-idle-timer:
+      source_type: integer
+      fortios_type: integer
+      description: Number of seconds before an idle UDP connection times out.
+      range:
+        min: 0
+        max: 86400
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: udp-idle-timer
+    udp-portrange:
+      source_type: opaque-user
+      fortios_type: user
+      description: Multiple UDP port ranges.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: udp-portrange
+          note: Fortinet documents this as type user and does not specify a grammar in this section.
+    uuid:
+      source_type: uuid
+      fortios_type: uuid
+      description: Universally Unique Identifier (UUID; automatically assigned but can be manually reset).
+      default:
+        value: 00000000-0000-0000-0000-000000000000
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall service custom
+          parameter: uuid
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall service custom
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall service custom
 - path: firewall service group
   mode: table
   key: <name>
