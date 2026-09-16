@@ -1,0 +1,336 @@
+format_version: 1
+applies_to:
+  vendor: Fortinet
+  product: FortiOS
+  version: 7.4.6
+
+purpose: >
+  Metadata contract for phased enrichment of the FortiOS 7.4.6 source
+  reference schema. It keeps Fortinet-documented syntax separate from
+  migration-tool semantics and from FortiOS-to-IR mapping.
+
+inheritance:
+  fortios_version: Inherit 7.4.6 from index.yaml unless a node explicitly needs a narrower documented qualifier.
+  provenance_document: Enriched nodes may reuse the default document identity but must still identify config_path.
+
+compatibility:
+  compact_field_form:
+    supported: true
+    meaning: A scalar field value is shorthand for source_type only.
+  enriched_field_form:
+    supported: true
+    meaning: Use the mapping form when a reviewed field gains verified metadata.
+  legacy_sensitive_suffix:
+    supported: true
+    syntax: "<source-type>!sensitive"
+    normalized_meaning:
+      source_type: "<source-type>"
+      semantic:
+        sensitive: true
+    guidance: "Preserve existing uses; prefer explicit semantic.sensitive in newly enriched fields."
+
+evidence:
+  statuses:
+    documented: Explicitly supported by the FortiOS 7.4.6 CLI Reference.
+    project_semantic: Migration-tool interpretation or classification, not a Fortinet documentation claim.
+    needs_review: Available evidence is insufficient to establish the claim safely.
+  structure:
+    required:
+      - status
+      - source
+    source:
+      required:
+        - document
+        - config_path
+      optional:
+        - document_id
+        - nested_config_path
+        - parameter
+        - section
+        - note
+  default_document:
+    document: FortiOS 7.4.6 CLI Reference
+    document_id: 01-746-912654-20241212
+
+config_node:
+  top_level_required:
+    - path
+    - mode
+  nested_required:
+    - name
+    - mode
+  properties:
+    path:
+      type: string
+      meaning: Full top-level FortiOS config path without the leading config keyword.
+    name:
+      type: string
+      meaning: Nested config block name relative to its parent.
+    full_path:
+      type: string
+      optional: true
+      meaning: Full path for an enriched nested config node.
+    mode:
+      allowed:
+        - singleton
+        - table
+    key:
+      type: string
+      optional: true
+      meaning: Literal edit key placeholder such as <name> or <id>.
+    key_type:
+      type: string
+      optional: true
+      meaning: Edit-key source type when explicitly documented.
+    description:
+      type: string
+      optional: true
+    fields:
+      type: mapping
+    nested:
+      type: list
+      optional: true
+    read_only:
+      type: boolean
+      optional: true
+    model_dependent:
+      type: boolean
+      optional: true
+    availability:
+      type: mapping
+      optional: true
+      properties:
+        models:
+          type: list
+          optional: true
+        not_models:
+          type: list
+          optional: true
+        note:
+          type: string
+          optional: true
+      rule: Record only availability explicitly documented by Fortinet.
+    scope:
+      type: mapping
+      optional: true
+      properties:
+        global:
+          type: boolean
+          optional: true
+        vdom:
+          type: boolean
+          optional: true
+        note:
+          type: string
+          optional: true
+      rule: Record only when the CLI reference establishes scope.
+    evidence:
+      type: evidence
+      optional: true
+    semantic:
+      type: semantic_metadata
+      optional: true
+
+field:
+  compact_form:
+    type: string
+    meaning: Existing source_type-only shorthand.
+  enriched_form:
+    required:
+      - source_type
+      - evidence
+    properties:
+      source_type:
+        type: string
+        meaning: Existing project-controlled source syntax category.
+      fortios_type:
+        type: string
+        optional: true
+        meaning: Literal Fortinet Type token when useful to retain.
+      description:
+        type: string
+        optional: true
+      options:
+        type: list
+        optional: true
+        item:
+          required:
+            - value
+          optional:
+            - description
+            - model_dependent
+            - availability
+        rule: Never invent or complete omitted option values.
+      range:
+        type: mapping
+        optional: true
+        properties:
+          min:
+            type: number
+            optional: true
+          max:
+            type: number
+            optional: true
+          note:
+            type: string
+            optional: true
+      length:
+        type: mapping
+        optional: true
+        properties:
+          min:
+            type: integer
+            optional: true
+          max:
+            type: integer
+            optional: true
+      address_family:
+        optional: true
+        allowed:
+          - ipv4
+          - ipv6
+          - dual
+          - other
+        rule: Use only when documentation establishes the address family.
+      cardinality:
+        optional: true
+        allowed:
+          - scalar
+          - list
+        rule: Use list only when syntax or parameter documentation explicitly shows multiple values.
+      default:
+        type: mapping
+        optional: true
+        required:
+          - value
+        optional_properties:
+          - raw
+          - note
+        rule: A documented default is source metadata and must not be emitted as an explicit set command solely because it is documented.
+      read_only:
+        type: boolean
+        optional: true
+      model_dependent:
+        type: boolean
+        optional: true
+      model_values:
+        type: mapping
+        optional: true
+        rule: Record only model-specific values explicitly documented by Fortinet.
+      conditions:
+        type: list
+        optional: true
+        item:
+          required:
+            - relationship
+            - evidence
+          optional:
+            - when
+            - note
+        rule: Record only explicit documented conditional relationships.
+      evidence:
+        type: evidence
+      semantic:
+        type: semantic_metadata
+        optional: true
+
+semantic_metadata:
+  rule: >
+    Semantic metadata is separate from authoritative source syntax. Each
+    semantic block carries its own evidence so project interpretations cannot
+    be mistaken for Fortinet documentation.
+  properties:
+    migration_relevance:
+      allowed:
+        - migration_relevant
+        - source_evidence_only
+        - operational_only
+        - needs_review
+    sensitive:
+      type: boolean
+      optional: true
+      rule: Never store actual secret values in the reference schema.
+    reference:
+      type: mapping
+      optional: true
+      properties:
+        kind:
+          type: string
+          optional: true
+        target_paths:
+          type: list
+          optional: true
+        cardinality:
+          optional: true
+          allowed:
+            - one
+            - many
+        note:
+          type: string
+          optional: true
+      rule: Do not infer references from string or opaque-user source syntax alone.
+    requires_custom_handler:
+      type: boolean
+      optional: true
+  evidence:
+    type: evidence
+    required: true
+
+source_type_vocabulary:
+  status: needs_review
+  rule: >
+    Preserve the existing compact source-type vocabulary during Phase 0.
+    Later reviewed phases may add structured metadata around those values.
+    Do not create a new source type merely to encode migration semantics.
+  known_normalizations:
+    fortios_option: enum
+    fortios_user: opaque-user
+    sensitive_suffix: "<source-type>!sensitive"
+
+normalization_rules:
+  - Preserve source syntax before semantic interpretation.
+  - Preserve unusual Fortinet/reference tokenization; annotate needs_review rather than silently correcting it.
+  - Do not infer references from string or opaque-user values.
+  - Do not treat schema absence as proof that runtime syntax is unsupported.
+  - Do not materialize documented defaults as explicit source commands.
+  - Keep FortiOS-to-IR mapping in ir-v2-mapping.yaml, not in source schema fields.
+  - Existing compact field entries remain valid; enrich only fields reviewed in the active phase.
+
+example:
+  path: example config
+  mode: table
+  key: <name>
+  key_type: string
+  fields:
+    status:
+      source_type: enum
+      fortios_type: option
+      options:
+        - value: enable
+          description: Example enabled state.
+        - value: disable
+          description: Example disabled state.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: example config
+          parameter: status
+      semantic:
+        migration_relevance: needs_review
+        sensitive: false
+        evidence:
+          status: needs_review
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: example config
+            parameter: status
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: example config
