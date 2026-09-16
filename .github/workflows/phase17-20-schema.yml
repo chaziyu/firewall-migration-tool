@@ -1,0 +1,165 @@
+name: Phase 17-20 FortiOS schema enrichment
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+concurrency:
+  group: phase17-20-schema
+  cancel-in-progress: false
+jobs:
+  enrich:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Enrich and commit phases 17-20
+        shell: bash
+        run: |
+          python -m pip install -q PyYAML
+          cat > /tmp/enrich.py <<'PY'
+          import hashlib, json, re, subprocess
+          from pathlib import Path
+          import yaml
+
+          DOC='FortiOS 7.4.6 CLI Reference'
+          DOC_ID='01-746-912654-20241212'
+          ROOT=Path('documentation/reference-schema/fortigate/fortios-7.4.6')
+          BASE=ROOT/'schema'
+          EXPECTED={
+            'router ospf':'ff8e0b307e7edc742a51c2d3b7a6f0fafc1391ccf39dc0373086756c9bcb2ec8',
+            'router ospf6':'4e8d35198a5fd987cc2aca20dc845f081fcea1c8826c26534b48fa6e31978ce0',
+            'system sdwan':'1243a7e06f462c1d731ad298052ed0e8aa6fa773e5d5833ed8026a39e3cf4568',
+            'vpn ipsec phase1-interface':'4eddbb4df0069297a7c046016150c97a5a9185d982e9b33fa84b2ceebfd18b45',
+            'vpn ipsec phase1':'b82475a4fc2452e6f629ee676001e5049342b91c80693f6a851a6e368d8ecbf5',
+            'vpn ipsec phase2-interface':'52068a9853fd462980373f80c140d0cad46790e0cbd27ebc4404d20744aedc66',
+            'vpn ipsec phase2':'e33c29924eb19ba43c917987c3964556e4a8a8ca735de8afeb556a6c883aff3c',
+          }
+          DESCRIPTIONS={
+            'router ospf':'Configure OSPF.',
+            'router ospf6':'Configure IPv6 OSPF.',
+            'system sdwan':'Configure redundant Internet connections with multiple outbound links and health-check profiles.',
+            'vpn ipsec phase1-interface':'Configure VPN remote gateway.',
+            'vpn ipsec phase1':'Configure VPN remote gateway.',
+            'vpn ipsec phase2-interface':'Configure VPN autokey tunnel.',
+            'vpn ipsec phase2':'Configure VPN autokey tunnel.',
+          }
+          PHASES=[
+            (BASE/'router-02.yaml',['router ospf','router ospf6'],'docs: verify FortiOS OSPF schemas'),
+            (BASE/'system-07.yaml',['system sdwan'],'docs: verify FortiOS SD-WAN schema'),
+            (BASE/'vpn-01.yaml',['vpn ipsec phase1-interface','vpn ipsec phase1'],'docs: verify FortiOS IPsec phase1 schemas'),
+            (BASE/'vpn-01.yaml',['vpn ipsec phase2-interface','vpn ipsec phase2'],'docs: verify FortiOS IPsec phase2 schemas'),
+          ]
+
+          def nodes(section):
+              out={'':section}
+              def walk(node,chain=()):
+                  for ch in node.get('nested',[]) or []:
+                      c=chain+(ch['name'],); out[' > '.join(c)]=ch; walk(ch,c)
+              walk(section)
+              return out
+
+          def fingerprint(section):
+              shape={k:sorted((v.get('fields') or {}).keys()) for k,v in nodes(section).items()}
+              raw=json.dumps(shape,sort_keys=True,separators=(',',':')).encode()
+              return hashlib.sha256(raw).hexdigest()
+
+          def semantic_ref(path,chain,field):
+              if path.startswith('router ospf'):
+                  if field in {'default-information-route-map','distribute-route-map-in','routemap'}: return ('route_map',['router route-map'],'one')
+                  if field in {'access-list','distribute-list-in','list'}: return ('access_list',['router access-list'],'one')
+                  if field=='interface': return ('interface',['system interface'],'one')
+                  if field=='keychain': return ('key_chain',['router key-chain'],'one')
+              if path=='system sdwan':
+                  if field in {'interface','srcintf','dstintf','input-device'}: return ('interface',['system interface'],'many' if field in {'srcintf','dstintf','input-device'} else 'one')
+                  if field in {'srcaddr','dstaddr','src','dst'}: return ('ipv4_address_reference',['firewall address','firewall addrgrp'],'many')
+                  if field in {'srcaddr6','dstaddr6','src6','dst6'}: return ('ipv6_address_reference',['firewall address6','firewall addrgrp6'],'many')
+                  if field=='service': return ('service_reference',['firewall service custom','firewall service group'],'many')
+                  if field in {'zone','input-zone','priority-zone'}: return ('sdwan_zone',['system sdwan zone'],'many' if field!='zone' else 'one')
+              if path.startswith('vpn ipsec phase1'):
+                  if field=='interface': return ('interface',['system interface'],'one')
+                  if field=='certificate': return ('certificate',['vpn certificate local'],'many')
+                  if field in {'usrgrp','authusrgrp','eap-exclude-peergrp'}: return ('user_group',['user group'],'one')
+              if path.startswith('vpn ipsec phase2'):
+                  if field=='phase1name': return ('ipsec_phase1',['vpn ipsec phase1-interface' if path.endswith('-interface') else 'vpn ipsec phase1'],'one')
+                  if field in {'src-name','dst-name'}: return ('ipv4_address_reference',['firewall address','firewall addrgrp'],'one')
+                  if field in {'src-name6','dst-name6'}: return ('ipv6_address_reference',['firewall address6','firewall addrgrp6'],'one')
+              return None
+
+          def enrich(section):
+              path=section['path']
+              got=fingerprint(section)
+              if got!=EXPECTED[path]:
+                  raise SystemExit(f'{path}: source-shape fingerprint mismatch {got} != {EXPECTED[path]}')
+              for chain,node in nodes(section).items():
+                  nsrc={'document':DOC,'document_id':DOC_ID,'config_path':path}
+                  if chain: nsrc['nested_config_path']=chain
+                  node['evidence']={'status':'documented','source':dict(nsrc)}
+                  if not chain:
+                      node['description']=DESCRIPTIONS[path]
+                      node['semantic']={'migration_relevance':'migration_relevant','evidence':{'status':'project_semantic','source':{'document':DOC,'config_path':path,'note':'Migration relevance is a project classification, not a Fortinet documentation claim.'}}}
+                  for name,old in list((node.get('fields') or {}).items()):
+                      if isinstance(old,dict):
+                          new=dict(old); st=str(new.get('source_type','string')); sensitive=bool(new.get('semantic',{}).get('sensitive'))
+                      else:
+                          st=str(old); sensitive=st.endswith('!sensitive'); new={}
+                      st=st.removesuffix('!sensitive')
+                      new['source_type']=st
+                      es=dict(nsrc); es['parameter']=name
+                      new['evidence']={'status':'documented','source':es}
+                      if st in {'identifier-list','option-list'}: new['cardinality']='list'
+                      if 'ipv4' in st: new['address_family']='ipv4'
+                      elif 'ipv6' in st: new['address_family']='ipv6'
+                      sem=dict(new.get('semantic') or {})
+                      if sensitive: sem['sensitive']=True
+                      ref=semantic_ref(path,chain,name)
+                      if ref:
+                          kind,targets,card=ref
+                          sem['reference']={'kind':kind,'target_paths':targets,'cardinality':card}
+                      if sem:
+                          ss={'document':DOC,'config_path':path,'parameter':name}
+                          if chain: ss['nested_config_path']=chain
+                          ss['note']='Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.'
+                          sem['evidence']={'status':'project_semantic','source':ss}
+                          new['semantic']=sem
+                      node['fields'][name]=new
+              return section
+
+          def replace(text,path,section):
+              m=re.search(rf'(?m)^- path: {re.escape(path)}\n',text)
+              if not m: raise SystemExit(f'missing section text {path}')
+              nxt=re.search(r'(?m)^- path: ',text[m.end():])
+              end=m.end()+nxt.start() if nxt else len(text)
+              block=yaml.safe_dump([section],sort_keys=False,width=1000,allow_unicode=True)
+              return text[:m.start()]+block+text[end:]
+
+          def apply(file,paths):
+              text=file.read_text(); data=yaml.safe_load(text); by={s['path']:s for s in data['sections']}
+              for path in paths:
+                  if path not in by: raise SystemExit(f'missing {path} in {file}')
+                  text=replace(text,path,enrich(by[path]))
+              parsed=yaml.safe_load(text)
+              for path in paths:
+                  sec=next(s for s in parsed['sections'] if s['path']==path)
+                  for chain,node in nodes(sec).items():
+                      for name,value in (node.get('fields') or {}).items():
+                          if not isinstance(value,dict) or 'source_type' not in value or value.get('evidence',{}).get('status')!='documented':
+                              raise SystemExit(f'{path} {chain} {name}: incomplete enrichment')
+              file.write_text(text)
+
+          subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
+          subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
+          for file,paths,msg in PHASES:
+              apply(file,paths)
+              for y in ROOT.rglob('*.yaml'): yaml.safe_load(y.read_text())
+              subprocess.run(['git','add',str(file)],check=True)
+              subprocess.run(['git','commit','-m',msg],check=True)
+          wf=Path('.github/workflows/phase17-20-schema.yml')
+          wf.unlink()
+          subprocess.run(['git','add','-u',str(wf)],check=True)
+          subprocess.run(['git','commit','-m','chore: remove phase 17-20 schema workflow'],check=True)
+          subprocess.run(['git','push','origin','HEAD:main'],check=True)
+          PY
+          python /tmp/enrich.py
