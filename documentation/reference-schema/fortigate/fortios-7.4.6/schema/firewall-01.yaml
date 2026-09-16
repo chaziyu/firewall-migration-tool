@@ -1406,42 +1406,446 @@ sections:
 - path: firewall addrgrp
   mode: table
   key: <name>
+  key_type: string
+  description: Configure IPv4 address groups.
   fields:
-    allow-routing: enum
-    category: enum
-    color: integer
-    comment: var-string
-    exclude: enum
-    exclude-member: identifier-list
-    fabric-object: enum
-    member: identifier-list
-    type: enum
-    uuid: uuid
+    allow-routing:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable use of this group in the static route configuration.
+      options:
+      - value: enable
+        description: Enable use of this group in the static route configuration.
+      - value: disable
+        description: Disable use of this group in the static route configuration.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp
+          parameter: allow-routing
+    category:
+      source_type: enum
+      fortios_type: option
+      description: Address group category.
+      options:
+      - value: default
+        description: Default address group category; cannot be used as ztna-ems-tag/ztna-geo-tag in policy.
+      - value: ztna-ems-tag
+        description: Members must be ztna-ems-tag group or ems-tag address; can be used as ztna-ems-tag in policy.
+      - value: ztna-geo-tag
+        description: Members must be ztna-geo-tag group or geographic address; can be used as ztna-geo-tag in policy.
+      default:
+        value: default
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp
+          parameter: category
+    color:
+      source_type: integer
+      fortios_type: integer
+      description: Color of icon on the GUI.
+      range:
+        min: 0
+        max: 32
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp
+          parameter: color
+    comment:
+      source_type: var-string
+      fortios_type: var-string
+      description: Comment.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp
+          parameter: comment
+    exclude:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable address exclusion.
+      options:
+      - value: enable
+        description: Enable address exclusion.
+      - value: disable
+        description: Disable address exclusion.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp
+          parameter: exclude
+    exclude-member:
+      source_type: identifier-list
+      fortios_type: string
+      description: Address exclusion member; address name.
+      length:
+        max: 79
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp
+          parameter: exclude-member
+      semantic:
+        reference:
+          kind: ipv4-address-exclusion-member
+          cardinality: many
+          note: Fortinet documents each value as an Address name; exact referenced config path is not explicitly stated here.
+        evidence:
+          status: needs_review
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall addrgrp
+            parameter: exclude-member
+    fabric-object:
+      source_type: enum
+      fortios_type: option
+      description: Security Fabric global object setting.
+      options:
+      - value: enable
+        description: Object is set as a security fabric-wide global object.
+      - value: disable
+        description: Object is local to this security fabric member.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp
+          parameter: fabric-object
+    member:
+      source_type: identifier-list
+      fortios_type: string
+      description: Address objects contained within the group; address name.
+      length:
+        max: 79
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp
+          parameter: member
+      semantic:
+        reference:
+          kind: ipv4-address-group-member
+          cardinality: many
+          note: Fortinet documents each value as an Address name. Category-specific membership restrictions are documented under category; exact referenced config path(s) are not explicitly stated here.
+        evidence:
+          status: needs_review
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall addrgrp
+            parameter: member
+    type:
+      source_type: enum
+      fortios_type: option
+      description: Address group type.
+      options:
+      - value: default
+        description: Default address group type; address may belong to multiple groups.
+      - value: folder
+        description: Address folder group; members may not belong to any other group.
+      default:
+        value: default
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp
+          parameter: type
+    uuid:
+      source_type: uuid
+      fortios_type: uuid
+      description: Universally Unique Identifier (UUID; automatically assigned but can be manually reset).
+      default:
+        value: 00000000-0000-0000-0000-000000000000
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp
+          parameter: uuid
   nested:
   - name: tagging
+    full_path: firewall addrgrp tagging
     mode: table
     key: <name>
+    key_type: string
+    description: Config object tagging.
     fields:
-      category: string
-      tags: identifier-list
+      category:
+        source_type: string
+        fortios_type: string
+        description: Tag category.
+        length:
+          max: 63
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall addrgrp
+            nested_config_path: tagging
+            parameter: category
+      tags:
+        source_type: identifier-list
+        fortios_type: string
+        description: Tags; tag name.
+        length:
+          max: 79
+        cardinality: list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall addrgrp
+            nested_config_path: tagging
+            parameter: tags
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall addrgrp
+        nested_config_path: tagging
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall addrgrp
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall addrgrp
 - path: firewall addrgrp6
   mode: table
   key: <name>
+  key_type: string
+  description: Configure IPv6 address groups.
   fields:
-    color: integer
-    comment: var-string
-    exclude: enum
-    exclude-member: identifier-list
-    fabric-object: enum
-    member: identifier-list
-    uuid: uuid
+    color:
+      source_type: integer
+      fortios_type: integer
+      description: Integer value to determine the color of the icon in the GUI.
+      range:
+        min: 0
+        max: 32
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp6
+          parameter: color
+    comment:
+      source_type: var-string
+      fortios_type: var-string
+      description: Comment.
+      length:
+        max: 255
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp6
+          parameter: comment
+    exclude:
+      source_type: enum
+      fortios_type: option
+      description: Enable/disable address6 exclusion.
+      options:
+      - value: enable
+        description: Enable address6 exclusion.
+      - value: disable
+        description: Disable address6 exclusion.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp6
+          parameter: exclude
+    exclude-member:
+      source_type: identifier-list
+      fortios_type: string
+      description: Address6 exclusion member; Address6 name.
+      length:
+        max: 79
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp6
+          parameter: exclude-member
+      semantic:
+        reference:
+          kind: ipv6-address-exclusion-member
+          target_paths:
+          - firewall address6
+          cardinality: many
+          note: Fortinet explicitly documents each exclusion member as an Address6 name.
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall addrgrp6
+            parameter: exclude-member
+    fabric-object:
+      source_type: enum
+      fortios_type: option
+      description: Security Fabric global object setting.
+      options:
+      - value: enable
+        description: Object is set as a security fabric-wide global object.
+      - value: disable
+        description: Object is local to this security fabric member.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp6
+          parameter: fabric-object
+    member:
+      source_type: identifier-list
+      fortios_type: string
+      description: Address objects contained within the group; Address6/addrgrp6 name.
+      length:
+        max: 79
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp6
+          parameter: member
+      semantic:
+        reference:
+          kind: ipv6-address-group-member
+          target_paths:
+          - firewall address6
+          - firewall addrgrp6
+          cardinality: many
+          note: Fortinet explicitly documents member values as Address6/addrgrp6 names.
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: firewall addrgrp6
+            parameter: member
+    uuid:
+      source_type: uuid
+      fortios_type: uuid
+      description: Universally Unique Identifier (UUID; automatically assigned but can be manually reset).
+      default:
+        value: 00000000-0000-0000-0000-000000000000
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall addrgrp6
+          parameter: uuid
   nested:
   - name: tagging
+    full_path: firewall addrgrp6 tagging
     mode: table
     key: <name>
+    key_type: string
+    description: Config object tagging.
     fields:
-      category: string
-      tags: identifier-list
+      category:
+        source_type: string
+        fortios_type: string
+        description: Tag category.
+        length:
+          max: 63
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall addrgrp6
+            nested_config_path: tagging
+            parameter: category
+      tags:
+        source_type: identifier-list
+        fortios_type: string
+        description: Tags; tag name.
+        length:
+          max: 79
+        cardinality: list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: firewall addrgrp6
+            nested_config_path: tagging
+            parameter: tags
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: firewall addrgrp6
+        nested_config_path: tagging
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall addrgrp6
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall addrgrp6
 - path: firewall auth-portal
   mode: singleton
   fields:
