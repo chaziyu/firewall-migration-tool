@@ -3,6 +3,9 @@
 Support describes current parser/extraction normalization for FDM and FMC
 REST bundles. It does not by itself guarantee target-generator support.
 
+IR V2 storage uses canonical collections for portable FTD intent. The typed FTD
+extension container is available for semantics that are not portable.
+
 | Domain | Vendor config | Vendor field | IR model | IR field | Mapping | Support | Parser |
 |---|---|---|---|---|---|---|---|
 | Address | FDM/FMC network objects | host, network, range, FQDN value | `IRAddress` | address type and value fields | Direct | Full | `fdm_bundle.py`, `fmc_bundle.py` |

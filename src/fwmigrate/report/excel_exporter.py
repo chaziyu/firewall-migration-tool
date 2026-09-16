@@ -46,6 +46,31 @@ class ExcelExportUnavailableError(RuntimeError):
 class IRExcelExporter:
     """Render a source firewall inventory directly from vendor-neutral IR."""
 
+    def _vendor_extension_value(self, field: str) -> Any:
+        vendor = self.ir.metadata.source_vendor.casefold()
+        containers = (
+            (self.ir.vendor_extensions.panos, self.ir.vendor_extensions.checkpoint, self.ir.vendor_extensions.fortios)
+            if vendor in {"palo_alto", "panos", "palo-alto"}
+            else (self.ir.vendor_extensions.checkpoint, self.ir.vendor_extensions.fortios, self.ir.vendor_extensions.panos)
+            if vendor in {"checkpoint", "check_point", "check-point"}
+            else (self.ir.vendor_extensions.fortios, self.ir.vendor_extensions.checkpoint, self.ir.vendor_extensions.panos)
+        )
+        fallback = None
+        for container in containers:
+            value = getattr(container, field, None)
+            if value is None:
+                continue
+            if fallback is None:
+                fallback = value
+            if not isinstance(value, (list, tuple, dict, set)) or value:
+                return value
+        return fallback
+
+    @staticmethod
+    def _object_extension_value(item: Any, field: str) -> Any:
+        extension = getattr(item, "vendor_extension", None)
+        return getattr(extension, field, None) if extension is not None else None
+
     OVERVIEW_SHEETS = (
         "Summary",
     )
@@ -777,6 +802,8 @@ class IRExcelExporter:
         )
 
     def _build_summary(self, workbook: Any) -> None:
+        pan_ext = self.ir.vendor_extensions.panos
+        forti_ext = self.ir.vendor_extensions.fortios
         sheet = workbook.create_sheet("Summary")
         sheet.sheet_view.showGridLines = False
 
@@ -920,17 +947,17 @@ class IRExcelExporter:
             ("Service Categories", len(self.ir.service_categories)),
             ("Services", len(self.ir.services)),
             ("Service Groups", len(self.ir.service_groups)),
-            ("Session Helpers", len(self.ir.session_helpers)),
+            ("Session Helpers", len(forti_ext.session_helpers)),
             (
                 "Session TTL Settings",
-                1 if self.ir.session_ttl_settings is not None else 0,
+                1 if forti_ext.session_ttl_settings is not None else 0,
             ),
             (
                 "Session TTL Overrides",
-                len(self.ir.session_ttl_overrides),
+                len(forti_ext.session_ttl_overrides),
             ),
             ("Schedules", len(self.ir.schedules)),
-            ("Traffic Shapers", len(self.ir.traffic_shapers)),
+            ("Traffic Shapers", len(self._vendor_extension_value("traffic_shapers") or [])),
             ("Policies", len(self.ir.policies)),
             ("Multicast Policies", len(self.ir.multicast_policies)),
             ("ZTNA Providers", len(self.ir.ztna_providers)),
@@ -951,58 +978,59 @@ class IRExcelExporter:
             ("NAT Rules", len(self.ir.nat_rules)),
             ("VPN Tunnels", len(self.ir.vpn_tunnels)),
             ("VPN Phase 2", len(self.ir.vpn_phase2)),
-            ("GlobalProtect Portals", len(self.ir.global_protect_portals)),
-            ("GlobalProtect Gateways", len(self.ir.global_protect_gateways)),
-            ("GlobalProtect Network Gateways", len(self.ir.global_protect_network_gateways)),
-            ("GlobalProtect Client Auth", sum(len(item.client_authentication) for item in self.ir.global_protect_portals + self.ir.global_protect_gateways)),
-            ("GlobalProtect Portal Configs", sum(len(item.client_configs) for item in self.ir.global_protect_portals)),
-            ("GlobalProtect External Gateways", sum(len(config.external_gateways) for item in self.ir.global_protect_portals for config in item.client_configs)),
-            ("GlobalProtect App Settings", sum(len(config.app_settings) for item in self.ir.global_protect_portals for config in item.client_configs)),
-            ("GlobalProtect Gateway Roles", sum(len(item.roles) for item in self.ir.global_protect_gateways)),
-            ("GlobalProtect Tunnel Configs", sum(len(item.remote_user_tunnel_configs) for item in self.ir.global_protect_gateways)),
-            ("SSL VPN Portals", len(self.ir.ssl_vpn_portals)),
-            ("SSL VPN Host Checks", len(self.ir.ssl_vpn_host_checks)),
+            ("GlobalProtect Portals", len(pan_ext.global_protect_portals)),
+            ("GlobalProtect Gateways", len(pan_ext.global_protect_gateways)),
+            ("GlobalProtect Network Gateways", len(pan_ext.global_protect_network_gateways)),
+            ("GlobalProtect Client Auth", sum(len(item.client_authentication) for item in pan_ext.global_protect_portals + pan_ext.global_protect_gateways)),
+            ("GlobalProtect Portal Configs", sum(len(item.client_configs) for item in pan_ext.global_protect_portals)),
+            ("GlobalProtect External Gateways", sum(len(config.external_gateways) for item in pan_ext.global_protect_portals for config in item.client_configs)),
+            ("GlobalProtect App Settings", sum(len(config.app_settings) for item in pan_ext.global_protect_portals for config in item.client_configs)),
+            ("GlobalProtect Gateway Roles", sum(len(item.roles) for item in pan_ext.global_protect_gateways)),
+            ("GlobalProtect Tunnel Configs", sum(len(item.remote_user_tunnel_configs) for item in pan_ext.global_protect_gateways)),
+            ("SSL VPN Portals", len(self._vendor_extension_value("ssl_vpn_portals") or [])),
+            ("SSL VPN Host Checks", len(self._vendor_extension_value("ssl_vpn_host_checks") or [])),
             (
                 "SSL VPN Host Check Items",
-                sum(len(item.check_items) for item in self.ir.ssl_vpn_host_checks),
+                sum(len(item.check_items) for item in self._vendor_extension_value("ssl_vpn_host_checks") or []),
             ),
             (
                 "SD-WAN Rules",
-                sum(len(sdwan.rules) for sdwan in self.ir.sdwans),
+                sum(len(sdwan.rules) for sdwan in forti_ext.sdwans)
+                + len(pan_ext.pan_sdwan_rules),
             ),
-            ("LDAP Servers", len(self.ir.user_ldap_servers)),
-            ("RADIUS Servers", len(self.ir.user_radius_servers)),
-            ("TACACS+ Servers", len(self.ir.user_tacacs_servers)),
-            ("SAML Servers", len(self.ir.user_saml_servers)),
-            ("FSSO Servers", len(self.ir.fsso_providers)),
-            ("FSSO AD Groups", len(self.ir.fsso_ad_groups)),
-            ("FSSO Polling", len(self.ir.fsso_polling)),
-            ("Local Users", len(self.ir.local_users)),
-            ("User Groups", len(self.ir.user_groups)),
+            ("LDAP Servers", len(self._vendor_extension_value("user_ldap_servers") or [])),
+            ("RADIUS Servers", len(self._vendor_extension_value("user_radius_servers") or [])),
+            ("TACACS+ Servers", len(self._vendor_extension_value("user_tacacs_servers") or [])),
+            ("SAML Servers", len(self._vendor_extension_value("user_saml_servers") or [])),
+            ("FSSO Servers", len(forti_ext.fsso_providers)),
+            ("FSSO AD Groups", len(forti_ext.fsso_ad_groups)),
+            ("FSSO Polling", len(forti_ext.fsso_polling)),
+            ("Local Users", len(self._vendor_extension_value("local_users") or [])),
+            ("User Groups", len(self._vendor_extension_value("user_groups") or [])),
             (
                 "User Authentication Settings",
-                1 if self.ir.user_authentication_settings is not None else 0,
+                1 if self._vendor_extension_value("user_authentication_settings") is not None else 0,
             ),
             (
                 "User Quarantine",
-                1 if self.ir.user_quarantine_settings is not None else 0,
+                1 if self._vendor_extension_value("user_quarantine_settings") is not None else 0,
             ),
-            ("DoS Policies", len(self.ir.dos_policies)),
-            ("Firewall Sniffers", len(self.ir.firewall_sniffers)),
+            ("DoS Policies", len(self._vendor_extension_value("dos_policies") or [])),
+            ("Firewall Sniffers", len(self._vendor_extension_value("firewall_sniffers") or [])),
             ("Certificates", len(self.ir.certificates)),
             ("Routes", len(self.ir.routes)),
-            ("Internet Services", len(self.ir.internet_services)),
-            ("Internet Service Definitions", len(self.ir.internet_service_definitions)),
-            ("Custom Internet Service Groups", len(self.ir.custom_internet_service_groups)),
+            ("Internet Services", len(self._vendor_extension_value("internet_services") or [])),
+            ("Internet Service Definitions", len(self._vendor_extension_value("internet_service_definitions") or [])),
+            ("Custom Internet Service Groups", len(self._vendor_extension_value("custom_internet_service_groups") or [])),
             (
                 "Internet Service Def Entries",
-                sum(len(definition.entries) for definition in self.ir.internet_service_definitions),
+                sum(len(definition.entries) for definition in self._vendor_extension_value("internet_service_definitions") or []),
             ),
             (
                 "Internet Service Def Ports",
                 sum(
                     len(entry.port_ranges)
-                    for definition in self.ir.internet_service_definitions
+                for definition in self._vendor_extension_value("internet_service_definitions") or []
                     for entry in definition.entries
                 ),
             ),
@@ -1853,7 +1881,7 @@ class IRExcelExporter:
                     item.allow_routing
                 ),
                 item.source_color,
-                item.source_fsso_group,
+                self._object_extension_value(item, "source_fsso_group"),
                 item.source_hw_vendor,
                 item.source_hw_model,
                 item.source_interface,
@@ -1862,7 +1890,7 @@ class IRExcelExporter:
                 item.source_cache_ttl,
                 item.source_clearpass_spt,
                 item.source_epg_name,
-                item.source_fabric_object_setting,
+                self._object_extension_value(item, "source_fabric_object_setting"),
                 item.dynamic_filter,
                 item.source_sdn,
                 item.source_sdn,
@@ -1995,7 +2023,7 @@ class IRExcelExporter:
                 item.exclude_members,
                 item.source_exclude_setting,
                 item.source_group_type,
-                item.source_fabric_object_setting,
+                self._object_extension_value(item, "source_fabric_object_setting"),
                 item.migration_status,
                 self._optional_bool_literal(item.requires_manual_review),
                 item.audit_note,
@@ -2202,7 +2230,7 @@ class IRExcelExporter:
                     item.source_attributes
                 ),
             )
-            for item in self.ir.session_helpers
+            for item in self._vendor_extension_value("session_helpers") or []
         ]
 
         sheet = self._table_sheet(
@@ -2253,7 +2281,7 @@ class IRExcelExporter:
                     )
 
     def _build_session_ttl_settings(self, workbook: Any) -> None:
-        settings = self.ir.session_ttl_settings
+        settings = self._vendor_extension_value("session_ttl_settings")
         if settings is None:
             self._table_sheet(workbook, "Session TTL Settings", (
                 "Default TTL", "Default Never", "Extraction Status",
@@ -2307,7 +2335,7 @@ class IRExcelExporter:
                     item.source_attributes
                 ),
             )
-            for item in self.ir.session_ttl_overrides
+            for item in self._vendor_extension_value("session_ttl_overrides") or []
         ]
 
         sheet = self._table_sheet(
@@ -2441,7 +2469,7 @@ class IRExcelExporter:
                 self._optional_bool_literal(item.requires_manual_review),
                 self._format_settings(item.source_attributes),
             )
-            for item in self.ir.traffic_shapers
+            for item in self._vendor_extension_value("traffic_shapers") or []
         ]
         self._table_sheet(
             workbook,
@@ -2544,14 +2572,16 @@ class IRExcelExporter:
                 item.source_service_negate_setting,
                 item.source_action, item.action, item.source_schedule, item.schedule,
                 item.disabled,
-                item.source_vpn_tunnel,
+                self._object_extension_value(item, "source_vpn_tunnel"),
                 item.source_log_setting, item.source_log_start_setting,
-                item.source_utm_status, item.source_effective_utm_status,
+                self._object_extension_value(item, "source_utm_status"),
+                self._object_extension_value(item, "source_effective_utm_status"),
                 item.log_start, item.log_end,
                 self._optional_bool_literal(item.nat_enabled),
                 self._optional_bool_literal(item.nat_pool_enabled), item.nat_pool_names,
                 item.nat_pool_names6,
-                item.applications, item.source_internet_service_status,
+                item.applications,
+                self._object_extension_value(item, "source_internet_service_status"),
                 item.internet_service, item.security_profile_group,
                 item.antivirus, item.ips_sensor, item.webfilter, item.application_list,
                 item.ssl_ssh_profile, item.source_profile_type,
@@ -2572,22 +2602,37 @@ class IRExcelExporter:
                  item.data_filtering_profiles,
                  item.source_extra_settings.get("pan_unresolved_source_zone", []),
                  item.source_extra_settings.get("pan_unresolved_destination_zone", []),
-                 item.source_inspection_mode, item.source_effective_inspection_mode,
-                item.source_ztna_status, item.source_effective_ztna_status,
-                item.source_ztna_ems_tags,
-                item.source_timeout_send_rst, item.source_effective_timeout_send_rst,
-                item.source_auto_asic_offload, item.source_effective_auto_asic_offload,
-                item.source_np_acceleration, item.source_effective_np_acceleration,
-                 item.source_port_preserve, item.source_effective_port_preserve,
-                 item.source_policy_expiry, item.source_effective_policy_expiry,
-                 item.source_policy_expiry_date, item.source_policy_expiry_date_utc,
-                 item.source_schedule_timeout, item.source_effective_schedule_timeout,
-                 item.source_reputation_direction, item.source_effective_reputation_direction,
-                 item.source_reputation_direction6, item.source_effective_reputation_direction6,
-                 item.source_reputation_minimum, item.source_effective_reputation_minimum,
-                 item.source_reputation_minimum6, item.source_effective_reputation_minimum6,
-                 item.source_match_vip, item.source_effective_match_vip,
-                 item.source_match_vip_only, item.source_effective_match_vip_only,
+                self._object_extension_value(item, "source_inspection_mode"),
+                self._object_extension_value(item, "source_effective_inspection_mode"),
+                self._object_extension_value(item, "source_ztna_status"),
+                self._object_extension_value(item, "source_effective_ztna_status"),
+                self._object_extension_value(item, "source_ztna_ems_tags"),
+                self._object_extension_value(item, "source_timeout_send_rst"),
+                self._object_extension_value(item, "source_effective_timeout_send_rst"),
+                self._object_extension_value(item, "source_auto_asic_offload"),
+                self._object_extension_value(item, "source_effective_auto_asic_offload"),
+                self._object_extension_value(item, "source_np_acceleration"),
+                self._object_extension_value(item, "source_effective_np_acceleration"),
+                self._object_extension_value(item, "source_port_preserve"),
+                self._object_extension_value(item, "source_effective_port_preserve"),
+                self._object_extension_value(item, "source_policy_expiry"),
+                self._object_extension_value(item, "source_effective_policy_expiry"),
+                self._object_extension_value(item, "source_policy_expiry_date"),
+                self._object_extension_value(item, "source_policy_expiry_date_utc"),
+                self._object_extension_value(item, "source_schedule_timeout"),
+                self._object_extension_value(item, "source_effective_schedule_timeout"),
+                self._object_extension_value(item, "source_reputation_direction"),
+                self._object_extension_value(item, "source_effective_reputation_direction"),
+                self._object_extension_value(item, "source_reputation_direction6"),
+                self._object_extension_value(item, "source_effective_reputation_direction6"),
+                self._object_extension_value(item, "source_reputation_minimum"),
+                self._object_extension_value(item, "source_effective_reputation_minimum"),
+                self._object_extension_value(item, "source_reputation_minimum6"),
+                self._object_extension_value(item, "source_effective_reputation_minimum6"),
+                self._object_extension_value(item, "source_match_vip"),
+                self._object_extension_value(item, "source_effective_match_vip"),
+                self._object_extension_value(item, "source_match_vip_only"),
+                self._object_extension_value(item, "source_effective_match_vip_only"),
                  self._format_settings(self._policy_source_settings(item)),
                  item.migration_status,
                  self._optional_bool_literal(item.requires_manual_review),
@@ -2775,7 +2820,7 @@ class IRExcelExporter:
 
     def _build_local_in_policies(self, workbook: Any) -> None:
         rows = []
-        for item in sorted(self.ir.local_in_policies, key=lambda value: value.source_order):
+        for item in sorted(self._vendor_extension_value("local_in_policies") or [], key=lambda value: value.source_order):
             attrs = item.source_attributes
             rows.append((
                 item.source_context,
@@ -3101,32 +3146,32 @@ class IRExcelExporter:
                 item.arp_interface,
                 self._optional_bool_literal(item.permit_any_host),
                 item.excluded_ips,
-                item.block_size,
-                item.blocks_per_user,
-                item.pba_timeout,
-                item.pba_interim_log,
-                item.ports_per_user,
-                self._optional_bool_literal(item.privileged_port_use_pba),
-                self._optional_bool_literal(item.nat64),
-                self._optional_bool_literal(item.add_nat64_route),
-                self._optional_bool_literal(item.nat46),
-                self._optional_bool_literal(item.add_nat46_route),
-                item.client_prefix_length,
-                self._optional_bool_literal(item.include_subnet_broadcast),
-                item.cgn_block_size,
-                item.cgn_client_start_ip,
-                item.cgn_client_end_ip,
-                item.cgn_client_ipv6_shift,
-                self._optional_bool_literal(item.cgn_fixed_allocation),
-                self._optional_bool_literal(item.cgn_overload),
-                item.cgn_port_start,
-                item.cgn_port_end,
-                self._optional_bool_literal(item.cgn_spa),
-                item.utilization_alarm_clear,
-                item.utilization_alarm_raise,
-                item.tcp_session_quota,
-                item.udp_session_quota,
-                item.icmp_session_quota,
+                self._object_extension_value(item, "block_size"),
+                self._object_extension_value(item, "blocks_per_user"),
+                self._object_extension_value(item, "pba_timeout"),
+                self._object_extension_value(item, "pba_interim_log"),
+                self._object_extension_value(item, "ports_per_user"),
+                self._optional_bool_literal(self._object_extension_value(item, "privileged_port_use_pba")),
+                self._optional_bool_literal(self._object_extension_value(item, "nat64")),
+                self._optional_bool_literal(self._object_extension_value(item, "add_nat64_route")),
+                self._optional_bool_literal(self._object_extension_value(item, "nat46")),
+                self._optional_bool_literal(self._object_extension_value(item, "add_nat46_route")),
+                self._object_extension_value(item, "client_prefix_length"),
+                self._optional_bool_literal(self._object_extension_value(item, "include_subnet_broadcast")),
+                self._object_extension_value(item, "cgn_block_size"),
+                self._object_extension_value(item, "cgn_client_start_ip"),
+                self._object_extension_value(item, "cgn_client_end_ip"),
+                self._object_extension_value(item, "cgn_client_ipv6_shift"),
+                self._optional_bool_literal(self._object_extension_value(item, "cgn_fixed_allocation")),
+                self._optional_bool_literal(self._object_extension_value(item, "cgn_overload")),
+                self._object_extension_value(item, "cgn_port_start"),
+                self._object_extension_value(item, "cgn_port_end"),
+                self._optional_bool_literal(self._object_extension_value(item, "cgn_spa")),
+                self._object_extension_value(item, "utilization_alarm_clear"),
+                self._object_extension_value(item, "utilization_alarm_raise"),
+                self._object_extension_value(item, "tcp_session_quota"),
+                self._object_extension_value(item, "udp_session_quota"),
+                self._object_extension_value(item, "icmp_session_quota"),
                 ", ".join(item.source_explicit_fields),
                 self._format_settings(item.source_effective_settings),
                 item.migration_status,
@@ -3279,7 +3324,7 @@ class IRExcelExporter:
                     self._optional_bool_literal(rule.requires_manual_review), rule.review_reasons,
                     self._format_settings(rule.source_attributes),
                 )
-                for rule in self.ir.checkpoint_access_rules
+                for rule in self._vendor_extension_value("checkpoint_access_rules") or []
             ),
             empty_note="No Check Point access rules were extracted.",
             subtitle="Complete Check Point rule dimensions retained separately from portable IRPolicy semantics.",
@@ -3332,20 +3377,30 @@ class IRExcelExporter:
                 item.source_translation_address_selection.floating_ips
                 if item.source_translation_address_selection else [],
                 item.source_pool_references, item.translated_sources,
-                item.source_pool_type, item.source_pool_excluded_ips,
-                self._optional_bool_literal(item.source_pool_permit_any_host),
-                item.source_pool_original_start_ip, item.source_pool_original_end_ip,
-                item.source_vip_reference, item.source_vip_group_reference,
-                item.source_vip_type, self._optional_bool_literal(item.source_vip_enabled),
-                self._optional_bool_literal(item.source_vip_nat_source_vip),
-                item.source_vip_filters, item.source_vip_interface_filters,
-                item.source_vip_services, item.source_vip_port_mapping_type,
+                self._object_extension_value(item, "source_pool_type"),
+                self._object_extension_value(item, "source_pool_excluded_ips"),
+                self._optional_bool_literal(self._object_extension_value(item, "source_pool_permit_any_host")),
+                self._object_extension_value(item, "source_pool_original_start_ip"),
+                self._object_extension_value(item, "source_pool_original_end_ip"),
+                self._object_extension_value(item, "source_vip_reference"),
+                self._object_extension_value(item, "source_vip_group_reference"),
+                self._object_extension_value(item, "source_vip_type"),
+                self._optional_bool_literal(self._object_extension_value(item, "source_vip_enabled")),
+                self._optional_bool_literal(self._object_extension_value(item, "source_vip_nat_source_vip")),
+                self._object_extension_value(item, "source_vip_filters"),
+                self._object_extension_value(item, "source_vip_interface_filters"),
+                self._object_extension_value(item, "source_vip_services"),
+                self._object_extension_value(item, "source_vip_port_mapping_type"),
                 item.translated_destinations, item.original_destination_port,
                 item.destination_protocol, item.translated_port,
-                item.source_policy_fixed_port, item.source_policy_nat46,
-                item.source_policy_nat64, item.source_policy_nat_inbound,
-                item.source_policy_nat_outbound, item.source_policy_nat_ip,
-                 item.source_policy_match_vip, item.source_policy_match_vip_only,
+                self._object_extension_value(item, "source_policy_fixed_port"),
+                self._object_extension_value(item, "source_policy_nat46"),
+                self._object_extension_value(item, "source_policy_nat64"),
+                self._object_extension_value(item, "source_policy_nat_inbound"),
+                self._object_extension_value(item, "source_policy_nat_outbound"),
+                self._object_extension_value(item, "source_policy_nat_ip"),
+                self._object_extension_value(item, "source_policy_match_vip"),
+                self._object_extension_value(item, "source_policy_match_vip_only"),
                  item.migration_status,
                  self._optional_bool_literal(item.requires_manual_review),
                  item.review_reasons,
@@ -4027,7 +4082,7 @@ class IRExcelExporter:
                 item.source_explicit_fields,
                 self._format_settings(item.source_attributes),
             )
-            for item in sorted(self.ir.policy_routes, key=lambda value: value.source_order)
+            for item in sorted(self._vendor_extension_value("policy_routes") or [], key=lambda value: value.source_order)
         ]
         self._table_sheet(
             workbook,
@@ -4268,7 +4323,7 @@ class IRExcelExporter:
                 item.description,
                 self._format_settings(item.source_attributes),
             )
-            for item in self.ir.internet_services
+            for item in self._vendor_extension_value("internet_services") or []
         ]
 
         self._table_sheet(
@@ -4559,7 +4614,7 @@ class IRExcelExporter:
         )
 
     def _build_sdwan(self, workbook: Any) -> None:
-        sdwans = self.ir.sdwans
+        sdwans = self._vendor_extension_value("sdwans") or []
         self._table_sheet(
             workbook,
             "SD-WAN",
@@ -4832,7 +4887,7 @@ class IRExcelExporter:
                     item.ssl_min_proto_version,
                     item.migration_status,
                     item.requires_manual_review, self._format_settings(item.source_attributes),
-                ) for item in self.ir.user_ldap_servers
+                ) for item in self._vendor_extension_value("user_ldap_servers") or []
             ),
         )
         self._table_sheet(
@@ -4852,7 +4907,7 @@ class IRExcelExporter:
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 )
-                for item in self.ir.user_radius_servers
+                for item in self._vendor_extension_value("user_radius_servers") or []
             ),
         )
         self._table_sheet(
@@ -4871,7 +4926,7 @@ class IRExcelExporter:
                     accounting.requires_manual_review,
                     self._format_settings(accounting.source_attributes),
                 )
-                for item in self.ir.user_radius_servers
+                for item in self._vendor_extension_value("user_radius_servers") or []
                 for accounting in item.accounting_servers
             ),
         )
@@ -4892,7 +4947,7 @@ class IRExcelExporter:
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 )
-                for item in self.ir.user_tacacs_servers
+                for item in self._vendor_extension_value("user_tacacs_servers") or []
             ),
         )
         self._table_sheet(
@@ -4911,7 +4966,7 @@ class IRExcelExporter:
                     item.user_claim_type, item.group_claim_type,
                     item.migration_status,
                     item.requires_manual_review, self._format_settings(item.source_attributes),
-                ) for item in self.ir.user_saml_servers
+                ) for item in self._vendor_extension_value("user_saml_servers") or []
             ),
         )
         self._table_sheet(
@@ -4929,7 +4984,7 @@ class IRExcelExporter:
                     item.has_password,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
-                ) for item in self.ir.fsso_providers
+                ) for item in self._vendor_extension_value("fsso_providers") or []
             ),
         )
         self._table_sheet(
@@ -4940,7 +4995,7 @@ class IRExcelExporter:
                     item.name, item.provider_name, item.provider_resolved,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
-                ) for item in self.ir.fsso_ad_groups
+                ) for item in self._vendor_extension_value("fsso_ad_groups") or []
             ),
         )
         self._table_sheet(
@@ -4959,7 +5014,7 @@ class IRExcelExporter:
                     item.username_sensitivity, item.ppk_identity, item.has_ppk_secret,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
-                ) for item in self.ir.local_users
+                ) for item in self._vendor_extension_value("local_users") or []
             ),
         )
         self._table_sheet(
@@ -4977,7 +5032,7 @@ class IRExcelExporter:
                     item.unresolved_match_servers,
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
-                ) for item in self.ir.user_groups
+                ) for item in self._vendor_extension_value("user_groups") or []
             ),
         )
         self._table_sheet(
@@ -4992,12 +5047,12 @@ class IRExcelExporter:
                     ),
                     match.group_name,
                 )
-                for group in self.ir.user_groups for match in group.matches
+                for group in self._vendor_extension_value("user_groups") or [] for match in group.matches
             ),
         )
 
     def _build_ssl_vpn(self, workbook: Any) -> None:
-        settings = self.ir.ssl_vpn_settings
+        settings = self._vendor_extension_value("ssl_vpn_settings")
         self._table_sheet(
             workbook, "SSL VPN Settings",
             ("Status", "Minimum Protocol", "Maximum Protocol", "Algorithm", "Banned Ciphers", "Client Signature Algorithms", "Require Client Certificate", "DTLS Tunnel", "Login Attempt Limit", "Login Block Time", "Authentication Timeout", "Idle Timeout", "Port", "DNS Server 1", "DNS Server 2", "WINS Server 1", "WINS Server 2", "Server Certificate", "Server Certificate Configured", "Source Interfaces", "Source Addresses", "Tunnel IP Pools", "Default Portal", "Extraction Status", "Manual Review", "Typed Source Fields", "Additional Settings"),
@@ -5033,7 +5088,7 @@ class IRExcelExporter:
                     item.split_tunneling_routing_addresses,
                     item.split_tunneling_routing_negate, item.migration_status,
                     item.requires_manual_review, self._format_settings(item.source_fields), self._format_settings(item.source_attributes),
-                ) for item in self.ir.ssl_vpn_portals
+                ) for item in self._vendor_extension_value("ssl_vpn_portals") or []
             ),
         )
         self._table_sheet(
@@ -5061,7 +5116,7 @@ class IRExcelExporter:
                     guest.email, guest.expiration, guest.mobile_phone, guest.sponsor,
                     guest.has_password, self._format_settings(guest.source_attributes),
                 )
-                for group in self.ir.user_groups for guest in group.guests
+                for group in self._vendor_extension_value("user_groups") or [] for guest in group.guests
             ),
         )
         self._table_sheet(
@@ -5076,10 +5131,10 @@ class IRExcelExporter:
                     ", ".join(group.name for group in item.ad_groups),
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
-                ) for item in self.ir.fsso_polling
+                ) for item in self._vendor_extension_value("fsso_polling") or []
             ),
         )
-        portals = self.ir.ssl_vpn_portals
+        portals = self._vendor_extension_value("ssl_vpn_portals") or []
         self._table_sheet(workbook, "SSL VPN Portal Split DNS",
             ("Portal", "ID", "Domains", "DNS Server 1", "DNS Server 2", "IPv6 DNS Server 1", "IPv6 DNS Server 2", "Extraction Status", "Manual Review", "Additional Settings"),
             ((portal.name, item.id, item.domains, item.dns_server1, item.dns_server2, item.ipv6_dns_server1, item.ipv6_dns_server2, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for item in portal.split_dns))
@@ -5106,7 +5161,7 @@ class IRExcelExporter:
             ((portal.name, page.name, item.name, item.value_configured, item.migration_status, item.requires_manual_review, self._format_settings(item.source_attributes)) for portal in portals for page in portal.landing_pages for item in page.form_data))
 
     def _build_user_identity_settings(self, workbook: Any) -> None:
-        settings = self.ir.user_authentication_settings
+        settings = self._vendor_extension_value("user_authentication_settings")
         self._table_sheet(
             workbook,
             "User Authentication Settings",
@@ -5134,7 +5189,7 @@ class IRExcelExporter:
                 self._format_settings(settings.source_attributes),
             )],
         )
-        quarantine = self.ir.user_quarantine_settings
+        quarantine = self._vendor_extension_value("user_quarantine_settings")
         self._table_sheet(
             workbook,
             "User Quarantine",
@@ -5167,7 +5222,7 @@ class IRExcelExporter:
                 impact, notes,
             ))
 
-        for group in self.ir.user_groups:
+        for group in self._vendor_extension_value("user_groups") or []:
             for dependency in group.member_dependencies:
                 add(
                     "User Group", group.name, dependency.dependency_type,
@@ -5183,14 +5238,14 @@ class IRExcelExporter:
                         "EXTRACT_ONLY",
                         "External directory group name is preserved but is not a local FortiGate reference.",
                     )
-        for ad_group in self.ir.fsso_ad_groups:
+        for ad_group in self._vendor_extension_value("fsso_ad_groups") or []:
             if ad_group.provider_name:
                 add(
                     "FSSO AD Group", ad_group.name, "fsso-provider",
                     ad_group.provider_name, ad_group.provider_resolved,
                     "EXTRACT_ONLY", "FSSO provider reference preserved.",
                 )
-        for saml in self.ir.user_saml_servers:
+        for saml in self._vendor_extension_value("user_saml_servers") or []:
             if saml.idp_cert and saml.idp_certificate_resolved is not None:
                 add(
                     "SAML Server", saml.name, "certificate", saml.idp_cert,
@@ -5212,14 +5267,14 @@ class IRExcelExporter:
                     rule.active_auth_method, rule.active_auth_method_resolved,
                     "EXTRACT_ONLY", "Authentication scheme reference preserved.",
                 )
-        for admin in self.ir.administrators:
+        for admin in self._vendor_extension_value("administrators") or []:
             if admin.token_reference and admin.fortitoken_resolved is not None:
                 add(
                     "Administrator", admin.name, "fortitoken",
                     admin.token_reference, admin.fortitoken_resolved,
                     "EXTRACT_ONLY", "FortiToken assignment metadata only; no token secret retained.",
                 )
-        settings = self.ir.user_authentication_settings
+        settings = self._vendor_extension_value("user_authentication_settings")
         if settings is not None:
             for reference, resolved, label in (
                 (settings.auth_certificate, settings.auth_certificate_resolved, "authentication certificate"),
@@ -5230,7 +5285,7 @@ class IRExcelExporter:
                         "User Authentication Settings", "global", "certificate",
                         reference, resolved, "EXTRACT_ONLY", f"{label.title()} reference preserved.",
                     )
-        quarantine = self.ir.user_quarantine_settings
+        quarantine = self._vendor_extension_value("user_quarantine_settings")
         if quarantine is not None:
             for reference in quarantine.firewall_groups:
                 add(
@@ -5261,8 +5316,9 @@ class IRExcelExporter:
                     tunnel.source_auth_user_group not in tunnel.unresolved_auth_user_groups,
                     "REVIEW_REQUIRED", "VPN authentication group reference preserved.",
                 )
-        if self.ir.ssl_vpn_settings is not None:
-            for rule in self.ir.ssl_vpn_settings.authentication_rules:
+        ssl_vpn_settings = self._vendor_extension_value("ssl_vpn_settings")
+        if ssl_vpn_settings is not None:
+            for rule in ssl_vpn_settings.authentication_rules:
                 for reference in rule.groups:
                     add(
                         "SSL VPN Authentication Rule", str(rule.source_id),
@@ -5290,7 +5346,7 @@ class IRExcelExporter:
                     len(item.check_items),
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
-                ) for item in self.ir.ssl_vpn_host_checks
+                ) for item in self._vendor_extension_value("ssl_vpn_host_checks") or []
             ),
         )
         self._table_sheet(
@@ -5303,13 +5359,13 @@ class IRExcelExporter:
                     item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 )
-                for host_check in self.ir.ssl_vpn_host_checks
+                for host_check in self._vendor_extension_value("ssl_vpn_host_checks") or []
                 for item in host_check.check_items
             ),
         )
 
     def _build_internet_service_definitions(self, workbook: Any) -> None:
-        definitions = self.ir.internet_service_definitions
+        definitions = self._vendor_extension_value("internet_service_definitions") or []
         self._table_sheet(
             workbook,
             "Internet Service Definitions",
@@ -5377,7 +5433,7 @@ class IRExcelExporter:
         )
 
     def _build_internet_service_extract_only(self, workbook: Any) -> None:
-        custom = self.ir.custom_internet_services
+        custom = self._vendor_extension_value("custom_internet_services") or []
         self._table_sheet(
             workbook, "Custom Internet Services",
             ("Name", "Comment", "Reputation", "Entry Count", "Migration Status", "Manual Review", "Additional Settings"),
@@ -5403,7 +5459,7 @@ class IRExcelExporter:
 
         self._build_custom_internet_service_groups(workbook)
 
-        groups = self.ir.internet_service_groups
+        groups = self._vendor_extension_value("internet_service_groups") or []
         self._table_sheet(
             workbook, "Internet Service Groups",
             ("Name", "Direction", "Members", "Comment", "Migration Status", "Manual Review", "Additional Settings"),
@@ -5412,7 +5468,7 @@ class IRExcelExporter:
             empty_note="No Internet Service groups were extracted.",
         )
 
-        additions = self.ir.internet_service_additions
+        additions = self._vendor_extension_value("internet_service_additions") or []
         self._table_sheet(
             workbook, "IS Additions",
             ("Internet Service ID", "Comment", "Entry Count", "Migration Status", "Manual Review", "Additional Settings"),
@@ -5439,11 +5495,11 @@ class IRExcelExporter:
             workbook, "IS Appends",
             ("Address Mode", "Append Port", "Match Port", "Migration Status", "Manual Review", "Additional Settings"),
             ((item.addr_mode, item.append_port, item.match_port, item.migration_status,
-              item.requires_manual_review, self._format_settings(item.source_attributes)) for item in self.ir.internet_service_appends),
+              item.requires_manual_review, self._format_settings(item.source_attributes)) for item in self._vendor_extension_value("internet_service_appends") or []),
             empty_note="No Internet Service appends were extracted.",
         )
 
-        extensions = self.ir.internet_service_extensions
+        extensions = self._vendor_extension_value("internet_service_extensions") or []
         self._table_sheet(
             workbook, "IS Extensions",
             ("Internet Service ID", "Comment", "Migration Status", "Manual Review", "Additional Settings"),
@@ -5498,7 +5554,7 @@ class IRExcelExporter:
             ("Name", "Comment", "Members", "Status", "Manual Review", "Additional Settings"),
             ((item.name, item.comment, ", ".join(item.members), item.migration_status,
               item.requires_manual_review, self._format_settings(item.source_attributes))
-             for item in self.ir.custom_internet_service_groups),
+             for item in self._vendor_extension_value("custom_internet_service_groups") or []),
             empty_note="No Custom Internet Service groups were extracted.",
         )
 
@@ -5536,7 +5592,7 @@ class IRExcelExporter:
                     item.authentication_sequence, self._optional_bool_literal(item.authentication_sequence_resolved),
                     self._format_settings(item.source_attributes),
                 )
-                for item in self.ir.administrators
+                for item in self._vendor_extension_value("administrators") or []
             ),
         )
         self._table_sheet(
@@ -5548,7 +5604,7 @@ class IRExcelExporter:
                     item.name, item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 )
-                for item in self.ir.admin_profiles
+                for item in self._vendor_extension_value("admin_profiles") or []
             ),
         )
     def _structured_routing_dependency_items(self) -> list[Any]:
@@ -5618,7 +5674,7 @@ class IRExcelExporter:
                     profile.name, block.name, setting, value, "EXTRACT_ONLY",
                     self._format_settings(block.source_attributes),
                 )
-                for profile in self.ir.admin_profiles
+                for profile in self._vendor_extension_value("admin_profiles") or []
                 for block in profile.permission_blocks
                 for setting, value in {**block.settings, **block.source_attributes}.items()
             ),
@@ -5637,7 +5693,7 @@ class IRExcelExporter:
                     item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
                 )
-                for item in self.ir.fortitokens
+                for item in self._vendor_extension_value("fortitokens") or []
             ),
         )
 
@@ -5651,7 +5707,7 @@ class IRExcelExporter:
                     item.destination_addresses, item.services, len(item.anomalies),
                     item.description, item.migration_status, item.requires_manual_review,
                     self._format_settings(item.source_attributes),
-                ) for item in self.ir.dos_policies
+                ) for item in self._vendor_extension_value("dos_policies") or []
             ),
         )
         self._table_sheet(
@@ -5663,7 +5719,7 @@ class IRExcelExporter:
                     item.quarantine, item.quarantine_expiry, item.quarantine_log,
                     item.threshold, item.threshold_default,
                     self._format_settings(item.source_attributes),
-                ) for policy in self.ir.dos_policies for item in policy.anomalies
+                ) for policy in self._vendor_extension_value("dos_policies") or [] for item in policy.anomalies
             ),
         )
 
@@ -5679,7 +5735,7 @@ class IRExcelExporter:
                     item.av_profile, item.webfilter_profile_status,
                     item.webfilter_profile, item.migration_status,
                     item.requires_manual_review, self._format_settings(item.source_attributes),
-                ) for item in self.ir.firewall_sniffers
+                ) for item in self._vendor_extension_value("firewall_sniffers") or []
             ),
         )
 
@@ -5711,41 +5767,43 @@ class IRExcelExporter:
         )
 
     def _build_pan_phase9_sheets(self, workbook: Any) -> None:
+        pan_ext = self.ir.vendor_extensions.panos
         def add(name, headers, rows):
             self._table_sheet(workbook, name, headers, rows,
                               empty_note="No PAN-OS Phase 9 source objects were extracted.",
                               subtitle="PAN-OS source-only inventory; not target configuration.")
         add("PAN Log Servers", ("Profile", "Type", "Endpoint", "Address", "Transport", "Port", "Format", "Facility", "SNMP Version", "Community Configured", "Auth Password Configured", "Privacy Password Configured"), [
             (p.name, p.profile_type, e.name, e.address, e.transport, e.port, e.format, e.facility, e.snmp_version, e.community_configured, e.authentication_password_configured, e.privacy_password_configured)
-            for p in self.ir.pan_log_server_profiles for e in p.servers
+            for p in pan_ext.pan_log_server_profiles for e in p.servers
         ])
-        add("PAN Log Forwarding", ("Profile", "Match Count", "Status"), [(p.name, len(p.matches), p.migration_status) for p in self.ir.pan_log_forwarding_profiles])
+        add("PAN Log Forwarding", ("Profile", "Match Count", "Status"), [(p.name, len(p.matches), p.migration_status) for p in pan_ext.pan_log_forwarding_profiles])
         add("PAN Log Forward Matches", ("Profile", "Match", "Log Type", "Filter", "Send to Panorama", "Syslog", "Email", "SNMP", "HTTP", "Resolution State"), [
             (p.name, m.name, m.log_type, m.filter, m.send_to_panorama, ", ".join(m.syslog_profiles), ", ".join(m.email_profiles), ", ".join(m.snmptrap_profiles), ", ".join(m.http_profiles), "review" if m.review_reasons else "retained")
-            for p in self.ir.pan_log_forwarding_profiles for m in p.matches
+            for p in pan_ext.pan_log_forwarding_profiles for m in p.matches
         ])
-        add("PAN DNS Proxies", ("Name", "Enabled", "Cache", "Max TTL", "Default Primary", "Default Secondary", "TCP Queries", "Interfaces", "Resolved Interfaces"), [(p.name,p.enabled,p.cache_enabled,p.max_ttl_enabled,p.default_primary,p.default_secondary,p.tcp_queries_enabled,", ".join(p.interfaces),", ".join(p.resolved_interfaces)) for p in self.ir.pan_dns_proxies])
-        add("PAN DNS Proxy Domains", ("Proxy", "Domain Rule", "Domains", "Primary", "Secondary", "Cacheable"), [(p.name,d.name,", ".join(d.domain_names),d.primary,d.secondary,d.cacheable) for p in self.ir.pan_dns_proxies for d in p.domain_servers])
-        add("PAN Monitor Profiles", ("Name", "Interval Seconds", "Threshold", "Action"), [(p.name,p.interval_seconds,p.threshold,p.action) for p in self.ir.pan_monitor_profiles])
-        add("PAN QoS Profiles", ("Name", "Bandwidth Type", "Class Count"), [(p.name,p.bandwidth_type,len(p.classes)) for p in self.ir.pan_qos_profiles])
-        add("PAN QoS Classes", ("Profile", "Class", "Priority", "Egress Max", "Egress Guaranteed"), [(p.name,c.name,c.priority,c.egress_max,c.egress_guaranteed) for p in self.ir.pan_qos_profiles for c in p.classes])
-        ha=self.ir.pan_high_availability
+        add("PAN DNS Proxies", ("Name", "Enabled", "Cache", "Max TTL", "Default Primary", "Default Secondary", "TCP Queries", "Interfaces", "Resolved Interfaces"), [(p.name,p.enabled,p.cache_enabled,p.max_ttl_enabled,p.default_primary,p.default_secondary,p.tcp_queries_enabled,", ".join(p.interfaces),", ".join(p.resolved_interfaces)) for p in pan_ext.pan_dns_proxies])
+        add("PAN DNS Proxy Domains", ("Proxy", "Domain Rule", "Domains", "Primary", "Secondary", "Cacheable"), [(p.name,d.name,", ".join(d.domain_names),d.primary,d.secondary,d.cacheable) for p in pan_ext.pan_dns_proxies for d in p.domain_servers])
+        add("PAN Monitor Profiles", ("Name", "Interval Seconds", "Threshold", "Action"), [(p.name,p.interval_seconds,p.threshold,p.action) for p in pan_ext.pan_monitor_profiles])
+        add("PAN QoS Profiles", ("Name", "Bandwidth Type", "Class Count"), [(p.name,p.bandwidth_type,len(p.classes)) for p in pan_ext.pan_qos_profiles])
+        add("PAN QoS Classes", ("Profile", "Class", "Priority", "Egress Max", "Egress Guaranteed"), [(p.name,c.name,c.priority,c.egress_max,c.egress_guaranteed) for p in pan_ext.pan_qos_profiles for c in p.classes])
+        ha=pan_ext.pan_high_availability
         add("PAN High Availability", ("Context", "Enabled", "Group ID", "Description", "Peer IP", "Preemptive", "HA2 Keepalive"), [] if ha is None else [(ha.source_context,ha.enabled,ha.group_id,ha.description,ha.peer_ip,ha.preemptive,ha.ha2_keep_alive_enabled)])
         add("PAN HA Monitoring", ("Kind", "Name", "References", "Resolved", "Unresolved", "Destinations"), [] if ha is None else [("link",g.name,", ".join(g.interfaces),", ".join(g.resolved_interfaces),", ".join(g.unresolved_interfaces),"") for g in ha.link_groups]+[("path",g.name,g.routing_instance or "",g.resolved_routing_instance or "", "", ", ".join(g.destination_ips)) for g in ha.path_groups])
-        ds=self.ir.pan_device_operational_settings
+        ds=pan_ext.pan_device_operational_settings
         add("PAN Device Settings", ("Context", "Rematch", "Hostname Type", "Commit Lock", "WildFire Benign", "WildFire Grayware", "Urgent Data", "Asymmetric Path", "Default Timeout", "TCP Timeout"), [] if ds is None else [(ds.source_context,ds.rematch_sessions,ds.hostname_type_in_syslog,ds.auto_acquire_commit_lock,ds.wildfire_report_benign_file,ds.wildfire_report_grayware_file,ds.tcp_urgent_data,ds.tcp_asymmetric_path,ds.session_timeout_default_seconds,ds.session_timeout_tcp_seconds)])
-        add("PAN VSYS Settings", ("Context", "Allow Forward Decrypted Content"), [(p.source_context,p.allow_forward_decrypted_content) for p in self.ir.pan_vsys_settings])
-        br=self.ir.pan_botnet_report_settings
+        add("PAN VSYS Settings", ("Context", "Allow Forward Decrypted Content"), [(p.source_context,p.allow_forward_decrypted_content) for p in pan_ext.pan_vsys_settings])
+        br=pan_ext.pan_botnet_report_settings
         add("PAN Botnet Report", ("Dynamic DNS", "Malware", "Recent Domains", "IP Domains", "Unknown Sites", "IRC", "Top N", "Scheduled"), [] if br is None else [(br.dynamic_dns_enabled,br.malware_sites_enabled,br.recent_domains_enabled,br.ip_domains_enabled,br.executables_unknown_sites_enabled,br.irc_enabled,br.topn,br.scheduled)])
-        add("PAN Custom Reports", ("Name", "Type", "Sort By", "Group By", "Aggregate Count", "Top N", "Top M", "Caption", "Start", "End"), [(p.name,p.report_type,p.sort_by,p.group_by,len(p.aggregate_by),p.topn,p.topm,p.caption,p.start_time,p.end_time) for p in self.ir.pan_custom_reports])
+        add("PAN Custom Reports", ("Name", "Type", "Sort By", "Group By", "Aggregate Count", "Top N", "Top M", "Caption", "Start", "End"), [(p.name,p.report_type,p.sort_by,p.group_by,len(p.aggregate_by),p.topn,p.topm,p.caption,p.start_time,p.end_time) for p in pan_ext.pan_custom_reports])
 
     def _build_pan_sdwan_sheets(self, workbook: Any) -> None:
+        pan_ext = self.ir.vendor_extensions.panos
         self._table_sheet(
             workbook, "PAN SD-WAN Interface Profiles",
             ("Name", "Source Context", "VPN Failover Metric", "Probe Settings", "Migration Status", "Manual Review", "Review Reasons"),
             ((p.name, p.source_context, p.vpn_failover_metric, p.probe_settings,
               p.migration_status, p.requires_manual_review, p.review_reasons)
-             for p in self.ir.pan_sdwan_interface_profiles),
+             for p in pan_ext.pan_sdwan_interface_profiles),
             empty_note="No PAN-OS SD-WAN interface profiles were extracted.",
         )
         self._table_sheet(
@@ -5754,7 +5812,7 @@ class IRExcelExporter:
             ((p.interface, p.interface_profile, p.path_quality_profile,
               p.traffic_distribution_profile, p.saas_quality_profile,
               p.migration_status, p.requires_manual_review, p.review_reasons)
-             for p in self.ir.pan_sdwan_link_settings),
+             for p in pan_ext.pan_sdwan_link_settings),
             empty_note="No PAN-OS SD-WAN link settings were extracted.",
         )
         self._table_sheet(
@@ -5762,7 +5820,7 @@ class IRExcelExporter:
             ("Name", "Source Context", "Latency", "Jitter", "Packet Loss", "Sensitivity", "Migration Status", "Manual Review", "Review Reasons"),
             ((p.name, p.source_context, p.latency, p.jitter, p.packet_loss,
               p.sensitivity, p.migration_status, p.requires_manual_review, p.review_reasons)
-             for p in self.ir.pan_sdwan_path_quality_profiles),
+             for p in pan_ext.pan_sdwan_path_quality_profiles),
             empty_note="No PAN-OS SD-WAN path-quality profiles were extracted.",
         )
         self._table_sheet(
@@ -5770,7 +5828,7 @@ class IRExcelExporter:
             ("Name", "Source Context", "Method", "Link Tags", "Weights", "Migration Status", "Manual Review", "Review Reasons"),
             ((p.name, p.source_context, p.method, p.link_tags, p.weights,
               p.migration_status, p.requires_manual_review, p.review_reasons)
-             for p in self.ir.pan_sdwan_traffic_distribution_profiles),
+             for p in pan_ext.pan_sdwan_traffic_distribution_profiles),
             empty_note="No PAN-OS SD-WAN traffic-distribution profiles were extracted.",
         )
         self._table_sheet(
@@ -5782,7 +5840,7 @@ class IRExcelExporter:
               p.traffic_distribution_profile, p.saas_quality_profile, p.action,
               p.disabled, p.migration_status, p.requires_manual_review,
               p.review_reasons)
-             for i, p in enumerate(self.ir.pan_sdwan_rules, 1)),
+             for i, p in enumerate(pan_ext.pan_sdwan_rules, 1)),
             empty_note="No PAN-OS SD-WAN rules were extracted.",
         )
 
@@ -6013,14 +6071,14 @@ class IRExcelExporter:
             ),
             (
                 "Session Helpers",
-                self.ir.session_helpers,
+                self._vendor_extension_value("session_helpers") or [],
             ),
             (
                 "Session TTL Overrides",
-                self.ir.session_ttl_overrides,
+                self._vendor_extension_value("session_ttl_overrides") or [],
             ),
             ("Schedules", self.ir.schedules),
-            ("Traffic Shapers", self.ir.traffic_shapers),
+            ("Traffic Shapers", self._vendor_extension_value("traffic_shapers") or []),
             ("Policies", self.ir.policies),
             (
                 "ZTNA Providers",
@@ -6036,56 +6094,56 @@ class IRExcelExporter:
             ("NAT Rules", self.ir.nat_rules),
             ("VPN Tunnels", self.ir.vpn_tunnels),
             ("VPN Phase 2", self.ir.vpn_phase2),
-            ("SSL VPN Portals", self.ir.ssl_vpn_portals),
-            ("SSL VPN Host Checks", self.ir.ssl_vpn_host_checks),
+            ("SSL VPN Portals", self._vendor_extension_value("ssl_vpn_portals") or []),
+            ("SSL VPN Host Checks", self._vendor_extension_value("ssl_vpn_host_checks") or []),
             (
                 "SSL VPN Host Check Items",
                 sum(
                     len(host_check.check_items)
-                    for host_check in self.ir.ssl_vpn_host_checks
+                    for host_check in self._vendor_extension_value("ssl_vpn_host_checks") or []
                 ),
             ),
             (
                 "SSL VPN Settings",
-                [] if self.ir.ssl_vpn_settings is None else [self.ir.ssl_vpn_settings],
+                [] if self._vendor_extension_value("ssl_vpn_settings") is None else [self._vendor_extension_value("ssl_vpn_settings")],
             ),
-            ("SD-WAN", self.ir.sdwans),
-            ("LDAP Servers", self.ir.user_ldap_servers),
-            ("SAML Servers", self.ir.user_saml_servers),
-            ("FSSO Servers", self.ir.fsso_providers),
-            ("FSSO AD Groups", self.ir.fsso_ad_groups),
-            ("Local Users", self.ir.local_users),
-            ("User Groups", self.ir.user_groups),
-            ("DoS Policies", self.ir.dos_policies),
-            ("Firewall Sniffer", self.ir.firewall_sniffers),
+            ("SD-WAN", self._vendor_extension_value("sdwans") or []),
+            ("LDAP Servers", self._vendor_extension_value("user_ldap_servers") or []),
+            ("SAML Servers", self._vendor_extension_value("user_saml_servers") or []),
+            ("FSSO Servers", self._vendor_extension_value("fsso_providers") or []),
+            ("FSSO AD Groups", self._vendor_extension_value("fsso_ad_groups") or []),
+            ("Local Users", self._vendor_extension_value("local_users") or []),
+            ("User Groups", self._vendor_extension_value("user_groups") or []),
+            ("DoS Policies", self._vendor_extension_value("dos_policies") or []),
+            ("Firewall Sniffer", self._vendor_extension_value("firewall_sniffers") or []),
             ("Authentication Schemes", self.ir.authentication_schemes),
             ("Authentication Sequences", self.ir.authentication_sequences),
             ("Authentication Rules", self.ir.authentication_rules),
             ("Certificates", self.ir.certificates),
-            ("SSL TLS Service Profiles", self.ir.ssl_tls_service_profiles),
+            ("SSL TLS Service Profiles", self._vendor_extension_value("ssl_tls_service_profiles") or []),
             ("Routes", self.ir.routes),
             (
                 "Internet Services",
-                self.ir.internet_services,
+                self._vendor_extension_value("internet_services") or [],
             ),
-            ("Internet Service Definitions", self.ir.internet_service_definitions),
-            ("Custom Internet Services", self.ir.custom_internet_services),
-            ("Internet Service Groups", self.ir.internet_service_groups),
-            ("IS Additions", self.ir.internet_service_additions),
-            ("IS Appends", self.ir.internet_service_appends),
-            ("IS Extensions", self.ir.internet_service_extensions),
+            ("Internet Service Definitions", self._vendor_extension_value("internet_service_definitions") or []),
+            ("Custom Internet Services", self._vendor_extension_value("custom_internet_services") or []),
+            ("Internet Service Groups", self._vendor_extension_value("internet_service_groups") or []),
+            ("IS Additions", self._vendor_extension_value("internet_service_additions") or []),
+            ("IS Appends", self._vendor_extension_value("internet_service_appends") or []),
+            ("IS Extensions", self._vendor_extension_value("internet_service_extensions") or []),
             (
                 "Internet Service Def Entries",
                 sum(
                     len(definition.entries)
-                    for definition in self.ir.internet_service_definitions
+                    for definition in self._vendor_extension_value("internet_service_definitions") or []
                 ),
             ),
             (
                 "Internet Service Def Ports",
                 sum(
                     len(entry.port_ranges)
-                    for definition in self.ir.internet_service_definitions
+                    for definition in self._vendor_extension_value("internet_service_definitions") or []
                     for entry in definition.entries
                 ),
             ),
@@ -6185,7 +6243,7 @@ class IRExcelExporter:
             ("Profile Type", "Profile Name", "Endpoint Name", "Address", "Port", "Secret Configured", "Extraction Status", "Manual Review", "Additional Settings"),
             ((kind, item.name, endpoint.name, endpoint.address, endpoint.port, endpoint.has_secret,
               item.migration_status, item.requires_manual_review, self._format_settings(endpoint.source_attributes))
-             for kind, items in (("LDAP", self.ir.user_ldap_servers), ("RADIUS", self.ir.user_radius_servers), ("TACACS+", self.ir.user_tacacs_servers))
+             for kind, items in (("LDAP", self._vendor_extension_value("user_ldap_servers") or []), ("RADIUS", self._vendor_extension_value("user_radius_servers") or []), ("TACACS+", self._vendor_extension_value("user_tacacs_servers") or []))
              for item in items for endpoint in item.server_entries))
         self._table_sheet(workbook, "Authentication Sequences",
             ("Name", "Source Context", "Authentication Profiles", "Resolved Authentication Profiles", "Unresolved Authentication Profiles", "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings"),
@@ -6197,12 +6255,13 @@ class IRExcelExporter:
             ((item.name, item.source_context, item.certificate, self._optional_bool_literal(item.certificate_resolved),
               item.certificate_profile, self._optional_bool_literal(item.certificate_profile_resolved),
               item.minimum_tls_version, item.maximum_tls_version, item.migration_status, item.requires_manual_review,
-              item.review_reasons, self._format_settings(item.source_attributes)) for item in self.ir.ssl_tls_service_profiles))
+              item.review_reasons, self._format_settings(item.source_attributes)) for item in self._vendor_extension_value("ssl_tls_service_profiles") or []))
 
     def _build_globalprotect_sheets(self, workbook: Any) -> None:
-        portals = self.ir.global_protect_portals
-        gateways = self.ir.global_protect_gateways
-        network_gateways = self.ir.global_protect_network_gateways
+        pan_ext = self.ir.vendor_extensions.panos
+        portals = pan_ext.global_protect_portals
+        gateways = pan_ext.global_protect_gateways
+        network_gateways = pan_ext.global_protect_network_gateways
         self._table_sheet(workbook, "GlobalProtect Portals", (
             "Name", "Source Context", "Local Interface", "Local Interface Resolved", "Local IPv4",
             "Local IPv6", "Local Address Resolved", "SSL/TLS Service Profile", "SSL/TLS Profile Resolved",

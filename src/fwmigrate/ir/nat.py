@@ -4,6 +4,15 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.enums import NATType, NATTranslationMode, NATTranslationAddressSource, NATFamily, NATSourcePortBehavior
 from .provenance import IRSourceConfigNode
+from .extension_models import (
+    IRCheckPointNATPoolExtension,
+    IRCheckPointNATRuleExtension,
+    IRFortiOSNATPoolExtension,
+    IRFortiOSNATRuleExtension,
+    get_object_extension_value,
+    move_object_extension,
+    set_object_extension_value,
+)
 
 
 class IRIPPoolRange(BaseModel):
@@ -41,38 +50,6 @@ class IRNATPool(BaseModel):
     permit_any_host: Optional[bool] = None
     excluded_ips: List[str] = Field(default_factory=list)
 
-    block_size: Optional[int] = None
-    blocks_per_user: Optional[int] = None
-    pba_timeout: Optional[int] = None
-    pba_interim_log: Optional[int] = None
-    ports_per_user: Optional[int] = None
-    privileged_port_use_pba: Optional[bool] = None
-
-    nat64: Optional[bool] = None
-    add_nat64_route: Optional[bool] = None
-    client_prefix_length: Optional[int] = None
-    include_subnet_broadcast: Optional[bool] = None
-
-    tcp_session_quota: Optional[int] = None
-    udp_session_quota: Optional[int] = None
-    icmp_session_quota: Optional[int] = None
-
-    cgn_block_size: Optional[int] = None
-    cgn_client_start_ip: Optional[str] = None
-    cgn_client_end_ip: Optional[str] = None
-    cgn_client_ipv6_shift: Optional[int] = None
-    cgn_fixed_allocation: Optional[bool] = None
-    cgn_overload: Optional[bool] = None
-    cgn_port_start: Optional[int] = None
-    cgn_port_end: Optional[int] = None
-    cgn_spa: Optional[bool] = None
-
-    utilization_alarm_clear: Optional[int] = None
-    utilization_alarm_raise: Optional[int] = None
-
-    nat46: Optional[bool] = None
-    add_nat46_route: Optional[bool] = None
-
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
     audit_note: Optional[str] = None
@@ -80,17 +57,29 @@ class IRNATPool(BaseModel):
 
     description: Optional[str] = None
     source_uuid: Optional[str] = None
-    checkpoint_pool_object_type: Optional[str] = None
-    checkpoint_network_references: List[str] = Field(default_factory=list)
-    checkpoint_network_group_references: List[str] = Field(default_factory=list)
-    checkpoint_address_range_references: List[str] = Field(default_factory=list)
-    checkpoint_gateway_references: List[str] = Field(default_factory=list)
-    checkpoint_member_assignments: Dict[str, Any] = Field(default_factory=dict)
-    checkpoint_applicability: List[str] = Field(default_factory=list)
-    checkpoint_precedence: Optional[int] = None
-    checkpoint_vpn_scope: Optional[str] = None
-    checkpoint_mep: Optional[bool] = None
+    vendor_extension: Optional[IRCheckPointNATPoolExtension | IRFortiOSNATPoolExtension] = None
     source_origin: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def move_legacy_vendor_fields(cls, data: Any) -> Any:
+        data = move_object_extension(data, (
+            "checkpoint_pool_object_type", "checkpoint_network_references",
+            "checkpoint_network_group_references", "checkpoint_address_range_references",
+            "checkpoint_gateway_references", "checkpoint_member_assignments",
+            "checkpoint_applicability", "checkpoint_precedence", "checkpoint_vpn_scope",
+            "checkpoint_mep",
+        ))
+        return move_object_extension(data, (
+            "block_size", "blocks_per_user", "pba_timeout", "pba_interim_log",
+            "ports_per_user", "privileged_port_use_pba", "nat64", "add_nat64_route",
+            "client_prefix_length", "include_subnet_broadcast", "tcp_session_quota",
+            "udp_session_quota", "icmp_session_quota", "cgn_block_size",
+            "cgn_client_start_ip", "cgn_client_end_ip", "cgn_client_ipv6_shift",
+            "cgn_fixed_allocation", "cgn_overload", "cgn_port_start", "cgn_port_end",
+            "cgn_spa", "utilization_alarm_clear", "utilization_alarm_raise", "nat46",
+            "add_nat46_route",
+        ))
 class IRVirtualIPRealServer(BaseModel):
     id: Optional[int] = None
     address_type: str = "ip"
@@ -263,10 +252,7 @@ class IRNATRule(BaseModel):
     name: str
     type: NATType
     source_context: Optional[str] = None
-    checkpoint_domain_uid: Optional[str] = None
-    checkpoint_domain_name: Optional[str] = None
-    checkpoint_package_uid: Optional[str] = None
-    checkpoint_package_name: Optional[str] = None
+    vendor_extension: Optional[IRCheckPointNATRuleExtension | IRFortiOSNATRuleExtension] = None
     source_policy_reference: Optional[str] = None
     source_policy_uuid: Optional[str] = None
     source_policy_name: Optional[str] = None
@@ -311,11 +297,6 @@ class IRNATRule(BaseModel):
     exemption: bool = False
     source_pool_references: List[str] = Field(default_factory=list)
     translated_source_address_references: List[str] = Field(default_factory=list)
-    source_pool_type: Optional[str] = None
-    source_pool_excluded_ips: List[str] = Field(default_factory=list)
-    source_pool_permit_any_host: Optional[bool] = None
-    source_pool_original_start_ip: List[str] = Field(default_factory=list)
-    source_pool_original_end_ip: List[str] = Field(default_factory=list)
     destination_pool_references: List[str] = Field(default_factory=list)
     translated_destination_address_references: List[str] = Field(default_factory=list)
     translated_sources: List[str] = Field(default_factory=list)
@@ -325,25 +306,6 @@ class IRNATRule(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     destination_protocol: Optional[str] = None
     original_destination_port: Optional[str] = None
-    source_vip_reference: Optional[str] = None
-    source_vip_group_reference: Optional[str] = None
-    source_vip_type: Optional[str] = None
-    source_vip_enabled: Optional[bool] = None
-    source_vip_nat_source_vip: Optional[bool] = None
-    source_vip_filters: List[str] = Field(default_factory=list)
-    source_vip_interface_filters: List[str] = Field(default_factory=list)
-    source_vip_services: List[str] = Field(default_factory=list)
-    source_vip_port_mapping_type: Optional[str] = None
-    source_policy_fixed_port: Optional[str] = None
-    source_policy_nat46: Optional[str] = None
-    source_policy_nat64: Optional[str] = None
-    source_policy_nat_inbound: Optional[str] = None
-    source_policy_nat_outbound: Optional[str] = None
-    source_policy_nat_ip: Optional[str] = None
-    source_policy_match_vip: Optional[str] = None
-    source_policy_match_vip_only: Optional[str] = None
-    source_policy_effective_match_vip: Optional[str] = None
-    source_policy_effective_match_vip_only: Optional[str] = None
     migration_status: str = "NORMALIZED"
     review_reasons: List[str] = Field(default_factory=list)
     requires_manual_review: bool = False
@@ -353,6 +315,37 @@ class IRNATRule(BaseModel):
     translated_destination: Optional[str] = None
     translated_port: Optional[str] = None
     description: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def move_legacy_vendor_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            data = dict(data)
+            nat_type = data.get("type")
+            nat_type = nat_type.value if hasattr(nat_type, "value") else nat_type
+            if nat_type == NATType.CENTRAL.value:
+                data["type"] = NATType.SOURCE
+                data["source_origin"] = data.get("source_origin") or "central-snat-map"
+            elif nat_type == NATType.SERVICE.value:
+                raise ValueError(
+                    "Service-only NAT is extension-only; load it through load_ir_payload()."
+                )
+        data = move_object_extension(data, (
+            "checkpoint_domain_uid", "checkpoint_domain_name",
+            "checkpoint_package_uid", "checkpoint_package_name",
+        ))
+        return move_object_extension(data, (
+            "source_pool_group_references", "source_pool_type", "source_pool_excluded_ips", "source_pool_permit_any_host",
+            "source_pool_original_start_ip", "source_pool_original_end_ip",
+            "source_vip_reference", "source_vip_group_reference", "source_vip_type",
+            "source_vip_enabled", "source_vip_nat_source_vip", "source_vip_filters",
+            "source_vip_interface_filters", "source_vip_services",
+            "source_vip_port_mapping_type", "source_policy_fixed_port",
+            "source_policy_nat46", "source_policy_nat64", "source_policy_nat_inbound",
+            "source_policy_nat_outbound", "source_policy_nat_ip", "source_policy_match_vip",
+            "source_policy_match_vip_only", "source_policy_effective_match_vip",
+            "source_policy_effective_match_vip_only",
+        ))
 
     @property
     def is_central_rulebase(self) -> bool:
@@ -459,6 +452,53 @@ class IRPublishedServiceGroup(BaseModel):
     requires_manual_review: bool = True
     audit_note: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+def _checkpoint_property(extension_type: type[BaseModel], field: str):
+    return property(
+        lambda self: get_object_extension_value(self, field),
+        lambda self, value: set_object_extension_value(
+            self, extension_type, field, value
+        ),
+    )
+
+
+for _field in (
+    "source_pool_group_references", "source_pool_type", "source_pool_excluded_ips", "source_pool_permit_any_host",
+    "source_pool_original_start_ip", "source_pool_original_end_ip",
+    "source_vip_reference", "source_vip_group_reference", "source_vip_type",
+    "source_vip_enabled", "source_vip_nat_source_vip", "source_vip_filters",
+    "source_vip_interface_filters", "source_vip_services", "source_vip_port_mapping_type",
+    "source_policy_fixed_port", "source_policy_nat46", "source_policy_nat64",
+    "source_policy_nat_inbound", "source_policy_nat_outbound", "source_policy_nat_ip",
+    "source_policy_match_vip", "source_policy_match_vip_only",
+    "source_policy_effective_match_vip", "source_policy_effective_match_vip_only",
+):
+    setattr(IRNATRule, _field, _checkpoint_property(IRFortiOSNATRuleExtension, _field))
+for _field in (
+    "block_size", "blocks_per_user", "pba_timeout", "pba_interim_log",
+    "ports_per_user", "privileged_port_use_pba", "nat64", "add_nat64_route",
+    "client_prefix_length", "include_subnet_broadcast", "tcp_session_quota",
+    "udp_session_quota", "icmp_session_quota", "cgn_block_size",
+    "cgn_client_start_ip", "cgn_client_end_ip", "cgn_client_ipv6_shift",
+    "cgn_fixed_allocation", "cgn_overload", "cgn_port_start", "cgn_port_end",
+    "cgn_spa", "utilization_alarm_clear", "utilization_alarm_raise", "nat46",
+    "add_nat46_route",
+):
+    setattr(IRNATPool, _field, _checkpoint_property(IRFortiOSNATPoolExtension, _field))
+for _field in (
+    "checkpoint_pool_object_type", "checkpoint_network_references",
+    "checkpoint_network_group_references", "checkpoint_address_range_references",
+    "checkpoint_gateway_references", "checkpoint_member_assignments",
+    "checkpoint_applicability", "checkpoint_precedence", "checkpoint_vpn_scope",
+    "checkpoint_mep",
+):
+    setattr(IRNATPool, _field, _checkpoint_property(IRCheckPointNATPoolExtension, _field))
+for _field in (
+    "checkpoint_domain_uid", "checkpoint_domain_name",
+    "checkpoint_package_uid", "checkpoint_package_name",
+):
+    setattr(IRNATRule, _field, _checkpoint_property(IRCheckPointNATRuleExtension, _field))
 
 
 IRIPPool = IRNATPool

@@ -383,9 +383,10 @@ def _enrich_canonical_nat(
 
 def _annotate_policy_hierarchy(result: ExtractionResult) -> None:
     ir = result.canonical_ir
-    packages = list(getattr(ir, "checkpoint_policy_packages", []))
-    layers = list(getattr(ir, "checkpoint_access_layers", []))
-    assignments = list(getattr(ir, "checkpoint_global_assignments", []))
+    checkpoint = ir.vendor_extensions.checkpoint
+    packages = list(checkpoint.checkpoint_policy_packages)
+    layers = list(checkpoint.checkpoint_access_layers)
+    assignments = list(checkpoint.checkpoint_global_assignments)
     if not packages:
         return
 

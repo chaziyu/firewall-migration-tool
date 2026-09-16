@@ -1,8 +1,8 @@
 # IR Schema V2 Plan
 
-Status: Planned target contract. Not yet the implemented schema.
+Status: Implemented IR V2 contract; this document is retained as historical design rationale.
 
-This file is the single source of truth for the planned IR refactor. `documentation/ir-model.md` continues to describe the currently implemented schema until migration is complete.
+`documentation/ir-model.md` describes the executable final contract. The compatibility rules and vendor-boundary decisions below remain the rationale for that implementation.
 
 ## Goals
 
@@ -21,7 +21,7 @@ This file is the single source of truth for the planned IR refactor. `documentat
 
 ## Root Contract
 
-Planned `IRConfig` structure:
+Implemented `IRConfig` structure:
 
 ```text
 IRConfig

@@ -20,6 +20,7 @@ from fwmigrate.ir.security_profiles import (
     IRGlobalProtectPortalRootCA,
     IRGlobalProtectRemoteUserTunnelConfig,
 )
+from fwmigrate.ir.vpn import IRRemoteAccessVPN
 
 from .extraction import record_extract_only, record_parse_error, record_unsupported
 from .source_model import PANScope, PANSourceObject
@@ -323,7 +324,17 @@ def _parse_portal(entry: ET.Element, scope: PANScope, extraction, resolver) -> O
         has_agent_user_override_key=(client_config is not None and client_config.find("./agent-user-override-key") is not None) or entry.find("./agent-user-override-key") is not None,
         review_reasons=reasons, source_attributes=attrs,
     )
-    extraction.canonical_ir.global_protect_portals.append(portal)
+    extraction.canonical_ir.vendor_extensions.panos.global_protect_portals.append(portal)
+    extraction.canonical_ir.remote_access_vpns.append(IRRemoteAccessVPN(
+        name=portal.name,
+        source_context=portal.source_context,
+        protocols=["globalprotect"],
+        listener_interfaces=[portal.local_interface] if portal.local_interface else [],
+        authentication=[item.authentication_profile for item in portal.client_authentication if item.authentication_profile],
+        certificate=portal.ssl_tls_service_profile,
+        client_settings={"source_kind": "globalprotect-portal"},
+        source_attributes=dict(portal.source_attributes),
+    ))
     portal_known = {
         "local-address", "ssl-tls-service-profile", "custom-login-page", "custom-home-page",
         "client-auth", "client-authentication",
@@ -411,7 +422,19 @@ def _parse_gateway(entry: ET.Element, scope: PANScope, extraction, resolver) -> 
     )
     _, reason = _strict_yes_no(config, "./tunnel-mode")
     if reason: gateway.review_reasons.append(reason)
-    extraction.canonical_ir.global_protect_gateways.append(gateway)
+    extraction.canonical_ir.vendor_extensions.panos.global_protect_gateways.append(gateway)
+    extraction.canonical_ir.remote_access_vpns.append(IRRemoteAccessVPN(
+        name=gateway.name,
+        source_context=gateway.source_context,
+        protocols=["globalprotect"],
+        client_ipv4_pools=[pool for item in gateway.remote_user_tunnel_configs for pool in item.ip_pools],
+        split_include=[route for item in gateway.remote_user_tunnel_configs for route in item.split_include_routes],
+        split_exclude=[route for item in gateway.remote_user_tunnel_configs for route in item.split_exclude_routes],
+        authentication=[item.authentication_profile for item in gateway.client_authentication if item.authentication_profile],
+        certificate=gateway.ssl_tls_service_profile,
+        client_settings={"source_kind": "globalprotect-gateway"},
+        source_attributes=dict(gateway.source_attributes),
+    ))
     _unsupported_children(config, {
         "ssl-tls-service-profile", "tunnel-mode", "remote-user-tunnel", "roles",
         "client-auth", "client-authentication", "remote-user-tunnel-configs", "remote-user-tunnel-config",
@@ -457,7 +480,17 @@ def _parse_network_gateway(entry: ET.Element, scope: PANScope, extraction, resol
         third_party_group_name=_first_text(entry, "./ipsec/third-party-client/group-name", "./third-party-client/group-name", "./group-name"),
         third_party_group_password_configured=password, review_reasons=reasons, source_attributes=attrs,
     )
-    extraction.canonical_ir.global_protect_network_gateways.append(item)
+    extraction.canonical_ir.vendor_extensions.panos.global_protect_network_gateways.append(item)
+    extraction.canonical_ir.remote_access_vpns.append(IRRemoteAccessVPN(
+        name=item.name,
+        source_context=item.source_context,
+        protocols=["globalprotect"],
+        listener_interfaces=[value for value in (item.local_interface, item.tunnel_interface) if value],
+        client_ipv4_pools=list(item.ip_pools),
+        dns_servers=[value for value in (item.client_dns_primary, item.client_dns_secondary) if value],
+        client_settings={"source_kind": "globalprotect-network-gateway"},
+        source_attributes=dict(item.source_attributes),
+    ))
     _register(resolver, name, "globalprotect-network-gateway", path, scope, item)
     _record_object(extraction, "network/tunnel/global-protect-gateway", path, scope, name, attrs, reasons)
     return item
@@ -546,7 +579,8 @@ def _resolve_address_value(obj: Any) -> Optional[str]:
 
 def finalize_globalprotect_references(extraction, resolver) -> None:
     ir = extraction.canonical_ir
-    for portal in ir.global_protect_portals:
+    pan_ext = ir.vendor_extensions.panos
+    for portal in pan_ext.global_protect_portals:
         scope = _scope_from_item(portal)
         for auth in portal.client_authentication:
             obj = _resolve(resolver, auth.authentication_profile, "authentication-profile", scope)
@@ -583,7 +617,7 @@ def finalize_globalprotect_references(extraction, resolver) -> None:
         for config in portal.client_configs:
             for gateway in config.external_gateways:
                 pass
-    for gateway in ir.global_protect_gateways:
+    for gateway in pan_ext.global_protect_gateways:
         scope = _scope_from_item(gateway)
         for auth in gateway.client_authentication:
             obj = _resolve(resolver, auth.authentication_profile, "authentication-profile", scope)
@@ -611,7 +645,7 @@ def finalize_globalprotect_references(extraction, resolver) -> None:
                     else:
                         getattr(config, unresolved_field).append(token)
                         config.review_reasons.append(f"unresolved-split-route:{token}")
-    for gateway in ir.global_protect_network_gateways:
+    for gateway in pan_ext.global_protect_network_gateways:
         interface = _resolve_interface(gateway, gateway.local_interface, resolver, extraction)
         gateway.local_interface_resolved = interface is not None
         if interface: gateway.resolved_local_interface = getattr(interface, "name", None) or interface.canonical_name

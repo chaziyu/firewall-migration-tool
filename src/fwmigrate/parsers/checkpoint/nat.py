@@ -321,6 +321,7 @@ def extract_nat_rulebase(
     scope: ScopeSelectionResult,
     safety_map: Optional[Mapping[RulebaseKey, RulebaseSafetyState]] = None,
     object_nat_metadata: Optional[Mapping[str, Dict[str, Any]]] = None,
+    extension_rules: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[List[IRNATRule], List[SourceInventoryItem], List[UnsupportedItem]]:
     """Extract NAT rules without guessing missing match or translation semantics."""
     nat_rules: List[IRNATRule] = []
@@ -548,7 +549,25 @@ def extract_nat_rulebase(
                 },
             }
 
-            if not withhold and nat_type is not None and enabled is not None:
+            if not withhold and nat_type == NATType.SERVICE and enabled is not None:
+                if extension_rules is not None:
+                    extension_rules.append({
+                        "canonical_name": name,
+                        "source_context": f"{domain}/{package or '<missing-package>'}",
+                        "source_uuid": str(uid) if uid is not None else None,
+                        "checkpoint_domain_uid": resp.domain_uid,
+                        "checkpoint_domain_name": resp.domain_name or domain,
+                        "checkpoint_package_uid": resp.package_uid,
+                        "checkpoint_package_name": resp.package_name or package,
+                        "translation_type": "service",
+                        "original_services": resolved_original["service"],
+                        "translated_services": translated["service"],
+                        "migration_status": status.value,
+                        "requires_manual_review": True,
+                        "review_reasons": reasons,
+                        "source_attributes": nat_source_attributes,
+                    })
+            elif not withhold and nat_type is not None and enabled is not None:
                 src_mode: Optional[NATTranslationMode] = None
                 if nat_type in (NATType.SOURCE, NATType.TWICE) and not identity_nat:
                     src_mode = src_method.mode

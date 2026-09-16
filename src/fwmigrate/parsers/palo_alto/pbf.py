@@ -349,7 +349,7 @@ class PANPBFRuleExtractor:
 
         monitor_profile = action.get("monitor_profile")
         if monitor_profile and not any(
-            profile.name == monitor_profile for profile in extraction.canonical_ir.pan_monitor_profiles
+            profile.name == monitor_profile for profile in extraction.canonical_ir.vendor_extensions.panos.pan_monitor_profiles
         ):
             reasons.append("unresolved-monitor-profile")
             attributes.setdefault("pan_unresolved_pbf_references", {})["monitor-profile"] = [monitor_profile]

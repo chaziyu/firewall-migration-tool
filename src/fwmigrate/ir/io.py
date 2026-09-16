@@ -5,6 +5,7 @@ from typing import Any
 
 from fwmigrate.ir import IRConfig
 from fwmigrate.ir.errors import IRSchemaError
+from fwmigrate.ir.extensions import normalize_transitional_v2_payload
 from fwmigrate.ir.version import CURRENT_IR_SCHEMA_VERSION, LEGACY_IR_SCHEMA_VERSION
 
 
@@ -54,7 +55,10 @@ def load_ir_payload(payload: dict[str, Any]) -> IRConfig:
             f"Unsupported IR schema_version {version}; expected {CURRENT_IR_SCHEMA_VERSION}."
         )
 
-    return IRConfig.model_validate(payload)
+    try:
+        return IRConfig.model_validate(normalize_transitional_v2_payload(payload))
+    except ValueError as exc:
+        raise IRSchemaError(str(exc)) from exc
 
 
 def load_ir_json(payload: str) -> IRConfig:
@@ -63,4 +67,6 @@ def load_ir_json(payload: str) -> IRConfig:
 
 
 def dump_ir_json(ir_config: IRConfig, **kwargs: Any) -> str:
-    return ir_config.model_dump_json(**kwargs)
+    output = ir_config.model_copy(deep=True)
+    output.sync_vendor_extensions(clear_embedded=True)
+    return output.model_dump_json(**kwargs)

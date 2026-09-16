@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+from fwmigrate.ir.security_profiles import IRLogDestinationProfile, IRLogForwardingPolicy
 from typing import Optional
 
 from fwmigrate.ir.security_profiles import (
@@ -95,20 +96,32 @@ def _match(entry: ET.Element) -> IRPANLogForwardingMatch:
 
 def extract_pan_logging(scope: PANScope, root: ET.Element, extraction, resolver) -> None:
     ir = extraction.canonical_ir
+    pan_ext = ir.vendor_extensions.panos
     log = root.find("./log-settings")
     if log is not None:
         for family in ("syslog", "email", "snmptrap", "http"):
             for entry in log.findall(f"./{family}/entry"):
                 profile = _profile(scope, family, entry, extraction)
                 if profile:
-                    ir.pan_log_server_profiles.append(profile)
+                    pan_ext.pan_log_server_profiles.append(profile)
+                    endpoint = profile.servers[0] if profile.servers else None
+                    ir.log_destination_profiles.append(IRLogDestinationProfile(
+                        name=profile.name, destination_type=profile.profile_type,
+                        servers=[item.name for item in profile.servers],
+                        address=endpoint.address if endpoint else None,
+                        transport=endpoint.transport if endpoint else None,
+                        port=endpoint.port if endpoint else None,
+                        format=endpoint.format if endpoint else None,
+                        facility=endpoint.facility if endpoint else None,
+                        source_attributes=dict(profile.source_attributes),
+                    ))
                     resolver.register_object(PANSourceObject(domain="pan_log_server", kind=family, source_path=f"log-settings/{family}/entry", name=profile.name, scope=scope, ir_object=profile), f"pan-{family}-profile" if family != "http" else "pan-http-log-profile")
                     record_extract_only(extraction,"pan_log_servers",f"log-settings/{family}/entry[@name='{profile.name}']",scope,profile.name,profile.source_attributes,notes=["PAN log server profile is source-only."] ,requires_manual_review=True)
         for entry in log.findall("./system/match-list/entry"):
             record_unknown_children(extraction, entry, {'send-syslog', 'send-email', 'send-snmptrap', 'send-http', 'log-type', 'filter', 'send-to-panorama'}, scope, 'log-settings/system/match-list/entry', 'pan_management_log_settings', 'Unknown PAN log match child.')
             match=IRPANManagementLogSetting(**_match(entry).model_dump(), log_family="system")
             match.source_attributes["pan_source_context"] = pan_scope_identity(scope)
-            ir.pan_management_log_settings.append(match)
+            pan_ext.pan_management_log_settings.append(match)
             record_extract_only(extraction,"pan_management_log_settings","log-settings/system/match-list/entry",scope,match.name,match.source_attributes,notes=["PAN management log setting is source-only."],requires_manual_review=True)
         for entry in log.findall("./profiles/entry"):
             record_unknown_children(extraction, entry, {'match-list'}, scope, 'log-settings/profiles/entry', 'pan_log_forwarding_profiles', 'Unknown PAN log forwarding profile child.')
@@ -117,7 +130,19 @@ def extract_pan_logging(scope: PANScope, root: ET.Element, extraction, resolver)
                 record_unknown_children(extraction, next(m for m in entry.findall('./match-list/entry') if (m.get('name') or '<unnamed>') == match.name), {'send-syslog', 'send-email', 'send-snmptrap', 'send-http', 'log-type', 'filter', 'send-to-panorama'}, scope, 'log-settings/profiles/entry/match-list/entry', 'pan_log_forwarding_profiles', 'Unknown PAN log match child.')
                 match.source_attributes["pan_source_context"] = pan_scope_identity(scope)
             profile=IRPANLogForwardingProfile(name=entry.get("name") or "<unnamed>", source_context=pan_scope_identity(scope), matches=matches, source_attributes=sanitize_source_attributes(structured_xml_capture(entry)))
-            ir.pan_log_forwarding_profiles.append(profile)
+            pan_ext.pan_log_forwarding_profiles.append(profile)
+            ir.log_forwarding_policies.append(IRLogForwardingPolicy(
+                name=profile.name,
+                destinations=list(dict.fromkeys(
+                    destination
+                    for match in profile.matches
+                    for destination in (
+                        *match.syslog_profiles, *match.email_profiles,
+                        *match.snmptrap_profiles, *match.http_profiles,
+                    )
+                )),
+                source_attributes=dict(profile.source_attributes),
+            ))
             resolver.register_object(PANSourceObject(domain="pan_log_forwarding", kind="profile", source_path="log-settings/profiles/entry", name=profile.name, scope=scope, ir_object=profile), "pan-log-forwarding-profile")
             record_extract_only(extraction,"pan_log_forwarding_profiles","log-settings/profiles/entry",scope,profile.name,profile.source_attributes,notes=["PAN log forwarding profile is source-only."],requires_manual_review=True)
 
@@ -143,11 +168,11 @@ def finalize_advanced_logging_references(extraction, resolver) -> None:
                     reason = f"Unresolved PAN log profile reference: {ref}"
                     if reason not in match.review_reasons:
                         match.review_reasons.append(reason)
-    for profile in extraction.canonical_ir.pan_log_forwarding_profiles:
+    for profile in extraction.canonical_ir.vendor_extensions.panos.pan_log_forwarding_profiles:
         scope = scope_for(profile.source_context)
         for match in profile.matches:
             resolve_match(match, scope)
-    for match in extraction.canonical_ir.pan_management_log_settings:
+    for match in extraction.canonical_ir.vendor_extensions.panos.pan_management_log_settings:
         resolve_match(match, scope_for(match.source_attributes.get("pan_source_context")))
     for policy in extraction.canonical_ir.policies:
         if not policy.source_log_setting:

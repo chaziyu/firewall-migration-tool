@@ -6,6 +6,7 @@ from fwmigrate.extraction.models import ExtractionResult
 def finalize_extraction(result: ExtractionResult) -> ExtractionResult:
     """Synchronize extraction and canonical-IR safety without changing accounting."""
     ir = result.canonical_ir
+    ir.sync_vendor_extensions()
     reasons = list(dict.fromkeys([
         *result.blocking_reasons,
         *ir.generation_blocking_reasons,

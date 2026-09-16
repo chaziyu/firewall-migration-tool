@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+from fwmigrate.ir.security_profiles import IRReportDefinition
 from fwmigrate.ir.security_profiles import (
     IRPANDeviceOperationalSettings,
     IRPANVsysSettings,
@@ -33,7 +34,7 @@ def _multi_vsys(system, reasons):
     return None, None
 
 def extract_pan_advanced_settings(scope: PANScope, root: ET.Element, extraction) -> None:
-    ir=extraction.canonical_ir; device=root.find('./deviceconfig')
+    ir=extraction.canonical_ir; pan_ext=ir.vendor_extensions.panos; device=root.find('./deviceconfig')
     system = device.find('./system') if device is not None else None
     for path, domain in (('./snmp-setting', 'pan_snmp_settings'), ('./snmp', 'pan_snmp_settings'),
                          ('./telemetry', 'pan_telemetry_settings')):
@@ -59,7 +60,7 @@ def extract_pan_advanced_settings(scope: PANScope, root: ET.Element, extraction)
             if scope.template_stack:
                 p.source_attributes.update({'pan_template_stack': scope.template_stack,
                                             'pan_template_provenance': scope.template_provenance})
-            ir.pan_device_operational_settings=p; record_extract_only(extraction,'pan_device_settings','deviceconfig/setting',scope,scope.name,p.source_attributes,notes=['PAN device settings are source-only.'],requires_manual_review=True)
+            pan_ext.pan_device_operational_settings=p; record_extract_only(extraction,'pan_device_settings','deviceconfig/setting',scope,scope.name,p.source_attributes,notes=['PAN device settings are source-only.'],requires_manual_review=True)
         elif multi_vsys_node is not None:
             p=IRPANDeviceOperationalSettings(
                 source_context=pan_scope_identity(scope), multi_vsys_enabled=multi_vsys_value,
@@ -71,7 +72,7 @@ def extract_pan_advanced_settings(scope: PANScope, root: ET.Element, extraction)
             if scope.template_stack:
                 p.source_attributes.update({'pan_template_stack': scope.template_stack,
                                             'pan_template_provenance': scope.template_provenance})
-            ir.pan_device_operational_settings=p
+            pan_ext.pan_device_operational_settings=p
             record_extract_only(extraction, 'pan_device_settings', 'deviceconfig/system/multi-vsys',
                                 scope, scope.name, p.source_attributes,
                                 notes=['PAN explicit multi-VSYS state is source-only.'],
@@ -83,7 +84,7 @@ def extract_pan_advanced_settings(scope: PANScope, root: ET.Element, extraction)
             record_unknown_children(extraction, vsys, {'ssl-decrypt'}, scope, 'setting', 'pan_vsys_settings', 'Unknown PAN VSYS setting.')
         decrypt = root.find('./setting/ssl-decrypt')
         if decrypt is not None: record_unknown_children(extraction, decrypt, {'allow-forward-decrypted-content'}, scope, 'setting/ssl-decrypt', 'pan_vsys_settings', 'Unknown PAN SSL decrypt setting.')
-        p=IRPANVsysSettings(source_context=pan_scope_identity(scope),allow_forward_decrypted_content=_b(root,'./setting/ssl-decrypt/allow-forward-decrypted-content'),source_attributes=sanitize_source_attributes(structured_xml_capture(root.find('./setting')))); ir.pan_vsys_settings.append(p); record_extract_only(extraction,'pan_vsys_settings','setting/ssl-decrypt/allow-forward-decrypted-content',scope,scope.name,p.source_attributes,notes=['PAN VSYS settings are source-only.'],requires_manual_review=True)
+        p=IRPANVsysSettings(source_context=pan_scope_identity(scope),allow_forward_decrypted_content=_b(root,'./setting/ssl-decrypt/allow-forward-decrypted-content'),source_attributes=sanitize_source_attributes(structured_xml_capture(root.find('./setting')))); pan_ext.pan_vsys_settings.append(p); record_extract_only(extraction,'pan_vsys_settings','setting/ssl-decrypt/allow-forward-decrypted-content',scope,scope.name,p.source_attributes,notes=['PAN VSYS settings are source-only.'],requires_manual_review=True)
     botnet=root.find('./botnet')
     if botnet is None: botnet=root.find('./shared/botnet')
     e=botnet.find('./configuration') if botnet is not None else None
@@ -105,10 +106,10 @@ def extract_pan_advanced_settings(scope: PANScope, root: ET.Element, extraction)
                 record_unknown_children(extraction, u, {'sessions-per-hour', 'destinations-per-hour', 'session-length'}, scope, f'botnet/configuration/unknown-applications/unknown-{protocol}', 'pan_botnet_report', 'Unknown PAN botnet application field.')
                 record_unknown_children(extraction, u.find('./session-length'), {'minimum-bytes', 'maximum-bytes'}, scope, f'botnet/configuration/unknown-applications/unknown-{protocol}/session-length', 'pan_botnet_report', 'Unknown PAN botnet session field.') if u.find('./session-length') is not None else None
                 p.unknown_application_thresholds.append(IRPANBotnetUnknownApplicationThreshold(protocol=protocol,sessions_per_hour=_i(u,'./sessions-per-hour'),destinations_per_hour=_i(u,'./destinations-per-hour'),minimum_bytes=_i(u,'./session-length/minimum-bytes'),maximum_bytes=_i(u,'./session-length/maximum-bytes'),source_attributes=sanitize_source_attributes(structured_xml_capture(u))))
-        ir.pan_botnet_report_settings=p; record_extract_only(extraction,'pan_botnet_report','botnet/configuration',scope,scope.name,p.source_attributes,notes=['PAN Botnet report is source-only.'],requires_manual_review=True)
+        pan_ext.pan_botnet_report_settings=p; record_extract_only(extraction,'pan_botnet_report','botnet/configuration',scope,scope.name,p.source_attributes,notes=['PAN Botnet report is source-only.'],requires_manual_review=True)
     for e in root.findall('.//reports/botnet-report'):
         record_unknown_children(extraction, e, {'name', 'dynamic-dns', 'malware-sites', 'recent-domains', 'ip-domains', 'executables-from-unknown-sites', 'irc', 'topn', 'scheduled'}, scope, 'reports/botnet-report', 'pan_botnet_report', 'Unknown PAN botnet report field.')
-        p=IRPANBotnetReportSettings(dynamic_dns_enabled=_b(e,'./dynamic-dns/enabled'),dynamic_dns_threshold=_i(e,'./dynamic-dns/threshold'),malware_sites_enabled=_b(e,'./malware-sites/enabled'),malware_sites_threshold=_i(e,'./malware-sites/threshold'),recent_domains_enabled=_b(e,'./recent-domains/enabled'),recent_domains_threshold=_i(e,'./recent-domains/threshold'),ip_domains_enabled=_b(e,'./ip-domains/enabled'),ip_domains_threshold=_i(e,'./ip-domains/threshold'),executables_unknown_sites_enabled=_b(e,'./executables-from-unknown-sites/enabled'),executables_unknown_sites_threshold=_i(e,'./executables-from-unknown-sites/threshold'),irc_enabled=_b(e,'./irc/enabled'),topn=_i(e,'./topn'),scheduled=_b(e,'./scheduled'),source_attributes=sanitize_source_attributes(structured_xml_capture(e))); ir.pan_botnet_report_settings=p; record_extract_only(extraction,'pan_botnet_report','reports/botnet-report',scope,e.get('name'),p.source_attributes,notes=['PAN Botnet report is source-only.'],requires_manual_review=True)
+        p=IRPANBotnetReportSettings(dynamic_dns_enabled=_b(e,'./dynamic-dns/enabled'),dynamic_dns_threshold=_i(e,'./dynamic-dns/threshold'),malware_sites_enabled=_b(e,'./malware-sites/enabled'),malware_sites_threshold=_i(e,'./malware-sites/threshold'),recent_domains_enabled=_b(e,'./recent-domains/enabled'),recent_domains_threshold=_i(e,'./recent-domains/threshold'),ip_domains_enabled=_b(e,'./ip-domains/enabled'),ip_domains_threshold=_i(e,'./ip-domains/threshold'),executables_unknown_sites_enabled=_b(e,'./executables-from-unknown-sites/enabled'),executables_unknown_sites_threshold=_i(e,'./executables-from-unknown-sites/threshold'),irc_enabled=_b(e,'./irc/enabled'),topn=_i(e,'./topn'),scheduled=_b(e,'./scheduled'),source_attributes=sanitize_source_attributes(structured_xml_capture(e))); pan_ext.pan_botnet_report_settings=p; record_extract_only(extraction,'pan_botnet_report','reports/botnet-report',scope,e.get('name'),p.source_attributes,notes=['PAN Botnet report is source-only.'],requires_manual_review=True)
     for e in root.findall('./reports/entry')+root.findall('./shared/reports/entry')+root.findall('./reports/custom/entry')+root.findall('./reports/custom-report/entry'):
         if not e.get('name'):
             record_parse_error(extraction, 'pan_custom_reports', 'shared/reports/entry', scope, attributes=structured_xml_capture(e), notes=['PAN custom report is missing its name.'])
@@ -117,4 +118,4 @@ def extract_pan_advanced_settings(scope: PANScope, root: ET.Element, extraction)
         attrs=sanitize_source_attributes(structured_xml_capture(e)); attrs['values']=member_texts(selected,'./values/member') if selected is not None else []
         record_unknown_children(extraction, e, {'name', 'type', 'topn', 'topm', 'caption', 'start-time', 'end-time'}, scope, f'reports/entry[@name="{e.get("name")}"]', 'pan_custom_reports', 'Unknown PAN custom report field.')
         if selected is not None: record_unknown_children(extraction, selected, {'sortby', 'group-by', 'aggregate-by', 'values'}, scope, f'reports/entry[@name="{e.get("name")}"]/type/{selected.tag}', 'pan_custom_reports', 'Unknown PAN custom report type field.')
-        p=IRPANCustomReport(name=e.get('name') or '<unnamed>',source_context=pan_scope_identity(scope),report_type=selected.tag if selected is not None else None,sort_by=text_or_none(selected,'./sortby') if selected is not None else text_or_none(e,'./sort-by'),group_by=text_or_none(selected,'./group-by') if selected is not None else text_or_none(e,'./group-by'),aggregate_by=member_texts(selected,'./aggregate-by/member') if selected is not None else member_texts(e,'./aggregate-by/member'),topn=_i(e,'./topn'),topm=_i(e,'./topm'),caption=text_or_none(e,'./caption'),start_time=text_or_none(e,'./start-time'),end_time=text_or_none(e,'./end-time'),source_attributes=attrs); ir.pan_custom_reports.append(p); record_extract_only(extraction,'pan_custom_reports','shared/reports/entry',scope,p.name,p.source_attributes,notes=['PAN custom report is source-only.'],requires_manual_review=True)
+        p=IRPANCustomReport(name=e.get('name') or '<unnamed>',source_context=pan_scope_identity(scope),report_type=selected.tag if selected is not None else None,sort_by=text_or_none(selected,'./sortby') if selected is not None else text_or_none(e,'./sort-by'),group_by=text_or_none(selected,'./group-by') if selected is not None else text_or_none(e,'./group-by'),aggregate_by=member_texts(selected,'./aggregate-by/member') if selected is not None else member_texts(e,'./aggregate-by/member'),topn=_i(e,'./topn'),topm=_i(e,'./topm'),caption=text_or_none(e,'./caption'),start_time=text_or_none(e,'./start-time'),end_time=text_or_none(e,'./end-time'),source_attributes=attrs); pan_ext.pan_custom_reports.append(p); ir.report_definitions.append(IRReportDefinition(name=p.name, report_type=p.report_type, group_by=[p.group_by] if p.group_by else [], sort_by=[p.sort_by] if p.sort_by else [], limit=p.topn, source_attributes=dict(p.source_attributes))); record_extract_only(extraction,'pan_custom_reports','shared/reports/entry',scope,p.name,p.source_attributes,notes=['PAN custom report is source-only.'],requires_manual_review=True)

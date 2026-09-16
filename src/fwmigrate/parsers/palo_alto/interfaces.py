@@ -732,7 +732,7 @@ def extract_virtual_wires(network_root: ET.Element, scope: PANScope, ir, resolve
             record_parse_error(extraction, "virtual_wires", path, scope, name, attrs,
                                ["Duplicate PAN-OS virtual-wire in the same scope."])
             continue
-        ir.pan_virtual_wires.append(item)
+        ir.vendor_extensions.panos.pan_virtual_wires.append(item)
         record_extract_only(
             extraction, "virtual_wires", path, scope, name, attrs,
             ["PAN-OS virtual-wire is retained as typed source-only inventory.", *reasons],

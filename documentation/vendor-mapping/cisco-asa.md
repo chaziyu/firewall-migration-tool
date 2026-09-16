@@ -4,6 +4,9 @@ Support describes current parser/extraction normalization. It does not by
 itself guarantee target-generator support. ASA names, interfaces, and ACL
 references remain scoped where the source configuration requires it.
 
+IR V2 storage uses canonical collections for portable ASA intent. The typed ASA
+extension container is available for semantics that are not portable.
+
 | Domain | Vendor config | Vendor field | IR model | IR field | Mapping | Support | Parser |
 |---|---|---|---|---|---|---|---|
 | Address | `object network` | `host`, `subnet`, `range`, `fqdn` | `IRAddress` | address type and value fields | Direct | Full | `parser.py`, `net_utils.py` |

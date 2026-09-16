@@ -4,6 +4,9 @@ Support describes current parser/extraction normalization for Junos hierarchy
 configuration. Logical-system and zone scope must remain part of source
 context; unresolved references are retained for review.
 
+IR V2 storage uses canonical collections for portable Junos intent. The typed
+Junos extension container is available for semantics that are not portable.
+
 | Domain | Vendor config | Vendor field | IR model | IR field | Mapping | Support | Parser |
 |---|---|---|---|---|---|---|---|
 | Address | `security address-book ... address` | `ip-prefix`, `dns-name`, `wildcard-address` | `IRAddress` | address type and value fields | Semantic | Full | `handlers/address_book.py` |

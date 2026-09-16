@@ -3,6 +3,13 @@
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.enums import PolicyAction
+from .extension_models import (
+    IRCheckPointPolicyExtension,
+    IRFortiOSPolicyExtension,
+    get_object_extension_value,
+    move_object_extension,
+    set_object_extension_value,
+)
 from .provenance import IRSourceConfigCommand
 
 
@@ -330,24 +337,7 @@ class IRSecurityPolicy(BaseModel):
     # only when the source-policy audit below confirms semantic safety.
     name: str
     source_context: Optional[str] = None
-    policy_package_uid: Optional[str] = None
-    policy_package_name: Optional[str] = None
-    access_layer_uid: Optional[str] = None
-    access_layer_name: Optional[str] = None
-    access_layer_inline: bool = False
-    access_layer_parent_uid: Optional[str] = None
-    access_layer_parent_rule_uid: Optional[str] = None
-    checkpoint_domain_uid: Optional[str] = None
-    checkpoint_domain_name: Optional[str] = None
-    checkpoint_package_uid: Optional[str] = None
-    checkpoint_package_name: Optional[str] = None
-    checkpoint_layer_uid: Optional[str] = None
-    checkpoint_layer_name: Optional[str] = None
-    checkpoint_parent_layer_uid: Optional[str] = None
-    checkpoint_parent_rule_uid: Optional[str] = None
-    checkpoint_section_path: List[str] = Field(default_factory=list)
-    checkpoint_rule_number: Optional[int] = None
-    install_on: List[str] = Field(default_factory=list)
+    vendor_extension: Optional[IRCheckPointPolicyExtension | IRFortiOSPolicyExtension] = None
     from_zone: List[str] = Field(default_factory=list)
     to_zone: List[str] = Field(default_factory=list)
     source: List[str] = Field(default_factory=list)
@@ -386,37 +376,6 @@ class IRSecurityPolicy(BaseModel):
     source_log_setting_resolved: Optional[bool] = None
     resolved_source_log_setting: Optional[str] = None
     source_log_start_setting: Optional[str] = None
-    source_utm_status: Optional[str] = None
-    source_inspection_mode: Optional[str] = None
-    source_timeout_send_rst: Optional[str] = None
-    source_auto_asic_offload: Optional[str] = None
-    source_np_acceleration: Optional[str] = None
-    source_port_preserve: Optional[str] = None
-    source_effective_utm_status: Optional[str] = None
-    source_effective_inspection_mode: Optional[str] = None
-    source_effective_ztna_status: Optional[str] = None
-    source_effective_timeout_send_rst: Optional[str] = None
-    source_effective_auto_asic_offload: Optional[str] = None
-    source_effective_np_acceleration: Optional[str] = None
-    source_effective_port_preserve: Optional[str] = None
-    source_policy_expiry: Optional[str] = None
-    source_effective_policy_expiry: Optional[str] = None
-    source_policy_expiry_date: Optional[str] = None
-    source_policy_expiry_date_utc: Optional[str] = None
-    source_schedule_timeout: Optional[str] = None
-    source_effective_schedule_timeout: Optional[str] = None
-    source_reputation_direction: Optional[str] = None
-    source_effective_reputation_direction: Optional[str] = None
-    source_reputation_direction6: Optional[str] = None
-    source_effective_reputation_direction6: Optional[str] = None
-    source_reputation_minimum: Optional[int] = None
-    source_effective_reputation_minimum: Optional[int] = None
-    source_reputation_minimum6: Optional[int] = None
-    source_effective_reputation_minimum6: Optional[int] = None
-    source_match_vip: Optional[str] = None
-    source_effective_match_vip: Optional[str] = None
-    source_match_vip_only: Optional[str] = None
-    source_effective_match_vip_only: Optional[str] = None
     source_extra_setting_commands: List[IRSourceConfigCommand] = Field(default_factory=list)
     source_profile_type: Optional[str] = None
     source_profile_group: Optional[str] = None
@@ -426,17 +385,6 @@ class IRSecurityPolicy(BaseModel):
     security_profile_reference_statuses: Dict[str, str] = Field(default_factory=dict)
     unresolved_security_profile_references: Dict[str, str] = Field(default_factory=dict)
     security_profile_semantics_review: bool = False
-    source_internet_service_status: Optional[str] = None
-    source_internet_service_settings: Dict[str, Any] = Field(default_factory=dict)
-    source_vpn_tunnel: Optional[str] = None
-    source_identity_based_route: Optional[str] = None
-    source_ztna_status: Optional[str] = None
-    source_ztna_ems_tags: List[str] = Field(default_factory=list)
-    source_ztna_device_ownership: Optional[str] = None
-    source_ztna_ems_tags_secondary: List[str] = Field(default_factory=list)
-    source_ztna_geo_tags: List[str] = Field(default_factory=list)
-    source_ztna_policy_redirect: Optional[str] = None
-    source_ztna_tags_match_logic: Optional[str] = None
     source_extra_settings: Dict[str, Any] = Field(default_factory=dict)
     nat_enabled: Optional[bool] = None
     nat_pool_enabled: Optional[bool] = None
@@ -475,6 +423,41 @@ class IRSecurityPolicy(BaseModel):
     applications: List[str] = Field(default_factory=list)
     application_categories: List[str] = Field(default_factory=list)
     internet_service: List[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def move_legacy_vendor_fields(cls, data: Any) -> Any:
+        data = move_object_extension(data, (
+            "policy_package_uid", "policy_package_name", "access_layer_uid",
+            "access_layer_name", "access_layer_inline", "access_layer_parent_uid",
+            "access_layer_parent_rule_uid", "checkpoint_domain_uid",
+            "checkpoint_domain_name", "checkpoint_package_uid", "checkpoint_package_name",
+            "checkpoint_layer_uid", "checkpoint_layer_name", "checkpoint_parent_layer_uid",
+            "checkpoint_parent_rule_uid", "checkpoint_section_path", "checkpoint_rule_number",
+            "install_on",
+        ))
+        return move_object_extension(data, (
+            "source_utm_status", "source_inspection_mode", "source_timeout_send_rst",
+            "source_auto_asic_offload", "source_np_acceleration", "source_port_preserve",
+            "source_effective_utm_status", "source_effective_inspection_mode",
+            "source_effective_ztna_status", "source_effective_timeout_send_rst",
+            "source_effective_auto_asic_offload", "source_effective_np_acceleration",
+            "source_effective_port_preserve", "source_policy_expiry",
+            "source_effective_policy_expiry", "source_policy_expiry_date",
+            "source_policy_expiry_date_utc", "source_schedule_timeout",
+            "source_effective_schedule_timeout", "source_reputation_direction",
+            "source_effective_reputation_direction", "source_reputation_direction6",
+            "source_effective_reputation_direction6", "source_reputation_minimum",
+            "source_effective_reputation_minimum", "source_reputation_minimum6",
+            "source_effective_reputation_minimum6", "source_match_vip",
+            "source_effective_match_vip", "source_match_vip_only",
+            "source_effective_match_vip_only", "source_internet_service_status",
+            "source_internet_service_settings", "source_vpn_tunnel",
+            "source_identity_based_route", "source_ztna_status", "source_ztna_ems_tags",
+            "source_ztna_device_ownership", "source_ztna_ems_tags_secondary",
+            "source_ztna_geo_tags", "source_ztna_policy_redirect",
+            "source_ztna_tags_match_logic",
+        ))
 
     @model_validator(mode="after")
     def normalize_policy_profile_compatibility(self):
@@ -670,6 +653,60 @@ IRCheckpointIdentitySource = IRIdentitySource
 IRCheckpointAccessRole = IRAccessRole
 IRPolicy = IRSecurityPolicy
 IRZTNAProvider = IREndpointContextProvider
+
+
+def _checkpoint_policy_property(field: str):
+    return property(
+        lambda self: get_object_extension_value(self, field),
+        lambda self, value: set_object_extension_value(
+            self, IRCheckPointPolicyExtension, field, value
+        ),
+    )
+
+
+for _field in (
+    "policy_package_uid", "policy_package_name", "access_layer_uid", "access_layer_name",
+    "access_layer_inline", "access_layer_parent_uid", "access_layer_parent_rule_uid",
+    "checkpoint_domain_uid", "checkpoint_domain_name", "checkpoint_package_uid",
+    "checkpoint_package_name", "checkpoint_layer_uid", "checkpoint_layer_name",
+    "checkpoint_parent_layer_uid", "checkpoint_parent_rule_uid", "checkpoint_section_path",
+    "checkpoint_rule_number", "install_on",
+):
+    setattr(IRSecurityPolicy, _field, _checkpoint_policy_property(_field))
+
+
+def _fortios_policy_property(field: str):
+    return property(
+        lambda self: get_object_extension_value(self, field),
+        lambda self, value: set_object_extension_value(
+            self, IRFortiOSPolicyExtension, field, value
+        ),
+    )
+
+
+for _field in (
+    "source_utm_status", "source_inspection_mode", "source_timeout_send_rst",
+    "source_auto_asic_offload", "source_np_acceleration", "source_port_preserve",
+    "source_effective_utm_status", "source_effective_inspection_mode",
+    "source_effective_ztna_status", "source_effective_timeout_send_rst",
+    "source_effective_auto_asic_offload", "source_effective_np_acceleration",
+    "source_effective_port_preserve", "source_policy_expiry",
+    "source_effective_policy_expiry", "source_policy_expiry_date",
+    "source_policy_expiry_date_utc", "source_schedule_timeout",
+    "source_effective_schedule_timeout", "source_reputation_direction",
+    "source_effective_reputation_direction", "source_reputation_direction6",
+    "source_effective_reputation_direction6", "source_reputation_minimum",
+    "source_effective_reputation_minimum", "source_reputation_minimum6",
+    "source_effective_reputation_minimum6", "source_match_vip",
+    "source_effective_match_vip", "source_match_vip_only",
+    "source_effective_match_vip_only", "source_internet_service_status",
+    "source_internet_service_settings", "source_vpn_tunnel",
+    "source_identity_based_route", "source_ztna_status", "source_ztna_ems_tags",
+    "source_ztna_device_ownership", "source_ztna_ems_tags_secondary",
+    "source_ztna_geo_tags", "source_ztna_policy_redirect",
+    "source_ztna_tags_match_logic",
+):
+    setattr(IRSecurityPolicy, _field, _fortios_policy_property(_field))
 
 
 __all__ = [
