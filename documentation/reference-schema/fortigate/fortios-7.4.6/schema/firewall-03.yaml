@@ -314,30 +314,293 @@ sections:
 - path: firewall schedule group
   mode: table
   key: <name>
+  key_type: string
+  description: Schedule group configuration.
   fields:
-    color: integer
-    fabric-object: enum
-    member: identifier-list
+    color:
+      source_type: integer
+      fortios_type: integer
+      description: Color of icon on the GUI.
+      range:
+        min: 0
+        max: 32
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule group
+          parameter: color
+    fabric-object:
+      source_type: enum
+      fortios_type: option
+      description: Security Fabric global object setting.
+      options:
+      - value: enable
+        description: Object is set as a security fabric-wide global object.
+      - value: disable
+        description: Object is local to this security fabric member.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule group
+          parameter: fabric-object
+    member:
+      source_type: identifier-list
+      fortios_type: string
+      description: Schedules added to the schedule group.
+      length:
+        max: 79
+      cardinality: list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule group
+          parameter: member
+          note: Fortinet documents each value only as a schedule name; this section does not state whether schedule groups can be nested.
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall schedule group
+      note: The edit key name is documented as a string with maximum length 31.
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall schedule group
 - path: firewall schedule onetime
   mode: table
   key: <name>
+  key_type: string
+  description: Onetime schedule configuration.
   fields:
-    color: integer
-    end: opaque-user
-    end-utc: opaque-user
-    expiration-days: integer
-    fabric-object: enum
-    start: opaque-user
-    start-utc: opaque-user
+    color:
+      source_type: integer
+      fortios_type: integer
+      description: Color of icon on the GUI.
+      range:
+        min: 0
+        max: 32
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule onetime
+          parameter: color
+    end:
+      source_type: opaque-user
+      fortios_type: user
+      description: Schedule end date and time, format hh:mm yyyy/mm/dd.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule onetime
+          parameter: end
+    end-utc:
+      source_type: opaque-user
+      fortios_type: user
+      description: Schedule end date and time, in epoch format.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule onetime
+          parameter: end-utc
+    expiration-days:
+      source_type: integer
+      fortios_type: integer
+      description: Write an event log message this many days before the schedule expires.
+      range:
+        min: 0
+        max: 100
+      default:
+        value: 3
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule onetime
+          parameter: expiration-days
+    fabric-object:
+      source_type: enum
+      fortios_type: option
+      description: Security Fabric global object setting.
+      options:
+      - value: enable
+        description: Object is set as a security fabric-wide global object.
+      - value: disable
+        description: Object is local to this security fabric member.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule onetime
+          parameter: fabric-object
+    start:
+      source_type: opaque-user
+      fortios_type: user
+      description: Schedule start date and time, format hh:mm yyyy/mm/dd.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule onetime
+          parameter: start
+    start-utc:
+      source_type: opaque-user
+      fortios_type: user
+      description: Schedule start date and time, in epoch format.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule onetime
+          parameter: start-utc
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall schedule onetime
+      note: The edit key name is documented as a string with maximum length 31.
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall schedule onetime
 - path: firewall schedule recurring
   mode: table
   key: <name>
+  key_type: string
+  description: Recurring schedule configuration.
   fields:
-    color: integer
-    day: option-list
-    end: opaque-user
-    fabric-object: enum
-    start: opaque-user
+    color:
+      source_type: integer
+      fortios_type: integer
+      description: Color of icon on the GUI.
+      range:
+        min: 0
+        max: 32
+      default:
+        value: 0
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule recurring
+          parameter: color
+    day:
+      source_type: option-list
+      fortios_type: option
+      description: One or more days of the week on which the schedule is valid. Separate the names of the days with a space.
+      options:
+      - value: sunday
+        description: Sunday.
+      - value: monday
+        description: Monday.
+      - value: tuesday
+        description: Tuesday.
+      - value: wednesday
+        description: Wednesday.
+      - value: thursday
+        description: Thursday.
+      - value: friday
+        description: Friday.
+      - value: saturday
+        description: Saturday.
+      - value: none
+        description: None.
+      cardinality: list
+      default:
+        value: none
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule recurring
+          parameter: day
+    end:
+      source_type: opaque-user
+      fortios_type: user
+      description: Time of day to end the schedule, format hh:mm.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule recurring
+          parameter: end
+    fabric-object:
+      source_type: enum
+      fortios_type: option
+      description: Security Fabric global object setting.
+      options:
+      - value: enable
+        description: Object is set as a security fabric-wide global object.
+      - value: disable
+        description: Object is local to this security fabric member.
+      default:
+        value: disable
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule recurring
+          parameter: fabric-object
+    start:
+      source_type: opaque-user
+      fortios_type: user
+      description: Time of day to start the schedule, format hh:mm.
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: firewall schedule recurring
+          parameter: start
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: firewall schedule recurring
+      note: The edit key name is documented as a string with maximum length 31.
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: firewall schedule recurring
 - path: firewall security-policy
   mode: table
   key: <policyid>
