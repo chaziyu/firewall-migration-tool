@@ -28,7 +28,11 @@ class PANOSIPv6NATInterfaceRefinementMixin:
         return families
 
     def _nat64_semantics(self, scope: PANScope, entry, rule):
-        semantics, reasons = super()._nat64_semantics(scope, entry, rule)
+        from .ipv6_nat_coverage import PANOSIPv6NATSemanticsCoverageMixin
+
+        semantics, reasons = PANOSIPv6NATSemanticsCoverageMixin._nat64_semantics(
+            self, scope, entry, rule
+        )
         details = rule.source_attributes.get("pan_interface_address_details")
         selector = rule.source_translation_address_selection
         if selector is not None and selector.address_source == "interface-address":
@@ -73,7 +77,11 @@ class PANOSIPv6NATInterfaceRefinementMixin:
         return semantics, list(dict.fromkeys(reasons))
 
     def _nptv6_semantics(self, scope: PANScope, entry, rule):
-        semantics, reasons = super()._nptv6_semantics(scope, entry, rule)
+        from .ipv6_nat_coverage import PANOSIPv6NATSemanticsCoverageMixin
+
+        semantics, reasons = PANOSIPv6NATSemanticsCoverageMixin._nptv6_semantics(
+            self, scope, entry, rule
+        )
         details = rule.source_attributes.get("pan_interface_address_details")
         selector = rule.source_translation_address_selection
         if selector is not None and selector.address_source == "interface-address":

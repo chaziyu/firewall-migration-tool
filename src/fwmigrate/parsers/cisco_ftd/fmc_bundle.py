@@ -21,7 +21,6 @@ from fwmigrate.ir.network import (
     IRInterfaceGroup,
     IRZone,
 )
-from fwmigrate.ir.metadata import IRMetadata
 from fwmigrate.ir.nat import (
     IRNATPortRange,
     IRNATRule,
@@ -769,18 +768,6 @@ class CiscoFMCBundleParser:
                     ir.nat_rules.append(self._parse_nat_rule(policy, rule, section=section, index=sequence, auto=is_auto))
 
     def parse(self) -> IRConfig:
-        ir = IRConfig(metadata=IRMetadata(
-            source_vendor="cisco_ftd", source_product="Cisco Secure Firewall Management Center / FTD",
-        ))
-        self._parse_objects(ir)
-        self._parse_access_policies(ir)
-        self._parse_nat_policies(ir)
-        self._parse_pbr_policies(ir)
-        ir.addresses.extend(self._synthetic_addresses.values())
-        ir.services.extend(self._synthetic_services.values())
-        if self._unresolved:
-            ir.generation_safe = False
-            reason = "Unresolved FMC object/policy reference"
-            if reason not in ir.generation_blocking_reasons:
-                ir.generation_blocking_reasons.append(reason)
-        return ir
+        from .transformer import FMCToIRTransformer
+
+        return FMCToIRTransformer(self).transform()

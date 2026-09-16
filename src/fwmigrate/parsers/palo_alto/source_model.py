@@ -1,5 +1,17 @@
+from dataclasses import dataclass
+import xml.etree.ElementTree as ET
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
+
+
+@dataclass(frozen=True)
+class PANSourceDocument:
+    """Normalized PAN-OS XML input retained for the IR transformer."""
+
+    root: ET.Element
+    raw_content: str
+    hostname: Optional[str] = None
+    source_version: Optional[str] = None
 
 class PANScope(BaseModel):
     kind: str

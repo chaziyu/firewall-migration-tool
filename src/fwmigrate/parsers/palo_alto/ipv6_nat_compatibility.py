@@ -42,7 +42,11 @@ class PANOSIPv6NATCompatibilityMixin:
         return False
 
     def _enhance_nat_rule(self, scope: PANScope, entry: ET.Element, extraction, rule) -> None:
-        super()._enhance_nat_rule(scope, entry, extraction, rule)
+        from .ipv6_nat_coverage import PANOSIPv6NATSemanticsCoverageMixin
+
+        PANOSIPv6NATSemanticsCoverageMixin._enhance_nat_rule(
+            self, scope, entry, extraction, rule
+        )
 
         family = self._compat_nat_family(entry)
         if family not in {"nat64", "nptv6"}:

@@ -10,7 +10,7 @@ from fwmigrate.parsers.cisco_asa import CiscoASASourceParser
 from fwmigrate.parsers.cisco_ftd import CiscoFTDSourceParser
 from fwmigrate.parsers.fortigate import FortiGateSourceParser
 from fwmigrate.parsers.juniper_srx import JuniperSRXSourceParser
-from fwmigrate.parsers.palo_alto.registered_parser import PANOSSourceParser
+from fwmigrate.parsers.palo_alto.extractor import PANOSSourceParser
 
 
 BUILTIN_PLUGIN_SPECS = (

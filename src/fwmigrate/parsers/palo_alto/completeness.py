@@ -21,7 +21,8 @@ from fwmigrate.ir.nat import IRNATPortRange
 
 from .interfaces import apply_routing_instance_associations, extract_interfaces
 from .panorama import PANPanoramaExtractor
-from .parser import PANOSSourceParser as _BasePANOSSourceParser, _configured_pan_zone_types
+from .parser import _configured_pan_zone_types
+from .transformer import PANToIRTransformer as _BasePANOSSourceParser
 from .source_model import PANScope, pan_scope_identity
 from .xml_utils import member_texts, structured_xml_capture, text_or_none
 
@@ -186,7 +187,8 @@ class PANOSSourceParser(_BasePANOSSourceParser):
         path_prefix: str,
     ):
         before = len(extraction.canonical_ir.policies)
-        super()._parse_security_rule(
+        _BasePANOSSourceParser._parse_security_rule(
+            self,
             scope,
             entry,
             extraction,
@@ -293,7 +295,7 @@ class PANOSSourceParser(_BasePANOSSourceParser):
 
     def _parse_schedules(self, scope: PANScope, search_root: ET.Element, extraction):
         before = len(extraction.canonical_ir.schedules)
-        super()._parse_schedules(scope, search_root, extraction)
+        _BasePANOSSourceParser._parse_schedules(self, scope, search_root, extraction)
 
         for schedule in extraction.canonical_ir.schedules[before:]:
             schedule.source_context = pan_scope_identity(scope)
@@ -357,7 +359,7 @@ class PANOSSourceParser(_BasePANOSSourceParser):
     def _parse_objects(self, scope: PANScope, search_root: ET.Element, extraction):
         zone_before = len(extraction.canonical_ir.zones)
         profile_before = len(extraction.canonical_ir.security_profile_groups)
-        super()._parse_objects(scope, search_root, extraction)
+        _BasePANOSSourceParser._parse_objects(self, scope, search_root, extraction)
         self._enhance_zones(
             scope,
             search_root,
@@ -545,7 +547,7 @@ class PANOSSourceParser(_BasePANOSSourceParser):
 
     def _parse_rules(self, scope: PANScope, search_root: ET.Element, extraction):
         nat_before = len(extraction.canonical_ir.nat_rules)
-        super()._parse_rules(scope, search_root, extraction)
+        _BasePANOSSourceParser._parse_rules(self, scope, search_root, extraction)
 
         entries: Dict[tuple[str, int], ET.Element] = {}
         for position, path in (

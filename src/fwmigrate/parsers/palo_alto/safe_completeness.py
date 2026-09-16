@@ -22,7 +22,9 @@ class PANOSSourceParser(_CompletenessPANOSSourceParser):
     """Lossless PAN-OS extraction that preserves established IR safety rules."""
 
     def _enhance_security_policy(self, scope, entry, extraction, policy) -> None:
-        super()._enhance_security_policy(scope, entry, extraction, policy)
+        _CompletenessPANOSSourceParser._enhance_security_policy(
+            self, scope, entry, extraction, policy
+        )
 
         # Policy tags are metadata. A missing local tag definition must not
         # change the rule's migration safety classification; the raw tag name
@@ -44,7 +46,9 @@ class PANOSSourceParser(_CompletenessPANOSSourceParser):
             item.requires_manual_review = bool(policy.review_reasons)
 
     def _enhance_zones(self, scope: PANScope, search_root, extraction, zones: List[Any]) -> None:
-        super()._enhance_zones(scope, search_root, extraction, zones)
+        _CompletenessPANOSSourceParser._enhance_zones(
+            self, scope, search_root, extraction, zones
+        )
         # `IRZone.source_context` is consumed as portable target context by
         # existing generators. PAN-OS scope is therefore kept in source
         # attributes instead of populating that generic field.
@@ -53,7 +57,9 @@ class PANOSSourceParser(_CompletenessPANOSSourceParser):
             zone.source_attributes["pan_source_context"] = pan_scope_identity(scope)
 
     def _enhance_profile_groups(self, scope: PANScope, extraction, groups: List[Any]) -> None:
-        super()._enhance_profile_groups(scope, extraction, groups)
+        _CompletenessPANOSSourceParser._enhance_profile_groups(
+            self, scope, extraction, groups
+        )
         # Same safety rule as zones: retain PAN scope explicitly in source
         # evidence without asserting generic cross-vendor target context.
         for group in groups:
@@ -62,7 +68,9 @@ class PANOSSourceParser(_CompletenessPANOSSourceParser):
 
     def _parse_schedules(self, scope: PANScope, search_root, extraction):
         before = len(extraction.canonical_ir.schedules)
-        super()._parse_schedules(scope, search_root, extraction)
+        _CompletenessPANOSSourceParser._parse_schedules(
+            self, scope, search_root, extraction
+        )
 
         # Complex PAN-OS schedules are now represented losslessly in `windows`
         # and `recurrence`, but remain `source-only` so target generators cannot
@@ -102,7 +110,7 @@ class PANOSSourceParser(_CompletenessPANOSSourceParser):
                         item.notes.append(note)
 
     def _enhance_interfaces(self, extraction) -> None:
-        super()._enhance_interfaces(extraction)
+        _CompletenessPANOSSourceParser._enhance_interfaces(self, extraction)
 
         # PAN-OS permits multiple addresses directly on one L3 interface.
         # Generic `secondary_ips` has vendor-specific semantics in existing

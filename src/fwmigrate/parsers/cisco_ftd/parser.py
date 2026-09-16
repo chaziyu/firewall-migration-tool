@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import ipaddress
 import re
-from typing import Optional
+import ipaddress
+from typing import Dict, Optional
 
 from fwmigrate.ir import IRConfig
-from fwmigrate.ir.network import IRInterface
-from fwmigrate.ir.metadata import IRMetadata
-from fwmigrate.ir.routing import IRRoute
-from fwmigrate.ir.enums import IRRouteNextHopType
 from fwmigrate.parsers.cisco_ftd.model import (
     CiscoFTDConfig, CiscoFTDInterface, CiscoFTDIPv6Address,
     CiscoFTDManagementSetting, CiscoFTDStaticRoute,
@@ -23,8 +19,9 @@ FTD_TEXT_GENERATION_BLOCK_REASON = (
 class CiscoFTDParser:
     """Independent FTD management-source parser; never routes through ASA parsing."""
 
-    def __init__(self, content: str):
+    def __init__(self, content: str, zone_mapping: Optional[Dict[str, str]] = None):
         self.content = content
+        self.zone_mapping = zone_mapping or {}
         self.config = CiscoFTDConfig()
 
     def _parse_interface_block(self, lines: list[str], index: int) -> int:
@@ -226,85 +223,8 @@ class CiscoFTDParser:
             return None, f"Invalid management IPv4 address/netmask: {address} {mask}"
 
     def parse(self) -> IRConfig:
-        cfg = self.parse_raw()
-        interfaces: list[IRInterface] = []
-        interface_names = {item.name for item in cfg.interfaces}
-        interface_names.update(item.nameif for item in cfg.interfaces if item.nameif)
-        for item in cfg.interfaces:
-            ip_value, parse_error = self._ipv4_interface(item.ip, item.mask)
-            interfaces.append(IRInterface(
-                name=item.name,
-                zone=None,
-                ip=ip_value,
-                description=item.description,
-                mtu=item.mtu,
-                status=not item.shutdown,
-                interface_type="management" if item.management_only or item.name.lower().startswith("management") else "physical",
-                addressing_mode="static" if item.ip and item.mask else None,
-                 ipv6_source_settings={"addresses": [address.model_dump() for address in item.ipv6_addresses]},
-                 additional_ipv6_addresses=[{
-                     "source_address": address.raw,
-                     "address": address.address,
-                     "prefix_length": address.prefix_length,
-                     "eui64": address.eui64, "link_local": address.link_local,
-                     "standby": address.standby,
-                 } for address in item.ipv6_addresses],
-                migration_status=item.migration_status,
-                requires_manual_review=item.requires_manual_review or bool(parse_error),
-                parse_errors=[parse_error] if parse_error else [],
-                source_attributes={
-                    **item.source_attributes,
-                    "nameif": item.nameif,
-                    "management_only": item.management_only,
-                    "security_level": item.security_level,
-                    "interface_type": item.interface_type,
-                    "parent_interface": item.parent_interface,
-                    "vlan_id": item.vlan_id,
-                    "etherchannel_id": item.etherchannel_id,
-                    "etherchannel_mode": item.etherchannel_mode,
-                    "bridge_group": item.bridge_group,
-                    "standby_ip": item.standby_ip,
-                    "raw_lines": item.raw_lines,
-                    "ftd_policy_zone_not_inferred": True,
-                },
-            ))
-        routes = []
-        for item in cfg.static_routes:
-            reasons = list(item.review_reasons)
-            if item.interface and item.interface not in interface_names:
-                reasons.append(f"Unresolved FTD route interface reference: {item.interface}")
-            routes.append(IRRoute(
-                name=item.name, address_family=item.address_family, destination=item.destination,
-                source_destination=item.raw_line, interface=item.interface, next_hop=item.gateway,
-                next_hop_type=IRRouteNextHopType.IP_ADDRESS if item.gateway else IRRouteNextHopType.NONE,
-                administrative_distance=item.administrative_distance,
-                migration_status="PARSE_ERROR" if item.migration_status == "PARSE_ERROR" else "PARTIALLY_NORMALIZED" if reasons else item.migration_status,
-                requires_manual_review=bool(reasons), review_reasons=reasons,
-                parse_error=reasons[0] if item.migration_status == "PARSE_ERROR" else None,
-                source_attributes={"raw_line": item.raw_line},
-            ))
-        return IRConfig(
-            metadata=IRMetadata(
-                source_vendor=cfg.source_vendor, source_product=cfg.source_product,
-                input_type="ftd-text-evidence",
-                source_attributes={
-                    "input_source_type": "ftd-text-evidence",
-                    "policy_extraction_supported": False,
-                    "nat_extraction_supported": False,
-                    "object_extraction_supported": False,
-                    "management_settings": [item.model_dump() for item in cfg.management_settings],
-                    "cmi_enabled": cfg.cmi_enabled,
-                    "management_ipv4": cfg.management_ipv4,
-                    "management_netmask": cfg.management_netmask,
-                    "management_gateway": cfg.management_gateway,
-                    "management_dns_servers": cfg.management_dns_servers,
-                    "ssh_access_list": cfg.ssh_access_list,
-                    "diagnostic_interface": cfg.diagnostic_interface,
-                },
-            ),
-            interfaces=interfaces,
-            routes=routes,
-            generation_safe=False,
-            requires_manual_review=True,
-            generation_blocking_reasons=[FTD_TEXT_GENERATION_BLOCK_REASON],
-        )
+        from .transformer import FTDToIRTransformer
+        return FTDToIRTransformer(
+            self.parse_raw(),
+            zone_mapping=self.zone_mapping,
+        ).transform()

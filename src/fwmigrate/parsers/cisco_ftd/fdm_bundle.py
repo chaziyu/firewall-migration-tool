@@ -8,7 +8,6 @@ from fwmigrate.core.constants import IR_KEYWORD_ANY
 from fwmigrate.ir import IRConfig
 from fwmigrate.ir.address import IRAddress, IRAddressGroup
 from fwmigrate.ir.enums import AddressType, NATTranslationMode, NATType, ServiceProtocol
-from fwmigrate.ir.metadata import IRMetadata
 from fwmigrate.ir.nat import IRNATPortRange, IRNATRule
 from fwmigrate.ir.network import IRInterface, IRInterfaceGroup, IRZone
 from fwmigrate.ir.service import IRService, IRServiceGroup, IRServicePort
@@ -357,16 +356,6 @@ class CiscoFDMBundleParser:
             ))
 
     def parse(self) -> IRConfig:
-        ir = IRConfig(metadata=IRMetadata(
-            source_vendor="cisco_ftd", source_product="Cisco Firepower Device Manager / FTD",
-            input_type="fdm-rest-export", source_context=self.context,
-        ))
-        self._parse_addresses(ir)
-        self._parse_network_groups(ir)
-        self._parse_services(ir)
-        self._parse_interfaces(ir)
-        self._parse_nat_policies(ir)
-        if self._unresolved:
-            ir.generation_safe = False
-            ir.generation_blocking_reasons.append("Unresolved FDM object/policy reference")
-        return ir
+        from .transformer import FDMToIRTransformer
+
+        return FDMToIRTransformer(self).transform()
