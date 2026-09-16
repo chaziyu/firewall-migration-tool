@@ -198,364 +198,3414 @@ sections:
   mode: table
   key: <name>
   fields:
-    acct-verify: enum
-    add-gw-route: enum
-    add-route: enum
-    aggregate-member: enum
-    aggregate-weight: integer
-    assign-ip: enum
-    assign-ip-from: enum
-    authmethod: enum
-    authmethod-remote: enum
-    authpasswd: password!sensitive
-    authusr: string
-    authusrgrp: string
-    auto-discovery-crossover: enum
-    auto-discovery-forwarder: enum
-    auto-discovery-offer-interval: integer
-    auto-discovery-psk: enum
-    auto-discovery-receiver: enum
-    auto-discovery-sender: enum
-    auto-discovery-shortcuts: enum
-    auto-negotiate: enum
-    azure-ad-autoconnect: enum
-    backup-gateway: identifier-list
-    banner: var-string
-    cert-id-validation: enum
-    cert-peer-username-strip: enum
-    cert-peer-username-validation: enum
-    cert-trust-store: enum
-    certificate: identifier-list
-    childless-ike: enum
-    client-auto-negotiate: enum
-    client-keep-alive: enum
-    client-resume: enum
-    client-resume-interval: integer
-    comments: var-string
-    default-gw: ipv4-address
-    default-gw-priority: integer
-    dev-id: string
-    dev-id-notification: enum
-    dhcp-ra-giaddr: ipv4-address
-    dhcp6-ra-linkaddr: ipv6-address
-    dhgrp: option-list
-    digital-signature-auth: enum
-    distance: integer
-    dns-mode: enum
-    domain: string
-    dpd: enum
-    dpd-retrycount: integer
-    dpd-retryinterval: opaque-user
-    eap: enum
-    eap-cert-auth: enum
-    eap-exclude-peergrp: string
-    eap-identity: enum
-    ems-sn-check: enum
-    encap-local-gw4: ipv4-address
-    encap-local-gw6: ipv6-address
-    encap-remote-gw4: ipv4-address
-    encap-remote-gw6: ipv6-address
-    encapsulation: enum
-    encapsulation-address: enum
-    enforce-unique-id: enum
-    esn: enum
-    exchange-fgt-device-id: enum
-    exchange-interface-ip: enum
-    exchange-ip-addr4: ipv4-address
-    exchange-ip-addr6: ipv6-address
-    fallback-tcp-threshold: integer
-    fec-base: integer
-    fec-codec: enum
-    fec-egress: enum
-    fec-health-check: string
-    fec-ingress: enum
-    fec-mapping-profile: string
-    fec-receive-timeout: integer
-    fec-redundant: integer
-    fec-send-timeout: integer
-    fgsp-sync: enum
-    fortinet-esp: enum
-    fragmentation: enum
-    fragmentation-mtu: integer
-    group-authentication: enum
-    group-authentication-secret: password-3!sensitive
-    ha-sync-esp-seqno: enum
-    idle-timeout: enum
-    idle-timeoutinterval: integer
-    ike-version: enum
-    inbound-dscp-copy: enum
-    include-local-lan: enum
-    interface: string
-    internal-domain-list: identifier-list
-    ip-delay-interval: integer
-    ip-fragmentation: enum
-    ip-version: enum
-    ipv4-dns-server1: ipv4-address
-    ipv4-dns-server2: ipv4-address
-    ipv4-dns-server3: ipv4-address
-    ipv4-end-ip: ipv4-address
-    ipv4-name: string
-    ipv4-netmask: ipv4-netmask
-    ipv4-split-exclude: string
-    ipv4-split-include: string
-    ipv4-start-ip: ipv4-address
-    ipv4-wins-server1: ipv4-address
-    ipv4-wins-server2: ipv4-address
-    ipv6-dns-server1: ipv6-address
-    ipv6-dns-server2: ipv6-address
-    ipv6-dns-server3: ipv6-address
-    ipv6-end-ip: ipv6-address
-    ipv6-name: string
-    ipv6-prefix: integer
-    ipv6-split-exclude: string
-    ipv6-split-include: string
-    ipv6-start-ip: ipv6-address
-    keepalive: integer
-    keylife: integer
-    kms: string
-    link-cost: integer
-    local-gw: ipv4-address
-    local-gw6: ipv6-address
-    localid: string
-    localid-type: enum
-    loopback-asymroute: enum
-    mesh-selector-type: enum
-    mode: enum
-    mode-cfg: enum
-    mode-cfg-allow-client-selector: enum
-    monitor: identifier-list
-    monitor-hold-down-delay: integer
-    monitor-hold-down-time: opaque-user
-    monitor-hold-down-type: enum
-    monitor-hold-down-weekday: enum
-    monitor-min: integer
-    nattraversal: enum
-    negotiate-timeout: integer
-    net-device: enum
-    network-id: integer
-    network-overlay: enum
-    npu-offload: enum
-    packet-redistribution: enum
-    passive-mode: enum
-    peer: string
-    peergrp: string
-    peerid: string
-    peertype: enum
-    ppk: enum
-    ppk-identity: string
-    ppk-secret: password-3!sensitive
-    priority: integer
-    proposal: option-list
-    psksecret: password-3!sensitive
-    psksecret-remote: password-3!sensitive
-    qkd: enum
-    qkd-profile: string
-    reauth: enum
-    rekey: enum
-    remote-gw: ipv4-address
-    remote-gw-country: string
-    remote-gw-end-ip: ipv4-address-any
-    remote-gw-match: enum
-    remote-gw-start-ip: ipv4-address-any
-    remote-gw-subnet: ipv4-classnet-any
-    remote-gw6: ipv6-address
-    remote-gw6-country: string
-    remote-gw6-end-ip: ipv6-address
-    remote-gw6-match: enum
-    remote-gw6-start-ip: ipv6-address
-    remote-gw6-subnet: ipv6-network
-    remotegw-ddns: string
-    rsa-signature-format: enum
-    rsa-signature-hash-override: enum
-    save-password: enum
-    send-cert-chain: enum
-    signature-hash-alg: option-list
-    split-include-service: string
-    suite-b: enum
-    transport: enum
-    type: enum
-    unity-support: enum
-    usrgrp: string
-    vni: integer
-    wizard-type: enum
-    xauthtype: enum
+    acct-verify:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: acct-verify
+    add-gw-route:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: add-gw-route
+    add-route:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: add-route
+    aggregate-member:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: aggregate-member
+    aggregate-weight:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: aggregate-weight
+    assign-ip:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: assign-ip
+    assign-ip-from:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: assign-ip-from
+    authmethod:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: authmethod
+    authmethod-remote:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: authmethod-remote
+    authpasswd:
+      source_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: authpasswd
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1-interface
+            parameter: authpasswd
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    authusr:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: authusr
+    authusrgrp:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: authusrgrp
+      semantic:
+        reference:
+          kind: user_group
+          target_paths:
+          - user group
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1-interface
+            parameter: authusrgrp
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    auto-discovery-crossover:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: auto-discovery-crossover
+    auto-discovery-forwarder:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: auto-discovery-forwarder
+    auto-discovery-offer-interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: auto-discovery-offer-interval
+    auto-discovery-psk:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: auto-discovery-psk
+    auto-discovery-receiver:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: auto-discovery-receiver
+    auto-discovery-sender:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: auto-discovery-sender
+    auto-discovery-shortcuts:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: auto-discovery-shortcuts
+    auto-negotiate:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: auto-negotiate
+    azure-ad-autoconnect:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: azure-ad-autoconnect
+    backup-gateway:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: backup-gateway
+      cardinality: list
+    banner:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: banner
+    cert-id-validation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: cert-id-validation
+    cert-peer-username-strip:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: cert-peer-username-strip
+    cert-peer-username-validation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: cert-peer-username-validation
+    cert-trust-store:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: cert-trust-store
+    certificate:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: certificate
+      cardinality: list
+      semantic:
+        reference:
+          kind: certificate
+          target_paths:
+          - vpn certificate local
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1-interface
+            parameter: certificate
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    childless-ike:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: childless-ike
+    client-auto-negotiate:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: client-auto-negotiate
+    client-keep-alive:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: client-keep-alive
+    client-resume:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: client-resume
+    client-resume-interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: client-resume-interval
+    comments:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: comments
+    default-gw:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: default-gw
+      address_family: ipv4
+    default-gw-priority:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: default-gw-priority
+    dev-id:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: dev-id
+    dev-id-notification:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: dev-id-notification
+    dhcp-ra-giaddr:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: dhcp-ra-giaddr
+      address_family: ipv4
+    dhcp6-ra-linkaddr:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: dhcp6-ra-linkaddr
+      address_family: ipv6
+    dhgrp:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: dhgrp
+      cardinality: list
+    digital-signature-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: digital-signature-auth
+    distance:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: distance
+    dns-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: dns-mode
+    domain:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: domain
+    dpd:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: dpd
+    dpd-retrycount:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: dpd-retrycount
+    dpd-retryinterval:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: dpd-retryinterval
+    eap:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: eap
+    eap-cert-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: eap-cert-auth
+    eap-exclude-peergrp:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: eap-exclude-peergrp
+      semantic:
+        reference:
+          kind: user_group
+          target_paths:
+          - user group
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1-interface
+            parameter: eap-exclude-peergrp
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    eap-identity:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: eap-identity
+    ems-sn-check:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ems-sn-check
+    encap-local-gw4:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: encap-local-gw4
+      address_family: ipv4
+    encap-local-gw6:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: encap-local-gw6
+      address_family: ipv6
+    encap-remote-gw4:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: encap-remote-gw4
+      address_family: ipv4
+    encap-remote-gw6:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: encap-remote-gw6
+      address_family: ipv6
+    encapsulation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: encapsulation
+    encapsulation-address:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: encapsulation-address
+    enforce-unique-id:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: enforce-unique-id
+    esn:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: esn
+    exchange-fgt-device-id:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: exchange-fgt-device-id
+    exchange-interface-ip:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: exchange-interface-ip
+    exchange-ip-addr4:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: exchange-ip-addr4
+      address_family: ipv4
+    exchange-ip-addr6:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: exchange-ip-addr6
+      address_family: ipv6
+    fallback-tcp-threshold:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fallback-tcp-threshold
+    fec-base:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fec-base
+    fec-codec:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fec-codec
+    fec-egress:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fec-egress
+    fec-health-check:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fec-health-check
+    fec-ingress:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fec-ingress
+    fec-mapping-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fec-mapping-profile
+    fec-receive-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fec-receive-timeout
+    fec-redundant:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fec-redundant
+    fec-send-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fec-send-timeout
+    fgsp-sync:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fgsp-sync
+    fortinet-esp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fortinet-esp
+    fragmentation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fragmentation
+    fragmentation-mtu:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: fragmentation-mtu
+    group-authentication:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: group-authentication
+    group-authentication-secret:
+      source_type: password-3
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: group-authentication-secret
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1-interface
+            parameter: group-authentication-secret
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    ha-sync-esp-seqno:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ha-sync-esp-seqno
+    idle-timeout:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: idle-timeout
+    idle-timeoutinterval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: idle-timeoutinterval
+    ike-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ike-version
+    inbound-dscp-copy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: inbound-dscp-copy
+    include-local-lan:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: include-local-lan
+    interface:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: interface
+      semantic:
+        reference:
+          kind: interface
+          target_paths:
+          - system interface
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1-interface
+            parameter: interface
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    internal-domain-list:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: internal-domain-list
+      cardinality: list
+    ip-delay-interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ip-delay-interval
+    ip-fragmentation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ip-fragmentation
+    ip-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ip-version
+    ipv4-dns-server1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv4-dns-server1
+      address_family: ipv4
+    ipv4-dns-server2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv4-dns-server2
+      address_family: ipv4
+    ipv4-dns-server3:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv4-dns-server3
+      address_family: ipv4
+    ipv4-end-ip:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv4-end-ip
+      address_family: ipv4
+    ipv4-name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv4-name
+    ipv4-netmask:
+      source_type: ipv4-netmask
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv4-netmask
+      address_family: ipv4
+    ipv4-split-exclude:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv4-split-exclude
+    ipv4-split-include:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv4-split-include
+    ipv4-start-ip:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv4-start-ip
+      address_family: ipv4
+    ipv4-wins-server1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv4-wins-server1
+      address_family: ipv4
+    ipv4-wins-server2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv4-wins-server2
+      address_family: ipv4
+    ipv6-dns-server1:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv6-dns-server1
+      address_family: ipv6
+    ipv6-dns-server2:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv6-dns-server2
+      address_family: ipv6
+    ipv6-dns-server3:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv6-dns-server3
+      address_family: ipv6
+    ipv6-end-ip:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv6-end-ip
+      address_family: ipv6
+    ipv6-name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv6-name
+    ipv6-prefix:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv6-prefix
+    ipv6-split-exclude:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv6-split-exclude
+    ipv6-split-include:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv6-split-include
+    ipv6-start-ip:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ipv6-start-ip
+      address_family: ipv6
+    keepalive:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: keepalive
+    keylife:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: keylife
+    kms:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: kms
+    link-cost:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: link-cost
+    local-gw:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: local-gw
+      address_family: ipv4
+    local-gw6:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: local-gw6
+      address_family: ipv6
+    localid:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: localid
+    localid-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: localid-type
+    loopback-asymroute:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: loopback-asymroute
+    mesh-selector-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: mesh-selector-type
+    mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: mode
+    mode-cfg:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: mode-cfg
+    mode-cfg-allow-client-selector:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: mode-cfg-allow-client-selector
+    monitor:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: monitor
+      cardinality: list
+    monitor-hold-down-delay:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: monitor-hold-down-delay
+    monitor-hold-down-time:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: monitor-hold-down-time
+    monitor-hold-down-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: monitor-hold-down-type
+    monitor-hold-down-weekday:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: monitor-hold-down-weekday
+    monitor-min:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: monitor-min
+    nattraversal:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: nattraversal
+    negotiate-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: negotiate-timeout
+    net-device:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: net-device
+    network-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: network-id
+    network-overlay:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: network-overlay
+    npu-offload:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: npu-offload
+    packet-redistribution:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: packet-redistribution
+    passive-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: passive-mode
+    peer:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: peer
+    peergrp:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: peergrp
+    peerid:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: peerid
+    peertype:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: peertype
+    ppk:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ppk
+    ppk-identity:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ppk-identity
+    ppk-secret:
+      source_type: password-3
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: ppk-secret
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1-interface
+            parameter: ppk-secret
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    priority:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: priority
+    proposal:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: proposal
+      cardinality: list
+    psksecret:
+      source_type: password-3
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: psksecret
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1-interface
+            parameter: psksecret
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    psksecret-remote:
+      source_type: password-3
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: psksecret-remote
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1-interface
+            parameter: psksecret-remote
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    qkd:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: qkd
+    qkd-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: qkd-profile
+    reauth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: reauth
+    rekey:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: rekey
+    remote-gw:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw
+      address_family: ipv4
+    remote-gw-country:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw-country
+    remote-gw-end-ip:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw-end-ip
+      address_family: ipv4
+    remote-gw-match:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw-match
+    remote-gw-start-ip:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw-start-ip
+      address_family: ipv4
+    remote-gw-subnet:
+      source_type: ipv4-classnet-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw-subnet
+      address_family: ipv4
+    remote-gw6:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw6
+      address_family: ipv6
+    remote-gw6-country:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw6-country
+    remote-gw6-end-ip:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw6-end-ip
+      address_family: ipv6
+    remote-gw6-match:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw6-match
+    remote-gw6-start-ip:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw6-start-ip
+      address_family: ipv6
+    remote-gw6-subnet:
+      source_type: ipv6-network
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remote-gw6-subnet
+      address_family: ipv6
+    remotegw-ddns:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: remotegw-ddns
+    rsa-signature-format:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: rsa-signature-format
+    rsa-signature-hash-override:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: rsa-signature-hash-override
+    save-password:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: save-password
+    send-cert-chain:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: send-cert-chain
+    signature-hash-alg:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: signature-hash-alg
+      cardinality: list
+    split-include-service:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: split-include-service
+    suite-b:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: suite-b
+    transport:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: transport
+    type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: type
+    unity-support:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: unity-support
+    usrgrp:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: usrgrp
+      semantic:
+        reference:
+          kind: user_group
+          target_paths:
+          - user group
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1-interface
+            parameter: usrgrp
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    vni:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: vni
+    wizard-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: wizard-type
+    xauthtype:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1-interface
+          parameter: xauthtype
   nested:
   - name: ipv4-exclude-range
     mode: table
     key: <id>
     fields:
-      end-ip: ipv4-address
-      start-ip: ipv4-address
+      end-ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ipsec phase1-interface
+            nested_config_path: ipv4-exclude-range
+            parameter: end-ip
+        address_family: ipv4
+      start-ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ipsec phase1-interface
+            nested_config_path: ipv4-exclude-range
+            parameter: start-ip
+        address_family: ipv4
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ipsec phase1-interface
+        nested_config_path: ipv4-exclude-range
   - name: ipv6-exclude-range
     mode: table
     key: <id>
     fields:
-      end-ip: ipv6-address
-      start-ip: ipv6-address
+      end-ip:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ipsec phase1-interface
+            nested_config_path: ipv6-exclude-range
+            parameter: end-ip
+        address_family: ipv6
+      start-ip:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ipsec phase1-interface
+            nested_config_path: ipv6-exclude-range
+            parameter: start-ip
+        address_family: ipv6
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ipsec phase1-interface
+        nested_config_path: ipv6-exclude-range
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: vpn ipsec phase1-interface
+  description: Configure VPN remote gateway.
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: vpn ipsec phase1-interface
+        note: Migration relevance is a project classification, not a Fortinet documentation claim.
 - path: vpn ipsec phase1
   mode: table
   key: <name>
   fields:
-    acct-verify: enum
-    add-gw-route: enum
-    add-route: enum
-    assign-ip: enum
-    assign-ip-from: enum
-    authmethod: enum
-    authmethod-remote: enum
-    authpasswd: password!sensitive
-    authusr: string
-    authusrgrp: string
-    auto-negotiate: enum
-    azure-ad-autoconnect: enum
-    backup-gateway: identifier-list
-    banner: var-string
-    cert-id-validation: enum
-    cert-peer-username-strip: enum
-    cert-peer-username-validation: enum
-    cert-trust-store: enum
-    certificate: identifier-list
-    childless-ike: enum
-    client-auto-negotiate: enum
-    client-keep-alive: enum
-    client-resume: enum
-    client-resume-interval: integer
-    comments: var-string
-    dev-id: string
-    dev-id-notification: enum
-    dhcp-ra-giaddr: ipv4-address
-    dhcp6-ra-linkaddr: ipv6-address
-    dhgrp: option-list
-    digital-signature-auth: enum
-    distance: integer
-    dns-mode: enum
-    domain: string
-    dpd: enum
-    dpd-retrycount: integer
-    dpd-retryinterval: opaque-user
-    eap: enum
-    eap-cert-auth: enum
-    eap-exclude-peergrp: string
-    eap-identity: enum
-    ems-sn-check: enum
-    enforce-unique-id: enum
-    esn: enum
-    exchange-fgt-device-id: enum
-    fallback-tcp-threshold: integer
-    fec-base: integer
-    fec-codec: enum
-    fec-egress: enum
-    fec-health-check: string
-    fec-ingress: enum
-    fec-mapping-profile: string
-    fec-receive-timeout: integer
-    fec-redundant: integer
-    fec-send-timeout: integer
-    fgsp-sync: enum
-    fortinet-esp: enum
-    fragmentation: enum
-    fragmentation-mtu: integer
-    group-authentication: enum
-    group-authentication-secret: password-3!sensitive
-    ha-sync-esp-seqno: enum
-    idle-timeout: enum
-    idle-timeoutinterval: integer
-    ike-version: enum
-    inbound-dscp-copy: enum
-    include-local-lan: enum
-    interface: string
-    internal-domain-list: identifier-list
-    ip-delay-interval: integer
-    ipv4-dns-server1: ipv4-address
-    ipv4-dns-server2: ipv4-address
-    ipv4-dns-server3: ipv4-address
-    ipv4-end-ip: ipv4-address
-    ipv4-name: string
-    ipv4-netmask: ipv4-netmask
-    ipv4-split-exclude: string
-    ipv4-split-include: string
-    ipv4-start-ip: ipv4-address
-    ipv4-wins-server1: ipv4-address
-    ipv4-wins-server2: ipv4-address
-    ipv6-dns-server1: ipv6-address
-    ipv6-dns-server2: ipv6-address
-    ipv6-dns-server3: ipv6-address
-    ipv6-end-ip: ipv6-address
-    ipv6-name: string
-    ipv6-prefix: integer
-    ipv6-split-exclude: string
-    ipv6-split-include: string
-    ipv6-start-ip: ipv6-address
-    keepalive: integer
-    keylife: integer
-    kms: string
-    link-cost: integer
-    local-gw: ipv4-address
-    localid: string
-    localid-type: enum
-    loopback-asymroute: enum
-    mesh-selector-type: enum
-    mode: enum
-    mode-cfg: enum
-    mode-cfg-allow-client-selector: enum
-    nattraversal: enum
-    negotiate-timeout: integer
-    network-id: integer
-    network-overlay: enum
-    npu-offload: enum
-    peer: string
-    peergrp: string
-    peerid: string
-    peertype: enum
-    ppk: enum
-    ppk-identity: string
-    ppk-secret: password-3!sensitive
-    priority: integer
-    proposal: option-list
-    psksecret: password-3!sensitive
-    psksecret-remote: password-3!sensitive
-    qkd: enum
-    qkd-profile: string
-    reauth: enum
-    rekey: enum
-    remote-gw: ipv4-address
-    remote-gw-country: string
-    remote-gw-end-ip: ipv4-address-any
-    remote-gw-match: enum
-    remote-gw-start-ip: ipv4-address-any
-    remote-gw-subnet: ipv4-classnet-any
-    remote-gw6-country: string
-    remote-gw6-end-ip: ipv6-address
-    remote-gw6-match: enum
-    remote-gw6-start-ip: ipv6-address
-    remote-gw6-subnet: ipv6-network
-    remotegw-ddns: string
-    rsa-signature-format: enum
-    rsa-signature-hash-override: enum
-    save-password: enum
-    send-cert-chain: enum
-    signature-hash-alg: option-list
-    split-include-service: string
-    suite-b: enum
-    transport: enum
-    type: enum
-    unity-support: enum
-    usrgrp: string
-    wizard-type: enum
-    xauthtype: enum
+    acct-verify:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: acct-verify
+    add-gw-route:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: add-gw-route
+    add-route:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: add-route
+    assign-ip:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: assign-ip
+    assign-ip-from:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: assign-ip-from
+    authmethod:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: authmethod
+    authmethod-remote:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: authmethod-remote
+    authpasswd:
+      source_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: authpasswd
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1
+            parameter: authpasswd
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    authusr:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: authusr
+    authusrgrp:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: authusrgrp
+      semantic:
+        reference:
+          kind: user_group
+          target_paths:
+          - user group
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1
+            parameter: authusrgrp
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    auto-negotiate:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: auto-negotiate
+    azure-ad-autoconnect:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: azure-ad-autoconnect
+    backup-gateway:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: backup-gateway
+      cardinality: list
+    banner:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: banner
+    cert-id-validation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: cert-id-validation
+    cert-peer-username-strip:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: cert-peer-username-strip
+    cert-peer-username-validation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: cert-peer-username-validation
+    cert-trust-store:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: cert-trust-store
+    certificate:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: certificate
+      cardinality: list
+      semantic:
+        reference:
+          kind: certificate
+          target_paths:
+          - vpn certificate local
+          cardinality: many
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1
+            parameter: certificate
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    childless-ike:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: childless-ike
+    client-auto-negotiate:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: client-auto-negotiate
+    client-keep-alive:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: client-keep-alive
+    client-resume:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: client-resume
+    client-resume-interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: client-resume-interval
+    comments:
+      source_type: var-string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: comments
+    dev-id:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: dev-id
+    dev-id-notification:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: dev-id-notification
+    dhcp-ra-giaddr:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: dhcp-ra-giaddr
+      address_family: ipv4
+    dhcp6-ra-linkaddr:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: dhcp6-ra-linkaddr
+      address_family: ipv6
+    dhgrp:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: dhgrp
+      cardinality: list
+    digital-signature-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: digital-signature-auth
+    distance:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: distance
+    dns-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: dns-mode
+    domain:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: domain
+    dpd:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: dpd
+    dpd-retrycount:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: dpd-retrycount
+    dpd-retryinterval:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: dpd-retryinterval
+    eap:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: eap
+    eap-cert-auth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: eap-cert-auth
+    eap-exclude-peergrp:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: eap-exclude-peergrp
+      semantic:
+        reference:
+          kind: user_group
+          target_paths:
+          - user group
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1
+            parameter: eap-exclude-peergrp
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    eap-identity:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: eap-identity
+    ems-sn-check:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ems-sn-check
+    enforce-unique-id:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: enforce-unique-id
+    esn:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: esn
+    exchange-fgt-device-id:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: exchange-fgt-device-id
+    fallback-tcp-threshold:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fallback-tcp-threshold
+    fec-base:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fec-base
+    fec-codec:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fec-codec
+    fec-egress:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fec-egress
+    fec-health-check:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fec-health-check
+    fec-ingress:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fec-ingress
+    fec-mapping-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fec-mapping-profile
+    fec-receive-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fec-receive-timeout
+    fec-redundant:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fec-redundant
+    fec-send-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fec-send-timeout
+    fgsp-sync:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fgsp-sync
+    fortinet-esp:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fortinet-esp
+    fragmentation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fragmentation
+    fragmentation-mtu:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: fragmentation-mtu
+    group-authentication:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: group-authentication
+    group-authentication-secret:
+      source_type: password-3
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: group-authentication-secret
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1
+            parameter: group-authentication-secret
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    ha-sync-esp-seqno:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ha-sync-esp-seqno
+    idle-timeout:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: idle-timeout
+    idle-timeoutinterval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: idle-timeoutinterval
+    ike-version:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ike-version
+    inbound-dscp-copy:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: inbound-dscp-copy
+    include-local-lan:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: include-local-lan
+    interface:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: interface
+      semantic:
+        reference:
+          kind: interface
+          target_paths:
+          - system interface
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1
+            parameter: interface
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    internal-domain-list:
+      source_type: identifier-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: internal-domain-list
+      cardinality: list
+    ip-delay-interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ip-delay-interval
+    ipv4-dns-server1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv4-dns-server1
+      address_family: ipv4
+    ipv4-dns-server2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv4-dns-server2
+      address_family: ipv4
+    ipv4-dns-server3:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv4-dns-server3
+      address_family: ipv4
+    ipv4-end-ip:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv4-end-ip
+      address_family: ipv4
+    ipv4-name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv4-name
+    ipv4-netmask:
+      source_type: ipv4-netmask
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv4-netmask
+      address_family: ipv4
+    ipv4-split-exclude:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv4-split-exclude
+    ipv4-split-include:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv4-split-include
+    ipv4-start-ip:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv4-start-ip
+      address_family: ipv4
+    ipv4-wins-server1:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv4-wins-server1
+      address_family: ipv4
+    ipv4-wins-server2:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv4-wins-server2
+      address_family: ipv4
+    ipv6-dns-server1:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv6-dns-server1
+      address_family: ipv6
+    ipv6-dns-server2:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv6-dns-server2
+      address_family: ipv6
+    ipv6-dns-server3:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv6-dns-server3
+      address_family: ipv6
+    ipv6-end-ip:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv6-end-ip
+      address_family: ipv6
+    ipv6-name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv6-name
+    ipv6-prefix:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv6-prefix
+    ipv6-split-exclude:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv6-split-exclude
+    ipv6-split-include:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv6-split-include
+    ipv6-start-ip:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ipv6-start-ip
+      address_family: ipv6
+    keepalive:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: keepalive
+    keylife:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: keylife
+    kms:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: kms
+    link-cost:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: link-cost
+    local-gw:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: local-gw
+      address_family: ipv4
+    localid:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: localid
+    localid-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: localid-type
+    loopback-asymroute:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: loopback-asymroute
+    mesh-selector-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: mesh-selector-type
+    mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: mode
+    mode-cfg:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: mode-cfg
+    mode-cfg-allow-client-selector:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: mode-cfg-allow-client-selector
+    nattraversal:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: nattraversal
+    negotiate-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: negotiate-timeout
+    network-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: network-id
+    network-overlay:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: network-overlay
+    npu-offload:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: npu-offload
+    peer:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: peer
+    peergrp:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: peergrp
+    peerid:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: peerid
+    peertype:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: peertype
+    ppk:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ppk
+    ppk-identity:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ppk-identity
+    ppk-secret:
+      source_type: password-3
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: ppk-secret
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1
+            parameter: ppk-secret
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    priority:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: priority
+    proposal:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: proposal
+      cardinality: list
+    psksecret:
+      source_type: password-3
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: psksecret
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1
+            parameter: psksecret
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    psksecret-remote:
+      source_type: password-3
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: psksecret-remote
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1
+            parameter: psksecret-remote
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    qkd:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: qkd
+    qkd-profile:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: qkd-profile
+    reauth:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: reauth
+    rekey:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: rekey
+    remote-gw:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remote-gw
+      address_family: ipv4
+    remote-gw-country:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remote-gw-country
+    remote-gw-end-ip:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remote-gw-end-ip
+      address_family: ipv4
+    remote-gw-match:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remote-gw-match
+    remote-gw-start-ip:
+      source_type: ipv4-address-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remote-gw-start-ip
+      address_family: ipv4
+    remote-gw-subnet:
+      source_type: ipv4-classnet-any
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remote-gw-subnet
+      address_family: ipv4
+    remote-gw6-country:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remote-gw6-country
+    remote-gw6-end-ip:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remote-gw6-end-ip
+      address_family: ipv6
+    remote-gw6-match:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remote-gw6-match
+    remote-gw6-start-ip:
+      source_type: ipv6-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remote-gw6-start-ip
+      address_family: ipv6
+    remote-gw6-subnet:
+      source_type: ipv6-network
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remote-gw6-subnet
+      address_family: ipv6
+    remotegw-ddns:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: remotegw-ddns
+    rsa-signature-format:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: rsa-signature-format
+    rsa-signature-hash-override:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: rsa-signature-hash-override
+    save-password:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: save-password
+    send-cert-chain:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: send-cert-chain
+    signature-hash-alg:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: signature-hash-alg
+      cardinality: list
+    split-include-service:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: split-include-service
+    suite-b:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: suite-b
+    transport:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: transport
+    type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: type
+    unity-support:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: unity-support
+    usrgrp:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: usrgrp
+      semantic:
+        reference:
+          kind: user_group
+          target_paths:
+          - user group
+          cardinality: one
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            config_path: vpn ipsec phase1
+            parameter: usrgrp
+            note: Reference/sensitivity classification is project semantic metadata; source syntax remains authoritative.
+    wizard-type:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: wizard-type
+    xauthtype:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: vpn ipsec phase1
+          parameter: xauthtype
   nested:
   - name: ipv4-exclude-range
     mode: table
     key: <id>
     fields:
-      end-ip: ipv4-address
-      start-ip: ipv4-address
+      end-ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ipsec phase1
+            nested_config_path: ipv4-exclude-range
+            parameter: end-ip
+        address_family: ipv4
+      start-ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ipsec phase1
+            nested_config_path: ipv4-exclude-range
+            parameter: start-ip
+        address_family: ipv4
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ipsec phase1
+        nested_config_path: ipv4-exclude-range
   - name: ipv6-exclude-range
     mode: table
     key: <id>
     fields:
-      end-ip: ipv6-address
-      start-ip: ipv6-address
+      end-ip:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ipsec phase1
+            nested_config_path: ipv6-exclude-range
+            parameter: end-ip
+        address_family: ipv6
+      start-ip:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: vpn ipsec phase1
+            nested_config_path: ipv6-exclude-range
+            parameter: start-ip
+        address_family: ipv6
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: vpn ipsec phase1
+        nested_config_path: ipv6-exclude-range
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: vpn ipsec phase1
+  description: Configure VPN remote gateway.
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        config_path: vpn ipsec phase1
+        note: Migration relevance is a project classification, not a Fortinet documentation claim.
 - path: vpn ipsec phase2-interface
   mode: table
   key: <name>
