@@ -5,10 +5,9 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.enums import ServiceProtocol
 from .extension_models import (
+    IRCheckPointObjectCompatibilityMixin,
     IRCheckPointObjectExtension,
-    get_object_extension_value,
     move_object_extension,
-    set_object_extension_value,
 )
 
 
@@ -28,7 +27,7 @@ class IRServiceCategory(BaseModel):
     review_reasons: List[str] = Field(default_factory=list)
     source_fabric_object: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRService(BaseModel):
+class IRService(IRCheckPointObjectCompatibilityMixin, BaseModel):
     name: str
     source_context: Optional[str] = None
     ports: List[IRServicePort] = Field(default_factory=list)
@@ -80,7 +79,7 @@ class IRServiceGroup(BaseModel):
     requires_manual_review: bool = False
     audit_note: Optional[str] = None
     description: Optional[str] = None
-class IRSchedule(BaseModel):
+class IRSchedule(IRCheckPointObjectCompatibilityMixin, BaseModel):
     name: str
     source_context: Optional[str] = None
     start: Optional[str] = None
@@ -157,7 +156,7 @@ class IRWebProxy(BaseModel):
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRApplication(BaseModel):
+class IRApplication(IRCheckPointObjectCompatibilityMixin, BaseModel):
     name: str
     source_uuid: Optional[str] = None
     vendor_extension: Optional[IRCheckPointObjectExtension] = None
@@ -315,7 +314,7 @@ class IRInternetServiceGroup(BaseModel):
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRScheduleGroup(BaseModel):
+class IRScheduleGroup(IRCheckPointObjectCompatibilityMixin, BaseModel):
     name: str
     source_context: Optional[str] = None
     members: List[str] = Field(default_factory=list)
@@ -338,23 +337,6 @@ class IRScheduleGroup(BaseModel):
 
 IRProxyAddress = IRProxyRequestMatch
 IRWebProxySettings = IRWebProxy
-
-
-def _checkpoint_property(field: str):
-    return property(
-        lambda self: get_object_extension_value(self, field),
-        lambda self, value: set_object_extension_value(
-            self, IRCheckPointObjectExtension, field, value
-        ),
-    )
-
-
-for _model in (IRService, IRSchedule, IRScheduleGroup, IRApplication):
-    for _field in (
-        "checkpoint_domain_uid", "checkpoint_domain_name", "checkpoint_origin_scope",
-        "global_source_uid", "global_source_name", "local_override_uid", "assignment_uid",
-    ):
-        setattr(_model, _field, _checkpoint_property(_field))
 
 
 __all__ = [

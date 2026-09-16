@@ -5,13 +5,20 @@ from pydantic import BaseModel, Field, model_validator
 from fwmigrate.ir.enums import NATType, NATTranslationMode, NATTranslationAddressSource, NATFamily, NATSourcePortBehavior
 from .provenance import IRSourceConfigNode
 from .extension_models import (
+    IRCheckPointNATPoolCompatibilityMixin,
     IRCheckPointNATPoolExtension,
+    IRCheckPointNATRuleCompatibilityMixin,
     IRCheckPointNATRuleExtension,
+    IRFortiOSNATPoolCompatibilityMixin,
     IRFortiOSNATPoolExtension,
+    IRFortiOSNATRuleCompatibilityMixin,
     IRFortiOSNATRuleExtension,
-    get_object_extension_value,
+    IRFortiOSPublishedServiceCompatibilityMixin,
+    IRFortiOSPublishedServiceExtension,
+    IRFortiOSPublishedServiceGSLBPublicIP,
+    IRFortiOSPublishedServiceQUICSettings,
+    IRFortiOSPublishedServiceSSLCipherSuite,
     move_object_extension,
-    set_object_extension_value,
 )
 
 
@@ -20,7 +27,7 @@ class IRIPPoolRange(BaseModel):
     end_ip: str
 
 
-class IRNATPool(BaseModel):
+class IRNATPool(IRFortiOSNATPoolCompatibilityMixin, IRCheckPointNATPoolCompatibilityMixin, BaseModel):
     name: str
     source_context: Optional[str] = None
     address_family: str = "ipv4"
@@ -43,9 +50,6 @@ class IRNATPool(BaseModel):
     end_port: Optional[int] = None
 
     associated_interface: Optional[str] = None
-
-    arp_reply: Optional[bool] = None
-    arp_interface: Optional[str] = None
 
     permit_any_host: Optional[bool] = None
     excluded_ips: List[str] = Field(default_factory=list)
@@ -71,6 +75,7 @@ class IRNATPool(BaseModel):
             "checkpoint_mep",
         ))
         return move_object_extension(data, (
+            "arp_reply", "arp_interface",
             "block_size", "blocks_per_user", "pba_timeout", "pba_interim_log",
             "ports_per_user", "privileged_port_use_pba", "nat64", "add_nat64_route",
             "client_prefix_length", "include_subnet_broadcast", "tcp_session_quota",
@@ -105,33 +110,19 @@ class IRVirtualIPRealServer(BaseModel):
         if self.address_type == "address":
             return self.address_reference or self.ip_address
         return self.ip_address or self.address_reference
-class IRVirtualIPGSLBPublicIP(BaseModel):
-    index: Optional[int] = None
-    ip: Optional[str] = None
-    source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRVirtualIPQUICSettings(BaseModel):
-    max_idle_timeout: Optional[int] = None
-    max_udp_payload_size: Optional[int] = None
-    active_connection_id_limit: Optional[int] = None
-    ack_delay_exponent: Optional[int] = None
-    max_ack_delay: Optional[int] = None
-    max_datagram_frame_size: Optional[int] = None
-    active_migration: Optional[str] = None
-    grease_quic_bit: Optional[str] = None
-    source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRVirtualIPSSLCipherSuite(BaseModel):
-    priority: Optional[int] = None
-    cipher: Optional[str] = None
-    versions: List[str] = Field(default_factory=list)
-    source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRPublishedService(BaseModel):
+IRVirtualIPGSLBPublicIP = IRFortiOSPublishedServiceGSLBPublicIP
+IRVirtualIPQUICSettings = IRFortiOSPublishedServiceQUICSettings
+IRVirtualIPSSLCipherSuite = IRFortiOSPublishedServiceSSLCipherSuite
+
+
+class IRPublishedService(IRFortiOSPublishedServiceCompatibilityMixin, BaseModel):
     name: str
     source_context: Optional[str] = None
     address_family: str = "ipv4"
 
     source_id: Optional[int] = None
     source_uuid: Optional[str] = None
-    vip_type: Optional[str] = None
+    vendor_extension: Optional[IRFortiOSPublishedServiceExtension] = None
     enabled: bool = True
 
     external_ip: Optional[str] = None
@@ -145,63 +136,42 @@ class IRPublishedService(BaseModel):
     protocol: Optional[str] = None
     external_port: Optional[str] = None
     mapped_port: Optional[str] = None
-    port_mapping_type: Optional[str] = None
-
-    arp_reply: Optional[bool] = None
-    gratuitous_arp_interval: Optional[int] = None
-    nat_source_vip: Optional[bool] = None
-    nat44: Optional[bool] = None
-    nat46: Optional[bool] = None
-    nat64: Optional[bool] = None
-    nat66: Optional[bool] = None
-    add_nat46_route: Optional[bool] = None
-    add_nat64_route: Optional[bool] = None
-    ndp_reply: Optional[bool] = None
-    ipv6_mapped_ip: Optional[str] = None
-    ipv6_mapped_port: Optional[str] = None
-    ipv4_mapped_ip: Optional[str] = None
-    ipv4_mapped_port: Optional[str] = None
-    embedded_ipv4_address: Optional[str] = None
 
     source_filters: List[str] = Field(default_factory=list)
     source_interface_filters: List[str] = Field(default_factory=list)
     services: List[str] = Field(default_factory=list)
 
     load_balance_method: Optional[str] = None
-    server_type: Optional[str] = None
     persistence: Optional[str] = None
-    http_redirect: Optional[bool] = None
-    h2_support: Optional[str] = None
-    h3_support: Optional[str] = None
-    http_multiplex: Optional[str] = None
-    ssl_mode: Optional[str] = None
     ssl_certificate: Optional[str] = None
-    ssl_algorithm: Optional[str] = None
-    ssl_min_version: Optional[str] = None
-    ssl_max_version: Optional[str] = None
-    ssl_server_algorithm: Optional[str] = None
-    ssl_server_min_version: Optional[str] = None
-    ssl_server_max_version: Optional[str] = None
-    ssl_pfs: Optional[str] = None
-    gslb_domain_name: Optional[str] = None
-    gslb_hostname: Optional[str] = None
     monitors: List[str] = Field(default_factory=list)
-    max_embryonic_connections: Optional[int] = None
     real_servers: List[IRVirtualIPRealServer] = Field(default_factory=list)
     source_explicit_fields: List[str] = Field(default_factory=list)
     source_effective_settings: Dict[str, Any] = Field(default_factory=dict)
     nested_source_configs: List[IRSourceConfigNode] = Field(default_factory=list)
-    source_gslb_public_ips: List[IRVirtualIPGSLBPublicIP] = Field(default_factory=list)
-    source_quic: Optional[IRVirtualIPQUICSettings] = None
-    source_ssl_cipher_suites: List[IRVirtualIPSSLCipherSuite] = Field(default_factory=list)
-    source_ssl_server_cipher_suites: List[IRVirtualIPSSLCipherSuite] = Field(default_factory=list)
-
     color: Optional[int] = None
     description: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
     migration_status: str = "NORMALIZED"
     requires_manual_review: bool = False
     audit_note: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def move_legacy_vendor_fields(cls, data: Any) -> Any:
+        return move_object_extension(data, (
+            "vip_type", "port_mapping_type", "arp_reply", "gratuitous_arp_interval",
+            "nat_source_vip", "nat44", "nat46", "nat64", "nat66",
+            "add_nat46_route", "add_nat64_route", "ndp_reply", "ipv6_mapped_ip",
+            "ipv6_mapped_port", "ipv4_mapped_ip", "ipv4_mapped_port",
+            "embedded_ipv4_address", "server_type", "http_redirect", "h2_support",
+            "h3_support", "http_multiplex", "ssl_mode", "ssl_algorithm",
+            "ssl_min_version", "ssl_max_version", "ssl_server_algorithm",
+            "ssl_server_min_version", "ssl_server_max_version", "ssl_pfs",
+            "gslb_domain_name", "gslb_hostname", "max_embryonic_connections",
+            "source_gslb_public_ips", "source_quic", "source_ssl_cipher_suites",
+            "source_ssl_server_cipher_suites",
+        ))
 class IRNATPortRange(BaseModel):
     start: int
     end: Optional[int] = None
@@ -248,7 +218,7 @@ class IRNATSourceTranslationFallback(BaseModel):
     interface: Optional[str] = None
     interface_ips: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-class IRNATRule(BaseModel):
+class IRNATRule(IRFortiOSNATRuleCompatibilityMixin, IRCheckPointNATRuleCompatibilityMixin, BaseModel):
     name: str
     type: NATType
     source_context: Optional[str] = None
@@ -452,54 +422,6 @@ class IRPublishedServiceGroup(BaseModel):
     requires_manual_review: bool = True
     audit_note: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-
-
-def _checkpoint_property(extension_type: type[BaseModel], field: str):
-    return property(
-        lambda self: get_object_extension_value(self, field),
-        lambda self, value: set_object_extension_value(
-            self, extension_type, field, value
-        ),
-    )
-
-
-for _field in (
-    "source_pool_group_references", "source_pool_type", "source_pool_excluded_ips", "source_pool_permit_any_host",
-    "source_pool_original_start_ip", "source_pool_original_end_ip",
-    "source_vip_reference", "source_vip_group_reference", "source_vip_type",
-    "source_vip_enabled", "source_vip_nat_source_vip", "source_vip_filters",
-    "source_vip_interface_filters", "source_vip_services", "source_vip_port_mapping_type",
-    "source_policy_fixed_port", "source_policy_nat46", "source_policy_nat64",
-    "source_policy_nat_inbound", "source_policy_nat_outbound", "source_policy_nat_ip",
-    "source_policy_match_vip", "source_policy_match_vip_only",
-    "source_policy_effective_match_vip", "source_policy_effective_match_vip_only",
-):
-    setattr(IRNATRule, _field, _checkpoint_property(IRFortiOSNATRuleExtension, _field))
-for _field in (
-    "block_size", "blocks_per_user", "pba_timeout", "pba_interim_log",
-    "ports_per_user", "privileged_port_use_pba", "nat64", "add_nat64_route",
-    "client_prefix_length", "include_subnet_broadcast", "tcp_session_quota",
-    "udp_session_quota", "icmp_session_quota", "cgn_block_size",
-    "cgn_client_start_ip", "cgn_client_end_ip", "cgn_client_ipv6_shift",
-    "cgn_fixed_allocation", "cgn_overload", "cgn_port_start", "cgn_port_end",
-    "cgn_spa", "utilization_alarm_clear", "utilization_alarm_raise", "nat46",
-    "add_nat46_route",
-):
-    setattr(IRNATPool, _field, _checkpoint_property(IRFortiOSNATPoolExtension, _field))
-for _field in (
-    "checkpoint_pool_object_type", "checkpoint_network_references",
-    "checkpoint_network_group_references", "checkpoint_address_range_references",
-    "checkpoint_gateway_references", "checkpoint_member_assignments",
-    "checkpoint_applicability", "checkpoint_precedence", "checkpoint_vpn_scope",
-    "checkpoint_mep",
-):
-    setattr(IRNATPool, _field, _checkpoint_property(IRCheckPointNATPoolExtension, _field))
-for _field in (
-    "checkpoint_domain_uid", "checkpoint_domain_name",
-    "checkpoint_package_uid", "checkpoint_package_name",
-):
-    setattr(IRNATRule, _field, _checkpoint_property(IRCheckPointNATRuleExtension, _field))
-
 
 IRIPPool = IRNATPool
 IRVirtualIP = IRPublishedService

@@ -5,10 +5,9 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, model_validator
 from .provenance import IRSourceConfigNode
 from .extension_models import (
+    IRCheckPointInterfaceCompatibilityMixin,
     IRCheckPointInterfaceExtension,
-    get_object_extension_value,
     move_object_extension,
-    set_object_extension_value,
 )
 
 
@@ -118,7 +117,7 @@ class IRCheckpointInterfaceContext(BaseModel):
     gaia_gateway_name: Optional[str] = None
     gaia_cluster_member_name: Optional[str] = None
     virtual_system_id: Optional[int] = None
-class IRInterface(BaseModel):
+class IRInterface(IRCheckPointInterfaceCompatibilityMixin, BaseModel):
     name: str
     source_context: Optional[str] = None
     vendor_extension: Optional[IRCheckPointInterfaceExtension] = None
@@ -294,18 +293,6 @@ class IRHighAvailability(BaseModel):
 
     migration_status: str = "EXTRACT_ONLY"
     requires_manual_review: bool = True
-
-
-def _checkpoint_interface_property(field: str):
-    return property(
-        lambda self: get_object_extension_value(self, field),
-        lambda self, value: set_object_extension_value(
-            self, IRCheckPointInterfaceExtension, field, value
-        ),
-    )
-
-
-setattr(IRInterface, "checkpoint_context", _checkpoint_interface_property("checkpoint_context"))
 
 
 class IRDHCPIPRange(BaseModel):

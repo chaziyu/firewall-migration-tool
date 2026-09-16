@@ -14,6 +14,7 @@ from .extension_models import (
     IRFortiOSNATPoolExtension,
     IRFortiOSNATRuleExtension,
     IRFortiOSPolicyExtension,
+    IRFortiOSPublishedServiceExtension,
     IRAddress6Template,
     IRIPPoolGroup,
     IRVendorExtensionIdentity,
@@ -106,6 +107,7 @@ class IRFortiOSExtensions(_VendorExtension):
     nat_pool_extensions: list[IRFortiOSNATPoolExtension] = Field(default_factory=list)
     nat_rule_extensions: list[IRFortiOSNATRuleExtension] = Field(default_factory=list)
     policy_extensions: list[IRFortiOSPolicyExtension] = Field(default_factory=list)
+    published_service_extensions: list[IRFortiOSPublishedServiceExtension] = Field(default_factory=list)
     security_policies: list[IRFortiGateSourceRule] = Field(default_factory=list)
     central_snat_rules: list[IRFortiGateSourceRule] = Field(default_factory=list)
     policy_routes: list[IRFortiGatePolicyRoute] = Field(default_factory=list)
