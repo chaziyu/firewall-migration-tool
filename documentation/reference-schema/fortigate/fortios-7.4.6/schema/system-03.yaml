@@ -5,108 +5,915 @@ sections:
 - path: system ha
   mode: singleton
   fields:
-    arps: integer
-    arps-interval: integer
-    authentication: enum
-    cpu-threshold: opaque-user
-    encryption: enum
-    evpn-ttl: integer
-    failover-hold-time: integer
-    ftp-proxy-threshold: opaque-user
-    gratuitous-arps: enum
-    group-id: integer
-    group-name: string
-    ha-direct: enum
-    ha-eth-type: string
-    ha-mgmt-status: enum
-    ha-uptime-diff-margin: integer
-    hb-interval: integer
-    hb-interval-in-milliseconds: enum
-    hb-lost-threshold: integer
-    hbdev: opaque-user
-    hc-eth-type: string
-    hello-holddown: integer
-    http-proxy-threshold: opaque-user
-    imap-proxy-threshold: opaque-user
-    ipsec-phase2-proposal: option-list
-    key: password!sensitive
-    l2ep-eth-type: string
-    link-failed-signal: enum
-    load-balance-all: enum
-    logical-sn: enum
-    memory-based-failover: enum
-    memory-compatible-mode: enum
-    memory-failover-flip-timeout: integer
-    memory-failover-monitor-period: integer
-    memory-failover-sample-rate: integer
-    memory-failover-threshold: integer
-    memory-threshold: opaque-user
-    mode: enum
-    monitor: opaque-user
-    multicast-ttl: integer
-    nntp-proxy-threshold: opaque-user
-    override: enum
-    override-wait-time: integer
-    password: password!sensitive
-    pingserver-failover-threshold: integer
-    pingserver-flip-timeout: integer
-    pingserver-monitor-interface: opaque-user
-    pingserver-secondary-force-reset: enum
-    pop3-proxy-threshold: opaque-user
-    priority: integer
-    route-hold: integer
-    route-ttl: integer
-    route-wait: integer
-    schedule: enum
-    session-pickup: enum
-    session-pickup-connectionless: enum
-    session-pickup-delay: enum
-    session-pickup-expectation: enum
-    session-pickup-nat: enum
-    session-sync-dev: opaque-user
-    smtp-proxy-threshold: opaque-user
-    ssd-failover: enum
-    standalone-config-sync: enum
-    standalone-mgmt-vdom: enum
-    sync-config: enum
-    sync-packet-balance: enum
-    unicast-gateway: ipv4-address
-    unicast-hb: enum
-    unicast-hb-netmask: ipv4-netmask
-    unicast-hb-peerip: ipv4-address
-    unicast-status: enum
-    uninterruptible-primary-wait: integer
-    upgrade-mode: enum
-    vcluster-status: enum
-    weight: opaque-user
+    arps:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: arps
+    arps-interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: arps-interval
+    authentication:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: authentication
+    cpu-threshold:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: cpu-threshold
+    encryption:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: encryption
+    evpn-ttl:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: evpn-ttl
+    failover-hold-time:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: failover-hold-time
+    ftp-proxy-threshold:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: ftp-proxy-threshold
+    gratuitous-arps:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: gratuitous-arps
+    group-id:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: group-id
+    group-name:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: group-name
+    ha-direct:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: ha-direct
+    ha-eth-type:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: ha-eth-type
+    ha-mgmt-status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: ha-mgmt-status
+    ha-uptime-diff-margin:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: ha-uptime-diff-margin
+    hb-interval:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: hb-interval
+    hb-interval-in-milliseconds:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: hb-interval-in-milliseconds
+    hb-lost-threshold:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: hb-lost-threshold
+    hbdev:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: hbdev
+    hc-eth-type:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: hc-eth-type
+    hello-holddown:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: hello-holddown
+    http-proxy-threshold:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: http-proxy-threshold
+    imap-proxy-threshold:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: imap-proxy-threshold
+    ipsec-phase2-proposal:
+      source_type: option-list
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: ipsec-phase2-proposal
+      cardinality: list
+    key:
+      source_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: key
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            parameter: key
+    l2ep-eth-type:
+      source_type: string
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: l2ep-eth-type
+    link-failed-signal:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: link-failed-signal
+    load-balance-all:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: load-balance-all
+    logical-sn:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: logical-sn
+    memory-based-failover:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: memory-based-failover
+    memory-compatible-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: memory-compatible-mode
+    memory-failover-flip-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: memory-failover-flip-timeout
+    memory-failover-monitor-period:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: memory-failover-monitor-period
+    memory-failover-sample-rate:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: memory-failover-sample-rate
+    memory-failover-threshold:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: memory-failover-threshold
+    memory-threshold:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: memory-threshold
+    mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: mode
+    monitor:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: monitor
+    multicast-ttl:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: multicast-ttl
+    nntp-proxy-threshold:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: nntp-proxy-threshold
+    override:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: override
+    override-wait-time:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: override-wait-time
+    password:
+      source_type: password
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: password
+      semantic:
+        sensitive: true
+        evidence:
+          status: project_semantic
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            parameter: password
+    pingserver-failover-threshold:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: pingserver-failover-threshold
+    pingserver-flip-timeout:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: pingserver-flip-timeout
+    pingserver-monitor-interface:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: pingserver-monitor-interface
+    pingserver-secondary-force-reset:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: pingserver-secondary-force-reset
+    pop3-proxy-threshold:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: pop3-proxy-threshold
+    priority:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: priority
+    route-hold:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: route-hold
+    route-ttl:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: route-ttl
+    route-wait:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: route-wait
+    schedule:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: schedule
+    session-pickup:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: session-pickup
+    session-pickup-connectionless:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: session-pickup-connectionless
+    session-pickup-delay:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: session-pickup-delay
+    session-pickup-expectation:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: session-pickup-expectation
+    session-pickup-nat:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: session-pickup-nat
+    session-sync-dev:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: session-sync-dev
+    smtp-proxy-threshold:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: smtp-proxy-threshold
+    ssd-failover:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: ssd-failover
+    standalone-config-sync:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: standalone-config-sync
+    standalone-mgmt-vdom:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: standalone-mgmt-vdom
+    sync-config:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: sync-config
+    sync-packet-balance:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: sync-packet-balance
+    unicast-gateway:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: unicast-gateway
+      address_family: ipv4
+    unicast-hb:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: unicast-hb
+    unicast-hb-netmask:
+      source_type: ipv4-netmask
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: unicast-hb-netmask
+      address_family: ipv4
+    unicast-hb-peerip:
+      source_type: ipv4-address
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: unicast-hb-peerip
+      address_family: ipv4
+    unicast-status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: unicast-status
+    uninterruptible-primary-wait:
+      source_type: integer
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: uninterruptible-primary-wait
+    upgrade-mode:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: upgrade-mode
+    vcluster-status:
+      source_type: enum
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: vcluster-status
+    weight:
+      source_type: opaque-user
+      evidence:
+        status: documented
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          parameter: weight
   nested:
   - name: ha-mgmt-interfaces
     mode: table
     key: <id>
     fields:
-      dst: ipv4-classnet
-      gateway: ipv4-address
-      gateway6: ipv6-address
-      interface: string
+      dst:
+        source_type: ipv4-classnet
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha ha-mgmt-interfaces
+            parameter: dst
+        address_family: ipv4
+      gateway:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha ha-mgmt-interfaces
+            parameter: gateway
+        address_family: ipv4
+      gateway6:
+        source_type: ipv6-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha ha-mgmt-interfaces
+            parameter: gateway6
+        address_family: ipv6
+      interface:
+        source_type: string
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha ha-mgmt-interfaces
+            parameter: interface
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system ha
+        nested_config_path: system ha ha-mgmt-interfaces
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          nested_config_path: system ha ha-mgmt-interfaces
   - name: unicast-peers
     mode: table
     key: <id>
     fields:
-      peer-ip: ipv4-address
+      peer-ip:
+        source_type: ipv4-address
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha unicast-peers
+            parameter: peer-ip
+        address_family: ipv4
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system ha
+        nested_config_path: system ha unicast-peers
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          nested_config_path: system ha unicast-peers
   - name: vcluster
     mode: table
     key: <vcluster-id>
     fields:
-      monitor: opaque-user
-      override: enum
-      override-wait-time: integer
-      pingserver-failover-threshold: integer
-      pingserver-flip-timeout: integer
-      pingserver-monitor-interface: opaque-user
-      pingserver-secondary-force-reset: enum
-      priority: integer
-      vdom: identifier-list
+      monitor:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha vcluster
+            parameter: monitor
+      override:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha vcluster
+            parameter: override
+      override-wait-time:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha vcluster
+            parameter: override-wait-time
+      pingserver-failover-threshold:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha vcluster
+            parameter: pingserver-failover-threshold
+      pingserver-flip-timeout:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha vcluster
+            parameter: pingserver-flip-timeout
+      pingserver-monitor-interface:
+        source_type: opaque-user
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha vcluster
+            parameter: pingserver-monitor-interface
+      pingserver-secondary-force-reset:
+        source_type: enum
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha vcluster
+            parameter: pingserver-secondary-force-reset
+      priority:
+        source_type: integer
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha vcluster
+            parameter: priority
+      vdom:
+        source_type: identifier-list
+        evidence:
+          status: documented
+          source:
+            document: FortiOS 7.4.6 CLI Reference
+            document_id: 01-746-912654-20241212
+            config_path: system ha
+            nested_config_path: system ha vcluster
+            parameter: vdom
+        cardinality: list
+    evidence:
+      status: documented
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system ha
+        nested_config_path: system ha vcluster
+    semantic:
+      migration_relevance: migration_relevant
+      evidence:
+        status: project_semantic
+        source:
+          document: FortiOS 7.4.6 CLI Reference
+          document_id: 01-746-912654-20241212
+          config_path: system ha
+          nested_config_path: system ha vcluster
   model_dependent: true
+  evidence:
+    status: documented
+    source:
+      document: FortiOS 7.4.6 CLI Reference
+      document_id: 01-746-912654-20241212
+      config_path: system ha
+  semantic:
+    migration_relevance: migration_relevant
+    evidence:
+      status: project_semantic
+      source:
+        document: FortiOS 7.4.6 CLI Reference
+        document_id: 01-746-912654-20241212
+        config_path: system ha
 - path: system icond
   mode: singleton
   fields:
