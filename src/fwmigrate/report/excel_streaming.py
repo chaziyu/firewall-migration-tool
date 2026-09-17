@@ -30,6 +30,13 @@ from fwmigrate.report.fortigate_address_schedule_excel import (
 from fwmigrate.report.fortigate_semantics_excel import FortiGateSemanticsExcelExporter
 from fwmigrate.report.nat_audit_excel import NATAuditIRExcelExporter
 
+try:
+    from openpyxl.cell import WriteOnlyCell
+    from openpyxl.utils import get_column_letter
+except ImportError:  # pragma: no cover - exercised only without the reports dependency
+    WriteOnlyCell = None
+    get_column_letter = None
+
 
 logger = logging.getLogger("fwmigrate.report.excel_optimized")
 
@@ -136,6 +143,49 @@ _MANDATORY_EMPTY_SHEETS = frozenset(
     }
 )
 
+FAST_DEFAULT_COLUMN_WIDTH = 18
+FAST_COLUMN_WIDTHS = {
+    "Name": 28,
+    "Migration Status": 22,
+    "Extraction Status": 22,
+    "Manual Review": 16,
+    "Review Reasons": 50,
+    "Review Reason": 50,
+    "Issue / Review Reason": 50,
+    "Source": 32,
+    "Destination": 32,
+    "Service": 28,
+    "Source Attributes": 50,
+    "Additional Settings": 50,
+    "Description": 50,
+    "Notes": 50,
+    "Evidence / Note": 50,
+    "Field": 28,
+    "Value": 50,
+    "Sheet": 32,
+}
+
+
+def _append_styled_row(
+    sheet: Any,
+    values: Sequence[Any],
+    styles: dict[str, Any],
+    kind: str,
+    first_cell_only: bool = False,
+) -> None:
+    row = list(values)
+    styled_count = 1 if first_cell_only else len(row)
+    for index in range(styled_count):
+        cell = WriteOnlyCell(sheet, value=row[index])
+        cell.font = styles[f"{kind}_font"]
+        cell.alignment = styles[f"{kind}_alignment"]
+        if kind in {"title", "header"}:
+            cell.fill = styles[f"{kind}_fill"]
+        if kind == "header":
+            cell.border = styles["header_border"]
+        row[index] = cell
+    sheet.append(row)
+
 
 @dataclass
 class _StreamingCell:
@@ -168,6 +218,13 @@ class _StreamingSheetProxy:
 
 class StreamingFastExcelExporter(NATAuditIRExcelExporter):
     """Write FAST exports forward without retaining an in-memory workbook."""
+
+    @staticmethod
+    def _configure_fast_columns(sheet: Any, headers: Sequence[str]) -> None:
+        for column, header in enumerate(headers, 1):
+            sheet.column_dimensions[get_column_letter(column)].width = FAST_COLUMN_WIDTHS.get(
+                str(header), FAST_DEFAULT_COLUMN_WIDTH
+            )
 
     def _stream_proxy(self, rows: int = 0, columns: int = 0) -> _StreamingSheetProxy:
         return _StreamingSheetProxy(
@@ -343,6 +400,7 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
             for index, values in enumerate(row_iterator):
                 yield tuple(values) + self._extra_values(title, index)
 
+        styles = self._table_styles()
         sheet_names = [title]
         sheets: list[tuple[Any, int, float, int]] = []
         limit = self._export_options.max_rows_per_sheet or self.MAX_ROWS_PER_DATA_SHEET
@@ -353,9 +411,28 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         def start_sheet(sheet: Any, note: str) -> None:
             width = len(output_headers)
             sheet.sheet_view.showGridLines = False
-            sheet.append([title] + [""] * (width - 1))
-            sheet.append([self._safe_value(f"Back to Summary  |  {note}")] + [""] * (width - 1))
-            sheet.append(list(output_headers))
+            self._configure_fast_columns(sheet, output_headers)
+            sheet.freeze_panes = "A4"
+            _append_styled_row(
+                sheet,
+                [title] + [""] * (width - 1),
+                styles,
+                "title",
+                first_cell_only=True,
+            )
+            _append_styled_row(
+                sheet,
+                [self._safe_value(f"Back to Summary  |  {note}")] + [""] * (width - 1),
+                styles,
+                "subtitle",
+                first_cell_only=True,
+            )
+            _append_styled_row(
+                sheet,
+                tuple(output_headers),
+                styles,
+                "header",
+            )
 
         start_sheet(current, subtitle if has_rows else empty_note)
         current_count = 0
@@ -394,6 +471,8 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         self._register_partitioned_sheets(title, sheet_names)
         metrics = getattr(self, "_last_export_metrics", None)
         for sheet, row_count, started, populated in sheets:
+            last_column = get_column_letter(len(output_headers))
+            sheet.auto_filter.ref = f"A3:{last_column}{max(3, row_count + 3)}"
             self._stream_sheet_counts[sheet.title] = row_count
             self._stream_sheet_columns[sheet.title] = len(output_headers)
             if metrics is not None:
@@ -434,16 +513,33 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         rows: Iterable[Sequence[Any]],
     ) -> None:
         width = len(headers)
-        sheet.append([title] + [""] * (width - 1))
+        styles = self._table_styles()
+        sheet.sheet_view.showGridLines = False
+        self._configure_fast_columns(sheet, headers)
+        sheet.freeze_panes = "A4"
+        _append_styled_row(
+            sheet,
+            [title] + [""] * (width - 1),
+            styles,
+            "title",
+            first_cell_only=True,
+        )
         sheet.append([""] * width)
-        sheet.append(list(headers))
+        _append_styled_row(sheet, headers, styles, "header")
+        row_count = 0
         for row in rows:
+            row_count += 1
             sheet.append([self._safe_value(value) for value in row])
+        last_column = get_column_letter(width)
+        sheet.auto_filter.ref = f"A3:{last_column}{max(3, row_count + 3)}"
 
     def _write_summary(self, sheet: Any) -> None:
-        sheet.append(["Firewall Source Inventory"])
-        sheet.append(["FAST streaming export"])
-        sheet.append(["Field", "Value"])
+        styles = self._table_styles()
+        sheet.sheet_view.showGridLines = False
+        self._configure_fast_columns(sheet, ("Field", "Value", "Sheet", "Rows", "Columns"))
+        _append_styled_row(sheet, ["Firewall Source Inventory"], styles, "title")
+        _append_styled_row(sheet, ["FAST streaming export"], styles, "subtitle")
+        _append_styled_row(sheet, ["Field", "Value"], styles, "header")
         metadata = self.ir.metadata
         for label, value in (
             ("Source Vendor", metadata.source_vendor),
@@ -455,7 +551,7 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         ):
             sheet.append([label, self._safe_value(value)])
         sheet.append([])
-        sheet.append(["Sheet", "Rows", "Columns"])
+        _append_styled_row(sheet, ["Sheet", "Rows", "Columns"], styles, "header")
         for name in self.SHEET_ORDER:
             if name in {"Summary", "Review Required", "Extraction Evidence"}:
                 continue

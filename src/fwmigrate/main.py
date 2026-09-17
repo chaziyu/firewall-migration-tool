@@ -16,7 +16,6 @@ register_builtin_plugins()
 
 from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.application import MigrationPipeline, MigrationRequest
-from fwmigrate.report.migration_report import MigrationReporter
 from fwmigrate.config import MigrationConfig
 
 @click.group()
@@ -45,9 +44,7 @@ def vendors():
 @click.option('--zone-map', type=click.Path(exists=True), help='YAML file with interface to zone mappings')
 @click.option('--format', type=click.Choice(['xml', 'set', 'terraform', 'cli']), default='xml', help='Output format')
 @click.option('--optimize', is_flag=True, default=False, help='Prune unused objects and optimize rules')
-@click.option('--report', type=click.Path(), help='Output path for the unified migration & configuration report markdown file')
-@click.option('--txt-report', type=click.Path(), hidden=True, help='Deprecated: Configuration summary is now part of the unified Markdown report')
-def migrate(input, output, source_vendor, target_vendor, zone_map, format, optimize, report, txt_report):
+def migrate(input, output, source_vendor, target_vendor, zone_map, format, optimize):
     """Migrate a firewall configuration between vendors."""
     try:
         # 1. Load config
@@ -109,30 +106,6 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
             with open(out_path, 'w', encoding='utf-8') as f:
                 f.write(artifact.content)
             click.echo(f"  Saved {out_path}")
-
-        # 5. Generate Unified Migration & Configuration Reports (Dual Export: MD & HTML)
-        if report:
-            click.echo(f"Generating unified migration reports: {report}")
-            reporter = MigrationReporter(
-                ir_config, target_vendor=result.target_display_name or target_vendor,
-                extraction_result=result.extraction,
-            )
-            report_content = reporter.generate_report()
-            html_report_content = reporter.generate_html_report()
-
-            report_path = Path(report)
-            report_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(report_content)
-            click.echo(f"  Saved Markdown: {report_path}")
-
-            html_report_path = report_path.with_suffix('.html')
-            with open(html_report_path, 'w', encoding='utf-8') as f:
-                f.write(html_report_content)
-            click.echo(f"  Saved Interactive HTML: {html_report_path}")
-
-        if txt_report:
-            click.echo("Note: --txt-report is deprecated. Configuration summary is now included in the unified Markdown report (--report).")
 
         click.echo("Migration complete!")
 

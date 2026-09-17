@@ -1443,7 +1443,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!resp.ok) {
           const errData = await resp.json().catch(() => ({}));
-          throw new Error(errData.error || "Failed to generate package");
+          const blockingReasons = Array.isArray(errData.blocking_reasons)
+            ? errData.blocking_reasons.filter(Boolean)
+            : [];
+          blockingReasons.forEach((reason) =>
+            logToTerminal(`[SAFETY] ${reason}`, "term-error"),
+          );
+          const detail = blockingReasons.length
+            ? ` ${blockingReasons[0]}${
+                blockingReasons.length > 1
+                  ? ` (+${blockingReasons.length - 1} more)`
+                  : ""
+              }`
+            : "";
+          throw new Error(
+            `${errData.error || "Failed to generate package"}${detail}`,
+          );
         }
 
         const blob = await resp.blob();

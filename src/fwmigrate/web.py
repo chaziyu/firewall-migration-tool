@@ -24,7 +24,6 @@ from fwmigrate.core.registry import PluginRegistry
 from fwmigrate.core.optimizer import RuleOptimizer
 from fwmigrate.application import MigrationPipeline, MigrationRequest
 from fwmigrate.application.metrics import PipelineMetrics
-from fwmigrate.report.migration_report import MigrationReporter
 from fwmigrate.report import (
     ExcelExportUnavailableError,
     ExcelExportOptions,
@@ -406,12 +405,11 @@ def create_app(test_config=None):
 
     @app.route('/api/migrate', methods=['POST'])
     def migrate():
-        """Multi-vendor migration handler: Generates configuration artifacts and Markdown audit report in a ZIP."""
+        """Generate a multi-vendor migration bundle."""
         try:
             source_vendor = request.form.get('source_vendor', 'fortigate')
             target_vendor = request.form.get('target_vendor', 'palo_alto')
             optimize = request.form.get('optimize', 'false').lower() == 'true'
-            include_report = request.form.get('include_report', 'true').lower() == 'true'
             include_inventory = request.form.get('include_inventory', 'true').lower() == 'true'
 
             if 'file' not in request.files or request.files['file'].filename == '':
@@ -452,27 +450,12 @@ def create_app(test_config=None):
                     extraction_result=result.extraction,
                 ).generate()
 
-            report_content = html_report_content = None
-            if include_report:
-                reporter = MigrationReporter(
-                    ir_config, target_vendor=result.target_display_name or target_vendor,
-                    extraction_result=result.extraction,
-                )
-                report_content = reporter.generate_report()
-                html_report_content = reporter.generate_html_report()
-
             # Package into ZIP
             memory_file = io.BytesIO()
             with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-                written_names = set()
                 for art in artifacts:
                     fname = f"terraform/{art.filename}" if art.format == "terraform" else art.filename
                     zf.writestr(fname, art.content)
-                    written_names.add(fname)
-                if include_report and "migration_report.md" not in written_names:
-                    zf.writestr("migration_report.md", report_content)
-                if include_report and "migration_report.html" not in written_names:
-                    zf.writestr("migration_report.html", html_report_content)
                 if include_inventory:
                     inventory_name = f"source_inventory_{_safe_vendor_filename(source_vendor)}.xlsx"
                     zf.writestr(inventory_name, source_inventory)
@@ -665,16 +648,7 @@ def create_app(test_config=None):
             ir_config = result.final_ir
             if ir_config is None:
                 return jsonify({'error': 'Failed to extract configuration from file'}), 400
-            extraction_result = result.extraction
             tf_artifacts = result.artifacts
-
-            reporter = MigrationReporter(
-                ir_config,
-                target_vendor=result.target_display_name or target_vendor,
-                extraction_result=extraction_result,
-            )
-            report_content = reporter.generate_report()
-            html_report_content = reporter.generate_html_report()
 
             # Create Sandbox
             session_id = str(uuid.uuid4())
@@ -688,11 +662,6 @@ def create_app(test_config=None):
             }
 
             sandbox_dir = sandbox.create(tf_artifacts, tfvars=tfvars)
-
-            with open(sandbox_dir / "migration_report.md", "w", encoding="utf-8") as f:
-                f.write(report_content)
-            with open(sandbox_dir / "migration_report.html", "w", encoding="utf-8") as f:
-                f.write(html_report_content)
 
             secrets = [s for s in [password, api_key] if s]
             secret_env = {}

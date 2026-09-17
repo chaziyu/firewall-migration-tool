@@ -742,10 +742,23 @@ def _semantic_unknown_keys(
         if source_context is not None and item_context not in {None, source_context}:
             continue
         extras = getattr(item, "extra_settings", {}) or {}
-        keys.update(
-            str(key) for key in extras
-            if str(key).replace("-", "_").lower() not in COSMETIC_SOURCE_SETTINGS
-        )
+        for key, value in extras.items():
+            normalized_key = str(key).replace("-", "_").lower()
+            if normalized_key in COSMETIC_SOURCE_SETTINGS:
+                continue
+            if path == "firewall service custom" and normalized_key == "id":
+                continue
+            if path == "firewall service custom" and normalized_key == "source_unset_settings":
+                unset_settings = value if isinstance(value, list) else [value]
+                keys.update(
+                    str(unset_key)
+                    for unset_key in unset_settings
+                    if str(unset_key).replace("-", "_") not in item.model_fields
+                )
+                continue
+            if path == "vpn ipsec phase1-interface" and normalized_key == "wizard_type":
+                continue
+            keys.add(str(key))
         if path == "system dns":
             # These fields are intentionally explicit in the vendor model,
             # but remain outside portable IRDNSSettings semantics.
@@ -765,6 +778,11 @@ def _semantic_unknown_keys(
 
 
 def _count_ir_source_section(ir_config: IRConfig, path: str) -> int:
+    if path == "firewall service custom":
+        return sum(
+            not str(item.description or "").startswith("Generated from VIP ")
+            for item in ir_config.services
+        )
     if path in ADDRESS_OBJECT_SOURCE_SECTIONS:
         return sum(item.source_section == path for item in ir_config.addresses) + sum(
             item.source_section == path for item in ir_config.address_groups
@@ -1242,9 +1260,7 @@ def classify_section_coverage(
             ]
             partial_policies = [
                 policy for policy in policies
-                if policy.requires_manual_review
-                or policy.migration_status != "NORMALIZED"
-                or policy.review_reasons
+                if policy.migration_status == "PARTIALLY_NORMALIZED"
             ]
             if partial_policies:
                 section.status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -1252,15 +1268,17 @@ def classify_section_coverage(
                     f"{len(partial_policies)} policy object(s) retain semantic or reference review findings."
                 )
                 continue
+            if any(policy.migration_status == "VENDOR_EXTENSION" for policy in policies):
+                section.status = ExtractionStatus.VENDOR_EXTENSION
+                section.notes.append("Policy objects retain source-specific semantics in typed extensions.")
+                continue
 
         if path in {"firewall multicast-policy", "firewall multicast-policy6"}:
             family = "ipv6" if path.endswith("6") else "ipv4"
             partial_policies = [
                 policy for policy in ir_config.multicast_policies
                 if policy.address_family == family and (
-                    policy.requires_manual_review
-                    or policy.migration_status != "NORMALIZED"
-                    or policy.review_reasons
+                    policy.migration_status == "PARTIALLY_NORMALIZED"
                 )
             ]
             if partial_policies:
@@ -1279,8 +1297,7 @@ def classify_section_coverage(
                     or group.source_context == section.source_context
                 )
                 and (
-                    group.requires_manual_review
-                    or group.migration_status != "NORMALIZED"
+                    group.migration_status == "PARTIALLY_NORMALIZED"
                 )
             ]
             if partial_groups:
@@ -1306,6 +1323,21 @@ def classify_section_coverage(
                 section.notes.append(
                     "Typed source values are retained, but exact target QoS behavior is vendor-specific."
                 )
+            continue
+
+        if path == "vpn ipsec phase1-interface":
+            vpn_objects = [
+                tunnel for tunnel in ir_config.vpn_tunnels
+                if section.source_context is None
+                or tunnel.source_context == section.source_context
+            ]
+            if any(tunnel.migration_status == "PARTIALLY_NORMALIZED" for tunnel in vpn_objects):
+                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
+            elif any(tunnel.migration_status == "VENDOR_EXTENSION" for tunnel in vpn_objects):
+                section.status = ExtractionStatus.VENDOR_EXTENSION
+                section.notes.append("Phase 1 objects retain source-specific IPsec semantics.")
+            else:
+                section.status = ExtractionStatus.NORMALIZED
             continue
 
         source_count = section.object_count_source
@@ -1334,8 +1366,7 @@ def classify_section_coverage(
                     or vip.source_context == section.source_context
                 )
                 and (
-                    vip.requires_manual_review
-                    or vip.migration_status != "NORMALIZED"
+                    vip.migration_status == "PARTIALLY_NORMALIZED"
                 )
             ]
             if partial_vips:
@@ -1346,6 +1377,14 @@ def classify_section_coverage(
                 )
                 if note not in section.notes:
                     section.notes.append(note)
+                continue
+            if any(
+                vip.address_family == family
+                and vip.migration_status == "VENDOR_EXTENSION"
+                for vip in ir_config.virtual_ips
+            ):
+                section.status = ExtractionStatus.VENDOR_EXTENSION
+                section.notes.append("Virtual IP objects retain source-specific semantics in typed extensions.")
                 continue
 
         if semantic_unknowns:
@@ -1363,9 +1402,7 @@ def classify_section_coverage(
         if path == "system interface":
             partial_interfaces = [
                 interface for interface in ir_config.interfaces
-                if interface.requires_manual_review
-                or interface.migration_status != "NORMALIZED"
-                or interface.review_reasons
+                if interface.migration_status == "PARTIALLY_NORMALIZED"
             ]
             if partial_interfaces:
                 section.status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -1373,12 +1410,15 @@ def classify_section_coverage(
                     f"{len(partial_interfaces)} interface(s) require manual review for topology or semantic review findings."
                 )
                 continue
+            if any(interface.migration_status == "VENDOR_EXTENSION" for interface in ir_config.interfaces):
+                section.status = ExtractionStatus.VENDOR_EXTENSION
+                section.notes.append("Interface objects retain source-specific semantics in typed extensions.")
+                continue
 
         if path == "firewall service custom":
             partial_services = [
                 item for item in ir_config.services
-                if item.requires_manual_review
-                or item.migration_status != "NORMALIZED"
+                if item.migration_status == "PARTIALLY_NORMALIZED"
             ]
             if partial_services:
                 section.status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -1387,12 +1427,15 @@ def classify_section_coverage(
                     "source-specific or manually reviewed semantics."
                 )
                 continue
+            if any(item.migration_status == "VENDOR_EXTENSION" for item in ir_config.services):
+                section.status = ExtractionStatus.VENDOR_EXTENSION
+                section.notes.append("Service objects retain source-specific semantics in typed extensions.")
+                continue
 
         if path == "firewall service group":
             partial_groups = [
                 item for item in ir_config.service_groups
-                if item.requires_manual_review
-                or item.migration_status != "NORMALIZED"
+                if item.migration_status == "PARTIALLY_NORMALIZED"
             ]
             if partial_groups:
                 section.status = ExtractionStatus.PARTIALLY_NORMALIZED
@@ -1410,10 +1453,8 @@ def classify_section_coverage(
                 if (
                     route.address_family == family
                     and (
-                        route.requires_manual_review
+                        route.migration_status == "PARTIALLY_NORMALIZED"
                         or route.parse_error is not None
-                        or route.migration_status != "NORMALIZED"
-                        or route.review_reasons
                     )
                 )
             ]
@@ -1433,23 +1474,29 @@ def classify_section_coverage(
                     "source semantics."
                 )
                 continue
+            if any(
+                route.address_family == family
+                and route.migration_status == "VENDOR_EXTENSION"
+                for route in ir_config.routes
+            ):
+                section.status = ExtractionStatus.VENDOR_EXTENSION
+                section.notes.append("Static routes retain source-specific semantics in typed extensions.")
+                continue
 
         if path in ADDRESS_OBJECT_SOURCE_SECTIONS:
             partial_addresses = [
                 item for item in ir_config.addresses
                 if item.source_section == path
                 and (
-                    item.requires_manual_review
+                    item.migration_status == "PARTIALLY_NORMALIZED"
                     or item.parse_error is not None
-                    or item.migration_status != "NORMALIZED"
                 )
             ]
             partial_derived_groups = [
                 item for item in ir_config.address_groups
                 if item.source_section == path
                 and (
-                    item.requires_manual_review
-                    or item.migration_status != "NORMALIZED"
+                    item.migration_status == "PARTIALLY_NORMALIZED"
                 )
             ]
             partial_count = len(partial_addresses) + len(partial_derived_groups)
@@ -1459,6 +1506,14 @@ def classify_section_coverage(
                     f"{partial_count} address object(s) retain source-specific, "
                     "missing, or manually reviewed semantics."
                 )
+                continue
+            if any(
+                item.migration_status == "VENDOR_EXTENSION"
+                for item in ir_config.addresses
+                if item.source_section == path
+            ):
+                section.status = ExtractionStatus.VENDOR_EXTENSION
+                section.notes.append("Address objects retain source-specific semantics in typed extensions.")
                 continue
 
         if path == "system interface":
@@ -1474,9 +1529,7 @@ def classify_section_coverage(
             )
 
             review_interface_count = sum(
-                interface.requires_manual_review
-                or interface.migration_status != "NORMALIZED"
-                or bool(interface.review_reasons)
+                interface.migration_status == "PARTIALLY_NORMALIZED"
                 for interface in interfaces
             )
 
@@ -1504,6 +1557,10 @@ def classify_section_coverage(
                 or review_interface_count
             ):
                 continue
+            if any(interface.migration_status == "VENDOR_EXTENSION" for interface in interfaces):
+                section.status = ExtractionStatus.VENDOR_EXTENSION
+                section.notes.append("Interface objects retain source-specific semantics in typed extensions.")
+                continue
 
         if path == "firewall ippool":
             partial_pools = [
@@ -1520,7 +1577,8 @@ def classify_section_coverage(
         if path in {"firewall vip", "firewall vip realservers"}:
             partial_vips = [
                 vip for vip in ir_config.virtual_ips
-                if vip.address_family == "ipv4" and vip.requires_manual_review
+                if vip.address_family == "ipv4"
+                and vip.migration_status == "PARTIALLY_NORMALIZED"
             ]
             if partial_vips:
                 section.status = ExtractionStatus.PARTIALLY_NORMALIZED

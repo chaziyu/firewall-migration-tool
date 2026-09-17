@@ -120,6 +120,16 @@ class IRFortiOSNATRuleExtension(IRVendorExtensionIdentity):
     source_attributes: dict[str, Any] = Field(default_factory=dict)
 
 
+class IRFortiOSInterfaceExtension(IRVendorExtensionIdentity):
+    source_src_check: str | None = None
+    source_netflow_sampler: Any | None = None
+    source_sflow_sampler: Any | None = None
+    source_sample_rate: Any | None = None
+    source_polling_interval: Any | None = None
+    source_lldp_transmission: Any | None = None
+    source_attributes: dict[str, Any] = Field(default_factory=dict)
+
+
 class IRFortiOSNATPoolExtension(IRVendorExtensionIdentity):
     arp_reply: bool | None = None
     arp_interface: str | None = None

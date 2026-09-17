@@ -7,6 +7,7 @@ from .provenance import IRSourceConfigNode
 from .extension_models import (
     IRCheckPointInterfaceCompatibilityMixin,
     IRCheckPointInterfaceExtension,
+    IRFortiOSInterfaceExtension,
     move_object_extension,
 )
 
@@ -120,7 +121,9 @@ class IRCheckpointInterfaceContext(BaseModel):
 class IRInterface(IRCheckPointInterfaceCompatibilityMixin, BaseModel):
     name: str
     source_context: Optional[str] = None
-    vendor_extension: Optional[IRCheckPointInterfaceExtension] = None
+    vendor_extension: Optional[
+        IRCheckPointInterfaceExtension | IRFortiOSInterfaceExtension
+    ] = None
     zone: Optional[str] = None
     ip: Optional[str] = None
     # IPv6 interface addressing is kept separate from the legacy IPv4 scalar.

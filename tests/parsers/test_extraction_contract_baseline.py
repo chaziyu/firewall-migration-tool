@@ -18,7 +18,7 @@ EXPECTED_ACCOUNTING = {
 # extraction safe, complete, review; canonical IR safe, review
 EXPECTED_SAFETY = {
     "fortigate": (False, False, True, False, True),
-    "palo_alto": (False, False, True, False, True),
+    "palo_alto": (True, True, True, True, True),
     "cisco_asa": (True, True, False, True, False),
     "cisco_ftd": (True, True, False, True, False),
     "checkpoint": (False, False, True, False, True),
