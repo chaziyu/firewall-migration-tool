@@ -4,6 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
   let currentFile = null;
   let currentLiveCollectionId = null;
+  let currentPreviewId = null;
   let currentSessionId = null;
   let selectedSourceVendor = "fortigate";
   let selectedTargetVendor = "palo_alto";
@@ -594,6 +595,7 @@ document.addEventListener("DOMContentLoaded", () => {
     previewController = null;
     sourceReady = false;
     sourceFailed = false;
+    currentPreviewId = null;
     currentPolicies = [];
     optimizerPanel?.classList.add("hidden");
     [
@@ -1278,6 +1280,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const requestRevision = sourceRevision;
     sourceReady = false;
     sourceFailed = false;
+    currentPreviewId = null;
     setPreviewStatus(
       "Reading your configuration and preparing the inventory…",
       "loading",
@@ -1298,6 +1301,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       const data = await readJson(resp, "Could not read this configuration");
       if (requestRevision !== sourceRevision) return;
+      currentPreviewId = data.preview_id || null;
       const stats = data.stats || {};
       if (optimizerPanel) optimizerPanel.classList.remove("hidden");
       if (statTotalRules) statTotalRules.textContent = count(stats.policies);
@@ -1500,6 +1504,8 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("file", currentFile);
         formData.append("source_vendor", selectedSourceVendor);
       }
+      if (currentPreviewId) formData.append("preview_id", currentPreviewId);
+      formData.append("excel_profile", "fast");
 
       try {
         const live = !currentFile && currentLiveCollectionId;

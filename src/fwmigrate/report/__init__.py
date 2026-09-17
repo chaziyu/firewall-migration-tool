@@ -36,6 +36,7 @@ from fwmigrate.report.fortigate_address_schedule_excel import (
     FortiGateAddressScheduleExcelExporter,
 )
 from fwmigrate.report.excel_optimized import SinglePassIRExcelExporter
+from fwmigrate.report.excel_streaming import StreamingFastExcelExporter
 from fwmigrate.report.nat_audit_excel import NATAuditIRExcelExporter
 from fwmigrate.report.excel_options import ExcelExportOptions, ExcelExportProfile
 
@@ -52,5 +53,6 @@ __all__ = [
     "ExcelExportProfile",
     "ExcelExportUnavailableError",
     "IRExcelExporter",
+    "StreamingFastExcelExporter",
     "XLSX_MIMETYPE",
 ]

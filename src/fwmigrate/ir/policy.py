@@ -456,7 +456,8 @@ class IRSecurityPolicy(IRCheckPointPolicyCompatibilityMixin, IRFortiOSPolicyComp
             "source_identity_based_route", "source_ztna_status", "source_ztna_ems_tags",
             "source_ztna_device_ownership", "source_ztna_ems_tags_secondary",
             "source_ztna_geo_tags", "source_ztna_policy_redirect",
-            "source_ztna_tags_match_logic",
+            "source_ztna_tags_match_logic", "source_attachments",
+            "destination_attachments",
         ))
 
     @model_validator(mode="after")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -79,7 +79,19 @@ class IRFortiOSAddressExtension(IRVendorExtensionIdentity):
         return [] if value is None else [value] if isinstance(value, str) else value
 
 
+class IRFortiOSAttachment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    kind: Literal[
+        "interface", "zone", "sdwan_zone", "virtual_interface", "unknown", "any"
+    ]
+    resolved: bool
+
+
 class IRFortiOSNATRuleExtension(IRVendorExtensionIdentity):
+    source_attachments: list[IRFortiOSAttachment] = Field(default_factory=list)
+    destination_attachments: list[IRFortiOSAttachment] = Field(default_factory=list)
     source_pool_group_references: list[str] = Field(default_factory=list)
     source_pool_type: str | None = None
     source_pool_excluded_ips: list[str] = Field(default_factory=list)
@@ -141,6 +153,8 @@ class IRFortiOSNATPoolExtension(IRVendorExtensionIdentity):
 
 
 class IRFortiOSPolicyExtension(IRVendorExtensionIdentity):
+    source_attachments: list[IRFortiOSAttachment] = Field(default_factory=list)
+    destination_attachments: list[IRFortiOSAttachment] = Field(default_factory=list)
     source_utm_status: str | None = None
     source_inspection_mode: str | None = None
     source_timeout_send_rst: str | None = None
@@ -908,6 +922,22 @@ class IRFortiOSAddressGroupCompatibilityMixin:
 
 
 class IRFortiOSPolicyCompatibilityMixin:
+    @property
+    def source_attachments(self):
+        return get_object_extension_value(self, "source_attachments")
+
+    @source_attachments.setter
+    def source_attachments(self, value):
+        set_object_extension_value(self, IRFortiOSPolicyExtension, "source_attachments", value)
+
+    @property
+    def destination_attachments(self):
+        return get_object_extension_value(self, "destination_attachments")
+
+    @destination_attachments.setter
+    def destination_attachments(self, value):
+        set_object_extension_value(self, IRFortiOSPolicyExtension, "destination_attachments", value)
+
     @property
     def source_utm_status(self):
         return get_object_extension_value(self, "source_utm_status")
@@ -1770,6 +1800,22 @@ class IRFortiOSNATPoolCompatibilityMixin:
 
 
 class IRFortiOSNATRuleCompatibilityMixin:
+    @property
+    def source_attachments(self):
+        return get_object_extension_value(self, "source_attachments")
+
+    @source_attachments.setter
+    def source_attachments(self, value):
+        set_object_extension_value(self, IRFortiOSNATRuleExtension, "source_attachments", value)
+
+    @property
+    def destination_attachments(self):
+        return get_object_extension_value(self, "destination_attachments")
+
+    @destination_attachments.setter
+    def destination_attachments(self, value):
+        set_object_extension_value(self, IRFortiOSNATRuleExtension, "destination_attachments", value)
+
     @property
     def source_pool_group_references(self):
         return get_object_extension_value(self, "source_pool_group_references")

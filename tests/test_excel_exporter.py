@@ -2,6 +2,7 @@ import ast
 from collections import Counter
 import io
 from pathlib import Path
+import zipfile
 import pytest
 
 from openpyxl import load_workbook
@@ -46,6 +47,152 @@ from fwmigrate.ir.enums import (
 )
 from fwmigrate.report.excel_exporter import IRExcelExporter
 from fwmigrate.report.excel_exporter import ExcelExportUnavailableError
+from fwmigrate.report.excel_options import ExcelExportOptions, ExcelExportProfile
+from fwmigrate.report.excel_optimized import SinglePassIRExcelExporter
+from fwmigrate.report.excel_streaming import StreamingFastExcelExporter
+from fwmigrate.report import IRExcelExporter as OptimizedIRExcelExporter
+
+
+def _workbook_values(workbook):
+    return [
+        (
+            sheet.title,
+            tuple(tuple(cell.value for cell in row) for row in sheet.iter_rows()),
+        )
+        for sheet in workbook.worksheets
+    ]
+
+
+def test_fast_and_full_profiles_preserve_workbook_data():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="profile-test", source_vendor="fortigate"),
+        addresses=[IRAddress(name="web", type=AddressType.HOST, value="192.0.2.10/32")],
+        policies=[IRPolicy(name="allow-web", action=PolicyAction.ALLOW)],
+    )
+
+    fast = load_workbook(io.BytesIO(
+        OptimizedIRExcelExporter(
+            ir,
+            options=ExcelExportOptions(profile=ExcelExportProfile.FAST),
+        ).generate()
+    ))
+    full = load_workbook(io.BytesIO(
+        OptimizedIRExcelExporter(
+            ir,
+            options=ExcelExportOptions(profile=ExcelExportProfile.FULL),
+        ).generate()
+    ))
+
+    assert _workbook_values(fast) == _workbook_values(full)
+
+
+def test_streaming_fast_export_preserves_semantic_rows_and_required_sheets():
+    ir = _sample_ir()
+    streamed = load_workbook(
+        io.BytesIO(
+            StreamingFastExcelExporter(
+                ir,
+                options=ExcelExportOptions(profile=ExcelExportProfile.FAST),
+            ).generate()
+        ),
+        read_only=True,
+        data_only=False,
+    )
+    full = load_workbook(
+        io.BytesIO(OptimizedIRExcelExporter(ir).generate()),
+        read_only=True,
+        data_only=False,
+    )
+
+    for sheet_name in (
+        "Addresses",
+        "Policies",
+        "NAT Rules",
+        "Routes",
+        "IP Pools",
+        "Security Profiles",
+        "Extraction Coverage",
+    ):
+        assert list(streamed[sheet_name].values)[2:] == list(full[sheet_name].values)[2:]
+
+    assert streamed.sheetnames[:3] == [
+        "Summary",
+        "Review Required",
+        "Extraction Evidence",
+    ]
+    for sheet_name in (
+        "Review Required",
+        "Extraction Evidence",
+        "FortiGate Source Configuration",
+        "Interface Nested Configuration",
+        "VIP Nested Configuration",
+    ):
+        assert sheet_name in streamed.sheetnames
+    assert streamed["Addresses"][4][0].value == "Users"
+    assert streamed["Addresses"][5][0].value.startswith("'")
+
+
+def test_streaming_fast_uses_write_only_workbook(monkeypatch):
+    calls = []
+    workbook_factory = excel_exporter.Workbook
+
+    def factory(*args, **kwargs):
+        calls.append(kwargs.get("write_only"))
+        return workbook_factory(*args, **kwargs)
+
+    monkeypatch.setattr(excel_exporter, "Workbook", factory)
+    StreamingFastExcelExporter(
+        IRConfig(metadata=IRMetadata(source_vendor="fortigate")),
+        options=ExcelExportOptions(profile=ExcelExportProfile.FAST),
+    ).generate()
+
+    assert calls == [True]
+
+
+def test_compression_levels_keep_xlsx_content_readable():
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="compression-test", source_vendor="fortigate"),
+        addresses=[IRAddress(name="web", type=AddressType.HOST, value="192.0.2.10/32")],
+    )
+    outputs = [
+        OptimizedIRExcelExporter(
+            ir,
+            options=ExcelExportOptions(
+                profile=ExcelExportProfile.FAST,
+                compression_level=level,
+            ),
+        ).generate()
+        for level in (1, 9)
+    ]
+
+    for output in outputs:
+        with zipfile.ZipFile(io.BytesIO(output)) as archive:
+            assert "xl/workbook.xml" in archive.namelist()
+        assert load_workbook(io.BytesIO(output)).sheetnames
+
+
+def test_invalid_compression_level_fails_fast():
+    with pytest.raises(ValueError, match="compression_level"):
+        ExcelExportOptions(compression_level=10)
+
+
+def test_optimized_export_skips_empty_vendor_builder(monkeypatch):
+    calls = []
+
+    def unexpected_builder(self, workbook):
+        calls.append("pan-phase9")
+
+    monkeypatch.setattr(
+        SinglePassIRExcelExporter,
+        "_build_pan_phase9_sheets",
+        unexpected_builder,
+    )
+
+    OptimizedIRExcelExporter(
+        IRConfig(metadata=IRMetadata(hostname="pan", source_vendor="palo_alto")),
+    ).generate()
+
+    assert calls == []
 
 
 def test_excel_exporter_exposes_typed_ips_fields_and_exempt_ips():

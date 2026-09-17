@@ -3351,8 +3351,26 @@ class IRExcelExporter:
                 getattr(item.runtime_behavior, "rtp_addresses", []),
                 item.source_policy_reference,
                 item.source_policy_uuid, self._optional_bool_literal(item.enabled),
-                item.source_from_interfaces, item.from_zone, item.source_to_interfaces,
-                 item.to_zone, item.source, item.destination,
+                item.source_from_interfaces,
+                self._format_nat_attachment_values(
+                    self._object_extension_value(item, "source_attachments"), "name"
+                ),
+                self._format_nat_attachment_values(
+                    self._object_extension_value(item, "source_attachments"), "kind"
+                ),
+                item.from_zone,
+                item.from_zone,
+                item.source_to_interfaces,
+                self._format_nat_attachment_values(
+                    self._object_extension_value(item, "destination_attachments"), "name"
+                ),
+                self._format_nat_attachment_values(
+                    self._object_extension_value(item, "destination_attachments"), "kind"
+                ),
+                item.to_zone,
+                item.to_zone,
+                self._nat_attachment_resolution_status(item),
+                item.source, item.destination,
                  item.from_routing_instances, item.to_routing_instances,
                  self._format_nat_address_ranges(item.address_range_mappings, "original_start"),
                  self._format_nat_address_ranges(item.address_range_mappings, "original_end"),
@@ -3430,8 +3448,11 @@ class IRExcelExporter:
                 "Translated Destination Port", "Source Port Behavior", "Install Translation Route",
                 "PCP Inbound", "PCP Outbound", "PCP Pools", "STUN Any Host", "RTP NAT",
                 "RTP Addresses", "Source Policy ID", "Source Policy UUID",
-                 "Enabled", "Source Interface", "From Zone", "Destination Interface",
-                 "To Zone", "Original Source", "Original Destination",
+                 "Enabled", "Source Interface", "Source Attachments", "Source Attachment Types",
+                 "Canonical Source Zones", "From Zone", "Destination Interface", "Destination Attachments",
+                 "Destination Attachment Types", "Canonical Destination Zones", "To Zone",
+                 "Attachment Resolution Status",
+                 "Original Source", "Original Destination",
                  "From Routing Instance", "To Routing Instance",
                  "Original Range Start", "Original Range End", "Translated Range Start",
                  "Translated Range End", "Services",
@@ -4311,7 +4332,7 @@ class IRExcelExporter:
         )
 
     def _build_internet_services(self, workbook: Any) -> None:
-        rows = [
+        rows = (
             (
                 item.name,
                 self.ir.metadata.source_vendor,
@@ -4324,7 +4345,7 @@ class IRExcelExporter:
                 self._format_settings(item.source_attributes),
             )
             for item in self._vendor_extension_value("internet_services") or []
-        ]
+        )
 
         self._table_sheet(
             workbook,
@@ -4350,7 +4371,7 @@ class IRExcelExporter:
         )
 
     def _build_security_profiles(self, workbook: Any) -> None:
-        rows = [
+        rows = (
             (
                 item.name, item.antivirus, item.vulnerability, item.anti_spyware,
                 item.url_filtering, item.file_blocking, item.wildfire,
@@ -4358,7 +4379,7 @@ class IRExcelExporter:
                 self._format_settings(item.source_attributes),
             )
             for item in self.ir.security_profile_groups
-        ]
+        )
         self._table_sheet(
             workbook,
             "Security Profiles",
@@ -5893,33 +5914,33 @@ class IRExcelExporter:
     def _build_source_inventory(self, workbook: Any) -> None:
         if self.extraction is not None and self.extraction.inventory_items:
             vendor = getattr(self.ir.metadata, "source_vendor", "unknown") if self.ir else "unknown"
-            rows = []
-            for item in self.extraction.inventory_items:
+            def rows():
+                for item in self.extraction.inventory_items:
                 # Attempt to extract scope from PAN-OS source_path if possible
-                scope_type = "-"
-                scope_name = "-"
-                if vendor == "palo_alto" and item.source_path:
-                    # e.g., vsys[@name='vsys1']/zone...
-                    if "[@name='" in item.source_path:
-                        parts = item.source_path.split("/")
-                        if "[@name='" in parts[0]:
-                            st, sn = parts[0].split("[@name='", 1)
-                            scope_type = st
-                            scope_name = sn.replace("']", "")
-                            
-                rows.append((
-                    vendor,
-                    item.domain or "",
-                    scope_type,
-                    scope_name,
-                    item.source_path or "",
-                    item.name or "",
-                    "-", # Setting
-                    "-", # Value
-                    item.status.value if hasattr(item.status, "value") else str(item.status),
-                    item.requires_manual_review,
-                    "; ".join(item.notes) if item.notes else "",
-                ))
+                    scope_type = "-"
+                    scope_name = "-"
+                    if vendor == "palo_alto" and item.source_path:
+                        # e.g., vsys[@name='vsys1']/zone...
+                        if "[@name='" in item.source_path:
+                            parts = item.source_path.split("/")
+                            if "[@name='" in parts[0]:
+                                st, sn = parts[0].split("[@name='", 1)
+                                scope_type = st
+                                scope_name = sn.replace("']", "")
+
+                    yield (
+                        vendor,
+                        item.domain or "",
+                        scope_type,
+                        scope_name,
+                        item.source_path or "",
+                        item.name or "",
+                        "-", # Setting
+                        "-", # Value
+                        item.status.value if hasattr(item.status, "value") else str(item.status),
+                        item.requires_manual_review,
+                        "; ".join(item.notes) if item.notes else "",
+                    )
 
             sheet = self._table_sheet(
                 workbook,
@@ -5937,7 +5958,7 @@ class IRExcelExporter:
                     "Manual Review",
                     "Notes",
                 ),
-                rows,
+                rows(),
                 empty_note="No source inventory items were discovered.",
                 subtitle="Comprehensive leaf-level source inventory exported directly from source extraction before optimization.",
             )
@@ -5976,7 +5997,7 @@ class IRExcelExporter:
 
     def _build_extraction_coverage(self, workbook: Any) -> None:
         if self.extraction is not None:
-            rows = [
+            rows = (
                 (
                     section.path,
                     section.present,
@@ -5993,7 +6014,7 @@ class IRExcelExporter:
                     "; ".join(section.notes),
                 )
                 for section in self.extraction.source_sections
-            ]
+            )
             sheet = self._table_sheet(
                 workbook,
                 "Extraction Coverage",
@@ -6711,6 +6732,38 @@ class IRExcelExporter:
     def _format_nat_source_section(item: Any) -> Any:
         attributes = item.source_attributes or {}
         return attributes.get("fmc_nat_section") or attributes.get("section")
+
+    @staticmethod
+    def _format_nat_attachment_values(attachments: Any, field: str) -> Any:
+        values = []
+        for attachment in attachments or []:
+            value = getattr(attachment, field, None)
+            if value is None and isinstance(attachment, dict):
+                value = attachment.get(field)
+            if value is not None:
+                values.append(str(value))
+        return "\n".join(values) or None
+
+    def _nat_attachment_resolution_status(self, item: Any) -> Any:
+        source = self._object_extension_value(item, "source_attachments")
+        destination = self._object_extension_value(item, "destination_attachments")
+        if source is None and destination is None:
+            return None
+        attachments = list(source or []) + list(destination or [])
+        if not attachments:
+            return "UNRESOLVED"
+        return (
+            "RESOLVED"
+            if all(
+                bool(
+                    getattr(attachment, "resolved", None)
+                    if not isinstance(attachment, dict)
+                    else attachment.get("resolved")
+                )
+                for attachment in attachments
+            )
+            else "UNRESOLVED"
+        )
 
     @staticmethod
     def _format_nat_address_ranges(mappings: list[Any], field: str) -> Any:

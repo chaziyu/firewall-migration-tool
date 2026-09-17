@@ -5,7 +5,13 @@ import json
 import uuid
 import zipfile
 import re
+import hashlib
+import logging
+import threading
+import time
+from copy import deepcopy
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
@@ -19,9 +25,12 @@ from fwmigrate.core.optimizer import RuleOptimizer
 from fwmigrate.application import MigrationPipeline, MigrationRequest
 from fwmigrate.application.metrics import PipelineMetrics
 from fwmigrate.report.migration_report import MigrationReporter
-from fwmigrate.report.excel_exporter import (
+from fwmigrate.report import (
     ExcelExportUnavailableError,
+    ExcelExportOptions,
+    ExcelExportProfile,
     IRExcelExporter,
+    StreamingFastExcelExporter,
     XLSX_MIMETYPE,
 )
 from fwmigrate.engine.diagnostics import PaloAltoDiagnostics
@@ -29,6 +38,23 @@ from fwmigrate.engine.runner import TerraformSandbox, TerraformRunner
 
 # In-memory session registry (session_id -> metadata/sandbox)
 ACTIVE_SESSIONS = {}
+_LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _PreviewCacheEntry:
+    preview_id: str
+    source_vendor: str
+    source_digest: str
+    created_at: float
+    ir_config: object
+    extraction_result: object
+
+
+_PREVIEW_CACHE: dict[str, _PreviewCacheEntry] = {}
+_PREVIEW_CACHE_LOCK = threading.RLock()
+_PREVIEW_CACHE_MAX_ENTRIES = 16
+_PREVIEW_CACHE_TTL_SECONDS = 15 * 60
 
 
 class ConfigurationDecodeError(ValueError):
@@ -58,6 +84,67 @@ def _extract_source_config(source_vendor: str, content: str):
         or extraction_result.unsupported_items
     )
     return extraction_result.canonical_ir, (extraction_result if has_accounting else None)
+
+
+def _source_digest(source_vendor: str, raw: bytes) -> str:
+    digest = hashlib.sha256()
+    digest.update(raw)
+    digest.update(b"\0")
+    digest.update(source_vendor.encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _cleanup_preview_cache(now: float | None = None) -> None:
+    now = time.monotonic() if now is None else now
+    expired = [
+        preview_id
+        for preview_id, entry in _PREVIEW_CACHE.items()
+        if now - entry.created_at >= _PREVIEW_CACHE_TTL_SECONDS
+    ]
+    for preview_id in expired:
+        _PREVIEW_CACHE.pop(preview_id, None)
+
+
+def _cache_preview(source_vendor: str, raw: bytes, extraction_result) -> _PreviewCacheEntry:
+    now = time.monotonic()
+    source_digest = _source_digest(source_vendor, raw)
+    with _PREVIEW_CACHE_LOCK:
+        _cleanup_preview_cache(now)
+        for entry in _PREVIEW_CACHE.values():
+            if entry.source_vendor == source_vendor and entry.source_digest == source_digest:
+                return entry
+        while len(_PREVIEW_CACHE) >= _PREVIEW_CACHE_MAX_ENTRIES:
+            oldest_id = min(_PREVIEW_CACHE, key=lambda key: _PREVIEW_CACHE[key].created_at)
+            _PREVIEW_CACHE.pop(oldest_id, None)
+        entry = _PreviewCacheEntry(
+            preview_id=uuid.uuid4().hex,
+            source_vendor=source_vendor,
+            source_digest=source_digest,
+            created_at=now,
+            ir_config=extraction_result.canonical_ir,
+            extraction_result=extraction_result,
+        )
+        _PREVIEW_CACHE[entry.preview_id] = entry
+        return entry
+
+
+def _lookup_preview(
+    preview_id: str,
+    source_vendor: str,
+    raw: bytes | None = None,
+) -> _PreviewCacheEntry | None:
+    with _PREVIEW_CACHE_LOCK:
+        _cleanup_preview_cache()
+        entry = _PREVIEW_CACHE.get(str(preview_id or "").strip())
+        if entry is None or entry.source_vendor != source_vendor:
+            return None
+        if raw is not None and entry.source_digest != _source_digest(source_vendor, raw):
+            return None
+        return entry
+
+
+def _clone_preview(entry: _PreviewCacheEntry):
+    return deepcopy(entry.ir_config), deepcopy(entry.extraction_result)
 
 
 def _parse_bool(value, default=False):
@@ -191,7 +278,8 @@ def create_app(test_config=None):
             metrics = PipelineMetrics() if _parse_bool(request.form.get('collect_metrics')) else None
             started = perf_counter()
             file = request.files['file']
-            file_content = _timed(metrics, 'decode', lambda: _decode_configuration(file.read()))
+            raw_content = file.read()
+            file_content = _timed(metrics, 'decode', lambda: _decode_configuration(raw_content))
             extraction = _timed(
                 metrics,
                 'extraction',
@@ -202,8 +290,10 @@ def create_app(test_config=None):
             if not ir_config:
                 return jsonify({'success': False, 'error': 'Failed to extract configuration from file'}), 400
 
+            preview_entry = _cache_preview(source_vendor, raw_content, extraction)
             response = {
                 'success': True,
+                'preview_id': preview_entry.preview_id,
                 **_ir_preview_fields(ir_config),
                 'extraction': _extraction_summary(extraction),
                 'optimization': {'status': 'not_analyzed'},
@@ -408,33 +498,98 @@ def create_app(test_config=None):
         try:
             payload = request.get_json(silent=True) or {}
             source_vendor = request.form.get('source_vendor') or payload.get('source_vendor') or 'fortigate'
-            if 'file' not in request.files or request.files['file'].filename == '':
-                return jsonify({'error': 'A configuration file is required for Excel extraction'}), 400
-
-            file_content = _decode_configuration(request.files['file'].read())
-            ir_config, extraction_result = _extract_source_config(
-                source_vendor,
-                file_content,
+            preview_id = request.form.get('preview_id') or payload.get('preview_id') or ''
+            metrics = (
+                PipelineMetrics()
+                if _parse_bool(request.form.get('collect_metrics') or payload.get('collect_metrics'))
+                or _LOGGER.isEnabledFor(logging.DEBUG)
+                else None
             )
-            
+            total_started = perf_counter()
+            profile_value = request.form.get('excel_profile') or payload.get('excel_profile') or ExcelExportProfile.FAST.value
+            try:
+                profile = ExcelExportProfile(profile_value)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'excel_profile must be one of: fast, full, data_only'}), 400
+
+            uploaded_file = request.files.get('file')
+            raw_content = (
+                _timed(metrics, 'request decode', uploaded_file.read)
+                if uploaded_file is not None and uploaded_file.filename != ''
+                else None
+            )
+            preview_entry = (
+                _timed(
+                    metrics,
+                    'cache lookup',
+                    lambda: _lookup_preview(preview_id, source_vendor, raw_content),
+                )
+                if preview_id
+                else None
+            )
+            if preview_entry is not None:
+                ir_config, extraction_result = _clone_preview(preview_entry)
+            else:
+                if raw_content is None:
+                    return jsonify({'error': 'A configuration file or valid preview_id is required for Excel extraction'}), 400
+                file_content = _timed(
+                    metrics,
+                    'decode',
+                    lambda: _decode_configuration(raw_content),
+                )
+                ir_config, extraction_result = _timed(
+                    metrics,
+                    'extraction/fallback extraction',
+                    lambda: _extract_source_config(source_vendor, file_content),
+                )
+
             if not ir_config:
                 return jsonify({'error': 'Failed to extract configuration from file'}), 400
                 
             ir_config.metadata.input_type = "Configuration File"
 
-            workbook = io.BytesIO(
-                IRExcelExporter(
-                    ir_config,
-                    extraction_result=extraction_result,
-                ).generate()
+            workbook = io.BytesIO()
+            exporter_type = (
+                StreamingFastExcelExporter
+                if profile is ExcelExportProfile.FAST
+                else IRExcelExporter
             )
+            exporter = exporter_type(
+                ir_config,
+                extraction_result=extraction_result,
+                options=ExcelExportOptions(profile=profile),
+            )
+            generate_to = getattr(exporter, 'generate_to', None)
+            export_started = perf_counter()
+            if generate_to is None:
+                workbook.write(exporter.generate())
+            else:
+                generate_to(workbook)
+            export_elapsed = perf_counter() - export_started
+            exporter_metrics = getattr(exporter, '_last_export_metrics', None)
+            if metrics is not None:
+                if exporter_metrics is None:
+                    metrics.add('workbook construction', export_elapsed * 1000)
+                else:
+                    for stage, elapsed in exporter_metrics.timings.items():
+                        metrics.add(stage, elapsed * 1000)
             workbook.seek(0)
-            return send_file(
+            response = send_file(
                 workbook,
                 mimetype=XLSX_MIMETYPE,
                 as_attachment=True,
                 download_name=f'firewall_inventory_{_safe_vendor_filename(source_vendor)}.xlsx',
             )
+            if metrics is not None:
+                metrics.add('response preparation', (perf_counter() - export_started - export_elapsed) * 1000)
+                metrics.total_duration_ms = (perf_counter() - total_started) * 1000
+                _LOGGER.debug(
+                    "Excel endpoint metrics: cache_hit=%s profile=%s %s",
+                    bool(preview_entry),
+                    profile.value,
+                    metrics.as_dict(),
+                )
+            return response
         except ExcelExportUnavailableError as e:
             return jsonify({'error': str(e)}), 503
         except ConfigurationDecodeError as e:

@@ -5,7 +5,26 @@ from __future__ import annotations
 import io
 import time
 import zipfile
+from datetime import datetime, timezone
 from typing import Any
+
+
+def save_workbook_with_compression(workbook: Any, output, compression_level: int = 6) -> None:
+    """Write an openpyxl workbook with an explicit ZIP compression level."""
+    if not isinstance(compression_level, int) or not 0 <= compression_level <= 9:
+        raise ValueError("compression_level must be between 0 and 9")
+
+    from openpyxl.writer.excel import ExcelWriter
+
+    archive = zipfile.ZipFile(
+        output,
+        "w",
+        zipfile.ZIP_DEFLATED,
+        compresslevel=compression_level,
+        allowZip64=True,
+    )
+    workbook.properties.modified = datetime.now(timezone.utc).replace(tzinfo=None)
+    ExcelWriter(workbook, archive).save()
 
 
 def profile_xlsx(data: bytes) -> dict[str, Any]:
