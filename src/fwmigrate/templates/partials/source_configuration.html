@@ -185,9 +185,6 @@
   <div class="optimizer-panel hidden" id="optimizer-panel">
     <div class="optimizer-header">
       <strong>{{ icon('activity') }}Configuration overview</strong
-      ><button type="button" id="btn-analyze" class="btn btn-secondary btn-sm">
-        Run analysis
-      </button
       ><label class="checkbox-label" id="optimizer-controls"
         ><input type="checkbox" id="opt-prune-objects" checked /><span
           >Prune unused objects on conversion</span
@@ -202,16 +199,6 @@
       <div class="opt-stat-box">
         <div class="opt-stat-value" id="stat-total-objects">0</div>
         <div class="opt-stat-label">Total objects</div>
-      </div>
-      <div class="opt-stat-box">
-        <div class="opt-stat-value text-warning" id="stat-unused-objects">
-          0
-        </div>
-        <div class="opt-stat-label">Unused objects</div>
-      </div>
-      <div class="opt-stat-box">
-        <div class="opt-stat-value text-danger" id="stat-shadowed-rules">0</div>
-        <div class="opt-stat-label">Shadowed rules</div>
       </div>
     </div>
   </div>
