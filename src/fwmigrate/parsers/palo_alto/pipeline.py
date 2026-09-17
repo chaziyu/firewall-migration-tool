@@ -125,13 +125,13 @@ class PANOSExtractionPipeline(_PANToIRTransformer):
     _remove_review_reason = staticmethod(
         PANOSNATInterfaceAddressCoverageMixin._remove_review_reason
     )
-    _interface_address_review_reasons = staticmethod(
+    _interface_address_review_reasons = (
         PANOSNATInterfaceAddressCoverageMixin._interface_address_review_reasons
     )
     _selection_from_details = staticmethod(
         PANOSNATInterfaceAddressCoverageMixin._selection_from_details
     )
-    _sync_source_translation_semantics = staticmethod(
+    _sync_source_translation_semantics = (
         PANOSNATInterfaceAddressCoverageMixin._sync_source_translation_semantics
     )
     _parse_complete_interface_address = (
