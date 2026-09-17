@@ -16,7 +16,6 @@ config system interface
 end
 config firewall address
     edit "LAN"
-        set type ipmask
         set subnet 10.0.0.0 255.255.255.0
     next
 end

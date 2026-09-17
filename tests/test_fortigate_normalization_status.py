@@ -1,4 +1,5 @@
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
+from fwmigrate.ir.address import AddressType
 from fwmigrate.parsers.fortigate.model import FGConfig
 from fwmigrate.parsers.fortigate.transformer import (
     FGToIRTransformer,
@@ -79,6 +80,40 @@ end
     assert multi.destination is None
     assert multi.migration_status == "PARTIALLY_NORMALIZED"
     assert multi.review_reasons
+
+
+def test_ipv4_transformer_applies_effective_ipmask_without_changing_source_type():
+    ir = extract_fortigate_config(
+        """\
+config firewall address
+    edit "explicit"
+        set type ipmask
+        set subnet 192.0.2.0 255.255.255.0
+    next
+    edit "implicit"
+        set subnet 198.51.100.0 255.255.255.0
+    next
+    edit "missing-subnet"
+        set type ipmask
+    next
+    edit "fqdn"
+        set type fqdn
+        set fqdn example.com
+    next
+end
+"""
+    ).canonical_ir
+    addresses = {address.name: address for address in ir.addresses}
+
+    assert addresses["explicit"].subnet == "192.0.2.0/24"
+    assert addresses["explicit"].source_type == "ipmask"
+    assert addresses["implicit"].type == AddressType.NETWORK
+    assert addresses["implicit"].subnet == "198.51.100.0/24"
+    assert addresses["implicit"].source_type is None
+    assert addresses["missing-subnet"].migration_status == "PARTIALLY_NORMALIZED"
+    assert addresses["missing-subnet"].requires_manual_review is True
+    assert addresses["fqdn"].type == AddressType.FQDN
+    assert addresses["fqdn"].source_type == "fqdn"
 
 
 def test_fortigate_source_settings_are_typed_without_becoming_partial():
