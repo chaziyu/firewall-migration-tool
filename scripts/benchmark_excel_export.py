@@ -20,7 +20,12 @@ from fwmigrate.ir.core import (
     IRMetadata,
     IRPolicy,
 )
-from fwmigrate.report import ExcelExportOptions, ExcelExportProfile, IRExcelExporter
+from fwmigrate.report import (
+    ExcelExportOptions,
+    ExcelExportProfile,
+    IRExcelExporter,
+    StreamingFastExcelExporter,
+)
 from fwmigrate.report.excel_serialization import (
     compare_compression_levels,
     profile_xlsx,
@@ -89,12 +94,18 @@ def run_once(
     scenario: str,
     profile: ExcelExportProfile,
     compression_profile: bool = False,
+    compression_level: int | None = None,
 ) -> dict[str, object]:
     tracemalloc.start()
     preparation_started = time.perf_counter()
-    exporter = IRExcelExporter(
+    exporter_type = (
+        StreamingFastExcelExporter
+        if profile is ExcelExportProfile.FAST
+        else IRExcelExporter
+    )
+    exporter = exporter_type(
         build_ir(scenario),
-        options=ExcelExportOptions(profile=profile),
+        options=ExcelExportOptions(profile=profile, compression_level=compression_level),
     )
     preparation_seconds = time.perf_counter() - preparation_started
     started = time.perf_counter()
@@ -133,6 +144,23 @@ def run_once(
         "xlsx_bytes": len(output),
         "peak_memory_bytes": peak_memory,
     }
+    result["top_sheets"] = {
+        field: [
+            {
+                "name": metric.name,
+                "value": getattr(metric, field),
+                "rows": metric.rows,
+                "columns": metric.columns,
+                "cells": metric.cells,
+            }
+            for metric in sorted(
+                metrics.worksheet_metrics,
+                key=lambda item: getattr(item, field),
+                reverse=True,
+            )[:10]
+        ]
+        for field in ("build_seconds", "sizing_seconds", "rows", "columns", "cells")
+    }
     result["serialization_profile"] = profile_xlsx(output)
     result["serialization_percent"] = round(
         100 * metrics.timings.get("final XLSX serialization", 0.0) / max(elapsed, 1e-9),
@@ -162,6 +190,12 @@ def main() -> int:
         action="store_true",
         help="Also compare ZIP compression levels in memory.",
     )
+    parser.add_argument(
+        "--compression-level",
+        type=int,
+        choices=range(10),
+        help="Explicit production ZIP compression level to benchmark.",
+    )
     args = parser.parse_args()
 
     logging.getLogger("fwmigrate.report.excel_optimized").setLevel(logging.DEBUG)
@@ -170,7 +204,12 @@ def main() -> int:
     for scenario in scenarios:
         print(
             json.dumps(
-                run_once(scenario, profile, args.compression_profile),
+                run_once(
+                    scenario,
+                    profile,
+                    args.compression_profile,
+                    args.compression_level,
+                ),
                 sort_keys=True,
             )
         )

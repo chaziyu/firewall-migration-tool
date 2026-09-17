@@ -314,7 +314,8 @@ class IRNATRule(IRFortiOSNATRuleCompatibilityMixin, IRCheckPointNATRuleCompatibi
             "source_policy_nat46", "source_policy_nat64", "source_policy_nat_inbound",
             "source_policy_nat_outbound", "source_policy_nat_ip", "source_policy_match_vip",
             "source_policy_match_vip_only", "source_policy_effective_match_vip",
-            "source_policy_effective_match_vip_only",
+            "source_policy_effective_match_vip_only", "source_attachments",
+            "destination_attachments",
         ))
 
     @property

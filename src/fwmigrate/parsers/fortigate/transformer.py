@@ -132,6 +132,7 @@ from fwmigrate.ir.extension_models import (
     IRAddress6TemplateSegment,
     IRAddress6TemplateValue,
     IRIPPoolGroup,
+    IRFortiOSAttachment,
     IRFortiOSAddressExtension,
     IRFortiOSNATRuleExtension,
     IRFortiOSPublishedServiceExtension,
@@ -759,6 +760,18 @@ class FGToIRTransformer:
             (interface.source_context, interface.name): interface
             for interface in self.fg.interfaces
         }
+        self._interface_attachment_names = {
+            (str(interface.source_context or "root"), interface.name)
+            for interface in self.fg.interfaces
+        }
+        self._system_zone_names = {
+            (str(zone.source_context or "root"), zone.name)
+            for zone in self.fg.system_zones
+        }
+        self._virtual_interface_names = {
+            (str(phase1.source_context or "root"), phase1.name)
+            for phase1 in self.fg.phase1_interfaces
+        }
 
         self._aggregate_parent_map: Dict[Tuple[str, str], List[str]] = {}
         for parent in self.fg.interfaces:
@@ -776,6 +789,7 @@ class FGToIRTransformer:
 
         for sdwan in self.fg.sdwans:
             source_context = sdwan.source_context or "root"
+            self._sdwan_zone_names.add((source_context, "virtual-wan-link"))
             self._sdwan_zone_names.update(
                 (source_context, zone.name)
                 for zone in sdwan.zones
@@ -6480,6 +6494,8 @@ class FGToIRTransformer:
         )
         source_attributes, review_reasons = self._policy_ipsec_phase2_nat_evidence(policy)
         source_attributes["natip"] = policy.natip
+        source_attachments = list(ir_policy.source_attachments or [])
+        destination_attachments = list(ir_policy.destination_attachments or [])
         translated_sources, natip_reason = self._policy_ipsec_natip_translation(policy.natip)
         if natip_reason:
             review_reasons.append(natip_reason)
@@ -6502,6 +6518,8 @@ class FGToIRTransformer:
             enabled=policy.status != "disable",
             source_from_interfaces=list(policy.srcintf),
             source_to_interfaces=list(policy.dstintf),
+            source_attachments=source_attachments,
+            destination_attachments=destination_attachments,
             from_zone=list(ir_policy.from_zone),
             to_zone=list(ir_policy.to_zone),
             source=list(ir_policy.source),
@@ -7068,47 +7086,113 @@ class FGToIRTransformer:
         direction: str,
         source_context: str,
     ) -> List[str]:
+        return self._canonical_zones_for_attachments(
+            self._resolve_attachments(interfaces, source_context),
+            policy_id,
+            direction,
+            source_context,
+        )
+
+    def _resolve_attachments(
+        self,
+        names: List[str],
+        source_context: Optional[str],
+    ) -> List[IRFortiOSAttachment]:
+        context = str(source_context or "root")
+        attachments: List[IRFortiOSAttachment] = []
+        for raw_name in names:
+            name = str(raw_name)
+            lowered = name.casefold()
+            if lowered in {"any", IR_KEYWORD_ANY.casefold()}:
+                kind, resolved = "any", True
+            elif (context, name) in self._system_zone_names:
+                kind, resolved = "zone", True
+            elif (context, name) in self._sdwan_zone_names:
+                kind, resolved = "sdwan_zone", True
+            elif (context, name) in self._interface_attachment_names:
+                kind, resolved = "interface", True
+            elif (context, name) in self._virtual_interface_names:
+                kind, resolved = "virtual_interface", True
+            else:
+                kind, resolved = "unknown", False
+            attachments.append(IRFortiOSAttachment(name=name, kind=kind, resolved=resolved))
+        return attachments
+
+    def _canonical_zones_for_attachments(
+        self,
+        attachments: List[IRFortiOSAttachment],
+        policy_id: int,
+        direction: str,
+        source_context: Optional[str],
+    ) -> List[str]:
         zones: List[str] = []
         unresolved: Set[str] = set()
-
-        for interface in interfaces:
-            if interface == "any":
-                zone = IR_KEYWORD_ANY
-            else:
-                zone = (
-                    self._intf_to_zone.get((source_context, interface))
-                    or self.fg_zone_intf_map.get((source_context, interface))
-                )
-                if zone is None and (source_context, interface) in self._sdwan_zone_names:
-                    zone = interface
-
+        for attachment in attachments:
+            zone = (
+                IR_KEYWORD_ANY
+                if attachment.kind == "any"
+                else attachment.name
+                if attachment.kind == "zone"
+                else self.zone_mapping.get(attachment.name)
+                if attachment.kind == "interface"
+                else None
+            )
             if zone:
                 if zone not in zones:
                     zones.append(zone)
                 continue
-
-            if interface in unresolved:
+            if attachment.resolved or attachment.name in unresolved:
                 continue
-
-            unresolved.add(interface)
+            unresolved.add(attachment.name)
             self.ir.audit_entries.append(
                 IRAuditEntry(
-                    id=(
-                        f"policy:{policy_id}:"
-                        f"{direction}:{interface}"
-                    ),
+                    id=f"policy:{policy_id}:{direction}:{attachment.name}",
                     category="Policy Zone Resolution",
                     message=(
-                        f"Policy {policy_id} references interface "
-                        f"'{interface}' with no explicit canonical "
-                        "zone. Source interface preserved; no "
-                        "trust/untrust zone inferred."
+                        f"Policy {policy_id} references attachment '{attachment.name}' "
+                        "with no explicit canonical zone. Source attachment preserved; "
+                        "no trust/untrust zone inferred."
                     ),
                     confidence=MigrationConfidence.MANUAL,
                 )
             )
-
         return zones
+
+    @staticmethod
+    def _attachment_review_reasons(
+        source_attachments: List[IRFortiOSAttachment],
+        destination_attachments: List[IRFortiOSAttachment],
+        *,
+        require_both: bool = True,
+    ) -> List[str]:
+        reasons: List[str] = []
+        for label, attachments in (
+            ("source", source_attachments),
+            ("destination", destination_attachments),
+        ):
+            if require_both and not attachments:
+                reasons.append(f"missing {label} NAT attachment reference")
+            for attachment in attachments:
+                if not attachment.resolved:
+                    reasons.append(
+                        f"unresolved {label} NAT attachment '{attachment.name}'"
+                    )
+        return list(dict.fromkeys(reasons))
+
+    @staticmethod
+    def _nat_migration_status(
+        review_reasons: List[str],
+        source_attachments: List[IRFortiOSAttachment],
+        destination_attachments: List[IRFortiOSAttachment],
+    ) -> str:
+        if review_reasons:
+            return "PARTIALLY_NORMALIZED"
+        if any(
+            attachment.kind in {"interface", "sdwan_zone", "virtual_interface"}
+            for attachment in (*source_attachments, *destination_attachments)
+        ):
+            return "VENDOR_EXTENSION"
+        return "NORMALIZED"
 
     @staticmethod
     def _policy_value_is_configured(value: object) -> bool:
@@ -7695,17 +7779,17 @@ class FGToIRTransformer:
                 )
                 continue
             source_security_profile_references, security_profile_reference_statuses, unresolved_security_profile_references, unresolved_security_profiles = self._resolve_security_profile_references(policy)
-            from_zones = self._resolve_policy_zones(
-                policy.srcintf,
-                policy.id,
-                "source",
-                policy.source_context,
+            source_attachments = self._resolve_attachments(
+                policy.srcintf, policy.source_context
             )
-            to_zones = self._resolve_policy_zones(
-                policy.dstintf,
-                policy.id,
-                "destination",
-                policy.source_context,
+            destination_attachments = self._resolve_attachments(
+                policy.dstintf, policy.source_context
+            )
+            from_zones = self._canonical_zones_for_attachments(
+                source_attachments, policy.id, "source", policy.source_context
+            )
+            to_zones = self._canonical_zones_for_attachments(
+                destination_attachments, policy.id, "destination", policy.source_context
             )
 
             action_map = {
@@ -7800,6 +7884,8 @@ class FGToIRTransformer:
                 source_to_interfaces=list(
                     policy.dstintf
                 ),
+                source_attachments=source_attachments,
+                destination_attachments=destination_attachments,
                 source_address_references=list(
                     policy.srcaddr
                 ),
@@ -9053,6 +9139,23 @@ class FGToIRTransformer:
                 if authority == "unknown"
                 else []
             )
+            source_attachments = self._resolve_attachments(
+                list(rule.srcintf), rule.source_context
+            )
+            destination_attachments = self._resolve_attachments(
+                list(rule.dstintf), rule.source_context
+            )
+            review_reasons.extend(
+                self._attachment_review_reasons(
+                    source_attachments, destination_attachments
+                )
+            )
+            from_zone = self._canonical_zones_for_attachments(
+                source_attachments, rule.id, "source", rule.source_context
+            )
+            to_zone = self._canonical_zones_for_attachments(
+                destination_attachments, rule.id, "destination", rule.source_context
+            )
             original_family = "ipv6" if rule.type.lower() == "ipv6" else "ipv4"
             sources = list(rule.orig_addr6 if original_family == "ipv6" else rule.orig_addr)
             destinations = list(rule.dst_addr6 if original_family == "ipv6" else rule.dst_addr)
@@ -9137,6 +9240,10 @@ class FGToIRTransformer:
                 enabled=rule.status != "disable",
                 source_from_interfaces=list(rule.srcintf),
                 source_to_interfaces=list(rule.dstintf),
+                source_attachments=source_attachments,
+                destination_attachments=destination_attachments,
+                from_zone=from_zone,
+                to_zone=to_zone,
                 source=sources,
                 destination=destinations,
                 services=[str(rule.protocol)] if rule.protocol is not None else ["any"],
@@ -9159,7 +9266,9 @@ class FGToIRTransformer:
                 source_pool_references=source_pool_references,
                 translated_sources=translated_sources,
                 source_origin="central-snat-map",
-                migration_status="PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED",
+                migration_status=self._nat_migration_status(
+                    review_reasons, source_attachments, destination_attachments
+                ),
                 review_reasons=review_reasons,
                 requires_manual_review=bool(review_reasons),
                 description=rule.comments,
@@ -9227,17 +9336,24 @@ class FGToIRTransformer:
                 reasons.append(f"VIP '{vip.name}' uses unsupported port-forward protocol '{protocol}'")
 
             external_interface = vip.extintf or IR_KEYWORD_ANY
+            source_attachments = self._resolve_attachments(
+                [external_interface], vip.source_context
+            )
+            destination_attachments: List[IRFortiOSAttachment] = []
+            reasons.extend(
+                self._attachment_review_reasons(
+                    source_attachments,
+                    destination_attachments,
+                    require_both=False,
+                )
+            )
             source_from_interfaces = []
-            from_zone = []
+            from_zone = self._canonical_zones_for_attachments(
+                source_attachments, vip.id or index, "source", vip.source_context
+            )
             if external_interface.lower() not in {"any", "all", IR_KEYWORD_ANY.lower()}:
                 source_from_interfaces = [external_interface]
-                zone = (
-                    self._intf_to_zone.get((vip.source_context, external_interface))
-                    or self.fg_zone_intf_map.get((vip.source_context, external_interface))
-                )
-                if zone:
-                    from_zone = [zone]
-                else:
+                if not from_zone and source_attachments[0].resolved is False:
                     reasons.append(
                         f"VIP '{vip.name}' external interface '{external_interface}' is unresolved"
                     )
@@ -9250,6 +9366,8 @@ class FGToIRTransformer:
                 sequence=vip.id or index,
                 enabled=True,
                 source_from_interfaces=source_from_interfaces,
+                source_attachments=source_attachments,
+                destination_attachments=destination_attachments,
                 from_zone=from_zone,
                 to_zone=[IR_KEYWORD_ANY],
                 destination=original_destinations,
@@ -9274,7 +9392,9 @@ class FGToIRTransformer:
                 source_vip_interface_filters=list(vip.srcintf_filter),
                 source_vip_services=list(vip.service),
                 source_vip_port_mapping_type=vip.portmapping_type,
-                migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                migration_status=self._nat_migration_status(
+                    reasons, source_attachments, destination_attachments
+                ),
                 review_reasons=list(dict.fromkeys(reasons)),
                 requires_manual_review=bool(reasons),
                 description=vip.comment,
@@ -9394,6 +9514,8 @@ class FGToIRTransformer:
                         MigrationConfidence.MANUAL,
                     )
                 continue
+            source_attachments = list(ir_policy.source_attachments or [])
+            destination_attachments = list(ir_policy.destination_attachments or [])
             if policy.action == "ipsec":
                 self._transform_policy_ipsec_nat(policy, ir_policy, policy_index)
                 continue
@@ -9485,10 +9607,12 @@ class FGToIRTransformer:
             source_pool_permit_any_host = None
             source_pool_original_start_ip = []
             source_pool_original_end_ip = []
-            source_requires_review = (
-                not ir_policy.from_zone
-                or not ir_policy.to_zone
-            )
+            source_requires_review = False
+            for reason in self._attachment_review_reasons(
+                source_attachments, destination_attachments
+            ):
+                source_requires_review = True
+                add_reason(nat_review_reasons, reason)
             for reason in vip_group_review_reasons:
                 source_requires_review = True
                 add_reason(nat_review_reasons, reason)
@@ -9498,16 +9622,6 @@ class FGToIRTransformer:
             if port_review_reason:
                 source_requires_review = True
                 add_reason(nat_review_reasons, port_review_reason)
-
-            if source_requires_review:
-                add_reason(nat_review_reasons, "unresolved canonical NAT zones")
-
-            if ir_policy.requires_manual_review:
-                source_requires_review = True
-                add_reason(
-                    nat_review_reasons,
-                    "source policy semantics require manual review",
-                )
 
             policy_nat_controls = (
                 ("match-vip", policy.match_vip),
@@ -9532,8 +9646,8 @@ class FGToIRTransformer:
                 audit(
                     policy.id,
                     (
-                        f"Policy {policy.id} NAT match has unresolved canonical zones "
-                        "or source policy semantics requiring manual review; "
+                        f"Policy {policy.id} NAT match has unresolved attachment "
+                        "or source semantics requiring manual review; "
                         "source evidence was preserved."
                     ),
                     MigrationConfidence.MANUAL,
@@ -9834,6 +9948,8 @@ class FGToIRTransformer:
                 source_to_interfaces=list(
                     policy.dstintf
                 ),
+                source_attachments=source_attachments,
+                destination_attachments=destination_attachments,
                 from_zone=list(
                     ir_policy.from_zone
                 ),
@@ -9899,8 +10015,8 @@ class FGToIRTransformer:
                     if port_review_reason
                     else {}
                 ),
-                migration_status=(
-                    "PARTIALLY_NORMALIZED" if source_requires_review else "NORMALIZED"
+                migration_status=self._nat_migration_status(
+                    nat_review_reasons, source_attachments, destination_attachments
                 ),
                 review_reasons=list(nat_review_reasons),
                 requires_manual_review=(
@@ -10163,8 +10279,10 @@ class FGToIRTransformer:
                         source_vip_services=list(vip.service),
                         source_vip_port_mapping_type=vip.portmapping_type,
                         services=vip_services,
-                        migration_status=(
-                            "PARTIALLY_NORMALIZED" if vip_requires_review else "NORMALIZED"
+                        migration_status=self._nat_migration_status(
+                            vip_review_reasons,
+                            source_attachments,
+                            destination_attachments,
                         ),
                         review_reasons=vip_review_reasons,
                         requires_manual_review=(
@@ -10374,6 +10492,13 @@ class FGToIRTransformer:
             )
             snat_enabled = self._policy_source_nat_enabled(policy, family)
             snat_reasons: List[str] = []
+            source_attachments = list(ir_policy.source_attachments or [])
+            destination_attachments = list(ir_policy.destination_attachments or [])
+            snat_reasons.extend(
+                self._attachment_review_reasons(
+                    source_attachments, destination_attachments
+                )
+            )
             ipsec_nat_review_reason = self._policy_ipsec_nat_review_reason(policy)
             if ipsec_nat_review_reason:
                 snat_reasons.append(ipsec_nat_review_reason)
@@ -10429,6 +10554,8 @@ class FGToIRTransformer:
                 source_policy_reference=str(policy.id), source_policy_uuid=policy.uuid,
                 source_policy_name=policy.name, sequence=index,
                 source_from_interfaces=list(policy.srcintf), source_to_interfaces=list(policy.dstintf),
+                source_attachments=source_attachments,
+                destination_attachments=destination_attachments,
                 from_zone=list(ir_policy.from_zone), to_zone=list(ir_policy.to_zone),
                 source=[normalize_to_ir("fortigate", value) for value in policy.srcaddr6],
                 services=list(ir_policy.service), nat_family=family,
@@ -10468,7 +10595,9 @@ class FGToIRTransformer:
                     translated_sources=translated,
                     source_translation_mode=NATTranslationMode.POOL if pool_names else NATTranslationMode.INTERFACE_ADDRESS,
                     source_pool_references=pool_names,
-                    migration_status="PARTIALLY_NORMALIZED" if snat_reasons else "NORMALIZED",
+                    migration_status=self._nat_migration_status(
+                        snat_reasons, source_attachments, destination_attachments
+                    ),
                     review_reasons=snat_reasons, requires_manual_review=bool(snat_reasons),
                     **common,
                 ))
@@ -10533,7 +10662,9 @@ class FGToIRTransformer:
                     source_vip_enabled=vip.status != "disable",
                     source_vip_nat_source_vip=vip.nat_source_vip == "enable",
                     source_vip_filters=list(vip.src_filter),
-                    migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                    migration_status=self._nat_migration_status(
+                        reasons, source_attachments, destination_attachments
+                    ),
                     review_reasons=reasons, requires_manual_review=bool(reasons),
                     **common,
                 ))
@@ -10677,6 +10808,19 @@ class FGToIRTransformer:
                 reasons.append("multicast SNAT is enabled without snat-ip")
             if not (has_snat or has_dnat):
                 continue
+            source_attachments = self._resolve_attachments(
+                [rule.srcintf] if rule.srcintf else [], rule.source_context
+            )
+            destination_attachments = self._resolve_attachments(
+                [rule.dstintf] if rule.dstintf else [], rule.source_context
+            )
+            reasons.extend(
+                self._attachment_review_reasons(
+                    source_attachments,
+                    destination_attachments,
+                    require_both=False,
+                )
+            )
             nat_type = NATType.TWICE if has_snat and has_dnat else NATType.SOURCE if has_snat else NATType.DESTINATION
             port_ranges = []
             if not (
@@ -10699,6 +10843,8 @@ class FGToIRTransformer:
                 sequence=rule.source_order, enabled=enabled,
                 source_from_interfaces=[rule.srcintf] if rule.srcintf else [],
                 source_to_interfaces=[rule.dstintf] if rule.dstintf else [],
+                source_attachments=source_attachments,
+                destination_attachments=destination_attachments,
                 source=[normalize_to_ir("fortigate", value) for value in rule.srcaddr],
                 destination=[normalize_to_ir("fortigate", value) for value in rule.dstaddr],
                 protocol_number=effective["protocol"], original_destination_ports=port_ranges,
@@ -10706,7 +10852,9 @@ class FGToIRTransformer:
                 translated_destinations=[str(dnat_address)] if has_dnat and dnat_address else [],
                 nat_family="nat44", traffic_type="multicast",
                 original_address_family=family, translated_address_family=family,
-                migration_status="PARTIALLY_NORMALIZED" if reasons else "NORMALIZED",
+                migration_status=self._nat_migration_status(
+                    reasons, source_attachments, destination_attachments
+                ),
                 review_reasons=reasons, requires_manual_review=bool(reasons),
                 source_origin="multicast-policy", source_attributes=dict(rule.extra_settings),
             ))

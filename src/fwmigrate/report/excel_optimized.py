@@ -11,11 +11,13 @@ import io
 import logging
 import time
 from dataclasses import dataclass, field
+from typing import BinaryIO, Callable
 
 import fwmigrate.report.excel_exporter as _excel_exporter
 from fwmigrate.report.excel_exporter import ExcelExportUnavailableError
 from fwmigrate.report.excel_vendor_visibility import _BASE_SHEET_ORDER
 from fwmigrate.report.excel_audit import ExcelAuditAccumulator
+from fwmigrate.report.excel_serialization import save_workbook_with_compression
 from fwmigrate.report.fortigate_address_schedule_excel import (
     FortiGateAddressScheduleExcelExporter,
 )
@@ -53,12 +55,87 @@ class WorksheetExportMetric:
 class ExcelBuilderSpec:
     method_name: str
     produced_sheets: frozenset[str]
+    vendors: frozenset[str] = frozenset()
+    has_data: Callable[[object], bool] | None = None
+
+
+def _has_globalprotect_data(exporter) -> bool:
+    panos = exporter.ir.vendor_extensions.panos
+    return bool(
+        panos.global_protect_portals
+        or panos.global_protect_gateways
+        or panos.global_protect_network_gateways
+    )
+
+
+def _has_pan_phase9_data(exporter) -> bool:
+    panos = exporter.ir.vendor_extensions.panos
+    return any(
+        getattr(panos, name)
+        for name in (
+            "pan_log_server_profiles",
+            "pan_log_forwarding_profiles",
+            "pan_dns_proxies",
+            "pan_monitor_profiles",
+            "pan_qos_profiles",
+            "pan_vsys_settings",
+            "pan_custom_reports",
+        )
+    ) or any(
+        getattr(panos, name) is not None
+        for name in (
+            "pan_high_availability",
+            "pan_device_operational_settings",
+            "pan_botnet_report_settings",
+        )
+    )
+
+
+def _has_pan_sdwan_data(exporter) -> bool:
+    panos = exporter.ir.vendor_extensions.panos
+    return any(
+        getattr(panos, name)
+        for name in (
+            "pan_sdwan_interface_profiles",
+            "pan_sdwan_link_settings",
+            "pan_sdwan_path_quality_profiles",
+            "pan_sdwan_traffic_distribution_profiles",
+            "pan_sdwan_rules",
+        )
+    )
+
+
+def _has_cisco_acp(exporter) -> bool:
+    return any(str(item.source_context or "").startswith("fmc:") for item in exporter.ir.policies)
+
+
+def _has_checkpoint_rules(exporter) -> bool:
+    return any(str(item.source_context or "").startswith("checkpoint") for item in exporter.ir.policies)
+
+
+def _has_policy_source_settings(exporter) -> bool:
+    return any(item.source_extra_settings for item in exporter.ir.policies)
 
 
 BUILDERS = (
-    ExcelBuilderSpec("_build_management_service_routes", frozenset({"Management Service Routes"})),
-    ExcelBuilderSpec("_build_cisco_acp", frozenset({"Cisco ACP"})),
-    ExcelBuilderSpec("_build_checkpoint_access_rule_sheet", frozenset({"Checkpoint Access Rules"})),
+    ExcelBuilderSpec(
+        "_build_management_service_routes",
+        frozenset({"Management Service Routes"}),
+        frozenset({"palo_alto"}),
+        lambda exporter: bool(exporter.ir.management_service_routes),
+    ),
+    ExcelBuilderSpec(
+        "_build_cisco_acp",
+        frozenset({"Cisco ACP"}),
+        frozenset({"cisco_asa"}),
+        _has_cisco_acp,
+    ),
+    ExcelBuilderSpec(
+        "_build_checkpoint_access_rule_sheet",
+        frozenset({"Checkpoint Access Rules"}),
+        frozenset({"checkpoint"}),
+        _has_checkpoint_rules,
+    ),
     ExcelBuilderSpec(
         "_build_globalprotect_sheets",
         frozenset({
@@ -67,6 +144,8 @@ BUILDERS = (
             "GlobalProtect App Settings", "GlobalProtect Root CAs", "GlobalProtect Gateway Roles",
             "GlobalProtect Tunnel Configs", "GlobalProtect Network Gateways",
         }),
+        frozenset({"palo_alto"}),
+        _has_globalprotect_data,
     ),
     ExcelBuilderSpec(
         "_build_pan_phase9_sheets",
@@ -76,6 +155,8 @@ BUILDERS = (
             "PAN QoS Classes", "PAN High Availability", "PAN HA Monitoring", "PAN Device Settings",
             "PAN VSYS Settings", "PAN Botnet Report", "PAN Custom Reports",
         }),
+        frozenset({"palo_alto"}),
+        _has_pan_phase9_data,
     ),
     ExcelBuilderSpec(
         "_build_pan_sdwan_sheets",
@@ -83,14 +164,44 @@ BUILDERS = (
             "PAN SD-WAN Interface Profiles", "PAN SD-WAN Link Settings", "PAN SD-WAN Path Quality",
             "PAN SD-WAN Traffic Distribution", "PAN SD-WAN Rules",
         }),
+        frozenset({"palo_alto"}),
+        _has_pan_sdwan_data,
     ),
-    ExcelBuilderSpec("_build_security_profile_definitions", frozenset({"Security Profile Definitions"})),
-    ExcelBuilderSpec("_build_security_profile_rules", frozenset({"Security Profile Rules"})),
-    ExcelBuilderSpec("_build_custom_url_categories", frozenset({"Custom URL Categories"})),
-    ExcelBuilderSpec("_build_fortigate_source_configuration", frozenset({"FortiGate Source Configuration"})),
-    ExcelBuilderSpec("_build_firewall_policy_source_settings", frozenset({"Firewall Policy Source Settings"})),
-    ExcelBuilderSpec("_build_interface_nested_configuration", frozenset({"Interface Nested Configuration"})),
-    ExcelBuilderSpec("_build_vip_nested_configuration", frozenset({"VIP Nested Configuration"})),
+    ExcelBuilderSpec(
+        "_build_security_profile_definitions",
+        frozenset({"Security Profile Definitions"}),
+        has_data=lambda exporter: bool(exporter.ir.security_profile_definitions),
+    ),
+    ExcelBuilderSpec(
+        "_build_security_profile_rules",
+        frozenset({"Security Profile Rules"}),
+        has_data=lambda exporter: any(item.rules for item in exporter.ir.security_profile_definitions),
+    ),
+    ExcelBuilderSpec(
+        "_build_custom_url_categories",
+        frozenset({"Custom URL Categories"}),
+        has_data=lambda exporter: bool(exporter.ir.custom_url_categories),
+    ),
+    ExcelBuilderSpec(
+        "_build_fortigate_source_configuration",
+        frozenset({"FortiGate Source Configuration"}),
+        frozenset({"fortigate"}),
+    ),
+    ExcelBuilderSpec(
+        "_build_firewall_policy_source_settings",
+        frozenset({"Firewall Policy Source Settings"}),
+        has_data=_has_policy_source_settings,
+    ),
+    ExcelBuilderSpec(
+        "_build_interface_nested_configuration",
+        frozenset({"Interface Nested Configuration"}),
+        frozenset({"fortigate"}),
+    ),
+    ExcelBuilderSpec(
+        "_build_vip_nested_configuration",
+        frozenset({"VIP Nested Configuration"}),
+        frozenset({"fortigate"}),
+    ),
 )
 _BUILDER_SPECS = {spec.method_name: spec for spec in BUILDERS}
 
@@ -347,11 +458,24 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         builder_name: str,
     ) -> None:
         spec = _BUILDER_SPECS[builder_name]
-        if active_sheets.intersection(spec.produced_sheets):
-            getattr(self, builder_name)(workbook)
+        if not active_sheets.intersection(spec.produced_sheets):
+            return
+        vendor = self._source_vendor()
+        if vendor in self._KNOWN_VENDORS:
+            if spec.vendors and vendor not in spec.vendors:
+                return
+            if spec.has_data is not None and not spec.has_data(self):
+                return
+        getattr(self, builder_name)(workbook)
 
     def generate(self) -> bytes:
-        """Generate the final workbook without an intermediate save/reload."""
+        """Generate the final workbook and return its bytes."""
+        output = io.BytesIO()
+        self.generate_to(output)
+        return output.getvalue()
+
+    def generate_to(self, output: BinaryIO) -> None:
+        """Generate the final workbook directly into a file-like object."""
         debug_timings = logger.isEnabledFor(logging.DEBUG)
         metrics = _ExcelExportMetrics() if debug_timings else None
         self._last_export_metrics = metrics
@@ -405,15 +529,15 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
 
         self._finalize_table_metrics(workbook)
 
-        output = io.BytesIO()
         stage_start = time.perf_counter() if debug_timings else 0.0
-        workbook.save(output)
-        result = output.getvalue()
+        compression_level = self._export_options.compression_level
+        if compression_level is None:
+            compression_level = 1 if self._is_fast_profile() else 6
+        save_workbook_with_compression(workbook, output, compression_level)
         if metrics is not None:
             metrics.timings["final XLSX serialization"] = (
                 time.perf_counter() - stage_start
             )
-            metrics.output_bytes = len(result)
+            metrics.output_bytes = output.tell()
             _log_export_metrics(metrics, time.perf_counter() - total_start)
         self._preserve_column_order = False
-        return result
