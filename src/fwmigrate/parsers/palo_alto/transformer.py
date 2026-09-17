@@ -47,7 +47,7 @@ from .predefined_services import PAN_PREDEFINED_SERVICES, PAN_RULE_SERVICE_BUILT
 from .policy_order import apply_effective_policy_order
 from .extraction import (
     add_inventory_section_accounting, add_source_section, record_extract_only, record_normalized, record_parse_error, record_partial,
-    record_unsupported,
+    record_unsupported, inventory_item_blocks_generation,
 )
 from .residual import PANResidualExtractor
 from .external_lists import extract_external_lists
@@ -1175,10 +1175,10 @@ class PANToIRTransformer(_PANOSBaseSourceParser):
         extraction.canonical_ir = ir
         add_inventory_section_accounting(extraction)
         review_items = [item for item in extraction.inventory_items if item.requires_manual_review]
-        blocking_items = [item for item in extraction.inventory_items if item.status in {
-            ExtractionStatus.PARTIALLY_NORMALIZED, ExtractionStatus.UNSUPPORTED,
-            ExtractionStatus.PARSE_ERROR, ExtractionStatus.EXTRACT_ONLY,
-        } and item.requires_manual_review]
+        blocking_items = [
+            item for item in extraction.inventory_items
+            if inventory_item_blocks_generation(item)
+        ]
         extraction.requires_manual_review = bool(review_items)
         extraction.migration_complete = not any(
             item.status in {ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR}

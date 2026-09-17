@@ -52,7 +52,7 @@ def render_capabilities() -> str:
         )
     lines += [
         "",
-        "> A registered source and a registered target do not imply lossless feature parity. Review the vendor support matrix and migration report before deployment.",
+        "> A registered source and a registered target do not imply lossless feature parity. Review the vendor support matrix, migration warnings, and exported inventory before deployment.",
         "",
     ]
     return "\n".join(lines)

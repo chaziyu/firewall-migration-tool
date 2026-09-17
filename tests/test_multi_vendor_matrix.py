@@ -8,7 +8,7 @@ from fwmigrate.parsers.fortigate.parser import parse_fortigate_config
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 from tests.fixture_paths import VENDOR_FIXTURES
 
-SOURCE_VENDORS = ["fortigate", "palo_alto", "cisco_asa", "checkpoint", "juniper_srx"]
+SOURCE_VENDORS = ["fortigate", "palo_alto", "cisco_asa", "cisco_ftd", "checkpoint", "juniper_srx"]
 TARGET_VENDORS = ["palo_alto", "fortigate", "checkpoint", "juniper_srx", "cisco_asa"]
 
 GOLDEN_INPUTS = VENDOR_FIXTURES

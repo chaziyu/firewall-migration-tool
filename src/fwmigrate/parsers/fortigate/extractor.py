@@ -431,7 +431,10 @@ def extract_fortigate_config(
         )
         if section is not None:
             section.unresolved_dependencies += 1
-            if section.status == ExtractionStatus.NORMALIZED:
+            if section.status in {
+                ExtractionStatus.NORMALIZED,
+                ExtractionStatus.VENDOR_EXTENSION,
+            }:
                 section.status = ExtractionStatus.PARTIALLY_NORMALIZED
             note = (
                 f"Unresolved {dependency.source_field} reference "
@@ -562,13 +565,18 @@ def extract_fortigate_config(
             continue
         if item.source_path == "firewall policy" and item.source_id:
             policy = policy_safety.get((context, item.source_id))
-            if policy and (
-                policy.requires_manual_review
-                or policy.migration_status != "NORMALIZED"
-                or policy.review_reasons
-            ):
-                item.status = ExtractionStatus.PARTIALLY_NORMALIZED
-                item.requires_manual_review = True
+            if policy:
+                item.status = {
+                    "PARTIALLY_NORMALIZED": ExtractionStatus.PARTIALLY_NORMALIZED,
+                    "VENDOR_EXTENSION": ExtractionStatus.VENDOR_EXTENSION,
+                    "NORMALIZED": ExtractionStatus.NORMALIZED,
+                }.get(policy.migration_status, item.status)
+                item.requires_manual_review = (
+                    policy.requires_manual_review
+                    or has_source_only_operation
+                    or "structured-security-profile" in item.notes
+                    or bool(item_dependencies)
+                )
                 item.notes.extend(
                     reason for reason in policy.review_reasons if reason not in item.notes
                 )

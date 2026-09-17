@@ -93,6 +93,14 @@ def classify_partial(has_unsupported_fields: bool) -> ExtractionStatus:
     return ExtractionStatus.PARTIALLY_NORMALIZED if has_unsupported_fields else ExtractionStatus.NORMALIZED
 
 
+def inventory_item_blocks_generation(item: SourceInventoryItem) -> bool:
+    return item.requires_manual_review and item.status in {
+        ExtractionStatus.UNSUPPORTED,
+        ExtractionStatus.PARSE_ERROR,
+        ExtractionStatus.EXTRACT_ONLY,
+    }
+
+
 def add_inventory_section_accounting(extraction: ExtractionResult) -> None:
     """Add scope-aware summary rows for every terminal PAN inventory domain."""
     grouped: Dict[tuple[str, Optional[str]], List[SourceInventoryItem]] = {}

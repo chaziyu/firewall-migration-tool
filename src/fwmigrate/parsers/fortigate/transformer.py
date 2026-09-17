@@ -1,7 +1,9 @@
 from ipaddress import IPv4Network, ip_address, ip_interface
 import re
 from ipaddress import IPv6Address
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel, SerializeAsAny, ValidationError
@@ -60,6 +62,27 @@ CENTRAL_NAT_UNKNOWN_REVIEW_REASON = (
     "central NAT rules exist but effective central-nat mode cannot be proven "
     "from supplied configuration"
 )
+
+
+class SemanticIssueKind(str, Enum):
+    UNRESOLVED = "UNRESOLVED"
+    AMBIGUOUS = "AMBIGUOUS"
+    PARSE_FAILURE = "PARSE_FAILURE"
+    VENDOR_SPECIFIC = "VENDOR_SPECIFIC"
+    TARGET_REVIEW = "TARGET_REVIEW"
+
+
+@dataclass(frozen=True)
+class SemanticIssue:
+    kind: SemanticIssueKind
+    message: str
+
+
+@dataclass(frozen=True)
+class RouteDestinationResolution:
+    prefixes: Tuple[str, ...]
+    resolved: bool
+    reason: Optional[str] = None
 SRC_VIP_FILTER_REVIEW_REASON = (
     "FortiGate VIP src-vip-filter enables reverse-SNAT source filtering and "
     "requires source-specific review."
@@ -134,6 +157,7 @@ from fwmigrate.ir.extension_models import (
     IRIPPoolGroup,
     IRFortiOSAttachment,
     IRFortiOSAddressExtension,
+    IRFortiOSInterfaceExtension,
     IRFortiOSNATRuleExtension,
     IRFortiOSPublishedServiceExtension,
     set_object_extension_value,
@@ -444,6 +468,11 @@ INTERFACE_NORMALIZED_SOURCE_SETTINGS = frozenset({
     "dns_server_override",
     "mediatype",
     "device_identification",
+    "netflow_sampler",
+    "sflow_sampler",
+    "sample_rate",
+    "polling_interval",
+    "lldp_transmission",
 })
 
 # Keep this allowlist deliberately small. These settings are presentation or
@@ -732,6 +761,7 @@ class FGToIRTransformer:
         zone_mapping: Optional[Dict[str, str]] = None,
     ):
         self.fg = fg_config
+        self._source_version = fg_config.source_version
 
         source_version = None
         if fg_config.source_version:
@@ -815,6 +845,72 @@ class FGToIRTransformer:
             self._intf_to_zone[
                 (system_zone.source_context, system_zone.name)
             ] = system_zone.name
+
+    @staticmethod
+    def _semantic_issue_kind(reason: str) -> SemanticIssueKind:
+        text = str(reason).lower()
+        if any(marker in text for marker in (
+            "unresolved", "missing ", "could not", "failed ", "invalid ",
+            "malformed", "ambiguous", "unknown", "unrecognized",
+            "incomplete", "outside the valid", "no safe ",
+            "cannot be proven", "not resolved", "not found", "unmodeled",
+            "unknown source", "source-only", "no deterministic", "multiple concrete",
+        )):
+            if "ambiguous" in text:
+                return SemanticIssueKind.AMBIGUOUS
+            if any(marker in text for marker in (
+                "could not", "failed ", "invalid ", "malformed",
+                "outside the valid",
+            )):
+                return SemanticIssueKind.PARSE_FAILURE
+            return SemanticIssueKind.UNRESOLVED
+        if any(marker in text for marker in (
+            "proxy inspection", "proxy service", "security profile",
+            "identity", "internet service", "ztna", "ipsec action",
+            "policy-based", "schedule group", "target-specific",
+            "target-platform", "target review", "source-specific",
+            "ipv6 policy", "negate", "nat46", "nat64", "nat-source-vip",
+            "load-balanc", "service restriction", "source filter",
+            "port mapping", "real-server", "healthcheck", "monitor",
+            "client-ip", "http/connection", "m-to-n", "sctp service",
+            "destination port 0",
+            "unsupported nat behavior retained",
+        )):
+            return SemanticIssueKind.VENDOR_SPECIFIC
+        return SemanticIssueKind.TARGET_REVIEW
+
+    @classmethod
+    def _semantic_issues(
+        cls,
+        reasons: List[str],
+    ) -> List[SemanticIssue]:
+        return [
+            SemanticIssue(cls._semantic_issue_kind(reason), reason)
+            for reason in dict.fromkeys(reasons)
+        ]
+
+    @staticmethod
+    def _semantic_status(
+        issues: List[SemanticIssue],
+        *,
+        has_vendor_extension: bool = False,
+    ) -> str:
+        if any(issue.kind in {
+            SemanticIssueKind.UNRESOLVED,
+            SemanticIssueKind.AMBIGUOUS,
+            SemanticIssueKind.PARSE_FAILURE,
+        } for issue in issues):
+            return "PARTIALLY_NORMALIZED"
+        if has_vendor_extension or any(
+            issue.kind == SemanticIssueKind.VENDOR_SPECIFIC
+            for issue in issues
+        ):
+            return "VENDOR_EXTENSION"
+        return "NORMALIZED"
+
+    @staticmethod
+    def _requires_manual_review(issues: List[SemanticIssue]) -> bool:
+        return bool(issues)
 
     def transform(self) -> IRConfig:
         self._transform_system_settings()
@@ -910,19 +1006,25 @@ class FGToIRTransformer:
 
     def _transform_execution_contexts(self) -> None:
         for context in self.fg.execution_contexts:
+            central_nat = self._effective_central_nat(context.central_nat)
+            source_attributes = dict(context.extra_settings)
+            if context.central_nat is None and central_nat is not None:
+                source_attributes["central_nat_provenance"] = (
+                    "FortiOS documented default for the supplied source version"
+                )
             interpretation_changing = (
-                context.central_nat == "enable"
+                central_nat == "enable"
                 or context.ngfw_mode == "policy-based"
             )
             self.ir.execution_contexts.append(
                 IRExecutionContext(
                     vdom=context.vdom,
                     scope=context.scope,
-                    central_nat=context.central_nat,
+                    central_nat=central_nat,
                     ngfw_mode=context.ngfw_mode,
                     opmode=context.opmode,
                     requires_manual_review=interpretation_changing,
-                    source_attributes=dict(context.extra_settings),
+                    source_attributes=source_attributes,
                 )
             )
 
@@ -1020,6 +1122,17 @@ class FGToIRTransformer:
         )
         return any((context, name) in vip_names for name in policy.dstaddr)
 
+    def _effective_central_nat(self, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            normalized = str(value).strip().lower()
+            return normalized if normalized in {"enable", "disable"} else None
+
+        version = str(self._source_version or "")
+        match = re.search(r"\b(\d+)\.(\d+)(?:\.\d+)?\b", version)
+        if match and match.group(1) == "7" and match.group(2) == "2":
+            return "disable"
+        return None
+
     def _get_nat_authority_for_context(self, source_context: Optional[str]) -> str:
         """Return policy, central, or unknown NAT authority for one VDOM."""
         context_name = source_context or "root"
@@ -1040,7 +1153,7 @@ class FGToIRTransformer:
                     {},
                 ).get("central_nat")
 
-        central_nat = str(central_nat).strip().lower() if central_nat is not None else None
+        central_nat = self._effective_central_nat(central_nat)
         if central_nat == "enable":
             return "central"
         if central_nat == "disable":
@@ -4135,6 +4248,33 @@ class FGToIRTransformer:
                 intf.monitor_bandwidth
             )
             topology_review_reasons = self._interface_topology_review_reasons(intf)
+            interface_extension_values = {
+                "source_src_check": intf.src_check,
+                "source_netflow_sampler": intf.source_attributes.get("netflow_sampler"),
+                "source_sflow_sampler": intf.source_attributes.get("sflow_sampler"),
+                "source_sample_rate": intf.source_attributes.get("sample_rate"),
+                "source_polling_interval": intf.source_attributes.get("polling_interval"),
+                "source_lldp_transmission": intf.source_attributes.get("lldp_transmission"),
+            }
+            interface_vendor_extension = (
+                IRFortiOSInterfaceExtension(
+                    canonical_name=intf.name,
+                    source_context=intf.source_context,
+                    **interface_extension_values,
+                    source_attributes={
+                        key: value
+                        for key, value in intf.source_attributes.items()
+                        if str(key).replace("-", "_").lower()
+                        in {
+                            "netflow_sampler", "sflow_sampler", "sample_rate",
+                            "polling_interval", "lldp_transmission",
+                        }
+                    },
+                )
+                if any(value not in (None, "", []) for value in interface_extension_values.values())
+                else None
+            )
+            interface_issues = self._semantic_issues(interface_review_reasons)
             if topology_review_reasons:
                 self.ir.audit_entries.append(
                     IRAuditEntry(
@@ -4186,6 +4326,7 @@ class FGToIRTransformer:
                 IRInterface(
                     name=intf.name,
                     source_context=intf.source_context,
+                    vendor_extension=interface_vendor_extension,
                     zone=zone_name,
                     ip=ip_cidr,
                     ipv6_address=ipv6_address,
@@ -4284,11 +4425,17 @@ class FGToIRTransformer:
                     requires_manual_review=bool(
                         parse_errors
                         or interface_review_reasons
+                        or interface_vendor_extension
                     ),
                     migration_status=(
                         "PARTIALLY_NORMALIZED"
-                        if parse_errors or interface_review_reasons
-                        else "NORMALIZED"
+                        if parse_errors
+                        else self._semantic_status(
+                            interface_issues,
+                            has_vendor_extension=bool(
+                                interface_vendor_extension or interface_review_reasons
+                            ),
+                        )
                     ),
                     review_reasons=interface_review_reasons,
                     parse_errors=parse_errors,
@@ -5367,7 +5514,11 @@ class FGToIRTransformer:
                             source_tagging_entries=self._address_tagging_entries(addr),
                         )
                         item.original_type = addr.type
-                        item.migration_status = "PARTIALLY_NORMALIZED"
+                        item.migration_status = (
+                            "PARTIALLY_NORMALIZED"
+                            if review_reason
+                            else "VENDOR_EXTENSION"
+                        )
                         item.requires_manual_review = True
                         item.audit_note = review_reason or (
                             "Resolved interface-subnet to an extraction-time interface subnet snapshot."
@@ -6662,6 +6813,8 @@ class FGToIRTransformer:
         """Identify retained service settings without canonical semantics."""
         unmodeled = []
         for key, value in service.extra_settings.items():
+            if str(key).replace("-", "_").lower() == "id":
+                continue
             if key != "source_unset_settings":
                 unmodeled.append(key)
                 continue
@@ -6825,6 +6978,8 @@ class FGToIRTransformer:
                     "source protocol has no safe normalized port representation"
                 )
 
+            semantic_issues = self._semantic_issues(audit_reasons)
+
             self.ir.services.append(
                 IRService(
                     name=service.name,
@@ -6845,12 +7000,10 @@ class FGToIRTransformer:
                         service.extra_settings
                     ),
                     migration_status=(
-                        "PARTIALLY_NORMALIZED"
-                        if requires_manual_review
-                        else "NORMALIZED"
+                        self._semantic_status(semantic_issues)
                     ),
                     requires_manual_review=(
-                        requires_manual_review
+                        self._requires_manual_review(semantic_issues)
                     ),
                     audit_note=(
                         "; ".join(audit_reasons)
@@ -7185,14 +7338,41 @@ class FGToIRTransformer:
         source_attachments: List[IRFortiOSAttachment],
         destination_attachments: List[IRFortiOSAttachment],
     ) -> str:
-        if review_reasons:
-            return "PARTIALLY_NORMALIZED"
-        if any(
+        issues = FGToIRTransformer._semantic_issues(review_reasons)
+        has_vendor_attachment = any(
             attachment.kind in {"interface", "sdwan_zone", "virtual_interface"}
             for attachment in (*source_attachments, *destination_attachments)
-        ):
-            return "VENDOR_EXTENSION"
-        return "NORMALIZED"
+        )
+        return FGToIRTransformer._semantic_status(
+            issues,
+            has_vendor_extension=has_vendor_attachment,
+        )
+
+    @staticmethod
+    def _policy_has_effective_source_selector(policy: FGPolicy) -> bool:
+        return bool(
+            policy.srcaddr
+            or policy.srcaddr6
+            or policy.internet_service_src == "enable"
+            or policy.internet_service6_src == "enable"
+        )
+
+    @staticmethod
+    def _policy_has_effective_destination_selector(policy: FGPolicy) -> bool:
+        return bool(
+            policy.dstaddr
+            or policy.dstaddr6
+            or policy.internet_service == "enable"
+            or policy.internet_service6 == "enable"
+        )
+
+    @staticmethod
+    def _policy_has_effective_service_selector(policy: FGPolicy) -> bool:
+        return bool(
+            policy.service
+            or policy.internet_service == "enable"
+            or policy.internet_service6 == "enable"
+        )
 
     @staticmethod
     def _policy_value_is_configured(value: object) -> bool:
@@ -7311,6 +7491,62 @@ class FGToIRTransformer:
             }
         identity_indexes = self._build_identity_dependency_indexes()
 
+        context = self._policy_context(policy)
+        known_addresses = {
+            (item.source_context or "root", item.name)
+            for item in self.ir.addresses
+        } | {
+            (item.source_context or "root", item.name)
+            for item in self.ir.address_groups
+        }
+        known_services = {
+            (item.source_context or "root", item.name)
+            for item in self.ir.services
+        }
+        review_reasons: List[str] = []
+        for label, references in (
+            ("source address", (*policy.srcaddr, *policy.srcaddr6)),
+            ("destination address", (*policy.dstaddr, *policy.dstaddr6)),
+        ):
+            unresolved = [
+                name for name in dict.fromkeys(references)
+                if name.lower() not in {"all", "all_ipv4", "all_ipv6"}
+                and (context, name) not in known_addresses
+            ]
+            if unresolved:
+                review_reasons.append(
+                    f"unresolved {label} reference(s): "
+                    + ", ".join(unresolved)
+                )
+
+        unresolved_services = [
+            name for name in dict.fromkeys(policy.service)
+            if name.lower() not in {"all", "any"}
+            and (context, name) not in known_services
+        ]
+        if unresolved_services:
+            review_reasons.append(
+                "unresolved service reference(s): "
+                + ", ".join(unresolved_services)
+            )
+
+        source_attachments = self._resolve_attachments(
+            policy.srcintf, policy.source_context
+        )
+        destination_attachments = self._resolve_attachments(
+            policy.dstintf, policy.source_context
+        )
+        for label, attachments in (
+            ("source", source_attachments),
+            ("destination", destination_attachments),
+        ):
+            unresolved = [item.name for item in attachments if not item.resolved]
+            if unresolved:
+                review_reasons.append(
+                    f"unresolved {label} interface or zone reference(s): "
+                    + ", ".join(unresolved)
+                )
+
         _, _, _, unresolved_security_profiles = self._resolve_security_profile_references(policy)
 
         schedule_keys = {
@@ -7335,7 +7571,6 @@ class FGToIRTransformer:
             if item.name
         }
 
-        review_reasons: List[str] = []
 
         # Execution mode.
         if policy.source_context in policy_based_contexts:
@@ -7805,6 +8040,7 @@ class FGToIRTransformer:
             )
             review_reasons.extend(internet_service_review_reasons)
             review_reasons = list(dict.fromkeys(review_reasons))
+            semantic_issues = self._semantic_issues(review_reasons)
             internet_service_fields = self._get_policy_internet_service_settings(policy)
 
             unresolved_user_groups = [
@@ -8017,12 +8253,13 @@ class FGToIRTransformer:
                     policy.poolname6
                 ),
                 migration_status=(
-                    "PARTIALLY_NORMALIZED"
-                    if review_reasons
-                    else "NORMALIZED"
+                    self._semantic_status(
+                        semantic_issues,
+                        has_vendor_extension=bool(review_reasons),
+                    )
                 ),
                 review_reasons=review_reasons,
-                requires_manual_review=bool(review_reasons),
+                requires_manual_review=self._requires_manual_review(semantic_issues),
                 from_zone=from_zones,
                 to_zone=to_zones,
                 source=[
@@ -8689,10 +8926,13 @@ class FGToIRTransformer:
                 max_connections=server.max_connections,
                 monitors=list(server.monitor),
                 client_ip=server.client_ip,
-                migration_status=(
-                    "PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED"
+                migration_status=self._semantic_status(
+                    self._semantic_issues(review_reasons),
+                    has_vendor_extension=bool(review_reasons),
                 ),
-                requires_manual_review=bool(review_reasons),
+                requires_manual_review=self._requires_manual_review(
+                    self._semantic_issues(review_reasons)
+                ),
                 audit_note="; ".join(review_reasons) or None,
                 source_attributes=dict(server.extra_settings),
             )
@@ -8731,13 +8971,20 @@ class FGToIRTransformer:
                     "unresolved VIP monitor reference(s): " + ", ".join(unresolved_monitors)
                 )
             if any(server.requires_manual_review for server in real_servers):
-                review_reasons.append("advanced real-server semantics")
+                if any(
+                    server.migration_status == "PARTIALLY_NORMALIZED"
+                    for server in real_servers
+                ):
+                    review_reasons.append("invalid or unresolved real-server semantics")
+                else:
+                    review_reasons.append("advanced real-server semantics")
             if vip.extra_settings:
                 review_reasons.append("unmodeled VIP source settings")
             if vip.nested_configs:
                 review_reasons.append("advanced nested VIP configuration")
             review_reasons.extend(self._vip_advanced_review_reasons(vip))
             review_reasons = list(dict.fromkeys(review_reasons))
+            semantic_issues = self._semantic_issues(review_reasons)
 
             self.ir.virtual_ips.append(
                 IRVirtualIP(
@@ -8849,9 +9096,12 @@ class FGToIRTransformer:
                         vip.extra_settings
                     ),
                     migration_status=(
-                        "PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED"
+                        self._semantic_status(
+                            semantic_issues,
+                            has_vendor_extension=bool(review_reasons),
+                        )
                     ),
-                    requires_manual_review=bool(review_reasons),
+                    requires_manual_review=self._requires_manual_review(semantic_issues),
                     audit_note="; ".join(review_reasons) or None,
                 )
             )
@@ -8882,7 +9132,13 @@ class FGToIRTransformer:
             if unresolved_monitors:
                 review_reasons.append("unresolved VIP6 monitor reference(s): " + ", ".join(unresolved_monitors))
             if any(server.requires_manual_review for server in real_servers):
-                review_reasons.append("advanced real-server semantics")
+                if any(
+                    server.migration_status == "PARTIALLY_NORMALIZED"
+                    for server in real_servers
+                ):
+                    review_reasons.append("invalid or unresolved real-server semantics")
+                else:
+                    review_reasons.append("advanced real-server semantics")
             if vip.extra_settings:
                 review_reasons.append("unmodeled VIP6 settings")
             if vip.http_redirect == "enable":
@@ -8893,6 +9149,7 @@ class FGToIRTransformer:
                 review_reasons.append("VIP6 nested source configuration")
             review_reasons.extend(self._vip_advanced_review_reasons(vip))
             review_reasons = list(dict.fromkeys(review_reasons))
+            semantic_issues = self._semantic_issues(review_reasons)
             self.ir.virtual_ips.append(
                 IRVirtualIP(
                     name=vip.name,
@@ -8956,8 +9213,11 @@ class FGToIRTransformer:
                     color=vip.color,
                     description=vip.comment,
                     extra_settings=dict(vip.extra_settings),
-                    migration_status="PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED",
-                    requires_manual_review=bool(review_reasons),
+                    migration_status=self._semantic_status(
+                        semantic_issues,
+                        has_vendor_extension=bool(review_reasons),
+                    ),
+                    requires_manual_review=self._requires_manual_review(semantic_issues),
                     audit_note="; ".join(review_reasons) or None,
                 )
             )
@@ -9865,10 +10125,7 @@ class FGToIRTransformer:
                         MigrationConfidence.MANUAL,
                     )
 
-            if (
-                policy.internet_service
-                == "enable"
-            ):
+            if policy.internet_service == "enable" or policy.internet_service6 == "enable":
                 source_requires_review = True
                 add_reason(
                     nat_review_reasons,
@@ -9889,9 +10146,9 @@ class FGToIRTransformer:
             if (
                 snat_enabled
                 and (
-                    not policy.srcaddr
-                    or not policy.dstaddr
-                    or not policy.service
+                    not self._policy_has_effective_source_selector(policy)
+                    or not self._policy_has_effective_destination_selector(policy)
+                    or not self._policy_has_effective_service_selector(policy)
                 )
             ):
                 source_requires_review = True
@@ -9911,8 +10168,8 @@ class FGToIRTransformer:
             if (
                 vip_matches
                 and (
-                    not policy.srcaddr
-                    or not policy.service
+                    not self._policy_has_effective_source_selector(policy)
+                    or not self._policy_has_effective_service_selector(policy)
                 )
             ):
                 source_requires_review = True
@@ -10019,9 +10276,7 @@ class FGToIRTransformer:
                     nat_review_reasons, source_attachments, destination_attachments
                 ),
                 review_reasons=list(nat_review_reasons),
-                requires_manual_review=(
-                    source_requires_review
-                ),
+                requires_manual_review=source_requires_review,
                 description=policy.comments,
             )
 
@@ -10598,7 +10853,8 @@ class FGToIRTransformer:
                     migration_status=self._nat_migration_status(
                         snat_reasons, source_attachments, destination_attachments
                     ),
-                    review_reasons=snat_reasons, requires_manual_review=bool(snat_reasons),
+                    review_reasons=snat_reasons,
+                    requires_manual_review=bool(snat_reasons),
                     **common,
                 ))
             for vip, group_name in vip_matches:
@@ -10665,7 +10921,8 @@ class FGToIRTransformer:
                     migration_status=self._nat_migration_status(
                         reasons, source_attachments, destination_attachments
                     ),
-                    review_reasons=reasons, requires_manual_review=bool(reasons),
+                    review_reasons=reasons,
+                    requires_manual_review=bool(reasons),
                     **common,
                 ))
 
@@ -10855,7 +11112,8 @@ class FGToIRTransformer:
                 migration_status=self._nat_migration_status(
                     reasons, source_attachments, destination_attachments
                 ),
-                review_reasons=reasons, requires_manual_review=bool(reasons),
+                review_reasons=reasons,
+                requires_manual_review=bool(reasons),
                 source_origin="multicast-policy", source_attributes=dict(rule.extra_settings),
             ))
 
@@ -11050,7 +11308,10 @@ class FGToIRTransformer:
             (phase1.source_context, phase1.name)
             for phase1 in self.fg.phase1_interfaces
         }
-        user_group_names = {item.name for item in self._fortios.user_groups}
+        user_group_names = {
+            ("root", item.name)
+            for item in self._fortios.user_groups
+        }
         interface_names = {
             (item.source_context or "root", item.name) for item in self.ir.interfaces
         }
@@ -11105,6 +11366,19 @@ class FGToIRTransformer:
                 ike_version = None
                 if phase1.ike_version is not None:
                     source_attributes["ike_version"] = phase1.ike_version
+                    review_reasons.append(
+                        f"FortiGate Phase 1 IKE version has unknown value '{phase1.ike_version}'."
+                    )
+
+            if (
+                phase1.authusrgrp
+                and (phase1.source_context or "root", phase1.authusrgrp)
+                not in user_group_names
+            ):
+                review_reasons.append(
+                    f"Phase 1 references missing authentication user group '{phase1.authusrgrp}'."
+                )
+            semantic_issues = self._semantic_issues(review_reasons)
 
             self.ir.vpn_tunnels.append(
                 IRVPNTunnel(
@@ -11138,7 +11412,10 @@ class FGToIRTransformer:
                     unresolved_auth_user_groups=(
                         [phase1.authusrgrp]
                         if phase1.authusrgrp
-                        and phase1.authusrgrp not in user_group_names
+                        and (
+                            phase1.source_context or "root",
+                            phase1.authusrgrp,
+                        ) not in user_group_names
                         else []
                     ),
                     source_client_ip_start=phase1.ipv4_start_ip,
@@ -11175,7 +11452,10 @@ class FGToIRTransformer:
                     source_signature_hash_algorithms=list(phase1.signature_hash_alg),
                     unresolved_interfaces=unresolved_interfaces,
                     unresolved_certificates=unresolved_certificates,
-                    migration_status="PARTIALLY_NORMALIZED",
+                    migration_status=self._semantic_status(
+                        semantic_issues,
+                        has_vendor_extension=True,
+                    ),
                     requires_manual_review=True,
                     review_reasons=review_reasons,
                     source_attributes=source_attributes,
@@ -11183,7 +11463,11 @@ class FGToIRTransformer:
                 )
             )
 
-            if phase1.authusrgrp and phase1.authusrgrp not in user_group_names:
+            if (
+                phase1.authusrgrp
+                and (phase1.source_context or "root", phase1.authusrgrp)
+                not in user_group_names
+            ):
                 self._add_identity_audit(
                     f"identity:vpn:{phase1.name}:auth-user-group",
                     f"IPsec VPN Phase 1 '{phase1.name}' references unresolved "
@@ -11217,10 +11501,15 @@ class FGToIRTransformer:
                     "usable PSK securely from the source environment and "
                     "set the equivalent target IKE gateway credential."
                 )
-            else:
+            elif review_reasons:
                 audit_message = (
                     "IPsec VPN Phase 1 source semantics were partially "
                     "normalized and require target-specific migration review."
+                )
+            else:
+                audit_message = (
+                    "IPsec VPN Phase 1 source semantics are preserved and "
+                    "require target-specific migration review."
                 )
 
             self.ir.audit_entries.append(
@@ -11230,6 +11519,8 @@ class FGToIRTransformer:
                     message=audit_message,
                     confidence=(
                         MigrationConfidence.PARTIAL
+                        if review_reasons
+                        else MigrationConfidence.MANUAL
                     ),
                 )
             )
@@ -11279,6 +11570,7 @@ class FGToIRTransformer:
                 review_reasons.append(
                     f"Phase 2 references missing Phase 1 '{phase2.phase1name}'."
                 )
+            semantic_issues = self._semantic_issues(review_reasons)
             self.ir.vpn_phase2.append(
                 IRVPNPhase2(
                     name=phase2.name,
@@ -11320,6 +11612,10 @@ class FGToIRTransformer:
                         phase2.keepalive
                     ),
                     description=phase2.comments,
+                    migration_status=self._semantic_status(
+                        semantic_issues,
+                        has_vendor_extension=True,
+                    ),
                     requires_manual_review=True,
                     review_reasons=review_reasons,
                     source_attributes=source_attributes,
@@ -11345,6 +11641,79 @@ class FGToIRTransformer:
     # Routes
     # ------------------------------------------------------------------
 
+    def _resolve_route_destination_reference(
+        self,
+        reference: str,
+        address_family: str,
+        source_context: Optional[str] = None,
+    ) -> RouteDestinationResolution:
+        context = str(source_context or "root")
+        # Route references are resolved against the source VDOM while using
+        # already-normalized address objects to avoid inventing prefixes.
+        address_index = {
+            ((item.source_context or "root"), item.name): item
+            for item in self.ir.addresses
+        }
+        group_index = {
+            ((item.source_context or "root"), item.name): item
+            for item in self.ir.address_groups
+        }
+        normalizer = (
+            normalize_ipv6_network
+            if address_family == "ipv6"
+            else normalize_ipv4_network
+        )
+
+        def resolve(name: str, stack: Set[str]) -> Tuple[List[str], Optional[str]]:
+            key = (context, name)
+            if name in stack:
+                return [], f"unresolved route destination reference cycle at '{name}'"
+
+            address = address_index.get(key)
+            if address is not None:
+                if address.parse_error is not None:
+                    return [], f"unresolved route destination address '{name}'"
+                if address.address_family not in (None, address_family):
+                    return [], f"route destination address '{name}' has the wrong address family"
+                raw = address.subnet
+                if (
+                    raw is None
+                    and address.source_type == "interface-subnet"
+                    and address.resolved_interface_subnet
+                    and address.interface_reference_resolved
+                ):
+                    raw = address.resolved_interface_subnet
+                if raw is None or address.type not in {AddressType.NETWORK, AddressType.HOST}:
+                    return [], f"route destination address '{name}' has no deterministic prefix"
+                try:
+                    return [normalizer(raw)], None
+                except ValueError as exc:
+                    return [], f"route destination address '{name}' could not be normalized: {exc}"
+
+            group = group_index.get(key)
+            if group is None:
+                return [], f"unresolved route destination reference '{name}'"
+            if group.is_dynamic or not group.members:
+                return [], f"route destination group '{name}' has no deterministic prefix"
+
+            prefixes: List[str] = []
+            for member in group.members:
+                member_prefixes, reason = resolve(member, stack | {name})
+                if reason:
+                    return [], reason
+                prefixes.extend(member_prefixes)
+            prefixes = list(dict.fromkeys(prefixes))
+            if len(prefixes) != 1:
+                return [], f"route destination group '{name}' resolves to multiple concrete prefixes"
+            return prefixes, None
+
+        prefixes, reason = resolve(str(reference), set())
+        return RouteDestinationResolution(
+            prefixes=tuple(prefixes),
+            resolved=reason is None and len(prefixes) == 1,
+            reason=reason,
+        )
+
     def _transform_routes(
         self,
     ) -> None:
@@ -11353,17 +11722,23 @@ class FGToIRTransformer:
             parse_error = None
             dst_cidr = None
             src_cidr = None
+            default_destination = (
+                "::/0"
+                if route.address_family == "ipv6"
+                else "0.0.0.0 0.0.0.0"
+            )
 
             if route.dstaddr is not None:
-                review_reasons.append(
-                    "FortiGate destination object/group reference requires manual review."
+                resolution = self._resolve_route_destination_reference(
+                    route.dstaddr,
+                    route.address_family,
+                    route.source_context,
                 )
+                if resolution.resolved:
+                    dst_cidr = resolution.prefixes[0]
+                elif resolution.reason:
+                    review_reasons.append(resolution.reason)
             else:
-                default_destination = (
-                    "::/0"
-                    if route.address_family == "ipv6"
-                    else "0.0.0.0 0.0.0.0"
-                )
                 dst_raw = route.dst if route.dst is not None else default_destination
                 normalizer = (
                     normalize_ipv6_network
@@ -11430,7 +11805,8 @@ class FGToIRTransformer:
             if route.extra_settings:
                 review_reasons.append("Unknown source route settings are retained.")
 
-            requires_review = bool(review_reasons)
+            semantic_issues = self._semantic_issues(review_reasons)
+            requires_review = self._requires_manual_review(semantic_issues)
 
             if source_attributes:
                 self.ir.audit_entries.append(
@@ -11493,9 +11869,10 @@ class FGToIRTransformer:
                     internet_service_custom=route.internet_service_custom,
                     description=route.comment,
                     migration_status=(
-                        "PARTIALLY_NORMALIZED"
-                        if requires_review
-                        else "NORMALIZED"
+                        self._semantic_status(
+                            semantic_issues,
+                            has_vendor_extension=bool(review_reasons),
+                        )
                     ),
                     review_reasons=review_reasons,
                     parse_error=parse_error,

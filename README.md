@@ -5,105 +5,21 @@
 
 A Python 3.10+ multi-vendor firewall configuration extraction and migration platform.
 
-The current development priority is reliable, auditable extraction:
-
-```text
-Vendor configuration
-        ↓
-ExtractionResult
-        ↓
-Canonical IR V2 + vendor extensions
-        ↓
-Validation and coverage accounting
-        ↓
-Excel report
-```
-
-Target configuration generation remains available, but extraction correctness and completeness are the primary validation milestone.
+The core goal of this project is **reliable, auditable extraction** of firewall intent into a vendor-neutral intermediate representation (IR) before converting it into target configurations or reports.
 
 ## Supported source vendors
 
 - Fortinet FortiGate
 - Palo Alto Networks PAN-OS / Panorama
 - Cisco ASA
-- Cisco Firepower Threat Defense
+- Cisco Firepower Threat Defense (FTD)
 - Check Point R80/R81
 - Juniper SRX / Junos
 
-## Common extraction pipeline
+## Documentation & Architecture
 
-All source vendors are being standardized around the same lifecycle:
-
-```text
-Raw source
-  ↓
-1. Input detection / format adapter
-  ↓
-2. Source normalization
-  ↓
-3. Parse / tokenize / load
-  ↓
-4. Vendor source model
-  ↓
-5. Context / scope / inheritance resolution
-  ↓
-6. Reference and dependency resolution
-  ↓
-7. Source inventory and coverage accounting
-  ↓
-8. Transform to IR V2
-     ├─ canonical generic IR
-     └─ typed vendor extensions
-  ↓
-9. Semantic validation
-  ↓
-10. Extraction safety and completeness evaluation
-  ↓
-11. Finalize ExtractionResult
-  ↓
-12. Excel export
-```
-
-`extract()` is the authoritative parser entry point. Source syntax may differ by vendor, but every parser must produce the same extraction contract and must not silently discard configuration.
-
-Each source item should be accounted for as one of:
-
-- `NORMALIZED`
-- `PARTIALLY_NORMALIZED`
-- `VENDOR_EXTENSION`
-- `EXTRACT_ONLY`
-- `UNSUPPORTED`
-- `PARSE_ERROR`
-
-## IR direction
-
-The canonical IR is being refined so portable firewall intent stays vendor-neutral while vendor-only semantics remain preserved in typed extensions.
-
-Use these documents as the source of truth:
-
-- [Currently implemented IR](documentation/ir-model.md)
-- [Documentation index](documentation/README.md)
-
-Vendor-specific extraction coverage is maintained separately:
-
-- [FortiGate](documentation/vendor-mapping/fortigate.md)
-- [Palo Alto](documentation/vendor-mapping/palo-alto.md)
-- [Cisco ASA](documentation/vendor-mapping/cisco-asa.md)
-- [Cisco FTD](documentation/vendor-mapping/cisco-ftd.md)
-- [Check Point](documentation/vendor-mapping/checkpoint.md)
-- [Juniper](documentation/vendor-mapping/juniper.md)
-
-## Safety principles
-
-The project follows a fail-closed extraction model:
-
-- **No silent loss:** source configuration must be normalized or explicitly accounted for.
-- **No unsafe guessing:** malformed, ambiguous, unsupported, or unresolved semantics must not be broadened into permissive values.
-- **Preserve evidence:** source-only and vendor-specific semantics remain available for review.
-- **Protect secrets:** passwords, usable PSKs, private keys, tokens, and equivalent credentials must not appear in normal outputs.
-- **Review generated output:** target configuration generation still requires human and vendor validation.
-
-Detailed repository rules are in [AGENTS.md](AGENTS.md).
+- **[Documentation Index](documentation/README.md)**: Details on the canonical IR model and vendor-specific mappings.
+- **[AGENTS.md](AGENTS.md)**: Core architectural rules, extraction pipeline steps, and safety principles (fail-closed, no silent loss).
 
 ## Installation
 
@@ -113,13 +29,7 @@ cd firewall-migration-tool
 python -m pip install -e .
 ```
 
-For development:
-
-```bash
-python -m pip install -e ".[dev]"
-```
-
-## Basic usage
+## Basic Usage
 
 Start the web application:
 
@@ -127,30 +37,15 @@ Start the web application:
 python -m fwmigrate.main serve --port 5000
 ```
 
-## Development and testing
+## Development and Testing
+
+Before submitting changes, ensure all validations pass:
 
 ```bash
 python -m compileall -q src tests
 python -m py_compile scripts/*.py scripts/docs/*.py
 python -m pytest -q
 ```
-
-CI runs the test suite on supported Python versions.
-
-## Current focus
-
-The near-term goal is not to maximize target-generation features. It is to prove that supported firewall configurations can be extracted deterministically into IR V2 and Excel with complete source accounting.
-
-A successful extraction should make it clear:
-
-- what was found in the source,
-- what was normalized,
-- what remains vendor-specific,
-- what requires manual review,
-- what could not be parsed or supported,
-- and which references or dependencies remain unresolved.
-
-Once extraction completeness is stable across all six vendors, target-generation work can build on a much safer foundation.
 
 ## License
 

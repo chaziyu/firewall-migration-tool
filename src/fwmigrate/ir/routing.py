@@ -82,7 +82,6 @@ class IRRoute(BaseModel):
             and not self.review_reasons
             and self.parse_error is None
             and self.destination is not None
-            and self.source_destination_reference is None
         )
 class IRPBFSymmetricReturn(BaseModel):
     enabled: Optional[bool] = None

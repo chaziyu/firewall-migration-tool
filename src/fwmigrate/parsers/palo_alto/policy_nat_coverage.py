@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 
 from fwmigrate.extraction.models import ExtractionStatus
 
-from .extraction import add_inventory_section_accounting
+from .extraction import add_inventory_section_accounting, inventory_item_blocks_generation
 from .policy_order import apply_effective_policy_order, sync_effective_order_to_ir
 from .completeness import PANOSSourceParser as _CompletenessPANOSSourceParser
 from .safe_completeness import PANOSSourceParser as _SafePANOSSourceParser
@@ -460,12 +460,7 @@ class PANOSSourceParser(_SafePANOSSourceParser):
         review_items = [item for item in extraction.inventory_items if item.requires_manual_review]
         blocking_items = [
             item for item in extraction.inventory_items
-            if item.status in {
-                ExtractionStatus.PARTIALLY_NORMALIZED,
-                ExtractionStatus.UNSUPPORTED,
-                ExtractionStatus.PARSE_ERROR,
-                ExtractionStatus.EXTRACT_ONLY,
-            } and item.requires_manual_review
+            if inventory_item_blocks_generation(item)
         ]
         extraction.requires_manual_review = bool(review_items)
         extraction.migration_complete = not any(

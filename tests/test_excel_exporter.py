@@ -132,6 +132,30 @@ def test_streaming_fast_export_preserves_semantic_rows_and_required_sheets():
     assert streamed["Addresses"][5][0].value.startswith("'")
 
 
+def test_streaming_fast_export_restores_structural_readability():
+    workbook = load_workbook(
+        io.BytesIO(
+            StreamingFastExcelExporter(
+                _sample_ir(),
+                options=ExcelExportOptions(profile=ExcelExportProfile.FAST),
+            ).generate()
+        ),
+        data_only=False,
+    )
+    addresses = workbook["Addresses"]
+
+    assert addresses["A1"].font.bold is True
+    assert addresses["A1"].fill.fill_type == "solid"
+    assert addresses["A2"].font.italic is True
+    assert addresses["A3"].font.bold is True
+    assert addresses["A3"].fill.fill_type == "solid"
+    assert addresses["A3"].border.bottom.style == "thin"
+    assert addresses.column_dimensions["A"].width == 28
+    assert addresses.column_dimensions["B"].width == 18
+    assert addresses.freeze_panes == "A4"
+    assert addresses.auto_filter.ref.startswith("A3:")
+
+
 def test_streaming_fast_uses_write_only_workbook(monkeypatch):
     calls = []
     workbook_factory = excel_exporter.Workbook
@@ -821,7 +845,7 @@ end
     assert vips.cell(4, headers["Type"]).value == "server-load-balance"
     assert vips.cell(4, headers["NAT Source VIP"]).value == "TRUE"
     assert vips.cell(4, headers["Source Filters"]).value == "TRUSTED_SOURCE"
-    assert vips.cell(4, headers["Extraction Status"]).value == "PARTIALLY_NORMALIZED"
+    assert vips.cell(4, headers["Extraction Status"]).value == "VENDOR_EXTENSION"
 
     servers = workbook["VIP Real Servers"]
     headers = {cell.value: cell.column for cell in servers[3]}
