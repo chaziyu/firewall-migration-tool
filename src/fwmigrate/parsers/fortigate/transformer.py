@@ -4979,6 +4979,11 @@ class FGToIRTransformer:
                 )
                 continue
 
+            effective_type = (
+                "ipmask"
+                if addr.type is None and not addr.is_ipv6 and not addr.is_multicast
+                else addr.type
+            )
             addr_type = AddressType.NETWORK
             val = ""
 
@@ -5052,7 +5057,7 @@ class FGToIRTransformer:
                         val = f"{addr.start_ip}-{addr.end_ip}"
 
                 elif (
-                    addr.type == "ipmask"
+                    effective_type == "ipmask"
                     and addr.subnet
                 ):
                     try:
@@ -5119,7 +5124,7 @@ class FGToIRTransformer:
                         continue
 
                 elif (
-                    addr.type in ["ipmask", "iprange"]
+                    effective_type in ["ipmask", "iprange"]
                     and addr.start_ip
                     and addr.end_ip
                 ):

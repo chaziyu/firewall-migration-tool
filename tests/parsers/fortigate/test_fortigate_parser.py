@@ -114,6 +114,44 @@ end
     assert all(not hasattr(address, "source_effective_defaults") for address in addresses.values())
 
 
+def test_firewall_address_builder_preserves_unknown_and_nested_values():
+    source = '''
+config firewall address
+    edit "server"
+        set subnet 10.0.0.1 255.255.255.0
+        set color 6
+        set sdn-tag "prod"
+        set future-field kept
+        config list
+            edit "member1"
+            next
+        end
+        config tagging
+            edit "tag1"
+                set category "environment"
+                set tags "prod"
+            next
+        end
+    next
+end
+'''
+
+    address = FortiGateParser(FortiGateTokenizer(source)).parse().addresses[0]
+
+    assert address.type is None
+    assert address.subnet == "10.0.0.1 255.255.255.0"
+    assert address.color == 6
+    assert address.sdn_tag == "prod"
+    assert address.extra_settings == {"future_field": "kept"}
+    assert [entry.name for entry in address.address_list] == ["member1"]
+    assert address.tagging[0].model_dump() == {
+        "name": "tag1",
+        "category": "environment",
+        "tags": ["prod"],
+        "extra_settings": {},
+    }
+
+
 def test_local_user_passwd_time_uses_scalar_evaluation_and_reaches_ir():
     spec = get_section_spec("user local")
     assert spec is not None
