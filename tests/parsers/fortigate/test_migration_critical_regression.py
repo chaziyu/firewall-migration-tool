@@ -70,6 +70,42 @@ def test_p0_canonical_policy_nat_and_route_evidence_is_preserved():
     assert ir.routes[0].destination == "0.0.0.0/0"
 
 
+def test_p0_vdom_source_context_is_preserved_for_services_and_source_sections():
+    source = """
+config vdom
+    edit "tenant-a"
+        config firewall service custom
+            edit "svc1"
+                set protocol TCP/UDP/SCTP
+            next
+        end
+        config firewall service group
+            edit "group1"
+                set member "svc1"
+            next
+        end
+    next
+end
+"""
+
+    result = extract_fortigate_config(source)
+
+    assert result.canonical_ir.services[0].source_context == "tenant-a"
+    assert result.canonical_ir.service_groups[0].source_context == "tenant-a"
+    sections = {
+        section.path: section
+        for section in result.source_sections
+        if section.path in {"firewall service custom", "firewall service group"}
+    }
+    assert {
+        path: section.source_context
+        for path, section in sections.items()
+    } == {
+        "firewall service custom": "tenant-a",
+        "firewall service group": "tenant-a",
+    }
+
+
 def test_p0_dependency_resolution_is_local_first_and_fail_closed():
     commands = [
         SourceCommand(operation="set", key="srcintf", values=["port1"]),
@@ -92,6 +128,84 @@ def test_p0_dependency_resolution_is_local_first_and_fail_closed():
     dependency = build_dependency_registry(items)[0]
     assert dependency.result == "UNRESOLVED"
     assert dependency.target_path is None
+
+
+def test_p0_predefined_services_resolve_for_policies_and_groups():
+    commands = [
+        SourceCommand(
+            operation="set",
+            key="service",
+            values=["HTTP", "HTTPS", "DNS", "PING"],
+        ),
+    ]
+    group_commands = [
+        SourceCommand(
+            operation="set",
+            key="member",
+            values=["HTTP", "HTTPS", "DNS", "PING"],
+        ),
+    ]
+    items = [
+        SourceInventoryItem(
+            domain="firewall",
+            source_path="firewall policy",
+            source_context="root",
+            name="1",
+            commands=commands,
+        ),
+        SourceInventoryItem(
+            domain="firewall",
+            source_path="firewall service group",
+            source_context="root",
+            name="WEB",
+            commands=group_commands,
+        ),
+    ]
+
+    dependencies = build_dependency_registry(items)
+
+    assert {
+        dependency.reference
+        for dependency in dependencies
+        if dependency.result == "RESOLVED"
+        and dependency.target_path == "fortigate predefined service"
+    } == {"HTTP", "HTTPS", "DNS", "PING"}
+    assert all(
+        "target semantic expansion is not modeled" in dependency.notes
+        for dependency in dependencies
+    )
+    assert all(dependency.reason is None for dependency in dependencies)
+
+
+def test_p0_custom_service_precedes_same_named_service_group():
+    items = [
+        SourceInventoryItem(
+            domain="firewall",
+            source_path="firewall policy",
+            source_context="root",
+            name="1",
+            commands=[
+                SourceCommand(operation="set", key="service", values=["WEB"]),
+            ],
+        ),
+        SourceInventoryItem(
+            domain="firewall",
+            source_path="firewall service custom",
+            source_context="root",
+            name="WEB",
+        ),
+        SourceInventoryItem(
+            domain="firewall",
+            source_path="firewall service group",
+            source_context="root",
+            name="WEB",
+        ),
+    ]
+
+    dependency = build_dependency_registry(items)[0]
+
+    assert dependency.result == "RESOLVED"
+    assert dependency.target_path == "firewall service custom"
 
 
 def test_p0_pool_and_pool_group_collision_is_unresolved():

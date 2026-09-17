@@ -4,6 +4,7 @@ from fwmigrate.extraction.finalize import finalize_extraction
 from fwmigrate.extraction.models import (
     ExtractionResult,
     ExtractionStatus,
+    MigrationImpact,
     SourceCommand,
     SourceInventoryItem,
     SourceSectionResult,
@@ -13,6 +14,7 @@ from fwmigrate.extraction.models import (
 __all__ = [
     "ExtractionResult",
     "ExtractionStatus",
+    "MigrationImpact",
     "SourceCommand",
     "SourceInventoryItem",
     "SourceSectionResult",

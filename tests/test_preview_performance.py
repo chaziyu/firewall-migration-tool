@@ -262,6 +262,32 @@ def test_cached_ir_is_not_mutated_by_excel_export(monkeypatch):
     assert entry.extraction_result.model_dump(mode="json") == before_extraction
 
 
+def test_real_fast_export_does_not_mutate_cached_preview(monkeypatch):
+    extraction = _extraction()
+
+    monkeypatch.setattr(
+        web.PluginRegistry,
+        "get_parser",
+        lambda vendor: type("Parser", (), {"extract": lambda self, content: extraction})(),
+    )
+    monkeypatch.setattr(
+        web,
+        "_clone_preview",
+        lambda entry: pytest.fail("FAST cache hit should not deep-copy the preview"),
+    )
+    client = create_app({"TESTING": True}).test_client()
+    preview = _post_file(client).get_json()
+    entry = web._PREVIEW_CACHE[preview["preview_id"]]
+    before_ir = entry.ir_config.model_dump(mode="json")
+    before_extraction = entry.extraction_result.model_dump(mode="json")
+
+    response = _post_excel(client, preview_id=preview["preview_id"], profile="fast")
+
+    assert response.status_code == 200
+    assert entry.ir_config.model_dump(mode="json") == before_ir
+    assert entry.extraction_result.model_dump(mode="json") == before_extraction
+
+
 def test_invalid_excel_profile_fails_safely(monkeypatch):
     response = _post_excel(create_app({"TESTING": True}).test_client(), profile="not-a-profile")
 

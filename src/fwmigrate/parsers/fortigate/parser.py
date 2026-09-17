@@ -39,7 +39,6 @@ from fwmigrate.parsers.fortigate.model import (
     FGAddressGroupTaggingEntry,
     FGWildcardFQDN,
     FGServiceCategory,
-    FGPortRange,
     FGService,
     FGServiceGroup,
     FGSchedule,
@@ -690,43 +689,6 @@ def _classify_pppoe_password(values: List[str]) -> tuple[bool, Optional[str]]:
     if not value:
         return False, None
     return True, "encrypted" if value.upper().startswith("ENC ") else "plaintext"
-
-
-def parse_service_port_ranges(value: Optional[str]) -> List[FGPortRange]:
-    """Parse FortiOS destination[:source] service port expressions."""
-    ranges: List[FGPortRange] = []
-    for original in re.split(r"[,\s]+", (value or "").strip()):
-        if not original:
-            continue
-        parsed: List[tuple[int, int]] = []
-        for part in original.split(":", 1):
-            bounds = part.split("-", 1)
-            try:
-                parsed.append((int(bounds[0]), int(bounds[-1])))
-            except (TypeError, ValueError):
-                parsed = []
-                break
-        if not parsed:
-            ranges.append(FGPortRange(original=original))
-            continue
-        destination_start, destination_end = parsed[0]
-        if len(parsed) == 1:
-            ranges.append(FGPortRange(
-                original=original,
-                port=destination_start if destination_start == destination_end else None,
-                destination_start=destination_start,
-                destination_end=destination_end,
-            ))
-            continue
-        source_start, source_end = parsed[1]
-        ranges.append(FGPortRange(
-            original=original,
-            source_start=source_start,
-            source_end=source_end,
-            destination_start=destination_start,
-            destination_end=destination_end,
-        ))
-    return ranges
 
 
 STANDARD_SECTION_PATHS = frozenset({
@@ -2144,10 +2106,6 @@ class FortiGateParser:
                             if cmd.key.replace("-", "_") == field:
                                 cmd.status = ExtractionStatus.PARSE_ERROR
                                 cmd.requires_manual_review = True
-
-    @staticmethod
-    def _parse_port_ranges(value: Optional[str]) -> List[FGPortRange]:
-        return parse_service_port_ranges(value)
 
     def parse_key_values(
         self,

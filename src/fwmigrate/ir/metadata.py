@@ -60,6 +60,12 @@ class IRAuditEntry(BaseModel):
     message: str
     confidence: MigrationConfidence
     original_config: Optional[str] = None
+    code: Optional[str] = None
+    source_context: Optional[str] = None
+    object_type: Optional[str] = None
+    object_name: Optional[str] = None
+    field: Optional[str] = None
+    raw_value: Any = None
 
 
 __all__ = [

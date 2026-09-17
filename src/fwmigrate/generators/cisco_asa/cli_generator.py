@@ -13,6 +13,7 @@ from fwmigrate.ir.nat import IRNATRule
 from fwmigrate.ir.routing import IRRoute
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction, NATType
 from fwmigrate.generators.policy_capabilities import policy_capabilities
+from fwmigrate.generators.target_helpers import prepare_target_services
 from fwmigrate.ir.semantics import (
     AddressUniversalFamily,
     classify_universal_address_reference,
@@ -24,6 +25,9 @@ class CiscoASACLIGenerator:
     """Generates Cisco ASA native CLI commands from Canonical IR."""
 
     def generate(self, ir: IRConfig) -> str:
+        prepared_services = prepare_target_services(
+            ir.services, ir.service_groups, "cisco_asa"
+        )
         lines: List[str] = [
             "! =============================================================================",
             f"! Cisco ASA Configuration Migration from {ir.metadata.source_vendor or 'Generic'} -> Cisco ASA",
@@ -94,19 +98,24 @@ class CiscoASACLIGenerator:
         if ir.services:
             lines.append("! --- Service Objects ---")
             for svc in ir.services:
-                if (
-                    svc.requires_manual_review
-                    or any(port.source_port for port in svc.ports)
-                ):
+                service_result = prepared_services.service_result(svc)
+                if not service_result.supported:
                     lines.append(
-                        f"! Service {svc.name} withheld: source/proxy port semantics require manual review"
+                        f"! Service {svc.name} withheld: target capability requires manual review"
+                        + (f" ({'; '.join(service_result.reasons)})" if service_result.reasons else "")
                     )
                     continue
                 for port_entry in svc.ports:
                     proto = port_entry.protocol.value.lower()
                     if proto in ('tcp', 'udp'):
+                        port_operator = "eq"
+                        port_value = port_entry.port
+                        if "-" in port_entry.port:
+                            start, end = port_entry.port.split("-", 1)
+                            port_operator = "range"
+                            port_value = f"{start} {end}"
                         lines.append(f"object service {svc.name}")
-                        lines.append(f" service {proto} destination eq {port_entry.port}")
+                        lines.append(f" service {proto} destination {port_operator} {port_value}")
                         if svc.description:
                             lines.append(f" description {svc.description}")
                         lines.append("!")
@@ -119,15 +128,17 @@ class CiscoASACLIGenerator:
         if ir.service_groups:
             lines.append("! --- Service Object Groups ---")
             for sgrp in ir.service_groups:
-                if sgrp.requires_manual_review:
+                group_result = prepared_services.group_result(sgrp)
+                if not group_result.supported:
                     lines.append(
-                        f"! Service group {sgrp.name} withheld: member semantics require manual review"
+                        f"! Service group {sgrp.name} withheld: target capability requires manual review"
+                        + (f" ({'; '.join(group_result.reasons)})" if group_result.reasons else "")
                     )
                     continue
                 lines.append(f"object-group service {sgrp.name}")
                 if sgrp.description:
                     lines.append(f" description {sgrp.description}")
-                for mem in sgrp.members:
+                for mem in prepared_services.members_for(sgrp):
                     lines.append(f" service-object object {mem}")
                 lines.append("!")
             lines.append("")

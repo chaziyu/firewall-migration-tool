@@ -537,57 +537,22 @@ class FGAddressTaggingEntry(BaseModel):
 
 
 class FGAddress(FGContextualModel):
+    # Keep normalized nested source entries available to legacy callers while
+    # scalar vendor-only settings remain in extra_settings.
+    model_config = ConfigDict(extra="allow")
     name: str
     uuid: Optional[str] = None
     type: Optional[str] = None  # ipmask, fqdn, iprange, dynamic
-    sub_type: Optional[str] = None
-    fsso_group: List[str] = Field(default_factory=list)
-    hw_model: Optional[str] = None
-    hw_vendor: Optional[str] = None
-    clearpass_spt: Optional[str] = None
-    epg_name: Optional[str] = None
-    fabric_object: Optional[str] = None
     subnet: Optional[str] = None  # e.g. "192.168.1.0 255.255.255.0"
-    ip6: Optional[str] = None
-    host: Optional[str] = None
-    host_type: Optional[str] = None
-    template: Optional[str] = None
-    fqdn: Optional[str] = None
-    wildcard_fqdn: Optional[str] = None
-    subnet_name: Optional[str] = None
-    sw_version: Optional[str] = None
-    tag_detection_level: Optional[str] = None
-    tenant: Optional[str] = None
-    cache_ttl: Optional[int] = None
-    wildcard: Optional[str] = None
     start_ip: Optional[str] = None
     end_ip: Optional[str] = None
-    country: Optional[str] = None
-    interface: Optional[str] = None
-    route_tag: Optional[int] = None
-    organization: Optional[str] = None
-    os: Optional[str] = None
-    policy_group: Optional[str] = None
-    comment: Optional[str] = None
-    macaddr: Optional[str] = None
-    mac: Optional[str] = None
+    fqdn: Optional[str] = None
+    wildcard: Optional[str] = None
+    wildcard_fqdn: Optional[str] = None
     associated_interface: Optional[str] = None
-    allow_routing: Optional[str] = None
-    color: Optional[int] = None
-    # For dynamic addresses (e.g. EMS tags)
-    ems_tag_name: Optional[str] = None
-    obj_tag: Optional[str] = None
-    tag_type: Optional[str] = None
-    obj_type: Optional[str] = None
-    dirty: Optional[str] = None
-    sdn: Optional[str] = None
-    sdn_addr_type: Optional[str] = None
-    sdn_tag: Optional[str] = None
-    filter: Optional[str] = None
-    node_ip_only: Optional[str] = None
-    obj_id: Optional[str] = None
-    address_list: List[FGAddressListEntry] = Field(default_factory=list)
-    tagging: List[FGAddressTaggingEntry] = Field(default_factory=list)
+    comment: Optional[str] = None
+    # Compatibility fields retained while IPv6 and multicast sections share this model.
+    ip6: Optional[str] = None
     is_ipv6: bool = False
     is_multicast: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
@@ -600,7 +565,6 @@ class FGAddressGroupTaggingEntry(BaseModel):
 
 
 class FGAddressGroup(FGContextualModel):
-    model_config = ConfigDict(populate_by_name=True)
     name: str
     member: List[str] = Field(default_factory=list)
     exclude: Optional[str] = None
@@ -609,7 +573,6 @@ class FGAddressGroup(FGContextualModel):
     uuid: Optional[str] = None
     allow_routing: Optional[str] = None
     color: Optional[int] = None
-    dynamic_filter: Optional[str] = Field(default=None, alias="filter")
     category: Optional[str] = None
     type: Optional[str] = None
     fabric_object: Optional[str] = None
@@ -632,17 +595,9 @@ class FGServiceCategory(FGContextualModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGPortRange(BaseModel):
-    original: str
-    port: Optional[int] = None
-    source_start: Optional[int] = None
-    source_end: Optional[int] = None
-    destination_start: Optional[int] = None
-    destination_end: Optional[int] = None
-
 class FGService(FGContextualModel):
     name: str
-    protocol: str = "tcp/udp/sctp"  # default
+    protocol: Optional[str] = None
     session_ttl: Optional[Union[int, Literal["never"]]] = None
     tcp_halfclose_timer: Optional[int] = None
     tcp_halfopen_timer: Optional[int] = None
@@ -653,9 +608,6 @@ class FGService(FGContextualModel):
     tcp_portrange: Optional[str] = None
     udp_portrange: Optional[str] = None
     sctp_portrange: Optional[str] = None
-    tcp_port_ranges: List[FGPortRange] = Field(default_factory=list)
-    udp_port_ranges: List[FGPortRange] = Field(default_factory=list)
-    sctp_port_ranges: List[FGPortRange] = Field(default_factory=list)
     protocol_number: Optional[int] = None
     icmpcode: Optional[int] = None
     icmptype: Optional[int] = None
@@ -691,6 +643,7 @@ class FGService(FGContextualModel):
 
 class FGServiceGroup(FGContextualModel):
     name: str
+    # Raw FortiOS member names; dependency resolution happens downstream.
     member: List[str] = Field(default_factory=list)
     comment: Optional[str] = None
     uuid: Optional[str] = None

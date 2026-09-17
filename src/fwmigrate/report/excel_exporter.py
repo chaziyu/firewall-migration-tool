@@ -1996,7 +1996,7 @@ class IRExcelExporter:
         )
 
     def _build_address_groups(self, workbook: Any) -> None:
-        rows = [
+        rows = (
             (
                 item.name,
                 item.source_uuid,
@@ -2035,7 +2035,7 @@ class IRExcelExporter:
             )
             for item in self.ir.address_groups
             if not self._is_source_address_backed_group(item)
-        ]
+        )
         self._table_sheet(
             workbook,
             "Address Groups",
@@ -2101,7 +2101,7 @@ class IRExcelExporter:
         )
 
     def _build_services(self, workbook: Any) -> None:
-        rows = [
+        rows = (
             (
                 item.name,
                 item.source_uuid,
@@ -2135,7 +2135,7 @@ class IRExcelExporter:
                 item.description,
             )
             for item in self.ir.services
-        ]
+        )
         self._table_sheet(
             workbook,
             "Services",
@@ -3978,7 +3978,7 @@ class IRExcelExporter:
         )
 
     def _build_routes(self, workbook: Any) -> None:
-        rows = [
+        rows = (
             (
                 item.name,
                 item.source_route_id,
@@ -4021,7 +4021,7 @@ class IRExcelExporter:
                 item.parse_error,
             )
             for item in self.ir.routes
-        ]
+        )
         self._table_sheet(
             workbook,
             "Routes",
@@ -6472,6 +6472,8 @@ class IRExcelExporter:
         sheet_nonempty: dict[int, int] = {}
         classifiers: dict[str, AuditSheetClassifier] = {}
         category = getattr(self, "_sheet_category", lambda _: "Inventory")
+        if self._audit_accumulator is not None and has_rows:
+            classifiers[title] = build_audit_classifier(title, headers, category)
 
         def create_sheet(sheet_title: str, note: str) -> Any:
             sheet = workbook.create_sheet(sheet_title)
@@ -6528,6 +6530,12 @@ class IRExcelExporter:
                 self._register_partitioned_sheets(title, names)
                 sheet = create_sheet(next_name, subtitle)
                 sheets.append((sheet, 0))
+                if self._audit_accumulator is not None:
+                    classifiers[next_name] = build_audit_classifier(
+                        next_name,
+                        headers,
+                        category,
+                    )
                 current_count = 0
 
             current_count += 1
@@ -6545,21 +6553,16 @@ class IRExcelExporter:
                     cell.fill = styles["stripe_fill"]
             accumulator = self._audit_accumulator
             if accumulator is not None:
-                classifier = classifiers.get(sheet.title)
-                if classifier is None:
-                    classifier = classifiers[sheet.title] = build_audit_classifier(
+                classifier = classifiers[sheet.title]
+                if classifier.can_produce_review or classifier.can_produce_evidence:
+                    accumulator.add_row(
                         sheet.title,
                         headers,
+                        safe_values,
+                        worksheet_row,
                         category,
+                        classifier,
                     )
-                accumulator.add_row(
-                    sheet.title,
-                    headers,
-                    safe_values,
-                    worksheet_row,
-                    category,
-                    classifier,
-                )
 
         for sheet, row_count in sheets:
             last_column = get_column_letter(len(headers))

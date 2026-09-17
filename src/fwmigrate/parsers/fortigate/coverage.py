@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-from fwmigrate.extraction.models import ExtractionStatus, SourceSectionResult
+from fwmigrate.extraction.models import (
+    ExtractionStatus,
+    MigrationImpact,
+    SourceSectionResult,
+)
 from fwmigrate.ir import IRConfig
 from fwmigrate.parsers.fortigate.model import FGConfig
 from fwmigrate.parsers.fortigate.source_tree import (
@@ -45,6 +49,61 @@ MISC_OPERATIONAL_PREFIXES = (
     "system threat-weight",
 )
 
+NON_BLOCKING_SOURCE_PREFIXES = (
+    "system accprofile",
+    "system admin",
+    "log",
+    "system snmp",
+    "system ntp",
+    "system email-server",
+    "system fortiguard",
+    "system auto-install",
+    "system autoupdate",
+    "system custom-language",
+    "system object-tagging",
+)
+
+MIGRATION_RELEVANT_SOURCE_PREFIXES = (
+    "firewall",
+    "router",
+    "vpn",
+    "user",
+    "endpoint-control",
+    "authentication",
+    "system interface",
+    "system zone",
+    "system sdwan",
+    "system dhcp",
+    "system dns-server",
+    "system dns64",
+    "system fsso-polling",
+    "system link-monitor",
+    "system switch-interface",
+    "system virtual-wire-pair",
+    "system vdom-link",
+    "system pppoe-interface",
+)
+
+ALWAYS_BLOCKING_SOURCE_PREFIXES = (
+    "firewall acl",
+    "firewall interface-policy",
+    "firewall network-service-dynamic",
+    "firewall central-snat-map",
+    "firewall security-policy",
+    "firewall local-in-policy",
+    "firewall proxy-policy",
+    "firewall shaping-policy",
+    "firewall dnstranslation",
+    "firewall access-proxy",
+    "vpn certificate",
+    "system sdn-connector",
+    "system link-monitor",
+    "system switch-interface",
+    "system virtual-wire-pair",
+    "system vdom-link",
+    "system pppoe-interface",
+)
+
 def is_interface_nested_source_path(
     path: str,
 ) -> bool:
@@ -56,12 +115,21 @@ def is_interface_nested_source_path(
         != "system interface secondaryip"
     )
 
+
+def _nested_entries(model: Any, key: str) -> list[Any]:
+    entries = getattr(model, key, None)
+    if entries is None:
+        entries = (getattr(model, "extra_settings", {}) or {}).get(key, [])
+    return entries or []
+
 def _matches_source_prefix(path: str, prefixes: tuple[str, ...]) -> bool:
     return any(path == prefix or path.startswith(f"{prefix} ") for prefix in prefixes)
 
 
 def fortigate_source_category(path: str) -> str:
     """Classify source-only FortiGate configuration without inferring semantics."""
+    if _matches_source_prefix(path, ("system accprofile", "system admin")):
+        return "Administration"
     if _matches_source_prefix(path, tuple(STRUCTURED_OPERATIONAL_SECTIONS)):
         return "Automation"
     if _matches_source_prefix(path, tuple(STRUCTURED_ROUTING_DEPENDENCY_SECTIONS)):
@@ -73,6 +141,35 @@ def fortigate_source_category(path: str) -> str:
     if path == "system settings" or _matches_source_prefix(path, SYSTEM_BEHAVIOUR_PREFIXES):
         return "System Behaviour"
     return "Other Operational"
+
+
+def fortigate_generation_impact(
+    path: str,
+    status: ExtractionStatus,
+) -> MigrationImpact:
+    """Classify migration risk separately from source extraction status."""
+    if _matches_source_prefix(path, NON_BLOCKING_SOURCE_PREFIXES):
+        return (
+            MigrationImpact.NONE
+            if status == ExtractionStatus.NORMALIZED
+            else MigrationImpact.REVIEW
+        )
+    if _matches_source_prefix(path, ALWAYS_BLOCKING_SOURCE_PREFIXES):
+        return MigrationImpact.BLOCKING
+    if status == ExtractionStatus.NORMALIZED:
+        return MigrationImpact.NONE
+    if status == ExtractionStatus.PARTIALLY_NORMALIZED:
+        return MigrationImpact.REVIEW
+    if (
+        status in {
+            ExtractionStatus.EXTRACT_ONLY,
+            ExtractionStatus.UNSUPPORTED,
+            ExtractionStatus.PARSE_ERROR,
+        }
+        and _matches_source_prefix(path, MIGRATION_RELEVANT_SOURCE_PREFIXES)
+    ):
+        return MigrationImpact.BLOCKING
+    return MigrationImpact.REVIEW
 
 
 def is_operational_source_path(path: str) -> bool:
@@ -846,7 +943,7 @@ def _count_collection(
             pass
     if isinstance(model, FGConfig) and path == "firewall address list":
         return sum(
-            len(item.address_list)
+            len(_nested_entries(item, "address_list"))
             for item in model.addresses
             if not item.is_ipv6 and not item.is_multicast
         )
@@ -859,7 +956,7 @@ def _count_collection(
         expected_ipv6 = "address6" in path
         expected_multicast = "multicast-address" in path
         return sum(
-            len(item.tagging)
+            len(_nested_entries(item, "tagging"))
             for item in model.addresses
             if item.is_ipv6 == expected_ipv6
             and item.is_multicast == expected_multicast
@@ -1642,3 +1739,9 @@ def classify_section_coverage(
             section.notes.append(
                 "Source, parsed, and normalized counts do not prove complete one-to-one normalization."
             )
+
+    for section in source_sections:
+        section.migration_impact = fortigate_generation_impact(
+            section.path,
+            section.status,
+        )
