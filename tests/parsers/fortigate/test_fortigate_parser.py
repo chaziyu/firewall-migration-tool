@@ -10,6 +10,7 @@ from fwmigrate.parsers.fortigate.section_registry import (
 )
 from fwmigrate.parsers.fortigate.source_tree import FGSourceCommand
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
+from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
 
 
 def test_fortigate_syntax_evaluation_and_critical_sections_are_lossless():
@@ -79,6 +80,125 @@ def test_fortigate_syntax_evaluation_and_critical_sections_are_lossless():
     assert all(item.commands or item.children for item in extraction.inventory_items)
 
 
+def test_service_and_service_group_source_values_are_preserved():
+    source = '''
+config firewall service custom
+    edit "svc1"
+        set protocol TCP/UDP/SCTP
+        set tcp-portrange "443:1024-65535"
+        set future-field "keep-me"
+    next
+end
+config firewall service group
+    edit "group1"
+        set member "A"
+        append member "B"
+        unset member
+    next
+end
+'''
+
+    config = FortiGateParser(FortiGateTokenizer(source)).parse()
+    service = config.services[0]
+    service_group = config.service_groups[0]
+
+    assert service.protocol == "TCP/UDP/SCTP"
+    assert service.source_protocol_configured == "TCP/UDP/SCTP"
+    assert service.tcp_portrange == "443:1024-65535"
+    assert service.extra_settings["future_field"] == "keep-me"
+    assert service_group.member == []
+    assert service_group.extra_settings["source_unset_settings"] == ["member"]
+
+    extraction = extract_fortigate_config(source)
+    ir_service = extraction.canonical_ir.services[0]
+    assert ir_service.source_protocol_configured == "TCP/UDP/SCTP"
+    assert ir_service.ports[0].raw_source_value == "443:1024-65535"
+    assert ir_service.source_attributes["future_field"] == "keep-me"
+
+
+def test_service_group_preserves_unresolved_member_names_and_source_metadata():
+    source = '''
+config firewall service group
+    edit "group A"
+        set member "service1" "group B"
+        set comment "Mixed service group"
+        set uuid "group-uuid"
+        set proxy enable
+        set fabric-object "fabric-group"
+        set color 7
+        set future-setting kept
+    next
+end
+'''
+
+    group = FortiGateParser(FortiGateTokenizer(source)).parse().service_groups[0]
+
+    assert group.member == ["service1", "group B"]
+    assert (group.comment, group.uuid, group.proxy, group.fabric_object, group.color) == (
+        "Mixed service group", "group-uuid", "enable", "fabric-group", 7
+    )
+    assert group.extra_settings["future_setting"] == "kept"
+
+
+def test_address_group_transform_preserves_fields_without_dynamic_filter_source_access():
+    source = '''
+config firewall addrgrp
+    edit "WEB-GROUP"
+        set member "WEB1" "WEB2"
+        set comment "Web servers"
+        set uuid "group-uuid"
+        set allow-routing enable
+        set color 6
+        set category default
+        set type static
+        set exclude enable
+        set exclude-member "BLOCKED"
+        set filter stale-filter
+        set future-setting kept
+        config tagging
+            edit "environment"
+                set category "environment"
+                set tags "prod"
+            next
+        end
+    next
+end
+config firewall addrgrp6
+    edit "V6-GROUP"
+        set member "V6-NET"
+        set comment "IPv6 group"
+    next
+end
+'''
+
+    ir = FGToIRTransformer(
+        FortiGateParser(FortiGateTokenizer(source)).parse()
+    ).transform()
+    group, group6 = ir.address_groups
+
+    assert (group.name, group.members, group.description) == (
+        "WEB-GROUP", ["WEB1", "WEB2"], "Web servers"
+    )
+    assert group.dynamic_filter is None
+    assert group.allow_routing is True
+    assert (group.source_color, group.source_category, group.source_group_type) == (
+        6, "default", "static"
+    )
+    assert group.exclusion_enabled is True
+    assert group.exclude_members == ["BLOCKED"]
+    assert group.source_tagging_entries[0].tags == ["prod"]
+    assert group.source_attributes == {
+        "filter": "stale-filter",
+        "future_setting": "kept",
+    }
+    assert group.requires_manual_review is True
+
+    assert (group6.source_section, group6.address_family, group6.members) == (
+        "firewall addrgrp6", "ipv6", ["V6-NET"]
+    )
+    assert group6.requires_manual_review is True
+
+
 def test_ipv4_addresses_preserve_only_explicit_type_and_subnet_values():
     source = '''
 config firewall address
@@ -127,7 +247,7 @@ end
     )
 
 
-def test_firewall_address_builder_preserves_unknown_and_nested_values():
+def test_firewall_address_builder_preserves_nested_values_as_extra_settings():
     source = '''
 config firewall address
     edit "server"
@@ -153,16 +273,84 @@ end
 
     assert address.type is None
     assert address.subnet == "10.0.0.1 255.255.255.0"
-    assert address.color == 6
-    assert address.sdn_tag == "prod"
-    assert address.extra_settings == {"future_field": "kept"}
-    assert [entry.name for entry in address.address_list] == ["member1"]
-    assert address.tagging[0].model_dump() == {
+    assert not hasattr(address, "address_list")
+    assert not hasattr(address, "tagging")
+    assert not hasattr(address, "color")
+    assert not hasattr(address, "sdn_tag")
+    assert address.extra_settings["color"] == 6
+    assert address.extra_settings["sdn_tag"] == "prod"
+    assert address.extra_settings["future_field"] == "kept"
+    assert address.extra_settings["address_list"] == [{"name": "member1"}]
+    assert address.extra_settings["tagging"] == [{
         "name": "tag1",
         "category": "environment",
         "tags": ["prod"],
-        "extra_settings": {},
+    }]
+
+    extraction = extract_fortigate_config(source)
+    ir_address = extraction.canonical_ir.addresses[0]
+    assert ir_address.source_list_entries == []
+    assert ir_address.source_tagging_entries == []
+    assert ir_address.source_attributes["address_list"] == address.extra_settings["address_list"]
+    assert ir_address.source_attributes["tagging"] == address.extra_settings["tagging"]
+    sections = {section.path: section for section in extraction.source_sections}
+    assert sections["firewall address list"].object_count_source == 1
+    assert sections["firewall address tagging"].object_count_source == 1
+
+
+def test_firewall_address_removed_fields_are_lossless_in_extra_settings():
+    source = '''
+config firewall address
+    edit "metadata"
+        set type ipmask
+        set subnet 192.0.2.0 255.255.255.0
+        set uuid uuid-1
+        set comment "Address comment"
+        set associated-interface "port1"
+        set color 3
+        set fabric-object enable
+        set sdn-tag "abc"
+        set country "MY"
+        set allow-routing enable
+        set cache-ttl 300
+        set fsso-group "group-a"
+        set hw-vendor "vendor"
+        set node-ip-only enable
+        set obj-id "object-1"
+    next
+end
+'''
+
+    address = FortiGateParser(FortiGateTokenizer(source)).parse().addresses[0]
+    removed_fields = {
+        "color", "fabric_object", "sdn_tag", "country", "allow_routing",
+        "cache_ttl", "fsso_group", "hw_vendor", "node_ip_only", "obj_id",
     }
+
+    assert all(not hasattr(address, field) for field in removed_fields)
+    assert {
+        field: address.extra_settings[field]
+        for field in removed_fields
+    } == {
+        "color": 3,
+        "fabric_object": "enable",
+        "sdn_tag": "abc",
+        "country": "MY",
+        "allow_routing": "enable",
+        "cache_ttl": 300,
+        "fsso_group": "group-a",
+        "hw_vendor": "vendor",
+        "node_ip_only": "enable",
+        "obj_id": "object-1",
+    }
+    assert (
+        address.type,
+        address.subnet,
+        address.uuid,
+        address.comment,
+        address.associated_interface,
+    ) == ("ipmask", "192.0.2.0 255.255.255.0", "uuid-1", "Address comment", "port1")
+    assert "source_effective_defaults" not in address.extra_settings
 
 
 def test_fortigate_address_forms_preserve_source_and_ir_semantics():
@@ -258,6 +446,102 @@ end
     }
 
 
+def test_fortigate_address_forms_preserve_canonical_ir_after_model_shrink():
+    source = '''
+config firewall address
+    edit "EXPLICIT"
+        set type ipmask
+        set subnet 10.0.0.1 255.255.255.255
+    next
+    edit "MISSING_TYPE"
+        set subnet 10.0.0.2 255.255.255.0
+    next
+    edit "RANGE"
+        set type iprange
+        set start-ip 10.0.2.1
+        set end-ip 10.0.2.10
+    next
+    edit "FQDN"
+        set type fqdn
+        set fqdn app.example.test
+    next
+    edit "WILDCARD"
+        set type wildcard
+        set wildcard 10.0.0.0 0.0.0.255
+    next
+    edit "WILDCARD_FQDN"
+        set type wildcard-fqdn
+        set wildcard-fqdn *.example.test
+    next
+    edit "METADATA"
+        set type ipmask
+        set subnet 10.0.3.0 255.255.255.0
+        set uuid uuid-1
+        set comment "Address comment"
+        set associated-interface "port1"
+        set color 3
+        set fabric-object enable
+        set sdn-tag "abc"
+        set country "MY"
+        set allow-routing enable
+        set cache-ttl 300
+        set fsso-group "group-a"
+        set hw-vendor "vendor"
+        set node-ip-only enable
+        set obj-id "object-1"
+    next
+end
+'''
+
+    addresses = {
+        address.name: address
+        for address in extract_fortigate_config(source).canonical_ir.addresses
+    }
+
+    assert {
+        name: (address.type.value, address.value)
+        for name, address in addresses.items()
+    } == {
+        "EXPLICIT": ("network", "10.0.0.1/32"),
+        "MISSING_TYPE": ("network", "10.0.0.2/24"),
+        "RANGE": ("range", "10.0.2.1-10.0.2.10"),
+        "FQDN": ("fqdn", "app.example.test"),
+        "WILDCARD": ("wildcard_mask", "10.0.0.0 0.0.0.255"),
+        "WILDCARD_FQDN": ("wildcard", "*.example.test"),
+        "METADATA": ("network", "10.0.3.0/24"),
+    }
+
+    metadata = addresses["METADATA"]
+    assert (
+        metadata.description,
+        metadata.source_uuid,
+        metadata.associated_interface,
+    ) == ("Address comment", "uuid-1", "port1")
+    assert metadata.source_attributes == {
+        "color": 3,
+        "fabric_object": "enable",
+        "sdn_tag": "abc",
+        "country": "MY",
+        "allow_routing": "enable",
+        "cache_ttl": 300,
+        "fsso_group": ["group-a"],
+        "hw_vendor": "vendor",
+        "node_ip_only": "enable",
+        "obj_id": "object-1",
+        "subnet": "10.0.3.0 255.255.255.0",
+    }
+    assert (
+        metadata.source_color,
+        metadata.allow_routing,
+        metadata.source_hw_vendor,
+        metadata.source_cache_ttl,
+        metadata.source_fsso_group,
+        metadata.source_node_ip_only,
+        metadata.source_obj_id,
+        metadata.source_fabric_object_setting,
+    ) == (3, True, "vendor", 300, ["group-a"], True, "object-1", "enable")
+
+
 def test_wildcard_fqdn_uses_its_dedicated_source_model():
     source = """
 config firewall wildcard-fqdn custom
@@ -317,8 +601,8 @@ end
             values["ip6"],
             values["is_ipv6"],
             values["is_multicast"],
-            values["address_list"],
-            values["tagging"],
+            values["extra_settings"].get("address_list", []),
+            values["extra_settings"].get("tagging", []),
             values["extra_settings"],
         )
         for address in config.addresses
@@ -328,15 +612,24 @@ end
     assert parser_values == {
         "V6_DEFAULT_TYPE": (
             "ipprefix", None, None, None, "2001:db8:100::/64", True, False, [], [],
-            {"source_effective_defaults": {"type": "ipprefix"}},
+            {
+                "source_effective_defaults": {"type": "ipprefix"},
+                "address_list": [],
+                "tagging": [],
+            },
         ),
         "MCAST4_RANGE": (
             "multicastrange", None, "239.1.1.1", "239.1.1.255", None, False, True,
             [], [],
-            {"source_effective_defaults": {"type": "multicastrange"}},
+            {
+                "source_effective_defaults": {"type": "multicastrange"},
+                "address_list": [],
+                "tagging": [],
+            },
         ),
         "MCAST6_RANGE": (
-            None, None, None, None, "ff05::/16", True, True, [], [], {},
+            None, None, None, None, "ff05::/16", True, True, [], [],
+            {"address_list": [], "tagging": []},
         ),
     }
 
@@ -540,7 +833,7 @@ config firewall service custom
     edit web
         set session-ttl never
         set tcp-halfopen-timer malformed
-        set tcp-portrange 443:1024-1025
+        set tcp-portrange 443:1024-65535
     next
 end
 """
@@ -556,8 +849,9 @@ end
     service = config.services[0]
     assert service.session_ttl == "never"
     assert service.extra_settings["unparsed_tcp_halfopen_timer"] == "malformed"
-    assert service.tcp_port_ranges[0].source_start == 1024
-    assert service.tcp_port_ranges[0].source_end == 1025
+    assert service.tcp_portrange == "443:1024-65535"
+    assert service.protocol is None
+    assert not hasattr(service, "tcp_port_ranges")
 
 
 def test_repeated_system_fsso_imports_do_not_mutate_parser_methods():
@@ -570,3 +864,97 @@ def test_repeated_system_fsso_imports_do_not_mutate_parser_methods():
     importlib.reload(module)
 
     assert all(getattr(FortiGateParser, name) is method for name, method in methods.items())
+
+
+def test_moved_address_metadata_keeps_review_and_extension_behavior():
+    source = f"""\
+config firewall address
+    edit review
+        set type ipmask
+        set subnet 10.0.0.0 255.255.255.0
+        set sw-version {"s" * 36}
+        set tag-detection-level {"t" * 16}
+        set cache-ttl 86401
+        set clearpass-spt invalid
+        set sub-type clearpass-spt
+        set node-ip-only enable
+        set obj-id {"o" * 256}
+    next
+end
+"""
+
+    address = extract_fortigate_config(source).canonical_ir.addresses[0]
+
+    assert address.source_sw_version == "s" * 36
+    assert address.source_tag_detection_level == "t" * 16
+    assert address.source_cache_ttl == 86401
+    assert address.source_clearpass_spt == "invalid"
+    assert address.source_node_ip_only is True
+    assert len(address.source_obj_id) == 256
+    assert "cache-ttl 86401 is outside the documented range 0-86400 seconds" in address.audit_note
+    assert "Unknown FortiGate clearpass-spt value 'invalid'" in address.audit_note
+    assert "node-ip-only is configured on a non-dynamic FortiGate address object" in address.audit_note
+    assert "FortiGate address obj-id exceeds the documented maximum length of 255" in address.audit_note
+    assert "sw-version is configured on a non-dynamic FortiGate address" in address.audit_note
+    assert "tag-detection-level is configured on a non-dynamic FortiGate address" in address.audit_note
+
+
+def test_service_protocols_preserve_icmp_families_and_validate_ip_protocol_numbers():
+    source = """\
+config firewall service custom
+    edit icmp-v4
+        set protocol ICMP
+        set icmptype 8
+        set icmpcode 0
+    next
+    edit icmp-v6
+        set protocol ICMP6
+        set icmptype 128
+        set icmpcode 0
+    next
+    edit ip-zero
+        set protocol IP
+        set protocol-number 0
+    next
+    edit ip-17
+        set protocol IP
+        set protocol-number 17
+    next
+    edit ip-out-of-range
+        set protocol IP
+        set protocol-number 255
+    next
+    edit ip-malformed
+        set protocol IP
+        set protocol-number invalid
+    next
+    edit icmp-malformed
+        set protocol ICMP
+        set icmptype invalid
+        set icmpcode invalid
+    next
+end
+"""
+
+    services = {
+        service.name: service
+        for service in extract_fortigate_config(source).canonical_ir.services
+    }
+
+    assert services["icmp-v4"].ports[0].protocol.value == "icmp"
+    assert services["icmp-v4"].ports[0].icmptype == 8
+    assert services["icmp-v4"].ports[0].icmpcode == 0
+    assert services["icmp-v6"].ports[0].protocol.value == "icmpv6"
+    assert services["ip-zero"].ports[0].protocol.value == "ip"
+    assert services["ip-zero"].ports[0].port == "0"
+    assert services["ip-17"].ports[0].port == "17"
+
+    assert services["ip-out-of-range"].ports == []
+    assert services["ip-out-of-range"].migration_status == "PARTIALLY_NORMALIZED"
+    assert "outside the valid range 0-254" in services["ip-out-of-range"].audit_note
+    assert services["ip-malformed"].ports == []
+    assert services["ip-malformed"].source_attributes["unparsed_protocol_number"] == "invalid"
+    assert "Malformed FortiGate protocol-number" in services["ip-malformed"].audit_note
+    assert services["icmp-malformed"].ports[0].icmptype is None
+    assert services["icmp-malformed"].source_attributes["unparsed_icmptype"] == "invalid"
+    assert "Malformed FortiGate icmptype" in services["icmp-malformed"].audit_note

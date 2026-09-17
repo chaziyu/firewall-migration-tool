@@ -50,9 +50,6 @@ def prepare_section(self: Any, section_path: str, attributes: Dict[str, Any]) ->
         "firewall multicast-address6",
     }:
         _apply_address_defaults(section_path, attributes)
-    if section_path in {"firewall addrgrp", "firewall addrgrp6"}:
-        if "filter" in attributes:
-            attributes["dynamic_filter"] = attributes["filter"]
     if section_path in CONTEXTUAL_MODEL_SECTIONS:
         attributes.setdefault("source_context", self.current_context)
     if section_path in {

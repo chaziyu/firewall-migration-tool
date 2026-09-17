@@ -34,6 +34,27 @@ def test_registered_direct_fields_have_one_cardinality_category():
             assert sum(field in values for values in fields.values()) == 1, (path, field)
 
 
+def test_service_fields_keep_structural_cardinality_metadata():
+    service = get_section_spec("firewall service custom")
+    service_group = get_section_spec("firewall service group")
+
+    assert service is not None
+    assert service_group is not None
+    assert {
+        "protocol_number",
+        "icmptype",
+        "icmpcode",
+        "color",
+        "tcp_halfclose_timer",
+        "tcp_halfopen_timer",
+        "tcp_rst_timer",
+        "tcp_timewait_timer",
+        "udp_idle_timer",
+    } <= set(service.integer_fields)
+    assert "member" in service_group.list_fields
+    assert "color" in service_group.integer_fields
+
+
 def test_section_registration_rejects_overlapping_cardinality():
     with pytest.raises(ValueError, match=r"test section.*members.*list_fields.*scalar_fields"):
         register_section(

@@ -118,12 +118,38 @@ def _has_policy_source_settings(exporter) -> bool:
 
 
 BUILDERS = (
+    ExcelBuilderSpec("_build_system_settings", frozenset({"System Settings", "DNS Settings"})),
+    ExcelBuilderSpec("_build_ntp_settings", frozenset({"NTP Settings"})),
     ExcelBuilderSpec(
         "_build_management_service_routes",
         frozenset({"Management Service Routes"}),
         frozenset({"palo_alto"}),
         lambda exporter: bool(exporter.ir.management_service_routes),
     ),
+    ExcelBuilderSpec("_build_interfaces", frozenset({"Interfaces"})),
+    ExcelBuilderSpec("_build_interface_secondary_ips", frozenset({"Interface Secondary IPs"})),
+    ExcelBuilderSpec("_build_interface_source_settings", frozenset({"Interface Source Settings"})),
+    ExcelBuilderSpec("_build_interface_nested_configuration", frozenset({"Interface Nested Configuration"}), frozenset({"fortigate"})),
+    ExcelBuilderSpec("_build_dhcp_servers", frozenset({"DHCP Servers"})),
+    ExcelBuilderSpec("_build_dhcp_ip_ranges", frozenset({"DHCP IP Ranges"})),
+    ExcelBuilderSpec("_build_dhcp_reservations", frozenset({"DHCP Reservations"})),
+    ExcelBuilderSpec("_build_zones", frozenset({"Zones"})),
+    ExcelBuilderSpec("_build_addresses", frozenset({"Addresses"})),
+    ExcelBuilderSpec("_build_address_groups", frozenset({"Address Groups"})),
+    ExcelBuilderSpec("_build_address_group_tags", frozenset({"Address Group Tags"})),
+    ExcelBuilderSpec("_build_proxy_addresses", frozenset({"Proxy Addresses"})),
+    ExcelBuilderSpec("_build_web_proxy_settings", frozenset({"Web Proxy Settings"})),
+    ExcelBuilderSpec("_build_service_categories", frozenset({"Service Categories"})),
+    ExcelBuilderSpec("_build_services", frozenset({"Services"})),
+    ExcelBuilderSpec("_build_service_groups", frozenset({"Service Groups"})),
+    ExcelBuilderSpec("_build_session_helpers", frozenset({"Session Helpers"})),
+    ExcelBuilderSpec("_build_session_ttl_settings", frozenset({"Session TTL Settings"})),
+    ExcelBuilderSpec("_build_session_ttl_overrides", frozenset({"Session TTL Overrides"})),
+    ExcelBuilderSpec("_build_schedules", frozenset({"Schedules"})),
+    ExcelBuilderSpec("_build_schedule_groups", frozenset({"Schedule Groups"})),
+    ExcelBuilderSpec("_build_traffic_shapers", frozenset({"Traffic Shapers"})),
+    ExcelBuilderSpec("_build_policies", frozenset({"Policies"})),
+    ExcelBuilderSpec("_build_firewall_filters", frozenset({"Firewall Filters"})),
     ExcelBuilderSpec(
         "_build_cisco_acp",
         frozenset({"Cisco ACP"}),
@@ -136,6 +162,71 @@ BUILDERS = (
         frozenset({"checkpoint"}),
         _has_checkpoint_rules,
     ),
+    ExcelBuilderSpec("_build_default_security_rules", frozenset({"Default Security Rules"})),
+    ExcelBuilderSpec("_build_pbf_rules", frozenset({"PBF Rules"})),
+    ExcelBuilderSpec("_build_local_in_policies", frozenset({"Local-In Policies"})),
+    ExcelBuilderSpec("_build_security_policies", frozenset({"NGFW Security Policies"})),
+    ExcelBuilderSpec("_build_multicast_policies", frozenset({"Multicast Policies"})),
+    ExcelBuilderSpec(
+        "_build_firewall_policy_source_settings",
+        frozenset({"Firewall Policy Source Settings"}),
+        has_data=_has_policy_source_settings,
+    ),
+    ExcelBuilderSpec("_build_ztna_providers", frozenset({"ZTNA Providers"})),
+    ExcelBuilderSpec("_build_ip_pools", frozenset({"IP Pools"})),
+    ExcelBuilderSpec("_build_ipv6_eh_filter", frozenset({"IPv6 EH Filter"})),
+    ExcelBuilderSpec("_build_virtual_ips", frozenset({"Virtual IPs"})),
+    ExcelBuilderSpec("_build_vip_real_servers", frozenset({"VIP Real Servers"})),
+    ExcelBuilderSpec("_build_vip_nested_configuration", frozenset({"VIP Nested Configuration"}), frozenset({"fortigate"})),
+    ExcelBuilderSpec("_build_vip_groups", frozenset({"VIP Groups"})),
+    ExcelBuilderSpec("_build_nat_rules", frozenset({"NAT Rules"})),
+    ExcelBuilderSpec("_build_routes", frozenset({"Routes"})),
+    ExcelBuilderSpec("_build_policy_routes", frozenset({"Policy Routes"})),
+    ExcelBuilderSpec("_build_cisco_pbr", frozenset({"Cisco PBR"})),
+    ExcelBuilderSpec("_build_vpn_tunnels", frozenset({"VPN Tunnels"})),
+    ExcelBuilderSpec("_build_vpn_phase2", frozenset({"VPN Phase 2"})),
+    ExcelBuilderSpec(
+        "_build_ssl_vpn",
+        frozenset({
+            "SSL VPN Settings", "SSL VPN Portals", "SSL VPN Authentication Rules",
+            "User Group Guests", "FSSO Polling", "SSL VPN Portal Split DNS",
+            "SSL VPN Portal MAC Rules", "SSL VPN Portal OS Checks", "SSL VPN Bookmark Groups",
+            "SSL VPN Bookmarks", "SSL VPN Bookmark Form Data", "SSL VPN Landing Pages",
+            "SSL VPN Landing Form Data",
+        }),
+    ),
+    ExcelBuilderSpec("_build_certificates", frozenset({"Certificates"})),
+    ExcelBuilderSpec("_build_ssh_keys", frozenset({"SSH Keys"})),
+    ExcelBuilderSpec("_build_routing_protocols", frozenset({"Routing Protocols", "Routing Protocol Settings"})),
+    ExcelBuilderSpec(
+        "_build_routing_dependencies",
+        frozenset({
+            "Routing Dependencies", "Routing Dependency Settings", "Admin Profile Permissions", "FortiTokens",
+        }),
+    ),
+    ExcelBuilderSpec(
+        "_build_sdwan",
+        frozenset({
+            "SD-WAN", "IPS Exempt IPs", "SD-WAN Zones", "SD-WAN Members", "SD-WAN Health Checks",
+            "SD-WAN SLAs", "SD-WAN Rules",
+        }),
+    ),
+    ExcelBuilderSpec("_build_internet_services", frozenset({"Internet Services"})),
+    ExcelBuilderSpec(
+        "_build_internet_service_definitions",
+        frozenset({"Internet Service Definitions", "Internet Service Def Entries", "Internet Service Def Ports"}),
+    ),
+    ExcelBuilderSpec(
+        "_build_internet_service_extract_only",
+        frozenset({
+            "Custom Internet Services", "Custom IS Entries", "Custom IS Ports", "Custom Internet Service Groups",
+            "Internet Service Groups", "IS Additions", "IS Addition Entries", "IS Addition Ports", "IS Appends",
+            "IS Extensions", "IS Extension Disabled", "IS Extension Entries", "IS Extension Ports",
+        }),
+    ),
+    ExcelBuilderSpec("_build_ips_sensors", frozenset({"IPS Sensors"})),
+    ExcelBuilderSpec("_build_ips_sensor_entries", frozenset({"IPS Sensor Entries"})),
+    ExcelBuilderSpec("_build_security_profiles", frozenset({"Security Profiles"})),
     ExcelBuilderSpec(
         "_build_globalprotect_sheets",
         frozenset({
@@ -183,25 +274,34 @@ BUILDERS = (
         has_data=lambda exporter: bool(exporter.ir.custom_url_categories),
     ),
     ExcelBuilderSpec(
+        "_build_source_security_profiles",
+        frozenset({"Source Security Profiles", "Source Security Profile Setting"}),
+    ),
+    ExcelBuilderSpec(
         "_build_fortigate_source_configuration",
         frozenset({"FortiGate Source Configuration"}),
         frozenset({"fortigate"}),
     ),
-    ExcelBuilderSpec(
-        "_build_firewall_policy_source_settings",
-        frozenset({"Firewall Policy Source Settings"}),
-        has_data=_has_policy_source_settings,
-    ),
-    ExcelBuilderSpec(
-        "_build_interface_nested_configuration",
-        frozenset({"Interface Nested Configuration"}),
-        frozenset({"fortigate"}),
-    ),
-    ExcelBuilderSpec(
-        "_build_vip_nested_configuration",
-        frozenset({"VIP Nested Configuration"}),
-        frozenset({"fortigate"}),
-    ),
+    ExcelBuilderSpec("_build_identity_inventory", frozenset({
+        "LDAP Servers", "RADIUS Servers", "RADIUS Accounting Servers", "TACACS+ Servers", "SAML Servers",
+        "FSSO Servers", "FSSO AD Groups", "Local Users", "User Groups", "User Group Matches",
+    })),
+    ExcelBuilderSpec("_build_user_identity_settings", frozenset({"User Authentication Settings", "User Quarantine"})),
+    ExcelBuilderSpec("_build_security_identity_dependencies", frozenset({
+        "Security Identity Dependencies", "SSL VPN Host Checks", "SSL VPN Host Check Items",
+    })),
+    ExcelBuilderSpec("_build_administrator_inventory", frozenset({"Administrators", "Admin Profiles"})),
+    ExcelBuilderSpec("_build_dos_inventory", frozenset({"DoS Policies", "DoS Anomalies"})),
+    ExcelBuilderSpec("_build_firewall_sniffers", frozenset({"Firewall Sniffer"})),
+    ExcelBuilderSpec("_build_authentication_inventory", frozenset({"Authentication Schemes", "Authentication Rules"})),
+    ExcelBuilderSpec("_build_phase7_identity_sheets", frozenset({
+        "Identity Server Endpoints", "Authentication Sequences", "SSL TLS Service Profiles",
+    })),
+    ExcelBuilderSpec("_build_warnings", frozenset({"Warnings"})),
+    ExcelBuilderSpec("_build_unsupported", frozenset({"Unsupported"})),
+    ExcelBuilderSpec("_build_source_inventory", frozenset({"Source Inventory"})),
+    ExcelBuilderSpec("_build_extraction_coverage", frozenset({"Extraction Coverage"})),
+    ExcelBuilderSpec("_build_unresolved_references", frozenset({"Dependency Registry", "Unresolved References"})),
 )
 _BUILDER_SPECS = {spec.method_name: spec for spec in BUILDERS}
 
@@ -451,6 +551,21 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         if active_sheets.intersection(produced_sheets):
             getattr(self, builder_name)(workbook)
 
+    def _should_build(
+        self,
+        spec: ExcelBuilderSpec,
+        active_sheets: set[str],
+    ) -> bool:
+        if not active_sheets.intersection(spec.produced_sheets):
+            return False
+        vendor = self._source_vendor()
+        if vendor in self._KNOWN_VENDORS:
+            if spec.vendors and vendor not in spec.vendors:
+                return False
+            if spec.has_data is not None and not spec.has_data(self):
+                return False
+        return True
+
     def _build_registered_if_active(
         self,
         workbook,
@@ -458,14 +573,8 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         builder_name: str,
     ) -> None:
         spec = _BUILDER_SPECS[builder_name]
-        if not active_sheets.intersection(spec.produced_sheets):
+        if not self._should_build(spec, active_sheets):
             return
-        vendor = self._source_vendor()
-        if vendor in self._KNOWN_VENDORS:
-            if spec.vendors and vendor not in spec.vendors:
-                return
-            if spec.has_data is not None and not spec.has_data(self):
-                return
         getattr(self, builder_name)(workbook)
 
     def generate(self) -> bytes:

@@ -22,6 +22,12 @@ class ExtractionStatus(str, Enum):
     PARSE_ERROR = "PARSE_ERROR"
 
 
+class MigrationImpact(str, Enum):
+    NONE = "NONE"
+    REVIEW = "REVIEW"
+    BLOCKING = "BLOCKING"
+
+
 class SourceSectionResult(BaseModel):
     path: str
     source_context: Optional[str] = None
@@ -57,6 +63,7 @@ class SourceSectionResult(BaseModel):
     unresolved_dependencies: int = 0
 
     status: ExtractionStatus
+    migration_impact: MigrationImpact = MigrationImpact.REVIEW
 
     parser_handler: Optional[str] = None
     notes: List[str] = Field(default_factory=list)
@@ -91,6 +98,7 @@ class SourceInventoryItem(BaseModel):
     children: List["SourceInventoryItem"] = Field(default_factory=list)
 
     status: ExtractionStatus = ExtractionStatus.EXTRACT_ONLY
+    migration_impact: MigrationImpact = MigrationImpact.REVIEW
     requires_manual_review: bool = False
     evidence_class: str = "configuration"
 
@@ -145,6 +153,7 @@ class UnsupportedItem(BaseModel):
     requires_manual_review: bool = True
     raw_capture: Optional[str] = None
     source_context: Optional[str] = None
+    migration_impact: MigrationImpact = MigrationImpact.REVIEW
 
 
 class ExtractionResult(BaseModel):

@@ -37,6 +37,7 @@ from fwmigrate.engine.runner import TerraformSandbox, TerraformRunner
 # In-memory session registry (session_id -> metadata/sandbox)
 ACTIVE_SESSIONS = {}
 _LOGGER = logging.getLogger(__name__)
+_READ_ONLY_PREVIEW_EXPORTERS = frozenset({StreamingFastExcelExporter})
 
 
 @dataclass(frozen=True)
@@ -114,6 +115,7 @@ def _cache_preview(source_vendor: str, raw: bytes, extraction_result) -> _Previe
         while len(_PREVIEW_CACHE) >= _PREVIEW_CACHE_MAX_ENTRIES:
             oldest_id = min(_PREVIEW_CACHE, key=lambda key: _PREVIEW_CACHE[key].created_at)
             _PREVIEW_CACHE.pop(oldest_id, None)
+        extraction_result.canonical_ir.metadata.input_type = "Configuration File"
         entry = _PreviewCacheEntry(
             preview_id=uuid.uuid4().hex,
             source_vendor=source_vendor,
@@ -398,6 +400,11 @@ def create_app(test_config=None):
                 profile = ExcelExportProfile(profile_value)
             except (TypeError, ValueError):
                 return jsonify({'error': 'excel_profile must be one of: fast, full, data_only'}), 400
+            exporter_type = (
+                StreamingFastExcelExporter
+                if profile is ExcelExportProfile.FAST
+                else IRExcelExporter
+            )
 
             uploaded_file = request.files.get('file')
             raw_content = (
@@ -415,7 +422,13 @@ def create_app(test_config=None):
                 else None
             )
             if preview_entry is not None:
-                ir_config, extraction_result = _clone_preview(preview_entry)
+                if exporter_type in _READ_ONLY_PREVIEW_EXPORTERS:
+                    ir_config, extraction_result = (
+                        preview_entry.ir_config,
+                        preview_entry.extraction_result,
+                    )
+                else:
+                    ir_config, extraction_result = _clone_preview(preview_entry)
             else:
                 if raw_content is None:
                     return jsonify({'error': 'A configuration file or valid preview_id is required for Excel extraction'}), 400
@@ -432,15 +445,10 @@ def create_app(test_config=None):
 
             if not ir_config:
                 return jsonify({'error': 'Failed to extract configuration from file'}), 400
-                
-            ir_config.metadata.input_type = "Configuration File"
+            if preview_entry is None:
+                ir_config.metadata.input_type = "Configuration File"
 
             workbook = io.BytesIO()
-            exporter_type = (
-                StreamingFastExcelExporter
-                if profile is ExcelExportProfile.FAST
-                else IRExcelExporter
-            )
             exporter = exporter_type(
                 ir_config,
                 extraction_result=extraction_result,

@@ -11,7 +11,10 @@ from itertools import chain
 from typing import Any, BinaryIO, Iterable, Sequence
 
 import fwmigrate.report.excel_exporter as _excel_exporter
-from fwmigrate.report.excel_audit import ExcelAuditAccumulator
+from fwmigrate.report.excel_audit import (
+    ExcelAuditAccumulator,
+    build_audit_classifier,
+)
 from fwmigrate.report.excel_exporter import (
     ExcelExportUnavailableError,
     IRExcelExporter,
@@ -41,7 +44,9 @@ except ImportError:  # pragma: no cover - exercised only without the reports dep
 logger = logging.getLogger("fwmigrate.report.excel_optimized")
 
 
-_STREAM_BUILD_ORDER = (
+_STREAM_BUILD_ORDER = tuple(
+    _BUILDER_SPECS[builder_name]
+    for builder_name in (
     "_build_system_settings",
     "_build_ntp_settings",
     "_build_management_service_routes",
@@ -123,6 +128,7 @@ _STREAM_BUILD_ORDER = (
     "_build_source_inventory",
     "_build_extraction_coverage",
     "_build_unresolved_references",
+    )
 )
 
 
@@ -400,7 +406,7 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
             for index, values in enumerate(row_iterator):
                 yield tuple(values) + self._extra_values(title, index)
 
-        styles = self._table_styles()
+        styles = self._stream_styles
         sheet_names = [title]
         sheets: list[tuple[Any, int, float, int]] = []
         limit = self._export_options.max_rows_per_sheet or self.MAX_ROWS_PER_DATA_SHEET
@@ -435,6 +441,14 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
             )
 
         start_sheet(current, subtitle if has_rows else empty_note)
+        classifiers = {}
+        category = getattr(self, "_sheet_category", lambda _: "Inventory")
+        if has_rows:
+            classifiers[title] = build_audit_classifier(
+                title,
+                output_headers,
+                category,
+            )
         current_count = 0
         nonempty = 0
         for values in output_rows():
@@ -444,6 +458,12 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
                     current.title = f"{title} 1"
                     sheet_names[0] = current.title
                     self._audit_accumulator.rename_sheet(old_title, current.title)
+                    classifiers[current.title] = build_audit_classifier(
+                        current.title,
+                        output_headers,
+                        category,
+                    )
+                    classifiers.pop(old_title, None)
                 sheets.append((current, current_count, build_started, nonempty))
                 next_title = f"{title} {len(sheet_names) + 1}"
                 sheet_names.append(next_title)
@@ -451,21 +471,32 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
                 current = workbook.create_sheet(next_title)
                 self._stream_last_sheet = current
                 start_sheet(current, subtitle)
+                classifiers[next_title] = build_audit_classifier(
+                    next_title,
+                    output_headers,
+                    category,
+                )
                 build_started = time.perf_counter()
                 current_count = 0
                 nonempty = 0
 
             current_count += 1
-            safe_values = tuple(self._safe_value(value) for value in values)
-            current.append(list(safe_values))
-            nonempty += sum(value not in (None, "") for value in safe_values)
-            self._audit_accumulator.add_row(
-                current.title,
-                output_headers,
-                safe_values,
-                current_count + 3,
-                getattr(self, "_sheet_category", lambda _: "Inventory"),
-            )
+            safe_values = []
+            for value in values:
+                safe_value = self._safe_value(value)
+                safe_values.append(safe_value)
+                nonempty += safe_value not in (None, "")
+            current.append(safe_values)
+            classifier = classifiers[current.title]
+            if classifier.can_produce_review or classifier.can_produce_evidence:
+                self._audit_accumulator.add_row(
+                    current.title,
+                    output_headers,
+                    safe_values,
+                    current_count + 3,
+                    category,
+                    classifier,
+                )
 
         sheets.append((current, current_count, build_started, nonempty))
         self._register_partitioned_sheets(title, sheet_names)
@@ -513,7 +544,7 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         rows: Iterable[Sequence[Any]],
     ) -> None:
         width = len(headers)
-        styles = self._table_styles()
+        styles = self._stream_styles
         sheet.sheet_view.showGridLines = False
         self._configure_fast_columns(sheet, headers)
         sheet.freeze_panes = "A4"
@@ -534,7 +565,7 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         sheet.auto_filter.ref = f"A3:{last_column}{max(3, row_count + 3)}"
 
     def _write_summary(self, sheet: Any) -> None:
-        styles = self._table_styles()
+        styles = self._stream_styles
         sheet.sheet_view.showGridLines = False
         self._configure_fast_columns(sheet, ("Field", "Value", "Sheet", "Rows", "Columns"))
         _append_styled_row(sheet, ["Firewall Source Inventory"], styles, "title")
@@ -631,6 +662,7 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         if self._export_options.profile is not ExcelExportProfile.FAST:
             raise ValueError("StreamingFastExcelExporter requires the FAST profile")
 
+        self._stream_styles = self._table_styles()
         debug_timings = logger.isEnabledFor(logging.DEBUG)
         metrics = _ExcelExportMetrics() if debug_timings else None
         self._last_export_metrics = metrics
@@ -663,15 +695,12 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         evidence_sheet = workbook.create_sheet("Extraction Evidence")
 
         build_started = time.perf_counter()
-        for builder_name in _STREAM_BUILD_ORDER:
-            if builder_name in _BUILDER_SPECS:
-                self._build_registered_if_active(
-                    workbook,
-                    self._stream_active_sheets,
-                    builder_name,
-                )
-            else:
-                getattr(self, builder_name)(workbook)
+        for spec in _STREAM_BUILD_ORDER:
+            self._build_registered_if_active(
+                workbook,
+                self._stream_active_sheets,
+                spec.method_name,
+            )
         if metrics is not None:
             metrics.timings["streaming workbook construction"] = time.perf_counter() - build_started
 
@@ -713,3 +742,4 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
             metrics.timings["final XLSX serialization"] = time.perf_counter() - serialization_started
             metrics.output_bytes = output.tell()
             _log_export_metrics(metrics, time.perf_counter() - total_started)
+        self._stream_styles = None

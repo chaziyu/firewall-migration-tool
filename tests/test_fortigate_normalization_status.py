@@ -158,3 +158,59 @@ end
     assert tunnel.psk is None
     assert tunnel.migration_status == "VENDOR_EXTENSION"
     assert tunnel.requires_manual_review is True
+
+
+def test_addrgrp_ir_fields_and_unknown_setting_review_are_preserved():
+    ir = extract_fortigate_config(
+        """
+config firewall addrgrp
+    edit "GROUP-A"
+        set member "ADDR-A" "ADDR-B" "GROUP-C"
+        set exclude enable
+        set exclude-member "ADDR-X" "ADDR-Y"
+        set comment "Address group"
+        set uuid "group-uuid"
+        set allow-routing enable
+        set color 6
+        set category location
+        set type static
+        set fabric-object enable
+    next
+    edit "GROUP-UNKNOWN"
+        set member "ADDR-A"
+        set future-setting "value"
+    next
+end
+"""
+    ).canonical_ir
+
+    group = next(group for group in ir.address_groups if group.name == "GROUP-A")
+    assert (
+        group.name,
+        group.members,
+        group.description,
+        group.source_uuid,
+        group.allow_routing,
+        group.source_color,
+        group.source_category,
+        group.exclude_members,
+        group.address_family,
+    ) == (
+        "GROUP-A",
+        ["ADDR-A", "ADDR-B", "GROUP-C"],
+        "Address group",
+        "group-uuid",
+        True,
+        6,
+        "location",
+        ["ADDR-X", "ADDR-Y"],
+        "ipv4",
+    )
+
+    unknown = next(
+        group for group in ir.address_groups if group.name == "GROUP-UNKNOWN"
+    )
+    assert unknown.source_attributes == {"future_setting": "value"}
+    assert unknown.migration_status == "PARTIALLY_NORMALIZED"
+    assert unknown.requires_manual_review is True
+    assert "unmodeled FortiGate address-group settings" in unknown.audit_note

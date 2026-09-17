@@ -2,6 +2,7 @@ from typing import List
 from fwmigrate.ir import IRConfig
 from fwmigrate.ir.enums import AddressType, ServiceProtocol, PolicyAction
 from fwmigrate.generators.policy_capabilities import policy_capabilities
+from fwmigrate.generators.target_helpers import prepare_target_services
 from fwmigrate.ir.semantics import (
     AddressUniversalFamily,
     classify_universal_address_reference,
@@ -14,6 +15,9 @@ class JuniperSRXCLIGenerator:
     """Generates JunOS SRX set syntax configuration commands from Canonical IR."""
 
     def generate(self, ir: IRConfig) -> str:
+        prepared_services = prepare_target_services(
+            ir.services, ir.service_groups, "juniper_srx"
+        )
         lines: List[str] = [
             "# =============================================================================",
             f"# Juniper SRX JunOS Set Syntax Migration for {ir.metadata.hostname or 'srx-fw'}",
@@ -100,13 +104,11 @@ class JuniperSRXCLIGenerator:
         if ir.services or ir.service_groups:
             lines.append("# --- Applications & Application Sets ---")
             for svc in ir.services:
-                if (
-                    svc.requires_manual_review
-                    or svc.migration_status != "NORMALIZED"
-                    or any(port.source_port for port in svc.ports)
-                ):
+                service_result = prepared_services.service_result(svc)
+                if not service_result.supported:
                     lines.append(
-                        f"# Service {svc.name} withheld: source/proxy port semantics require manual review"
+                        f"# Service {svc.name} withheld: target capability requires manual review"
+                        + (f" ({'; '.join(service_result.reasons)})" if service_result.reasons else "")
                     )
                     continue
                 for port_entry in svc.ports:
@@ -121,12 +123,14 @@ class JuniperSRXCLIGenerator:
                         dest_p = port_entry.port if port_entry.port != "any" else "0-65535"
                         lines.append(f"set applications application {svc.name} protocol {proto} destination-port {dest_p}")
             for sgrp in ir.service_groups:
-                if sgrp.requires_manual_review or sgrp.migration_status != "NORMALIZED":
+                group_result = prepared_services.group_result(sgrp)
+                if not group_result.supported:
                     lines.append(
-                        f"# Service group {sgrp.name} withheld: member semantics require manual review"
+                        f"# Service group {sgrp.name} withheld: target capability requires manual review"
+                        + (f" ({'; '.join(group_result.reasons)})" if group_result.reasons else "")
                     )
                     continue
-                for mem in sgrp.members:
+                for mem in prepared_services.members_for(sgrp):
                     lines.append(f"set applications application-set {sgrp.name} application {mem}")
             lines.append("")
 

@@ -136,7 +136,6 @@ def build_objects(self: Any, section_path: str, attributes: Dict[str, Any]) -> b
         return True
 
     if section_path == "firewall address":
-        self._normalize_address_nested_entries(attributes)
         attributes["extra_settings"] = (
             _extract_extra_settings(
                 attributes,
@@ -155,7 +154,7 @@ def build_objects(self: Any, section_path: str, attributes: Dict[str, Any]) -> b
         attributes["extra_settings"] = (
             _extract_extra_settings(
                 attributes,
-                set(FGAddress.model_fields),
+                set(FGAddress.model_fields)
             )
         )
 
@@ -179,7 +178,7 @@ def build_objects(self: Any, section_path: str, attributes: Dict[str, Any]) -> b
         attributes["extra_settings"] = (
             _extract_extra_settings(
                 attributes,
-                set(FGAddress.model_fields),
+                set(FGAddress.model_fields)
             )
         )
 
@@ -195,7 +194,7 @@ def build_objects(self: Any, section_path: str, attributes: Dict[str, Any]) -> b
         attributes["extra_settings"] = (
             _extract_extra_settings(
                 attributes,
-                set(FGAddress.model_fields),
+                set(FGAddress.model_fields)
             )
         )
 
@@ -229,14 +228,6 @@ def build_objects(self: Any, section_path: str, attributes: Dict[str, Any]) -> b
         attributes["source_protocol_configured"] = attributes.get(
             "protocol"
         )
-        for key, range_key in {
-            "tcp_portrange": "tcp_port_ranges",
-            "udp_portrange": "udp_port_ranges",
-            "sctp_portrange": "sctp_port_ranges",
-        }.items():
-            attributes[range_key] = self._parse_port_ranges(
-                attributes.get(key)
-            )
         attributes["extra_settings"] = (
             _extract_extra_settings(
                 attributes,
@@ -351,4 +342,3 @@ def build_objects(self: Any, section_path: str, attributes: Dict[str, Any]) -> b
         return True
 
     return False
-

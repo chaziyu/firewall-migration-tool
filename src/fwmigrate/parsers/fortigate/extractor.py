@@ -8,6 +8,7 @@ from typing import Dict, Optional
 from fwmigrate.extraction.models import (
     ExtractionResult,
     ExtractionStatus,
+    MigrationImpact,
     SourceCommand,
     SourceInventoryItem,
     UnsupportedItem,
@@ -15,6 +16,7 @@ from fwmigrate.extraction.models import (
 from fwmigrate.parsers.fortigate.coverage import (
     classify_section_coverage,
     extract_only_requires_manual_review,
+    fortigate_generation_impact,
 )
 from fwmigrate.parsers.fortigate.dependencies import build_dependency_registry
 from fwmigrate.parsers.fortigate.dependencies import _norm
@@ -33,30 +35,6 @@ from fwmigrate.ir.metadata import IRAuditEntry
 from fwmigrate.ir.provenance import IRSourceConfigCommand
 from fwmigrate.ir.enums import MigrationConfidence
 
-
-# These sections are preserved as typed/source-only objects because their
-# behavior has no portable canonical equivalent yet.  A configured instance
-# must therefore prevent an apparently complete target from being generated.
-SOURCE_ONLY_OPERATIONAL_SECTIONS = {
-    "firewall acl", "firewall acl6",
-    "firewall interface-policy", "firewall interface-policy6",
-    "firewall network-service-dynamic", "system sdn-connector",
-    "system link-monitor", "system switch-interface",
-    "system virtual-wire-pair", "system vdom-link", "system pppoe-interface",
-    "vpn certificate crl", "vpn certificate ocsp-server", "vpn certificate setting",
-    "system dns-server", "system dns64", "system fsso-polling", "firewall dnstranslation",
-    "firewall access-proxy", "firewall access-proxy6",
-    "firewall access-proxy-virtual-host", "firewall access-proxy-ssh-client-cert",
-    "firewall ipv6-eh-filter",
-    "firewall address6-template",
-    "firewall ippool_grp",
-    "endpoint-control fctems-override",
-    "vpn ssl web realm", "vpn ssl web user-bookmark", "vpn ssl web group-bookmark",
-    "vpn ipsec manualkey-interface",
-    "user radius", "user tacacs+", "user peer", "user peergrp",
-    "user fsso-polling", "user domain-controller", "user krb-keytab",
-    "user certificate", "user external-identity-provider",
-}
 
 SOURCE_ONLY_TRAFFIC_SECTIONS = {
     *SOURCE_ONLY_RULE_FAMILIES,
@@ -460,6 +438,11 @@ def extract_fortigate_config(
                 confidence=MigrationConfidence.MANUAL,
             )
         )
+    for section in source_sections:
+        section.migration_impact = fortigate_generation_impact(
+            section.path,
+            section.status,
+        )
     semantic_findings = validate_internet_service_group_directions(
         parser.source_inventory_items,
         dependencies,
@@ -539,6 +522,10 @@ def extract_fortigate_config(
                         or has_source_only_operation
                         or any(note.startswith("unresolved-reference:") for note in item.notes)
                     )
+        item.migration_impact = fortigate_generation_impact(
+            item.source_path,
+            item.status,
+        )
         include_item = (
             status in {
                 ExtractionStatus.EXTRACT_ONLY,
@@ -587,6 +574,7 @@ def extract_fortigate_config(
             source_path=section.path,
             reason=f"FortiGate section '{section.path}' is not supported for canonical migration.",
             requires_manual_review=True,
+            migration_impact=section.migration_impact,
         )
         for section in source_sections
         if section.status == ExtractionStatus.UNSUPPORTED
@@ -609,23 +597,11 @@ def extract_fortigate_config(
                 f"VDOM '{context.vdom}' uses policy-based NGFW mode; security-policy is not portable firewall-policy intent"
             )
 
-    traffic_prefixes = (
-        "firewall", "router", "vpn", "system", "system interface", "system dhcp",
-        "system settings", "system sdwan", "authentication", "user group",
-    )
     for section in source_sections:
-        if section.status in {ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR} and section.path.startswith(traffic_prefixes):
+        if section.migration_impact == MigrationImpact.BLOCKING:
             blocking_reasons.append(
-                f"{section.status.value}: {section.path}"
-                + (f" in VDOM '{section.source_context}'" if section.source_context else "")
-            )
-
-        if (
-            section.path in SOURCE_ONLY_OPERATIONAL_SECTIONS
-            and section.object_count_source > 0
-        ):
-            blocking_reasons.append(
-                f"FortiGate {section.path} is retained as source-only operational semantics"
+                f"Generation blocked because traffic-affecting FortiGate section "
+                f"'{section.path}' contains {section.status.value.lower()} source semantics"
                 + (f" in VDOM '{section.source_context}'" if section.source_context else "")
             )
 
@@ -665,13 +641,29 @@ def extract_fortigate_config(
         blocking_reasons.append(
             "FortiGate DHCP servers are extract-only and require manual review"
         )
-    if any(
-        getattr(obj, "requires_manual_review", False)
-        or getattr(obj, "migration_status", "NORMALIZED") != "NORMALIZED"
-        or bool(getattr(obj, "review_reasons", []))
-        for collection in critical_collections for obj in collection
-    ):
-        blocking_reasons.append("One or more traffic-affecting canonical objects require manual review")
+    for collection in critical_collections:
+        for obj in collection:
+            if not (
+                getattr(obj, "requires_manual_review", False)
+                or getattr(obj, "migration_status", "NORMALIZED") != "NORMALIZED"
+                or bool(getattr(obj, "review_reasons", []))
+            ):
+                continue
+            label = (
+                getattr(obj, "name", None)
+                or getattr(obj, "source_rule_id", None)
+                or getattr(obj, "source_id", None)
+                or "unnamed object"
+            )
+            reasons = list(getattr(obj, "review_reasons", []) or [])
+            if not reasons and getattr(obj, "parse_error", None):
+                reasons.append(str(obj.parse_error))
+            if not reasons:
+                reasons.append("source semantics require manual review")
+            blocking_reasons.extend(
+                f"Generation blocked because traffic object '{label}' requires manual review: {reason}"
+                for reason in reasons
+            )
 
     if any(sdwan.health_checks for sdwan in ir_config.vendor_extensions.fortios.sdwans):
         blocking_reasons.append("FortiGate SD-WAN health checks are extract-only and require manual review")
@@ -695,7 +687,7 @@ def extract_fortigate_config(
             context = rule.source_context or "root"
             source_id = f" {rule.source_id}" if rule.source_id is not None else ""
             blocking_reasons.append(
-                f"FortiGate {rule.family}{source_id} in VDOM '{context}' is retained as source-only traffic semantics"
+                f"FortiGate {rule.family}{source_id} in VDOM '{context}' is retained as source-only traffic-affecting semantics"
             )
 
     # Nested interface nodes are separately tracked in source inventory as

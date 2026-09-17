@@ -1,6 +1,153 @@
 import json
 import re
+from dataclasses import dataclass
 from typing import Any, Iterable, Optional, Set, Tuple
+
+from fwmigrate.capabilities.schema import CapabilityStatus
+from fwmigrate.generators.service_capabilities import (
+    ServiceCapabilityResult,
+    service_capabilities,
+)
+from fwmigrate.ir.service import IRService, IRServiceGroup
+
+
+ServiceKey = Tuple[str, str]
+
+
+@dataclass(frozen=True)
+class TargetServicePreparation:
+    """Target-safe service decisions and lowered service-group members."""
+
+    service_results: dict[ServiceKey, ServiceCapabilityResult]
+    group_results: dict[ServiceKey, ServiceCapabilityResult]
+    group_members: dict[ServiceKey, tuple[str, ...]]
+
+    @staticmethod
+    def key(item: IRService | IRServiceGroup) -> ServiceKey:
+        return (str(item.source_context or "root"), item.name)
+
+    def service_result(self, service: IRService) -> ServiceCapabilityResult:
+        return self.service_results[self.key(service)]
+
+    def group_result(self, group: IRServiceGroup) -> ServiceCapabilityResult:
+        return self.group_results[self.key(group)]
+
+    def members_for(self, group: IRServiceGroup) -> tuple[str, ...]:
+        return self.group_members[self.key(group)]
+
+
+def prepare_target_services(
+    services: Iterable[IRService],
+    groups: Iterable[IRServiceGroup],
+    target_vendor: str,
+) -> TargetServicePreparation:
+    """Evaluate service support and flatten nested groups only when safe."""
+    services = list(services)
+    groups = list(groups)
+    capabilities = service_capabilities(target_vendor)
+    service_by_key = {TargetServicePreparation.key(item): item for item in services}
+    group_by_key = {TargetServicePreparation.key(item): item for item in groups}
+    service_results = {
+        key: capabilities.evaluate_service(item)
+        for key, item in service_by_key.items()
+    }
+    groups_by_context: dict[str, list[IRServiceGroup]] = {}
+    for group in groups:
+        groups_by_context.setdefault(str(group.source_context or "root"), []).append(group)
+    base_group_results = {
+        key: capabilities.evaluate_group(
+            item,
+            groups_by_context.get(key[0], []),
+        )
+        for key, item in group_by_key.items()
+    }
+    group_results: dict[ServiceKey, ServiceCapabilityResult] = {}
+
+    def review_group(
+        key: ServiceKey,
+        trail: tuple[ServiceKey, ...] = (),
+    ) -> ServiceCapabilityResult:
+        if key in trail:
+            return ServiceCapabilityResult(
+                CapabilityStatus.MANUAL_REVIEW,
+                ("cyclic service-group reference",),
+            )
+        if key in group_results:
+            return group_results[key]
+
+        group = group_by_key[key]
+        base = base_group_results[key]
+        reasons = [] if base.requires_lowering else list(base.reasons)
+        next_trail = (*trail, key)
+        for member in group.members:
+            member_key = (key[0], member)
+            if member_key in service_results:
+                result = service_results[member_key]
+                if not result.supported:
+                    reasons.extend(result.reasons)
+            elif member_key in group_by_key:
+                result = review_group(member_key, next_trail)
+                if not result.supported:
+                    reasons.extend(result.reasons)
+            else:
+                reasons.append(
+                    f"unresolved service-group member '{member}'"
+                )
+
+        if reasons:
+            result = ServiceCapabilityResult(
+                CapabilityStatus.MANUAL_REVIEW,
+                tuple(dict.fromkeys(reasons)),
+            )
+        else:
+            result = base
+        group_results[key] = result
+        return result
+
+    group_members: dict[ServiceKey, tuple[str, ...]] = {}
+    for key, group in group_by_key.items():
+        result = review_group(key)
+        if not result.supported and not result.requires_lowering:
+            continue
+        if result.requires_lowering:
+            flattened: list[str] = []
+
+            def flatten(member_key: ServiceKey, trail: tuple[ServiceKey, ...]) -> None:
+                if member_key in trail:
+                    raise ValueError("cyclic service-group reference")
+                child = group_by_key.get(member_key)
+                if child is None:
+                    service = service_by_key.get(member_key)
+                    if service is None:
+                        raise ValueError(
+                            f"service-group member '{member_key[1]}' cannot be lowered safely"
+                        )
+                    if not service_results[member_key].supported:
+                        raise ValueError(
+                            f"service member '{member_key[1]}' requires target review"
+                        )
+                    flattened.append(member_key[1])
+                    return
+                for nested_member in child.members:
+                    nested_key = (member_key[0], nested_member)
+                    flatten(nested_key, (*trail, member_key))
+
+            try:
+                for member in group.members:
+                    flatten((key[0], member), (key,))
+            except ValueError as exc:
+                result = ServiceCapabilityResult(
+                    CapabilityStatus.MANUAL_REVIEW,
+                    tuple(dict.fromkeys((*result.reasons, str(exc)))),
+                )
+                group_results[key] = result
+                continue
+            group_members[key] = tuple(dict.fromkeys(flattened))
+            group_results[key] = ServiceCapabilityResult(CapabilityStatus.SUPPORTED)
+        else:
+            group_members[key] = tuple(group.members)
+
+    return TargetServicePreparation(service_results, group_results, group_members)
 
 
 def allocate_target_helper_name(

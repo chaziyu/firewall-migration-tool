@@ -1,12 +1,18 @@
 from fwmigrate.extraction.models import (
     ExtractionResult,
     ExtractionStatus,
+    MigrationImpact,
     SourceCommand,
     SourceInventoryItem,
     SourceSectionResult,
     UnsupportedItem,
 )
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
+from fwmigrate.parsers.fortigate.coverage import fortigate_generation_impact
+from fwmigrate.parsers.fortigate.model import (
+    FGAddressGroup,
+    FGAddressGroupTaggingEntry,
+)
 from fwmigrate.parsers.fortigate.parser import FortiGateParser
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from tests.fixture_paths import (
@@ -67,6 +73,69 @@ def test_fortigate_extraction_pipeline_compatibility():
     assert any(addr.name == "web_server" for addr in result.canonical_ir.addresses)
 
 
+def test_fortigate_addrgrp_parser_preserves_typed_and_unknown_fields():
+    source = """
+config firewall addrgrp
+    edit "GROUP-A"
+        set member "ADDR-A" "ADDR-B" "GROUP-C"
+        set exclude enable
+        set exclude-member "ADDR-X" "ADDR-Y"
+        set comment "Address group"
+        set uuid "group-uuid"
+        set allow-routing enable
+        set color 6
+        set category location
+        set type static
+        set fabric-object enable
+        set filter "legacy-filter"
+        set future-setting "value"
+        config tagging
+            edit "tag-entry"
+                set category location
+                set tags "prod" "dmz"
+            next
+        end
+    next
+end
+"""
+
+    config = FortiGateParser(FortiGateTokenizer(source)).parse()
+    group = config.address_groups[0]
+
+    assert group.member == ["ADDR-A", "ADDR-B", "GROUP-C"]
+    assert group.exclude_member == ["ADDR-X", "ADDR-Y"]
+    assert (
+        group.exclude,
+        group.comment,
+        group.uuid,
+        group.allow_routing,
+        group.color,
+        group.category,
+        group.type,
+        group.fabric_object,
+    ) == (
+        "enable",
+        "Address group",
+        "group-uuid",
+        "enable",
+        6,
+        "location",
+        "static",
+        "enable",
+    )
+    assert group.extra_settings == {
+        "filter": "legacy-filter",
+        "future_setting": "value",
+    }
+    assert len(group.tagging) == 1
+    assert isinstance(group.tagging[0], FGAddressGroupTaggingEntry)
+    assert group.tagging[0].name == "tag-entry"
+    assert group.tagging[0].category == "location"
+    assert group.tagging[0].tags == ["prod", "dmz"]
+    assert "dynamic_filter" not in FGAddressGroup.model_fields
+    assert not hasattr(group, "dynamic_filter")
+
+
 def test_fortigate_p0_migration_critical_fixture_freezes_current_behavior():
     """Freeze migration-critical FortiOS 7.4.6 extraction and dependency behavior."""
     result = extract_fortigate_config(
@@ -79,6 +148,10 @@ def test_fortigate_p0_migration_critical_fixture_freezes_current_behavior():
     assert "LAN_ZONE" in _names(ir.zones)
     assert {"USER_NET", "WEB_SERVER", "V6_NET"} <= _names(ir.addresses)
     assert {"INTERNAL_NETS", "V6_GROUP"} <= _names(ir.address_groups)
+    v6_group = next(
+        group for group in ir.address_groups if group.name == "V6_GROUP"
+    )
+    assert v6_group.address_family == "ipv6"
     assert {"TCP_443", "TCP_8443"} <= _names(ir.services)
     assert "WEB_SERVICES" in _names(ir.service_groups)
     assert {"WORK_HOURS", "MAINT_WINDOW"} <= _names(ir.schedules)
@@ -202,3 +275,105 @@ def test_fortigate_p0_edge_fixture_freezes_lossless_and_fail_closed_behavior():
     }
     assert section_counts["firewall central-snat-map"] == 1
     assert section_counts["firewall ip-translation"] == 1
+
+
+def test_administrative_unsupported_section_is_preserved_without_blocking_generation():
+    source = """
+config system interface
+    edit port1
+    next
+    edit port2
+    next
+end
+config firewall policy
+    edit 1
+        set srcintf port1
+        set dstintf port2
+        set srcaddr all
+        set dstaddr all
+        set service ALL
+        set action accept
+    next
+end
+config system accprofile
+    edit admin-profile
+        config utmgrp-permission
+            set cli-read enable
+        end
+    next
+end
+"""
+
+    result = extract_fortigate_config(source)
+
+    assert result.generation_safe is True
+    assert result.blocking_reasons == []
+    nested_section = next(
+        section
+        for section in result.source_sections
+        if section.path == "system accprofile utmgrp-permission"
+    )
+    inventory = next(
+        item for item in result.inventory_items if item.source_path == "system accprofile"
+    )
+    unsupported = next(
+        item
+        for item in result.unsupported_items
+        if item.source_path == "system accprofile utmgrp-permission"
+    )
+    assert nested_section.migration_impact == MigrationImpact.REVIEW
+    assert inventory.migration_impact == MigrationImpact.REVIEW
+    assert unsupported.migration_impact == MigrationImpact.REVIEW
+    assert result.requires_manual_review is True
+
+
+def test_unsupported_traffic_section_still_blocks_generation():
+    result = extract_fortigate_config("""
+config firewall unknown-policy
+    edit policy-1
+        set future-field value
+    next
+end
+""")
+
+    assert result.generation_safe is False
+    assert any("firewall unknown-policy" in reason for reason in result.blocking_reasons)
+
+
+def test_administrative_and_traffic_unsupported_sections_keep_only_traffic_blocking():
+    result = extract_fortigate_config("""
+config system accprofile
+    edit admin-profile
+        config utmgrp-permission
+            set cli-read enable
+        end
+    next
+end
+config firewall unknown-policy
+    edit policy-1
+        set future-field value
+    next
+end
+""")
+
+    assert result.generation_safe is False
+    assert any("firewall unknown-policy" in reason for reason in result.blocking_reasons)
+    assert not any("system accprofile" in reason for reason in result.blocking_reasons)
+
+
+def test_fortigate_generation_impact_matrix():
+    cases = [
+        ("system accprofile", ExtractionStatus.EXTRACT_ONLY, False),
+        ("system accprofile utmgrp-permission", ExtractionStatus.UNSUPPORTED, False),
+        ("system admin", ExtractionStatus.EXTRACT_ONLY, False),
+        ("log fortianalyzer setting", ExtractionStatus.EXTRACT_ONLY, False),
+        ("system snmp community", ExtractionStatus.UNSUPPORTED, False),
+        ("firewall policy", ExtractionStatus.UNSUPPORTED, True),
+        ("firewall central-snat-map", ExtractionStatus.EXTRACT_ONLY, True),
+        ("unknown source section", ExtractionStatus.UNSUPPORTED, False),
+        ("firewall policy", ExtractionStatus.PARSE_ERROR, True),
+    ]
+
+    for path, status, blocking in cases:
+        impact = fortigate_generation_impact(path, status)
+        assert (impact == MigrationImpact.BLOCKING) is blocking, (path, status, impact)

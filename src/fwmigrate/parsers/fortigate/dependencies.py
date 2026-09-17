@@ -1042,6 +1042,26 @@ def _matching_candidates(
     ]
 
 
+def _matching_service_candidates(
+    index: Dict[Tuple[str, str], List[SourceInventoryItem]],
+    *,
+    source_context: str,
+    reference: str,
+    allowed_sections: set[str],
+) -> List[SourceInventoryItem]:
+    for section in ("firewall service custom", "firewall service group"):
+        if section not in allowed_sections:
+            continue
+        candidates = [
+            candidate
+            for candidate in index.get((source_context, reference), [])
+            if _norm(candidate.source_path) == section
+        ]
+        if candidates:
+            return candidates
+    return []
+
+
 def _ambiguous_candidates(
     candidates: List[SourceInventoryItem],
 ) -> List[SourceInventoryItem]:
@@ -1113,11 +1133,20 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                 expected,
             )
             for reference in _reference_values(command.values):
-                candidates = _matching_candidates(
-                    index,
-                    source_context=source_context,
-                    reference=reference,
-                    allowed_sections=allowed_sections,
+                candidates = (
+                    _matching_service_candidates(
+                        index,
+                        source_context=source_context,
+                        reference=reference,
+                        allowed_sections=allowed_sections,
+                    )
+                    if expected == "firewall service custom"
+                    else _matching_candidates(
+                        index,
+                        source_context=source_context,
+                        reference=reference,
+                        allowed_sections=allowed_sections,
+                    )
                 )
                 ambiguous = _ambiguous_candidates(candidates)
                 pool_collision = (
@@ -1171,12 +1200,18 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                 ):
                     predefined_service_group = True
                     result = "RESOLVED"
-                    note = "FortiOS predefined service group."
+                    note = (
+                        "FortiOS predefined service group name resolved; "
+                        "target semantic expansion is not modeled."
+                    )
                     target = None
                 elif expected == "firewall service custom" and is_predefined_service(reference):
                     predefined_service = True
                     result = "RESOLVED"
-                    note = "FortiOS 7.4.x predefined service."
+                    note = (
+                        "FortiOS 7.4.x predefined service name resolved; "
+                        "target semantic expansion is not modeled."
+                    )
                 else:
                     result = (
                         "EXTERNAL"

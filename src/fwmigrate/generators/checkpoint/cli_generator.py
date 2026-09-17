@@ -14,13 +14,19 @@ from fwmigrate.ir.semantics import (
     unsafe_zone_names,
     policy_references_unsafe_zone,
 )
-from fwmigrate.generators.target_helpers import allocate_target_helper_name
+from fwmigrate.generators.target_helpers import (
+    allocate_target_helper_name,
+    prepare_target_services,
+)
 
 
 class CheckPointCLIGenerator:
     """Generates Check Point mgmt_cli automation batch scripts from Canonical IR."""
 
     def generate(self, ir: IRConfig) -> str:
+        prepared_services = prepare_target_services(
+            ir.services, ir.service_groups, "checkpoint"
+        )
         lines: List[str] = [
             "#!/bin/bash",
             "# =============================================================================",
@@ -112,12 +118,11 @@ class CheckPointCLIGenerator:
         if ir.services:
             lines.append("# --- Service Objects ---")
             for svc in ir.services:
-                if (
-                    svc.requires_manual_review
-                    or any(port.source_port for port in svc.ports)
-                ):
+                service_result = prepared_services.service_result(svc)
+                if not service_result.supported:
                     lines.append(
-                        f"# Service {svc.name} withheld: source/proxy port semantics require manual review"
+                        f"# Service {svc.name} withheld: target capability requires manual review"
+                        + (f" ({'; '.join(service_result.reasons)})" if service_result.reasons else "")
                     )
                     continue
                 for port_entry in svc.ports:
@@ -126,6 +131,27 @@ class CheckPointCLIGenerator:
                         lines.append(f'mgmt_cli add service-tcp name "{svc.name}" port "{port_entry.port}" --session-id $SESSION_ID -s id.txt')
                     elif proto == 'udp':
                         lines.append(f'mgmt_cli add service-udp name "{svc.name}" port "{port_entry.port}" --session-id $SESSION_ID -s id.txt')
+            lines.append("")
+
+        if ir.service_groups:
+            lines.append("# --- Service Groups ---")
+            for group in ir.service_groups:
+                group_result = prepared_services.group_result(group)
+                if not group_result.supported:
+                    lines.append(
+                        f"# Service group {group.name} withheld: target capability requires manual review"
+                        + (f" ({'; '.join(group_result.reasons)})" if group_result.reasons else "")
+                    )
+                    continue
+                members = prepared_services.members_for(group)
+                members_args = " ".join(
+                    f'members.{index} "{member}"'
+                    for index, member in enumerate(members, 1)
+                )
+                lines.append(
+                    f'mgmt_cli add service-group name "{group.name}" {members_args} '
+                    "--session-id $SESSION_ID -s id.txt"
+                )
             lines.append("")
 
         # 4. Security Rules

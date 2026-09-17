@@ -2,6 +2,7 @@ import ast
 from collections import Counter
 import io
 from pathlib import Path
+from types import GeneratorType, SimpleNamespace
 import zipfile
 import pytest
 
@@ -47,6 +48,7 @@ from fwmigrate.ir.enums import (
 )
 from fwmigrate.report.excel_exporter import IRExcelExporter
 from fwmigrate.report.excel_exporter import ExcelExportUnavailableError
+from fwmigrate.report.excel_audit import ExcelAuditAccumulator, build_audit_classifier
 from fwmigrate.report.excel_options import ExcelExportOptions, ExcelExportProfile
 from fwmigrate.report.excel_optimized import SinglePassIRExcelExporter
 from fwmigrate.report.excel_streaming import StreamingFastExcelExporter
@@ -61,6 +63,56 @@ def _workbook_values(workbook):
         )
         for sheet in workbook.worksheets
     ]
+
+
+def test_large_stream_builders_pass_rows_lazily(monkeypatch):
+    ir = IRConfig(
+        metadata=IRMetadata(hostname="lazy-rows", source_vendor="fortigate"),
+        address_groups=[IRAddressGroup(name="group")],
+        services=[IRService(name="service")],
+        routes=[IRRoute(name="route")],
+    )
+    exporter = IRExcelExporter(ir)
+    captured = []
+
+    def capture_rows(*args, **kwargs):
+        captured.append(args[-1])
+
+    monkeypatch.setattr(exporter, "_table_sheet", capture_rows)
+    workbook = SimpleNamespace(sheetnames=[])
+
+    exporter._build_address_groups(workbook)
+    exporter._build_services(workbook)
+    exporter._build_routes(workbook)
+
+    assert all(isinstance(rows, GeneratorType) for rows in captured)
+
+
+def test_audit_classifier_skips_rows_without_audit_capabilities(monkeypatch):
+    classifier = build_audit_classifier(
+        "Addresses",
+        ("Name", "Description"),
+        lambda _: "Inventory",
+    )
+    assert not classifier.can_produce_review
+    assert not classifier.can_produce_evidence
+
+    def fail_classify(*args, **kwargs):
+        raise AssertionError("irrelevant rows must not be classified")
+
+    monkeypatch.setattr(type(classifier), "classify", fail_classify)
+    accumulator = ExcelAuditAccumulator()
+    accumulator.add_row(
+        "Addresses",
+        ("Name", "Description"),
+        ("web", "host"),
+        4,
+        lambda _: "Inventory",
+        classifier,
+    )
+
+    assert accumulator.review_rows == []
+    assert accumulator.evidence_rows == []
 
 
 def test_fast_and_full_profiles_preserve_workbook_data():
@@ -112,6 +164,8 @@ def test_streaming_fast_export_preserves_semantic_rows_and_required_sheets():
         "IP Pools",
         "Security Profiles",
         "Extraction Coverage",
+        "Review Required",
+        "Extraction Evidence",
     ):
         assert list(streamed[sheet_name].values)[2:] == list(full[sheet_name].values)[2:]
 
@@ -173,6 +227,26 @@ def test_streaming_fast_uses_write_only_workbook(monkeypatch):
     assert calls == [True]
 
 
+def test_streaming_fast_reuses_table_styles_per_export(monkeypatch):
+    exporter = StreamingFastExcelExporter(
+        IRConfig(metadata=IRMetadata(source_vendor="fortigate")),
+        options=ExcelExportOptions(profile=ExcelExportProfile.FAST),
+    )
+    calls = 0
+    table_styles = exporter._table_styles
+
+    def counted_table_styles():
+        nonlocal calls
+        calls += 1
+        return table_styles()
+
+    monkeypatch.setattr(exporter, "_table_styles", counted_table_styles)
+    exporter.generate()
+
+    assert calls == 1
+    assert exporter._stream_styles is None
+
+
 def test_compression_levels_keep_xlsx_content_readable():
     ir = IRConfig(
         metadata=IRMetadata(hostname="compression-test", source_vendor="fortigate"),
@@ -214,6 +288,52 @@ def test_optimized_export_skips_empty_vendor_builder(monkeypatch):
 
     OptimizedIRExcelExporter(
         IRConfig(metadata=IRMetadata(hostname="pan", source_vendor="palo_alto")),
+    ).generate()
+
+    assert calls == []
+
+
+def test_streaming_fast_export_skips_empty_vendor_builder(monkeypatch):
+    calls = []
+
+    def unexpected_builder(self, workbook):
+        calls.append("pan-phase9")
+
+    monkeypatch.setattr(
+        StreamingFastExcelExporter,
+        "_build_pan_phase9_sheets",
+        unexpected_builder,
+    )
+
+    StreamingFastExcelExporter(
+        IRConfig(metadata=IRMetadata(hostname="pan", source_vendor="palo_alto")),
+        options=ExcelExportOptions(profile=ExcelExportProfile.FAST),
+    ).generate()
+
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("vendor", "builder"),
+    (
+        ("fortigate", "_build_pan_phase9_sheets"),
+        ("palo_alto", "_build_fortigate_source_configuration"),
+        ("cisco_asa", "_build_checkpoint_access_rule_sheet"),
+        ("checkpoint", "_build_cisco_acp"),
+        ("juniper_srx", "_build_pan_phase9_sheets"),
+    ),
+)
+def test_streaming_fast_export_skips_inactive_builder(monkeypatch, vendor, builder):
+    calls = []
+
+    def unexpected_builder(self, workbook):
+        calls.append(builder)
+
+    monkeypatch.setattr(StreamingFastExcelExporter, builder, unexpected_builder)
+
+    StreamingFastExcelExporter(
+        IRConfig(metadata=IRMetadata(hostname="inactive-builder", source_vendor=vendor)),
+        options=ExcelExportOptions(profile=ExcelExportProfile.FAST),
     ).generate()
 
     assert calls == []
