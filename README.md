@@ -30,12 +30,6 @@ Target configuration generation remains available, but extraction correctness an
 - Check Point R80/R81
 - Juniper SRX / Junos
 
-Run the live plugin registry to see currently registered parsers and generators:
-
-```bash
-fwmigrate vendors
-```
-
 ## Common extraction pipeline
 
 All source vendors are being standardized around the same lifecycle:
@@ -87,7 +81,6 @@ The canonical IR is being refined so portable firewall intent stays vendor-neutr
 
 Use these documents as the source of truth:
 
-- [Planned IR V2 contract](documentation/ir-schema-v2-plan.md)
 - [Currently implemented IR](documentation/ir-model.md)
 - [Documentation index](documentation/README.md)
 
@@ -131,33 +124,7 @@ python -m pip install -e ".[dev]"
 Start the web application:
 
 ```bash
-fwmigrate serve --port 5000
-```
-
-Or use the desktop launcher:
-
-```bash
-fwmigrate app --port 5000
-```
-
-Run a file-based migration when target generation is required:
-
-```bash
-fwmigrate migrate \
-  --input /path/to/source.conf \
-  --output ./output \
-  --source-vendor fortigate \
-  --target-vendor palo_alto
-```
-
-FortiGate live collection is also available:
-
-```bash
-fwmigrate-live-fortigate \
-  --host 192.0.2.10 \
-  --username admin \
-  --verify-host-key \
-  --output fortigate_source_inventory.xlsx
+python -m fwmigrate.main serve --port 5000
 ```
 
 ## Development and testing
@@ -184,15 +151,6 @@ A successful extraction should make it clear:
 - and which references or dependencies remain unresolved.
 
 Once extraction completeness is stable across all six vendors, target-generation work can build on a much safer foundation.
-
-## Known limitations
-
-- Vendor feature coverage is not complete.
-- Some settings are intentionally source-only or partially normalized.
-- Cisco FTD currently has no dedicated target generator.
-- Live source collection is currently FortiGate-only.
-- Runtime-learned state may not exist in offline configuration backups.
-- Hardware-, cluster-, identity-, and platform-specific behavior can require manual review.
 
 ## License
 
