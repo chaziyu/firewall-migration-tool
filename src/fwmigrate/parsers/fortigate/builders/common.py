@@ -45,7 +45,6 @@ def prepare_section(self: Any, section_path: str, attributes: Dict[str, Any]) ->
         ):
             self._normalize_optional_int(attributes, "timeout")
     if section_path in {
-        "firewall address",
         "firewall address6",
         "firewall multicast-address",
         "firewall multicast-address6",

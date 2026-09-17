@@ -786,11 +786,7 @@ def _apply_address_defaults(
             attributes[key] = value
             defaults[key] = value
 
-    if section_path == "firewall address":
-        set_default("type", "ipmask")
-        if attributes.get("type") == "ipmask":
-            set_default("subnet", "0.0.0.0 0.0.0.0")
-    elif section_path == "firewall address6":
+    if section_path == "firewall address6":
         set_default("type", "ipprefix")
         if attributes.get("type") == "ipprefix":
             set_default("ip6", "::/0")
