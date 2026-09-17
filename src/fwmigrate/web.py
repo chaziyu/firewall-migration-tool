@@ -21,7 +21,6 @@ from fwmigrate.builtin_plugins import register_builtin_plugins
 register_builtin_plugins()
 
 from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.core.optimizer import RuleOptimizer
 from fwmigrate.application import MigrationPipeline, MigrationRequest
 from fwmigrate.application.metrics import PipelineMetrics
 from fwmigrate.report import (
@@ -295,7 +294,6 @@ def create_app(test_config=None):
                 'preview_id': preview_entry.preview_id,
                 **_ir_preview_fields(ir_config),
                 'extraction': _extraction_summary(extraction),
-                'optimization': {'status': 'not_analyzed'},
                 'generation_allowed': 'not_evaluated',
                 'blocking_reasons': extraction.blocking_reasons,
                 'requires_manual_review': extraction.requires_manual_review,
@@ -303,100 +301,6 @@ def create_app(test_config=None):
             if metrics is not None:
                 metrics.add('preview_total', (perf_counter() - started) * 1000)
                 response['diagnostics'] = {'metrics': metrics.as_dict()}
-            return jsonify(response)
-        except ConfigurationDecodeError as e:
-            return jsonify({'success': False, 'error': str(e), 'stage': 'decode'}), 400
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
-
-    @app.route('/api/analyze', methods=['POST'])
-    def analyze_migration():
-        """Run full migration and optional optimizer analysis on explicit request."""
-        try:
-            source_vendor = request.form.get('source_vendor', 'fortigate')
-            if 'file' not in request.files or request.files['file'].filename == '':
-                return jsonify({'success': False, 'error': 'A configuration file is required'}), 400
-
-            analyze_unused = _parse_bool(request.form.get('analyze_unused'))
-            analyze_duplicates = _parse_bool(request.form.get('analyze_duplicates'))
-            analyze_shadowing = _parse_bool(request.form.get('analyze_shadowing'))
-            target_vendor = request.form.get('target_vendor') or None
-            analyze_capabilities = _parse_bool(
-                request.form.get('analyze_capabilities'),
-                default=bool(target_vendor),
-            )
-            analysis_started = perf_counter()
-            file = request.files['file']
-            file_content = _decode_configuration(file.read())
-            analysis = MigrationPipeline().analyze(MigrationRequest(
-                source_vendor=source_vendor,
-                target_vendor=target_vendor if analyze_capabilities else None,
-                target_version=request.form.get('target_version') or None,
-                source_content=file_content,
-                target_format='all',
-                source_name=file.filename,
-                collect_metrics=True,
-            ))
-            ir_config = analysis.final_ir or analysis.source_ir
-            if not ir_config:
-                return jsonify({'success': False, 'error': 'Failed to analyze configuration'}), 400
-
-            optimization = {'status': 'not_analyzed'}
-            if any((
-                analyze_unused,
-                analyze_duplicates,
-                analyze_shadowing,
-            )):
-                optimizer = RuleOptimizer(
-                    ir_config,
-                    ir_index=analysis._ir_index,
-                    dependency_graph=analysis._dependency_graph,
-                )
-                optimizer_started = perf_counter()
-
-                def run_optimizer(stage, operation):
-                    started = perf_counter()
-                    try:
-                        return operation()
-                    finally:
-                        analysis.metrics.add(stage, (perf_counter() - started) * 1000)
-
-                unused = run_optimizer(
-                    'preview_unused', optimizer.find_unused_objects,
-                ) if analyze_unused else {}
-                duplicates = run_optimizer(
-                    'preview_duplicates', optimizer.find_duplicate_objects,
-                ) if analyze_duplicates else {}
-                shadowed = run_optimizer(
-                    'preview_shadowed', optimizer.find_shadowed_rules,
-                ) if analyze_shadowing else []
-                optimizer_ms = (perf_counter() - optimizer_started) * 1000
-                analysis.metrics.add('preview_total', optimizer_ms)
-                analysis.metrics.total_duration_ms += optimizer_ms
-                optimization = {
-                    'status': 'analyzed',
-                    'unused_addresses_count': len(unused.get('unused_addresses', [])),
-                    'unused_services_count': len(unused.get('unused_services', [])),
-                    'duplicate_address_groups_count': len(duplicates.get('duplicate_addresses', [])),
-                    'shadowed_rules_count': len(shadowed),
-                    'shadowed_rules': shadowed,
-                }
-
-            analysis_total_ms = (perf_counter() - analysis_started) * 1000
-            analysis.metrics.add('analysis_total', analysis_total_ms)
-            analysis.metrics.total_duration_ms = analysis_total_ms
-            response = {
-                'success': True,
-                **_ir_preview_fields(ir_config),
-                'extraction': _extraction_summary(analysis.extraction),
-                'optimization': optimization,
-                'generation_allowed': analysis.generation_allowed,
-                'blocking_reasons': analysis.blocking_reasons,
-                'requires_manual_review': analysis.requires_manual_review,
-                'diagnostics': {'metrics': analysis.metrics.as_dict()},
-            }
-            if analysis.capability_analysis is not None:
-                response['capability_analysis'] = analysis.capability_analysis.to_dict()
             return jsonify(response)
         except ConfigurationDecodeError as e:
             return jsonify({'success': False, 'error': str(e), 'stage': 'decode'}), 400

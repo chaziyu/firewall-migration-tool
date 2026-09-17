@@ -391,9 +391,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const optPruneObjects = document.getElementById("opt-prune-objects");
   const statTotalRules = document.getElementById("stat-total-rules");
   const statTotalObjects = document.getElementById("stat-total-objects");
-  const statUnusedObjects = document.getElementById("stat-unused-objects");
-  const statShadowedRules = document.getElementById("stat-shadowed-rules");
-  const btnAnalyze = document.getElementById("btn-analyze");
 
   // Mode A Components
   const btnGenerateBundle = document.getElementById("btn-generate-bundle");
@@ -483,9 +480,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnPlanDryrun)
       btnPlanDryrun.disabled =
         !hasFile || !sourceReady || busyButtons.has(btnPlanDryrun) || liveOperationRunning;
-    if (btnAnalyze)
-      btnAnalyze.disabled =
-        !hasFile || !sourceReady || busyButtons.has(btnAnalyze) || liveOperationRunning;
     setText(
       "summary-source",
       VENDOR_CONFIGS[selectedSourceVendor]?.name || selectedSourceVendor,
@@ -598,12 +592,7 @@ document.addEventListener("DOMContentLoaded", () => {
     currentPreviewId = null;
     currentPolicies = [];
     optimizerPanel?.classList.add("hidden");
-    [
-      statTotalRules,
-      statTotalObjects,
-      statUnusedObjects,
-      statShadowedRules,
-    ].forEach((element) => {
+    [statTotalRules, statTotalObjects].forEach((element) => {
       if (element) element.textContent = "0";
     });
     setText("inventory-interface-count", "—");
@@ -624,7 +613,6 @@ document.addEventListener("DOMContentLoaded", () => {
       btnIngestApi,
       fileInput,
       btnApiExtract,
-      btnAnalyze,
       panHost,
       panPort,
       panApikey,
@@ -1308,8 +1296,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (statTotalObjects)
         statTotalObjects.textContent =
           count(stats.addresses) + count(stats.services);
-      if (statUnusedObjects) statUnusedObjects.textContent = "Not analyzed";
-      if (statShadowedRules) statShadowedRules.textContent = "Not analyzed";
       setText("inventory-interface-count", count(stats.interfaces));
       setText("inventory-policy-count", count(stats.policies));
       currentPolicies = Array.isArray(data.policies) ? data.policies : [];
@@ -1341,54 +1327,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
     }
-  }
-
-  if (btnAnalyze) {
-    btnAnalyze.addEventListener("click", async () => {
-      if (!currentFile || !sourceReady) return;
-      setBusy(btnAnalyze, true);
-      const originalText = btnAnalyze.textContent;
-      btnAnalyze.textContent = "Analyzing…";
-      const requestRevision = sourceRevision;
-      const formData = new FormData();
-      formData.append("file", currentFile);
-      formData.append("source_vendor", selectedSourceVendor);
-      formData.append("target_vendor", selectedTargetVendor);
-      formData.append("analyze_unused", "true");
-      formData.append("analyze_duplicates", "true");
-      formData.append("analyze_shadowing", "true");
-      formData.append("analyze_capabilities", "true");
-
-      try {
-        const resp = await fetch("/api/analyze", {
-          method: "POST",
-          body: formData,
-        });
-        const data = await readJson(resp, "Could not analyze this configuration");
-        if (requestRevision !== sourceRevision) return;
-        const optimization = data.optimization || {};
-        if (optimization.status === "analyzed") {
-          if (statUnusedObjects)
-            statUnusedObjects.textContent =
-              count(optimization.unused_addresses_count) +
-              count(optimization.unused_services_count);
-          if (statShadowedRules)
-            statShadowedRules.textContent = count(
-              optimization.shadowed_rules_count,
-            );
-          setPreviewStatus("Analysis complete. Review the findings before continuing.", "ready");
-        } else {
-          setPreviewStatus("Analysis completed without optimizer findings.", "ready");
-        }
-      } catch (err) {
-        if (requestRevision !== sourceRevision) return;
-        showError(`Configuration analysis failed: ${err.message}`);
-        setPreviewStatus(err.message, "error");
-      } finally {
-        btnAnalyze.textContent = originalText;
-        setBusy(btnAnalyze, false);
-      }
-    });
   }
 
   // =========================================================================
