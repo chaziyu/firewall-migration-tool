@@ -87,7 +87,7 @@ config firewall address
         set subnet 10.0.0.1 255.255.255.255
     next
     edit "missing-type"
-        set subnet 10.0.0.2 255.255.255.255
+        set subnet 10.0.0.2 255.255.255.0
     next
     edit "missing-subnet"
         set type ipmask
@@ -104,7 +104,7 @@ end
     )
     assert (addresses["missing-type"].type, addresses["missing-type"].subnet) == (
         None,
-        "10.0.0.2 255.255.255.255",
+        "10.0.0.2 255.255.255.0",
     )
     assert (addresses["missing-subnet"].type, addresses["missing-subnet"].subnet) == (
         "ipmask",
@@ -112,6 +112,19 @@ end
     )
     assert all("source_effective_defaults" not in address.extra_settings for address in addresses.values())
     assert all(not hasattr(address, "source_effective_defaults") for address in addresses.values())
+
+    ir_addresses = {
+        address.name: address
+        for address in extract_fortigate_config(source).canonical_ir.addresses
+    }
+    assert (ir_addresses["explicit"].type.value, ir_addresses["explicit"].value) == (
+        "network",
+        "10.0.0.1/32",
+    )
+    assert (ir_addresses["missing-type"].type.value, ir_addresses["missing-type"].value) == (
+        "network",
+        "10.0.0.2/24",
+    )
 
 
 def test_firewall_address_builder_preserves_unknown_and_nested_values():
@@ -150,6 +163,229 @@ end
         "tags": ["prod"],
         "extra_settings": {},
     }
+
+
+def test_fortigate_address_forms_preserve_source_and_ir_semantics():
+    source = """
+config system interface
+    edit "port1"
+    next
+end
+config firewall address
+    edit "RANGE"
+        set type iprange
+        set start-ip 10.0.2.1
+        set end-ip 10.0.2.10
+    next
+    edit "FQDN"
+        set type fqdn
+        set fqdn app.example.test
+    next
+    edit "WILDCARD"
+        set type wildcard
+        set wildcard 10.0.0.0 0.0.0.255
+    next
+    edit "METADATA"
+        set type ipmask
+        set subnet 10.0.3.0 255.255.255.0
+        set uuid uuid-1
+        set comment "Address comment"
+        set associated-interface "port1"
+        set future-field abc
+    next
+end
+"""
+
+    config = FortiGateParser(FortiGateTokenizer(source)).parse()
+    parser_values = {
+        address.name: (
+            values["type"],
+            values["subnet"],
+            values["start_ip"],
+            values["end_ip"],
+            values["fqdn"],
+            values["wildcard"],
+            values["uuid"],
+            values["comment"],
+            values["associated_interface"],
+            values["extra_settings"],
+        )
+        for address in config.addresses
+        for values in [address.model_dump()]
+    }
+    assert parser_values == {
+        "RANGE": (
+            "iprange", None, "10.0.2.1", "10.0.2.10", None, None,
+            None, None, None, {},
+        ),
+        "FQDN": (
+            "fqdn", None, None, None, "app.example.test", None,
+            None, None, None, {},
+        ),
+        "WILDCARD": (
+            "wildcard", None, None, None, None, "10.0.0.0 0.0.0.255",
+            None, None, None, {},
+        ),
+        "METADATA": (
+            "ipmask", "10.0.3.0 255.255.255.0", None, None, None, None,
+            "uuid-1", "Address comment", "port1", {"future_field": "abc"},
+        ),
+    }
+
+    ir_addresses = {
+        address.name: address
+        for address in extract_fortigate_config(source).canonical_ir.addresses
+    }
+    assert {
+        name: (
+            address.type.value,
+            address.value,
+            address.source_uuid,
+            address.description,
+            address.associated_interface,
+            address.source_attributes.get("future_field"),
+        )
+        for name, address in ir_addresses.items()
+    } == {
+        "RANGE": ("range", "10.0.2.1-10.0.2.10", None, None, None, None),
+        "FQDN": ("fqdn", "app.example.test", None, None, None, None),
+        "WILDCARD": (
+            "wildcard_mask", "10.0.0.0 0.0.0.255", None, None, None, None,
+        ),
+        "METADATA": (
+            "network", "10.0.3.0/24", "uuid-1", "Address comment", "port1", "abc",
+        ),
+    }
+
+
+def test_wildcard_fqdn_uses_its_dedicated_source_model():
+    source = """
+config firewall wildcard-fqdn custom
+    edit "WILDCARD_FQDN"
+        set wildcard-fqdn *.example.test
+    next
+end
+"""
+
+    config = FortiGateParser(FortiGateTokenizer(source)).parse()
+    assert config.wildcard_fqdns[0].model_dump() == {
+        "source_context": "root",
+        "nested_configs": [],
+        "name": "WILDCARD_FQDN",
+        "wildcard_fqdn": "*.example.test",
+        "comment": None,
+        "uuid": None,
+        "extra_settings": {},
+    }
+
+    address = extract_fortigate_config(source).canonical_ir.addresses[0]
+    assert (address.type.value, address.value, address.source_section, address.source_type) == (
+        "wildcard",
+        "*.example.test",
+        "firewall wildcard-fqdn custom",
+        "wildcard-fqdn",
+    )
+
+
+def test_ipv6_and_multicast_address_paths_preserve_current_behavior():
+    source = """
+config firewall address6
+    edit "V6_DEFAULT_TYPE"
+        set ip6 2001:db8:100::/64
+    next
+end
+config firewall multicast-address
+    edit "MCAST4_RANGE"
+        set start-ip 239.1.1.1
+        set end-ip 239.1.1.255
+    next
+end
+config firewall multicast-address6
+    edit "MCAST6_RANGE"
+        set ip6 ff05::/16
+    next
+end
+    """
+
+    config = FortiGateParser(FortiGateTokenizer(source)).parse()
+    parser_values = {
+        address.name: (
+            values["type"],
+            values["subnet"],
+            values["start_ip"],
+            values["end_ip"],
+            values["ip6"],
+            values["is_ipv6"],
+            values["is_multicast"],
+            values["address_list"],
+            values["tagging"],
+            values["extra_settings"],
+        )
+        for address in config.addresses
+        for values in [address.model_dump()]
+    }
+
+    assert parser_values == {
+        "V6_DEFAULT_TYPE": (
+            "ipprefix", None, None, None, "2001:db8:100::/64", True, False, [], [],
+            {"source_effective_defaults": {"type": "ipprefix"}},
+        ),
+        "MCAST4_RANGE": (
+            "multicastrange", None, "239.1.1.1", "239.1.1.255", None, False, True,
+            [], [],
+            {"source_effective_defaults": {"type": "multicastrange"}},
+        ),
+        "MCAST6_RANGE": (
+            None, None, None, None, "ff05::/16", True, True, [], [], {},
+        ),
+    }
+
+    extraction = extract_fortigate_config(source)
+    ir_values = {
+        address.name: (
+            address.type.value,
+            address.address_family,
+            address.is_ipv6,
+            address.is_multicast,
+            address.source_section,
+            address.migration_status,
+            address.requires_manual_review,
+        )
+        for address in extraction.canonical_ir.addresses
+    }
+    assert ir_values == {
+        "V6_DEFAULT_TYPE": (
+            "network", "ipv6", True, False, "firewall address6", "NORMALIZED", False,
+        ),
+        "MCAST4_RANGE": (
+            "range", "ipv4", False, True, "firewall multicast-address", "NORMALIZED", False,
+        ),
+        "MCAST6_RANGE": (
+            "network", "ipv6", True, True, "firewall multicast-address6", "NORMALIZED", False,
+        ),
+    }
+
+    sections = {
+        section.path: section
+        for section in extraction.source_sections
+        if section.path in {
+            "firewall address6",
+            "firewall multicast-address",
+            "firewall multicast-address6",
+        }
+    }
+    assert {
+        path: (section.object_count_source, section.object_count_parsed, section.status.value)
+        for path, section in sections.items()
+    } == {
+        "firewall address6": (1, 1, "PARTIALLY_NORMALIZED"),
+        "firewall multicast-address": (1, 1, "PARTIALLY_NORMALIZED"),
+        "firewall multicast-address6": (1, 1, "PARTIALLY_NORMALIZED"),
+    }
+    assert len(extraction.canonical_ir.addresses) == 3
+    assert not extraction.requires_manual_review
+    assert extraction.generation_safe
+    assert extraction.blocking_reasons == []
 
 
 def test_local_user_passwd_time_uses_scalar_evaluation_and_reaches_ir():
