@@ -539,10 +539,9 @@ class FGAddressTaggingEntry(BaseModel):
 class FGAddress(FGContextualModel):
     name: str
     uuid: Optional[str] = None
-    type: str = "ipmask"  # ipmask, fqdn, iprange, dynamic
+    type: Optional[str] = None  # ipmask, fqdn, iprange, dynamic
     sub_type: Optional[str] = None
     fsso_group: List[str] = Field(default_factory=list)
-    source_effective_defaults: Dict[str, Any] = Field(default_factory=dict)
     hw_model: Optional[str] = None
     hw_vendor: Optional[str] = None
     clearpass_spt: Optional[str] = None

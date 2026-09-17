@@ -4681,7 +4681,7 @@ class FGToIRTransformer:
                 continue
             if value is not None:
                 attributes[key] = value
-        defaults = dict(getattr(addr, "source_effective_defaults", {}) or {})
+        defaults = dict(attributes.pop("source_effective_defaults", {}) or {})
         for key in defaults:
             attributes.pop(key, None)
         if addr.fsso_group:
@@ -5711,7 +5711,7 @@ class FGToIRTransformer:
             source = source_by_key.get((address.source_context, address.name))
             if source is None:
                 continue
-            defaults = dict(source.source_effective_defaults or {})
+            defaults = dict(source.extra_settings.get("source_effective_defaults") or {})
             if defaults:
                 set_object_extension_value(
                     address, IRFortiOSAddressExtension, "source_effective_defaults", defaults

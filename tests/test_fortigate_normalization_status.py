@@ -45,9 +45,11 @@ def test_route_destination_group_requires_one_concrete_prefix():
         """\
 config firewall address
     edit "single"
+        set type ipmask
         set subnet 192.0.2.0 255.255.255.0
     next
     edit "other"
+        set type ipmask
         set subnet 198.51.100.0 255.255.255.0
     next
 end

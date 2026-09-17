@@ -79,6 +79,41 @@ def test_fortigate_syntax_evaluation_and_critical_sections_are_lossless():
     assert all(item.commands or item.children for item in extraction.inventory_items)
 
 
+def test_ipv4_addresses_preserve_only_explicit_type_and_subnet_values():
+    source = '''
+config firewall address
+    edit "explicit"
+        set type ipmask
+        set subnet 10.0.0.1 255.255.255.255
+    next
+    edit "missing-type"
+        set subnet 10.0.0.2 255.255.255.255
+    next
+    edit "missing-subnet"
+        set type ipmask
+    next
+end
+'''
+
+    config = FortiGateParser(FortiGateTokenizer(source)).parse()
+    addresses = {address.name: address for address in config.addresses}
+
+    assert (addresses["explicit"].type, addresses["explicit"].subnet) == (
+        "ipmask",
+        "10.0.0.1 255.255.255.255",
+    )
+    assert (addresses["missing-type"].type, addresses["missing-type"].subnet) == (
+        None,
+        "10.0.0.2 255.255.255.255",
+    )
+    assert (addresses["missing-subnet"].type, addresses["missing-subnet"].subnet) == (
+        "ipmask",
+        None,
+    )
+    assert all("source_effective_defaults" not in address.extra_settings for address in addresses.values())
+    assert all(not hasattr(address, "source_effective_defaults") for address in addresses.values())
+
+
 def test_local_user_passwd_time_uses_scalar_evaluation_and_reaches_ir():
     spec = get_section_spec("user local")
     assert spec is not None
