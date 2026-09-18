@@ -17,9 +17,6 @@ from fwmigrate.parsers.fortigate.model import (
     FGDHCPv6IAPD,
     FGInterfaceIPv6ExtraAddress,
     FGInterfaceVRRP6,
-    FGIPSSensor,
-    FGIPSSensorEntry,
-    FGIPSSensorExemptIP,
     FGIPv6DelegatedPrefixAdvertisement,
     FGIPv6PrefixAdvertisement,
     FGProfileGroup,
@@ -54,200 +51,7 @@ def _effective_node_attributes(
 
 
 # ---------------------------------------------------------------------------
-# Phase 46 - IPS sensors
-# ---------------------------------------------------------------------------
-
-
-class FGIPSSelectorCriteria(BaseModel):
-    """FortiOS IPS filter/selectors.  Never inferred from signature IDs."""
-
-    severity: List[str] = Field(default_factory=list)
-    protocol: List[str] = Field(default_factory=list)
-    application: List[str] = Field(default_factory=list)
-    cve: List[str] = Field(default_factory=list)
-    os: List[str] = Field(default_factory=list)
-    vuln_type: List[int] = Field(default_factory=list)
-    location: Optional[str] = None
-
-
-class FGIPSSignatureCriteria(BaseModel):
-    """Explicit FortiOS IPS signature/rule identifiers."""
-
-    rule_ids: List[int] = Field(default_factory=list)
-
-
-class FGIPSSensorEntry746(FGIPSSensorEntry):
-    """7.4.6 IPS entry with explicit filter-vs-signature semantics."""
-
-    selector_criteria: FGIPSSelectorCriteria = Field(default_factory=FGIPSSelectorCriteria)
-    signature_criteria: FGIPSSignatureCriteria = Field(default_factory=FGIPSSignatureCriteria)
-    last_modified: Optional[str] = None
-
-
-IPS_SENSOR_SPEC: Dict[str, set[str]] = {
-    "scalar_fields": {
-        "block_malicious_url",
-        "comment",
-        "extended_log",
-        "replacemsg_group",
-        "scan_botnet_connections",
-    },
-}
-
-IPS_ENTRY_SPEC: Dict[str, set[str]] = {
-    "scalar_fields": {
-        "action",
-        "default_action",
-        "default_status",
-        "last_modified",
-        "location",
-        "log",
-        "log_attack_context",
-        "log_packet",
-        "quarantine",
-        "quarantine_expiry",
-        "quarantine_log",
-        "rate_mode",
-        "rate_track",
-        "status",
-    },
-    "list_fields": {
-        "application",
-        "cve",
-        "os",
-        "protocol",
-        "severity",
-    },
-    "int_fields": {"rate_count", "rate_duration"},
-    "int_list_fields": {"rule", "vuln_type"},
-}
-
-IPS_EXEMPT_SPEC: Dict[str, set[str]] = {
-    "scalar_fields": {"src_ip", "dst_ip"},
-}
-
-
-def _entry_identity(value: str) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        # The source ID remains in source evidence.  Use -1 only as a typed
-        # sentinel because the existing model requires an integer ID.
-        return -1
-
-
-def _build_ips_sensor(parser: Any, nodes: List[FGSourceNode]) -> None:
-    for node in nodes:
-        effective, extra = _effective_node_attributes(node, IPS_SENSOR_SPEC)
-        entries: List[FGIPSSensorEntry] = []
-
-        entries_nodes = [
-            child for child in node.children
-            if child.node_type == "config" and child.name.lower() == "entries"
-        ]
-        for entries_node in entries_nodes:
-            for entry_node in entries_node.children:
-                if entry_node.node_type != "edit":
-                    continue
-
-                values, entry_extra = _effective_node_attributes(entry_node, IPS_ENTRY_SPEC)
-                rules = list(values.pop("rule", []))
-                vuln_type = list(values.get("vuln_type", []))
-
-                # Keep the existing public malformed-rule evidence name for
-                # compatibility while using the shared evaluator internally.
-                malformed_rules = entry_extra.pop("unparsed_rule", None)
-                if malformed_rules is not None:
-                    entry_extra["unparsed_rule_values"] = (
-                        malformed_rules if isinstance(malformed_rules, list) else [malformed_rules]
-                    )
-                malformed_append_rules = entry_extra.pop("unparsed_append_rule", None)
-                if malformed_append_rules is not None:
-                    entry_extra.setdefault("unparsed_rule_values", []).extend(
-                        malformed_append_rules
-                        if isinstance(malformed_append_rules, list)
-                        else [malformed_append_rules]
-                    )
-
-                exempt_ips: List[FGIPSSensorExemptIP] = []
-                for child in entry_node.children:
-                    if child.node_type != "config" or child.name.lower() != "exempt-ip":
-                        continue
-                    for exempt_node in child.children:
-                        if exempt_node.node_type != "edit":
-                            continue
-                        exempt_values, exempt_extra = _effective_node_attributes(
-                            exempt_node, IPS_EXEMPT_SPEC
-                        )
-                        exempt_extra = sanitize_source_attributes(exempt_extra)
-                        if exempt_extra:
-                            # FGIPSSensorExemptIP has no generic extension bag.
-                            # Preserve unknown nested data in the parent entry
-                            # without altering the authoritative source tree.
-                            entry_extra.setdefault("exempt_ip_extra_settings", {})[
-                                exempt_node.name
-                            ] = exempt_extra
-                        exempt_ips.append(
-                            FGIPSSensorExemptIP(
-                                id=_entry_identity(exempt_node.name),
-                                src_ip=exempt_values.get("src_ip"),
-                                dst_ip=exempt_values.get("dst_ip"),
-                            )
-                        )
-
-                selector = FGIPSSelectorCriteria(
-                    severity=list(values.get("severity", [])),
-                    protocol=list(values.get("protocol", [])),
-                    application=list(values.get("application", [])),
-                    cve=list(values.get("cve", [])),
-                    os=list(values.get("os", [])),
-                    vuln_type=vuln_type,
-                    location=values.get("location"),
-                )
-                signature = FGIPSSignatureCriteria(rule_ids=rules)
-
-                entries.append(
-                    FGIPSSensorEntry746(
-                        id=_entry_identity(entry_node.name),
-                        rules=rules,
-                        exempt_ips=exempt_ips,
-                        selector_criteria=selector,
-                        signature_criteria=signature,
-                        extra_settings=sanitize_source_attributes(entry_extra),
-                        **{
-                            key: value
-                            for key, value in values.items()
-                            if key in FGIPSSensorEntry746.model_fields
-                            and key not in {
-                                "id",
-                                "rules",
-                                "exempt_ips",
-                                "selector_criteria",
-                                "signature_criteria",
-                                "extra_settings",
-                            }
-                        },
-                    )
-                )
-
-        sensor_values = {
-            key: value
-            for key, value in effective.items()
-            if key in FGIPSSensor.model_fields and key not in {"name", "entries", "extra_settings"}
-        }
-        parser.config.ips_sensors.append(
-            FGIPSSensor(
-                name=node.name,
-                source_context=parser.current_context or "root",
-                entries=entries,
-                extra_settings=sanitize_source_attributes(extra),
-                **sensor_values,
-            )
-        )
-
-
-# ---------------------------------------------------------------------------
-# Phase 47 - SSL/SSH inspection
+# SSL/SSH inspection
 # ---------------------------------------------------------------------------
 
 
@@ -400,6 +204,7 @@ def _build_ssl_ssh_profile(parser: Any, nodes: List[FGSourceNode]) -> None:
         root_values, root_extra = _effective_node_attributes(node, SSL_ROOT_SPEC)
         profile = FGSSLSSHProfile746(
             name=node.name,
+            source_context=parser.current_context or "root",
             settings=sanitize_source_attributes(dict(root_values)),
             extra_settings=sanitize_source_attributes(root_extra),
             **{

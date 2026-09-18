@@ -76,8 +76,5 @@ def test_fortigate_admin_only_source_config_still_generates_zip():
     with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
         workbook_name = next(name for name in names if name.endswith(".xlsx"))
         workbook = load_workbook(io.BytesIO(archive.read(workbook_name)), read_only=True)
-        rows = workbook["Source Inventory"].iter_rows(values_only=True)
-        assert any(
-            any(value == "system accprofile" for value in row)
-            for row in rows
-        )
+        assert "Source Inventory" not in workbook.sheetnames
+        assert "Extraction Coverage" in workbook.sheetnames

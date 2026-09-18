@@ -15,7 +15,6 @@ from .extension_models import (
     IRFortiOSNATRuleExtension,
     IRFortiOSPolicyExtension,
     IRFortiOSPublishedServiceExtension,
-    IRAddress6Template,
     IRIPPoolGroup,
     IRVendorExtensionIdentity,
     _payload_value,
@@ -111,11 +110,6 @@ class IRFortiOSExtensions(_VendorExtension):
     security_policies: list[IRFortiGateSourceRule] = Field(default_factory=list)
     central_snat_rules: list[IRFortiGateSourceRule] = Field(default_factory=list)
     policy_routes: list[IRFortiGatePolicyRoute] = Field(default_factory=list)
-    local_in_policies: list[IRLocalDeviceAccessRule] = Field(default_factory=list)
-    proxy_policies: list[IRFortiGateSourceRule] = Field(default_factory=list)
-    shaping_policies: list[IRFortiGateSourceRule] = Field(default_factory=list)
-    dhcp6_servers: list[IRFortiGateSourceRule] = Field(default_factory=list)
-    source_only_rules: list[IRFortiGateSourceRule] = Field(default_factory=list)
     sdwans: list[IRSDWAN] = Field(default_factory=list)
     user_ldap_servers: list[IRUserLDAP] = Field(default_factory=list)
     user_radius_servers: list[IRUserRADIUS] = Field(default_factory=list)
@@ -153,7 +147,6 @@ class IRFortiOSExtensions(_VendorExtension):
     session_helpers: list[IRSessionHelper] = Field(default_factory=list)
     session_ttl_overrides: list[IRSessionTTLOverride] = Field(default_factory=list)
     session_ttl_settings: IRSessionTTLSettings | None = None
-    address6_templates: list[IRAddress6Template] = Field(default_factory=list)
     ip_pool_groups: list[IRIPPoolGroup] = Field(default_factory=list)
 
 
@@ -211,7 +204,7 @@ class IRCheckPointExtensions(_VendorExtension):
 
 
 class IRCiscoASAExtensions(_VendorExtension):
-    pass
+    local_in_policies: list[IRLocalDeviceAccessRule] = Field(default_factory=list)
 
 
 class IRCiscoFTDExtensions(_VendorExtension):
@@ -219,7 +212,7 @@ class IRCiscoFTDExtensions(_VendorExtension):
 
 
 class IRJunosExtensions(_VendorExtension):
-    pass
+    local_in_policies: list[IRLocalDeviceAccessRule] = Field(default_factory=list)
 
 
 class IRVendorExtensions(BaseModel):
@@ -246,11 +239,6 @@ _TRANSITIONAL_ROOTS = {
     "checkpoint_sic_metadata": ("checkpoint", "checkpoint_sic_metadata"),
     "central_snat_rules": ("fortios", "central_snat_rules"),
     "policy_routes": ("fortios", "policy_routes"),
-    "local_in_policies": ("fortios", "local_in_policies"),
-    "proxy_policies": ("fortios", "proxy_policies"),
-    "shaping_policies": ("fortios", "shaping_policies"),
-    "dhcp6_servers": ("fortios", "dhcp6_servers"),
-    "source_only_rules": ("fortios", "source_only_rules"),
     "sdwans": ("fortios", "sdwans"),
     "user_ldap_servers": ("fortios", "user_ldap_servers"),
     "user_radius_servers": ("fortios", "user_radius_servers"),
@@ -285,7 +273,6 @@ _TRANSITIONAL_ROOTS = {
     "session_helpers": ("fortios", "session_helpers"),
     "session_ttl_overrides": ("fortios", "session_ttl_overrides"),
     "session_ttl_settings": ("fortios", "session_ttl_settings"),
-    "address6_templates": ("fortios", "address6_templates"),
     "ip_pool_groups": ("fortios", "ip_pool_groups"),
     "global_protect_portals": ("panos", "global_protect_portals"),
     "global_protect_gateways": ("panos", "global_protect_gateways"),
@@ -308,6 +295,15 @@ _TRANSITIONAL_ROOTS = {
     "pan_botnet_report_settings": ("panos", "pan_botnet_report_settings"),
     "pan_custom_reports": ("panos", "pan_custom_reports"),
 }
+
+_REMOVED_FORTIOS_EXTENSION_FIELDS = frozenset({
+    "local_in_policies",
+    "proxy_policies",
+    "shaping_policies",
+    "dhcp6_servers",
+    "source_only_rules",
+    "address6_templates",
+})
 
 _CHECKPOINT_SHARED_ROOTS = {
     "user_ldap_servers", "user_radius_servers", "user_tacacs_servers",
@@ -332,6 +328,10 @@ def normalize_transitional_v2_payload(payload: dict[str, Any]) -> dict[str, Any]
     """Move old authoritative roots into typed extension containers once."""
     migrated = dict(payload)
     extensions = dict(migrated.get("vendor_extensions") or {})
+    fortios_payload = dict(extensions.get("fortios") or {})
+    for field in _REMOVED_FORTIOS_EXTENSION_FIELDS:
+        fortios_payload.pop(field, None)
+    extensions["fortios"] = fortios_payload
     metadata = migrated.get("metadata")
     source_vendor = (
         str(metadata.get("source_vendor", "")).casefold()
@@ -340,6 +340,9 @@ def normalize_transitional_v2_payload(payload: dict[str, Any]) -> dict[str, Any]
     )
     for root, (vendor, field) in _TRANSITIONAL_ROOTS.items():
         if root in migrated:
+            if vendor == "fortios" and field in _REMOVED_FORTIOS_EXTENSION_FIELDS:
+                migrated.pop(root, None)
+                continue
             if root in _CHECKPOINT_SHARED_ROOTS and source_vendor in {
                 "checkpoint", "check_point", "check-point",
             }:

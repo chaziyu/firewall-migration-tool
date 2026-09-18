@@ -12,11 +12,8 @@ from fwmigrate.parsers.fortigate.model import (
     FGConfig,
     FGInterface,
     FGInterfaceSecondaryIP,
-    FGFCTEMS,
     FGService,
     FGPolicy,
-    FGMulticastPolicy,
-    FGSystemGlobal,
     FGSSLVPNPortal,
     FGSSLVPNSettings,
     FGPolicyRoute,
@@ -222,26 +219,6 @@ from fwmigrate.ir.service import (
     IRSchedule,
     IRTrafficShaper,
     IRProxyAddress,
-    IRWebProxySettings,
-    IRInternetService,
-    IRInternetServiceDefinition,
-    IRInternetServiceDefinitionEntry,
-    IRInternetServiceDefinitionPortRange,
-    IRInternetServiceAddition,
-    IRInternetServiceAdditionEntry,
-    IRInternetServiceAdditionPortRange,
-    IRInternetServiceAppend,
-    IRInternetServiceCustom,
-    IRInternetServiceCustomEntry,
-    IRInternetServiceCustomGroup,
-    IRInternetServiceCustomPortRange,
-    IRInternetServiceExtension,
-    IRInternetServiceExtensionDisableEntry,
-    IRInternetServiceExtensionEntry,
-    IRInternetServiceExtensionIPv4Range,
-    IRInternetServiceExtensionIPv6Range,
-    IRInternetServiceExtensionPortRange,
-    IRInternetServiceGroup,
     IRScheduleGroup,
 )
 from fwmigrate.ir.policy import (
@@ -253,9 +230,6 @@ from fwmigrate.ir.policy import (
     IRSessionTTLOverride,
     IRSessionTTLSettings,
     IRFortiGateSourceRule,
-    IRIPSSensor,
-    IRIPSSensorEntry,
-    IRIPSSensorExemptIP,
 )
 from fwmigrate.ir.nat import (
     IRIPPool,
@@ -333,10 +307,6 @@ from fwmigrate.ir.security_profiles import (
 from fwmigrate.ir.provenance import (
     IRSourceConfigCommand,
     IRSourceConfigNode,
-)
-from fwmigrate.parsers.fortigate.session_helper_defaults import (
-    classify_session_helper,
-    protocol_number_to_name,
 )
 from fwmigrate.parsers.fortigate.net_utils import (
     normalize_ipv4_network,
@@ -627,18 +597,9 @@ def _is_policy_based_ngfw(transformer: Any, policy: Any) -> bool:
 
 
 def _structured_policy_source(transformer: Any, policy: Any) -> Optional[Any]:
-    source_id = str(getattr(policy, "id", ""))
-    source_context = getattr(policy, "source_context", "root")
-    return next(
-        (
-            source_object
-            for source_object in getattr(transformer.fg, "structured_source_objects", []) or []
-            if getattr(source_object, "source_path", None) == "firewall policy"
-            and getattr(source_object, "source_context", "root") == source_context
-            and str(getattr(source_object, "source_id", "") or "") == source_id
-        ),
-        None,
-    )
+    # Raw source trees stay parser-local diagnostics. Supported policy models
+    # already retain explicit fields and nested source nodes.
+    return None
 
 
 def _policy_based_source_attributes(transformer: Any, policy: Any) -> Dict[str, Any]:
@@ -660,9 +621,6 @@ def _policy_based_source_attributes(transformer: Any, policy: Any) -> Dict[str, 
     extra_settings = dict(getattr(policy, "extra_settings", {}) or {})
     if extra_settings:
         attributes["extra_settings"] = extra_settings
-    source_object = _structured_policy_source(transformer, policy)
-    if source_object is not None:
-        attributes["source_tree"] = source_object.root.model_dump()
     return attributes
 
 
@@ -671,12 +629,9 @@ def _policy_based_source_rule(
     policy: Any,
     source_order: int,
 ) -> IRFortiGateSourceRule:
-    source_object = _structured_policy_source(transformer, policy)
     explicit_keys = {
-        str(getattr(command, "key", "") or "").strip().lower()
-        for command in getattr(getattr(source_object, "root", None), "commands", []) or []
-        if str(getattr(command, "operation", "") or "").strip().lower()
-        in {"set", "unset"}
+        str(key).strip().lower()
+        for key in getattr(policy, "source_explicit_fields", set()) or set()
     }
     review_reasons = [_POLICY_BASED_NGFW_REVIEW]
     if "action" in explicit_keys:
@@ -892,11 +847,7 @@ class FGToIRTransformer:
 
         self.ir = IRConfig(
             metadata=IRMetadata(
-                hostname=(
-                    fg_config.system_global.hostname
-                    if fg_config.system_global
-                    else None
-                ),
+                hostname=None,
                 source_vendor="fortigate",
                 source_version=source_version,
             )
@@ -1122,31 +1073,19 @@ class FGToIRTransformer:
         self._transform_interfaces_and_zones()
 
         # Operational / traffic-behaviour settings.
-        self._transform_dhcp_servers()
-
         self._transform_addresses()
         self._propagate_address_group_review()
         self._mark_address_group_family_collisions()
         self._transform_services()
 
         # ALG / session behaviour.
-        self._transform_session_helpers()
-        self._transform_session_ttl_overrides()
-        self._transform_session_ttl_settings()
-
         self._transform_schedules()
         self._transform_schedule_groups()
-        self._transform_traffic_shapers()
-        self._transform_proxy_settings()
-        self._transform_ips_sensors()
         self._transform_profile_groups()
         self._transform_certificates()
-        self._transform_ssh_keys()
         self._transform_identity()
         self._transform_user_authentication_settings()
         self._transform_user_quarantine()
-        self._transform_administrator_inventory()
-        self._transform_authentication_inventory()
         self._transform_policies()
         self._transform_policy_routes()
         self._transform_source_only_rule_families()
@@ -1164,34 +1103,11 @@ class FGToIRTransformer:
         self._transform_routes()
         self._transform_sdwan()
 
-        self._transform_internet_services()
-        self._transform_internet_service_definitions()
-        self._transform_internet_service_additions()
-        self._transform_internet_service_appends()
-        self._transform_custom_internet_services()
-        self._transform_custom_internet_service_groups()
-        self._transform_internet_service_extensions()
-        self._transform_internet_service_groups()
-        self._transform_ztna_providers()
         self._transform_ssl_vpn()
         self._transform_dos_policies()
-        self._transform_firewall_sniffers()
         return self.ir
 
     def _transform_system_settings(self) -> None:
-        if self.fg.system_global:
-            typed_settings = isinstance(self.fg.system_global, FGSystemGlobal)
-            self.ir.system_settings = IRSystemSettings(
-                hostname=self.fg.system_global.hostname,
-                timezone=(self.fg.system_global.timezone if typed_settings else None),
-                admin_https_port=(
-                    self.fg.system_global.admin_sport if typed_settings else None
-                ),
-                source_attributes=(
-                    dict(self.fg.system_global.extra_settings) if typed_settings else {}
-                ),
-            )
-
         if self.fg.dns:
             dns_source_attributes = dict(self.fg.dns.extra_settings)
             for field in (
@@ -1349,13 +1265,7 @@ class FGToIRTransformer:
         )
         central_nat = getattr(execution_context, "central_nat", None)
         if central_nat is None and context_name == "root":
-            central_nat = getattr(self.fg.system_global, "central_nat", None)
-            if central_nat is None:
-                central_nat = getattr(
-                    self.fg.system_global,
-                    "extra_settings",
-                    {},
-                ).get("central_nat")
+            central_nat = None
 
         central_nat = self._effective_central_nat(central_nat)
         if central_nat == "enable":
@@ -1377,80 +1287,6 @@ class FGToIRTransformer:
 
     def _central_nat_enabled(self, source_context: Optional[str]) -> bool:
         return self._get_nat_authority_for_context(source_context) == "central"
-
-    def _transform_ips_sensors(self) -> None:
-        """Preserve FortiGate IPS sensors as source-only inventory."""
-        for sensor in self.fg.ips_sensors:
-            entries = []
-
-            for entry in sensor.entries:
-                source_attributes = dict(entry.extra_settings)
-                if entry.status == "enable":
-                    enabled = True
-                elif entry.status == "disable":
-                    enabled = False
-                else:
-                    enabled = None
-                    if entry.status is not None:
-                        source_attributes["status"] = entry.status
-
-                entries.append(
-                    IRIPSSensorEntry(
-                        source_id=entry.id,
-                        source_signature_ids=list(entry.rules),
-                        severities=list(entry.severity),
-                        location=entry.location,
-                        protocols=list(entry.protocol),
-                        enabled=enabled,
-                        action=entry.action,
-                        rate_count=entry.rate_count,
-                        rate_duration=entry.rate_duration,
-                        quarantine=entry.quarantine,
-                        quarantine_expiry=entry.quarantine_expiry,
-                        application=list(entry.application),
-                        cve=list(entry.cve),
-                        default_action=entry.default_action,
-                        default_status=entry.default_status,
-                        log=entry.log,
-                        log_packet=entry.log_packet,
-                        log_attack_context=entry.log_attack_context,
-                        os=list(entry.os),
-                        rate_mode=entry.rate_mode,
-                        rate_track=entry.rate_track,
-                        vuln_type=list(entry.vuln_type),
-                        quarantine_log=entry.quarantine_log,
-                        exempt_ips=[IRIPSSensorExemptIP(**exempt.model_dump()) for exempt in entry.exempt_ips],
-                        source_attributes=source_attributes,
-                    )
-                )
-
-            source_attributes = dict(sensor.extra_settings)
-            if sensor.block_malicious_url == "enable":
-                block_malicious_url = True
-            elif sensor.block_malicious_url == "disable":
-                block_malicious_url = False
-            else:
-                block_malicious_url = None
-                if sensor.block_malicious_url is not None:
-                    source_attributes["block_malicious_url"] = (
-                        sensor.block_malicious_url
-                    )
-
-            self.ir.ips_sensors.append(
-                IRIPSSensor(
-                    name=sensor.name,
-                    source_context=sensor.source_context,
-                    description=sensor.comment,
-                    block_malicious_url=block_malicious_url,
-                    scan_botnet_connections=sensor.scan_botnet_connections,
-                    extended_log=sensor.extended_log,
-                    replacemsg_group=sensor.replacemsg_group,
-                    entries=entries,
-                    migration_status="EXTRACT_ONLY",
-                    requires_manual_review=True,
-                    source_attributes=source_attributes,
-                )
-            )
 
     def _transform_profile_groups(self) -> None:
         for group in self.fg.profile_groups:
@@ -1729,366 +1565,9 @@ class FGToIRTransformer:
                 reasons.append(f"DHCP {field} has unknown value '{value}'.")
         return reasons
 
-    def _transform_dhcp_servers(self) -> None:
-        """
-        Preserve FortiGate DHCP server configuration.
-
-        DHCP configuration is migration-relevant but target-platform
-        implementation varies. It is therefore retained as
-        extraction-only inventory requiring manual review.
-        """
-
-        for server in self.fg.dhcp_servers:
-            ip_ranges = []
-            for item in server.ip_ranges:
-                ip_ranges.append(IRDHCPIPRange(
-                    source_id=item.id,
-                    source_context=item.source_context,
-                    start_ip=item.start_ip,
-                    end_ip=item.end_ip,
-                    lease_time_seconds=item.lease_time,
-                    uci_match=item.uci_match,
-                    uci_strings=list(item.uci_string),
-                    vci_match=item.vci_match,
-                    vci_strings=list(item.vci_string),
-                    source_explicit_fields=sorted(item.source_explicit_fields),
-                    review_reasons=self._validate_dhcp_range(item, "IP range"),
-                    source_attributes=dict(item.extra_settings),
-                ))
-
-            exclude_ranges = []
-            for item in server.exclude_ranges:
-                exclude_ranges.append(IRDHCPExcludeRange(
-                    source_id=item.id,
-                    source_context=item.source_context,
-                    start_ip=item.start_ip,
-                    end_ip=item.end_ip,
-                    lease_time_seconds=item.lease_time,
-                    uci_match=item.uci_match,
-                    uci_strings=list(item.uci_string),
-                    vci_match=item.vci_match,
-                    vci_strings=list(item.vci_string),
-                    source_explicit_fields=sorted(item.source_explicit_fields),
-                    review_reasons=self._validate_dhcp_range(item, "exclude range"),
-                    source_attributes=dict(item.extra_settings),
-                ))
-
-            reservations = [
-                IRDHCPReservation(
-                    source_id=item.id,
-                    source_context=item.source_context,
-                    action=item.action,
-                    reservation_type=item.type,
-                    ip_address=item.ip,
-                    mac_address=item.mac,
-                    circuit_id=item.circuit_id,
-                    circuit_id_type=item.circuit_id_type,
-                    remote_id=item.remote_id,
-                    remote_id_type=item.remote_id_type,
-                    description=item.description,
-                    source_explicit_fields=sorted(item.source_explicit_fields),
-                    review_reasons=self._validate_dhcp_reservation(item),
-                    source_attributes=dict(item.extra_settings),
-                )
-                for item in server.reserved_addresses
-            ]
-
-            options = []
-            for item in server.options:
-                ips = list(item.ips)
-                if not ips and item.ip is not None:
-                    ips = [item.ip]
-                options.append(IRDHCPOption(
-                    source_id=item.id,
-                    source_context=item.source_context,
-                    code=item.code,
-                    option_type=item.type,
-                    value=item.value,
-                    ip=item.ip,
-                    ips=ips,
-                    uci_match=item.uci_match,
-                    uci_strings=list(item.uci_string),
-                    vci_match=item.vci_match,
-                    vci_strings=list(item.vci_string),
-                    source_explicit_fields=sorted(item.source_explicit_fields),
-                    review_reasons=self._validate_dhcp_option(item),
-                    source_attributes=dict(item.extra_settings),
-                ))
-
-            review_reasons = self._validate_dhcp_server(server)
-            dns_servers = [getattr(server, field) for field in (
-                "dns_server1", "dns_server2", "dns_server3", "dns_server4"
-            ) if getattr(server, field) is not None]
-            ntp_servers = [getattr(server, field) for field in (
-                "ntp_server1", "ntp_server2", "ntp_server3"
-            ) if getattr(server, field) is not None]
-            wifi_ac_servers = [getattr(server, field) for field in (
-                "wifi_ac1", "wifi_ac2", "wifi_ac3"
-            ) if getattr(server, field) is not None]
-            wins_servers = [getattr(server, field) for field in (
-                "wins_server1", "wins_server2"
-            ) if getattr(server, field) is not None]
-
-            self.ir.dhcp_servers.append(
-                IRDHCPServer(
-                    source_id=server.id,
-                    enabled=(
-                        server.status != "disable"
-                    ),
-                    interface=server.interface,
-                    default_gateway=server.default_gateway,
-                    netmask=server.netmask,
-                    lease_time_seconds=server.lease_time,
-                    auto_configuration=server.auto_configuration,
-                    auto_managed_status=server.auto_managed_status,
-                    conflicted_ip_timeout=server.conflicted_ip_timeout,
-                    ddns_auth=server.ddns_auth,
-                    has_ddns_key=server.has_ddns_key,
-                    ddns_key_format=server.ddns_key_format,
-                    ddns_key_name=server.ddns_keyname,
-                    ddns_server_ip=server.ddns_server_ip,
-                    ddns_ttl=server.ddns_ttl,
-                    ddns_update=server.ddns_update,
-                    ddns_update_override=server.ddns_update_override,
-                    ddns_zone=server.ddns_zone,
-                    dhcp_settings_from_fortiipam=server.dhcp_settings_from_fortiipam,
-                    domain=server.domain,
-                    filename=server.filename,
-                    forticlient_on_net_status=server.forticlient_on_net_status,
-                    ip_mode=server.ip_mode,
-                    ipsec_lease_hold=server.ipsec_lease_hold,
-                    mac_acl_default_action=server.mac_acl_default_action,
-                    next_server=server.next_server,
-                    ntp_servers=ntp_servers,
-                    ntp_service=server.ntp_service,
-                    relay_agent=server.relay_agent,
-                    server_type=server.server_type,
-                    shared_subnet=server.shared_subnet,
-                    tftp_servers=list(server.tftp_server),
-                    timezone=server.timezone,
-                    vci_match=server.vci_match,
-                    vci_strings=list(server.vci_string),
-                    wifi_ac_service=server.wifi_ac_service,
-                    wifi_ac_servers=wifi_ac_servers,
-                    wins_servers=wins_servers,
-                    dns_service=server.dns_service,
-                    dns_servers=dns_servers,
-                    timezone_option=server.timezone_option,
-                    ip_ranges=ip_ranges,
-                    exclude_ranges=exclude_ranges,
-                    reservations=reservations,
-                    options=options,
-                    migration_status="EXTRACT_ONLY",
-                    requires_manual_review=True,
-                    source_context=server.source_context,
-                    source_explicit_fields=sorted(server.source_explicit_fields),
-                    review_reasons=review_reasons,
-                    source_attributes=dict(
-                        server.extra_settings
-                    ),
-                )
-            )
-
-    # ------------------------------------------------------------------
-    # Session helpers / session TTL
-    # ------------------------------------------------------------------
-
-    def _transform_session_helpers(self) -> None:
-        """
-        Preserve FortiGate session-helper / ALG configuration.
-
-        Session helpers affect traffic processing. They are not normal
-        firewall service objects and must remain extraction-only data.
-        """
-
-        for helper in self.fg.session_helpers:
-            classification = classify_session_helper(
-                source_id=helper.id,
-                name=helper.name,
-                protocol=helper.protocol,
-                port=helper.port,
-            )
-
-            self._fortios.session_helpers.append(
-                IRSessionHelper(
-                    source_id=helper.id,
-                    name=(
-                        helper.name
-                        or f"session-helper-{helper.id}"
-                    ),
-                    protocol_number=helper.protocol,
-                    protocol_name=(
-                        protocol_number_to_name(
-                            helper.protocol
-                        )
-                    ),
-                    port=helper.port,
-                    classification=classification,
-                    migration_status="EXTRACT_ONLY",
-                    requires_manual_review=(
-                        classification != "DEFAULT"
-                    ),
-                    source_attributes=dict(
-                        helper.extra_settings
-                    ),
-                )
-            )
-
-    def _transform_session_ttl_overrides(
-        self,
-    ) -> None:
-        """
-        Preserve explicit FortiGate session timeout overrides.
-
-        Session lifetime behaviour is target-platform dependent and
-        therefore requires migration review.
-        """
-
-        for override in self.fg.session_ttl_overrides:
-            self._fortios.session_ttl_overrides.append(
-                IRSessionTTLOverride(
-                    source_id=override.id,
-                    protocol_number=override.protocol,
-                    protocol_name=(
-                        protocol_number_to_name(
-                            override.protocol
-                        )
-                    ),
-                    start_port=override.start_port,
-                    end_port=override.end_port,
-                    timeout_seconds=override.timeout,
-                    timeout_never=override.timeout_never,
-                    refresh_direction=override.refresh_direction,
-                    migration_status="EXTRACT_ONLY",
-                    requires_manual_review=True,
-                    source_attributes=dict(
-                        override.extra_settings
-                    ),
-                )
-            )
-
-    def _transform_session_ttl_settings(self) -> None:
-        settings = self.fg.session_ttl_settings
-        if settings is None:
-            return
-            self._fortios.session_ttl_settings = IRSessionTTLSettings(
-            default_timeout_seconds=settings.default_timeout,
-            default_never=settings.default_never,
-            source_attributes=dict(settings.extra_settings),
-        )
-
     # ------------------------------------------------------------------
     # Internet services / ZTNA
     # ------------------------------------------------------------------
-
-    def _transform_internet_services(
-        self,
-    ) -> None:
-        for internet_service in self.fg.internet_services:
-            self._fortios.internet_services.append(
-                IRInternetService(
-                    name=internet_service.name,
-                    source_id=internet_service.id,
-                    city_id=internet_service.city_id,
-                    country_id=internet_service.country_id,
-                    region_id=internet_service.region_id,
-                    service_type=internet_service.service_type,
-                    source_attributes=dict(
-                        internet_service.extra_settings
-                    ),
-                )
-            )
-
-    @staticmethod
-    def _has_meaningful_fctems_configuration(
-        item: FGFCTEMS,
-    ) -> bool:
-        """
-        Return True only when an FCTEMS entry contains meaningful data.
-
-        FortiGate configurations may contain empty placeholders such as:
-
-            edit 2
-            next
-
-        Such entries should not become ZTNA provider records.
-        """
-
-        return any(
-            [
-                item.name,
-                item.status == "enable",
-                item.fortinetone_cloud_authentication,
-                item.serial_number,
-                item.tenant_id,
-                item.capabilities,
-                item.verifying_ca,
-                item.verified_cn,
-                item.extra_settings,
-            ]
-        )
-
-    def _transform_ztna_providers(
-        self,
-    ) -> None:
-        """
-        Preserve FortiClient EMS integrations as ZTNA /
-        endpoint-posture dependencies.
-
-        Provider configuration is retained for migration review but is
-        not automatically converted into target-vendor configuration.
-        """
-
-        for connector in self.fg.fctems_connectors:
-            if not self._has_meaningful_fctems_configuration(
-                connector
-            ):
-                continue
-
-            self.ir.ztna_providers.append(
-                IRZTNAProvider(
-                    name=(
-                        connector.name
-                        or f"FCTEMS_{connector.id}"
-                    ),
-                    provider_type=(
-                        "endpoint-posture-provider"
-                    ),
-                    enabled=(
-                        connector.status == "enable"
-                    ),
-                    source_vendor="fortigate",
-                    source_id=str(connector.id),
-                    source_serial=connector.serial_number,
-                    source_tenant_id=connector.tenant_id,
-                    source_cloud_authentication=(
-                        connector.fortinetone_cloud_authentication
-                        == "enable"
-                        if connector.fortinetone_cloud_authentication
-                        is not None
-                        else None
-                    ),
-                    verifying_ca=connector.verifying_ca,
-                    verified_cn=connector.verified_cn,
-                    capabilities=list(
-                        connector.capabilities
-                    ),
-                    source_attributes=dict(
-                        connector.extra_settings
-                    ),
-                    migration_status="EXTRACT_ONLY",
-                    requires_manual_review=True,
-                    migration_instruction=(
-                        "Source endpoint-posture/ZTNA provider "
-                        "detected. Firewall policies reference "
-                        "ZTNA EMS tags. Review the target platform's "
-                        "endpoint posture/ZTNA architecture and "
-                        "recreate equivalent access-control intent. "
-                        "The FortiClient EMS connector itself is "
-                        "not automatically migrated."
-                    ),
-                )
-            )
 
     def _transform_sdwan(self) -> None:
         for fg_sdwan in self.fg.sdwans:
@@ -2834,30 +2313,6 @@ class FGToIRTransformer:
             )
 
     def _transform_ssl_vpn(self) -> None:
-        self._fortios.ssl_vpn_host_checks.extend(
-            IRSSLVPNHostCheck(
-                name=check.name,
-                check_type=check.type,
-                source_type=check.type,
-                os_type=check.os_type,
-                guid=check.guid,
-                version=check.version,
-                check_items=[
-                    IRSSLVPNHostCheckItem(
-                        source_id=item.id,
-                        action=item.action,
-                        md5s=list(item.md5s),
-                        target=item.target,
-                        check_type=item.type,
-                        version=item.version,
-                        source_attributes=dict(item.extra_settings),
-                    )
-                    for item in check.check_items
-                ],
-                source_attributes=dict(check.extra_settings),
-            )
-            for check in self.fg.ssl_vpn_host_check_software
-        )
         self._fortios.ssl_vpn_portals.extend(
             IRSSLVPNPortal(
                 name=portal.name,
@@ -2868,9 +2323,6 @@ class FGToIRTransformer:
                 split_tunneling=portal.split_tunneling,
                 limit_user_logins=portal.limit_user_logins,
                 forticlient_download=portal.forticlient_download,
-                host_check=portal.host_check,
-                host_check_policies=list(portal.host_check_policy),
-                host_check_interval=portal.host_check_interval,
                 allow_user_access=list(portal.allow_user_access),
                 auto_connect=portal.auto_connect,
                 exclusive_routing=portal.exclusive_routing,
@@ -2886,22 +2338,9 @@ class FGToIRTransformer:
                     portal.ipv6_split_tunneling_routing_address
                 ),
                 source_fields=portal.model_dump(
-                    exclude={"host_checks", "bookmark_groups", "landing_pages", "mac_address_check_rules", "os_check_list", "split_dns", "extra_settings"},
+                    exclude={"landing_pages", "mac_address_check_rules", "os_check_list", "split_dns", "extra_settings"},
                     exclude_none=True,
                 ),
-                bookmark_groups=[
-                    IRSSLVPNPortalBookmarkGroup(
-                        name=group.name,
-                        bookmarks=[
-                            IRSSLVPNPortalBookmark(
-                                name=bookmark.name,
-                                has_logon_password=bookmark.has_logon_password,
-                                has_sso_password=bookmark.has_sso_password,
-                                form_data=[IRSSLVPNPortalBookmarkFormData(**item.model_dump()) for item in bookmark.form_data],
-                            ) for bookmark in group.bookmarks
-                        ],
-                    ) for group in portal.bookmark_groups
-                ],
                 landing_pages=[
                     IRSSLVPNPortalLandingPage(
                         name=page.name,
@@ -2919,22 +2358,12 @@ class FGToIRTransformer:
                         "name", "tunnel_mode", "ipv6_tunnel_mode", "ip_pools", "ipv6_pools",
                         "split_tunneling", "limit_user_logins", "forticlient_download", "host_check",
                         "host_check_policies", "host_check_interval", "allow_user_access", "auto_connect",
-                        "exclusive_routing", "ip_mode", "service_restriction", "host_checks",
+                        "exclusive_routing", "ip_mode", "service_restriction",
                         "split_tunneling_routing_negate", "split_tunneling_routing_address",
-                        "bookmark_groups", "landing_pages", "mac_address_check_rules", "os_check_list",
+                        "landing_pages", "mac_address_check_rules", "os_check_list",
                         "split_dns", "source_fields", "extra_settings",
                     }
                 },
-                host_checks=[
-                    IRSSLVPNHostCheck(
-                        name=check.name,
-                        source_type=check.type,
-                        guid=check.guid,
-                        version=check.version,
-                        source_attributes=dict(check.extra_settings),
-                    )
-                    for check in portal.host_checks
-                ],
                 source_attributes=dict(portal.extra_settings),
             )
             for portal in self.fg.ssl_vpn_portals
@@ -3012,7 +2441,6 @@ class FGToIRTransformer:
         self._validate_ssl_vpn_references()
 
     def _validate_ssl_vpn_references(self) -> None:
-        host_check_names = {item.name for item in self._fortios.ssl_vpn_host_checks}
         portal_names = {item.name for item in self._fortios.ssl_vpn_portals}
         group_names = {item.name for item in self._fortios.user_groups}
         ipv4_address_names = {
@@ -3051,19 +2479,6 @@ class FGToIRTransformer:
             )
 
         for portal in self._fortios.ssl_vpn_portals:
-            missing_checks = [
-                name for name in portal.host_check_policies
-                if name not in host_check_names
-            ]
-            portal.unresolved_host_check_policies = missing_checks
-            if missing_checks:
-                add_audit(
-                    f"ssl-vpn-portal:{portal.name}:host-check-policy",
-                    f"SSL VPN portal '{portal.name}' references missing "
-                    f"host-check software object(s): {', '.join(missing_checks)}. "
-                    "Source references were preserved and require manual review.",
-                )
-
             for label, references, known in (
                 (
                     "IPv4 pool", portal.ip_pools,
@@ -3168,267 +2583,6 @@ class FGToIRTransformer:
             "source_attributes": dict(item.extra_settings),
         }
 
-    def _transform_internet_service_additions(self) -> None:
-        for item in self.fg.internet_service_additions:
-            self._fortios.internet_service_additions.append(IRInternetServiceAddition(
-                source_id=item.id,
-                comment=item.comment,
-                entries=[IRInternetServiceAdditionEntry(
-                    source_id=entry.id,
-                    addr_mode=entry.addr_mode,
-                    protocol=entry.protocol,
-                    port_ranges=[IRInternetServiceAdditionPortRange(
-                        source_id=port.id,
-                        start_port=port.start_port,
-                        end_port=port.end_port,
-                        source_attributes=dict(port.extra_settings),
-                    ) for port in entry.port_ranges],
-                    source_attributes=dict(entry.extra_settings),
-                ) for entry in item.entries],
-                **self._review_metadata(item),
-            ))
-
-    def _transform_internet_service_appends(self) -> None:
-        for item in self.fg.internet_service_appends:
-            self._fortios.internet_service_appends.append(IRInternetServiceAppend(
-                addr_mode=item.addr_mode,
-                append_port=item.append_port,
-                match_port=item.match_port,
-                **self._review_metadata(item),
-            ))
-
-    def _transform_custom_internet_services(self) -> None:
-        for item in self.fg.custom_internet_services:
-            self._fortios.custom_internet_services.append(IRInternetServiceCustom(
-                name=item.name,
-                comment=item.comment,
-                reputation=item.reputation,
-                entries=[IRInternetServiceCustomEntry(
-                    source_id=entry.id,
-                    addr_mode=entry.addr_mode,
-                    destination_ipv4=list(entry.dst),
-                    destination_ipv6=list(entry.dst6),
-                    protocol=entry.protocol,
-                    port_ranges=[IRInternetServiceCustomPortRange(
-                        source_id=port.id,
-                        start_port=port.start_port,
-                        end_port=port.end_port,
-                        source_attributes=dict(port.extra_settings),
-                    ) for port in entry.port_ranges],
-                    source_attributes=dict(entry.extra_settings),
-                ) for entry in item.entries],
-                **self._review_metadata(item),
-            ))
-
-    def _transform_custom_internet_service_groups(self) -> None:
-        for item in self.fg.custom_internet_service_groups:
-            self._fortios.custom_internet_service_groups.append(IRInternetServiceCustomGroup(
-                name=item.name,
-                comment=item.comment,
-                members=list(item.members),
-                **self._review_metadata(item),
-            ))
-
-    def _transform_internet_service_extensions(self) -> None:
-        for item in self.fg.internet_service_extensions:
-            disable_entries = [IRInternetServiceExtensionDisableEntry(
-                source_id=entry.id,
-                addr_mode=entry.addr_mode,
-                ipv4_ranges=[IRInternetServiceExtensionIPv4Range(
-                    source_id=range_item.id,
-                    start_ip=range_item.start_ip,
-                    end_ip=range_item.end_ip,
-                    source_attributes=dict(range_item.extra_settings),
-                ) for range_item in entry.ip_range],
-                ipv6_ranges=[IRInternetServiceExtensionIPv6Range(
-                    source_id=range_item.id,
-                    start_ip6=range_item.start_ip6,
-                    end_ip6=range_item.end_ip6,
-                    source_attributes=dict(range_item.extra_settings),
-                ) for range_item in entry.ip6_range],
-                protocol=entry.protocol,
-                port_ranges=[IRInternetServiceExtensionPortRange(
-                    source_id=port.id,
-                    start_port=port.start_port,
-                    end_port=port.end_port,
-                    source_attributes=dict(port.extra_settings),
-                ) for port in entry.port_ranges],
-                source_attributes=dict(entry.extra_settings),
-            ) for entry in item.disable_entries]
-            entries = [IRInternetServiceExtensionEntry(
-                source_id=entry.id,
-                addr_mode=entry.addr_mode,
-                destination_ipv4=list(entry.dst),
-                destination_ipv6=list(entry.dst6),
-                protocol=entry.protocol,
-                port_ranges=[IRInternetServiceExtensionPortRange(
-                    source_id=port.id,
-                    start_port=port.start_port,
-                    end_port=port.end_port,
-                    source_attributes=dict(port.extra_settings),
-                ) for port in entry.port_ranges],
-                source_attributes=dict(entry.extra_settings),
-            ) for entry in item.entries]
-            self._fortios.internet_service_extensions.append(IRInternetServiceExtension(
-                source_id=item.id,
-                comment=item.comment,
-                disable_entries=disable_entries,
-                entries=entries,
-                **self._review_metadata(item),
-            ))
-
-    def _transform_internet_service_groups(self) -> None:
-        for item in self.fg.internet_service_groups:
-            self._fortios.internet_service_groups.append(IRInternetServiceGroup(
-                name=item.name,
-                comment=item.comment,
-                direction=item.direction,
-                members=list(item.members),
-                **self._review_metadata(item),
-            ))
-
-    def _transform_internet_service_definitions(self) -> None:
-        for definition in self.fg.internet_service_definitions:
-            self._fortios.internet_service_definitions.append(
-                IRInternetServiceDefinition(
-                    source_id=definition.id,
-                    entries=[
-                        IRInternetServiceDefinitionEntry(
-                            source_sequence=entry.seq_num,
-                            category_id=entry.category_id,
-                            name=entry.name,
-                            protocol_number=entry.protocol,
-                            port_ranges=[
-                                IRInternetServiceDefinitionPortRange(
-                                    source_id=port_range.id,
-                                    start_port=port_range.start_port,
-                                    end_port=port_range.end_port,
-                                    source_attributes=dict(port_range.extra_settings),
-                                )
-                                for port_range in entry.port_ranges
-                            ],
-                            source_attributes=dict(entry.extra_settings),
-                        )
-                        for entry in definition.entries
-                    ],
-                    source_attributes=dict(definition.extra_settings),
-                )
-            )
-
-    def _transform_administrator_inventory(self) -> None:
-        self._fortios.administrators.extend(
-            IRAdministrator(
-                name=item.name,
-                access_profile=item.accprofile,
-                vdoms=list(item.vdom),
-                trusthost1=item.trusthost1,
-                trusthost2=item.trusthost2,
-                trusted_hosts_ipv4=[
-                    value for value in (
-                        item.trusthost1, item.trusthost2, item.trusthost3,
-                        item.trusthost4, item.trusthost5, item.trusthost6,
-                        item.trusthost7, item.trusthost8, item.trusthost9,
-                        item.trusthost10,
-                    ) if value is not None
-                ],
-                trusted_hosts_ipv6=[
-                    value for value in (
-                        item.ip6_trusthost1, item.ip6_trusthost2,
-                        item.ip6_trusthost3, item.ip6_trusthost4,
-                        item.ip6_trusthost5, item.ip6_trusthost6,
-                        item.ip6_trusthost7, item.ip6_trusthost8,
-                        item.ip6_trusthost9, item.ip6_trusthost10,
-                    ) if value is not None
-                ],
-                two_factor=item.two_factor,
-                token_reference=item.fortitoken,
-                email_to=item.email_to,
-                remote_auth=item.remote_auth,
-                remote_group=item.remote_group,
-                guest_user_groups=list(item.guest_usergroups),
-                schedule=item.schedule,
-                peer_auth=item.peer_auth,
-                peer_group=item.peer_group,
-                ssh_certificate=item.ssh_certificate,
-                ssh_public_keys=[
-                    value for value in (
-                        item.ssh_public_key1, item.ssh_public_key2,
-                        item.ssh_public_key3,
-                    ) if value is not None
-                ],
-                credential_configured=item.credential_configured,
-                source_attributes={
-                    **dict(item.extra_settings),
-                    **{
-                        key: value
-                        for key, value in {
-                            "accprofile_override": item.accprofile_override,
-                            "vdom_override": item.vdom_override,
-                            "two_factor_authentication": item.two_factor_authentication,
-                            "two_factor_notification": item.two_factor_notification,
-                            "guest_auth": item.guest_auth,
-                            "guest_lang": item.guest_lang,
-                            "wildcard": item.wildcard,
-                        }.items()
-                        if value is not None
-                    },
-                },
-            )
-            for item in self.fg.administrators
-        )
-        self._fortios.admin_profiles.extend(
-            IRAdminProfile(
-                name=item.name,
-                permission_blocks=[
-                    IRAdminProfilePermissionBlock(
-                        name=block.name,
-                        settings=dict(block.settings),
-                        source_attributes=dict(block.extra_settings),
-                    )
-                    for block in item.permission_blocks
-                ],
-                source_attributes=dict(item.extra_settings),
-            )
-            for item in self.fg.admin_profiles
-        )
-        self._fortios.fortitokens.extend(
-            IRFortiToken(
-                serial=item.serial,
-                status=item.status,
-                assigned_user=item.assigned_user,
-                description=item.comments,
-                source_attributes=dict(item.extra_settings),
-            )
-            for item in self.fg.fortitokens
-        )
-        token_names = {item.serial for item in self._fortios.fortitokens}
-        custom_profiles = {item.name for item in self._fortios.admin_profiles}
-        built_in_profiles = {"super_admin", "super_admin_readonly"}
-        for admin in self._fortios.administrators:
-            if admin.token_reference is not None:
-                admin.fortitoken_resolved = admin.token_reference in token_names
-                if not admin.fortitoken_resolved:
-                    admin.unresolved_references.append(admin.token_reference)
-                    self._add_identity_audit(
-                        f"identity:administrator:{admin.name}:fortitoken",
-                        f"Administrator '{admin.name}' references missing FortiToken "
-                        f"'{admin.token_reference}'. The source reference was preserved "
-                        "and requires manual review.",
-                    )
-            if admin.access_profile is not None:
-                admin.access_profile_resolved = (
-                    admin.access_profile in custom_profiles
-                    or admin.access_profile in built_in_profiles
-                )
-                if not admin.access_profile_resolved:
-                    admin.unresolved_references.append(admin.access_profile)
-                    self._add_identity_audit(
-                        f"identity:administrator:{admin.name}:access-profile",
-                        f"Administrator '{admin.name}' references unresolved access "
-                        f"profile '{admin.access_profile}'. The source reference was "
-                        "preserved and requires manual review.",
-                    )
-
     def _transform_dos_policies(self) -> None:
         self._fortios.dos_policies.extend(
             IRDoSPolicy(
@@ -3461,130 +2615,6 @@ class FGToIRTransformer:
             )
             for policy in self.fg.dos_policies
         )
-
-    def _transform_firewall_sniffers(self) -> None:
-        self._fortios.firewall_sniffers.extend(
-            IRFirewallSniffer(
-                source_id=item.id,
-                source_uuid=item.uuid,
-                logtraffic=item.logtraffic,
-                ipv6=item.ipv6,
-                non_ip=item.non_ip,
-                application_list_status=item.application_list_status,
-                application_list=item.application_list,
-                ips_sensor_status=item.ips_sensor_status,
-                ips_sensor=item.ips_sensor,
-                av_profile_status=item.av_profile_status,
-                av_profile=item.av_profile,
-                webfilter_profile_status=item.webfilter_profile_status,
-                webfilter_profile=item.webfilter_profile,
-                source_attributes=dict(item.extra_settings),
-            )
-            for item in self.fg.firewall_sniffers
-        )
-
-    def _transform_authentication_inventory(self) -> None:
-        self._fortios.authentication_profiles.extend(
-            IRAuthenticationScheme(
-                name=item.name,
-                method=item.method[0] if item.method else None,
-                user_database=item.user_database[0] if item.user_database else None,
-                source_attributes={
-                    **dict(item.extra_settings),
-                    **{
-                        field: getattr(item, field)
-                        for field in AUTHENTICATION_SOURCE_ONLY_FIELDS
-                        if getattr(item, field, None) is not None
-                    },
-                },
-            )
-            for item in self.fg.authentication_schemes
-        )
-        self._fortios.authentication_policies.extend(
-            IRAuthenticationRule(
-                name=item.name,
-                source_interfaces=list(item.srcintf),
-                source_addresses=list(item.srcaddr),
-                active_auth_method=item.active_auth_method,
-                source_attributes={
-                    **dict(item.extra_settings),
-                    **({"protocol": item.protocol[0]} if item.protocol else {}),
-                    **({"srcaddr6": list(item.srcaddr6)} if item.srcaddr6 else {}),
-                    **({"dstaddr": list(item.dstaddr)} if item.dstaddr else {}),
-                    **({"dstaddr6": list(item.dstaddr6)} if item.dstaddr6 else {}),
-                },
-            )
-            for item in self.fg.authentication_rules
-        )
-        provider_types = (
-            ("ldap-server", {item.name for item in self._fortios.user_ldap_servers}),
-            ("saml-server", {item.name for item in self._fortios.user_saml_servers}),
-            ("fsso-provider", {item.name for item in self._fortios.fsso_providers}),
-        )
-        provider_names = set().union(*(names for _, names in provider_types))
-        for source, scheme in zip(
-            self.fg.authentication_schemes,
-            self._fortios.authentication_profiles,
-        ):
-            references = list(source.user_database)
-            if not references and scheme.user_database:
-                references = [scheme.user_database]
-            if not references:
-                continue
-            expanded_references: List[str] = []
-            for raw_reference in references:
-                if raw_reference not in provider_names and "," in raw_reference:
-                    expanded_references.extend(
-                        item.strip()
-                        for item in raw_reference.split(",")
-                        if item.strip()
-                    )
-                else:
-                    expanded_references.append(raw_reference)
-            for reference in expanded_references:
-                dependency_type = "unknown"
-                resolved = reference.casefold() == "local"
-                if resolved:
-                    dependency_type = "local"
-                else:
-                    for candidate_type, names in provider_types:
-                        if reference in names:
-                            dependency_type = candidate_type
-                            resolved = True
-                            break
-                scheme.user_database_dependencies.append(IRIdentityDependency(
-                    reference=reference,
-                    dependency_type=dependency_type,
-                    resolved=resolved,
-                    target_name=reference if resolved else None,
-                    source_context=f"authentication scheme {scheme.name}",
-                ))
-                (scheme.resolved_user_databases if resolved else scheme.unresolved_user_databases).append(reference)
-            if scheme.unresolved_user_databases:
-                self._add_identity_audit(
-                    f"identity:authentication-scheme:{scheme.name}:user-database",
-                    f"Authentication scheme '{scheme.name}' contains unresolved user "
-                    f"database reference(s): {', '.join(scheme.unresolved_user_databases)}. "
-                    "Source values were preserved and require manual review.",
-                )
-
-        scheme_names = {item.name for item in self._fortios.authentication_profiles}
-        for rule in self._fortios.authentication_policies:
-            if rule.active_auth_method is None:
-                continue
-            rule.active_auth_method_resolved = rule.active_auth_method in scheme_names
-            if not rule.active_auth_method_resolved:
-                rule.unresolved_auth_methods = [rule.active_auth_method]
-                self._add_identity_audit(
-                    f"identity:authentication-rule:{rule.name}:scheme",
-                    f"Authentication rule '{rule.name}' references missing authentication "
-                    f"scheme '{rule.active_auth_method}'. Source reference was preserved "
-                    "and requires manual review.",
-                )
-
-    # ------------------------------------------------------------------
-    # Interfaces / zones
-    # ------------------------------------------------------------------
 
     def _get_zone_for_intf(
         self,
@@ -5935,14 +4965,6 @@ class FGToIRTransformer:
         self._apply_node_ip_only_and_obj_id()
         self._apply_address_metadata()
 
-        self._fortios.address6_templates.extend(
-            _canonical_address6_template(template)
-            for template in self.fg.address6_templates
-        )
-        template_keys = {
-            (template.source_context, template.name)
-            for template in self.fg.address6_templates
-        }
         source_by_key = {
             (address.source_context, address.name): address
             for address in self.fg.addresses
@@ -5955,25 +4977,6 @@ class FGToIRTransformer:
             if defaults:
                 set_object_extension_value(
                     address, IRFortiOSAddressExtension, "source_effective_defaults", defaults
-                )
-            template_name = _address_setting(source, "template")
-            if not template_name:
-                continue
-            resolved = (source.source_context, template_name) in template_keys
-            set_object_extension_value(address, IRFortiOSAddressExtension, "source_template", template_name)
-            set_object_extension_value(
-                address, IRFortiOSAddressExtension, "source_template_reference_resolved", resolved
-            )
-            address.source_attributes["template_reference_resolved"] = resolved
-            if not resolved:
-                address.requires_manual_review = True
-                address.migration_status = "PARTIALLY_NORMALIZED"
-                reason = (
-                    f"FortiGate IPv6 template reference {template_name!r} "
-                    "was not found in the same source context."
-                )
-                address.audit_note = "; ".join(
-                    part for part in (address.audit_note, reason) if part
                 )
 
     @staticmethod
@@ -7140,33 +6143,6 @@ class FGToIRTransformer:
     def _transform_services(
         self,
     ) -> None:
-        for category in self.fg.service_categories:
-            cat_review_reasons = []
-            if not category.name or len(category.name) > 63:
-                cat_review_reasons.append("Service category name is missing or exceeds 63 characters.")
-            if category.comment is not None and len(category.comment) > 255:
-                cat_review_reasons.append("Service category comment exceeds 255 characters.")
-            if category.fabric_object is not None and category.fabric_object not in {"enable", "disable"}:
-                cat_review_reasons.append(f"Invalid fabric-object setting '{category.fabric_object}'.")
-            if category.extra_settings:
-                cat_review_reasons.append(f"Unknown source settings: {', '.join(sorted(category.extra_settings))}")
-
-            is_normalized = not bool(cat_review_reasons)
-            self.ir.service_categories.append(
-                IRServiceCategory(
-                    name=category.name,
-                    source_context=category.source_context,
-                    description=category.comment,
-                    source_fabric_object=category.fabric_object,
-                    source_attributes=dict(
-                        category.extra_settings
-                    ),
-                    migration_status="NORMALIZED" if is_normalized else "PARTIALLY_NORMALIZED",
-                    requires_manual_review=not is_normalized,
-                    review_reasons=cat_review_reasons,
-                )
-            )
-
         for service in self.fg.services:
             (
                 effective_protocol,
@@ -7576,67 +6552,6 @@ class FGToIRTransformer:
                 )
             )
 
-    def _transform_ssh_keys(self) -> None:
-        """Preserve public SSH key/CA metadata without credential contents."""
-        for key in self.fg.ssh_keys:
-            self.ir.ssh_keys.append(
-                IRSSHKey(
-                    name=key.name,
-                    key_type=key.key_type,
-                    public_key=key.public_key,
-                    source_origin=key.source,
-                    has_private_key=key.has_private_key,
-                    has_password=key.has_password,
-                    source_attributes=dict(key.extra_settings),
-                )
-            )
-
-    def _transform_traffic_shapers(self) -> None:
-        for shaper in self.fg.traffic_shapers:
-            source_attributes = dict(shaper.extra_settings)
-            per_policy = None
-            if shaper.per_policy == "enable":
-                per_policy = True
-            elif shaper.per_policy == "disable":
-                per_policy = False
-            elif shaper.per_policy is not None:
-                source_attributes["per_policy"] = shaper.per_policy
-
-            self._fortios.traffic_shapers.append(
-                IRTrafficShaper(
-                    name=shaper.name,
-                    source_context=shaper.source_context,
-                    guaranteed_bandwidth=shaper.guaranteed_bandwidth,
-                    maximum_bandwidth=shaper.maximum_bandwidth,
-                    source_bandwidth_unit=shaper.bandwidth_unit,
-                    priority=shaper.priority,
-                    per_policy=per_policy,
-                    source_attributes=source_attributes,
-                )
-            )
-
-    def _transform_proxy_settings(self) -> None:
-        for proxy in self.fg.proxy_addresses:
-            self._fortios.proxy_addresses.append(
-                IRProxyAddress(
-                    name=proxy.name,
-                    source_context=proxy.source_context,
-                    source_uuid=proxy.uuid,
-                    proxy_address_type=proxy.type,
-                    host=proxy.host,
-                    host_regex=proxy.host_regex,
-                    path=proxy.path,
-                    query=proxy.query,
-                    source_attributes=dict(proxy.extra_settings),
-                )
-            )
-
-        if self.fg.web_proxy_global is not None:
-            self.ir.web_proxies.append(IRWebProxySettings(
-                proxy_fqdn=self.fg.web_proxy_global.proxy_fqdn,
-                source_attributes=dict(self.fg.web_proxy_global.extra_settings),
-            ))
-
     # ------------------------------------------------------------------
     # Policies
     # ------------------------------------------------------------------
@@ -7969,18 +6884,6 @@ class FGToIRTransformer:
             (item.source_context, item.name)
             for item in self.fg.schedule_groups
         }
-        custom_is_keys = {
-            (getattr(item, "source_context", "root"), item.name)
-            for item in self.fg.custom_internet_services
-            if item.name
-        }
-        custom_is_group_keys = {
-            (getattr(item, "source_context", "root"), item.name)
-            for item in self.fg.custom_internet_service_groups
-            if item.name
-        }
-
-
         # Execution mode.
         if policy.source_context in policy_based_contexts:
             review_reasons.append(
@@ -8200,27 +7103,6 @@ class FGToIRTransformer:
                 "FortiGate Internet Service match semantics are retained and not merged with ordinary address/service matching"
             )
 
-        for reference in (
-            *policy.internet_service_custom,
-            *policy.internet_service_src_custom,
-            *policy.internet_service6_custom,
-            *policy.internet_service6_src_custom,
-        ):
-            if (policy.source_context, reference) not in custom_is_keys:
-                review_reasons.append(
-                    f"unresolved custom Internet Service reference '{reference}' in VDOM '{policy.source_context}'"
-                )
-        for reference in (
-            *policy.internet_service_custom_group,
-            *policy.internet_service_src_custom_group,
-            *policy.internet_service6_custom_group,
-            *policy.internet_service6_src_custom_group,
-        ):
-            if (policy.source_context, reference) not in custom_is_group_keys:
-                review_reasons.append(
-                    f"unresolved custom Internet Service group reference '{reference}' in VDOM '{policy.source_context}'"
-                )
-
         if (
             policy.schedule is not None
             and policy.schedule != "always"
@@ -8376,16 +7258,26 @@ class FGToIRTransformer:
             if not name:
                 continue
             source_references[field] = name
+            if source_path == "ips sensor":
+                statuses[field] = "external"
+                continue
+            collection_by_path = {
+                "antivirus profile": "antivirus_profiles",
+                "webfilter profile": "webfilter_profiles",
+                "dnsfilter profile": "dnsfilter_profiles",
+                "application list": "application_lists",
+                "application custom": "application_lists",
+                "firewall ssl-ssh-profile": "ssl_ssh_profiles",
+            }
+            collection = collection_by_path.get(source_path)
             contexts = (
                 {
-                    item.source_context for item in self.fg.ips_sensors
+                    item.source_context
+                    for item in getattr(self.fg, collection, []) or []
                     if item.name == name
                 }
-                if source_path == "ips sensor" else
-                {
-                    item.source_context for item in self.fg.structured_source_objects
-                    if item.source_path == source_path and item.name == name
-                }
+                if collection
+                else set()
             )
             if policy.source_context in contexts:
                 statuses[field] = "resolved"
@@ -8836,7 +7728,7 @@ class FGToIRTransformer:
             self.ir.policies.append(
                 ir_policy
             )
-        self._fortios.source_only_rules.extend(pre_match_rules)
+        self._fortios.security_policies.extend(pre_match_rules)
 
     # ------------------------------------------------------------------
     # IP pools
@@ -8876,7 +7768,7 @@ class FGToIRTransformer:
     @staticmethod
     def _source_rule_effective_action(rule) -> Optional[str]:
         """Resolve only verified FortiOS source-only action semantics."""
-        explicit_action = rule.settings.get("action")
+        explicit_action = getattr(rule, "action", None)
         if explicit_action is not None:
             allowed_actions = SOURCE_ONLY_ALLOWED_ACTIONS.get(rule.family)
             if (
@@ -8894,7 +7786,16 @@ class FGToIRTransformer:
         review_reason: str,
         additional_review_reasons: Optional[List[str]] = None,
     ) -> IRFortiGateSourceRule:
-        source_attributes = dict(rule.settings)
+        structural_fields = {
+            "family", "id", "name", "source_order", "status", "source_context",
+            "nested_configs", "source_explicit_fields", "extra_settings",
+        }
+        source_attributes = {
+            key: value
+            for key, value in rule.model_dump().items()
+            if key not in structural_fields and value not in (None, [], {})
+        }
+        source_attributes.update(rule.extra_settings)
         if rule.nested_configs:
             source_attributes["nested_configs"] = [
                 node.model_dump() for node in rule.nested_configs
@@ -8914,38 +7815,6 @@ class FGToIRTransformer:
             source_attributes=source_attributes,
             review_reasons=review_reasons,
         )
-
-    @staticmethod
-    def _local_in_semantic_review_reasons(rule) -> List[str]:
-        if rule.family == "local-in-policy-ipv4":
-            internet_service_field = "internet_service_src"
-            label = "Internet Service"
-            source_field = "srcaddr"
-            negate_field = "srcaddr_negate"
-        elif rule.family == "local-in-policy-ipv6":
-            internet_service_field = "internet_service6_src"
-            label = "IPv6 Internet Service"
-            source_field = "srcaddr"
-            negate_field = "srcaddr_negate"
-        else:
-            return []
-
-        if rule.settings.get(internet_service_field) != "enable":
-            return []
-
-        reasons = []
-        if rule.settings.get(source_field):
-            reasons.append(
-                f"FortiOS {label} source matching is enabled; configured "
-                f"{source_field} values are preserved as source evidence but "
-                "are not effective ordinary source match criteria."
-            )
-        if negate_field in rule.settings:
-            reasons.append(
-                f"FortiOS {label} source matching leaves configured "
-                f"{negate_field} inactive with the ordinary source address selector."
-            )
-        return reasons
 
     @staticmethod
     def _policy_route_review_reasons(route: FGPolicyRoute) -> List[str]:
@@ -9083,28 +7952,6 @@ class FGToIRTransformer:
                 rule,
                 review_reasons[0],
                 review_reasons,
-            ))
-        for rule in self.fg.local_in_policies:
-            self.ir.vendor_extensions.fortios.local_in_policies.append(self._source_rule_to_ir(
-                rule,
-                "FortiGate local-in policy protects control-plane traffic",
-                self._local_in_semantic_review_reasons(rule),
-            ))
-        for rule in self.fg.proxy_policies:
-            self.ir.vendor_extensions.fortios.proxy_policies.append(self._source_rule_to_ir(
-                rule, "FortiGate explicit proxy policy is not transit firewall policy"
-            ))
-        for rule in self.fg.shaping_policies:
-            self.ir.vendor_extensions.fortios.shaping_policies.append(self._source_rule_to_ir(
-                rule, "FortiGate shaping match semantics are source-specific"
-            ))
-        for rule in self.fg.dhcp6_servers:
-            self.ir.vendor_extensions.fortios.dhcp6_servers.append(self._source_rule_to_ir(
-                rule, "DHCPv6 is retained separately from IPv4 DHCP"
-            ))
-        for rule in self.fg.source_only_rules:
-            self.ir.vendor_extensions.fortios.source_only_rules.append(self._source_rule_to_ir(
-                rule, f"FortiGate {rule.family} semantics are source-only"
             ))
         for rule in self.fg.central_snat_rules:
             attributes = rule.model_dump(exclude={"source_context", "id"})
@@ -9298,11 +8145,7 @@ class FGToIRTransformer:
     def _transform_virtual_ips(
         self,
     ) -> None:
-        monitor_keys = {
-            (rule.source_context, rule.name)
-            for rule in self.fg.source_only_rules
-            if rule.family == "load-balance-monitor" and rule.name
-        }
+        monitor_keys = set()
         def transform_real_server(server) -> IRVirtualIPRealServer:
             review_reasons = []
             if server.type == "address":
@@ -11336,7 +10179,7 @@ class FGToIRTransformer:
                 ))
 
     @staticmethod
-    def _multicast_review_reasons(rule: FGMulticastPolicy, family: str) -> List[str]:
+    def _multicast_review_reasons(rule: Any, family: str) -> List[str]:
         effective = (
             FGToIRTransformer._effective_multicast_ipv4_settings(rule)
             if family == "ipv4"
@@ -11379,7 +10222,7 @@ class FGToIRTransformer:
         return reasons
 
     @staticmethod
-    def _effective_multicast_ipv4_settings(rule: FGMulticastPolicy) -> Dict[str, Any]:
+    def _effective_multicast_ipv4_settings(rule: Any) -> Dict[str, Any]:
         defaults = {
             "action": "accept",
             "status": "enable",
@@ -11388,10 +10231,13 @@ class FGToIRTransformer:
             "end_port": 65535,
             "snat": "disable",
             "snat_ip": "0.0.0.0",
-            "dnat": "0.0.0.0",
-            "logtraffic": "utm",
-            "utm_status": "disable",
-            "auto_asic_offload": "enable",
+            "dnat": None,
+            "comments": None,
+            "ips_sensor": None,
+            "logtraffic": None,
+            "utm_status": None,
+            "traffic_shaper": None,
+            "auto_asic_offload": None,
         }
         return {
             field: (
@@ -11404,7 +10250,7 @@ class FGToIRTransformer:
         }
 
     def _transform_multicast_policies(self) -> None:
-        for family, rules in (("ipv4", self.fg.multicast_policies), ("ipv6", self.fg.multicast_policies6)):
+        for family, rules in (("ipv4", getattr(self.fg, "multicast_policies", [])), ("ipv6", getattr(self.fg, "multicast_policies6", []))):
             for rule in rules:
                 effective = (
                     self._effective_multicast_ipv4_settings(rule)
@@ -11447,7 +10293,7 @@ class FGToIRTransformer:
                 ))
 
     def _transform_multicast_nat(self) -> None:
-        for rule in self.fg.multicast_policies:
+        for rule in getattr(self.fg, "multicast_policies", []):
             family = "ipv4"
             effective = self._effective_multicast_ipv4_settings(rule)
             enabled = effective["status"] == "enable"

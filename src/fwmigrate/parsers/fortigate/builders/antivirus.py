@@ -201,6 +201,7 @@ def _build_antivirus_profiles(
         )
         profile = FGAntivirusProfile746(
             name=node.name,
+            source_context=parser.current_context or "root",
             **phase41._typed_values(
                 profile_settings,
                 FGAntivirusProfile746,

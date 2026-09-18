@@ -37,6 +37,7 @@ XLSX_MIMETYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.she
 _FORMULA_PREFIXES = ("=", "+", "-", "@")
 _ILLEGAL_XML_CHARS = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
 _MAX_CELL_TEXT = 32767
+_REMOVED_SHEETS = frozenset({"Review Required", "Extraction Evidence"})
 
 
 class ExcelExportUnavailableError(RuntimeError):
@@ -117,8 +118,6 @@ class IRExcelExporter:
         "DHCP Servers",
         "DHCP IP Ranges",
         "DHCP Reservations",
-        "Traffic Shapers",
-        "Session Helpers",
         "Session TTL Settings",
         "Session TTL Overrides",
         "SD-WAN",
@@ -165,7 +164,6 @@ class IRExcelExporter:
         "Administrators",
         "Admin Profiles",
         "Admin Profile Permissions",
-        "FortiTokens",
         "ZTNA Providers",
         "Authentication Schemes",
         "Authentication Rules",
@@ -210,28 +208,7 @@ class IRExcelExporter:
         "Interface Source Settings",
         "Interface Nested Configuration",
         "Proxy Addresses",
-        "Web Proxy Settings",
         "SSH Keys",
-        "Internet Services",
-        "Internet Service Definitions",
-        "Internet Service Def Entries",
-        "Internet Service Def Ports",
-        "Custom Internet Services",
-        "Custom IS Entries",
-        "Custom IS Ports",
-        "Custom Internet Service Groups",
-        "Internet Service Groups",
-        "IS Additions",
-        "IS Addition Entries",
-        "IS Addition Ports",
-        "IS Appends",
-        "IS Extensions",
-        "IS Extension Disabled",
-        "IS Extension Entries",
-        "IS Extension Ports",
-        "IPS Sensors",
-        "IPS Sensor Entries",
-        "IPS Exempt IPs",
         "Security Profiles",
         "Security Profile Definitions",
         "Security Profile Rules",
@@ -244,14 +221,7 @@ class IRExcelExporter:
         "IPv6 EH Filter",
     )
 
-    AUDIT_SHEETS = (
-        "Dependency Registry",
-        "Unresolved References",
-        "Warnings",
-        "Unsupported",
-        "Source Inventory",
-        "Extraction Coverage",
-    )
+    AUDIT_SHEETS = ("Dependency Registry", "Extraction Coverage")
 
     SHEET_ORDER = (
         OVERVIEW_SHEETS
@@ -405,18 +375,15 @@ class IRExcelExporter:
         self._build_address_groups(workbook)
         self._build_address_group_tags(workbook)
         self._build_proxy_addresses(workbook)
-        self._build_web_proxy_settings(workbook)
 
         self._build_service_categories(workbook)
         self._build_services(workbook)
         self._build_service_groups(workbook)
-        self._build_session_helpers(workbook)
         self._build_session_ttl_settings(workbook)
         self._build_session_ttl_overrides(workbook)
 
         self._build_schedules(workbook)
         self._build_schedule_groups(workbook)
-        self._build_traffic_shapers(workbook)
         self._build_policies(workbook)
         self._build_firewall_filters(workbook)
         self._build_checkpoint_access_rule_sheet(workbook)
@@ -450,11 +417,6 @@ class IRExcelExporter:
         self._build_routing_dependencies(workbook)
         self._build_sdwan(workbook)
 
-        self._build_internet_services(workbook)
-        self._build_internet_service_definitions(workbook)
-        self._build_internet_service_extract_only(workbook)
-        self._build_ips_sensors(workbook)
-        self._build_ips_sensor_entries(workbook)
 
         self._build_security_profiles(workbook)
         self._build_security_profile_definitions(workbook)
@@ -475,9 +437,6 @@ class IRExcelExporter:
         self._build_pan_phase9_sheets(workbook)
         self._build_pan_sdwan_sheets(workbook)
 
-        self._build_warnings(workbook)
-        self._build_unsupported(workbook)
-        self._build_source_inventory(workbook)
         self._build_extraction_coverage(workbook)
         self._build_unresolved_references(workbook)
 
@@ -855,16 +814,6 @@ class IRExcelExporter:
                 if entry.confidence == MigrationConfidence.UNSUPPORTED
             )
 
-        unresolved_count = sum(
-            1
-            for dependency in (
-                self.extraction.dependencies
-                if self.extraction is not None
-                else []
-            )
-            if dependency.result == "UNRESOLVED"
-        )
-
         if unsupported_count:
             extraction_status = "COMPLETE_WITH_UNSUPPORTED_ITEMS"
         elif self.ir.audit_entries:
@@ -940,14 +889,9 @@ class IRExcelExporter:
                 ),
             ),
             ("Proxy Addresses", len(self.ir.proxy_addresses)),
-            (
-                "Web Proxy Settings",
-                1 if self.ir.web_proxy_settings is not None else 0,
-            ),
             ("Service Categories", len(self.ir.service_categories)),
             ("Services", len(self.ir.services)),
             ("Service Groups", len(self.ir.service_groups)),
-            ("Session Helpers", len(forti_ext.session_helpers)),
             (
                 "Session TTL Settings",
                 1 if forti_ext.session_ttl_settings is not None else 0,
@@ -957,7 +901,6 @@ class IRExcelExporter:
                 len(forti_ext.session_ttl_overrides),
             ),
             ("Schedules", len(self.ir.schedules)),
-            ("Traffic Shapers", len(self._vendor_extension_value("traffic_shapers") or [])),
             ("Policies", len(self.ir.policies)),
             ("Multicast Policies", len(self.ir.multicast_policies)),
             ("ZTNA Providers", len(self.ir.ztna_providers)),
@@ -1019,33 +962,6 @@ class IRExcelExporter:
             ("Firewall Sniffers", len(self._vendor_extension_value("firewall_sniffers") or [])),
             ("Certificates", len(self.ir.certificates)),
             ("Routes", len(self.ir.routes)),
-            ("Internet Services", len(self._vendor_extension_value("internet_services") or [])),
-            ("Internet Service Definitions", len(self._vendor_extension_value("internet_service_definitions") or [])),
-            ("Custom Internet Service Groups", len(self._vendor_extension_value("custom_internet_service_groups") or [])),
-            (
-                "Internet Service Def Entries",
-                sum(len(definition.entries) for definition in self._vendor_extension_value("internet_service_definitions") or []),
-            ),
-            (
-                "Internet Service Def Ports",
-                sum(
-                    len(entry.port_ranges)
-                for definition in self._vendor_extension_value("internet_service_definitions") or []
-                    for entry in definition.entries
-                ),
-            ),
-            ("IPS Sensors", len(self.ir.ips_sensors)),
-            (
-                "IPS Sensor Entries",
-                sum(
-                    len(sensor.entries)
-                    for sensor in self.ir.ips_sensors
-                ),
-            ),
-            (
-                "IPS Exempt IPs",
-                sum(len(entry.exempt_ips) for sensor in self.ir.ips_sensors for entry in sensor.entries),
-            ),
             (
                 "Security Profiles",
                 len(self.ir.security_profile_groups),
@@ -1053,9 +969,6 @@ class IRExcelExporter:
             ("Security Profile Definitions", len(self.ir.security_profile_definitions)),
             ("Security Profile Rules", sum(len(item.rules) for item in self.ir.security_profile_definitions)),
             ("Custom URL Categories", len(self.ir.custom_url_categories)),
-            ("Warnings", len(self.ir.audit_entries)),
-            ("Unsupported Items", unsupported_count),
-            ("Unresolved References", unresolved_count),
         ]
 
         self._summary_section(
@@ -1169,7 +1082,7 @@ class IRExcelExporter:
         row_index = header_row
 
         for sheet_name in self.SHEET_ORDER:
-            if sheet_name == "Summary":
+            if sheet_name == "Summary" or sheet_name in _REMOVED_SHEETS:
                 continue
 
             target_sheet = generated_sheets.get(sheet_name)
@@ -1319,12 +1232,6 @@ class IRExcelExporter:
             "Source Security Profile Setting": (
                 "Detailed source security-profile settings"
             ),
-            "Warnings": (
-                "Extraction and migration review warnings"
-            ),
-            "Unsupported": (
-                "Unsupported source sections/items"
-            ),
             "Extraction Coverage": (
                 "Source-to-parser extraction coverage"
             ),
@@ -1403,6 +1310,10 @@ class IRExcelExporter:
             )
 
         expected = set(self.SHEET_ORDER)
+        for worksheet in list(workbook.worksheets):
+            if worksheet.title in _REMOVED_SHEETS:
+                workbook.remove(worksheet)
+
         actual = {
             worksheet.title
             for worksheet in workbook.worksheets
@@ -1447,9 +1358,6 @@ class IRExcelExporter:
 
         if sheet_name in self.SOURCE_DETAIL_SHEETS:
             return self._MUTED
-
-        if sheet_name == "Unsupported":
-            return self._LIGHT_RED
 
         if sheet_name in self.AUDIT_SHEETS:
             return self._LIGHT_AMBER
@@ -2528,30 +2436,6 @@ class IRExcelExporter:
             ),
         )
 
-    def _build_web_proxy_settings(self, workbook: Any) -> None:
-        settings = self.ir.web_proxy_settings
-        rows = [] if settings is None else [
-            (
-                settings.proxy_fqdn,
-                settings.migration_status,
-                self._optional_bool_literal(settings.requires_manual_review),
-                self._format_settings(settings.source_attributes),
-            )
-        ]
-        self._table_sheet(
-            workbook,
-            "Web Proxy Settings",
-            (
-                "Proxy FQDN",
-                "Extraction Status",
-                "Manual Review",
-                "Additional Settings",
-            ),
-            rows,
-            empty_note="No web-proxy global settings were extracted.",
-            subtitle="FortiGate global web-proxy settings retained as source inventory.",
-        )
-
     def _build_policies(self, workbook: Any) -> None:
         rows = (
             (
@@ -2815,12 +2699,15 @@ class IRExcelExporter:
             ),
             rows,
             empty_note="No configured PAN-OS default security-rule overrides were extracted.",
-            subtitle="Configured PAN-OS default-rule overrides; untouched built-ins remain in Source Inventory.",
+            subtitle="Configured PAN-OS default-rule overrides; untouched built-ins remain in source evidence.",
         )
 
     def _build_local_in_policies(self, workbook: Any) -> None:
         rows = []
-        for item in sorted(self._vendor_extension_value("local_in_policies") or [], key=lambda value: value.source_order):
+        items = getattr(self.ir, "local_in_policies", None)
+        if items is None:
+            items = self._vendor_extension_value("local_in_policies") or []
+        for item in sorted(items, key=lambda value: value.source_order):
             attrs = item.source_attributes
             rows.append((
                 item.source_context,
@@ -4331,45 +4218,6 @@ class IRExcelExporter:
             ),
         )
 
-    def _build_internet_services(self, workbook: Any) -> None:
-        rows = (
-            (
-                item.name,
-                self.ir.metadata.source_vendor,
-                item.source_id,
-                item.city_id,
-                item.country_id,
-                item.region_id,
-                item.service_type,
-                item.description,
-                self._format_settings(item.source_attributes),
-            )
-            for item in self._vendor_extension_value("internet_services") or []
-        )
-
-        self._table_sheet(
-            workbook,
-            "Internet Services",
-            (
-                "Name",
-                "Source Vendor",
-                "Source ID",
-                "City ID",
-                "Country ID",
-                "Region ID",
-                "Type",
-                "Description",
-                "Additional Settings",
-            ),
-            rows,
-            empty_note="No Internet Service objects were extracted from the source configuration.",
-            subtitle=(
-                "Internet Service objects referenced by source firewall policy. "
-                "Source IDs are retained for traceability and must not be assumed "
-                "equivalent to target-vendor identifiers."
-            ),
-        )
-
     def _build_security_profiles(self, workbook: Any) -> None:
         rows = (
             (
@@ -4438,181 +4286,6 @@ class IRExcelExporter:
             "Extraction Status", "Manual Review", "Review Reasons", "Additional Settings",
         ), rows, empty_note="No PAN-OS custom URL categories were extracted.")
 
-    def _build_ips_sensors(self, workbook: Any) -> None:
-        rows = [
-            (
-                sensor.name,
-                sensor.description,
-                sensor.block_malicious_url,
-                sensor.scan_botnet_connections,
-                sensor.extended_log,
-                sensor.replacemsg_group,
-                len(sensor.entries),
-                sensor.migration_status,
-                sensor.requires_manual_review,
-                self._format_settings(sensor.source_attributes),
-            )
-            for sensor in self.ir.ips_sensors
-        ]
-        self._table_sheet(
-            workbook,
-            "IPS Sensors",
-            (
-                "Name",
-                "Description",
-                "Block Malicious URL",
-                "Scan Botnet Connections",
-                "Extended Log",
-                "Replacement Message Group",
-                "Entry Count",
-                "Extraction Status",
-                "Manual Review",
-                "Additional Settings",
-            ),
-            rows,
-            empty_note="No IPS sensors were extracted.",
-            subtitle=(
-                "FortiGate IPS sensor inventory retained as EXTRACT_ONLY; "
-                "source signature IDs are not translated."
-            ),
-        )
-
-    def _build_ips_sensor_entries(self, workbook: Any) -> None:
-        rows = [
-            (
-                sensor.name,
-                entry.source_id,
-                ", ".join(str(value) for value in entry.source_signature_ids),
-                ", ".join(entry.severities),
-                entry.location,
-                ", ".join(entry.protocols),
-                entry.enabled,
-                entry.action,
-                entry.rate_count,
-                entry.rate_duration,
-                entry.quarantine,
-                entry.quarantine_expiry,
-                ", ".join(entry.application),
-                ", ".join(entry.cve),
-                entry.default_action,
-                entry.default_status,
-                entry.log,
-                entry.log_packet,
-                entry.log_attack_context,
-                ", ".join(entry.os),
-                entry.rate_mode,
-                entry.rate_track,
-                ", ".join(str(value) for value in entry.vuln_type),
-                entry.quarantine_log,
-                self._format_settings(entry.source_attributes),
-            )
-            for sensor in self.ir.ips_sensors
-            for entry in sensor.entries
-        ]
-        self._table_sheet(
-            workbook,
-            "IPS Sensor Entries",
-            (
-                "Sensor",
-                "Entry ID",
-                "Signature IDs",
-                "Severities",
-                "Location",
-                "Protocols",
-                "Enabled",
-                "Action",
-                "Rate Count",
-                "Rate Duration",
-                "Quarantine",
-                "Quarantine Expiry",
-                "Applications",
-                "CVEs",
-                "Default Action",
-                "Default Status",
-                "Log",
-                "Log Packet",
-                "Log Attack Context",
-                "OS",
-                "Rate Mode",
-                "Rate Track",
-                "Vulnerability Types",
-                "Quarantine Log",
-                "Additional Settings",
-            ),
-            rows,
-            empty_note="No nested IPS sensor entries were extracted.",
-            subtitle=(
-                "One row per source entry. Signature IDs and filter values "
-                "retain their FortiGate source meaning."
-            ),
-        )
-
-    def _build_warnings(
-        self,
-        workbook: Any,
-    ) -> None:
-        rows = [
-            (
-                item.id,
-                item.category,
-                item.confidence,
-                item.message,
-            )
-            for item in self.ir.audit_entries
-        ]
-
-        sheet = self._table_sheet(
-            workbook,
-            "Warnings",
-            (
-                "ID",
-                "Category",
-                "Confidence",
-                "Message",
-            ),
-            rows,
-            empty_note=(
-                "No audit warnings were reported. "
-                "See Extraction Coverage before assuming extraction is complete."
-            ),
-            subtitle=(
-                "Audit and manual-review entries emitted while "
-                "normalizing the source configuration."
-            ),
-        )
-
-        # Highlight only the confidence/status cell rather than painting the
-        # entire row. This preserves readability for large warning inventories.
-        for row in range(
-            4,
-            sheet.max_row + 1,
-        ):
-            confidence_cell = sheet.cell(
-                row,
-                3,
-            )
-
-            confidence = str(
-                confidence_cell.value or ""
-            ).lower()
-
-            if confidence in {
-                "manual",
-                "unsupported",
-            }:
-                fill = self._LIGHT_RED
-
-            elif confidence == "partial":
-                fill = self._LIGHT_AMBER
-
-            else:
-                continue
-
-            confidence_cell.fill = PatternFill(
-                "solid",
-                fgColor=fill,
-            )
-
     def _build_vip_groups(self, workbook: Any) -> None:
         self._table_sheet(
             workbook,
@@ -4654,18 +4327,6 @@ class IRExcelExporter:
             ),
         )
 
-        self._table_sheet(
-            workbook,
-            "IPS Exempt IPs",
-            ("Sensor", "Entry ID", "Exempt IP ID", "Source IP", "Destination IP"),
-            (
-                (sensor.name, entry.source_id, exempt.id, exempt.src_ip, exempt.dst_ip)
-                for sensor in self.ir.ips_sensors
-                for entry in sensor.entries
-                for exempt in entry.exempt_ips
-            ),
-            empty_note="No nested IPS exempt IPs were extracted.",
-        )
         self._table_sheet(
             workbook,
             "SD-WAN Zones",
@@ -5385,204 +5046,6 @@ class IRExcelExporter:
             ),
         )
 
-    def _build_internet_service_definitions(self, workbook: Any) -> None:
-        definitions = self._vendor_extension_value("internet_service_definitions") or []
-        self._table_sheet(
-            workbook,
-            "Internet Service Definitions",
-            (
-                "Definition ID", "Entry Count", "Migration Status",
-                "Requires Manual Review", "Additional Settings",
-            ),
-            (
-                (
-                    definition.source_id,
-                    len(definition.entries),
-                    definition.migration_status,
-                    definition.requires_manual_review,
-                    self._format_settings(definition.source_attributes),
-                )
-                for definition in definitions
-            ),
-            empty_note="No Internet Service Definitions were extracted from the source configuration.",
-            subtitle="FortiGate Internet Service Definitions are EXTRACT_ONLY and require manual review.",
-        )
-        self._table_sheet(
-            workbook,
-            "Internet Service Def Entries",
-            (
-                "Definition ID", "Sequence #", "Category ID", "Name", "Protocol #",
-                "Protocol Name", "Port Range Count", "Additional Settings",
-            ),
-            (
-                (
-                    definition.source_id,
-                    entry.source_sequence,
-                    entry.category_id,
-                    entry.name,
-                    entry.protocol_number,
-                    self._protocol_name(entry.protocol_number),
-                    len(entry.port_ranges),
-                    self._format_settings(entry.source_attributes),
-                )
-                for definition in definitions
-                for entry in definition.entries
-            ),
-            empty_note="No Internet Service Definition entries were extracted from the source configuration.",
-        )
-        self._table_sheet(
-            workbook,
-            "Internet Service Def Ports",
-            (
-                "Definition ID", "Entry Sequence #", "Range ID", "Start Port",
-                "End Port", "Additional Settings",
-            ),
-            (
-                (
-                    definition.source_id,
-                    entry.source_sequence,
-                    port_range.source_id,
-                    port_range.start_port,
-                    port_range.end_port,
-                    self._format_settings(port_range.source_attributes),
-                )
-                for definition in definitions
-                for entry in definition.entries
-                for port_range in entry.port_ranges
-            ),
-            empty_note="No Internet Service Definition port ranges were extracted from the source configuration.",
-        )
-
-    def _build_internet_service_extract_only(self, workbook: Any) -> None:
-        custom = self._vendor_extension_value("custom_internet_services") or []
-        self._table_sheet(
-            workbook, "Custom Internet Services",
-            ("Name", "Comment", "Reputation", "Entry Count", "Migration Status", "Manual Review", "Additional Settings"),
-            ((item.name, item.comment, item.reputation, len(item.entries), item.migration_status, item.requires_manual_review,
-              self._format_settings(item.source_attributes)) for item in custom),
-            empty_note="No Custom Internet Services were extracted.",
-        )
-        self._table_sheet(
-            workbook, "Custom IS Entries",
-            ("Custom Service", "Entry ID", "Address Mode", "Destination IPv4", "Destination IPv6", "Protocol", "Additional Settings"),
-            ((item.name, entry.source_id, entry.addr_mode, ", ".join(entry.destination_ipv4), ", ".join(entry.destination_ipv6),
-              entry.protocol, self._format_settings(entry.source_attributes))
-             for item in custom for entry in item.entries),
-            empty_note="No Custom Internet Service entries were extracted.",
-        )
-        self._table_sheet(
-            workbook, "Custom IS Ports",
-            ("Custom Service", "Entry ID", "Port Range ID", "Start Port", "End Port"),
-            ((item.name, entry.source_id, port.source_id, port.start_port, port.end_port)
-             for item in custom for entry in item.entries for port in entry.port_ranges),
-            empty_note="No Custom Internet Service port ranges were extracted.",
-        )
-
-        self._build_custom_internet_service_groups(workbook)
-
-        groups = self._vendor_extension_value("internet_service_groups") or []
-        self._table_sheet(
-            workbook, "Internet Service Groups",
-            ("Name", "Direction", "Members", "Comment", "Migration Status", "Manual Review", "Additional Settings"),
-            ((item.name, item.direction, ", ".join(item.members), item.comment, item.migration_status,
-              item.requires_manual_review, self._format_settings(item.source_attributes)) for item in groups),
-            empty_note="No Internet Service groups were extracted.",
-        )
-
-        additions = self._vendor_extension_value("internet_service_additions") or []
-        self._table_sheet(
-            workbook, "IS Additions",
-            ("Internet Service ID", "Comment", "Entry Count", "Migration Status", "Manual Review", "Additional Settings"),
-            ((item.source_id, item.comment, len(item.entries), item.migration_status, item.requires_manual_review,
-              self._format_settings(item.source_attributes)) for item in additions),
-            empty_note="No Internet Service additions were extracted.",
-        )
-        self._table_sheet(
-            workbook, "IS Addition Entries",
-            ("Internet Service ID", "Entry ID", "Address Mode", "Protocol", "Additional Settings"),
-            ((item.source_id, entry.source_id, entry.addr_mode, entry.protocol, self._format_settings(entry.source_attributes))
-             for item in additions for entry in item.entries),
-            empty_note="No Internet Service addition entries were extracted.",
-        )
-        self._table_sheet(
-            workbook, "IS Addition Ports",
-            ("Internet Service ID", "Entry ID", "Port Range ID", "Start Port", "End Port"),
-            ((item.source_id, entry.source_id, port.source_id, port.start_port, port.end_port)
-             for item in additions for entry in item.entries for port in entry.port_ranges),
-            empty_note="No Internet Service addition port ranges were extracted.",
-        )
-
-        self._table_sheet(
-            workbook, "IS Appends",
-            ("Address Mode", "Append Port", "Match Port", "Migration Status", "Manual Review", "Additional Settings"),
-            ((item.addr_mode, item.append_port, item.match_port, item.migration_status,
-              item.requires_manual_review, self._format_settings(item.source_attributes)) for item in self._vendor_extension_value("internet_service_appends") or []),
-            empty_note="No Internet Service appends were extracted.",
-        )
-
-        extensions = self._vendor_extension_value("internet_service_extensions") or []
-        self._table_sheet(
-            workbook, "IS Extensions",
-            ("Internet Service ID", "Comment", "Migration Status", "Manual Review", "Additional Settings"),
-            ((item.source_id, item.comment, item.migration_status, item.requires_manual_review,
-              self._format_settings(item.source_attributes)) for item in extensions),
-            empty_note="No Internet Service extensions were extracted.",
-        )
-        self._table_sheet(
-            workbook, "IS Extension Disabled",
-            ("Internet Service ID", "Disable Entry ID", "Address Mode", "IPv4 Ranges", "IPv6 Ranges", "Protocol", "Additional Settings"),
-            ((item.source_id, entry.source_id, entry.addr_mode, self._format_internet_service_ranges(entry.ipv4_ranges, "start_ip", "end_ip"),
-              self._format_internet_service_ranges(entry.ipv6_ranges, "start_ip6", "end_ip6"), entry.protocol,
-              self._format_settings(entry.source_attributes))
-             for item in extensions for entry in item.disable_entries),
-            empty_note="No disabled Internet Service extension entries were extracted.",
-        )
-        self._table_sheet(
-            workbook, "IS Extension Entries",
-            ("Internet Service ID", "Entry ID", "Address Mode", "Destination IPv4", "Destination IPv6", "Protocol", "Additional Settings"),
-            ((item.source_id, entry.source_id, entry.addr_mode, ", ".join(entry.destination_ipv4),
-              ", ".join(entry.destination_ipv6), entry.protocol, self._format_settings(entry.source_attributes))
-             for item in extensions for entry in item.entries),
-            empty_note="No Internet Service extension entries were extracted.",
-        )
-        from itertools import chain
-
-        extension_port_rows = chain(
-            (
-                (item.source_id, "disable-entry", entry.source_id, port.source_id, port.start_port, port.end_port)
-                for item in extensions
-                for entry in item.disable_entries
-                for port in entry.port_ranges
-            ),
-            (
-                (item.source_id, "entry", entry.source_id, port.source_id, port.start_port, port.end_port)
-                for item in extensions
-                for entry in item.entries
-                for port in entry.port_ranges
-            ),
-        )
-        self._table_sheet(
-            workbook, "IS Extension Ports",
-            ("Internet Service ID", "Parent Type", "Parent Entry ID", "Port Range ID", "Start Port", "End Port"),
-            extension_port_rows,
-            empty_note="No Internet Service extension port ranges were extracted.",
-        )
-
-    def _build_custom_internet_service_groups(self, workbook: Any) -> None:
-        self._table_sheet(
-            workbook,
-            "Custom Internet Service Groups",
-            ("Name", "Comment", "Members", "Status", "Manual Review", "Additional Settings"),
-            ((item.name, item.comment, ", ".join(item.members), item.migration_status,
-              item.requires_manual_review, self._format_settings(item.source_attributes))
-             for item in self._vendor_extension_value("custom_internet_service_groups") or []),
-            empty_note="No Custom Internet Service groups were extracted.",
-        )
-
-    @staticmethod
-    def _protocol_name(protocol_number: int | None) -> str | None:
-        return {1: "ICMP", 6: "TCP", 17: "UDP"}.get(protocol_number)
-
     def _build_administrator_inventory(self, workbook: Any) -> None:
         self._table_sheet(
             workbook,
@@ -5701,23 +5164,6 @@ class IRExcelExporter:
             ),
             empty_note="No admin profile permissions were extracted from the source configuration.",
         )
-        self._table_sheet(
-            workbook,
-            "FortiTokens",
-            (
-                "Serial / Name", "Status", "Assigned User", "Description",
-                "Migration Status", "Manual Review", "Additional Settings",
-            ),
-            (
-                (
-                    item.serial, item.status, item.assigned_user, item.description,
-                    item.migration_status, item.requires_manual_review,
-                    self._format_settings(item.source_attributes),
-                )
-                for item in self._vendor_extension_value("fortitokens") or []
-            ),
-        )
-
     def _build_dos_inventory(self, workbook: Any) -> None:
         self._table_sheet(
             workbook, "DoS Policies",
@@ -5865,136 +5311,6 @@ class IRExcelExporter:
             empty_note="No PAN-OS SD-WAN rules were extracted.",
         )
 
-    def _build_unsupported(self, workbook: Any) -> None:
-        if self.extraction is not None:
-            rows = [
-                (
-                    item.source_path,
-                    item.source_name or "",
-                    "UNSUPPORTED",
-                    item.reason,
-                    item.requires_manual_review,
-                    item.raw_capture or "",
-                )
-                for item in self.extraction.unsupported_items
-            ]
-            sheet = self._table_sheet(
-                workbook,
-                "Unsupported",
-                ("Section", "Item", "Status", "Reason", "Manual Review", "Raw Capture"),
-                rows,
-                empty_note="No unsupported source sections or objects were reported.",
-                subtitle="Unsupported source evidence is shown without secret-bearing raw configuration.",
-            )
-            for row in range(4, sheet.max_row + 1):
-                for column in range(1, 7):
-                    sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
-            return
-
-        rows = [
-            (
-                item.category, item.id, "Unsupported", item.message, True,
-                "Audit entry; raw source intentionally excluded from workbook",
-            )
-            for item in self.ir.audit_entries
-            if item.confidence == MigrationConfidence.UNSUPPORTED
-        ]
-        sheet = self._table_sheet(
-            workbook,
-            "Unsupported",
-            ("Section", "Item", "Status", "Reason", "Manual Review", "Raw Capture"),
-            rows,
-            empty_note="No unsupported items were reported. See Extraction Coverage before assuming extraction is complete.",
-            subtitle="Unsupported audit entries are listed without raw source configuration or secrets.",
-        )
-        for row in range(4, sheet.max_row + 1):
-            for column in range(1, 7):
-                sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
-
-    def _build_source_inventory(self, workbook: Any) -> None:
-        if self.extraction is not None and self.extraction.inventory_items:
-            vendor = getattr(self.ir.metadata, "source_vendor", "unknown") if self.ir else "unknown"
-            def rows():
-                for item in self.extraction.inventory_items:
-                # Attempt to extract scope from PAN-OS source_path if possible
-                    scope_type = "-"
-                    scope_name = "-"
-                    if vendor == "palo_alto" and item.source_path:
-                        # e.g., vsys[@name='vsys1']/zone...
-                        if "[@name='" in item.source_path:
-                            parts = item.source_path.split("/")
-                            if "[@name='" in parts[0]:
-                                st, sn = parts[0].split("[@name='", 1)
-                                scope_type = st
-                                scope_name = sn.replace("']", "")
-
-                    yield (
-                        vendor,
-                        item.domain or "",
-                        scope_type,
-                        scope_name,
-                        item.source_path or "",
-                        item.name or "",
-                        "-", # Setting
-                        "-", # Value
-                        item.status.value if hasattr(item.status, "value") else str(item.status),
-                        item.requires_manual_review,
-                        "; ".join(item.notes) if item.notes else "",
-                    )
-
-            sheet = self._table_sheet(
-                workbook,
-                "Source Inventory",
-                (
-                    "Vendor",
-                    "Domain",
-                    "Scope Type",
-                    "Scope Name",
-                    "Source Path",
-                    "Object Name",
-                    "Setting",
-                    "Value",
-                    "Extraction Status",
-                    "Manual Review",
-                    "Notes",
-                ),
-                rows(),
-                empty_note="No source inventory items were discovered.",
-                subtitle="Comprehensive leaf-level source inventory exported directly from source extraction before optimization.",
-            )
-            for row in range(4, sheet.max_row + 1):
-                status = str(sheet.cell(row, 9).value or "").lower()
-                if "unsupported" in status or "parse_error" in status:
-                    fill = self._LIGHT_RED
-                elif "partial" in status or "extract_only" in status:
-                    fill = self._LIGHT_AMBER
-                else:
-                    continue
-                for column in range(1, 12):
-                    sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
-            return
-
-        self._table_sheet(
-            workbook,
-            "Source Inventory",
-            (
-                "Vendor",
-                "Domain",
-                "Scope Type",
-                "Scope Name",
-                "Source Path",
-                "Object Name",
-                "Setting",
-                "Value",
-                "Extraction Status",
-                "Manual Review",
-                "Notes",
-            ),
-            [],
-            empty_note="No source inventory items were discovered in this IR extraction.",
-            subtitle="Comprehensive leaf-level source inventory exported directly from source extraction before optimization.",
-        )
-
     def _build_extraction_coverage(self, workbook: Any) -> None:
         if self.extraction is not None:
             rows = (
@@ -6078,10 +5394,6 @@ class IRExcelExporter:
             ),
             ("Proxy Addresses", self.ir.proxy_addresses),
             (
-                "Web Proxy Settings",
-                [] if self.ir.web_proxy_settings is None else [self.ir.web_proxy_settings],
-            ),
-            (
                 "Service Categories",
                 self.ir.service_categories,
             ),
@@ -6091,15 +5403,10 @@ class IRExcelExporter:
                 self.ir.service_groups,
             ),
             (
-                "Session Helpers",
-                self._vendor_extension_value("session_helpers") or [],
-            ),
-            (
                 "Session TTL Overrides",
                 self._vendor_extension_value("session_ttl_overrides") or [],
             ),
             ("Schedules", self.ir.schedules),
-            ("Traffic Shapers", self._vendor_extension_value("traffic_shapers") or []),
             ("Policies", self.ir.policies),
             (
                 "ZTNA Providers",
@@ -6144,36 +5451,6 @@ class IRExcelExporter:
             ("SSL TLS Service Profiles", self._vendor_extension_value("ssl_tls_service_profiles") or []),
             ("Routes", self.ir.routes),
             (
-                "Internet Services",
-                self._vendor_extension_value("internet_services") or [],
-            ),
-            ("Internet Service Definitions", self._vendor_extension_value("internet_service_definitions") or []),
-            ("Custom Internet Services", self._vendor_extension_value("custom_internet_services") or []),
-            ("Internet Service Groups", self._vendor_extension_value("internet_service_groups") or []),
-            ("IS Additions", self._vendor_extension_value("internet_service_additions") or []),
-            ("IS Appends", self._vendor_extension_value("internet_service_appends") or []),
-            ("IS Extensions", self._vendor_extension_value("internet_service_extensions") or []),
-            (
-                "Internet Service Def Entries",
-                sum(
-                    len(definition.entries)
-                    for definition in self._vendor_extension_value("internet_service_definitions") or []
-                ),
-            ),
-            (
-                "Internet Service Def Ports",
-                sum(
-                    len(entry.port_ranges)
-                    for definition in self._vendor_extension_value("internet_service_definitions") or []
-                    for entry in definition.entries
-                ),
-            ),
-            ("IPS Sensors", self.ir.ips_sensors),
-            (
-                "IPS Sensor Entries",
-                sum(len(sensor.entries) for sensor in self.ir.ips_sensors),
-            ),
-            (
                 "Security Profiles",
                 self.ir.security_profile_groups,
             ),
@@ -6212,51 +5489,39 @@ class IRExcelExporter:
                 sheet.cell(row, column).fill = PatternFill("solid", fgColor=fill)
 
     def _build_unresolved_references(self, workbook: Any) -> None:
-        """Export all dependencies and an actionable unresolved-only view."""
+        """Export the complete dependency registry without an unresolved-only view."""
         dependencies = list(self.extraction.dependencies) if self.extraction is not None else []
         headers = (
             "Source VDOM", "Source Type", "Source Object", "Field",
             "Reference", "Expected Type", "Result", "Target Path", "Target UID",
             "Target Name", "Semantic Kind", "Normalization Status", "Reason", "Notes",
         )
-
-        def build_sheet(title: str, selected: list[Any]) -> None:
-            rows = [
-                (
-                    dependency.source_context or "root",
-                    dependency.source_path,
-                    dependency.source_object or "",
-                    dependency.source_field,
-                    dependency.reference,
-                    dependency.expected_type,
-                    dependency.result,
-                    dependency.target_path or "",
-                    dependency.target_uid or "",
-                    dependency.target_name or "",
-                    dependency.semantic_kind or "",
-                    dependency.normalization_status or "",
-                    dependency.reason or "",
-                    dependency.notes or "",
-                )
-                for dependency in selected
-            ]
-            sheet = self._table_sheet(
-                workbook,
-                title,
-                headers,
-                rows,
-                empty_note="No FortiGate dependency references were discovered.",
-                subtitle="References are resolved within the source VDOM/context; unresolved entries require manual review.",
+        rows = [
+            (
+                dependency.source_context or "root",
+                dependency.source_path,
+                dependency.source_object or "",
+                dependency.source_field,
+                dependency.reference,
+                dependency.expected_type,
+                dependency.result,
+                dependency.target_path or "",
+                dependency.target_uid or "",
+                dependency.target_name or "",
+                dependency.semantic_kind or "",
+                dependency.normalization_status or "",
+                dependency.reason or "",
+                dependency.notes or "",
             )
-            for row in range(4, sheet.max_row + 1):
-                if str(sheet.cell(row, 7).value or "").upper() == "UNRESOLVED":
-                    for column in range(1, sheet.max_column + 1):
-                        sheet.cell(row, column).fill = PatternFill("solid", fgColor=self._LIGHT_RED)
-
-        build_sheet("Dependency Registry", dependencies)
-        build_sheet(
-            "Unresolved References",
-            [dependency for dependency in dependencies if dependency.result == "UNRESOLVED"],
+            for dependency in dependencies
+        ]
+        self._table_sheet(
+            workbook,
+            "Dependency Registry",
+            headers,
+            rows,
+            empty_note="No FortiGate dependency references were discovered.",
+            subtitle="References are resolved within the source VDOM/context; unresolved entries require manual review.",
         )
 
     def _build_phase7_identity_sheets(self, workbook: Any) -> None:
@@ -6789,13 +6054,6 @@ class IRExcelExporter:
             )
             for route in routes
             if isinstance(route, dict)
-        )
-
-    @staticmethod
-    def _format_internet_service_ranges(ranges: list[Any], start_field: str, end_field: str) -> str:
-        return ", ".join(
-            f"{item.source_id}: {getattr(item, start_field)} - {getattr(item, end_field)}"
-            for item in ranges
         )
 
     @staticmethod

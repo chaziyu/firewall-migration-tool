@@ -15,9 +15,12 @@ from fwmigrate.parsers.fortigate.predefined_services import (
 # table vendor-local prevents FortiGate-only relationships leaking into the
 # generic IR while still making missing references auditable.
 REFERENCE_RULES: Dict[Tuple[str, str], str] = {
-    ("firewall policy", "network-service-dynamic"): "firewall network-service-dynamic",
-    ("firewall network-service-dynamic", "sdn"): "system sdn-connector",
     ("firewall policy", "ips-sensor"): "ips sensor",
+    ("firewall policy", "internet-service-name"): "firewall internet-service-name",
+    ("firewall policy", "internet-service-custom"): "firewall internet-service-custom",
+    ("firewall policy", "internet-service-src-custom"): "firewall internet-service-custom",
+    ("firewall policy", "internet-service6-custom"): "firewall internet-service-custom",
+    ("firewall policy", "internet-service6-src-custom"): "firewall internet-service-custom",
     ("firewall policy", "profile-group"): "firewall profile-group",
     ("firewall policy", "av-profile"): "antivirus profile",
     ("firewall policy", "webfilter-profile"): "webfilter profile",
@@ -25,18 +28,6 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall policy", "application-list"): "application list",
     ("firewall policy", "srcintf"): "system interface",
     ("firewall policy", "dstintf"): "system interface",
-    ("firewall multicast-policy", "srcintf"): "system interface",
-    ("firewall multicast-policy", "dstintf"): "system interface",
-    ("firewall multicast-policy", "srcaddr"): "firewall address",
-    ("firewall multicast-policy", "dstaddr"): "firewall multicast-address",
-    ("firewall multicast-policy", "ips-sensor"): "ips sensor",
-    ("firewall multicast-policy", "traffic-shaper"): "firewall shaper traffic-shaper",
-    ("firewall multicast-policy6", "srcintf"): "system interface",
-    ("firewall multicast-policy6", "dstintf"): "system interface",
-    ("firewall multicast-policy6", "srcaddr"): "firewall address6",
-    ("firewall multicast-policy6", "dstaddr"): "firewall multicast-address6",
-    ("firewall multicast-policy6", "ips-sensor"): "ips sensor",
-    ("system dhcp server", "interface"): "system interface",
     ("vpn ipsec phase1-interface", "interface"): "system interface",
     ("vpn ipsec phase1-interface", "certificate"): "vpn certificate local",
     ("vpn ipsec phase2-interface", "phase1name"): "vpn ipsec phase1-interface",
@@ -63,6 +54,10 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("firewall policy", "internet-service-src-group"): "firewall internet-service-group",
     ("firewall policy", "internet-service6-group"): "firewall internet-service-group",
     ("firewall policy", "internet-service6-src-group"): "firewall internet-service-group",
+    ("firewall policy", "internet-service-custom-group"): "firewall internet-service-custom-group",
+    ("firewall policy", "internet-service-src-custom-group"): "firewall internet-service-custom-group",
+    ("firewall policy", "internet-service6-custom-group"): "firewall internet-service-custom-group",
+    ("firewall policy", "internet-service6-src-custom-group"): "firewall internet-service-custom-group",
     ("firewall security-policy", "internet-service-group"): "firewall internet-service-group",
     ("firewall security-policy", "internet-service-src-group"): "firewall internet-service-group",
     ("firewall security-policy", "internet-service6-group"): "firewall internet-service-group",
@@ -126,31 +121,15 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
     ("router policy", "srcaddr"): "firewall address",
     ("router policy", "dstaddr"): "firewall address",
     ("router policy", "internet-service-custom"): "firewall internet-service-custom",
+    ("router policy", "internet-service-name"): "firewall internet-service-name",
     ("router policy", "internet-service-id"): "FortiGuard Internet Service ID",
     ("router policy6", "input-device"): "system interface",
     ("router policy6", "output-device"): "system interface",
     ("router policy6", "srcaddr"): "firewall address6",
     ("router policy6", "dstaddr"): "firewall address6",
     ("router policy6", "internet-service-custom"): "firewall internet-service-custom",
+    ("router policy6", "internet-service-name"): "firewall internet-service-name",
     ("router policy6", "internet-service-id"): "FortiGuard Internet Service ID",
-    ("firewall local-in-policy", "intf"): "system interface",
-    ("firewall local-in-policy", "srcaddr"): "firewall address",
-    ("firewall local-in-policy", "dstaddr"): "firewall address",
-    ("firewall local-in-policy", "service"): "firewall service custom",
-    ("firewall local-in-policy", "schedule"): "firewall schedule recurring",
-    ("firewall local-in-policy", "internet-service-src-custom"): "firewall internet-service-custom",
-    ("firewall local-in-policy", "internet-service-src-custom-group"): "firewall internet-service-custom-group",
-    ("firewall local-in-policy", "internet-service-src-group"): "firewall internet-service-group",
-    ("firewall local-in-policy", "internet-service-src-name"): "firewall internet-service-name",
-    ("firewall local-in-policy6", "intf"): "system interface",
-    ("firewall local-in-policy6", "srcaddr"): "firewall address6",
-    ("firewall local-in-policy6", "dstaddr"): "firewall address6",
-    ("firewall local-in-policy6", "service"): "firewall service custom",
-    ("firewall local-in-policy6", "schedule"): "firewall schedule recurring",
-    ("firewall local-in-policy6", "internet-service6-src-custom"): "firewall internet-service-custom",
-    ("firewall local-in-policy6", "internet-service6-src-custom-group"): "firewall internet-service-custom-group",
-    ("firewall local-in-policy6", "internet-service6-src-group"): "firewall internet-service-group",
-    ("firewall local-in-policy6", "internet-service6-src-name"): "firewall internet-service-name",
     ("system interface", "member"): "system interface",
     ("firewall internet-service-custom-group", "member"): "firewall internet-service-custom",
     ("firewall profile-group", "ssh-filter-profile"): "ssh-filter profile",
@@ -216,7 +195,6 @@ REFERENCE_RULES: Dict[Tuple[str, str], str] = {
 # match only their exact indexed source sections; numeric ISDB IDs and
 # database-only names use explicit external resolution modes below.
 REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
-    ("system dhcp server", "interface"): {"system interface"},
     ("vpn ipsec phase1-interface", "interface"): {"system interface"},
     ("vpn ipsec phase1-interface", "certificate"): {"vpn certificate local"},
     ("vpn ipsec phase2-interface", "phase1name"): {"vpn ipsec phase1-interface"},
@@ -276,17 +254,6 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "firewall schedule onetime",
         "firewall schedule group",
     },
-    ("firewall multicast-policy", "srcintf"): {"system interface"},
-    ("firewall multicast-policy", "dstintf"): {"system interface"},
-    ("firewall multicast-policy", "srcaddr"): {"firewall address"},
-    ("firewall multicast-policy", "dstaddr"): {"firewall multicast-address"},
-    ("firewall multicast-policy", "ips-sensor"): {"ips sensor"},
-    ("firewall multicast-policy", "traffic-shaper"): {"firewall shaper traffic-shaper"},
-    ("firewall multicast-policy6", "srcintf"): {"system interface"},
-    ("firewall multicast-policy6", "dstintf"): {"system interface"},
-    ("firewall multicast-policy6", "srcaddr"): {"firewall address6"},
-    ("firewall multicast-policy6", "dstaddr"): {"firewall multicast-address6"},
-    ("firewall multicast-policy6", "ips-sensor"): {"ips sensor"},
     ("firewall dos-policy", "interface"): {"system interface"},
     ("firewall dos-policy", "srcaddr"): {"firewall address", "firewall addrgrp"},
     ("firewall dos-policy", "dstaddr"): {"firewall address", "firewall addrgrp"},
@@ -300,14 +267,6 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "system zone",
         "system sdwan zone",
     },
-    ("firewall policy", "internet-service-group"): {"firewall internet-service-group"},
-    ("firewall policy", "internet-service-src-group"): {"firewall internet-service-group"},
-    ("firewall policy", "internet-service6-group"): {"firewall internet-service-group"},
-    ("firewall policy", "internet-service6-src-group"): {"firewall internet-service-group"},
-    ("firewall security-policy", "internet-service-group"): {"firewall internet-service-group"},
-    ("firewall security-policy", "internet-service-src-group"): {"firewall internet-service-group"},
-    ("firewall security-policy", "internet-service6-group"): {"firewall internet-service-group"},
-    ("firewall security-policy", "internet-service6-src-group"): {"firewall internet-service-group"},
     ("firewall security-policy", "srcintf"): {
         "system interface", "system zone", "system sdwan zone",
     },
@@ -335,14 +294,6 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     ("firewall security-policy", "app-group"): {"application group"},
     ("firewall security-policy", "fsso-groups"): {"user adgrp"},
     ("firewall security-policy", "webfilter-profile"): {"webfilter profile"},
-    ("firewall security-policy", "internet-service-custom"): {"firewall internet-service-custom"},
-    ("firewall security-policy", "internet-service-src-custom"): {"firewall internet-service-custom"},
-    ("firewall security-policy", "internet-service-custom-group"): {"firewall internet-service-custom-group"},
-    ("firewall security-policy", "internet-service-src-custom-group"): {"firewall internet-service-custom-group"},
-    ("firewall security-policy", "internet-service6-custom"): {"firewall internet-service-custom"},
-    ("firewall security-policy", "internet-service6-src-custom"): {"firewall internet-service-custom"},
-    ("firewall security-policy", "internet-service6-custom-group"): {"firewall internet-service-custom-group"},
-    ("firewall security-policy", "internet-service6-src-custom-group"): {"firewall internet-service-custom-group"},
     ("firewall policy", "identity-based-route"): {
         "firewall identity-based-route",
     },
@@ -391,9 +342,6 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
         "firewall address",
         "firewall addrgrp",
     },
-    ("router policy", "internet-service-custom"): {
-        "firewall internet-service-custom",
-    },
     ("router policy6", "input-device"): {
         "system interface",
     },
@@ -407,76 +355,6 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     ("router policy6", "dstaddr"): {
         "firewall address6",
         "firewall addrgrp6",
-    },
-    ("router policy6", "internet-service-custom"): {
-        "firewall internet-service-custom",
-    },
-    ("firewall local-in-policy", "intf"): {
-        "system interface",
-    },
-    ("firewall local-in-policy", "srcaddr"): {
-        "firewall address",
-        "firewall addrgrp",
-    },
-    ("firewall local-in-policy", "dstaddr"): {
-        "firewall address",
-        "firewall addrgrp",
-    },
-    ("firewall local-in-policy", "service"): {
-        "firewall service custom",
-        "firewall service group",
-    },
-    ("firewall local-in-policy", "schedule"): {
-        "firewall schedule recurring",
-        "firewall schedule onetime",
-        "firewall schedule group",
-    },
-    ("firewall local-in-policy", "internet-service-src-custom"): {
-        "firewall internet-service-custom",
-    },
-    ("firewall local-in-policy", "internet-service-src-custom-group"): {
-        "firewall internet-service-custom-group",
-    },
-    ("firewall local-in-policy", "internet-service-src-group"): {
-        "firewall internet-service-group",
-    },
-    ("firewall local-in-policy", "internet-service-src-name"): {
-        "firewall internet-service-name",
-    },
-    ("firewall local-in-policy6", "intf"): {
-        "system interface",
-    },
-    ("firewall local-in-policy6", "srcaddr"): {
-        "firewall address6",
-        "firewall addrgrp6",
-    },
-    ("firewall local-in-policy6", "dstaddr"): {
-        "firewall address6",
-        "firewall addrgrp6",
-    },
-    ("firewall local-in-policy6", "service"): {
-        "firewall service custom",
-        "firewall service group",
-    },
-    ("firewall local-in-policy6", "schedule"): {
-        "firewall schedule recurring",
-        "firewall schedule onetime",
-        "firewall schedule group",
-    },
-    ("firewall local-in-policy6", "internet-service6-src-custom"): {
-        "firewall internet-service-custom",
-    },
-    ("firewall local-in-policy6", "internet-service6-src-custom-group"): {
-        "firewall internet-service-custom-group",
-    },
-    ("firewall local-in-policy6", "internet-service6-src-group"): {
-        "firewall internet-service-group",
-    },
-    ("firewall local-in-policy6", "internet-service6-src-name"): {
-        "firewall internet-service-name",
-    },
-    ("firewall internet-service-custom-group", "member"): {
-        "firewall internet-service-custom",
     },
     ("system interface", "member"): {
         "system interface",
@@ -543,8 +421,6 @@ REFERENCE_TARGET_SECTIONS: Dict[Tuple[str, str], set[str]] = {
     ("system sdwan service", "input-zone"): {"system zone"},
     ("system sdwan service", "groups"): {"user group"},
     ("system sdwan service", "users"): {"user local"},
-    ("system sdwan service", "internet-service-custom"): {"firewall internet-service-custom"},
-    ("system sdwan service", "internet-service-custom-group"): {"firewall internet-service-custom-group"},
     ("system sdwan service", "internet-service-name"): {"firewall internet-service-name"},
     ("system sdwan service sla", "edit"): {"system sdwan health-check"},
 }
@@ -559,7 +435,6 @@ REFERENCE_RULES.update({
     ("firewall address", "associated-interface"): "system interface",
     ("firewall address6", "interface"): "system interface",
     ("firewall address6", "associated-interface"): "system interface",
-    ("firewall address6", "template"): "firewall address6-template",
     ("firewall addrgrp", "member"): "firewall address",
     ("firewall addrgrp", "exclude-member"): "firewall address",
     ("firewall addrgrp6", "member"): "firewall address6",
@@ -623,28 +498,9 @@ REFERENCE_RULES.update({
     for field, target in PROFILE_GROUP_REFERENCE_RULES.items()
 })
 REFERENCE_RULES.update({
-    ("authentication scheme", "domain-controller"): "user domain-controller",
-    ("authentication scheme", "fsso-agent-for-ntlm"): "user fsso",
-    ("authentication scheme", "kerberos-keytab"): "user krb-keytab",
-    ("authentication scheme", "saml-server"): "user saml",
-    ("authentication scheme", "ssh-ca"): "vpn certificate ca",
-    ("authentication scheme", "user-database"): "user ldap",
     ("firewall vip", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy", "certificate"): "vpn certificate local",
-    ("firewall access-proxy", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy6", "certificate"): "vpn certificate local",
-    ("firewall access-proxy6", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy-virtual-host", "certificate"): "vpn certificate local",
-    ("firewall access-proxy-virtual-host", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy virtual-host", "certificate"): "vpn certificate local",
-    ("firewall access-proxy virtual-host", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy6 virtual-host", "certificate"): "vpn certificate local",
-    ("firewall access-proxy6 virtual-host", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy realservers", "ssl-certificate"): "vpn certificate local",
-    ("firewall access-proxy6 realservers", "ssl-certificate"): "vpn certificate local",
     ("firewall ssl-ssh-profile", "caname"): "vpn certificate ca",
     ("firewall ssl-ssh-profile", "server-cert"): "vpn certificate local",
-    ("system global", "admin-server-cert"): "vpn certificate local",
     ("user setting", "auth-cert"): "vpn certificate local",
     ("user setting", "auth-ca-cert"): "vpn certificate ca",
     ("user ldap", "ca-cert"): "vpn certificate ca",
@@ -656,37 +512,6 @@ REFERENCE_RULES.update({
     ("vpn ipsec phase1-interface", "certificate"): "vpn certificate local",
     ("vpn ssl settings", "servercert"): "vpn certificate local",
 })
-REFERENCE_RULES.update({
-    ("firewall access-proxy" if suffix == "" else f"firewall access-proxy{suffix}", field): target
-    for suffix in ("", "6")
-    for field, target in {
-        "interface": "system interface",
-        "srcintf": "system interface",
-        "certificate": "vpn certificate local",
-        "ssl-certificate": "vpn certificate local",
-        "auth-method": "authentication scheme",
-        "auth-rule": "authentication rule",
-        "auth-virtual-host": "firewall access-proxy-virtual-host",
-        "service": "firewall service custom",
-        "ssl-vpn-web-portal": "vpn ssl web portal",
-    }.items()
-})
-REFERENCE_RULES.update({
-    ("firewall access-proxy-virtual-host", field): target
-    for field, target in {
-        "access-proxy": "firewall access-proxy",
-        "certificate": "vpn certificate local",
-        "ssl-certificate": "vpn certificate local",
-        "interface": "system interface",
-        "auth-method": "authentication scheme",
-        "auth-portal": "firewall auth-portal",
-    }.items()
-})
-REFERENCE_RULES.update({
-    ("authentication rule", field): "authentication scheme"
-    for field in ("active-auth-method", "auth-method")
-})
-
 REFERENCE_TARGET_SECTIONS.update({
     ("firewall profile-group", field): {target}
     for field, target in PROFILE_GROUP_REFERENCE_RULES.items()
@@ -696,32 +521,11 @@ REFERENCE_TARGET_SECTIONS.update({
     for field, target in PROFILE_GROUP_REFERENCE_RULES.items()
 })
 REFERENCE_TARGET_SECTIONS.update({
-    ("authentication scheme", "domain-controller"): {"user domain-controller"},
-    ("authentication scheme", "fsso-agent-for-ntlm"): {"user fsso", "user fsso-polling"},
-    ("authentication scheme", "kerberos-keytab"): {"user krb-keytab"},
-    ("authentication scheme", "saml-server"): {"user saml"},
-    ("authentication scheme", "ssh-ca"): {"vpn certificate ca"},
-    ("authentication scheme", "user-database"): {"user ldap"},
-})
-REFERENCE_TARGET_SECTIONS.update({
     key: {value}
     for key, value in {
         ("firewall vip", "ssl-certificate"): "vpn certificate local",
-        ("firewall access-proxy", "certificate"): "vpn certificate local",
-        ("firewall access-proxy", "ssl-certificate"): "vpn certificate local",
-        ("firewall access-proxy6", "certificate"): "vpn certificate local",
-        ("firewall access-proxy6", "ssl-certificate"): "vpn certificate local",
-        ("firewall access-proxy-virtual-host", "certificate"): "vpn certificate local",
-        ("firewall access-proxy-virtual-host", "ssl-certificate"): "vpn certificate local",
-        ("firewall access-proxy virtual-host", "certificate"): "vpn certificate local",
-        ("firewall access-proxy virtual-host", "ssl-certificate"): "vpn certificate local",
-        ("firewall access-proxy6 virtual-host", "certificate"): "vpn certificate local",
-        ("firewall access-proxy6 virtual-host", "ssl-certificate"): "vpn certificate local",
-        ("firewall access-proxy realservers", "ssl-certificate"): "vpn certificate local",
-        ("firewall access-proxy6 realservers", "ssl-certificate"): "vpn certificate local",
         ("firewall ssl-ssh-profile", "caname"): "vpn certificate ca",
         ("firewall ssl-ssh-profile", "server-cert"): "vpn certificate local",
-        ("system global", "admin-server-cert"): "vpn certificate local",
         ("user setting", "auth-cert"): "vpn certificate local",
         ("user setting", "auth-ca-cert"): "vpn certificate ca",
         ("user ldap", "ca-cert"): "vpn certificate ca",
@@ -734,40 +538,6 @@ REFERENCE_TARGET_SECTIONS.update({
         ("vpn ssl settings", "servercert"): "vpn certificate local",
     }.items()
 })
-for _suffix in ("", "6"):
-    _access_proxy_path = (
-        "firewall access-proxy"
-        if not _suffix
-        else "firewall access-proxy6"
-    )
-    REFERENCE_TARGET_SECTIONS.update({
-        (_access_proxy_path, "interface"): {"system interface"},
-        (_access_proxy_path, "srcintf"): {"system interface"},
-        (_access_proxy_path, "certificate"): {"vpn certificate local"},
-        (_access_proxy_path, "ssl-certificate"): {"vpn certificate local"},
-        (_access_proxy_path, "auth-method"): {"authentication scheme"},
-        (_access_proxy_path, "auth-rule"): {"authentication rule"},
-        (_access_proxy_path, "auth-virtual-host"): {
-            "firewall access-proxy-virtual-host"
-        },
-        (_access_proxy_path, "service"): {
-            "firewall service custom", "firewall service group"
-        },
-        (_access_proxy_path, "ssl-vpn-web-portal"): {"vpn ssl web portal"},
-    })
-REFERENCE_TARGET_SECTIONS.update({
-    ("firewall access-proxy-virtual-host", "access-proxy"): {
-        "firewall access-proxy", "firewall access-proxy6"
-    },
-    ("firewall access-proxy-virtual-host", "certificate"): {"vpn certificate local"},
-    ("firewall access-proxy-virtual-host", "ssl-certificate"): {"vpn certificate local"},
-    ("firewall access-proxy-virtual-host", "interface"): {"system interface"},
-    ("firewall access-proxy-virtual-host", "auth-method"): {"authentication scheme"},
-    ("firewall access-proxy-virtual-host", "auth-portal"): {"firewall auth-portal"},
-    ("authentication rule", "active-auth-method"): {"authentication scheme"},
-    ("authentication rule", "auth-method"): {"authentication scheme"},
-})
-
 # Phase 46-50 keeps the historical nested profile sections valid as targets.
 for _profile_field, _nested_targets in {
     "ssh-filter-profile": {"ssh-filter profile", "firewall profile-group ssh-filter"},
@@ -784,7 +554,6 @@ for _relationship, _targets in {
     ("firewall address", "associated-interface"): {"system interface"},
     ("firewall address6", "interface"): {"system interface"},
     ("firewall address6", "associated-interface"): {"system interface"},
-    ("firewall address6", "template"): {"firewall address6-template"},
     ("firewall addrgrp", "member"): {"firewall address", "firewall addrgrp"},
     ("firewall addrgrp", "exclude-member"): {"firewall address"},
     ("firewall addrgrp6", "member"): {"firewall address6", "firewall addrgrp6"},
@@ -826,11 +595,38 @@ SDWAN_BUILTIN_REFERENCES = {
 }
 
 REFERENCE_RESOLUTION_MODES: Dict[Tuple[str, str], str] = {
+    ("firewall policy", "ips-sensor"): "external",
+    ("firewall policy", "internet-service-name"): "external",
+    ("firewall policy", "internet-service-custom"): "external",
+    ("firewall policy", "internet-service-src-custom"): "external",
+    ("firewall policy", "internet-service6-custom"): "external",
+    ("firewall policy", "internet-service6-src-custom"): "external",
+    ("firewall policy", "internet-service-group"): "external",
+    ("firewall policy", "internet-service-src-group"): "external",
+    ("firewall policy", "internet-service6-group"): "external",
+    ("firewall policy", "internet-service6-src-group"): "external",
+    ("firewall policy", "internet-service-custom-group"): "external",
+    ("firewall policy", "internet-service-src-custom-group"): "external",
+    ("firewall policy", "internet-service6-custom-group"): "external",
+    ("firewall policy", "internet-service6-src-custom-group"): "external",
+    ("firewall security-policy", "ips-sensor"): "external",
+    ("firewall security-policy", "internet-service-custom"): "external",
+    ("firewall security-policy", "internet-service-src-custom"): "external",
+    ("firewall security-policy", "internet-service6-custom"): "external",
+    ("firewall security-policy", "internet-service6-src-custom"): "external",
+    ("firewall security-policy", "internet-service-custom-group"): "external",
+    ("firewall security-policy", "internet-service-src-custom-group"): "external",
+    ("firewall security-policy", "internet-service6-custom-group"): "external",
+    ("firewall security-policy", "internet-service6-src-custom-group"): "external",
+    ("router policy", "internet-service-custom"): "external",
+    ("router policy", "internet-service-name"): "external",
+    ("router policy6", "internet-service-custom"): "external",
+    ("router policy6", "internet-service-name"): "external",
     ("router policy", "internet-service-id"): "external",
     ("router policy6", "internet-service-id"): "external",
-    ("firewall local-in-policy", "internet-service-src-name"): "local-or-external",
-    ("firewall local-in-policy6", "internet-service6-src-name"): "local-or-external",
-    ("system sdwan service", "internet-service-name"): "local-or-external",
+    ("system sdwan service", "internet-service-name"): "external",
+    ("system sdwan service", "internet-service-custom"): "external",
+    ("system sdwan service", "internet-service-custom-group"): "external",
     ("system sdwan service", "internet-service-app-ctrl"): "external",
     ("system sdwan service", "internet-service-app-ctrl-category"): "external",
     ("system sdwan service", "internet-service-app-ctrl-group"): "external",
@@ -943,16 +739,6 @@ _FIELD_SPECIFIC_BUILTINS = {
     ("firewall security-policy", "dstaddr6"): {"all"},
     ("firewall security-policy", "service"): {"all", "none"},
     ("firewall security-policy", "schedule"): {"always"},
-    ("firewall local-in-policy", "intf"): {"any"},
-    ("firewall local-in-policy", "srcaddr"): {"all"},
-    ("firewall local-in-policy", "dstaddr"): {"all"},
-    ("firewall local-in-policy", "service"): {"all", "none"},
-    ("firewall local-in-policy", "schedule"): {"always"},
-    ("firewall local-in-policy6", "intf"): {"any"},
-    ("firewall local-in-policy6", "srcaddr"): {"all"},
-    ("firewall local-in-policy6", "dstaddr"): {"all"},
-    ("firewall local-in-policy6", "service"): {"all", "none"},
-    ("firewall local-in-policy6", "schedule"): {"always"},
     ("firewall dos-policy", "interface"): {"any"},
     ("firewall dos-policy", "srcaddr"): {"all"},
     ("firewall dos-policy", "dstaddr"): {"all"},
@@ -961,12 +747,6 @@ _FIELD_SPECIFIC_BUILTINS = {
     ("firewall dos-policy6", "srcaddr"): {"all"},
     ("firewall dos-policy6", "dstaddr"): {"all"},
     ("firewall dos-policy6", "service"): {"all", "none"},
-    ("firewall multicast-policy", "srcintf"): {"any"},
-    ("firewall multicast-policy", "dstintf"): {"any"},
-    ("firewall multicast-policy", "srcaddr"): {"all"},
-    ("firewall multicast-policy6", "srcintf"): {"any"},
-    ("firewall multicast-policy6", "dstintf"): {"any"},
-    ("firewall multicast-policy6", "srcaddr"): {"all"},
     ("router policy", "srcaddr"): {"all"},
     ("router policy", "dstaddr"): {"all"},
     ("router policy6", "srcaddr"): {"all"},
@@ -997,8 +777,6 @@ def _is_predefined_service_group_reference(
         return True
     return field == "service" and _norm(source_path) in {
         "firewall policy",
-        "firewall local-in-policy",
-        "firewall local-in-policy6",
         "firewall security-policy",
         "firewall dos-policy",
         "firewall dos-policy6",
@@ -1187,14 +965,6 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                     result = "RESOLVED"
                     note = "FortiOS built-in virtual-wan-link zone."
                     target = None
-                elif (
-                    source_path == "authentication scheme"
-                    and field == "user-database"
-                    and _norm(reference) == "local"
-                ):
-                    result = "RESOLVED"
-                    note = "FortiOS built-in local authentication database."
-                    target = None
                 elif _is_predefined_service_group_reference(
                     source_path, field, reference
                 ):
@@ -1235,12 +1005,6 @@ def build_dependency_registry(items: Iterable[SourceInventoryItem]) -> List[Depe
                         _norm(target.source_path) if target
                         else "fortigate predefined service" if predefined_service
                         else "fortigate predefined service group" if predefined_service_group
-                        else "fortigate built-in local user database"
-                        if (
-                            source_path == "authentication scheme"
-                            and field == "user-database"
-                            and _norm(reference) == "local"
-                        )
                         else None
                     ),
                     notes=note,

@@ -3,6 +3,12 @@ from pathlib import Path
 
 from fwmigrate.parsers.fortigate import extract_fortigate_config
 from fwmigrate.parsers.fortigate.command_evaluator import evaluate_commands
+from fwmigrate.parsers.fortigate.coverage import _count_collection
+from fwmigrate.parsers.fortigate.model import (
+    FGConfig,
+    FGSSLVPNAuthenticationRule,
+    FGSSLVPNSettings,
+)
 from fwmigrate.parsers.fortigate.parser import FortiGateParser
 from fwmigrate.parsers.fortigate.section_registry import (
     get_section_parser_capability,
@@ -11,6 +17,21 @@ from fwmigrate.parsers.fortigate.section_registry import (
 from fwmigrate.parsers.fortigate.source_tree import FGSourceCommand
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
 from fwmigrate.parsers.fortigate.transformer import FGToIRTransformer
+
+
+def test_ssl_vpn_authentication_rule_coverage_counts_nested_rules():
+    config = FGConfig(
+        ssl_vpn_settings=FGSSLVPNSettings(
+            authentication_rules=[FGSSLVPNAuthenticationRule(id=1)]
+        )
+    )
+
+    assert _count_collection(config, "ssl_vpn_settings", "vpn ssl settings") == 1
+    assert _count_collection(
+        config,
+        "ssl_vpn_settings",
+        "vpn ssl settings authentication-rule",
+    ) == 1
 
 
 def test_fortigate_syntax_evaluation_and_critical_sections_are_lossless():
@@ -815,8 +836,23 @@ end
     assert "TYPED_EXTRACT_ONLY" in " ".join(section.notes)
 
 
-def test_canonical_models_keep_dns_authentication_and_session_semantics():
+def test_supported_models_survive_dropped_sections_and_service_session_ttl():
     source = """\
+config firewall address
+    edit web
+        set subnet 192.0.2.10 255.255.255.255
+    next
+end
+config firewall policy
+    edit 1
+        set srcintf port1
+        set dstintf port2
+        set srcaddr web
+        set dstaddr web
+        set service web
+        set action accept
+    next
+end
 config system dns
     set server-hostname dns-one dns-two
 end
@@ -827,6 +863,16 @@ config authentication scheme
     edit scheme-one
         set method basic unsupported
         set fsso-guest invalid
+    next
+end
+config system dhcp server
+    edit 1
+        set default-gateway 192.0.2.1
+    next
+end
+config firewall shaping-policy
+    edit dropped-policy
+        set status enable
     next
 end
 config firewall service custom
@@ -840,12 +886,14 @@ end
 
     config = FortiGateParser(FortiGateTokenizer(source)).parse()
 
+    assert [item.name for item in config.addresses] == ["web"]
+    assert [item.name for item in config.services] == ["web"]
+    assert [item.id for item in config.policies] == [1]
     assert config.dns.server_hostname == ["dns-one", "dns-two"]
-    assert config.system_global.tcp_halfclose_timer is None
-    assert config.system_global.extra_settings["unparsed_tcp_halfclose_timer"] == "malformed"
-    assert config.authentication_schemes[0].method == ["basic"]
-    assert config.authentication_schemes[0].extra_settings["unparsed_method"] == ["unsupported"]
-    assert config.authentication_schemes[0].extra_settings["unparsed_fsso_guest"] == "invalid"
+    assert not hasattr(config, "system_global")
+    assert not hasattr(config, "authentication_schemes")
+    assert not hasattr(config, "dhcp_servers")
+    assert not hasattr(config, "shaping_policies")
     service = config.services[0]
     assert service.session_ttl == "never"
     assert service.extra_settings["unparsed_tcp_halfopen_timer"] == "malformed"

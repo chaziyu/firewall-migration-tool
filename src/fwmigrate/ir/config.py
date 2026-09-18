@@ -8,7 +8,7 @@ from .metadata import IRAuditEntry, IRCheckpointManagementAccess, IRCheckpointPe
 from .network import IRCheckpointSICMetadata, IRDHCPServer, IRDNSSettings, IRHighAvailability, IRInterface, IRInterfaceGroup, IRNTPSettings, IRSystemSettings, IRZone
 from .address import IRAddress, IRAddressGroup
 from .service import IRApplication, IRApplicationCategory, IRApplicationGroup, IRInternetService, IRInternetServiceAddition, IRInternetServiceAppend, IRInternetServiceCustom, IRInternetServiceCustomGroup, IRInternetServiceDefinition, IRInternetServiceExtension, IRInternetServiceGroup, IRProxyAddress, IRSchedule, IRScheduleGroup, IRService, IRServiceCategory, IRServiceGroup, IRTrafficShaper, IRWebProxySettings
-from .policy import IRCheckpointAccessLayer, IRCheckpointAccessRole, IRCheckpointAccessRule, IRCheckpointDomain, IRCheckpointGlobalAssignment, IRCheckpointIdentitySource, IRCheckpointPolicyPackage, IRCheckpointThreatPreventionProfile, IRCheckpointThreatPreventionRule, IRCustomURLCategory, IRDefaultSecurityRule, IRFirewallFilter, IRFortiGateSourceRule, IRHTTPSInspectionRule, IRIPSSensor, IRLocalDeviceAccessRule, IRMulticastPolicy, IRPolicy, IRSecurityProfileGroup, IRSessionHelper, IRSessionTTLOverride, IRSessionTTLSettings, IRZTNAProvider
+from .policy import IRCheckpointAccessLayer, IRCheckpointAccessRole, IRCheckpointAccessRule, IRCheckpointDomain, IRCheckpointGlobalAssignment, IRCheckpointIdentitySource, IRCheckpointPolicyPackage, IRCheckpointThreatPreventionProfile, IRCheckpointThreatPreventionRule, IRCustomURLCategory, IRDefaultSecurityRule, IRFirewallFilter, IRFortiGateSourceRule, IRHTTPSInspectionRule, IRIPSSensor, IRMulticastPolicy, IRPolicy, IRSecurityProfileGroup, IRSessionHelper, IRSessionTTLOverride, IRSessionTTLSettings, IRZTNAProvider
 from .nat import IRIPPool, IRNATRule, IRVirtualIP, IRVirtualIPGroup
 from .routing import IRFortiGatePolicyRoute, IRManagementServiceRoute, IRPolicyBasedForwardingRule, IRPolicyRoute, IRRoute, IRSDWAN
 from .vpn import IRVPNCommunity, IRVPNGateway, IRVPNPhase2, IRVPNTunnel
@@ -370,6 +370,23 @@ class IRConfig(BaseModel):
         )
         setattr(container, field, value)
 
+    @property
+    def local_in_policies(self) -> Any:
+        vendor = self.metadata.source_vendor.casefold()
+        if vendor in {"cisco_asa", "asa"}:
+            return self.vendor_extensions.cisco_asa.local_in_policies
+        if vendor in {"juniper_srx", "junos", "juniper"}:
+            return self.vendor_extensions.junos.local_in_policies
+        return []
+
+    @local_in_policies.setter
+    def local_in_policies(self, value: Any) -> None:
+        vendor = self.metadata.source_vendor.casefold()
+        if vendor in {"cisco_asa", "asa"}:
+            self.vendor_extensions.cisco_asa.local_in_policies = value
+        elif vendor in {"juniper_srx", "junos", "juniper"}:
+            self.vendor_extensions.junos.local_in_policies = value
+
     checkpoint_management_access = property(lambda self: self._vendor_collection("checkpoint_management_access"), lambda self, value: self._set_vendor_collection("checkpoint_management_access", value))
     checkpoint_performance = property(lambda self: self._vendor_collection("checkpoint_performance"), lambda self, value: self._set_vendor_collection("checkpoint_performance", value))
     checkpoint_policy_packages = property(lambda self: self._vendor_collection("checkpoint_policy_packages"), lambda self, value: self._set_vendor_collection("checkpoint_policy_packages", value))
@@ -382,11 +399,6 @@ class IRConfig(BaseModel):
     checkpoint_sic_metadata = property(lambda self: self._vendor_collection("checkpoint_sic_metadata"), lambda self, value: self._set_vendor_collection("checkpoint_sic_metadata", value))
     central_snat_rules = property(lambda self: self._vendor_collection("central_snat_rules"), lambda self, value: self._set_vendor_collection("central_snat_rules", value))
     policy_routes = property(lambda self: self._vendor_collection("policy_routes"), lambda self, value: self._set_vendor_collection("policy_routes", value))
-    local_in_policies = property(lambda self: self._vendor_collection("local_in_policies"), lambda self, value: self._set_vendor_collection("local_in_policies", value))
-    proxy_policies = property(lambda self: self._vendor_collection("proxy_policies"), lambda self, value: self._set_vendor_collection("proxy_policies", value))
-    shaping_policies = property(lambda self: self._vendor_collection("shaping_policies"), lambda self, value: self._set_vendor_collection("shaping_policies", value))
-    dhcp6_servers = property(lambda self: self._vendor_collection("dhcp6_servers"), lambda self, value: self._set_vendor_collection("dhcp6_servers", value))
-    source_only_rules = property(lambda self: self._vendor_collection("source_only_rules"), lambda self, value: self._set_vendor_collection("source_only_rules", value))
     sdwans = property(lambda self: self._vendor_collection("sdwans"), lambda self, value: self._set_vendor_collection("sdwans", value))
     user_ldap_servers = property(lambda self: self._vendor_collection("user_ldap_servers"), lambda self, value: self._set_vendor_collection("user_ldap_servers", value))
     user_radius_servers = property(lambda self: self._vendor_collection("user_radius_servers"), lambda self, value: self._set_vendor_collection("user_radius_servers", value))
@@ -421,7 +433,6 @@ class IRConfig(BaseModel):
     session_helpers = property(lambda self: self._vendor_collection("session_helpers"), lambda self, value: self._set_vendor_collection("session_helpers", value))
     session_ttl_overrides = property(lambda self: self._vendor_collection("session_ttl_overrides"), lambda self, value: self._set_vendor_collection("session_ttl_overrides", value))
     session_ttl_settings = property(lambda self: self._vendor_collection("session_ttl_settings"), lambda self, value: self._set_vendor_collection("session_ttl_settings", value))
-    address6_templates = property(lambda self: self._vendor_collection("address6_templates"), lambda self, value: self._set_vendor_collection("address6_templates", value))
     ip_pool_groups = property(lambda self: self._vendor_collection("ip_pool_groups"), lambda self, value: self._set_vendor_collection("ip_pool_groups", value))
     global_protect_portals = property(lambda self: self._vendor_collection("global_protect_portals"), lambda self, value: self._set_vendor_collection("global_protect_portals", value))
     global_protect_gateways = property(lambda self: self._vendor_collection("global_protect_gateways"), lambda self, value: self._set_vendor_collection("global_protect_gateways", value))

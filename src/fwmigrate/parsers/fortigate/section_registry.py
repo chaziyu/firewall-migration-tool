@@ -5,30 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Mapping
 
-from fwmigrate.parsers.fortigate.model import (
-    SESSION_TTL_OVERRIDE_INT_FIELDS,
-    SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
-)
-
-
-AUTHENTICATION_METHODS = {
-    "ntlm", "basic", "digest", "form", "negotiate",
-    "fsso", "rsso", "ssh-publickey", "cert", "saml",
-}
-
-AUTHENTICATION_SWITCH_FIELDS = {
-    "fsso_guest", "negotiate_ntlm", "require_tfa", "user_cert",
-}
-
-AUTHENTICATION_STRING_LIMITS = {
-    "domain_controller": 35,
-    "fsso_agent_for_ntlm": 35,
-    "kerberos_keytab": 35,
-    "saml_server": 35,
-    "ssh_ca": 35,
-}
-
-
 @dataclass(frozen=True)
 class SectionSpec:
     source_path: str
@@ -46,37 +22,9 @@ class SectionSpec:
 
 
 SECTION_LIST_FIELDS = {
-    "system dhcp server": {"tftp_server", "vci_string"},
-    "system dhcp server ip-range": {"uci_string", "vci_string"},
-    "system dhcp server exclude-range": {"uci_string", "vci_string"},
-    "system dhcp server options": {"uci_string", "vci_string", "ip"},
-    "system dhcp6 server option": {"ip6"},
-    "system dhcp6 server options": {"ip6"},
-    "authentication scheme": {"method", "user_database"},
-    "authentication rule": {"srcintf", "srcaddr", "srcaddr6", "dstaddr", "dstaddr6", "protocol", "auth_method"},
     "system zone": {"interface"},
     "system zone tagging": {"tags"},
     "user ldap": {"search_type"},
-    "firewall local-in-policy": {
-        "dstaddr",
-        "internet_service_src_custom",
-        "internet_service_src_custom_group",
-        "internet_service_src_group",
-        "internet_service_src_name",
-        "intf",
-        "service",
-        "srcaddr",
-    },
-    "firewall local-in-policy6": {
-        "dstaddr",
-        "internet_service6_src_custom",
-        "internet_service6_src_custom_group",
-        "internet_service6_src_group",
-        "internet_service6_src_name",
-        "intf",
-        "service",
-        "srcaddr",
-    },
     "router policy": {
         "dst",
         "dstaddr",
@@ -168,16 +116,6 @@ SECTION_LIST_FIELDS = {
         "internet_service6_src_custom_group", "internet_service6_src_group",
         "internet_service6_src_name",
     },
-    "firewall shaping-policy": {
-        "srcintf", "dstintf", "srcaddr", "dstaddr", "srcaddr6", "dstaddr6",
-        "application", "app_category", "app_group", "url_category", "service",
-    },
-    "firewall multicast-policy": {
-        "srcaddr", "dstaddr",
-    },
-    "firewall multicast-policy6": {
-        "srcaddr", "dstaddr",
-    },
     "firewall central-snat-map": {
         "srcintf", "dstintf", "orig_addr", "orig_addr6", "dst_addr",
         "dst_addr6", "nat_ippool", "nat_ippool6",
@@ -185,7 +123,6 @@ SECTION_LIST_FIELDS = {
     "firewall schedule group": {"member"},
     "firewall service group": {"member"},
     "system dns": {"protocol", "domain", "server_hostname"},
-    "system admin": {"vdom", "guest_usergroups"},
     # These settings accept multiple CLI values on a system interface.  Keep
     # this section-specific because the same keys may be scalar in other
     # FortiOS sections, and because source preservation must not depend only
@@ -286,13 +223,11 @@ SECTION_LIST_FIELDS = {
     "vpn ssl web portal": {
         "ip_pools",
         "ipv6_pools",
-        "host_check_policy",
         "allow_user_access",
         "split_tunneling_routing_address",
         "ipv6_split_tunneling_routing_address",
     },
     "vpn ssl web portal mac-addr-check-rule": {"mac_addr_list"},
-    "vpn ssl web host-check-software check-item-list": {"md5s"},
     "vpn ssl settings": {
         "banned_cipher",
         "ciphersuite",
@@ -344,7 +279,6 @@ SECTION_INTEGER_FIELDS = {
     "firewall schedule recurring": {"color", "expiration_days"},
     "firewall schedule onetime": {"color", "expiration_days"},
     "firewall schedule group": {"color"},
-    "firewall address6-template": {"subnet_segment_count"},
     "vpn ipsec phase1-interface": {
         "default_gw_priority", "distance", "priority", "aggregate_weight",
     },
@@ -471,27 +405,22 @@ def initialize_builtin_sections() -> None:
         "system interface": parser_module.FGInterface,
         "system zone": parser_module.FGSystemZone,
         "firewall wildcard-fqdn custom": parser_module.FGWildcardFQDN,
-        "firewall service category": parser_module.FGServiceCategory,
         "firewall address": parser_module.FGAddress,
         "firewall address6": parser_module.FGAddress,
-        "firewall address6-template": parser_module.FGAddress6Template,
         "firewall addrgrp": parser_module.FGAddressGroup,
         "firewall addrgrp6": parser_module.FGAddressGroup,
         "firewall service custom": parser_module.FGService,
         "firewall service group": parser_module.FGServiceGroup,
-        "firewall proxy-address": parser_module.FGProxyAddress,
         "firewall schedule recurring": parser_module.FGSchedule,
         "firewall schedule onetime": parser_module.FGSchedule,
         "firewall schedule group": parser_module.FGScheduleGroup,
         "firewall ippool": parser_module.FGIPPool,
         "firewall ippool6": parser_module.FGIPPool6,
         "firewall ippool_grp": parser_module.FGIPPoolGroup,
-        "endpoint-control fctems": parser_module.FGFCTEMS,
         "user adgrp": parser_module.FGADGroup,
         "user local": parser_module.FGLocalUser,
         "user group": parser_module.FGUserGroup,
         "user saml": parser_module.FGUserSAML,
-        "system dns-server": parser_module.FGDnsServer,
         "system fsso-polling": parser_module.FGSystemFSSOPolling,
         "firewall vip": parser_module.FGVIP,
         "firewall vip6": parser_module.FGVIP6,
@@ -502,17 +431,12 @@ def initialize_builtin_sections() -> None:
         "system interface secondaryip": parser_module.FGInterfaceSecondaryIP,
         "firewall policy": parser_module.FGPolicy,
         "firewall security-policy": parser_module.FGSecurityPolicy,
-        "firewall shaping-policy": parser_module.FGShapingPolicy,
         "firewall central-snat-map": parser_module.FGCentralSNATRule,
         "router static": parser_module.FGStaticRoute,
         "router static6": parser_module.FGStaticRoute,
         "router policy": parser_module.FGPolicyRoute,
         "router policy6": parser_module.FGPolicyRoute,
-        "system dhcp server": parser_module.FGDHCPServer,
-        "system dhcp6 server": parser_module.FGDHCP6Server,
         "system dns": parser_module.FGDns,
-        "authentication scheme": parser_module.FGAuthenticationScheme,
-        "authentication rule": parser_module.FGAuthenticationRule,
         "vpn ipsec phase1-interface": parser_module.FGPhase1Interface,
         "vpn ipsec phase1": parser_module.FGPhase1Policy,
         "vpn ipsec phase2-interface": parser_module.FGPhase2Interface,
@@ -540,41 +464,31 @@ def initialize_builtin_sections() -> None:
         "system interface": "interfaces",
         "system zone": "system_zones",
         "firewall wildcard-fqdn custom": "wildcard_fqdns",
-        "firewall service category": "service_categories",
         "firewall address": "addresses",
         "firewall address6": "addresses",
-        "firewall address6-template": "address6_templates",
         "firewall addrgrp": "address_groups",
         "firewall addrgrp6": "address_groups",
         "firewall service custom": "services",
         "firewall service group": "service_groups",
-        "firewall proxy-address": "proxy_addresses",
         "firewall schedule recurring": "schedules",
         "firewall schedule onetime": "schedules",
         "firewall schedule group": "schedule_groups",
         "firewall ippool": "ip_pools",
         "firewall ippool6": "ip_pools6",
         "firewall ippool_grp": "ip_pool_groups",
-        "endpoint-control fctems": "fctems_connectors",
         "user adgrp": "ad_groups",
         "user saml": "user_saml_servers",
-        "system dns-server": "dns_servers",
         "firewall vip": "vips",
         "firewall vip6": "vips6",
         "firewall vipgrp": "vip_groups",
         "firewall vipgrp6": "vip_groups6",
         "firewall policy": "policies",
         "firewall security-policy": "security_policies",
-        "firewall shaping-policy": "shaping_policies",
         "firewall central-snat-map": "central_snat_rules",
         "router static": "static_routes",
         "router static6": "static_routes",
         "router policy": "policy_routes",
         "router policy6": "policy_routes",
-        "system dhcp server": "dhcp_servers",
-        "system dhcp6 server": "dhcp6_servers",
-        "authentication scheme": "authentication_schemes",
-        "authentication rule": "authentication_rules",
         "vpn ipsec phase1-interface": "phase1_interfaces",
         "vpn ipsec phase1": "phase1_policies",
         "vpn ipsec phase2-interface": "phase2_interfaces",
@@ -590,13 +504,7 @@ def initialize_builtin_sections() -> None:
         "system sdwan health-check": parser_module.FG_SDWAN_HEALTH_CHECK_INT_FIELDS,
         "system sdwan health-check sla": parser_module.FG_SDWAN_HEALTH_CHECK_SLA_INT_FIELDS,
         "system sdwan service": parser_module.FG_SDWAN_SERVICE_INT_FIELDS,
-        "system dhcp server": parser_module.FG_DHCP_SERVER_INT_FIELDS,
-        "system dhcp server ip-range": parser_module.FG_DHCP_RANGE_INT_FIELDS,
-        "system dhcp server options": parser_module.FG_DHCP_OPTION_INT_FIELDS,
-        "authentication scheme": {"saml_timeout"},
-        "system global": SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
         "system fsso-polling": {"listening_port"},
-        "system session-ttl port": SESSION_TTL_OVERRIDE_INT_FIELDS,
     })
     integer_list_fields = {
         path: set(fields) for path, fields in SECTION_INTEGER_LIST_FIELDS.items()
@@ -619,7 +527,6 @@ def initialize_builtin_sections() -> None:
         for path in parser_module.IDENTITY_SECTIONS
     }
     secret_fields.update({
-        "system admin": parser_module.ADMIN_SECRET_FIELDS,
         "vpn ipsec phase1": {
             "psksecret", "psksecret_remote", "authpasswd",
             "group_authentication_secret", "ppk_secret",

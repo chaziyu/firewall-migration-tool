@@ -1,4 +1,4 @@
-from fwmigrate.extraction.models import SourceCommand, SourceInventoryItem
+from fwmigrate.extraction.models import ExtractionStatus, SourceCommand, SourceInventoryItem
 from fwmigrate.parsers.fortigate.dependencies import build_dependency_registry
 from fwmigrate.parsers.fortigate.extractor import extract_fortigate_config
 from fwmigrate.parsers.fortigate.parser import FortiGateParser
@@ -128,6 +128,44 @@ def test_p0_dependency_resolution_is_local_first_and_fail_closed():
     dependency = build_dependency_registry(items)[0]
     assert dependency.result == "UNRESOLVED"
     assert dependency.target_path is None
+
+
+def test_dropped_fortigate_sections_are_dependency_isolated():
+    dropped = [
+        ("firewall local-in-policy", "srcaddr"),
+        ("firewall multicast-policy", "srcaddr"),
+        ("system dhcp server", "interface"),
+        ("firewall access-proxy", "certificate"),
+        ("authentication scheme", "user-database"),
+        ("system global", "admin-server-cert"),
+    ]
+    items = [
+        SourceInventoryItem(
+            domain="firewall",
+            source_path=path,
+            source_context="root",
+            name=str(index),
+            commands=[SourceCommand(operation="set", key=field, values=["missing"])],
+        )
+        for index, (path, field) in enumerate(dropped, start=1)
+    ]
+    items.append(
+        SourceInventoryItem(
+            domain="firewall",
+            source_path="firewall policy",
+            source_context="root",
+            name="supported",
+            commands=[
+                SourceCommand(operation="set", key="srcaddr", values=["missing"]),
+            ],
+        )
+    )
+
+    dependencies = build_dependency_registry(items)
+
+    assert len(dependencies) == 1
+    assert dependencies[0].source_path == "firewall policy"
+    assert dependencies[0].result == "UNRESOLVED"
 
 
 def test_p0_predefined_services_resolve_for_policies_and_groups():
@@ -349,17 +387,26 @@ end
         and dependency.source_field in profile_fields
     }
     assert set(profile_dependencies) == set(profile_fields)
-    assert all(item.result == "UNRESOLVED" for item in profile_dependencies.values())
+    assert profile_dependencies["ips-sensor"].result == "EXTERNAL"
+    assert all(
+        item.result == "UNRESOLVED"
+        for field, item in profile_dependencies.items()
+        if field != "ips-sensor"
+    )
     assert all(
         item.reference == profile_fields[item.source_field]
         for item in profile_dependencies.values()
     )
-    auth_dependency = next(
-        item
-        for item in result.dependencies
+    auth_inventory = next(
+        item for item in result.inventory_items
         if item.source_path == "authentication scheme"
-        and item.source_field == "user-database"
     )
-    assert auth_dependency.result == "RESOLVED"
+    assert auth_inventory.status == ExtractionStatus.IGNORED_BY_POLICY
+    assert not any(
+        item.source_path == "authentication scheme"
+        for item in result.dependencies
+    )
+    assert result.canonical_ir.vendor_extensions.fortios.authentication_profiles == []
+    assert result.canonical_ir.vendor_extensions.fortios.authentication_policies == []
     assert "supersecret" not in str(result.model_dump())
     assert result.generation_safe is False

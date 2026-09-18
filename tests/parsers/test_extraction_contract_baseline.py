@@ -8,7 +8,7 @@ from tests.fixture_paths import VENDOR_FIXTURES
 
 # sections, coverage, inventory, unsupported, dependencies
 EXPECTED_ACCOUNTING = {
-    "fortigate": (10, 0, 5, 0, 23),
+    "fortigate": (10, 0, 6, 0, 23),
     "palo_alto": (11, 0, 15, 0, 3),
     "cisco_asa": (20, 0, 39, 2, 0),
     "cisco_ftd": (2, 0, 8, 0, 0),

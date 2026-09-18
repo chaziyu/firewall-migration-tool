@@ -3,7 +3,7 @@ from ipaddress import ip_address
 from typing import Any, Dict, List, Literal, Optional, Set, Union
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, field_validator, model_validator
 
-from fwmigrate.parsers.fortigate.source_tree import FGSourceNode, FGStructuredSourceObject
+from fwmigrate.parsers.fortigate.source_tree import FGSourceNode
 
 
 SYSTEM_GLOBAL_SESSION_TIMER_FIELDS = {
@@ -588,13 +588,6 @@ class FGWildcardFQDN(FGContextualModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGServiceCategory(FGContextualModel):
-    name: str
-    comment: Optional[str] = None
-    fabric_object: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
 class FGService(FGContextualModel):
     name: str
     protocol: Optional[str] = None
@@ -665,49 +658,6 @@ class FGSchedule(FGContextualModel):
     end_utc: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-
-class FGTrafficShaper(FGContextualModel):
-    name: str
-    guaranteed_bandwidth: Optional[int] = None
-    maximum_bandwidth: Optional[int] = None
-    bandwidth_unit: Optional[str] = None
-    priority: Optional[str] = None
-    per_policy: Optional[str] = None
-    diffserv: Optional[str] = None
-    diffservcode: Optional[str] = None
-    dscp_marking_method: Optional[str] = None
-    exceed_bandwidth: Optional[int] = None
-    exceed_dscp: Optional[str] = None
-    maximum_dscp: Optional[str] = None
-    cos: Optional[str] = None
-    cos_marking: Optional[str] = None
-    cos_marking_method: Optional[str] = None
-    exceed_cos: Optional[str] = None
-    maximum_cos: Optional[str] = None
-    dscp_marking: Optional[str] = None
-    dscp_marking_value: Optional[str] = None
-    cos_marking_value: Optional[str] = None
-    exceed_action: Optional[str] = None
-    exceed_class_id: Optional[int] = None
-    overhead: Optional[int] = None
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGProxyAddress(FGContextualModel):
-    name: str
-    uuid: Optional[str] = None
-    type: Optional[str] = None
-    host: Optional[str] = None
-    host_regex: Optional[str] = None
-    path: Optional[str] = None
-    query: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGWebProxyGlobal(BaseModel):
-    proxy_fqdn: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGIPPool(FGContextualModel):
     name: str
@@ -820,19 +770,6 @@ class FGIPPoolGroup(FGContextualModel):
     source_explicit_fields: Set[str] = Field(default_factory=set)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
-
-class FGIPv6EHFilter(BaseModel):
-    source_context: str = "root"
-    auth: Optional[str] = None
-    dest_opt: Optional[str] = None
-    fragment: Optional[str] = None
-    hdopt_type: List[int] = Field(default_factory=list)
-    hop_opt: Optional[str] = None
-    no_next: Optional[str] = None
-    routing: Optional[str] = None
-    routing_type: Optional[int] = None
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 class FGVIPRealServer(BaseModel):
     id: int
@@ -1266,77 +1203,6 @@ class FGPolicy(FGContextualModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGMulticastPolicy(FGContextualModel):
-    id: int
-    source_order: int = 0
-    uuid: Optional[str] = None
-    name: Optional[str] = None
-    srcintf: Optional[str] = None
-    dstintf: Optional[str] = None
-    srcaddr: List[str] = Field(default_factory=list)
-    dstaddr: List[str] = Field(default_factory=list)
-    protocol: Optional[int] = None
-    start_port: Optional[int] = None
-    end_port: Optional[int] = None
-    action: Optional[str] = None
-    status: Optional[str] = None
-    snat: Optional[str] = None
-    snat_ip: Optional[str] = None
-    dnat: Optional[str] = None
-    comments: Optional[str] = None
-    ips_sensor: Optional[str] = None
-    logtraffic: Optional[str] = None
-    utm_status: Optional[str] = None
-    traffic_shaper: Optional[str] = None
-    auto_asic_offload: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_source_fields(cls, value: Any) -> Any:
-        normalized = _preserve_malformed_int_fields(
-            value, {"protocol", "start_port", "end_port"}
-        )
-        if not isinstance(normalized, dict):
-            return normalized
-
-        normalized = dict(normalized)
-        extra_settings = dict(normalized.get("extra_settings") or {})
-        for field in ("srcintf", "dstintf"):
-            field_value = normalized.get(field)
-            if isinstance(field_value, list):
-                if len(field_value) == 1 and isinstance(field_value[0], str):
-                    normalized[field] = field_value[0]
-                else:
-                    extra_settings[f"unparsed_{field}"] = field_value
-                    normalized[field] = None
-            elif field_value is not None and not isinstance(field_value, str):
-                extra_settings[f"unparsed_{field}"] = field_value
-                normalized[field] = None
-        for field, maximum in (
-            ("protocol", 255),
-            ("start_port", 65535),
-            ("end_port", 65535),
-        ):
-            field_value = normalized.get(field)
-            if field_value is not None and not 0 <= field_value <= maximum:
-                extra_settings[f"unparsed_{field}"] = field_value
-                normalized[field] = None
-
-        if "dnat" in normalized and normalized["dnat"] is not None:
-            raw_dnat = normalized["dnat"]
-            try:
-                parsed_dnat = ip_address(str(raw_dnat))
-                if parsed_dnat.version != 4:
-                    raise ValueError("DNAT address must be IPv4")
-                normalized["dnat"] = str(parsed_dnat)
-            except ValueError:
-                extra_settings["unparsed_dnat"] = raw_dnat
-                normalized["dnat"] = None
-
-        normalized["extra_settings"] = extra_settings
-        return normalized
-
 class FGPhase1Common(BaseModel):
     """Shared, source-preserving Phase 1 settings for both FortiOS modes."""
 
@@ -1635,20 +1501,18 @@ class FGIPTranslation(FGContextualModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGSourceOnlyRule(FGContextualModel):
-    """A distinct FortiGate rule family retained outside portable policy IR."""
+class FGRuleSourceModel(FGContextualModel):
+    """Shared shape for explicitly supported FortiGate rule families."""
 
     family: str
     id: Optional[int] = None
     name: Optional[str] = None
     source_order: int = 0
     status: Optional[str] = None
-    settings: Dict[str, Any] = Field(default_factory=dict)
-    nested_configs: List[FGSourceNode] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGSecurityPolicy(FGSourceOnlyRule):
+class FGSecurityPolicy(FGRuleSourceModel):
     ngfw_mode: Optional[str] = None
     uuid: Optional[str] = None
     srcintf: List[str] = Field(default_factory=list)
@@ -1729,42 +1593,11 @@ class FGSecurityPolicy(FGSourceOnlyRule):
     source_explicit_fields: Set[str] = Field(default_factory=set)
 
 
-class FGShapingPolicy(FGSourceOnlyRule):
-    srcintf: List[str] = Field(default_factory=list)
-    dstintf: List[str] = Field(default_factory=list)
-    srcaddr: List[str] = Field(default_factory=list)
-    dstaddr: List[str] = Field(default_factory=list)
-    srcaddr6: List[str] = Field(default_factory=list)
-    dstaddr6: List[str] = Field(default_factory=list)
-    srcaddr_negate: Optional[str] = None
-    dstaddr_negate: Optional[str] = None
-    srcaddr6_negate: Optional[str] = None
-    dstaddr6_negate: Optional[str] = None
-    service: List[str] = Field(default_factory=list)
-    schedule: Optional[str] = None
-    traffic_shaper: Optional[str] = None
-    traffic_shaper_reverse: Optional[str] = None
-    per_ip_shaper: Optional[str] = None
-    per_ip_shaper_reverse: Optional[str] = None
-    application: List[int] = Field(default_factory=list)
-    app_category: List[int] = Field(default_factory=list)
-    app_group: List[str] = Field(default_factory=list)
-    url_category: List[str] = Field(default_factory=list)
-    comments: Optional[str] = None
-    comment: Optional[str] = None
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_application_ids(cls, value: Any) -> Any:
-        return _preserve_malformed_int_lists(value, {"application", "app_category"})
-
-
-class FGPhase1Policy(FGPhase1Common, FGSourceOnlyRule):
+class FGPhase1Policy(FGPhase1Common, FGRuleSourceModel):
     comments: Optional[str] = None
 
 
-class FGPhase2Policy(FGSourceOnlyRule):
+class FGPhase2Policy(FGRuleSourceModel):
     phase1name: Optional[str] = None
     use_natip: Optional[str] = None
     proposal: List[str] = Field(default_factory=list)
@@ -1825,46 +1658,6 @@ class FGPhase2Policy(FGSourceOnlyRule):
             value,
             {"protocol", "src_port", "dst_port"},
         )
-
-
-class FGLocalInPolicy(FGSourceOnlyRule):
-    """Typed source semantics for FortiOS control-plane policy rules."""
-
-    address_family: str = "ipv4"
-    intf: List[str] = Field(default_factory=list)
-    srcaddr: List[str] = Field(default_factory=list)
-    dstaddr: List[str] = Field(default_factory=list)
-    service: List[str] = Field(default_factory=list)
-    schedule: Optional[str] = None
-    action: Optional[str] = None
-    comments: Optional[str] = None
-    uuid: Optional[str] = None
-    virtual_patch: Optional[str] = None
-    # FortiOS exposes this only on IPv4 local-in-policy. IPv6 input is
-    # retained as source evidence but is not treated as IPv6 typed semantics.
-    ha_mgmt_intf_only: Optional[str] = None
-    srcaddr_negate: Optional[str] = None
-    dstaddr_negate: Optional[str] = None
-    service_negate: Optional[str] = None
-    internet_service_src: Optional[str] = None
-    internet_service_src_custom: List[str] = Field(default_factory=list)
-    internet_service_src_custom_group: List[str] = Field(default_factory=list)
-    internet_service_src_group: List[str] = Field(default_factory=list)
-    internet_service_src_name: List[str] = Field(default_factory=list)
-    internet_service_src_negate: Optional[str] = None
-    internet_service6_src: Optional[str] = None
-    internet_service6_src_custom: List[str] = Field(default_factory=list)
-    internet_service6_src_custom_group: List[str] = Field(default_factory=list)
-    internet_service6_src_group: List[str] = Field(default_factory=list)
-    internet_service6_src_name: List[str] = Field(default_factory=list)
-    internet_service6_src_negate: Optional[str] = None
-
-    @model_validator(mode="after")
-    def _keep_ipv4_only_fields_family_safe(self) -> "FGLocalInPolicy":
-        if self.address_family == "ipv6" and self.ha_mgmt_intf_only is not None:
-            self.extra_settings.setdefault("ha_mgmt_intf_only", self.ha_mgmt_intf_only)
-            self.ha_mgmt_intf_only = None
-        return self
 
 
 class FGPolicyRoute(FGContextualModel):
@@ -2164,438 +1957,6 @@ class FGDns(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGDnsServer(FGContextualModel):
-    name: str
-    mode: Optional[str] = None
-    dnsfilter_profile: Optional[str] = None
-    doh: Optional[str] = None
-    doh_certificate: Optional[str] = None
-    status: Optional[str] = None
-    interface: Optional[str] = None
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGDns64(FGContextualModel):
-    status: Optional[str] = None
-    prefix: Optional[str] = None
-    always_synthesize_aaaa: Optional[str] = None
-    dns64_service: Optional[str] = None
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSystemGlobal(BaseModel):
-    hostname: Optional[str] = None
-    admin_sport: Optional[int] = None
-    admin_http_port: Optional[int] = None
-    admin_https_port: Optional[int] = None
-    admin_ssh_port: Optional[int] = None
-    admin_telnet_port: Optional[int] = None
-    admin_server_cert: Optional[str] = None
-    admin_https_redirect: Optional[str] = None
-    admin_restrict_local: Optional[str] = None
-    admin_hsts_header: Optional[str] = None
-    admin_hsts_max_age: Optional[int] = None
-    admin_login_max: Optional[int] = None
-    admin_lockout_threshold: Optional[int] = None
-    admin_lockout_duration: Optional[int] = None
-    admin_console_timeout: Optional[int] = None
-    timezone: Optional[str] = None
-    tcp_halfclose_timer: Optional[int] = None
-    tcp_halfopen_timer: Optional[int] = None
-    tcp_rst_timer: Optional[int] = None
-    tcp_timewait_timer: Optional[int] = None
-    udp_idle_timer: Optional[int] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_session_timer_fields(cls, value: Any) -> Any:
-        return _preserve_malformed_int_fields(
-            value,
-            SYSTEM_GLOBAL_SESSION_TIMER_FIELDS,
-        )
-
-
-class FGInternetService(BaseModel):
-    name: str
-    id: Optional[int] = None
-    city_id: Optional[int] = None
-    country_id: Optional[int] = None
-    region_id: Optional[int] = None
-    service_type: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceCustomPortRange(BaseModel):
-    id: Optional[int] = None
-    start_port: Optional[int] = None
-    end_port: Optional[int] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceCustomEntry(BaseModel):
-    id: Optional[int] = None
-    addr_mode: Optional[str] = None
-    dst: List[str] = Field(default_factory=list)
-    dst6: List[str] = Field(default_factory=list)
-    protocol: Optional[int] = None
-    port_ranges: List[FGInternetServiceCustomPortRange] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceCustom(BaseModel):
-    name: str
-    source_context: str = "root"
-    comment: Optional[str] = None
-    reputation: Optional[int] = None
-    entries: List[FGInternetServiceCustomEntry] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceCustomGroup(BaseModel):
-    name: str
-    source_context: str = "root"
-    comment: Optional[str] = None
-    members: List[str] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceAdditionPortRange(BaseModel):
-    id: Optional[int] = None
-    start_port: Optional[int] = None
-    end_port: Optional[int] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceAdditionEntry(BaseModel):
-    id: Optional[int] = None
-    addr_mode: Optional[str] = None
-    protocol: Optional[int] = None
-    port_ranges: List[FGInternetServiceAdditionPortRange] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceAddition(BaseModel):
-    id: Optional[int] = None
-    source_context: str = "root"
-    comment: Optional[str] = None
-    entries: List[FGInternetServiceAdditionEntry] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceAppend(BaseModel):
-    source_context: str = "root"
-    addr_mode: Optional[str] = None
-    append_port: Optional[int] = None
-    match_port: Optional[int] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceExtensionIPv4Range(BaseModel):
-    id: Optional[int] = None
-    start_ip: Optional[str] = None
-    end_ip: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceExtensionIPv6Range(BaseModel):
-    id: Optional[int] = None
-    start_ip6: Optional[str] = None
-    end_ip6: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceExtensionPortRange(BaseModel):
-    id: Optional[int] = None
-    start_port: Optional[int] = None
-    end_port: Optional[int] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceExtensionDisableEntry(BaseModel):
-    id: Optional[int] = None
-    addr_mode: Optional[str] = None
-    ip_range: List[FGInternetServiceExtensionIPv4Range] = Field(default_factory=list)
-    ip6_range: List[FGInternetServiceExtensionIPv6Range] = Field(default_factory=list)
-    protocol: Optional[int] = None
-    port_ranges: List[FGInternetServiceExtensionPortRange] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceExtensionEntry(BaseModel):
-    id: Optional[int] = None
-    addr_mode: Optional[str] = None
-    dst: List[str] = Field(default_factory=list)
-    dst6: List[str] = Field(default_factory=list)
-    protocol: Optional[int] = None
-    port_ranges: List[FGInternetServiceExtensionPortRange] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceExtension(BaseModel):
-    id: Optional[int] = None
-    source_context: str = "root"
-    comment: Optional[str] = None
-    disable_entries: List[FGInternetServiceExtensionDisableEntry] = Field(default_factory=list)
-    entries: List[FGInternetServiceExtensionEntry] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceGroup(BaseModel):
-    name: str
-    source_context: str = "root"
-    comment: Optional[str] = None
-    direction: str = "both"
-    members: List[str] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceDefinitionPortRange(BaseModel):
-    id: Optional[int] = None
-    start_port: Optional[int] = None
-    end_port: Optional[int] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceDefinitionEntry(BaseModel):
-    seq_num: Optional[int] = None
-    category_id: Optional[int] = None
-    name: Optional[str] = None
-    protocol: Optional[int] = None
-    port_ranges: List[FGInternetServiceDefinitionPortRange] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGInternetServiceDefinition(BaseModel):
-    id: Optional[int] = None
-    entries: List[FGInternetServiceDefinitionEntry] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGFCTEMS(BaseModel):
-    id: int
-    name: Optional[str] = None
-    status: str = "disable"
-
-    fortinetone_cloud_authentication: Optional[str] = None
-    serial_number: Optional[str] = None
-    tenant_id: Optional[str] = None
-
-    capabilities: List[str] = Field(default_factory=list)
-
-    verifying_ca: Optional[str] = None
-    verified_cn: Optional[str] = None
-
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSessionHelper(BaseModel):
-    id: int
-    name: Optional[str] = None
-    protocol: Optional[int] = None
-    port: Optional[int] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSessionTTLOverride(BaseModel):
-    id: int
-    protocol: Optional[int] = None
-    timeout: Optional[int] = None
-    timeout_never: bool = False
-    start_port: Optional[int] = None
-    end_port: Optional[int] = None
-    refresh_direction: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-class FGDHCPIPRange(BaseModel):
-    id: int
-    source_context: str = "root"
-    start_ip: Optional[str] = None
-    end_ip: Optional[str] = None
-    lease_time: int = 0
-    uci_match: str = "disable"
-    uci_string: List[str] = Field(default_factory=list)
-    vci_match: str = "disable"
-    vci_string: List[str] = Field(default_factory=list)
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGDHCPReservation(BaseModel):
-    id: int
-    source_context: str = "root"
-    action: str = "reserved"
-    type: str = "mac"
-    ip: Optional[str] = None
-    mac: Optional[str] = None
-    circuit_id: Optional[str] = None
-    circuit_id_type: str = "string"
-    remote_id: Optional[str] = None
-    remote_id_type: str = "string"
-    description: Optional[str] = None
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGDHCPExcludeRange(BaseModel):
-    id: int
-    source_context: str = "root"
-    start_ip: Optional[str] = None
-    end_ip: Optional[str] = None
-    lease_time: int = 0
-    uci_match: str = "disable"
-    uci_string: List[str] = Field(default_factory=list)
-    vci_match: str = "disable"
-    vci_string: List[str] = Field(default_factory=list)
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGDHCPOption(BaseModel):
-    id: int
-    source_context: str = "root"
-    code: Optional[int] = None
-    type: Optional[str] = None
-    value: Optional[str] = None
-    ip: Optional[str] = None
-    ips: List[str] = Field(default_factory=list)
-    uci_match: str = "disable"
-    uci_string: List[str] = Field(default_factory=list)
-    vci_match: str = "disable"
-    vci_string: List[str] = Field(default_factory=list)
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGDHCPServer(FGContextualModel):
-    id: int
-    status: str = "enable"
-
-    interface: Optional[str] = None
-    default_gateway: Optional[str] = None
-    netmask: Optional[str] = None
-    lease_time: Optional[int] = 604800
-
-    auto_configuration: Optional[str] = None
-    auto_managed_status: Optional[str] = None
-    conflicted_ip_timeout: Optional[int] = None
-
-    ddns_auth: Optional[str] = None
-    has_ddns_key: bool = False
-    ddns_key_format: Optional[str] = None
-    ddns_keyname: Optional[str] = None
-    ddns_server_ip: Optional[str] = None
-    ddns_ttl: Optional[int] = None
-    ddns_update: Optional[str] = None
-    ddns_update_override: Optional[str] = None
-    ddns_zone: Optional[str] = None
-
-    dhcp_settings_from_fortiipam: Optional[str] = None
-
-    dns_service: Optional[str] = None
-    dns_server1: Optional[str] = None
-    dns_server2: Optional[str] = None
-    dns_server3: Optional[str] = None
-    dns_server4: Optional[str] = None
-    domain: Optional[str] = None
-
-    filename: Optional[str] = None
-    forticlient_on_net_status: Optional[str] = None
-
-    ip_mode: Optional[str] = None
-    ipsec_lease_hold: Optional[int] = None
-    mac_acl_default_action: Optional[str] = "assign"
-
-    next_server: Optional[str] = None
-
-    ntp_server1: Optional[str] = None
-    ntp_server2: Optional[str] = None
-    ntp_server3: Optional[str] = None
-    ntp_service: Optional[str] = "specify"
-
-    relay_agent: Optional[str] = None
-
-    server_type: Optional[str] = "regular"
-    shared_subnet: Optional[str] = "disable"
-
-    tftp_server: List[str] = Field(default_factory=list)
-
-    timezone: Optional[str] = None
-    timezone_option: Optional[str] = "disable"
-
-    vci_match: Optional[str] = None
-    vci_string: List[str] = Field(default_factory=list)
-
-    wifi_ac_service: Optional[str] = None
-    wifi_ac1: Optional[str] = None
-    wifi_ac2: Optional[str] = None
-    wifi_ac3: Optional[str] = None
-
-    wins_server1: Optional[str] = None
-    wins_server2: Optional[str] = None
-
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-
-    ip_ranges: List[FGDHCPIPRange] = Field(default_factory=list)
-    exclude_ranges: List[FGDHCPExcludeRange] = Field(default_factory=list)
-    reserved_addresses: List[FGDHCPReservation] = Field(
-        default_factory=list
-    )
-    options: List[FGDHCPOption] = Field(default_factory=list)
-
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGDHCP6IPRange(BaseModel):
-    id: int
-    source_context: str = "root"
-    start_ip: Optional[str] = None
-    end_ip: Optional[str] = None
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGDHCP6PrefixRange(BaseModel):
-    id: int
-    source_context: str = "root"
-    start_prefix: Optional[str] = None
-    end_prefix: Optional[str] = None
-    prefix_length: Optional[int] = None
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGDHCP6Option(BaseModel):
-    id: int
-    source_context: str = "root"
-    code: Optional[int] = None
-    type: Optional[str] = None
-    value: Optional[str] = None
-    ip6: Optional[str] = None
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGDHCP6Server(FGSourceOnlyRule):
-    interface: Optional[str] = None
-    subnet: Optional[str] = None
-    lease_time: Optional[int] = None
-    dns_service: Optional[str] = None
-    dns_server1: Optional[str] = None
-    dns_server2: Optional[str] = None
-    dns_server3: Optional[str] = None
-    dns_server4: Optional[str] = None
-    domain: Optional[str] = None
-    ip_mode: Optional[str] = None
-    upstream_interface: Optional[str] = None
-    ip_ranges: List[FGDHCP6IPRange] = Field(default_factory=list)
-    prefix_ranges: List[FGDHCP6PrefixRange] = Field(default_factory=list)
-    options: List[FGDHCP6Option] = Field(default_factory=list)
-    source_explicit_fields: Set[str] = Field(default_factory=set)
-
-
 class FGCertificate(BaseModel):
     name: str
     certificate_type: str
@@ -2625,61 +1986,6 @@ class FGCertificate(BaseModel):
     has_password: bool = False
 
     parse_error: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGIPSSensorExemptIP(BaseModel):
-    id: int
-    src_ip: Optional[str] = None
-    dst_ip: Optional[str] = None
-
-
-class FGIPSSensorEntry(BaseModel):
-    id: int
-    rules: List[int] = Field(default_factory=list)
-    severity: List[str] = Field(default_factory=list)
-    location: Optional[str] = None
-    protocol: List[str] = Field(default_factory=list)
-    status: Optional[str] = None
-    action: Optional[str] = None
-    rate_count: Optional[int] = None
-    rate_duration: Optional[int] = None
-    quarantine: Optional[str] = None
-    quarantine_expiry: Optional[str] = None
-    application: List[str] = Field(default_factory=list)
-    cve: List[str] = Field(default_factory=list)
-    default_action: Optional[str] = None
-    default_status: Optional[str] = None
-    log: Optional[str] = None
-    log_packet: Optional[str] = None
-    log_attack_context: Optional[str] = None
-    os: List[str] = Field(default_factory=list)
-    rate_mode: Optional[str] = None
-    rate_track: Optional[str] = None
-    vuln_type: List[int] = Field(default_factory=list)
-    quarantine_log: Optional[str] = None
-    exempt_ips: List[FGIPSSensorExemptIP] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGIPSSensor(FGContextualModel):
-    name: str
-    comment: Optional[str] = None
-    block_malicious_url: Optional[str] = None
-    scan_botnet_connections: Optional[str] = None
-    extended_log: Optional[str] = None
-    replacemsg_group: Optional[str] = None
-    entries: List[FGIPSSensorEntry] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSSHKey(BaseModel):
-    name: str
-    key_type: str
-    public_key: Optional[str] = None
-    source: Optional[str] = None
-    has_private_key: bool = False
-    has_password: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2933,66 +2239,6 @@ class FGUserGroup(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGAdministrator(BaseModel):
-    name: str
-    accprofile: Optional[str] = None
-    accprofile_override: Optional[str] = None
-    vdom: List[str] = Field(default_factory=list)
-    vdom_override: Optional[str] = None
-    trusthost1: Optional[str] = None
-    trusthost2: Optional[str] = None
-    trusthost3: Optional[str] = None
-    trusthost4: Optional[str] = None
-    trusthost5: Optional[str] = None
-    trusthost6: Optional[str] = None
-    trusthost7: Optional[str] = None
-    trusthost8: Optional[str] = None
-    trusthost9: Optional[str] = None
-    trusthost10: Optional[str] = None
-    ip6_trusthost1: Optional[str] = None
-    ip6_trusthost2: Optional[str] = None
-    ip6_trusthost3: Optional[str] = None
-    ip6_trusthost4: Optional[str] = None
-    ip6_trusthost5: Optional[str] = None
-    ip6_trusthost6: Optional[str] = None
-    ip6_trusthost7: Optional[str] = None
-    ip6_trusthost8: Optional[str] = None
-    ip6_trusthost9: Optional[str] = None
-    ip6_trusthost10: Optional[str] = None
-    two_factor: Optional[str] = None
-    two_factor_authentication: Optional[str] = None
-    two_factor_notification: Optional[str] = None
-    fortitoken: Optional[str] = None
-    email_to: Optional[str] = None
-    remote_auth: Optional[str] = None
-    remote_group: Optional[str] = None
-    guest_auth: Optional[str] = None
-    guest_lang: Optional[str] = None
-    guest_usergroups: List[str] = Field(default_factory=list)
-    schedule: Optional[str] = None
-    peer_auth: Optional[str] = None
-    peer_group: Optional[str] = None
-    ssh_certificate: Optional[str] = None
-    ssh_public_key1: Optional[str] = None
-    ssh_public_key2: Optional[str] = None
-    ssh_public_key3: Optional[str] = None
-    wildcard: Optional[str] = None
-    credential_configured: bool = False
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGAdminProfilePermissionBlock(BaseModel):
-    name: str
-    settings: Dict[str, Any] = Field(default_factory=dict)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSessionTTLSettings(BaseModel):
-    default_timeout: Optional[int] = None
-    default_never: bool = False
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
 class FGUserAuthenticationSettings(BaseModel):
     auth_cert: Optional[str] = None
     auth_ca_cert: Optional[str] = None
@@ -3008,40 +2254,6 @@ class FGUserQuarantine(BaseModel):
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
-class FGAdminProfile(BaseModel):
-    name: str
-    permission_blocks: List[FGAdminProfilePermissionBlock] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGFortiToken(BaseModel):
-    serial: str
-    status: Optional[str] = None
-    comments: Optional[str] = None
-    assigned_user: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSSLVPNHostCheckItem(BaseModel):
-    id: int
-    action: Optional[str] = None
-    md5s: List[str] = Field(default_factory=list)
-    target: Optional[str] = None
-    type: Optional[str] = None
-    version: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSSLVPNHostCheckSoftware(BaseModel):
-    name: str
-    type: Optional[str] = None
-    os_type: Optional[str] = None
-    guid: Optional[str] = None
-    version: Optional[str] = None
-    check_items: List[FGSSLVPNHostCheckItem] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
 class FGSSLVPNPortalSplitDNS(BaseModel):
     id: int
     domains: Optional[str] = None
@@ -3049,41 +2261,6 @@ class FGSSLVPNPortalSplitDNS(BaseModel):
     dns_server2: Optional[str] = None
     ipv6_dns_server1: Optional[str] = None
     ipv6_dns_server2: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSSLVPNPortalBookmarkFormData(BaseModel):
-    name: str
-    value_configured: bool = False
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSSLVPNPortalBookmark(BaseModel):
-    name: str
-    apptype: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[int] = None
-    url: Optional[str] = None
-    folder: Optional[str] = None
-    domain: Optional[str] = None
-    additional_params: Optional[str] = None
-    keyboard_layout: Optional[str] = None
-    security: Optional[str] = None
-    send_preconnection_id: Optional[str] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    vnc_keyboard_layout: Optional[str] = None
-    description: Optional[str] = None
-    sso: Optional[str] = None
-    form_data: List[FGSSLVPNPortalBookmarkFormData] = Field(default_factory=list)
-    has_logon_password: bool = False
-    has_sso_password: bool = False
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSSLVPNPortalBookmarkGroup(BaseModel):
-    name: str
-    bookmarks: List[FGSSLVPNPortalBookmark] = Field(default_factory=list)
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -3137,9 +2314,6 @@ class FGSSLVPNPortal(BaseModel):
     split_tunneling: Optional[str] = None
     limit_user_logins: Optional[str] = None
     forticlient_download: Optional[str] = None
-    host_check: Optional[str] = None
-    host_check_policy: List[str] = Field(default_factory=list)
-    host_check_interval: Optional[int] = None
     allow_user_access: List[str] = Field(default_factory=list)
     auto_connect: Optional[str] = None
     exclusive_routing: Optional[str] = None
@@ -3201,8 +2375,6 @@ class FGSSLVPNPortal(BaseModel):
     windows_forticlient_download_url: Optional[str] = None
     wins_server1: Optional[str] = None
     wins_server2: Optional[str] = None
-    host_checks: List[FGSSLVPNHostCheckSoftware] = Field(default_factory=list)
-    bookmark_groups: List[FGSSLVPNPortalBookmarkGroup] = Field(default_factory=list)
     landing_pages: List[FGSSLVPNPortalLandingPage] = Field(default_factory=list)
     mac_address_check_rules: List[FGSSLVPNPortalMACAddressRule] = Field(default_factory=list)
     os_check_list: List[FGSSLVPNPortalOSCheck] = Field(default_factory=list)
@@ -3329,23 +2501,6 @@ class FGDoSPolicy(BaseModel):
     service: List[str] = Field(default_factory=list)
     comments: Optional[str] = None
     anomalies: List[FGDoSAnomaly] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGNetworkServiceDynamic(FGContextualModel):
-    name: str
-    filter: Optional[str] = None
-    sdn: Optional[str] = None
-    comment: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSDNConnector(FGContextualModel):
-    name: str
-    type: Optional[str] = None
-    status: Optional[str] = None
-    server: Optional[str] = None
-    has_secret: bool = False
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -3476,17 +2631,6 @@ class FGLinkMonitor(FGContextualModel):
         return self.server_list
 
 
-class FGTopologyObject(FGContextualModel):
-    name: str
-    members: List[str] = Field(default_factory=list)
-    parent: Optional[str] = None
-    interface: Optional[str] = None
-    status: Optional[str] = None
-    type: Optional[str] = None
-    mode: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
 class FGVirtualWirePair(FGContextualModel):
     name: str
     members: List[str] = Field(default_factory=list)
@@ -3509,334 +2653,6 @@ class FGVDOMLink(FGContextualModel):
     interface: Optional[str] = None
     vcluster: Optional[str] = None
     source_explicit_fields: Set[str] = Field(default_factory=set)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGAccessProxyDestination(BaseModel):
-    name: str
-    status: Optional[str] = None
-    type: Optional[str] = None
-    server: Optional[str] = None
-    address: Optional[str] = None
-    port: Optional[int] = None
-    protocol: Optional[str] = None
-    host: Optional[str] = None
-    path: Optional[str] = None
-    url: Optional[str] = None
-    ssl_certificate: Optional[str] = None
-    ssl_min_proto_version: Optional[str] = None
-    ssl_max_proto_version: Optional[str] = None
-    verify_certificate: Optional[str] = None
-    ssl_vpn_web_portal: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGAccessProxyServer(BaseModel):
-    name: str
-    address: Optional[str] = None
-    port: Optional[int] = None
-    status: Optional[str] = None
-    type: Optional[str] = None
-    protocol: Optional[str] = None
-    host: Optional[str] = None
-    path: Optional[str] = None
-    ssl_certificate: Optional[str] = None
-    ssl_min_proto_version: Optional[str] = None
-    ssl_max_proto_version: Optional[str] = None
-    verify_certificate: Optional[str] = None
-    source_ip: Optional[str] = None
-    interface: Optional[str] = None
-    sni: Optional[str] = None
-    monitor: Optional[str] = None
-    weight: Optional[int] = None
-    client_cert: Optional[str] = None
-    addr_type: Optional[str] = None
-    ip: Optional[str] = None
-    domain: Optional[str] = None
-    mappedport: Optional[str] = None
-    http_host: Optional[str] = None
-    health_check: Optional[str] = None
-    health_check_proto: Optional[str] = None
-    holddown_interval: Optional[str] = None
-    ssh_client_cert: Optional[str] = None
-    ssh_host_key_validation: Optional[str] = None
-    ssh_host_key: List[str] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGAccessProxyVirtualHost(BaseModel):
-    name: str
-    host: Optional[str] = None
-    alias: List[str] = Field(default_factory=list)
-    access_proxy: Optional[str] = None
-    certificate: Optional[str] = None
-    ssl_certificate: List[str] = Field(default_factory=list)
-    ssl_min_proto_version: Optional[str] = None
-    ssl_max_proto_version: Optional[str] = None
-    ssl_ciphers: List[str] = Field(default_factory=list)
-    port: Optional[int] = None
-    interface: Optional[str] = None
-    status: Optional[str] = None
-    auth_method: Optional[str] = None
-    auth_portal: Optional[str] = None
-    client_cert: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGAccessProxyMapping(BaseModel):
-    name: str
-    source: Optional[str] = None
-    destination: Optional[str] = None
-    virtual_host: Optional[str] = None
-    realservers: List[str] = Field(default_factory=list)
-    url_map: Optional[str] = None
-    path: Optional[str] = None
-    host: Optional[str] = None
-    protocol: Optional[str] = None
-    port: Optional[int] = None
-    status: Optional[str] = None
-    action: Optional[str] = None
-    auth_method: Optional[str] = None
-    auth_portal: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGAddress6TemplateValue(BaseModel):
-    """One value entry beneath an IPv6 address-template subnet segment."""
-
-    source_id: str
-    value: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGAddress6TemplateSegment(BaseModel):
-    """One ``config subnet-segment`` entry from FortiOS 7.4.6."""
-
-    source_id: str
-    bits: Optional[int] = None
-    exclusive: Optional[str] = None
-    name: Optional[str] = None
-    values: List[FGAddress6TemplateValue] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_bits(cls, value: Any) -> Any:
-        return _preserve_malformed_int_fields(value, {"bits"})
-
-
-def _address6_template_command_settings(node: Any) -> Dict[str, Any]:
-    settings: Dict[str, Any] = {}
-    for command in getattr(node, "commands", []):
-        key = str(command.key).replace("-", "_")
-        values = list(command.values)
-        value: Any = values[0] if len(values) == 1 else values
-        if command.operation == "unset":
-            settings.pop(key, None)
-        else:
-            settings[key] = value
-    return settings
-
-
-def _parse_address6_template_segments(
-    nodes: List[FGSourceNode],
-) -> List[FGAddress6TemplateSegment]:
-    segments: List[FGAddress6TemplateSegment] = []
-    for node in nodes:
-        if node.node_type != "config":
-            continue
-        if str(node.name).lower().replace("_", "-") != "subnet-segment":
-            continue
-        for entry in node.children:
-            if entry.node_type != "edit":
-                continue
-            settings = _address6_template_command_settings(entry)
-            values: List[FGAddress6TemplateValue] = []
-            for child in entry.children:
-                if child.node_type != "config":
-                    continue
-                if str(child.name).lower().replace("_", "-") != "values":
-                    continue
-                for value_node in child.children:
-                    if value_node.node_type != "edit":
-                        continue
-                    value_settings = _address6_template_command_settings(value_node)
-                    value = value_settings.pop("value", None)
-                    values.append(
-                        FGAddress6TemplateValue(
-                            source_id=str(value_node.name),
-                            value=None if value is None else str(value),
-                            extra_settings=value_settings,
-                        )
-                    )
-            segments.append(
-                FGAddress6TemplateSegment(
-                    source_id=str(entry.name),
-                    bits=settings.pop("bits", None),
-                    exclusive=settings.pop("exclusive", None),
-                    name=settings.pop("name", None),
-                    values=values,
-                    extra_settings=settings,
-                )
-            )
-    return segments
-
-
-class FGAddress6Template(FGContextualModel):
-    """Typed FortiOS 7.4.6 IPv6 address-template inventory."""
-
-    name: str
-    ip6: Optional[str] = None
-    subnet_segment_count: Optional[int] = None
-    fabric_object: Optional[str] = None
-    subnet_segments: List[FGAddress6TemplateSegment] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_count(cls, value: Any) -> Any:
-        return _preserve_malformed_int_fields(value, {"subnet_segment_count"})
-
-    @model_validator(mode="after")
-    def _project_subnet_segments(self) -> "FGAddress6Template":
-        if not self.subnet_segments:
-            self.subnet_segments = _parse_address6_template_segments(self.nested_configs)
-        return self
-
-
-class FGAccessProxySSHClientCertExtension(BaseModel):
-    name: str
-    critical: Optional[str] = None
-    data: Optional[str] = None
-    type: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGAccessProxy(FGContextualModel):
-    name: str
-    family: str = "ipv4"
-    vip: Optional[str] = None
-    extip: Optional[str] = None
-    extport: Optional[str] = None
-    port: Optional[int] = None
-    interface: Optional[str] = None
-    srcintf: List[str] = Field(default_factory=list)
-    status: Optional[str] = None
-    server_type: Optional[str] = None
-    client_cert: Optional[str] = None
-    certificate: Optional[str] = None
-    ssl_certificate: Optional[str] = None
-    ssl_min_proto_version: Optional[str] = None
-    ssl_max_proto_version: Optional[str] = None
-    ssl_ciphers: List[str] = Field(default_factory=list)
-    auth_method: Optional[str] = None
-    auth_portal: Optional[str] = None
-    auth_rule: Optional[str] = None
-    auth_virtual_host: Optional[str] = None
-    empty_cert_action: Optional[str] = None
-    log_blocked_traffic: Optional[str] = None
-    add_vhost_domain_to_dnsdb: Optional[str] = None
-    persistence: Optional[str] = None
-    service: Optional[str] = None
-    ldb_method: Optional[str] = None
-    url_map: Optional[str] = None
-    url_map_type: Optional[str] = None
-    h2_support: Optional[str] = None
-    h3_support: Optional[str] = None
-    ssl_vpn_web_portal: Optional[str] = None
-    destinations: List[FGAccessProxyDestination] = Field(default_factory=list)
-    servers: List[FGAccessProxyServer] = Field(default_factory=list)
-    virtual_hosts: List[FGAccessProxyVirtualHost] = Field(default_factory=list)
-    mappings: List[FGAccessProxyMapping] = Field(default_factory=list)
-    cert_extensions: List[FGAccessProxySSHClientCertExtension] = Field(default_factory=list)
-    entries: List[Dict[str, Any]] = Field(default_factory=list)
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGEMSOverride(FGContextualModel):
-    name: str
-    kind: str = "OVERRIDE"
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSSLVPNRealm(FGContextualModel):
-    name: str
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGSSLVPNBookmark(FGContextualModel):
-    name: str
-    bookmark_type: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGManualKeyInterface(FGContextualModel):
-    name: str
-    interface: Optional[str] = None
-    local_gateway: Optional[str] = None
-    remote_gateway: Optional[str] = None
-    address_family: str = "ipv4"
-    spi: Optional[str] = None
-    encryption_algorithm: Optional[str] = None
-    authentication_algorithm: Optional[str] = None
-    has_encryption_key: bool = False
-    has_authentication_key: bool = False
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGFirewallSniffer(BaseModel):
-    id: int
-    uuid: Optional[str] = None
-    logtraffic: Optional[str] = None
-    ipv6: Optional[str] = None
-    non_ip: Optional[str] = None
-    application_list_status: Optional[str] = None
-    application_list: Optional[str] = None
-    ips_sensor_status: Optional[str] = None
-    ips_sensor: Optional[str] = None
-    av_profile_status: Optional[str] = None
-    av_profile: Optional[str] = None
-    webfilter_profile_status: Optional[str] = None
-    webfilter_profile: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FGAuthenticationScheme(BaseModel):
-    name: str
-    method: List[str] = Field(default_factory=list)
-    user_database: List[str] = Field(default_factory=list)
-    domain_controller: Optional[str] = None
-    fsso_agent_for_ntlm: Optional[str] = None
-    fsso_guest: Optional[str] = None
-    kerberos_keytab: Optional[str] = None
-    negotiate_ntlm: Optional[str] = None
-    require_tfa: Optional[str] = None
-    saml_server: Optional[str] = None
-    saml_timeout: Optional[int] = None
-    ssh_ca: Optional[str] = None
-    user_cert: Optional[str] = None
-    extra_settings: Dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_saml_timeout(cls, value: Any) -> Any:
-        return _preserve_malformed_int_fields(value, {"saml_timeout"})
-
-
-class FGAuthenticationRule(BaseModel):
-    name: str
-    srcintf: List[str] = Field(default_factory=list)
-    srcaddr: List[str] = Field(default_factory=list)
-    srcaddr6: List[str] = Field(default_factory=list)
-    dstaddr: List[str] = Field(default_factory=list)
-    dstaddr6: List[str] = Field(default_factory=list)
-    protocol: List[str] = Field(default_factory=list)
-    status: Optional[str] = None
-    active_auth_method: Optional[str] = None
-    auth_method: List[str] = Field(default_factory=list)
-    sso: Optional[str] = None
-    web_auth_cookie: Optional[str] = None
-    captive_portal: Optional[str] = None
     extra_settings: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -3888,6 +2704,7 @@ class FGAntivirusProtocol(BaseModel):
 
 class FGAntivirusProfile(BaseModel):
     name: str
+    source_context: str = "root"
     comment: Optional[str] = None
     status: Optional[str] = None
     inspection_mode: Optional[str] = None
@@ -3931,6 +2748,7 @@ class FGWebFilterURLFilter(BaseModel):
 
 class FGWebFilterProfile(BaseModel):
     name: str
+    source_context: str = "root"
     comment: Optional[str] = None
     status: Optional[str] = None
     inspection_mode: Optional[str] = None
@@ -3978,6 +2796,7 @@ class FGDNSFilterBotnet(BaseModel):
 
 class FGDNSFilterProfile(BaseModel):
     name: str
+    source_context: str = "root"
     comment: Optional[str] = None
     status: Optional[str] = None
     categories: List[FGDNSFilterCategory] = Field(default_factory=list)
@@ -4087,6 +2906,7 @@ class FGApplicationOverride(BaseModel):
 
 class FGApplicationList(BaseModel):
     name: str
+    source_context: str = "root"
     comment: Optional[str] = None
     entries: List[FGApplicationEntry] = Field(default_factory=list)
     filters: List[FGApplicationFilter] = Field(default_factory=list)
@@ -4121,6 +2941,7 @@ class FGSSLSSHExemption(BaseModel):
 
 class FGSSLSSHProfile(BaseModel):
     name: str
+    source_context: str = "root"
     comment: Optional[str] = None
     inspection_mode: Optional[str] = None
     protocols: List[FGSSLSSHProtocolInspection] = Field(default_factory=list)
@@ -4149,31 +2970,24 @@ class FGConfig(BaseModel):
     source_build: Optional[str] = None
     execution_contexts: List[FGExecutionContext] = Field(default_factory=list)
 
-    system_global: Optional[SerializeAsAny[FGSystemGlobal]] = None
     dns: Optional[FGDns] = None
 
     system_zones: List[FGSystemZone] = Field(default_factory=list)
     interfaces: List[SerializeAsAny[FGInterface]] = Field(default_factory=list)
 
     addresses: List[SerializeAsAny[FGAddress]] = Field(default_factory=list)
-    address6_templates: List[SerializeAsAny[FGAddress6Template]] = Field(default_factory=list)
     address_groups: List[FGAddressGroup] = Field(default_factory=list)
     wildcard_fqdns: List[FGWildcardFQDN] = Field(default_factory=list)
 
-    service_categories: List[FGServiceCategory] = Field(default_factory=list)
     services: List[SerializeAsAny[FGService]] = Field(default_factory=list)
     service_groups: List[FGServiceGroup] = Field(default_factory=list)
 
     schedules: List[FGSchedule] = Field(default_factory=list)
     schedule_groups: List[FGScheduleGroup] = Field(default_factory=list)
-    traffic_shapers: List[FGTrafficShaper] = Field(default_factory=list)
-    proxy_addresses: List[FGProxyAddress] = Field(default_factory=list)
-    web_proxy_global: Optional[FGWebProxyGlobal] = None
 
     ip_pools: List[FGIPPool] = Field(default_factory=list)
     ip_pools6: List[FGIPPool6] = Field(default_factory=list)
     ip_pool_groups: List[FGIPPoolGroup] = Field(default_factory=list)
-    ipv6_eh_filter: Optional[FGIPv6EHFilter] = None
 
     vips: List[SerializeAsAny[FGVIP]] = Field(default_factory=list)
     vips6: List[FGVIP6] = Field(default_factory=list)
@@ -4181,27 +2995,12 @@ class FGConfig(BaseModel):
     vip_groups6: List[FGVIPGroup6] = Field(default_factory=list)
 
     policies: List[SerializeAsAny[FGPolicy]] = Field(default_factory=list)
-    multicast_policies: List[FGMulticastPolicy] = Field(default_factory=list)
-    multicast_policies6: List[FGMulticastPolicy] = Field(default_factory=list)
     central_snat_rules: List[FGCentralSNATRule] = Field(default_factory=list)
     ip_translations: List[FGIPTranslation] = Field(default_factory=list)
     security_policies: List[FGSecurityPolicy] = Field(default_factory=list)
     policy_routes: List[FGPolicyRoute] = Field(default_factory=list)
-    local_in_policies: List[FGLocalInPolicy] = Field(default_factory=list)
-    proxy_policies: List[FGSourceOnlyRule] = Field(default_factory=list)
-    shaping_policies: List[FGShapingPolicy] = Field(default_factory=list)
     phase1_policies: List[FGPhase1Policy] = Field(default_factory=list)
     phase2_policies: List[FGPhase2Policy] = Field(default_factory=list)
-    dhcp6_servers: List[FGDHCP6Server] = Field(default_factory=list)
-    source_only_rules: List[FGSourceOnlyRule] = Field(default_factory=list)
-    custom_internet_services: List[FGInternetServiceCustom] = Field(default_factory=list)
-    custom_internet_service_groups: List[FGInternetServiceCustomGroup] = Field(default_factory=list)
-    internet_service_additions: List[FGInternetServiceAddition] = Field(default_factory=list)
-    internet_service_appends: List[FGInternetServiceAppend] = Field(default_factory=list)
-    internet_service_extensions: List[FGInternetServiceExtension] = Field(default_factory=list)
-    internet_service_groups: List[FGInternetServiceGroup] = Field(default_factory=list)
-
-    ips_sensors: List[FGIPSSensor] = Field(default_factory=list)
     profile_groups: List[FGProfileGroup] = Field(default_factory=list)
 
     phase1_interfaces: List[FGPhase1Interface] = Field(
@@ -4212,37 +3011,11 @@ class FGConfig(BaseModel):
     )
 
     certificates: List[FGCertificate] = Field(default_factory=list)
-    ssh_keys: List[FGSSHKey] = Field(default_factory=list)
 
     static_routes: List[FGStaticRoute] = Field(default_factory=list)
 
     sdwans: List[FGSDWan] = Field(default_factory=list)
-    dns_servers: List[FGDnsServer] = Field(default_factory=list)
-    dns64_settings: List[FGDns64] = Field(default_factory=list)
 
-    internet_services: List[FGInternetService] = Field(
-        default_factory=list
-    )
-    internet_service_definitions: List[FGInternetServiceDefinition] = Field(
-        default_factory=list
-    )
-
-    fctems_connectors: List[FGFCTEMS] = Field(
-        default_factory=list
-    )
-
-    session_helpers: List[FGSessionHelper] = Field(
-        default_factory=list
-    )
-
-    session_ttl_overrides: List[FGSessionTTLOverride] = Field(
-        default_factory=list
-    )
-    session_ttl_settings: Optional[FGSessionTTLSettings] = None
-
-    dhcp_servers: List[FGDHCPServer] = Field(
-        default_factory=list
-    )
     user_ldap_servers: List[FGUserLDAP] = Field(default_factory=list)
     fsso_servers: List[FGFSSOServer] = Field(default_factory=list)
     fsso_polling: List[FGFSSOPolling] = Field(default_factory=list)
@@ -4253,41 +3026,22 @@ class FGConfig(BaseModel):
     user_groups: List[FGUserGroup] = Field(default_factory=list)
     user_authentication_settings: Optional[FGUserAuthenticationSettings] = None
     user_quarantine: Optional[FGUserQuarantine] = None
-    administrators: List[FGAdministrator] = Field(default_factory=list)
-    admin_profiles: List[FGAdminProfile] = Field(default_factory=list)
-    fortitokens: List[FGFortiToken] = Field(default_factory=list)
     ssl_vpn_portals: List[FGSSLVPNPortal] = Field(default_factory=list)
-    ssl_vpn_host_check_software: List[FGSSLVPNHostCheckSoftware] = Field(
-        default_factory=list
-    )
     ssl_vpn_settings: Optional[FGSSLVPNSettings] = None
     dos_policies: List[FGDoSPolicy] = Field(default_factory=list)
-    firewall_sniffers: List[FGFirewallSniffer] = Field(default_factory=list)
-    authentication_schemes: List[FGAuthenticationScheme] = Field(default_factory=list)
-    authentication_rules: List[FGAuthenticationRule] = Field(default_factory=list)
     antivirus_profiles: List[SerializeAsAny[FGAntivirusProfile]] = Field(default_factory=list)
     webfilter_profiles: List[SerializeAsAny[FGWebFilterProfile]] = Field(default_factory=list)
     dnsfilter_profiles: List[SerializeAsAny[FGDNSFilterProfile]] = Field(default_factory=list)
     application_lists: List[SerializeAsAny[FGApplicationList]] = Field(default_factory=list)
     ssl_ssh_profiles: List[FGSSLSSHProfile] = Field(default_factory=list)
-    structured_source_objects: List[FGStructuredSourceObject] = Field(default_factory=list)
-
     # Typed FortiGate parents whose nested/source-specific semantics remain
-    # extraction-only.  Their recursive counterparts remain in
-    # structured_source_objects and source inventory.
-    network_service_dynamics: List[FGNetworkServiceDynamic] = Field(default_factory=list)
-    sdn_connectors: List[FGSDNConnector] = Field(default_factory=list)
+    # extraction-only. Their recursive counterparts remain parser-local and in
+    # source inventory.
     radius_servers: List[FGUserRADIUS] = Field(default_factory=list)
     tacacs_servers: List[FGUserTACACS] = Field(default_factory=list)
     link_monitors: List[FGLinkMonitor] = Field(default_factory=list)
-    topology_objects: List[FGTopologyObject] = Field(default_factory=list)
     virtual_wire_pairs: List[FGVirtualWirePair] = Field(default_factory=list)
     vdom_links: List[FGVDOMLink] = Field(default_factory=list)
-    access_proxies: List[FGAccessProxy] = Field(default_factory=list)
-    ems_overrides: List[FGEMSOverride] = Field(default_factory=list)
-    ssl_vpn_realms: List[FGSSLVPNRealm] = Field(default_factory=list)
-    ssl_vpn_bookmarks: List[FGSSLVPNBookmark] = Field(default_factory=list)
-    manualkey_interfaces: List[FGManualKeyInterface] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -4305,10 +3059,6 @@ class FGConfig(BaseModel):
     def sdwan(self) -> Optional[FGSDWan]:
         """Backward-compatible access for unambiguous single-SD-WAN configs."""
         return self.sdwans[0] if len(self.sdwans) == 1 else None
-
-    @property
-    def network_services_dynamic(self) -> List[FGNetworkServiceDynamic]:
-        return self.network_service_dynamics
 
     @property
     def user_radius(self) -> List[FGUserRADIUS]:

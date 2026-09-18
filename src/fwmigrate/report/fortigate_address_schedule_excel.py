@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from copy import copy
-import json
 from typing import Any
 
 from openpyxl.utils import get_column_letter
@@ -11,7 +10,6 @@ from openpyxl.utils import get_column_letter
 from fwmigrate.report.excel_readability import ReadableFortiGateExcelExporter
 
 
-ADDRESS6_TEMPLATE_SHEET = "IPv6 Address Templates"
 IP_POOL_GROUP_SHEET = "IP Pool Groups"
 
 
@@ -30,16 +28,9 @@ class FortiGateAddressScheduleExcelExporter(ReadableFortiGateExcelExporter):
             return tuple(
                 sheet_name
                 for sheet_name in order
-                if sheet_name not in {ADDRESS6_TEMPLATE_SHEET, IP_POOL_GROUP_SHEET}
+                if sheet_name != IP_POOL_GROUP_SHEET
             )
 
-        if ADDRESS6_TEMPLATE_SHEET not in order:
-            insert_at = (
-                order.index("Address Groups")
-                if "Address Groups" in order
-                else len(order)
-            )
-            order.insert(insert_at, ADDRESS6_TEMPLATE_SHEET)
         if IP_POOL_GROUP_SHEET not in order:
             insert_at = (
                 order.index("IP Pools") + 1
@@ -64,22 +55,12 @@ class FortiGateAddressScheduleExcelExporter(ReadableFortiGateExcelExporter):
         if "Addresses" in workbook.sheetnames:
             sheet = workbook["Addresses"]
             defaults_column = sheet.max_column + 1
-            template_column = sheet.max_column + 2
-            resolved_column = sheet.max_column + 3
             defaults_header = sheet.cell(3, defaults_column, "Effective Defaults")
-            template_header = sheet.cell(3, template_column, "IPv6 Template Reference")
-            resolved_header = sheet.cell(
-                3,
-                resolved_column,
-                "Template Reference Resolved",
-            )
             if defaults_column > 1:
                 self._copy_cell_style(
                     sheet.cell(3, defaults_column - 1),
                     defaults_header,
                 )
-                self._copy_cell_style(defaults_header, template_header)
-                self._copy_cell_style(template_header, resolved_header)
 
             for row_number, address in enumerate(self.ir.addresses, start=4):
                 defaults_cell = sheet.cell(
@@ -89,108 +70,15 @@ class FortiGateAddressScheduleExcelExporter(ReadableFortiGateExcelExporter):
                         getattr(address, "source_effective_defaults", {}) or {}
                     ),
                 )
-                template_cell = sheet.cell(
-                    row_number,
-                    template_column,
-                    getattr(address, "source_template", None),
-                )
-                resolved = getattr(
-                    address,
-                    "source_template_reference_resolved",
-                    None,
-                )
-                resolved_cell = sheet.cell(
-                    row_number,
-                    resolved_column,
-                    self._optional_bool_literal(resolved),
-                )
                 if defaults_column > 1:
                     self._copy_cell_style(
                         sheet.cell(row_number, defaults_column - 1),
                         defaults_cell,
                     )
-                    self._copy_cell_style(defaults_cell, template_cell)
-                    self._copy_cell_style(template_cell, resolved_cell)
 
             sheet.column_dimensions[
                 get_column_letter(defaults_column)
             ].width = 28
-            sheet.column_dimensions[
-                get_column_letter(template_column)
-            ].width = 24
-            sheet.column_dimensions[
-                get_column_letter(resolved_column)
-            ].width = 28
-
-        self._build_address6_templates(workbook)
-
-    def _build_address6_templates(self, workbook: Any) -> None:
-        templates = list(getattr(self.ir, "address6_templates", []) or [])
-        rows = []
-        for item in templates:
-            segment_payload = [
-                {
-                    "source_id": segment.source_id,
-                    "bits": segment.bits,
-                    "exclusive": segment.exclusive,
-                    "name": segment.name,
-                    "values": [
-                        {
-                            "source_id": value.source_id,
-                            "value": value.value,
-                            "source_attributes": value.source_attributes,
-                        }
-                        for value in segment.values
-                    ],
-                    "source_attributes": segment.source_attributes,
-                }
-                for segment in item.subnet_segments
-            ]
-            rows.append(
-                (
-                    item.name,
-                    item.source_context,
-                    item.ip6,
-                    item.subnet_segment_count,
-                    len(item.subnet_segments),
-                    item.source_fabric_object,
-                    json.dumps(
-                        segment_payload,
-                        ensure_ascii=False,
-                        sort_keys=True,
-                        default=str,
-                    ),
-                    item.migration_status,
-                    self._optional_bool_literal(item.requires_manual_review),
-                    item.review_reasons,
-                    self._format_settings(item.source_attributes),
-                )
-            )
-
-        self._table_sheet(
-            workbook,
-            ADDRESS6_TEMPLATE_SHEET,
-            (
-                "Name",
-                "Source Context",
-                "IPv6 Prefix",
-                "Declared Segment Count",
-                "Parsed Segment Count",
-                "Fabric Object",
-                "Subnet Segments",
-                "Migration Status",
-                "Manual Review",
-                "Review Reasons",
-                "Additional Settings",
-            ),
-            rows,
-            empty_note="No FortiGate IPv6 address templates were extracted.",
-            subtitle=(
-                "FortiOS 7.4.6 address6-template inventory retained without "
-                "expanding template semantics into inferred concrete addresses."
-            ),
-        )
-
     def _build_ip_pools(self, workbook: Any) -> None:
         super()._build_ip_pools(workbook)
         self._build_ip_pool_groups(workbook)

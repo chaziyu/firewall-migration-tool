@@ -241,6 +241,7 @@ def _build_application_lists(
         )
         profile = FGApplicationList746(
             name=node.name,
+            source_context=parser.current_context or "root",
             **_declared_typed_values(
                 profile_settings,
                 FGApplicationList746,

@@ -13,7 +13,6 @@ from fwmigrate.parsers.fortigate.builders.webfilter import _build_webfilter_prof
 from fwmigrate.parsers.fortigate.builders.dnsfilter import _build_dnsfilter_profiles
 from fwmigrate.parsers.fortigate.builders.application_control import _build_application_lists
 from fwmigrate.parsers.fortigate.builders.security_profiles_extra import (
-    _build_ips_sensor,
     _build_ssl_ssh_profile,
     _refresh_interface_ipv6_from_source,
     _refresh_policy_address_families,
@@ -103,98 +102,17 @@ def build_security(self: Any, section_path: str, attributes: Dict[str, Any]) -> 
         self.config.user_groups.append(FGUserGroup(**attributes))
         return True
 
-    if section_path == "system admin":
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes,
-            set(FGAdministrator.model_fields),
-        )
-        self.config.administrators.append(FGAdministrator(**attributes))
-        return True
-
-    if section_path == "system accprofile":
-        raw_permission_blocks = attributes.pop("permission_blocks", [])
-        permission_blocks = []
-        known_permission_settings = {
-            "fwgrp_permission": {"policy", "address", "service", "schedule", "others"},
-            "loggrp_permission": {"config", "data_access", "report_access", "threat_weight"},
-            "netgrp_permission": {"cfg", "packet_capture", "route_cfg"},
-            "sysgrp_permission": {"admin", "upd", "cfg", "mnt"},
-        }
-        for block in raw_permission_blocks:
-            settings = dict(block.get("settings", {}))
-            known_keys = known_permission_settings.get(
-                block["name"].replace("-", "_"), set(settings)
-            )
-            permission_blocks.append(
-                FGAdminProfilePermissionBlock(
-                    name=block["name"],
-                    settings={key: value for key, value in settings.items() if key in known_keys},
-                    extra_settings=sanitize_source_attributes({
-                        key: value for key, value in settings.items() if key not in known_keys
-                    }),
-                )
-            )
-        attributes["permission_blocks"] = permission_blocks
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes,
-            set(FGAdminProfile.model_fields),
-        )
-        self.config.admin_profiles.append(FGAdminProfile(**attributes))
-        return True
-
-    if section_path == "user fortitoken":
-        attributes["serial"] = attributes.pop("name")
-        attributes.pop("id", None)
-        if "user" in attributes:
-            attributes["assigned_user"] = attributes.pop("user")
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes,
-            set(FGFortiToken.model_fields),
-        )
-        self.config.fortitokens.append(FGFortiToken(**attributes))
-        return True
-
     if section_path == "vpn ssl web portal":
         for field in {
             "default_window_height", "default_window_width",
         }:
             self._normalize_optional_int(attributes, field)
         self._normalize_ssl_vpn_nested(attributes)
-        raw_checks = attributes.pop("host_checks", [])
-        host_checks = []
-        for entry in raw_checks:
-            entry["extra_settings"] = _extract_extra_settings(
-                entry,
-                set(FGSSLVPNHostCheckSoftware.model_fields),
-            )
-            host_checks.append(FGSSLVPNHostCheckSoftware(**entry))
-        attributes["host_checks"] = host_checks
         attributes["extra_settings"] = _extract_extra_settings(
             attributes,
             set(FGSSLVPNPortal.model_fields),
         )
         self.config.ssl_vpn_portals.append(FGSSLVPNPortal(**attributes))
-        return True
-
-    if section_path == "vpn ssl web host-check-software":
-        raw_items = attributes.pop("check_items", [])
-        check_items = []
-        for entry in raw_items:
-            if entry.get("name") == str(entry.get("id")):
-                entry.pop("name", None)
-            entry["extra_settings"] = _extract_extra_settings(
-                entry,
-                set(FGSSLVPNHostCheckItem.model_fields),
-            )
-            check_items.append(FGSSLVPNHostCheckItem(**entry))
-        attributes["check_items"] = check_items
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes,
-            set(FGSSLVPNHostCheckSoftware.model_fields),
-        )
-        self.config.ssl_vpn_host_check_software.append(
-            FGSSLVPNHostCheckSoftware(**attributes)
-        )
         return True
 
     if section_path in {"firewall DoS-policy", "firewall DoS-policy6"}:
@@ -220,156 +138,6 @@ def build_security(self: Any, section_path: str, attributes: Dict[str, Any]) -> 
             set(FGDoSPolicy.model_fields),
         )
         self.config.dos_policies.append(FGDoSPolicy(**attributes))
-        return True
-
-    if section_path == "firewall sniffer":
-        if attributes.get("name") == str(attributes.get("id")):
-            attributes.pop("name", None)
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes,
-            set(FGFirewallSniffer.model_fields),
-        )
-        self.config.firewall_sniffers.append(FGFirewallSniffer(**attributes))
-        return True
-
-    if section_path == "system session-helper":
-        if attributes.get("name") == str(attributes.get("id")):
-            attributes["name"] = None
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes,
-            set(FGSessionHelper.model_fields),
-        )
-        self.config.session_helpers.append(FGSessionHelper(**attributes))
-        return True
-
-    if section_path == "system session-ttl port":
-        if attributes.get("name") == str(attributes.get("id")):
-            attributes.pop("name", None)
-        raw_timeout = attributes.get("timeout")
-        if isinstance(raw_timeout, str):
-            if raw_timeout.lower() == "never":
-                attributes["timeout"] = None
-                attributes["timeout_never"] = True
-            else:
-                try:
-                    attributes["timeout"] = int(raw_timeout)
-                except ValueError:
-                    attributes.setdefault("extra_settings", {})["unparsed_timeout"] = raw_timeout
-                    attributes["timeout"] = None
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes,
-            set(FGSessionTTLOverride.model_fields),
-        )
-        self.config.session_ttl_overrides.append(
-            FGSessionTTLOverride(**attributes)
-        )
-        return True
-
-    if section_path == "system dhcp server":
-        if attributes.get("name") == str(attributes.get("id")):
-            attributes.pop("name", None)
-
-        # A malformed edit identifier remains in source inventory. It
-        # cannot safely become a typed object whose identity is numeric.
-        if "id" not in attributes:
-            return True
-
-        for key in FG_DHCP_SERVER_INT_FIELDS:
-            self._normalize_optional_int(attributes, key)
-
-        raw_ip_ranges = attributes.pop("ip_ranges", [])
-        ip_ranges = []
-        for range_attributes in raw_ip_ranges:
-            if range_attributes.get("name") == str(range_attributes.get("id")):
-                range_attributes.pop("name", None)
-            if "id" not in range_attributes:
-                continue
-            range_attributes.setdefault(
-                "source_context", attributes.get("source_context", self.current_context)
-            )
-            for key in FG_DHCP_RANGE_INT_FIELDS:
-                self._normalize_optional_int(range_attributes, key)
-            range_attributes["extra_settings"] = _extract_extra_settings(
-                range_attributes,
-                set(FGDHCPIPRange.model_fields),
-            )
-            ip_ranges.append(FGDHCPIPRange(**range_attributes))
-
-        raw_exclude_ranges = attributes.pop("exclude_ranges", [])
-        exclude_ranges = []
-        for range_attributes in raw_exclude_ranges:
-            if range_attributes.get("name") == str(range_attributes.get("id")):
-                range_attributes.pop("name", None)
-            if "id" not in range_attributes:
-                continue
-            range_attributes.setdefault(
-                "source_context", attributes.get("source_context", self.current_context)
-            )
-            for key in FG_DHCP_RANGE_INT_FIELDS:
-                self._normalize_optional_int(range_attributes, key)
-            range_attributes["extra_settings"] = _extract_extra_settings(
-                range_attributes,
-                set(FGDHCPExcludeRange.model_fields),
-            )
-            exclude_ranges.append(FGDHCPExcludeRange(**range_attributes))
-
-        raw_reservations = attributes.pop("reserved_addresses", [])
-        reserved_addresses = []
-        for reservation_attributes in raw_reservations:
-            if reservation_attributes.get("name") == str(reservation_attributes.get("id")):
-                reservation_attributes.pop("name", None)
-            if "id" not in reservation_attributes:
-                continue
-            reservation_attributes.setdefault(
-                "source_context", attributes.get("source_context", self.current_context)
-            )
-            reservation_attributes["extra_settings"] = _extract_extra_settings(
-                reservation_attributes,
-                set(FGDHCPReservation.model_fields),
-            )
-            reserved_addresses.append(FGDHCPReservation(**reservation_attributes))
-
-        raw_options = attributes.pop("options", [])
-        options = []
-        for option_attributes in raw_options:
-            if option_attributes.get("name") == str(option_attributes.get("id")):
-                option_attributes.pop("name", None)
-            if "id" not in option_attributes:
-                continue
-            option_attributes.setdefault(
-                "source_context", attributes.get("source_context", self.current_context)
-            )
-            for key in FG_DHCP_OPTION_INT_FIELDS:
-                self._normalize_optional_int(option_attributes, key)
-            raw_ips = option_attributes.get("ip", [])
-            if not isinstance(raw_ips, list):
-                raw_ips = [raw_ips]
-            option_attributes["ips"] = list(raw_ips)
-            option_attributes["ip"] = raw_ips[0] if len(raw_ips) == 1 else None
-            option_attributes["extra_settings"] = _extract_extra_settings(
-                option_attributes,
-                set(FGDHCPOption.model_fields),
-            )
-            options.append(FGDHCPOption(**option_attributes))
-
-        attributes["ip_ranges"] = ip_ranges
-        attributes["exclude_ranges"] = exclude_ranges
-        attributes["reserved_addresses"] = reserved_addresses
-        attributes["options"] = options
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes,
-            set(FGDHCPServer.model_fields),
-        )
-        self.config.dhcp_servers.append(FGDHCPServer(**attributes))
-        return True
-
-    if section_path == "system dns64":
-        attributes.pop("name", None)
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes,
-            set(FGDns64.model_fields),
-        )
-        self.config.dns64_settings.append(FGDns64(**attributes))
         return True
 
     return False

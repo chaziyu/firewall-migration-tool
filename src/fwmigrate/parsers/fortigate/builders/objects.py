@@ -163,12 +163,6 @@ def build_objects(self: Any, section_path: str, attributes: Dict[str, Any]) -> b
         )
         return True
 
-    if section_path == "firewall address6-template":
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes, set(FGAddress6Template.model_fields)
-        )
-        self.config.address6_templates.append(FGAddress6Template(**attributes))
-        return True
 
     if section_path == "firewall multicast-address6":
         attributes["is_ipv6"] = True
@@ -261,29 +255,6 @@ def build_objects(self: Any, section_path: str, attributes: Dict[str, Any]) -> b
         )
         return True
 
-    if section_path == "firewall shaper traffic-shaper":
-        for key in (
-            "guaranteed_bandwidth", "maximum_bandwidth", "exceed_bandwidth",
-            "exceed_class_id",
-        ):
-            self._normalize_optional_int(attributes, key)
-        overhead_val = attributes.pop("overhead", None)
-        if overhead_val is not None:
-            try:
-                attributes["overhead"] = int(overhead_val)
-            except (ValueError, TypeError):
-                attributes.setdefault("extra_settings", {})["overhead"] = overhead_val
-        attributes["extra_settings"] = {
-            **attributes.get("extra_settings", {}),
-            **_extract_extra_settings(
-                attributes,
-                set(FGTrafficShaper.model_fields),
-            ),
-        }
-        self.config.traffic_shapers.append(
-            FGTrafficShaper(**attributes)
-        )
-        return True
 
     if section_path == "firewall ippool":
         attributes["extra_settings"] = _extract_extra_settings(

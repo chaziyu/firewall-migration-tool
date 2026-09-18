@@ -50,100 +50,49 @@ def build_routing_vpn(self: Any, section_path: str, attributes: Dict[str, Any]) 
         context = attributes.pop("source_context", self.current_context)
         status = attributes.get("status")
         nested_configs = attributes.pop("nested_configs", [])
+        rule_type = {
+            "firewall security-policy": FGSecurityPolicy,
+            "vpn ipsec phase1": FGPhase1Policy,
+            "vpn ipsec phase2": FGPhase2Policy,
+        }.get(section_path)
+        if rule_type is None:
+            return False
         settings = sanitize_source_attributes(attributes)
-        rule_type = FGSourceOnlyRule
-        if section_path in {"firewall local-in-policy", "firewall local-in-policy6"}:
-            rule_type = FGLocalInPolicy
-        elif section_path == "firewall security-policy":
-            rule_type = FGSecurityPolicy
-        elif section_path == "firewall shaping-policy":
-            rule_type = FGShapingPolicy
-        elif section_path == "vpn ipsec phase1":
-            rule_type = FGPhase1Policy
-        elif section_path == "vpn ipsec phase2":
-            rule_type = FGPhase2Policy
-        elif section_path == "system dhcp6 server":
-            rule_type = FGDHCP6Server
-        typed_attributes = {}
-        if rule_type is not FGSourceOnlyRule:
-            inherited_fields = {
-                "family", "id", "name", "source_order", "status",
-                "source_context", "settings", "nested_configs", "extra_settings",
-                "source_explicit_fields",
-            }
-            semantic_fields = set(rule_type.model_fields) - inherited_fields
-            typed_attributes = {
-                key: value
-                for key, value in settings.items()
-                if key in semantic_fields
-            }
-            if "source_explicit_fields" in rule_type.model_fields:
-                typed_attributes["source_explicit_fields"] = set(
-                    settings.get("source_explicit_fields", set())
-                )
-            if rule_type is FGLocalInPolicy:
-                typed_attributes["address_family"] = (
-                    "ipv6" if section_path.endswith("6") else "ipv4"
-                )
-            typed_attributes["extra_settings"] = {
-                key: value
-                for key, value in settings.items()
-                if key not in semantic_fields and key not in inherited_fields
-            }
-            if rule_type is FGSecurityPolicy:
-                typed_attributes["ngfw_mode"] = self._execution_context().ngfw_mode
-                for key in ("application", "app_category"):
-                    self._normalize_int_list(typed_attributes, key)
-                    if f"unparsed_{key}" in typed_attributes:
-                        typed_attributes["extra_settings"][f"unparsed_{key}"] = typed_attributes.pop(
-                            f"unparsed_{key}"
-                        )
-            if rule_type is FGShapingPolicy:
-                for key in ("application", "app_category"):
-                    self._normalize_int_list(typed_attributes, key)
-                    if f"unparsed_{key}" in typed_attributes:
-                        typed_attributes["extra_settings"][f"unparsed_{key}"] = typed_attributes.pop(
-                            f"unparsed_{key}"
-                        )
-            if "dhgrp" in typed_attributes:
-                self._normalize_int_list(typed_attributes, "dhgrp")
-            for key in (
-                "aggregate_weight", "dpd_retrycount", "dpd_retryinterval",
-                "auto_discovery_offer_interval",
-                "fragmentation_mtu", "idle_timeoutinterval", "ipv6_prefix",
-                "keepalive", "keylife", "negotiate_timeout", "priority",
-                "distance", "ip_delay_interval", "keylifeseconds",
-                "keylifekbs", "initiator_autoclose", "network_id",
-            ):
-                self._normalize_optional_int(typed_attributes, key)
-            if rule_type is FGDHCP6Server:
-                self._normalize_optional_int(typed_attributes, "lease_time")
-                raw_ip_ranges = attributes.get("ip_ranges", [])
-                ip_ranges = []
-                for r in raw_ip_ranges:
-                    self._normalize_optional_int(r, "id")
-                    r["extra_settings"] = _extract_extra_settings(r, set(FGDHCP6IPRange.model_fields))
-                    ip_ranges.append(FGDHCP6IPRange(**r))
-                typed_attributes["ip_ranges"] = ip_ranges
-                raw_prefixes = attributes.get("prefix_ranges", [])
-                prefix_ranges = []
-                for p in raw_prefixes:
-                    self._normalize_optional_int(p, "id")
-                    self._normalize_optional_int(p, "prefix_length")
-                    p["extra_settings"] = _extract_extra_settings(p, set(FGDHCP6PrefixRange.model_fields))
-                    prefix_ranges.append(FGDHCP6PrefixRange(**p))
-                typed_attributes["prefix_ranges"] = prefix_ranges
-                raw_options = attributes.get("options", [])
-                options = []
-                for o in raw_options:
-                    self._normalize_optional_int(o, "id")
-                    self._normalize_optional_int(o, "code")
-                    raw_ip6 = o.get("ip6", [])
-                    if isinstance(raw_ip6, list):
-                        o["ip6"] = raw_ip6[0] if raw_ip6 else None
-                    o["extra_settings"] = _extract_extra_settings(o, set(FGDHCP6Option.model_fields))
-                    options.append(FGDHCP6Option(**o))
-                typed_attributes["options"] = options
+        inherited_fields = {
+            "family", "id", "name", "source_order", "status",
+            "source_context", "nested_configs", "extra_settings",
+            "source_explicit_fields",
+        }
+        semantic_fields = set(rule_type.model_fields) - inherited_fields
+        typed_attributes = {
+            key: value for key, value in settings.items() if key in semantic_fields
+        }
+        typed_attributes["source_explicit_fields"] = set(
+            settings.get("source_explicit_fields", set())
+        )
+        typed_attributes["extra_settings"] = {
+            key: value
+            for key, value in settings.items()
+            if key not in semantic_fields and key not in inherited_fields
+        }
+        if rule_type is FGSecurityPolicy:
+            typed_attributes["ngfw_mode"] = self._execution_context().ngfw_mode
+            for key in ("application", "app_category"):
+                self._normalize_int_list(typed_attributes, key)
+                if f"unparsed_{key}" in typed_attributes:
+                    typed_attributes["extra_settings"][f"unparsed_{key}"] = typed_attributes.pop(
+                        f"unparsed_{key}"
+                    )
+        if "dhgrp" in typed_attributes:
+            self._normalize_int_list(typed_attributes, "dhgrp")
+        for key in (
+            "aggregate_weight", "dpd_retrycount", "dpd_retryinterval",
+            "auto_discovery_offer_interval", "fragmentation_mtu",
+            "idle_timeoutinterval", "ipv6_prefix", "keepalive", "keylife",
+            "negotiate_timeout", "priority", "distance", "ip_delay_interval",
+            "keylifeseconds", "keylifekbs", "initiator_autoclose", "network_id",
+        ):
+            self._normalize_optional_int(typed_attributes, key)
         rule = rule_type(
             family=SOURCE_ONLY_RULE_FAMILIES[section_path],
             id=rule_id,
@@ -151,92 +100,18 @@ def build_routing_vpn(self: Any, section_path: str, attributes: Dict[str, Any]) 
             source_order=self._source_order,
             status=status,
             source_context=context,
-            settings=settings,
             nested_configs=nested_configs,
+            extra_settings=typed_attributes.pop("extra_settings", {}),
             **typed_attributes,
         )
         target = {
             "firewall security-policy": self.config.security_policies,
-            "router policy": self.config.policy_routes,
-            "router policy6": self.config.policy_routes,
-            "firewall local-in-policy": self.config.local_in_policies,
-            "firewall local-in-policy6": self.config.local_in_policies,
-            "firewall proxy-policy": self.config.proxy_policies,
-            "firewall shaping-policy": self.config.shaping_policies,
             "vpn ipsec phase1": self.config.phase1_policies,
             "vpn ipsec phase2": self.config.phase2_policies,
-            "system dhcp6 server": self.config.dhcp6_servers,
-        }.get(section_path, self.config.source_only_rules)
+        }.get(section_path)
+        if target is None:
+            return False
         target.append(rule)
-        return True
-
-    if section_path == "ips sensor":
-        raw_entries = attributes.pop("entries", [])
-        entries = []
-
-        for raw_entry in raw_entries:
-            entry = dict(raw_entry)
-            if entry.get("name") == str(entry.get("id")):
-                entry.pop("name", None)
-
-            raw_rules = entry.pop("rule", [])
-            if not isinstance(raw_rules, list):
-                raw_rules = [raw_rules]
-
-            rules = []
-            unparsed_rules = []
-            for value in raw_rules:
-                try:
-                    rules.append(int(value))
-                except (TypeError, ValueError):
-                    unparsed_rules.append(value)
-
-            entry["rules"] = rules
-            if unparsed_rules:
-                entry["unparsed_rule_values"] = unparsed_rules
-
-            for numeric_field in (
-                "rate_count",
-                "rate_duration",
-            ):
-                raw_value = entry.get(numeric_field)
-                if raw_value is None:
-                    continue
-                try:
-                    entry[numeric_field] = int(raw_value)
-                except (TypeError, ValueError):
-                    entry.pop(numeric_field, None)
-                    entry[
-                        f"unparsed_{numeric_field}"
-                    ] = raw_value
-
-            raw_vuln_types = entry.get("vuln_type", [])
-            vuln_types = []
-            for value in raw_vuln_types:
-                try:
-                    vuln_types.append(int(value))
-                except (TypeError, ValueError):
-                    entry.setdefault("unparsed_vuln_type", []).append(value)
-            entry["vuln_type"] = vuln_types
-            entry["exempt_ips"] = [
-                FGIPSSensorExemptIP(**exempt)
-                for exempt in entry.get("exempt_ips", [])
-            ]
-
-            entry["extra_settings"] = _extract_extra_settings(
-                entry,
-                set(FGIPSSensorEntry.model_fields),
-            )
-            entries.append(FGIPSSensorEntry(**entry))
-
-        attributes["entries"] = entries
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes,
-            set(FGIPSSensor.model_fields),
-        )
-        self.config.ips_sensors.append(
-            FGIPSSensor(**attributes)
-        )
         return True
 
     if section_path == "vpn ipsec phase1-interface":
@@ -305,18 +180,6 @@ def build_routing_vpn(self: Any, section_path: str, attributes: Dict[str, Any]) 
         self.config.certificates.append(
             FGCertificate(**attributes)
         )
-        return True
-
-    if section_path in {
-        "firewall ssh local-key",
-        "firewall ssh local-ca",
-    }:
-        attributes["key_type"] = section_path.rsplit(" ", 1)[-1]
-        attributes["extra_settings"] = _extract_extra_settings(
-            attributes,
-            set(FGSSHKey.model_fields),
-        )
-        self.config.ssh_keys.append(FGSSHKey(**attributes))
         return True
 
     if section_path in {"router static", "router static6"}:
@@ -483,4 +346,3 @@ def build_routing_vpn(self: Any, section_path: str, attributes: Dict[str, Any]) 
         return True
 
     return False
-
