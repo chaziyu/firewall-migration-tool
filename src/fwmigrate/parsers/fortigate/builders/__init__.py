@@ -13,8 +13,6 @@ def build_model(parser: Any, section_path: str, attributes: dict[str, Any]) -> b
     """Run the domain builders and report whether one consumed the section."""
 
     if section_path in {
-        "firewall shaper per-ip-shaper",
-        "firewall shaping-profile",
         "firewall ippool_grp",
     } and build_objects(parser, section_path, attributes):
         return True

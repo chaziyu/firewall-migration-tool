@@ -338,13 +338,6 @@ class FortiGateCLIGenerator:
                     )
                     continue
 
-                if svc.source_category:
-                    if (svc.source_context, svc.source_category) not in emitted_service_categories:
-                        lines.append(
-                            f"    # Service {svc.name} withheld: references un-emitted service category '{svc.source_category}'"
-                        )
-                        continue
-
                 if svc.source_protocol_number is not None and not (0 <= svc.source_protocol_number <= 254):
                     lines.append(
                         f"    # Service {svc.name} withheld: protocol-number {svc.source_protocol_number} outside valid range 0-254"
@@ -392,7 +385,10 @@ class FortiGateCLIGenerator:
                     continue
 
                 lines.append(f'    edit "{svc.name}"')
-                if svc.source_category:
+                if svc.source_category and (
+                    svc.source_context,
+                    svc.source_category,
+                ) in emitted_service_categories:
                     lines.append(f'        set category "{svc.source_category}"')
                 if svc.source_proxy:
                     lines.append("        set proxy enable")

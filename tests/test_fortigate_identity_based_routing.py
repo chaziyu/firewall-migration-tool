@@ -54,8 +54,9 @@ end
 
 
 def test_identity_routing_is_ordered_source_only_with_strict_dependencies() -> None:
-    parsed = FortiGateParser(FortiGateTokenizer(CONFIG)).parse()
-    route = next(item for item in parsed.structured_source_objects if item.source_path == "firewall identity-based-route")
+    parser = FortiGateParser(FortiGateTokenizer(CONFIG))
+    parsed = parser.parse()
+    route = next(item for item in parser.structured_source_objects if item.source_path == "firewall identity-based-route")
     rules = route.root.children[0].children
     assert [rule.name for rule in rules] == ["20", "5"]
     assert rules[0].commands[2].values == ["Employees", "Contractors"]

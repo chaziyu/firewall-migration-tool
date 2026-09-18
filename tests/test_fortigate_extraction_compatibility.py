@@ -29,6 +29,55 @@ def _names(items):
     return {item.name for item in items}
 
 
+def test_removed_fortigate_families_remain_inventory_only():
+    paths = [
+        "firewall multicast-policy", "firewall multicast-policy6",
+        "firewall local-in-policy", "firewall local-in-policy6",
+        "system dhcp server", "system dhcp6 server",
+        "firewall address6-template", "authentication scheme",
+        "authentication rule", "firewall access-proxy",
+        "firewall access-proxy6", "firewall access-proxy-virtual-host",
+        "firewall access-proxy virtual-host", "firewall access-proxy6 virtual-host",
+        "firewall access-proxy realservers", "firewall access-proxy6 realservers",
+        "firewall network-service-dynamic", "system sdn-connector",
+        "firewall shaper traffic-shaper", "firewall shaper per-ip-shaper",
+        "firewall shaping-profile", "firewall shaping-policy", "firewall proxy-policy",
+        "system global",
+    ]
+    blocks = []
+    for path in paths:
+        if path == "system global":
+            blocks.append("config system global\n    set hostname dropped\nend")
+            continue
+        blocks.append(
+            f"config {path}\n"
+            "    edit dropped\n"
+            "        set value dropped\n"
+            "    next\n"
+            "end"
+        )
+
+    result = extract_fortigate_config("\n".join(blocks))
+    sections = {section.path: section for section in result.source_sections}
+    inventory = {item.source_path: item for item in result.inventory_items}
+
+    assert set(sections) == set(paths)
+    assert all(
+        sections[path].status == ExtractionStatus.IGNORED_BY_POLICY
+        and sections[path].migration_impact == MigrationImpact.NONE
+        for path in paths
+    )
+    assert set(inventory) == set(paths)
+    assert not result.dependencies
+    assert result.blocking_reasons == []
+    assert result.generation_safe is True
+    fortios = result.canonical_ir.vendor_extensions.fortios
+    assert not hasattr(fortios, "source_only_rules")
+    assert fortios.authentication_profiles == []
+    assert fortios.authentication_policies == []
+    assert fortios.traffic_shapers == []
+
+
 def test_source_command_backward_compatibility():
     """Verify SourceCommand default field values work with legacy 3-arg constructor."""
     cmd = SourceCommand(operation="set", key="subnet", values=["192.168.1.0", "255.255.255.0"])
@@ -71,6 +120,33 @@ def test_fortigate_extraction_pipeline_compatibility():
     assert isinstance(result, ExtractionResult)
     assert len(result.canonical_ir.addresses) >= 1
     assert any(addr.name == "web_server" for addr in result.canonical_ir.addresses)
+
+
+def test_security_profile_references_preserve_profile_context():
+    source = '''
+config antivirus profile
+    edit "av"
+        set comment "test"
+    next
+end
+config firewall policy
+    edit 1
+        set name "policy"
+        set srcintf "any"
+        set dstintf "any"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action accept
+        set av-profile "av"
+    next
+end
+'''
+
+    result = extract_fortigate_config(source)
+
+    policy = result.canonical_ir.policies[0]
+    assert policy.security_profile_reference_statuses["av_profile"] == "resolved"
 
 
 def test_fortigate_addrgrp_parser_preserves_typed_and_unknown_fields():
@@ -316,15 +392,14 @@ end
     inventory = next(
         item for item in result.inventory_items if item.source_path == "system accprofile"
     )
-    unsupported = next(
-        item
+    assert nested_section.migration_impact == MigrationImpact.NONE
+    assert inventory.migration_impact == MigrationImpact.NONE
+    assert inventory.status == ExtractionStatus.IGNORED_BY_POLICY
+    assert not any(
+        item.source_path == "system accprofile utmgrp-permission"
         for item in result.unsupported_items
-        if item.source_path == "system accprofile utmgrp-permission"
     )
-    assert nested_section.migration_impact == MigrationImpact.REVIEW
-    assert inventory.migration_impact == MigrationImpact.REVIEW
-    assert unsupported.migration_impact == MigrationImpact.REVIEW
-    assert result.requires_manual_review is True
+    assert result.requires_manual_review is False
 
 
 def test_unsupported_traffic_section_still_blocks_generation():

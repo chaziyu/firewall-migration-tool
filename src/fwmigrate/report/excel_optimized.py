@@ -138,16 +138,13 @@ BUILDERS = (
     ExcelBuilderSpec("_build_address_groups", frozenset({"Address Groups"})),
     ExcelBuilderSpec("_build_address_group_tags", frozenset({"Address Group Tags"})),
     ExcelBuilderSpec("_build_proxy_addresses", frozenset({"Proxy Addresses"})),
-    ExcelBuilderSpec("_build_web_proxy_settings", frozenset({"Web Proxy Settings"})),
     ExcelBuilderSpec("_build_service_categories", frozenset({"Service Categories"})),
     ExcelBuilderSpec("_build_services", frozenset({"Services"})),
     ExcelBuilderSpec("_build_service_groups", frozenset({"Service Groups"})),
-    ExcelBuilderSpec("_build_session_helpers", frozenset({"Session Helpers"})),
     ExcelBuilderSpec("_build_session_ttl_settings", frozenset({"Session TTL Settings"})),
     ExcelBuilderSpec("_build_session_ttl_overrides", frozenset({"Session TTL Overrides"})),
     ExcelBuilderSpec("_build_schedules", frozenset({"Schedules"})),
     ExcelBuilderSpec("_build_schedule_groups", frozenset({"Schedule Groups"})),
-    ExcelBuilderSpec("_build_traffic_shapers", frozenset({"Traffic Shapers"})),
     ExcelBuilderSpec("_build_policies", frozenset({"Policies"})),
     ExcelBuilderSpec("_build_firewall_filters", frozenset({"Firewall Filters"})),
     ExcelBuilderSpec(
@@ -201,31 +198,16 @@ BUILDERS = (
     ExcelBuilderSpec(
         "_build_routing_dependencies",
         frozenset({
-            "Routing Dependencies", "Routing Dependency Settings", "Admin Profile Permissions", "FortiTokens",
+            "Routing Dependencies", "Routing Dependency Settings", "Admin Profile Permissions",
         }),
     ),
     ExcelBuilderSpec(
         "_build_sdwan",
         frozenset({
-            "SD-WAN", "IPS Exempt IPs", "SD-WAN Zones", "SD-WAN Members", "SD-WAN Health Checks",
+            "SD-WAN", "SD-WAN Zones", "SD-WAN Members", "SD-WAN Health Checks",
             "SD-WAN SLAs", "SD-WAN Rules",
         }),
     ),
-    ExcelBuilderSpec("_build_internet_services", frozenset({"Internet Services"})),
-    ExcelBuilderSpec(
-        "_build_internet_service_definitions",
-        frozenset({"Internet Service Definitions", "Internet Service Def Entries", "Internet Service Def Ports"}),
-    ),
-    ExcelBuilderSpec(
-        "_build_internet_service_extract_only",
-        frozenset({
-            "Custom Internet Services", "Custom IS Entries", "Custom IS Ports", "Custom Internet Service Groups",
-            "Internet Service Groups", "IS Additions", "IS Addition Entries", "IS Addition Ports", "IS Appends",
-            "IS Extensions", "IS Extension Disabled", "IS Extension Entries", "IS Extension Ports",
-        }),
-    ),
-    ExcelBuilderSpec("_build_ips_sensors", frozenset({"IPS Sensors"})),
-    ExcelBuilderSpec("_build_ips_sensor_entries", frozenset({"IPS Sensor Entries"})),
     ExcelBuilderSpec("_build_security_profiles", frozenset({"Security Profiles"})),
     ExcelBuilderSpec(
         "_build_globalprotect_sheets",
@@ -297,11 +279,8 @@ BUILDERS = (
     ExcelBuilderSpec("_build_phase7_identity_sheets", frozenset({
         "Identity Server Endpoints", "Authentication Sequences", "SSL TLS Service Profiles",
     })),
-    ExcelBuilderSpec("_build_warnings", frozenset({"Warnings"})),
-    ExcelBuilderSpec("_build_unsupported", frozenset({"Unsupported"})),
-    ExcelBuilderSpec("_build_source_inventory", frozenset({"Source Inventory"})),
     ExcelBuilderSpec("_build_extraction_coverage", frozenset({"Extraction Coverage"})),
-    ExcelBuilderSpec("_build_unresolved_references", frozenset({"Dependency Registry", "Unresolved References"})),
+    ExcelBuilderSpec("_build_unresolved_references", frozenset({"Dependency Registry"})),
 )
 _BUILDER_SPECS = {spec.method_name: spec for spec in BUILDERS}
 
@@ -436,18 +415,15 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         self._build_address_groups(workbook)
         self._build_address_group_tags(workbook)
         self._build_proxy_addresses(workbook)
-        self._build_web_proxy_settings(workbook)
 
         self._build_service_categories(workbook)
         self._build_services(workbook)
         self._build_service_groups(workbook)
-        self._build_session_helpers(workbook)
         self._build_session_ttl_settings(workbook)
         self._build_session_ttl_overrides(workbook)
 
         self._build_schedules(workbook)
         self._build_schedule_groups(workbook)
-        self._build_traffic_shapers(workbook)
         self._build_policies(workbook)
         self._build_firewall_filters(workbook)
         self._build_registered_if_active(
@@ -489,11 +465,6 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
         self._build_routing_dependencies(workbook)
         self._build_sdwan(workbook)
 
-        self._build_internet_services(workbook)
-        self._build_internet_service_definitions(workbook)
-        self._build_internet_service_extract_only(workbook)
-        self._build_ips_sensors(workbook)
-        self._build_ips_sensor_entries(workbook)
 
         self._build_security_profiles(workbook)
         self._build_registered_if_active(
@@ -528,9 +499,6 @@ class SinglePassIRExcelExporter(FortiGateAddressScheduleExcelExporter):
             workbook, active_sheets, "_build_pan_sdwan_sheets"
         )
 
-        self._build_warnings(workbook)
-        self._build_unsupported(workbook)
-        self._build_source_inventory(workbook)
         self._build_extraction_coverage(workbook)
         self._build_unresolved_references(workbook)
 

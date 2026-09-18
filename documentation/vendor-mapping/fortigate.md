@@ -5,9 +5,15 @@ itself guarantee target-generator support. Complex or vendor-specific values
 remain in source evidence and may require review.
 
 IR V2 storage uses canonical collections for portable intent. FortiOS-only
-source rules, Internet Service Database records, SD-WAN details, and other
+source rules, SD-WAN details, and other
 nonportable semantics are stored under `vendor_extensions.fortios`; legacy
 Python root properties remain compatibility projections.
+
+Standalone FortiGate IPS sensor inventory, Internet Service inventory, and
+global web-proxy settings are outside the extraction boundary. Their source
+sections remain accounted for as `IGNORED_BY_POLICY`. References to those
+objects from policies, routing, NAT, local-in, multicast, or SD-WAN rules are
+preserved as source references and are resolved as external dependencies.
 
 | Domain | Vendor config | Vendor field | IR model | IR field | Mapping | Support | Parser |
 |---|---|---|---|---|---|---|---|

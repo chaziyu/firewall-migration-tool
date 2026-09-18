@@ -74,7 +74,6 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
             "Firewall Policy Source Settings",
             "Interface Nested Configuration",
             "VIP Nested Configuration",
-            "FortiTokens",
         }
     )
 
@@ -154,16 +153,11 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
             "PAN DNS Proxy Domains",
             "PAN QoS Classes",
             "PAN HA Monitoring",
-            "Internet Service Def Entries",
-            "Internet Service Def Ports",
-            "IPS Sensor Entries",
-            "IPS Exempt IPs",
             "Security Profile Definitions",
             "Security Profile Rules",
             "Source Security Profile Setting",
             "Security Identity Dependencies",
             "DoS Anomalies",
-            "Source Inventory",
             "FortiGate Source Configuration",
         }
     )
@@ -175,9 +169,6 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
         {
             "Summary",
             REVIEW_SHEET,
-            "Warnings",
-            "Unsupported",
-            "Unresolved References",
             "Extraction Coverage",
         }
     )
@@ -205,7 +196,6 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
         "User Groups": "C4",
         "Administrators": "C4",
         "Security Profiles": "C4",
-        "IPS Sensors": "C4",
         "SD-WAN Rules": "D4",
         "Virtual IPs": "C4",
         "IP Pools": "C4",
@@ -443,12 +433,6 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
             reason_columns = [headers[name] for name in reason_headers if name in headers]
             object_columns = [headers[name] for name in object_headers if name in headers]
 
-            audit_sheet = sheet.title in {
-                "Warnings",
-                "Unsupported",
-                "Unresolved References",
-            }
-
             for row_number in range(4, sheet.max_row + 1):
                 manual_review = (
                     manual_column is not None
@@ -463,7 +447,7 @@ class VendorAwareIRExcelExporter(_BaseIRExcelExporter):
                         status_value = str(candidate)
                     status_requires_review = status_requires_review or self._review_status(candidate)
 
-                if not (audit_sheet or manual_review or status_requires_review):
+                if not (manual_review or status_requires_review):
                     continue
 
                 object_value = ""

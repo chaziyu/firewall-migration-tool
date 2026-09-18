@@ -4,22 +4,140 @@ from fwmigrate.parsers.fortigate.command_evaluator import (
     evaluate_commands,
     evaluate_section_commands,
 )
+from fwmigrate.parsers.fortigate.builders import build_model as build_section
 from fwmigrate.parsers.fortigate.model import (
     FGAddress,
     FGAddressGroup,
     FGAddressGroupTaggingEntry,
+    FGConfig,
 )
-from fwmigrate.parsers.fortigate.parser import FortiGateParser
+from fwmigrate.parsers.fortigate.parser import (
+    CONTEXTUAL_MODEL_SECTIONS,
+    SECTION_EXPLICIT_FIELDS,
+    SOURCE_ONLY_RULE_FAMILIES,
+    FortiGateParser,
+)
 from fwmigrate.parsers.fortigate.section_registry import (
     get_section_parser_capability,
     get_section_spec,
+    SECTION_REGISTRY,
 )
 from fwmigrate.parsers.fortigate.source_tree import FGSourceCommand
+from fwmigrate.ir.extensions import IRFortiOSExtensions
 from fwmigrate.parsers.fortigate.tokenizer import (
     FortiGateTokenizer,
     TokenType,
     TokenizerError,
 )
+
+
+DROPPED_SECTION_PATHS = frozenset({
+    "system dhcp server", "system dhcp server ip-range",
+    "system dhcp server exclude-range", "system dhcp server reserved-address",
+    "system dhcp server options", "system dhcp6 server",
+    "system dhcp6 server ip-range", "system dhcp6 server prefix-range",
+    "system dhcp6 server option", "system dhcp6 server options",
+    "firewall shaping-policy", "firewall shaper traffic-shaper",
+    "firewall shaper per-ip-shaper", "firewall ipv6-eh-filter",
+    "firewall address6-template", "firewall service category",
+    "firewall proxy-address", "system dns-server", "system dns64",
+    "firewall multicast-policy", "firewall multicast-policy6",
+    "firewall network-service-dynamic", "system sdn-connector",
+    "system switch-interface", "system pppoe-interface",
+    "authentication scheme", "authentication rule", "system admin",
+    "system accprofile", "user fortitoken", "system session-helper",
+    "system session-ttl", "system session-ttl port",
+    "vpn ssl web host-check-software", "firewall sniffer",
+    "endpoint-control fctems", "firewall local-in-policy",
+    "firewall local-in-policy6", "firewall proxy-policy",
+    "firewall ssh local-key", "firewall ssh local-ca", "web-proxy global",
+    "firewall access-proxy", "firewall access-proxy6",
+    "firewall access-proxy-virtual-host", "firewall access-proxy-ssh-client-cert",
+    "endpoint-control fctems-override", "vpn ssl web realm",
+    "vpn ssl web user-bookmark", "vpn ssl web group-bookmark",
+    "vpn ipsec manualkey", "vpn ipsec manualkey-interface",
+})
+
+
+def test_dropped_sections_are_not_parser_registered():
+    for path in DROPPED_SECTION_PATHS:
+        assert path not in SECTION_EXPLICIT_FIELDS
+        assert path not in SOURCE_ONLY_RULE_FAMILIES
+        assert path not in CONTEXTUAL_MODEL_SECTIONS
+        spec = SECTION_REGISTRY.get(path)
+        assert spec is None or (spec.model is None and spec.destination_collection is None)
+
+
+def test_dropped_sections_are_not_consumed_by_builders():
+    parser = FortiGateParser(FortiGateTokenizer(""))
+    before = parser.config.model_dump()
+
+    for path in (
+        "firewall address6-template",
+        "firewall shaper traffic-shaper",
+        "system admin",
+        "system accprofile",
+        "user fortitoken",
+        "vpn ssl web host-check-software",
+        "firewall sniffer",
+        "system session-helper",
+        "system session-ttl port",
+        "system dhcp server",
+        "system dns64",
+        "firewall local-in-policy",
+        "firewall local-in-policy6",
+        "firewall proxy-policy",
+        "firewall shaping-policy",
+        "system dhcp6 server",
+        "firewall ssh local-key",
+        "firewall ssh local-ca",
+        "authentication scheme",
+    ):
+        assert build_section(parser, path, {"id": 1, "name": "dropped"}) is False
+
+    assert parser.config.model_dump() == before
+
+
+def test_fg_config_exposes_only_migration_boundary_collections():
+    fields = set(FGConfig.model_fields)
+    assert fields.isdisjoint({
+        "traffic_shapers",
+        "dhcp_servers",
+        "dns64_settings",
+        "administrators",
+        "fortitokens",
+        "access_proxies",
+        "topology_objects",
+    })
+    assert {
+        "addresses",
+        "address_groups",
+        "services",
+        "service_groups",
+        "schedules",
+        "policies",
+        "static_routes",
+        "phase1_interfaces",
+        "phase2_interfaces",
+    } <= fields
+    assert "structured_source_objects" not in fields
+    assert "source_only_rules" not in fields
+    assert "source_only_rules" not in IRFortiOSExtensions.model_fields
+
+
+def test_unknown_source_stops_at_parser_inventory():
+    parser = FortiGateParser(FortiGateTokenizer('''config future feature
+    edit "one"
+        set unknown value
+    next
+end
+'''))
+    config = parser.parse()
+
+    assert "structured_source_objects" not in FGConfig.model_fields
+    assert "source_only_rules" not in FGConfig.model_fields
+    assert any(item.source_path == "future feature" for item in parser.source_inventory_items)
+    assert config.model_dump().get("future_feature") is None
 
 
 def test_fg_address_model_fields_are_explicitly_bounded():

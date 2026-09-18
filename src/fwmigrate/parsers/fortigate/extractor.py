@@ -20,13 +20,8 @@ from fwmigrate.parsers.fortigate.coverage import (
 )
 from fwmigrate.parsers.fortigate.dependencies import build_dependency_registry
 from fwmigrate.parsers.fortigate.dependencies import _norm
-from fwmigrate.parsers.fortigate.semantic_validation import (
-    validate_internet_service_group_directions,
-)
 from fwmigrate.parsers.fortigate.parser import (
     FortiGateParser,
-    POLICY_ROUTE_FAMILIES,
-    SOURCE_ONLY_RULE_FAMILIES,
 )
 from fwmigrate.parsers.fortigate.section_scanner import scan_fortigate_sections
 from fwmigrate.parsers.fortigate.tokenizer import FortiGateTokenizer
@@ -35,11 +30,6 @@ from fwmigrate.ir.metadata import IRAuditEntry
 from fwmigrate.ir.provenance import IRSourceConfigCommand
 from fwmigrate.ir.enums import MigrationConfidence
 
-
-SOURCE_ONLY_TRAFFIC_SECTIONS = {
-    *SOURCE_ONLY_RULE_FAMILIES,
-    *POLICY_ROUTE_FAMILIES,
-}
 
 INTERFACE_IPV6_TYPED_COMMANDS = frozenset({
     "ip6-address",
@@ -238,7 +228,7 @@ def _sync_vip_group_status(result) -> None:
             section.status = ExtractionStatus.NORMALIZED
 
 
-def _remove_resolved_source_only_blockers(result) -> None:
+def _remove_resolved_canonical_review_blocker(result) -> None:
     ir = result.canonical_ir
     blockers = list(result.blocking_reasons)
     if _GENERIC_CANONICAL_REVIEW_BLOCKER in blockers:
@@ -447,11 +437,6 @@ def extract_fortigate_config(
         (section.path, section.source_context): section.status
         for section in source_sections
     }
-    semantic_findings = validate_internet_service_group_directions(
-        parser.source_inventory_items,
-        dependencies,
-        ir_config,
-    )
     policy_safety = {
         (policy.source_context or "root", policy.source_rule_id): policy
         for policy in ir_config.policies
@@ -485,9 +470,11 @@ def extract_fortigate_config(
             status in {ExtractionStatus.PARTIALLY_NORMALIZED, ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR}
             or "structured-security-profile" in item.notes
             or extract_only_requires_manual_review(item.source_path)
-            or item.source_path in SOURCE_ONLY_TRAFFIC_SECTIONS
             or item.source_path == "firewall central-snat-map"
-            or has_source_only_operation
+            or (
+                has_source_only_operation
+                and status != ExtractionStatus.IGNORED_BY_POLICY
+            )
             or any(note.startswith("incompatible-internet-service-group-direction:") for note in item.notes)
         )
         item_dependencies = [
@@ -531,22 +518,18 @@ def extract_fortigate_config(
                 ExtractionStatus.EXTRACT_ONLY,
                 ExtractionStatus.VENDOR_EXTENSION,
                 ExtractionStatus.UNSUPPORTED,
+                ExtractionStatus.IGNORED_BY_POLICY,
             }
             or has_source_only_operation
             or (status == ExtractionStatus.PARTIALLY_NORMALIZED and item.name is None)
             or item.source_path in {
                 "firewall policy", "firewall ippool", "firewall ippool6",
-                "firewall multicast-policy", "firewall multicast-policy6",
                 "firewall vip", "firewall vip realservers", "firewall vip6",
                 "firewall vip6 realservers", "firewall vipgrp", "firewall vipgrp6",
                 "firewall central-snat-map", "firewall security-policy",
                 "firewall ip-translation",
-                "router policy", "router policy6", "system dhcp6 server",
-                "system dhcp server",
-                "firewall local-in-policy", "firewall local-in-policy6",
-                "firewall proxy-policy", "firewall shaping-policy",
+                "router policy", "router policy6",
             }
-            or item.source_path.startswith("system dhcp server ")
         )
         if not include_item:
             continue
@@ -618,35 +601,15 @@ def extract_fortigate_config(
                 f"{dependency.source_path} field '{dependency.source_field}' "
                 f"(expected {dependency.expected_type}) in VDOM '{context}'"
             )
-    blocking_reasons.extend(semantic_findings)
-    for extension in ir_config.internet_service_extensions:
-        children = [*extension.disable_entries, *extension.entries]
-        nested = [
-            port for entry in children for port in entry.port_ranges
-        ]
-        nested.extend(
-            range_item
-            for entry in extension.disable_entries
-            for range_item in [*entry.ipv4_ranges, *entry.ipv6_ranges]
-        )
-        if any(item.source_attributes.get("invalid_fields") for item in [*children, *nested]):
-            blocking_reasons.append(
-                f"FortiGate Internet Service extension '{extension.source_id}' contains invalid typed source values"
-            )
-
     ipv4_ip_pools = [
         pool for pool in ir_config.ip_pools if pool.address_family == "ipv4"
     ]
     critical_collections = (
-        ir_config.interfaces, ir_config.policies, ir_config.multicast_policies,
+        ir_config.interfaces, ir_config.policies,
         ir_config.nat_rules, ir_config.routes,
         ir_config.addresses, ir_config.address_groups, ir_config.services,
         ir_config.service_groups, ipv4_ip_pools, ir_config.virtual_ips,
     )
-    if ir_config.dhcp_servers:
-        blocking_reasons.append(
-            "FortiGate DHCP servers are extract-only and require manual review"
-        )
     for collection in critical_collections:
         for obj in collection:
             if not (
@@ -674,19 +637,11 @@ def extract_fortigate_config(
     if any(sdwan.health_checks for sdwan in ir_config.vendor_extensions.fortios.sdwans):
         blocking_reasons.append("FortiGate SD-WAN health checks are extract-only and require manual review")
 
-    # These rule families are intentionally retained outside portable canonical
-    # policy/routing/NAT models.  Their presence is therefore a migration and
-    # generation blocker, not merely an inventory annotation.  Otherwise a
-    # configured PBR, local-in rule, proxy rule, DHCPv6 server, or similar
-    # source-only traffic construct could coexist with generation_safe=True.
+    # These supported rule families remain outside portable policy/routing/NAT
+    # models and remain generation blockers.
     source_only_rule_collections = (
         ir_config.vendor_extensions.fortios.security_policies,
         ir_config.vendor_extensions.fortios.policy_routes,
-        ir_config.vendor_extensions.fortios.local_in_policies,
-        ir_config.vendor_extensions.fortios.proxy_policies,
-        ir_config.vendor_extensions.fortios.shaping_policies,
-        ir_config.vendor_extensions.fortios.dhcp6_servers,
-        ir_config.vendor_extensions.fortios.source_only_rules,
     )
     for collection in source_only_rule_collections:
         for rule in collection:
@@ -734,7 +689,7 @@ def extract_fortigate_config(
     )
     _normalize_complete_vip_groups(result.canonical_ir)
     _sync_vip_group_status(result)
-    _remove_resolved_source_only_blockers(result)
+    _remove_resolved_canonical_review_blocker(result)
     _apply_structured_extraction_regressions(result)
     _record_unsupported_syntax(result, _unsupported_source_lines(text))
     result.requires_manual_review = bool(result.blocking_reasons) or any(

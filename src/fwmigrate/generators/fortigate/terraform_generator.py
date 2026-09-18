@@ -394,12 +394,6 @@ variable "fortios_vdom" {
                 )
                 continue
 
-            if svc.source_category:
-                if (svc.source_context, svc.source_category) not in emitted_service_categories:
-                    main_tf_lines.append(
-                        f"# Service {svc.name} withheld: references un-emitted service category '{svc.source_category}'\n"
-                    )
-                    continue
 
             if svc.source_protocol_number is not None and not (0 <= svc.source_protocol_number <= 254):
                 main_tf_lines.append(
@@ -490,7 +484,10 @@ variable "fortios_vdom" {
                 f"  name = {hcl_string(svc.name)}",
             ]
 
-            if svc.source_category:
+            if svc.source_category and (
+                svc.source_context,
+                svc.source_category,
+            ) in emitted_service_categories:
                 cat_label = emitted_service_categories[(svc.source_context, svc.source_category)]
                 svc_lines.append(f"  category = fortios_firewallservice_category.{cat_label}.name")
 

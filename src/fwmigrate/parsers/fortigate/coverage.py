@@ -67,40 +67,23 @@ MIGRATION_RELEVANT_SOURCE_PREFIXES = (
     "firewall",
     "router",
     "vpn",
-    "endpoint-control",
-    "authentication",
     "system interface",
     "system zone",
     "system sdwan",
-    "system dhcp",
-    "system dns-server",
-    "system dns64",
     "system fsso-polling",
     "system link-monitor",
-    "system switch-interface",
     "system virtual-wire-pair",
     "system vdom-link",
-    "system pppoe-interface",
 )
 
 ALWAYS_BLOCKING_SOURCE_PREFIXES = (
-    "firewall acl",
-    "firewall interface-policy",
-    "firewall network-service-dynamic",
     "firewall central-snat-map",
     "firewall security-policy",
-    "firewall local-in-policy",
-    "firewall proxy-policy",
-    "firewall shaping-policy",
     "firewall dnstranslation",
-    "firewall access-proxy",
     "vpn certificate",
-    "system sdn-connector",
     "system link-monitor",
-    "system switch-interface",
     "system virtual-wire-pair",
     "system vdom-link",
-    "system pppoe-interface",
 )
 
 def is_interface_nested_source_path(
@@ -147,6 +130,8 @@ def fortigate_generation_impact(
     status: ExtractionStatus,
 ) -> MigrationImpact:
     """Classify migration risk separately from source extraction status."""
+    if any(path == prefix or path.startswith(f"{prefix} ") for prefix in IGNORED_PREFIXES):
+        return MigrationImpact.NONE
     if _matches_source_prefix(path, NON_BLOCKING_SOURCE_PREFIXES):
         return (
             MigrationImpact.NONE
@@ -187,7 +172,6 @@ def is_operational_source_path(path: str) -> bool:
 TYPED_SECTIONS = {
     "vdom",
     "system settings",
-    "system global",
     "system dns",
     "system dns-server",
     "system dns64",
@@ -196,16 +180,10 @@ TYPED_SECTIONS = {
     "system interface secondaryip",
     "system zone",
     "system zone tagging",
-    "system dhcp server",
-    "system dhcp server ip-range",
-    "system dhcp server exclude-range",
-    "system dhcp server reserved-address",
-    "system dhcp server options",
     "firewall address",
     "firewall address list",
     "firewall address tagging",
     "firewall address6",
-    "firewall address6-template",
     "firewall address6 tagging",
     "firewall multicast-address",
     "firewall multicast-address tagging",
@@ -222,9 +200,7 @@ TYPED_SECTIONS = {
     "firewall schedule recurring",
     "firewall schedule onetime",
     "firewall schedule group",
-    "firewall shaper traffic-shaper",
     "firewall proxy-address",
-    "web-proxy global",
     "antivirus profile",
     "webfilter profile",
     "dnsfilter profile",
@@ -235,66 +211,21 @@ TYPED_SECTIONS = {
     "firewall security-policy",
     "router policy",
     "router policy6",
-    "system dhcp6 server",
-    "firewall local-in-policy",
-    "firewall local-in-policy6",
-    "firewall proxy-policy",
     "firewall proxy-addrgrp",
-    "firewall shaping-policy",
-    "firewall shaper per-ip-shaper",
-    "firewall shaping-profile",
     "vpn ipsec phase1",
     "vpn ipsec phase2",
     "vpn ipsec phase2-interface",
     "vpn ipsec manualkey",
     "firewall wildcard-fqdn group",
-    "firewall multicast-policy",
-    "firewall multicast-policy6",
     "firewall ttl-policy",
     "firewall ldb-monitor",
     "firewall ssl-server",
     "firewall traffic-class",
-    "firewall internet-service-custom",
-    "firewall internet-service-custom-group",
-    "firewall internet-service-addition",
-    "firewall internet-service-addition entry",
-    "firewall internet-service-addition entry port-range",
-    "firewall internet-service-append",
-    "firewall internet-service-custom entry",
-    "firewall internet-service-custom entry port-range",
-    "firewall internet-service-extension",
-    "firewall internet-service-extension disable-entry",
-    "firewall internet-service-extension disable-entry ip-range",
-    "firewall internet-service-extension disable-entry ip6-range",
-    "firewall internet-service-extension disable-entry port-range",
-    "firewall internet-service-extension entry",
-    "firewall internet-service-extension entry port-range",
-    "firewall internet-service-group",
     "firewall ippool",
     "firewall ippool_grp",
     "firewall vip",
     "firewall vip realservers",
     "firewall vipgrp",
-    "firewall internet-service-name",
-    "firewall internet-service-definition",
-    "firewall internet-service-definition entry",
-    "firewall internet-service-definition entry port-range",
-    "firewall internet-service-addition",
-    "firewall internet-service-addition entry",
-    "firewall internet-service-addition entry port-range",
-    "firewall internet-service-append",
-    "firewall internet-service-custom",
-    "firewall internet-service-custom entry",
-    "firewall internet-service-custom entry port-range",
-    "firewall internet-service-custom-group",
-    "firewall internet-service-extension",
-    "firewall internet-service-extension disable-entry",
-    "firewall internet-service-extension disable-entry ip-range",
-    "firewall internet-service-extension disable-entry ip6-range",
-    "firewall internet-service-extension disable-entry port-range",
-    "firewall internet-service-extension entry",
-    "firewall internet-service-extension entry port-range",
-    "firewall internet-service-group",
     "vpn ipsec phase1-interface",
     "vpn ipsec phase2-interface",
     "vpn certificate remote",
@@ -351,25 +282,16 @@ TYPED_SECTIONS = {
     "firewall DoS-policy6",
     "firewall DoS-policy anomaly",
     "firewall sniffer",
-    "authentication scheme",
-    "authentication rule",
     "user setting",
     "user quarantine",
-    "ips sensor",
-    "ips sensor entries",
-    "ips sensor entries exempt-ip",
     "firewall acl",
     "firewall acl6",
     "firewall interface-policy",
     "firewall interface-policy6",
-    "firewall internet-service-definition",
-    "firewall internet-service-definition entry",
-    "firewall internet-service-definition entry port-range",
     "firewall central-snat-map",
     "firewall ip-translation",
     "firewall ippool6",
     "firewall ippool_grp",
-    "firewall address6-template",
     "firewall ipv6-eh-filter",
     "firewall vip6",
     "firewall vip6 realservers",
@@ -385,21 +307,9 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall schedule group",
     "router policy",
     "router policy6",
-    "system dhcp6 server",
-    "system dhcp server",
     "firewall ippool6",
     "firewall ipv6-eh-filter",
-    "system dhcp server ip-range",
-    "system dhcp server exclude-range",
-    "system dhcp server reserved-address",
-    "system dhcp server options",
-    "firewall local-in-policy",
-    "firewall local-in-policy6",
-    "firewall proxy-policy",
     "firewall proxy-addrgrp",
-    "firewall shaping-policy",
-    "firewall shaper per-ip-shaper",
-    "firewall shaping-profile",
     "vpn ipsec phase1",
     "vpn ipsec phase2",
     "vpn ipsec phase2-interface",
@@ -409,22 +319,6 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall ldb-monitor",
     "firewall ssl-server",
     "firewall traffic-class",
-    "firewall internet-service-custom",
-    "firewall internet-service-custom-group",
-    "firewall internet-service-addition",
-    "firewall internet-service-addition entry",
-    "firewall internet-service-addition entry port-range",
-    "firewall internet-service-append",
-    "firewall internet-service-custom entry",
-    "firewall internet-service-custom entry port-range",
-    "firewall internet-service-extension",
-    "firewall internet-service-extension disable-entry",
-    "firewall internet-service-extension disable-entry ip-range",
-    "firewall internet-service-extension disable-entry ip6-range",
-    "firewall internet-service-extension disable-entry port-range",
-    "firewall internet-service-extension entry",
-    "firewall internet-service-extension entry port-range",
-    "firewall internet-service-group",
     "firewall address list",
     "firewall address tagging",
     "firewall address6 tagging",
@@ -433,9 +327,6 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall addrgrp tagging",
     "firewall addrgrp6 tagging",
     "firewall service category",
-    "firewall internet-service-definition",
-    "firewall internet-service-definition entry",
-    "firewall internet-service-definition entry port-range",
     "vpn certificate remote",
     "vpn certificate local",
     "vpn certificate ca",
@@ -445,7 +336,6 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "system session-ttl",
     "system session-ttl port",
     "firewall proxy-address",
-    "web-proxy global",
     "firewall vipgrp",
     "system sdwan",
     "system sdwan zone",
@@ -486,13 +376,8 @@ TYPED_EXTRACT_ONLY_SECTIONS = {
     "firewall DoS-policy6",
     "firewall DoS-policy anomaly",
     "firewall sniffer",
-    "authentication scheme",
-    "authentication rule",
     "user setting",
     "user quarantine",
-    "ips sensor",
-    "ips sensor entries",
-    "ips sensor entries exempt-ip",
     "firewall acl",
     "firewall acl6",
     "firewall interface-policy",
@@ -517,7 +402,6 @@ MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
     "firewall ipv6-eh-filter",
     "firewall vipgrp",
     "firewall proxy-address",
-    "web-proxy global",
     "user fsso",
     "user adgrp",
     "user saml",
@@ -530,18 +414,16 @@ MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS = {
     "vpn ssl web host-check-software check-item-list",
     "firewall DoS-policy",
     "firewall sniffer",
-    "authentication scheme",
-    "authentication rule",
     "firewall ssh local-key",
     "firewall ssh local-ca",
 }
 
 
 def extract_only_requires_manual_review(path: str) -> bool:
+    if any(path == prefix or path.startswith(f"{prefix} ") for prefix in IGNORED_PREFIXES):
+        return False
     return (
-        path == "system dhcp server"
-        or path.startswith("system dhcp server ")
-        or path in MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS
+        path in MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS
         or path == "system settings"
         or is_operational_source_path(path)
         or path.startswith("system sdwan")
@@ -561,7 +443,78 @@ IGNORED_PREFIXES = {
     "system replacemsg": "FortiGate replacement-message configuration is outside current firewall migration scope.",
     "switch-controller": "FortiSwitch configuration is outside firewall migration scope.",
     "wireless-controller": "FortiAP/wireless-controller configuration is outside firewall migration scope.",
+    "system global": "FortiGate system-global settings are outside the migration extraction boundary.",
+    "system dns-server": "FortiGate DNS-server configuration is outside the migration extraction boundary.",
+    "system dns64": "FortiGate DNS64 configuration is outside the migration extraction boundary.",
+    "system dhcp server": "FortiGate DHCP server configuration is outside the migration extraction boundary.",
+    "system dhcp6 server": "FortiGate DHCPv6 server configuration is outside the migration extraction boundary.",
+    "firewall address6-template": "FortiGate IPv6 address templates are outside the migration extraction boundary.",
+    "firewall multicast-policy": "FortiGate multicast policies are outside the migration extraction boundary.",
+    "firewall multicast-policy6": "FortiGate IPv6 multicast policies are outside the migration extraction boundary.",
+    "firewall local-in-policy": "FortiGate local-in policies are outside the migration extraction boundary.",
+    "firewall local-in-policy6": "FortiGate IPv6 local-in policies are outside the migration extraction boundary.",
+    "authentication scheme": "FortiGate authentication schemes are outside the migration extraction boundary.",
+    "authentication rule": "FortiGate authentication rules are outside the migration extraction boundary.",
+    "firewall access-proxy": "FortiGate access-proxy configuration is outside the migration extraction boundary.",
+    "firewall access-proxy6": "FortiGate IPv6 access-proxy configuration is outside the migration extraction boundary.",
+    "firewall access-proxy-virtual-host": "FortiGate access-proxy virtual hosts are outside the migration extraction boundary.",
+    "firewall access-proxy virtual-host": "FortiGate access-proxy virtual hosts are outside the migration extraction boundary.",
+    "firewall access-proxy6 virtual-host": "FortiGate IPv6 access-proxy virtual hosts are outside the migration extraction boundary.",
+    "firewall access-proxy realservers": "FortiGate access-proxy real servers are outside the migration extraction boundary.",
+    "firewall access-proxy6 realservers": "FortiGate IPv6 access-proxy real servers are outside the migration extraction boundary.",
+    "firewall network-service-dynamic": "FortiGate dynamic network services are outside the migration extraction boundary.",
+    "system sdn-connector": "FortiGate SDN connectors are outside the migration extraction boundary.",
+    "system switch-interface": "FortiGate switch-interface configuration is outside the migration extraction boundary.",
+    "system pppoe-interface": "FortiGate PPPoE-interface configuration is outside the migration extraction boundary.",
+    "firewall shaper traffic-shaper": "FortiGate traffic shapers are outside the migration extraction boundary.",
+    "firewall shaper per-ip-shaper": "FortiGate per-IP shapers are outside the migration extraction boundary.",
+    "firewall shaping-profile": "FortiGate shaping profiles are outside the migration extraction boundary.",
+    "firewall shaping-policy": "FortiGate shaping policies are outside the migration extraction boundary.",
+    "firewall proxy-policy": "FortiGate proxy policies are outside the migration extraction boundary.",
+    "ips sensor": "FortiGate IPS sensor inventory is intentionally outside the migration extraction boundary.",
+    "web-proxy global": "FortiGate global web-proxy configuration is intentionally outside the migration extraction boundary.",
+    "firewall internet-service-name": "FortiGate Internet Service inventory is intentionally outside the migration extraction boundary.",
+    "firewall internet-service-definition": "FortiGate Internet Service inventory is intentionally outside the migration extraction boundary.",
+    "firewall internet-service-addition": "FortiGate Internet Service inventory is intentionally outside the migration extraction boundary.",
+    "firewall internet-service-append": "FortiGate Internet Service inventory is intentionally outside the migration extraction boundary.",
+    "firewall internet-service-custom": "FortiGate Internet Service inventory is intentionally outside the migration extraction boundary.",
+    "firewall internet-service-custom-group": "FortiGate Internet Service inventory is intentionally outside the migration extraction boundary.",
+    "firewall internet-service-extension": "FortiGate Internet Service inventory is intentionally outside the migration extraction boundary.",
+    "firewall internet-service-group": "FortiGate Internet Service inventory is intentionally outside the migration extraction boundary.",
+    "firewall service category": "FortiGate service categories are outside the migration extraction boundary.",
+    "firewall proxy-address": "FortiGate proxy-address configuration is outside the migration extraction boundary.",
+    "firewall acl": "FortiGate ACL configuration is outside the migration extraction boundary.",
+    "firewall interface-policy": "FortiGate interface-policy configuration is outside the migration extraction boundary.",
+    "firewall proxy-addrgrp": "FortiGate proxy address groups are outside the migration extraction boundary.",
+    "firewall ttl-policy": "FortiGate TTL policies are outside the migration extraction boundary.",
+    "firewall ldb-monitor": "FortiGate load-balance monitors are outside the migration extraction boundary.",
+    "firewall ssl-server": "FortiGate SSL-server configuration is outside the migration extraction boundary.",
+    "firewall traffic-class": "FortiGate traffic-class configuration is outside the migration extraction boundary.",
+    "firewall wildcard-fqdn group": "FortiGate wildcard-FQDN groups are outside the migration extraction boundary.",
+    "firewall ssh local-key": "FortiGate local SSH keys are outside the migration extraction boundary.",
+    "firewall ssh local-ca": "FortiGate local SSH CAs are outside the migration extraction boundary.",
+    "firewall sniffer": "FortiGate sniffers are outside the migration extraction boundary.",
+    "system session-helper": "FortiGate session helpers are outside the migration extraction boundary.",
+    "system session-ttl": "FortiGate session TTL overrides are outside the migration extraction boundary.",
+    "endpoint-control fctems": "FortiGate FCTEMS configuration is outside the migration extraction boundary.",
+    "endpoint-control fctems-override": "FortiGate FCTEMS overrides are outside the migration extraction boundary.",
+    "system admin": "FortiGate administrators are outside the migration extraction boundary.",
+    "system accprofile": "FortiGate administrator profiles are outside the migration extraction boundary.",
+    "user fortitoken": "FortiToken configuration is outside the migration extraction boundary.",
+    "vpn ssl web host-check-software": "FortiGate SSL-VPN host checks are outside the migration extraction boundary.",
+    "vpn ssl web realm": "FortiGate SSL-VPN realms are outside the migration extraction boundary.",
+    "vpn ssl web user-bookmark": "FortiGate SSL-VPN user bookmarks are outside the migration extraction boundary.",
+    "vpn ssl web group-bookmark": "FortiGate SSL-VPN group bookmarks are outside the migration extraction boundary.",
+    "vpn ipsec manualkey": "FortiGate manual IPsec keys are outside the migration extraction boundary.",
+    "vpn ipsec manualkey-interface": "FortiGate manual IPsec interfaces are outside the migration extraction boundary.",
+    "firewall access-proxy-ssh-client-cert": "FortiGate access-proxy SSH client certificates are outside the migration extraction boundary.",
 }
+
+IGNORED_OUT_OF_SCOPE_SECTIONS = frozenset(IGNORED_PREFIXES)
+
+TYPED_SECTIONS.difference_update(IGNORED_OUT_OF_SCOPE_SECTIONS)
+TYPED_EXTRACT_ONLY_SECTIONS.difference_update(IGNORED_OUT_OF_SCOPE_SECTIONS)
+MANUAL_REVIEW_EXTRACT_ONLY_SECTIONS.difference_update(IGNORED_OUT_OF_SCOPE_SECTIONS)
 
 
 def _address_filter(path: str) -> Callable[[object], bool]:
@@ -575,19 +528,11 @@ def _address_filter(path: str) -> Callable[[object], bool]:
 
 _COLLECTIONS: dict[str, tuple[str, str]] = {
     "system settings": ("execution_contexts", "execution_contexts"),
-    "system global": ("system_global", "system_settings"),
     "system dns": ("dns", "dns_settings"),
-    "system dns-server": ("dns_servers", "dns_servers"),
-    "system dns64": ("dns64_settings", "dns64_settings"),
     "system fsso-polling": ("system_fsso_polling", "system_fsso_polling"),
     "system interface": ("interfaces", "interfaces"),
     "system interface secondaryip": ("interfaces", "interfaces"),
     "system zone": ("system_zones", "zones"),
-    "system dhcp server": ("dhcp_servers", "dhcp_servers"),
-    "system dhcp server ip-range": ("dhcp_servers", "dhcp_servers"),
-    "system dhcp server exclude-range": ("dhcp_servers", "dhcp_servers"),
-    "system dhcp server reserved-address": ("dhcp_servers", "dhcp_servers"),
-    "system dhcp server options": ("dhcp_servers", "dhcp_servers"),
     "firewall address": ("addresses", "addresses"),
     "firewall address list": ("addresses", "addresses"),
     "firewall address tagging": ("addresses", "addresses"),
@@ -602,31 +547,18 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall addrgrp tagging": ("address_groups", "address_groups"),
     "firewall addrgrp6 tagging": ("address_groups", "address_groups"),
     "firewall wildcard-fqdn custom": ("wildcard_fqdns", "addresses"),
-    "firewall service category": ("service_categories", "service_categories"),
     "firewall service custom": ("services", "services"),
     "firewall service group": ("service_groups", "service_groups"),
     "firewall schedule recurring": ("schedules", "schedules"),
     "firewall schedule onetime": ("schedules", "schedules"),
     "firewall schedule group": ("schedule_groups", "schedule_groups"),
-    "firewall shaper traffic-shaper": ("traffic_shapers", "traffic_shapers"),
-    "firewall proxy-address": ("proxy_addresses", "proxy_addresses"),
-    "web-proxy global": ("web_proxy_global", "web_proxy_settings"),
     "firewall policy": ("policies", "policies"),
     "firewall central-snat-map": ("central_snat_rules", "nat_rules"),
     "firewall ip-translation": ("ip_translations", "nat_rules"),
-    "firewall multicast-policy": ("multicast_policies", "multicast_policies"),
-    "firewall multicast-policy6": ("multicast_policies6", "multicast_policies"),
     "firewall security-policy": ("security_policies", "security_policies"),
     "router policy": ("policy_routes", "policy_routes"),
     "router policy6": ("policy_routes", "policy_routes"),
     "vpn ipsec phase2": ("phase2_policies", "vpn_phase2"),
-    "system dhcp6 server": ("dhcp6_servers", "dhcp6_servers"),
-    "firewall local-in-policy": ("local_in_policies", "local_in_policies"),
-    "firewall local-in-policy6": ("local_in_policies", "local_in_policies"),
-    "firewall proxy-policy": ("proxy_policies", "proxy_policies"),
-    "firewall shaping-policy": ("shaping_policies", "shaping_policies"),
-    "firewall internet-service-custom": ("custom_internet_services", "custom_internet_services"),
-    "firewall internet-service-custom-group": ("custom_internet_service_groups", "custom_internet_service_groups"),
     "firewall ippool": ("ip_pools", "ip_pools"),
     "firewall ippool6": ("ip_pools6", "ip_pools6"),
     "firewall ippool_grp": ("ip_pool_groups", "ip_pool_groups"),
@@ -645,40 +577,9 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "certificate remote": ("certificates", "certificates"),
     "certificate local": ("certificates", "certificates"),
     "certificate ca": ("certificates", "certificates"),
-    "firewall ssh local-key": ("ssh_keys", "ssh_keys"),
-    "firewall ssh local-ca": ("ssh_keys", "ssh_keys"),
     "router static": ("static_routes", "routes"),
     "router static6": ("static_routes", "routes"),
-    "system session-helper": ("session_helpers", "session_helpers"),
-    "system session-ttl": ("session_ttl_settings", "session_ttl_settings"),
-    "system session-ttl port": ("session_ttl_overrides", "session_ttl_overrides"),
     "endpoint-control fctems": ("fctems_connectors", "ztna_providers"),
-    "firewall internet-service-name": ("internet_services", "internet_services"),
-    "firewall internet-service-addition": ("internet_service_additions", "internet_service_additions"),
-    "firewall internet-service-addition entry": ("internet_service_additions", "internet_service_additions"),
-    "firewall internet-service-addition entry port-range": ("internet_service_additions", "internet_service_additions"),
-    "firewall internet-service-append": ("internet_service_appends", "internet_service_appends"),
-    "firewall internet-service-custom": ("custom_internet_services", "custom_internet_services"),
-    "firewall internet-service-custom entry": ("custom_internet_services", "custom_internet_services"),
-    "firewall internet-service-custom entry port-range": ("custom_internet_services", "custom_internet_services"),
-    "firewall internet-service-custom-group": ("custom_internet_service_groups", "custom_internet_service_groups"),
-    "firewall internet-service-extension": ("internet_service_extensions", "internet_service_extensions"),
-    "firewall internet-service-extension disable-entry": ("internet_service_extensions", "internet_service_extensions"),
-    "firewall internet-service-extension disable-entry ip-range": ("internet_service_extensions", "internet_service_extensions"),
-    "firewall internet-service-extension disable-entry ip6-range": ("internet_service_extensions", "internet_service_extensions"),
-    "firewall internet-service-extension disable-entry port-range": ("internet_service_extensions", "internet_service_extensions"),
-    "firewall internet-service-extension entry": ("internet_service_extensions", "internet_service_extensions"),
-    "firewall internet-service-extension entry port-range": ("internet_service_extensions", "internet_service_extensions"),
-    "firewall internet-service-group": ("internet_service_groups", "internet_service_groups"),
-    "firewall internet-service-definition": (
-        "internet_service_definitions", "internet_service_definitions"
-    ),
-    "firewall internet-service-definition entry": (
-        "internet_service_definitions", "internet_service_definitions"
-    ),
-    "firewall internet-service-definition entry port-range": (
-        "internet_service_definitions", "internet_service_definitions"
-    ),
     "system sdwan zone": ("sdwan", "sdwan"),
     "system sdwan members": ("sdwan", "sdwan"),
     "system sdwan": ("sdwan", "sdwan"),
@@ -698,22 +599,10 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "user local": ("local_users", "local_users"),
     "user group": ("user_groups", "user_groups"),
     "user group match": ("user_groups", "user_groups"),
-    "system admin": ("administrators", "administrators"),
-    "system accprofile": ("admin_profiles", "admin_profiles"),
-    "user fortitoken": ("fortitokens", "fortitokens"),
     "vpn ssl web portal": ("ssl_vpn_portals", "ssl_vpn_portals"),
     "vpn ssl web portal host-check-software": ("ssl_vpn_portals", "ssl_vpn_portals"),
-    "vpn ssl web host-check-software": (
-        "ssl_vpn_host_check_software", "ssl_vpn_host_checks"
-    ),
-    "vpn ssl web host-check-software check-item-list": (
-        "ssl_vpn_host_check_software", "ssl_vpn_host_checks"
-    ),
     "vpn ssl settings": ("ssl_vpn_settings", "ssl_vpn_settings"),
     "vpn ssl settings authentication-rule": ("ssl_vpn_settings", "ssl_vpn_settings"),
-    "vpn ssl web portal bookmark-group": ("ssl_vpn_portals", "ssl_vpn_portals"),
-    "vpn ssl web portal bookmark-group bookmarks": ("ssl_vpn_portals", "ssl_vpn_portals"),
-    "vpn ssl web portal bookmark-group bookmarks form-data": ("ssl_vpn_portals", "ssl_vpn_portals"),
     "vpn ssl web portal landing-page": ("ssl_vpn_portals", "ssl_vpn_portals"),
     "vpn ssl web portal landing-page form-data": ("ssl_vpn_portals", "ssl_vpn_portals"),
     "vpn ssl web portal mac-addr-check-rule": ("ssl_vpn_portals", "ssl_vpn_portals"),
@@ -722,25 +611,14 @@ _COLLECTIONS: dict[str, tuple[str, str]] = {
     "firewall DoS-policy": ("dos_policies", "dos_policies"),
     "firewall DoS-policy6": ("dos_policies", "dos_policies"),
     "firewall DoS-policy anomaly": ("dos_policies", "dos_policies"),
-    "firewall sniffer": ("firewall_sniffers", "firewall_sniffers"),
-    "authentication scheme": ("authentication_schemes", "authentication_schemes"),
-    "authentication rule": ("authentication_rules", "authentication_rules"),
     "user setting": (
         "user_authentication_settings", "user_authentication_settings"
     ),
     "user quarantine": ("user_quarantine", "user_quarantine_settings"),
-    "ips sensor": ("ips_sensors", "ips_sensors"),
-    "ips sensor entries": ("ips_sensors", "ips_sensors"),
-    "ips sensor entries exempt-ip": ("ips_sensors", "ips_sensors"),
-    "firewall acl": ("source_only_rules", "source_only_rules"),
-    "firewall acl6": ("source_only_rules", "source_only_rules"),
-    "firewall interface-policy": ("source_only_rules", "source_only_rules"),
-    "firewall interface-policy6": ("source_only_rules", "source_only_rules"),
 }
 
 PROFILE_SUPPORT_LEVELS = {
     "firewall profile-group": "TYPED_EXTRACT_ONLY",
-    "firewall address6-template": "TYPED_EXTRACT_ONLY",
     "antivirus profile": "TYPED_EXTRACT_ONLY",
     "webfilter profile": "TYPED_EXTRACT_ONLY",
     "dnsfilter profile": "TYPED_EXTRACT_ONLY",
@@ -749,15 +627,7 @@ PROFILE_SUPPORT_LEVELS = {
 }
 
 SEMANTIC_SUPPORT_LEVELS = {
-    "system dhcp server": "TYPED_EXTRACT_ONLY",
-    "system dns-server": "TYPED_EXTRACT_ONLY",
-    "system dns64": "TYPED_EXTRACT_ONLY",
     "system fsso-polling": "TYPED_EXTRACT_ONLY",
-    "firewall local-in-policy": "TYPED_EXTRACT_ONLY",
-    "firewall local-in-policy6": "TYPED_EXTRACT_ONLY",
-    "firewall shaping-policy": "TYPED_EXTRACT_ONLY",
-    "firewall shaper per-ip-shaper": "TYPED_EXTRACT_ONLY",
-    "firewall shaping-profile": "TYPED_EXTRACT_ONLY",
     "router policy": "TYPED_EXTRACT_ONLY",
     "router policy6": "TYPED_EXTRACT_ONLY",
     "vpn ipsec phase2": "TYPED_EXTRACT_ONLY",
@@ -768,14 +638,8 @@ SEMANTIC_SUPPORT_LEVELS = {
     "user group match": "TYPED_EXTRACT_ONLY",
     "user radius": "TYPED_EXTRACT_ONLY",
     "user tacacs+": "TYPED_EXTRACT_ONLY",
-    "ips sensor": "TYPED_EXTRACT_ONLY",
-    "ips sensor entries": "TYPED_EXTRACT_ONLY",
-    "ips sensor entries exempt-ip": "TYPED_EXTRACT_ONLY",
     **{path: "STRUCTURED_EXTRACT_ONLY" for path in STRUCTURED_SECURITY_SECTIONS},
     "firewall profile-group": "TYPED_EXTRACT_ONLY",
-    "ips sensor": "TYPED_EXTRACT_ONLY",
-    "ips sensor entries": "TYPED_EXTRACT_ONLY",
-    "ips sensor entries exempt-ip": "TYPED_EXTRACT_ONLY",
 }
 
 
@@ -795,13 +659,6 @@ ADDRESS_OBJECT_SOURCE_SECTIONS = {
     "firewall multicast-address6",
 }
 ADDRESS_GROUP_SOURCE_SECTIONS = {"firewall addrgrp", "firewall addrgrp6"}
-
-SOURCE_ONLY_FAMILY_BY_SECTION = {
-    "firewall acl": "acl-ipv4",
-    "firewall acl6": "acl-ipv6",
-    "firewall interface-policy": "interface-policy-ipv4",
-    "firewall interface-policy6": "interface-policy-ipv6",
-}
 
 COSMETIC_SOURCE_SETTINGS = {
     "color",
@@ -923,12 +780,6 @@ def _count_collection(
     collection = getattr(model, attribute, None)
     if collection is None:
         return None
-    if path in {"firewall multicast-policy", "firewall multicast-policy6"}:
-        family = "ipv6" if path.endswith("6") else "ipv4"
-        return sum(
-            1 for item in collection
-            if getattr(item, "address_family", family) == family
-        )
     if path in {"router policy", "router policy6"}:
         family = "policy-route-ipv6" if path == "router policy6" else "policy-route-ipv4"
         return sum(
@@ -980,52 +831,7 @@ def _count_collection(
         if path in {"firewall vipgrp", "firewall vipgrp6"}:
             family = "ipv6" if path.endswith("6") else "ipv4"
             return sum(item.address_family == family for item in collection)
-    if path in {"system global", "system dns", "system session-ttl", "system settings", "system fsso-polling"}:
-        return 1
-    if path == "ips sensor":
-        return len(collection)
-    if path == "ips sensor entries":
-        return sum(len(sensor.entries) for sensor in collection)
-    if path == "ips sensor entries exempt-ip":
-        return sum(len(entry.exempt_ips) for sensor in collection for entry in sensor.entries)
-    if path in {
-        "firewall internet-service-addition entry",
-        "firewall internet-service-custom entry",
-    }:
-        return sum(len(item.entries) for item in collection)
-    if path in {
-        "firewall internet-service-addition entry port-range",
-        "firewall internet-service-custom entry port-range",
-    }:
-        return sum(len(entry.port_ranges) for item in collection for entry in item.entries)
-    if path == "firewall internet-service-extension disable-entry":
-        return sum(len(item.disable_entries) for item in collection)
-    if path == "firewall internet-service-extension entry":
-        return sum(len(item.entries) for item in collection)
-    if path in {
-        "firewall internet-service-extension disable-entry ip-range",
-        "firewall internet-service-extension disable-entry ip6-range",
-    }:
-        if isinstance(model, FGConfig):
-            attribute = "ip_range" if path.endswith("ip-range") else "ip6_range"
-        else:
-            attribute = "ipv4_ranges" if path.endswith("ip-range") else "ipv6_ranges"
-        return sum(len(getattr(entry, attribute)) for item in collection for entry in item.disable_entries)
-    if path in {
-        "firewall internet-service-extension disable-entry port-range",
-        "firewall internet-service-extension entry port-range",
-    }:
-        entries = "disable_entries" if "disable-entry" in path else "entries"
-        return sum(len(entry.port_ranges) for item in collection for entry in getattr(item, entries))
-    if path == "firewall internet-service-definition entry":
-        return sum(len(definition.entries) for definition in collection)
-    if path == "firewall internet-service-definition entry port-range":
-        return sum(
-            len(entry.port_ranges)
-            for definition in collection
-            for entry in definition.entries
-        )
-    if path == "web-proxy global":
+    if path in {"system dns", "system session-ttl", "system settings", "system fsso-polling"}:
         return 1
     if path == "system sdwan":
         return 1
@@ -1048,19 +854,10 @@ def _count_collection(
         return sum(len(getattr(item, child)) for item in collection)
     if path == "vpn ssl settings":
         return 1
-    if path in {"user setting", "user quarantine"}:
-        return 1
     if path == "vpn ssl settings authentication-rule":
         return len(collection.authentication_rules)
-    if path == "vpn ssl web portal host-check-software":
-        child = "host_checks"
-        return sum(len(getattr(item, child)) for item in collection)
-    if path == "vpn ssl web portal bookmark-group":
-        return sum(len(item.bookmark_groups) for item in collection)
-    if path == "vpn ssl web portal bookmark-group bookmarks":
-        return sum(len(group.bookmarks) for item in collection for group in item.bookmark_groups)
-    if path == "vpn ssl web portal bookmark-group bookmarks form-data":
-        return sum(len(bookmark.form_data) for item in collection for group in item.bookmark_groups for bookmark in group.bookmarks)
+    if path in {"user setting", "user quarantine"}:
+        return 1
     if path == "vpn ssl web portal landing-page":
         return sum(len(item.landing_pages) for item in collection)
     if path == "vpn ssl web portal landing-page form-data":
@@ -1121,27 +918,12 @@ def _count_collection(
             if isinstance(model, FGConfig)
             or getattr(item, "address_family", "ipv4") == family
         )
-    if path == "system dhcp server ip-range":
-        return sum(len(item.ip_ranges) for item in collection)
-    if path == "system dhcp server exclude-range":
-        return sum(len(item.exclude_ranges) for item in collection)
-    if path == "system dhcp server reserved-address":
-        child_attribute = "reserved_addresses" if isinstance(model, FGConfig) else "reservations"
-        return sum(len(getattr(item, child_attribute)) for item in collection)
-    if path == "system dhcp server options":
-        return sum(len(item.options) for item in collection)
     if path == "system interface secondaryip":
         if isinstance(model, FGConfig):
             return sum(len(intf.secondary_ips) for intf in collection)
         # Retained inactive/ambiguous entries are source preservation, not
         # active canonical normalization, so they must not inflate this count.
         return sum(len(intf.secondary_ips) for intf in collection)
-    if path in SOURCE_ONLY_FAMILY_BY_SECTION:
-        family = SOURCE_ONLY_FAMILY_BY_SECTION[path]
-        return sum(
-            1 for item in collection
-            if getattr(item, "family", None) == family
-        )
     return len(collection)
 
 
@@ -1158,6 +940,19 @@ def classify_section_coverage(
             section.notes.append(
                 f"Parser capability: {capability['classification']}; unknown fields remain source-only."
             )
+        ignored_reason = next(
+            (
+                reason
+                for prefix, reason in IGNORED_PREFIXES.items()
+                if path == prefix or path.startswith(f"{prefix} ")
+            ),
+            None,
+        )
+        if ignored_reason:
+            section.status = ExtractionStatus.IGNORED_BY_POLICY
+            section.parser_handler = "source inventory"
+            section.notes.append(ignored_reason)
+            continue
         if path == "vdom":
             section.status = ExtractionStatus.VENDOR_EXTENSION
             section.parser_handler = "FortiGateParser._parse_vdom_contents"
@@ -1213,19 +1008,6 @@ def classify_section_coverage(
             )
             continue
 
-        ignored_reason = next(
-            (
-                reason
-                for prefix, reason in IGNORED_PREFIXES.items()
-                if path == prefix or path.startswith(f"{prefix} ")
-            ),
-            None,
-        )
-        if ignored_reason:
-            section.status = ExtractionStatus.IGNORED_BY_POLICY
-            section.notes.append(ignored_reason)
-            continue
-
         if path in FORTIGATE_READ_ONLY_INVENTORY_SECTIONS:
             section.status = ExtractionStatus.EXTRACT_ONLY
             section.parser_handler = "FortiGateParser._parse_unknown_source_section"
@@ -1272,8 +1054,8 @@ def classify_section_coverage(
             continue
 
         if path in {
-            "system settings", "system global", "system dns", "system session-ttl",
-            "vpn ssl settings", "user setting", "user quarantine", "web-proxy global",
+            "system settings", "system dns", "system session-ttl",
+            "vpn ssl settings", "user setting", "user quarantine",
             "firewall ipv6-eh-filter",
         }:
             section.parser_handler = "FortiGateParser.apply_global_set"
@@ -1292,15 +1074,6 @@ def classify_section_coverage(
             continue
         if mapping is None:
             if path in TYPED_EXTRACT_ONLY_SECTIONS:
-                source_only_collection = {
-                    "firewall shaper per-ip-shaper": "per_ip_shapers",
-                    "firewall shaping-profile": "shaping_profiles",
-                    "firewall address6-template": "address6_templates",
-                }.get(path)
-                if source_only_collection:
-                    section.object_count_parsed = _count_collection(
-                        fg_config, source_only_collection, path
-                    )
                 section.status = ExtractionStatus.EXTRACT_ONLY
                 section.notes.append(
                     "Typed source inventory is retained, but this section is not portable migration intent."
@@ -1369,21 +1142,6 @@ def classify_section_coverage(
                 section.notes.append("Policy objects retain source-specific semantics in typed extensions.")
                 continue
 
-        if path in {"firewall multicast-policy", "firewall multicast-policy6"}:
-            family = "ipv6" if path.endswith("6") else "ipv4"
-            partial_policies = [
-                policy for policy in ir_config.multicast_policies
-                if policy.address_family == family and (
-                    policy.migration_status == "PARTIALLY_NORMALIZED"
-                )
-            ]
-            if partial_policies:
-                section.status = ExtractionStatus.PARTIALLY_NORMALIZED
-                section.notes.append(
-                    f"{len(partial_policies)} multicast policy object(s) retain semantic or reference review findings."
-                )
-                continue
-
         if path == "firewall vipgrp6":
             partial_groups = [
                 group for group in ir_config.virtual_ip_groups
@@ -1439,15 +1197,6 @@ def classify_section_coverage(
         source_count = section.object_count_source
         parsed_count = section.object_count_parsed
         normalized_count = section.object_count_normalized
-
-        if path == "firewall service category":
-            section.status = (
-                ExtractionStatus.NORMALIZED
-                if section.object_count_normalized == section.object_count_parsed
-                else ExtractionStatus.PARTIALLY_NORMALIZED
-            )
-            section.notes.append("Service category source items are normalized into IRServiceCategory.")
-            continue
 
         if path in {
             "firewall vip", "firewall vip6",

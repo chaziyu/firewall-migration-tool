@@ -332,7 +332,7 @@ class FortiGateSemanticsExcelExporter(EffectiveOrderIRExcelExporter):
         super()._build_security_policies(workbook)
         rules = [
             rule
-            for rule in self.ir.vendor_extensions.fortios.source_only_rules
+            for rule in self.ir.vendor_extensions.fortios.security_policies
             if getattr(rule, "family", None) == _PREMATCH_FAMILY
         ]
 

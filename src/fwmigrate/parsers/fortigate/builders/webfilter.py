@@ -226,6 +226,7 @@ def _build_webfilter_profiles(
         )
         profile = FGWebFilterProfile746(
             name=node.name,
+            source_context=parser.current_context or "root",
             **_declared_typed_values(
                 profile_settings,
                 FGWebFilterProfile746,

@@ -27,9 +27,6 @@ from fwmigrate.report.excel_optimized import (
 )
 from fwmigrate.report.excel_options import ExcelExportProfile
 from fwmigrate.report.excel_serialization import save_workbook_with_compression
-from fwmigrate.report.fortigate_address_schedule_excel import (
-    FortiGateAddressScheduleExcelExporter,
-)
 from fwmigrate.report.fortigate_semantics_excel import FortiGateSemanticsExcelExporter
 from fwmigrate.report.nat_audit_excel import NATAuditIRExcelExporter
 
@@ -62,16 +59,13 @@ _STREAM_BUILD_ORDER = tuple(
     "_build_address_groups",
     "_build_address_group_tags",
     "_build_proxy_addresses",
-    "_build_web_proxy_settings",
     "_build_service_categories",
     "_build_services",
     "_build_service_groups",
-    "_build_session_helpers",
     "_build_session_ttl_settings",
     "_build_session_ttl_overrides",
     "_build_schedules",
     "_build_schedule_groups",
-    "_build_traffic_shapers",
     "_build_policies",
     "_build_firewall_filters",
     "_build_checkpoint_access_rule_sheet",
@@ -101,11 +95,6 @@ _STREAM_BUILD_ORDER = tuple(
     "_build_routing_protocols",
     "_build_routing_dependencies",
     "_build_sdwan",
-    "_build_internet_services",
-    "_build_internet_service_definitions",
-    "_build_internet_service_extract_only",
-    "_build_ips_sensors",
-    "_build_ips_sensor_entries",
     "_build_security_profiles",
     "_build_security_profile_definitions",
     "_build_security_profile_rules",
@@ -123,9 +112,6 @@ _STREAM_BUILD_ORDER = tuple(
     "_build_globalprotect_sheets",
     "_build_pan_phase9_sheets",
     "_build_pan_sdwan_sheets",
-    "_build_warnings",
-    "_build_unsupported",
-    "_build_source_inventory",
     "_build_extraction_coverage",
     "_build_unresolved_references",
     )
@@ -135,14 +121,8 @@ _STREAM_BUILD_ORDER = tuple(
 _MANDATORY_EMPTY_SHEETS = frozenset(
     {
         "Summary",
-        "Review Required",
-        "Extraction Evidence",
-        "Warnings",
-        "Unsupported",
-        "Source Inventory",
         "Extraction Coverage",
         "Dependency Registry",
-        "Unresolved References",
         "FortiGate Source Configuration",
         "Interface Nested Configuration",
         "VIP Nested Configuration",
@@ -249,11 +229,7 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
     ) -> tuple[str, ...]:
         vendor = self._source_vendor()
         if title == "Addresses":
-            return (
-                "Effective Defaults",
-                "IPv6 Template Reference",
-                "Template Reference Resolved",
-            )
+            return ("Effective Defaults",)
         if title == "Routes":
             return ("Device Index",)
         if title == "Policies" and vendor == "palo_alto":
@@ -299,15 +275,11 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         vendor = self._source_vendor()
         if title == "Addresses":
             if index >= len(self.ir.addresses):
-                return (None, None, None)
+                return (None,)
             address = self.ir.addresses[index]
             return (
                 self._format_settings(
                     getattr(address, "source_effective_defaults", {}) or {}
-                ),
-                getattr(address, "source_template", None),
-                self._optional_bool_literal(
-                    getattr(address, "source_template_reference_resolved", None)
                 ),
             )
         if title == "Routes":
@@ -525,7 +497,6 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
 
     def _build_addresses(self, workbook: Any) -> None:
         IRExcelExporter._build_addresses(self, workbook)
-        FortiGateAddressScheduleExcelExporter._build_address6_templates(self, workbook)
 
     def _build_policies(self, workbook: Any) -> None:
         IRExcelExporter._build_policies(self, workbook)
@@ -680,10 +651,7 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         }
         active_order = self._active_sheet_order()
         self.SHEET_ORDER = self._workbook_sheet_order(active_order)
-        self._stream_active_sheets = set(active_order) | {
-            "Review Required",
-            "Extraction Evidence",
-        }
+        self._stream_active_sheets = set(active_order)
 
         total_started = time.perf_counter()
         workbook = _excel_exporter.Workbook(write_only=True)
@@ -691,8 +659,6 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         workbook.properties.subject = "Vendor-neutral firewall configuration extraction"
         workbook.properties.creator = "Firewall Migration Tool"
         summary_sheet = workbook.create_sheet("Summary")
-        review_sheet = workbook.create_sheet("Review Required")
-        evidence_sheet = workbook.create_sheet("Extraction Evidence")
 
         build_started = time.perf_counter()
         for spec in _STREAM_BUILD_ORDER:
@@ -704,7 +670,6 @@ class StreamingFastExcelExporter(NATAuditIRExcelExporter):
         if metrics is not None:
             metrics.timings["streaming workbook construction"] = time.perf_counter() - build_started
 
-        self._write_audit_sheets(review_sheet, evidence_sheet)
         self._write_summary(summary_sheet)
         self._order_sheets(workbook)
 

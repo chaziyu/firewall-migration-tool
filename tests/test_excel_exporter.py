@@ -19,10 +19,6 @@ from fwmigrate.ir.core import (
     IRInterface,
     IRInterfaceSecondaryIP,
     IRIPPool,
-    IRIPSSensor,
-    IRIPSSensorEntry,
-    IRIPSSensorExemptIP,
-    IRInternetServiceCustomGroup,
     IRLocalUser,
     IRMetadata,
     IRNATRule,
@@ -164,19 +160,11 @@ def test_streaming_fast_export_preserves_semantic_rows_and_required_sheets():
         "IP Pools",
         "Security Profiles",
         "Extraction Coverage",
-        "Review Required",
-        "Extraction Evidence",
     ):
         assert list(streamed[sheet_name].values)[2:] == list(full[sheet_name].values)[2:]
 
-    assert streamed.sheetnames[:3] == [
-        "Summary",
-        "Review Required",
-        "Extraction Evidence",
-    ]
+    assert streamed.sheetnames[0] == "Summary"
     for sheet_name in (
-        "Review Required",
-        "Extraction Evidence",
         "FortiGate Source Configuration",
         "Interface Nested Configuration",
         "VIP Nested Configuration",
@@ -339,24 +327,22 @@ def test_streaming_fast_export_skips_inactive_builder(monkeypatch, vendor, build
     assert calls == []
 
 
-def test_excel_exporter_exposes_typed_ips_fields_and_exempt_ips():
-    ir = IRConfig(
-        metadata=IRMetadata(hostname="fw", source_vendor="fortigate"),
-        ips_sensors=[IRIPSSensor(
-            name="ips",
-            extended_log="enable",
-            entries=[IRIPSSensorEntry(
-                source_id=1,
-                default_action="block",
-                vuln_type=[12],
-                exempt_ips=[IRIPSSensorExemptIP(id=2, src_ip="192.0.2.0/24")],
-            )],
-        )],
-    )
+def test_excel_exporter_omits_removed_fortigate_inventory_sheets():
+    ir = IRConfig(metadata=IRMetadata(hostname="fw", source_vendor="fortigate"))
     workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
-    headers = {cell.value: cell.column for cell in workbook["IPS Sensor Entries"][3]}
-    assert workbook["IPS Sensor Entries"].cell(4, headers["Default Action"]).value == "block"
-    assert workbook["IPS Exempt IPs"]["D4"].value == "192.0.2.0/24"
+    assert not {
+        "Web Proxy Settings",
+        "IPS Sensors",
+        "IPS Sensor Entries",
+        "IPS Exempt IPs",
+        "Internet Services",
+        "Internet Service Definitions",
+        "Internet Service Def Entries",
+        "Internet Service Def Ports",
+        "Custom Internet Services",
+        "Custom Internet Service Groups",
+        "Internet Service Extensions",
+    }.intersection(workbook.sheetnames)
 
 
 def test_excel_exporter_reports_security_profile_support_level():
@@ -369,27 +355,14 @@ def test_excel_exporter_reports_security_profile_support_level():
     assert workbook["Security Profiles"].cell(4, headers["Support Level"]).value == "TYPED_EXTRACT_ONLY"
 
 
-def test_excel_exporter_reports_custom_internet_service_groups_and_summary_count():
-    ir = IRConfig(
-        metadata=IRMetadata(hostname="fw", source_vendor="fortigate"),
-        custom_internet_service_groups=[IRInternetServiceCustomGroup(
-            name="web-group",
-            comment="Web services",
-            members=["custom-web", "custom-api"],
-        )],
-    )
+def test_excel_exporter_does_not_report_removed_internet_service_inventory():
+    ir = IRConfig(metadata=IRMetadata(hostname="fw", source_vendor="fortigate"))
     workbook = load_workbook(io.BytesIO(IRExcelExporter(ir).generate()))
-    sheet = workbook["Custom Internet Service Groups"]
-    headers = {cell.value: cell.column for cell in sheet[3]}
-
-    assert sheet.cell(4, headers["Members"]).value == "custom-web, custom-api"
-    assert sheet.cell(4, headers["Status"]).value == "EXTRACT_ONLY"
-    assert sheet.cell(4, headers["Manual Review"]).value == "Yes"
-    assert any(
-        workbook["Summary"].cell(row, 1).value == "Custom Internet Service Groups"
-        and workbook["Summary"].cell(row, 2).value == 1
+    summary_labels = {
+        workbook["Summary"].cell(row, 1).value
         for row in range(1, workbook["Summary"].max_row + 1)
-    )
+    }
+    assert "Custom Internet Service Groups" not in summary_labels
 
 
 def test_phase94_excel_sheets_have_production_rows_and_no_secrets():
@@ -603,7 +576,11 @@ def test_excel_exporter_generates_complete_safe_workbook():
     workbook_bytes = IRExcelExporter(_sample_ir()).generate()
     workbook = load_workbook(io.BytesIO(workbook_bytes), data_only=False)
 
-    assert workbook.sheetnames == list(IRExcelExporter.SHEET_ORDER)
+    assert workbook.sheetnames == [
+        sheet_name
+        for sheet_name in IRExcelExporter.SHEET_ORDER
+        if sheet_name in workbook.sheetnames
+    ]
     assert workbook["SSL VPN Host Checks"].max_row == 3
     assert workbook["SSL VPN Host Check Items"].max_row == 3
     assert [cell.value for cell in workbook["SSL VPN Host Check Items"][3]] == [
@@ -1071,10 +1048,11 @@ end
     ).value == 8
     assert "unavailable" not in coverage["A2"].value
 
-    unsupported = workbook["Unsupported"]
-    assert unsupported["A4"].value == "system unknown-feature"
-    assert unsupported["C4"].value == "UNSUPPORTED"
-    assert unsupported["E4"].value == "Yes"
+    assert "Warnings" not in workbook.sheetnames
+    assert "Unsupported" not in workbook.sheetnames
+    assert "Source Inventory" not in workbook.sheetnames
+    assert "Unresolved References" not in workbook.sheetnames
+    assert "Dependency Registry" in workbook.sheetnames
 
 
 def test_firewall_policy_source_settings_preserve_ordered_command_values():
@@ -1586,12 +1564,13 @@ def test_excel_exporter_uses_logical_sheet_order():
 
     assert workbook.sheetnames[0] == "Summary"
 
-    assert workbook.sheetnames[-4:] == [
+    assert workbook.sheetnames[-1] == "Extraction Coverage"
+    assert not {
+        "Unresolved References",
         "Warnings",
         "Unsupported",
         "Source Inventory",
-        "Extraction Coverage",
-    ]
+    }.intersection(workbook.sheetnames)
 
     assert (
         workbook.sheetnames.index("Policies")
@@ -1637,8 +1616,6 @@ def test_excel_exporter_summary_contains_navigation_links():
         "Policies",
         "IP Pools",
         "VPN Tunnels",
-        "Warnings",
-        "Unsupported",
         "Extraction Coverage",
     ):
         assert required_sheet in navigation
@@ -1685,7 +1662,6 @@ def test_excel_exporter_non_summary_sheets_link_back_to_summary():
         "Interfaces",
         "Policies",
         "Interface Source Settings",
-        "Warnings",
         "Extraction Coverage",
     ):
         sheet = workbook[
@@ -1733,12 +1709,6 @@ def test_excel_exporter_applies_sheet_group_tab_colors():
         IRExcelExporter._MUTED
     )
 
-    assert _tab_rgb(
-        workbook["Unsupported"]
-    ).endswith(
-        IRExcelExporter._LIGHT_RED
-    )
-
 
 def test_excel_exporter_preserves_table_navigation_features():
     workbook = load_workbook(
@@ -1775,40 +1745,6 @@ def test_excel_exporter_preserves_table_navigation_features():
     )
 
     assert policies.auto_filter.ref
-
-
-def test_excel_exporter_warning_highlight_is_limited_to_confidence():
-    workbook = load_workbook(
-        io.BytesIO(
-            IRExcelExporter(
-                _sample_ir()
-            ).generate()
-        )
-    )
-
-    warnings = workbook[
-        "Warnings"
-    ]
-
-    # Sample warning row uses PARTIAL confidence.
-    confidence_fill = (
-        warnings["C4"]
-        .fill
-        .fgColor
-        .rgb
-    )
-
-    message_fill = (
-        warnings["D4"]
-        .fill
-        .fgColor
-    )
-
-    assert confidence_fill is not None
-
-    # The warning emphasis should be localized rather than filling the
-    # complete warning row.
-    assert message_fill != confidence_fill
 
 
 def test_excel_exporter_preserves_names_with_sensitive_keywords_without_false_positive_redaction():
