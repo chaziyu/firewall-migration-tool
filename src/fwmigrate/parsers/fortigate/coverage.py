@@ -67,7 +67,6 @@ MIGRATION_RELEVANT_SOURCE_PREFIXES = (
     "firewall",
     "router",
     "vpn",
-    "user",
     "endpoint-control",
     "authentication",
     "system interface",

@@ -377,3 +377,18 @@ def test_fortigate_generation_impact_matrix():
     for path, status, blocking in cases:
         impact = fortigate_generation_impact(path, status)
         assert (impact == MigrationImpact.BLOCKING) is blocking, (path, status, impact)
+
+
+def test_unreferenced_user_source_only_object_is_review_only():
+    result = extract_fortigate_config("""
+config user ldap
+    edit LDAP1
+        set server ldap.example.test
+    next
+end
+""")
+
+    assert result.generation_safe is True
+    item = next(item for item in result.inventory_items if item.source_path == "user ldap")
+    assert item.migration_impact == MigrationImpact.REVIEW
+    assert result.blocking_reasons == []

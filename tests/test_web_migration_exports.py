@@ -1,6 +1,8 @@
 import io
 import zipfile
 
+from openpyxl import load_workbook
+
 from fwmigrate.web import create_app
 from tests.fixture_paths import CISCO_ASA_FIXTURE
 
@@ -71,3 +73,11 @@ def test_fortigate_admin_only_source_config_still_generates_zip():
         name.endswith((".xml", ".tf")) and not name.endswith(".xlsx")
         for name in names
     )
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        workbook_name = next(name for name in names if name.endswith(".xlsx"))
+        workbook = load_workbook(io.BytesIO(archive.read(workbook_name)), read_only=True)
+        rows = workbook["Source Inventory"].iter_rows(values_only=True)
+        assert any(
+            any(value == "system accprofile" for value in row)
+            for row in rows
+        )

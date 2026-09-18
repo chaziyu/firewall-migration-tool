@@ -443,15 +443,15 @@ def extract_fortigate_config(
             section.path,
             section.status,
         )
+    status_by_path = {
+        (section.path, section.source_context): section.status
+        for section in source_sections
+    }
     semantic_findings = validate_internet_service_group_directions(
         parser.source_inventory_items,
         dependencies,
         ir_config,
     )
-    status_by_path = {
-        (section.path, section.source_context): section.status
-        for section in source_sections
-    }
     policy_safety = {
         (policy.source_context or "root", policy.source_rule_id): policy
         for policy in ir_config.policies
@@ -607,11 +607,17 @@ def extract_fortigate_config(
 
     for dependency in unresolved_dependencies:
         context = dependency.source_context or "root"
-        blocking_reasons.append(
-            f"Unresolved FortiGate reference '{dependency.reference}' in "
-            f"{dependency.source_path} field '{dependency.source_field}' "
-            f"(expected {dependency.expected_type}) in VDOM '{context}'"
-        )
+        if (
+            fortigate_generation_impact(
+                dependency.source_path,
+                ExtractionStatus.UNSUPPORTED,
+            ) == MigrationImpact.BLOCKING
+        ):
+            blocking_reasons.append(
+                f"Unresolved FortiGate reference '{dependency.reference}' in "
+                f"{dependency.source_path} field '{dependency.source_field}' "
+                f"(expected {dependency.expected_type}) in VDOM '{context}'"
+            )
     blocking_reasons.extend(semantic_findings)
     for extension in ir_config.internet_service_extensions:
         children = [*extension.disable_entries, *extension.entries]
