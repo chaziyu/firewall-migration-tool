@@ -31,6 +31,7 @@ class _PreviewCacheEntry:
     source_digest: str
     created_at: float
     analysis: object
+    source_name: str | None = None
 
 
 _PREVIEW_CACHE: dict[str, _PreviewCacheEntry] = {}
@@ -91,7 +92,7 @@ def _cleanup_preview_cache(now: float | None = None) -> None:
         _PREVIEW_CACHE.pop(preview_id, None)
 
 
-def _cache_preview(source_vendor: str, raw: bytes, analysis) -> _PreviewCacheEntry:
+def _cache_preview(source_vendor: str, raw: bytes, analysis, source_name: str | None = None) -> _PreviewCacheEntry:
     now = time.monotonic()
     source_digest = _source_digest(source_vendor, raw)
     with _PREVIEW_CACHE_LOCK:
@@ -108,6 +109,7 @@ def _cache_preview(source_vendor: str, raw: bytes, analysis) -> _PreviewCacheEnt
             source_digest=source_digest,
             created_at=now,
             analysis=analysis,
+            source_name=source_name,
         )
         _PREVIEW_CACHE[entry.preview_id] = entry
         return entry
@@ -218,7 +220,7 @@ def create_app(test_config=None):
                 'extraction',
                 lambda: reporter.analyze_source(file_content),
             )
-            preview_entry = _cache_preview(source_vendor, raw_content, analysis)
+            preview_entry = _cache_preview(source_vendor, raw_content, analysis, os.path.basename(file.filename))
             report = _timed(metrics, 'preview', lambda: reporter.build_preview(analysis))
             response = {
                 'success': True,
@@ -296,7 +298,8 @@ def create_app(test_config=None):
 
             workbook = io.BytesIO()
             export_started = perf_counter()
-            reporter.export_excel(analysis, workbook, profile=profile)
+            source_name = os.path.basename(uploaded_file.filename) if uploaded_file is not None and uploaded_file.filename else (preview_entry.source_name if preview_entry else None)
+            reporter.export_excel(analysis, workbook, profile=profile, source_name=source_name)
             export_elapsed = perf_counter() - export_started
             if metrics is not None:
                 metrics.add('workbook construction', export_elapsed * 1000)

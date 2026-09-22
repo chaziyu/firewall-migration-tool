@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..source_model import PANScope
+
 
 @dataclass(frozen=True, slots=True)
 class PANOSValidationIssue:
@@ -11,6 +13,9 @@ class PANOSValidationIssue:
     source_path: str | None = None
     source_name: str | None = None
     field: str | None = None
+    source_scope: PANScope | None = None
+    scope_identity: str | None = None
+    object_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

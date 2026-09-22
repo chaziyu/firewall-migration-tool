@@ -20,8 +20,15 @@ def _ipv4(element: ET.Element | None):
     return [item.get("name") for item in node if item.tag == "entry"] if node is not None else None
 
 
+def _scalar_or_member(element: ET.Element | None, tag: str) -> str | None:
+    node = element.find(tag) if element is not None else None
+    if node is None:
+        return None
+    return (node.text or next((child.text for child in node if child.text), "")).strip() or None
+
+
 def _mode_extra(element: ET.Element, modes: set[str]) -> dict[str, object]:
-    known = {"layer3": {"interface-management-profile", "mtu", "ip", "ipv6", "units"}, "layer2": {"units", "lacp", "vlan"}, "virtual-wire": {"virtual-wire"}, "tap": set(), "ha": set(), "decrypt-mirror": set()}
+    known = {"layer3": {"interface-management-profile", "mtu", "ip", "ipv6", "units", "aggregate-group"}, "layer2": {"units", "lacp", "vlan", "aggregate-group"}, "virtual-wire": {"virtual-wire"}, "tap": set(), "ha": set(), "decrypt-mirror": set()}
     return {mode: raw_extra(element.find(mode), known[mode]) for mode in modes if element.find(mode) is not None and raw_extra(element.find(mode), known[mode])}
 
 
@@ -31,9 +38,9 @@ def extract_interface(element: ET.Element, path: tuple[str, ...], context: PANWa
         interfaces = [child.text.strip() for child in element if child.tag == "member" and child.text]
         extra, explicit = source_fields(element, spec)
         return PANInterfaceImport(scope=context.scope, interfaces=interfaces if spec.name == "interface_import" else None, virtual_routers=interfaces if spec.name == "virtual_router_import" else None, source_path="/".join(path), raw_extra=extra, explicit_fields=explicit)
-    if spec.name == "interface_unit" and context.interface_name:
+    if spec.name == "interface_unit":
         extra, explicit = source_fields(element, spec)
-        return PANInterfaceUnit(name=element.get("name"), parent=context.interface_name, tag=value(element, "tag"), ipv4_addresses=_ipv4(element), ipv6_addresses=_ipv6(element), management_profile=value(element, "interface-management-profile"), raw_extra=extra, explicit_fields=explicit)
+        return PANInterfaceUnit(name=element.get("name"), parent=context.interface_name, interface_family=context.interface_family, **common, tag=value(element, "tag"), ipv4_addresses=_ipv4(element), ipv6_addresses=_ipv6(element), management_profile=value(element, "interface-management-profile"), raw_extra=extra, explicit_fields=explicit)
     if not spec.name.startswith("interface_") or not context.interface_family:
         return None
     modes = {child.tag for child in element if child.tag in {"layer3", "layer2", "virtual-wire", "tap", "ha", "decrypt-mirror"}}
@@ -45,4 +52,7 @@ def extract_interface(element: ET.Element, path: tuple[str, ...], context: PANWa
     if layer3 is not None:
         explicit.update(field for field in ("management_profile", "mtu", "ipv4_addresses", "ipv6_addresses") if layer3.find({"management_profile": "interface-management-profile", "mtu": "mtu", "ipv4_addresses": "ip", "ipv6_addresses": "ipv6"}[field]) is not None)
     extra.update(_mode_extra(element, modes))
-    return PANInterface(name=element.get("name"), **common, interface_family=context.interface_family, mode=next(iter(modes)) if len(modes) == 1 else sorted(modes) if modes else None, comment=value(element, "comment"), link_state=value(element, "link-state"), speed=value(element, "speed"), duplex=value(element, "duplex"), management_profile=value(layer3, "interface-management-profile"), mtu=value(layer3, "mtu"), ipv4_addresses=_ipv4(layer3), ipv6_addresses=_ipv6(layer3), vlan=value(element, "vlan"), lldp_enable=value(element.find("lldp"), "enable"), raw_extra=extra, explicit_fields=explicit)
+    aggregate = _scalar_or_member(element, "aggregate-group") or _scalar_or_member(layer3, "aggregate-group") or _scalar_or_member(element.find("layer2"), "aggregate-group")
+    if aggregate:
+        explicit.add("aggregate-group")
+    return PANInterface(name=element.get("name"), **common, interface_family=context.interface_family, aggregate_group=aggregate, mode=next(iter(modes)) if len(modes) == 1 else sorted(modes) if modes else None, comment=value(element, "comment"), link_state=value(element, "link-state"), speed=value(element, "speed"), duplex=value(element, "duplex"), management_profile=value(layer3, "interface-management-profile"), mtu=value(layer3, "mtu"), ipv4_addresses=_ipv4(layer3), ipv6_addresses=_ipv6(layer3), vlan=value(element, "vlan"), lldp_enable=value(element.find("lldp"), "enable"), raw_extra=extra, explicit_fields=explicit)

@@ -36,6 +36,8 @@ def _transition(element: ET.Element, path: tuple[str, ...], parent: PANWalkConte
 
     parent_tag = path[-1] if path else None
     interface_families = {"ethernet", "aggregate-ethernet", "loopback", "tunnel", "vlan"}
+    if element.tag in interface_families:
+        context = replace(context, interface_family=element.tag, interface_name=None)
     if element.tag == "entry" and parent_tag in interface_families:
         context = replace(context, interface_name=element.get("name"), interface_family=parent_tag)
     if element.tag == "entry" and parent_tag in {"devices", "device"}:

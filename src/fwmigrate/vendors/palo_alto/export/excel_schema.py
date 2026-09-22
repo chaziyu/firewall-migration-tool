@@ -203,7 +203,9 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     # ------------------------------------------------------------------
 
     "Security Policies": (
-        "Rule Order",
+        "Source Order",
+        "Rulebase Position",
+        "Effective Order",
         "Name",
         "Rule Type",
         "From Zones",
@@ -239,6 +241,8 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
         "Description",
         "Scope Type",
         "Scope Name",
+        "Resolved Source References",
+        "Resolved Destination References",
         "Analysis Status",
         "Review Reasons",
         "Source Explicit Fields",
@@ -246,7 +250,9 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     ),
 
     "NAT Rules": (
-        "Rule Order",
+        "Source Order",
+        "Rulebase Position",
+        "Effective Order",
         "Name",
         "From Zones",
         "To Zones",
@@ -272,6 +278,10 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
         "Dynamic Destination Address",
         "Dynamic Destination Port",
         "Dynamic Destination Distribution",
+
+        "Derived Source Translation Mode",
+        "Derived Destination Translation Mode",
+        "Resolved Translation References",
 
         "Disabled",
         "Tags",
@@ -366,8 +376,19 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
         "Name",
         "Interface Type",
         "Parent Interface",
+        "Aggregate Interface",
+        "Topology Path",
+        "Physical Interfaces",
+        "Attached Tunnels",
         "Unit / Subinterface",
         "Layer",
+        "IPv4 Addresses",
+        "IPv6 Addresses",
+        "Imported VSYS",
+        "Zone",
+        "Virtual Router",
+        "Topology Issues",
+        "Description",
         "SD-WAN Enabled",
         "IPv6 SD-WAN Enabled",
         "SD-WAN Interface Profile",
@@ -985,52 +1006,46 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
 
     "Unresolved References": (
         "Source Scope Type",
-        "Source Scope",
-        "Source Type",
+        "Source Scope Name",
+        "Source Object Type",
         "Source Object",
         "Field",
         "Reference",
         "Expected Type",
+        "Status",
+        "Resolved Scope",
+        "Resolved Object",
         "Reason",
     ),
 
     "Unsupported": (
-        "Scope Type",
-        "Scope Name",
-        "Section",
-        "Object Count",
+        "Source Path",
         "Status",
         "Reason",
-        "Raw Capture Location",
     ),
 
     "PAN-OS Source Inventory": (
         "Scope Type",
         "Scope Name",
-        "Target Device",
+        "Device",
+        "Serial",
+        "Device Group",
         "Source Path",
-        "Object Type",
+        "Kind",
         "Object",
-        "Parent / Subsection",
-        "Operation",
-        "Setting",
-        "Value",
+        "Rulebase Position",
+        "Source Order",
+        "Values",
         "Extraction Status",
     ),
 
     "Extraction Coverage": (
-        "Source Section",
-        "Scope Type",
-        "Scope Name",
+        "Source Domain",
         "Found",
-        "Source Objects",
-        "Parsed Objects",
+        "Source Records",
+        "Typed Objects",
         "Status",
-        "Semantic Level",
-        "Parser Handler",
-        "Line Start",
-        "Line End",
-        "Semantic Unknowns",
+        "Unknown Paths",
         "Notes",
     ),
 }
@@ -1046,6 +1061,23 @@ DERIVED_COLUMNS_BY_SHEET: dict[str, tuple[str, ...]] = {
     "Vulnerability Profiles": (
         "Rule Count",
         "Exception Count",
+    ),
+    "Security Policies": (
+        "Effective Order",
+        "Resolved Source References",
+        "Resolved Destination References",
+    ),
+    "NAT Rules": (
+        "Effective Order",
+        "Derived Source Translation Mode",
+        "Derived Destination Translation Mode",
+        "Resolved Translation References",
+    ),
+    "Interfaces": (
+        "Imported VSYS",
+        "Zone",
+        "Virtual Router",
+        "Topology Issues",
     ),
 }
 
@@ -1064,3 +1096,36 @@ TECHNICAL_COLUMNS_BY_SHEET: dict[str, tuple[str, ...]] = {
 
 
 HIDDEN_COLUMNS_BY_DEFAULT = TECHNICAL_COLUMNS_BY_SHEET
+
+
+SHEET_IMPLEMENTATION_STATUS: dict[str, str] = {
+    sheet: "NOT_IMPLEMENTED"
+    for sheet in SHEET_ORDER
+}
+SHEET_IMPLEMENTATION_STATUS.update({
+    "Summary": "IMPLEMENTED",
+    "Review Required": "IMPLEMENTED",
+    "Validation": "IMPLEMENTED",
+    "Addresses": "IMPLEMENTED",
+    "Address Groups": "IMPLEMENTED",
+    "Services": "IMPLEMENTED",
+    "Service Groups": "IMPLEMENTED",
+    "Schedules": "IMPLEMENTED",
+    "Security Policies": "IMPLEMENTED",
+    "NAT Rules": "IMPLEMENTED",
+    "Security Profile Groups": "IMPLEMENTED",
+    "Interfaces": "IMPLEMENTED",
+    "Zones": "IMPLEMENTED",
+    "Virtual Router Routes": "IMPLEMENTED",
+    "Logical Router Routes": "IMPLEMENTED",
+    "Unresolved References": "IMPLEMENTED",
+    "Unsupported": "IMPLEMENTED",
+    "PAN-OS Source Inventory": "IMPLEMENTED",
+    "Extraction Coverage": "IMPLEMENTED",
+})
+
+ACTIVE_SHEET_ORDER: tuple[str, ...] = tuple(
+    sheet
+    for sheet in SHEET_ORDER
+    if SHEET_IMPLEMENTATION_STATUS[sheet] != "NOT_IMPLEMENTED"
+)
