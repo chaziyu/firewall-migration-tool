@@ -58,3 +58,26 @@ def test_palo_alto_native_source_evidence_redacts_secret_values():
     analysis = PaloAltoSourceReporter().analyze_source(source)
 
     assert "do-not-export" not in str(analysis.config.model_dump())
+
+
+def test_palo_alto_redacts_typed_inventory_preview_excel_and_validation():
+    secret = "typed-secret-value"
+    source = f"<config><shared><address><entry name='x'><future-password>{secret}</future-password></entry></address></shared></config>"
+    reporter = PaloAltoSourceReporter()
+    analysis = reporter.analyze_source(source)
+
+    address = analysis.config.addresses[0]
+    record = analysis.config.source_inventory[0]
+    assert secret not in str(address.raw_extra)
+    assert secret not in str(record.values)
+    assert secret not in str(record.raw_xml)
+    assert secret not in str(analysis.config.model_dump())
+    assert secret not in str(analysis.validation)
+
+    preview = reporter.build_preview(analysis)
+    assert secret not in str(preview)
+
+    output = io.BytesIO()
+    reporter.export_excel(analysis, output)
+    workbook = load_workbook(io.BytesIO(output.getvalue()), read_only=True, data_only=True)
+    assert secret not in "\n".join(str(cell.value) for sheet in workbook.worksheets for row in sheet.iter_rows() for cell in row)
