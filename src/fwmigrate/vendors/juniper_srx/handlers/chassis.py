@@ -18,6 +18,6 @@ def handle_chassis_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
     ))
     cmd.consumed = True
     cmd.handler = "chassis"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     cmd.requires_manual_review = True
     return True

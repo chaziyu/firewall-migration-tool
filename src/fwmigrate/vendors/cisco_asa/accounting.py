@@ -16,9 +16,9 @@ from fwmigrate.extraction.sanitize import sanitize_raw_text
 
 
 _SEVERITY = {
-    ExtractionStatus.NORMALIZED: 0,
-    ExtractionStatus.EXTRACT_ONLY: 1,
-    ExtractionStatus.PARTIALLY_NORMALIZED: 2,
+    ExtractionStatus.EXTRACTED: 0,
+    ExtractionStatus.SOURCE_ONLY: 1,
+    ExtractionStatus.PARTIAL: 2,
     ExtractionStatus.VENDOR_EXTENSION: 2,
     ExtractionStatus.UNSUPPORTED: 3,
     ExtractionStatus.PARSE_ERROR: 4,
@@ -137,7 +137,7 @@ def build_asa_source_accounting(
         safe_line = sanitize_raw_text(line)
         safe_parts = safe_line.split()
         requires_review = review_by_line.get(number, False) or status in {
-            ExtractionStatus.PARTIALLY_NORMALIZED,
+            ExtractionStatus.PARTIAL,
             ExtractionStatus.UNSUPPORTED,
             ExtractionStatus.PARSE_ERROR,
             ExtractionStatus.VENDOR_EXTENSION,
@@ -168,7 +168,7 @@ def build_asa_source_accounting(
         if status == ExtractionStatus.UNSUPPORTED:
             unsupported.append(UnsupportedItem(
                 source_path=source_path,
-                reason="Cisco ASA command is preserved but not safely normalized.",
+                reason="Cisco ASA command is preserved but not safely extracted.",
                 raw_capture=safe_line,
             ))
 

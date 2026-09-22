@@ -14,16 +14,16 @@ def handle_firewall_filter_command(cmd: JunosCommand, context: JuniperContextCon
         key, values = (t[4].lower(), t[5:]) if len(t) > 4 else ("", [])
         if key in {"bandwidth-limit", "bandwidth-percent"} and values:
             obj.bandwidth_limit = " ".join(values)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
         elif key in {"burst-size-limit", "burst-limit"} and values:
             obj.burst_limit = " ".join(values)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
         elif key == "then" and values:
             obj.action = " ".join(values)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
         else:
             obj.source_attributes["_".join(sanitize_tokens(t[4:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
-            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
     if len(t) < 6 or t[1].lower() != "firewall" or t[2].lower() != "family" or t[4].lower() != "filter":
         return False
@@ -33,11 +33,11 @@ def handle_firewall_filter_command(cmd: JunosCommand, context: JuniperContextCon
     filt = context.firewall_filters.setdefault(name, JuniperFirewallFilter(name=name, family=family))
     cmd.consumed, cmd.handler = True, "firewall-filters"
     if len(t) == 6:
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     if t[6].lower() != "term" or len(t) < 8:
         filt.source_attributes["_".join(sanitize_tokens(t[6:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
     term_name = t[7]
     term = next((x for x in filt.terms if x.name == term_name), None)
@@ -49,7 +49,7 @@ def handle_firewall_filter_command(cmd: JunosCommand, context: JuniperContextCon
         filt.terms.append(term)
     rest = t[8:]
     if not rest:
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     if rest[0].lower() == "from" and len(rest) >= 2:
@@ -67,13 +67,13 @@ def handle_firewall_filter_command(cmd: JunosCommand, context: JuniperContextCon
             term.from_conditions.append(
                 sanitize_source_attributes({"field": field, "values": values})
             )
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
         term.from_conditions.append(
             sanitize_source_attributes({"path": rest[1:], "values": values or [True]})
         )
         term.matches.setdefault(field, []).extend(values or [True])
-        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.extraction_status = ExtractionStatus.PARTIAL
         cmd.requires_manual_review = True
         return True
 
@@ -93,17 +93,17 @@ def handle_firewall_filter_command(cmd: JunosCommand, context: JuniperContextCon
                 elif action == "next-hop":
                     entry["next_hop"] = entry["value"]
             term.actions.append(sanitize_source_attributes(entry))
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
         term.actions.append(
             sanitize_source_attributes({"action": action, "values": values})
         )
-        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.extraction_status = ExtractionStatus.PARTIAL
         cmd.requires_manual_review = True
         return True
 
     term.source_attributes.setdefault("unsupported", []).append(
         sanitize_source_attributes({"path": rest, "raw": cmd.raw_sanitized})
     )
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

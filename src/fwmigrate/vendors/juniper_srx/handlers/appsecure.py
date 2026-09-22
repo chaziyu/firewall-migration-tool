@@ -44,5 +44,5 @@ def handle_appsecure_command(cmd: JunosCommand, context: JuniperContextConfig) -
         )
 
     cmd.consumed, cmd.handler = True, "appsecure"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

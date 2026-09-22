@@ -47,7 +47,7 @@ def handle_schedulers_command(cmd: JunosCommand, context: JuniperContextConfig) 
         )
 
         if len(toks) == 4:
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 
         i = 4
@@ -90,18 +90,18 @@ def handle_schedulers_command(cmd: JunosCommand, context: JuniperContextConfig) 
                 sched.source_attributes["_".join(safe_toks[i:])] = sanitize_source_attributes(
                     {"raw": cmd.raw_sanitized}
                 )
-                cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+                cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
                 return True
 
         if handled_any:
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 
         safe_toks = sanitize_tokens(toks)
         sched.source_attributes["_".join(safe_toks[4:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     return False

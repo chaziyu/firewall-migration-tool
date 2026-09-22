@@ -52,10 +52,6 @@ def _text_source(text: str, zone_mapping: dict[str, str] | None) -> CiscoFTDConf
         name=item.name, source_plane="ftd-text-evidence", raw={"raw_line": item.raw_line},
         interface=item.interface, destination=item.destination, gateway=item.gateway,
     ) for item in config.static_routes]
-    config.unsupported_evidence = [
-        {"source_path": "ftd-cli", "source_name": item.name, "reason": reason}
-        for item in config.interfaces for reason in item.review_reasons
-    ]
     return config
 
 
@@ -74,8 +70,8 @@ def _inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
                 source_id=str(record.source_id or index), name=record.name,
                 source_type=attribute[:-1], source_context=record.source_context,
                 source_attributes={"source_plane": config.source_plane, **record.source_attributes},
-                status=ExtractionStatus.EXTRACT_ONLY if config.source_plane == "ftd-text-evidence" else ExtractionStatus.NORMALIZED,
-                requires_manual_review=record.requires_manual_review,
+                status=ExtractionStatus.SOURCE_ONLY if config.source_plane == "ftd-text-evidence" else ExtractionStatus.EXTRACTED,
+                requires_manual_review=any(item.get("source_name") == record.name for item in config.unsupported_evidence),
             ))
     return items
 
@@ -87,26 +83,25 @@ def extract_cisco_ftd_source(text: str, zone_mapping: dict[str, str] | None = No
     if is_fmc_bundle(text):
         config = CiscoFMCBundleParser(text).parse_source()
         sections = [SourceSectionResult(path="fmc/source", source_context=config.source_metadata.get("domain_name"),
-                                         status=ExtractionStatus.NORMALIZED,
+                                         status=ExtractionStatus.EXTRACTED,
                                          object_count_source=len(config.managed_objects) + len(config.object_groups) + len(config.services),
                                          object_count_parsed=len(config.managed_objects) + len(config.object_groups) + len(config.services),
-                                         object_count_normalized=len(config.managed_objects) + len(config.object_groups) + len(config.services))]
+                                         object_count_extracted=len(config.managed_objects) + len(config.object_groups) + len(config.services))]
     elif is_fdm_bundle(text):
         config = CiscoFDMBundleParser(text).parse_source()
         sections = [SourceSectionResult(path="fdm/source", source_context=config.source_metadata.get("domain_name"),
-                                         status=ExtractionStatus.NORMALIZED,
+                                         status=ExtractionStatus.EXTRACTED,
                                          object_count_source=len(config.managed_objects) + len(config.object_groups) + len(config.services),
                                          object_count_parsed=len(config.managed_objects) + len(config.object_groups) + len(config.services),
-                                         object_count_normalized=len(config.managed_objects) + len(config.object_groups) + len(config.services))]
+                                         object_count_extracted=len(config.managed_objects) + len(config.object_groups) + len(config.services))]
     else:
         config = _text_source(text, zone_mapping)
-        sections = [SourceSectionResult(path="ftd-cli/source", status=ExtractionStatus.EXTRACT_ONLY,
+        sections = [SourceSectionResult(path="ftd-cli/source", status=ExtractionStatus.SOURCE_ONLY,
                                          object_count_source=len(config.interfaces) + len(config.static_routes),
                                          object_count_parsed=len(config.interfaces) + len(config.static_routes),
-                                         object_count_normalized=0)]
+                                         object_count_extracted=0)]
     config = _sanitize(deepcopy(config))
     derived = build_ftd_derived_views(config)
-    config.unresolved_references = [item.__dict__ for item in derived.unresolved_references]
     validation = validate_ftd_config(config, derived)
     return FTDSourceResult(config, sections, _inventory(config), config.unsupported_evidence, derived, validation)
 

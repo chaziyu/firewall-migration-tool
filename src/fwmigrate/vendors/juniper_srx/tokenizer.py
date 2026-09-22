@@ -169,7 +169,7 @@ class JunosActivationState:
                     if path not in self.inactive_paths:
                         self.inactive_paths.append(path)
                 cmd.consumed = True
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
             elif cmd.operation == JunosOperation.ACTIVATE:
                 if len(cmd.tokens) > 1:
                     path = [t.lower() for t in cmd.tokens[1:]]
@@ -178,7 +178,7 @@ class JunosActivationState:
                         p for p in self.inactive_paths if p != path
                     ]
                 cmd.consumed = True
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
 
     def is_inactive(self, path: Sequence[str]) -> bool:
         """

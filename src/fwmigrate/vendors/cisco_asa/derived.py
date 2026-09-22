@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
-from .reference_validation import ReferenceIssue, build_reference_indexes, validate_references
+from .reference_validation import (
+    ReferenceIssue,
+    build_reference_indexes,
+    derive_group_address_families,
+    validate_references,
+)
 
 
 def _context(item: Any) -> str | None:
@@ -16,6 +20,7 @@ def _context(item: Any) -> str | None:
 @dataclass(frozen=True)
 class ASADerivedViews:
     reference_indexes: dict[str, dict[str, Any]] = field(default_factory=dict)
+    group_address_families: dict[str, str | None] = field(default_factory=dict)
     object_group_memberships: dict[str, tuple[str, ...]] = field(default_factory=dict)
     interface_nameifs: dict[str, str] = field(default_factory=dict)
     acl_bindings: dict[str, tuple[Any, ...]] = field(default_factory=dict)
@@ -36,8 +41,14 @@ def build_asa_derived_views(config: Any) -> ASADerivedViews:
         contexts.update(_context(item) for item in collection)
 
     indexes: dict[str, dict[str, Any]] = {}
+    group_address_families: dict[str, str | None] = {}
     for context in sorted(contexts, key=lambda value: value or ""):
-        indexes[context or "__global__"] = build_reference_indexes(config, context)
+        key = context or "__global__"
+        indexes[key] = build_reference_indexes(config, context)
+        group_address_families.update({
+            f"{key}:{name}": family
+            for name, family in derive_group_address_families(indexes[key]).items()
+        })
 
     memberships = {
         f"{_context(group) or '__global__'}:{group.name}": tuple(
@@ -61,12 +72,10 @@ def build_asa_derived_views(config: Any) -> ASADerivedViews:
         "source_context": _context(item),
     } for item in config.crypto_maps)
 
-    # The existing validator contains ASA-specific reference semantics. It
-    # annotates nested records, so run it on a copy and keep its issues only.
-    checked = deepcopy(config)
-    issues = tuple(validate_references(checked))
+    issues = tuple(validate_references(config))
     return ASADerivedViews(
         reference_indexes=indexes,
+        group_address_families=group_address_families,
         object_group_memberships=memberships,
         interface_nameifs={item.name: item.nameif for item in config.interfaces if item.nameif},
         acl_bindings={name: tuple(items) for name, items in bindings.items()},

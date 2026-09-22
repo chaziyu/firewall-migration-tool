@@ -11,10 +11,10 @@ def handle_screens_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
     profile = context.screens.setdefault(t[3], JuniperScreenProfile(name=t[3]))
     cmd.consumed, cmd.handler = True, "screens"
     if len(t) == 4:
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     path = t[4:]
     profile.options.append(JuniperScreenOption(path=path, values=[]))
     profile.source_attributes["_".join(sanitize_tokens(path))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

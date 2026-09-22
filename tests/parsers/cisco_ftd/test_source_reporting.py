@@ -1,10 +1,13 @@
 from io import BytesIO
+from copy import deepcopy
 from pathlib import Path
 
 from fwmigrate.vendors.cisco_ftd.source_report import (
     CiscoFTDSourceReporter,
     extract_cisco_ftd_source,
 )
+from fwmigrate.vendors.cisco_ftd.derived import build_ftd_derived_views
+from fwmigrate.vendors.cisco_ftd.validation import validate_ftd_config
 
 
 ROOT = Path(__file__).parents[2]
@@ -51,6 +54,20 @@ def test_unresolved_native_reference_is_reported():
 
     assert result.derived.unresolved_references
     assert result.validation.issues
+
+
+def test_derived_validation_does_not_mutate_ftd_source_config():
+    result = extract_cisco_ftd_source(
+        '{"source":"fmc-rest-api","objects":{"hosts":[]},'
+        '"access_policies":[{"name":"p","rules":[{"name":"r",'
+        '"source":[{"name":"missing"}]}]}]}'
+    )
+    before = deepcopy(result.config)
+
+    derived = build_ftd_derived_views(result.config)
+    validate_ftd_config(result.config, derived)
+
+    assert result.config == before
 
 
 def test_ftd_reporter_exports_source_plane_workbook():

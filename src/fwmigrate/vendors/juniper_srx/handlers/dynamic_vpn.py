@@ -14,5 +14,5 @@ def handle_dynamic_vpn_command(cmd: JunosCommand, context: JuniperContextConfig)
     item = context.dynamic_vpns.setdefault(name, JuniperSourceHierarchyItem(name=name))
     item.settings["_".join(sanitize_tokens(toks[4:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.consumed, cmd.handler = True, "dynamic_vpn"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

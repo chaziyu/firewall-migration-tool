@@ -2,7 +2,6 @@
 
 from fwmigrate.extraction.models import (
     ExtractionStatus,
-    MigrationImpact,
     SourceCommand,
     SourceInventoryItem,
     SourceSectionResult,
@@ -11,7 +10,6 @@ from fwmigrate.extraction.models import (
 
 __all__ = [
     "ExtractionStatus",
-    "MigrationImpact",
     "SourceCommand",
     "SourceInventoryItem",
     "SourceSectionResult",

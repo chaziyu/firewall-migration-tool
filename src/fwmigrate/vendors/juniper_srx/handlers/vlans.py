@@ -14,25 +14,25 @@ def handle_vlans_command(cmd: JunosCommand, context: JuniperContextConfig) -> bo
     cmd.consumed = True
     cmd.handler = "vlans"
     if len(toks) == 3:
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     if len(toks) >= 5 and toks[3].lower() == "vlan-id":
         try:
             vlan.vlan_id = int(toks[4])
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
         except ValueError:
             cmd.extraction_status = ExtractionStatus.PARSE_ERROR
             cmd.parse_error = f"Invalid vlan-id: {toks[4]}"
         return True
     if len(toks) >= 5 and toks[3].lower() == "l3-interface":
         vlan.l3_interface = toks[4]
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     if len(toks) >= 5 and toks[3].lower() == "interface":
         vlan.members.append(toks[4])
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
     key = "_".join(sanitize_tokens(toks[3:]))
     vlan.source_attributes[key] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

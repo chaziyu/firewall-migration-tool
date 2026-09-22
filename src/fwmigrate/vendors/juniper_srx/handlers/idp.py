@@ -37,7 +37,7 @@ def handle_idp_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
     return _store(policy.source_attributes, rest, cmd)
 
 def _done(cmd):
-    cmd.consumed, cmd.handler, cmd.extraction_status = True, "idp", ExtractionStatus.EXTRACT_ONLY; return True
+    cmd.consumed, cmd.handler, cmd.extraction_status = True, "idp", ExtractionStatus.SOURCE_ONLY; return True
 def _store(target, path, cmd):
     target["_".join(sanitize_tokens(path))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     return _done(cmd)

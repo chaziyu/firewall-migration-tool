@@ -6,23 +6,17 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 class ExtractionStatus(str, Enum):
-    NORMALIZED = "NORMALIZED"
-    PARTIALLY_NORMALIZED = "PARTIALLY_NORMALIZED"
-    EXTRACT_ONLY = "EXTRACT_ONLY"
+    EXTRACTED = "EXTRACTED"
+    PARTIAL = "PARTIAL"
+    SOURCE_ONLY = "SOURCE_ONLY"
     # Compatibility alias for the conservative unknown-section fallback.  It
     # intentionally retains the historical serialized value so existing
     # clients that only understand UNSUPPORTED remain safe.
-    EXTRACT_ONLY_UNKNOWN = "UNSUPPORTED"
+    SOURCE_ONLY_UNKNOWN = "UNSUPPORTED"
     VENDOR_EXTENSION = "VENDOR_EXTENSION"
     UNSUPPORTED = "UNSUPPORTED"
     IGNORED_BY_POLICY = "IGNORED_BY_POLICY"
     PARSE_ERROR = "PARSE_ERROR"
-
-
-class MigrationImpact(str, Enum):
-    NONE = "NONE"
-    REVIEW = "REVIEW"
-    BLOCKING = "BLOCKING"
 
 
 class SourceSectionResult(BaseModel):
@@ -35,7 +29,7 @@ class SourceSectionResult(BaseModel):
 
     object_count_source: Optional[int] = None
     object_count_parsed: Optional[int] = None
-    object_count_normalized: Optional[int] = None
+    object_count_extracted: Optional[int] = None
 
     # Optional additive coverage fields.  Existing vendor extractors continue
     # to use ``path`` and the original counters.
@@ -55,13 +49,11 @@ class SourceSectionResult(BaseModel):
 
     # Counted independently from object cardinality.  Matching source and
     # parsed object counts is not proof that every semantic setting was
-    # normalized.
+    # extracted.
     semantic_unknowns: List[str] = Field(default_factory=list)
     unresolved_dependencies: int = 0
 
     status: ExtractionStatus
-    migration_impact: MigrationImpact = MigrationImpact.REVIEW
-
     parser_handler: Optional[str] = None
     notes: List[str] = Field(default_factory=list)
 
@@ -94,8 +86,7 @@ class SourceInventoryItem(BaseModel):
     source_references: List[str] = Field(default_factory=list)
     children: List["SourceInventoryItem"] = Field(default_factory=list)
 
-    status: ExtractionStatus = ExtractionStatus.EXTRACT_ONLY
-    migration_impact: MigrationImpact = MigrationImpact.REVIEW
+    status: ExtractionStatus = ExtractionStatus.SOURCE_ONLY
     requires_manual_review: bool = False
     evidence_class: str = "configuration"
 
@@ -117,7 +108,7 @@ class DependencyRecord(BaseModel):
     target_uid: Optional[str] = None
     target_name: Optional[str] = None
     semantic_kind: Optional[str] = None
-    normalization_status: Optional[str] = None
+    resolution_status: Optional[str] = None
     reason: Optional[str] = None
 
 
@@ -132,7 +123,7 @@ class CoverageSummary(BaseModel):
     operational: bool = False
     status: ExtractionStatus
     total: int = 0
-    normalized: int = 0
+    extracted: int = 0
     partial: int = 0
     extract_only: int = 0
     unsupported: int = 0
@@ -150,6 +141,5 @@ class UnsupportedItem(BaseModel):
     requires_manual_review: bool = True
     raw_capture: Optional[str] = None
     source_context: Optional[str] = None
-    migration_impact: MigrationImpact = MigrationImpact.REVIEW
 
 

@@ -22,7 +22,7 @@ def handle_dhcp_command(cmd: JunosCommand, context: JuniperContextConfig) -> boo
             cfg = context.dhcp_local_servers.setdefault(t[i + 1], [])
             if "interface" in lower and lower.index("interface") + 1 < len(t):
                 cfg.append(t[lower.index("interface") + 1])
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
     if "address-assignment" in [x.lower() for x in t]:
         i = next(i for i, x in enumerate(t) if x.lower() == "pool") if "pool" in [x.lower() for x in t] else -1
@@ -42,5 +42,5 @@ def handle_dhcp_command(cmd: JunosCommand, context: JuniperContextConfig) -> boo
             group = context.dhcp_relays.setdefault(t[i + 1], JuniperDHCPRelayGroup(name=t[i + 1]))
             if "interface" in [x.lower() for x in t]: group.interfaces.append(t[-1])
             else: group.source_attributes.update(sanitize_source_attributes({"raw": cmd.raw_sanitized}))
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

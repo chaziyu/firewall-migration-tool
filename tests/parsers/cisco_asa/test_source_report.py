@@ -1,10 +1,13 @@
 from io import BytesIO
+from copy import deepcopy
 
 from openpyxl import load_workbook
 
 from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
 from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
 from fwmigrate.vendors.cisco_asa.web_report import build_asa_preview
+from fwmigrate.vendors.cisco_asa.derived import build_asa_derived_views
+from fwmigrate.vendors.cisco_asa.validation import validate_asa_config
 
 
 def test_source_pipeline_preserves_acl_nat_order_and_uses_source_model():
@@ -50,6 +53,23 @@ object network WEB
     assert [item.source_context for item in result.config.network_objects] == ["customer-a", None]
     assert result.config.network_groups[0].review_reasons == []
     assert all(issue.resolved for issue in result.derived.reference_issues)
+
+
+def test_derived_and_validation_are_read_only():
+    result = extract_cisco_asa_source(
+        "object network WEB\n host 10.0.0.10\n"
+        "object-group network SERVERS\n network-object object WEB\n"
+    )
+    before_derived = deepcopy(result.config)
+
+    derived = build_asa_derived_views(result.config)
+
+    assert result.config == before_derived
+
+    before_validation = deepcopy(result.config)
+    validate_asa_config(result.config, derived)
+
+    assert result.config == before_validation
 
 
 def test_source_preview_and_excel_contain_no_ir_or_secret_text():

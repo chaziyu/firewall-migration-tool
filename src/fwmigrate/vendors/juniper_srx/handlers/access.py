@@ -15,5 +15,5 @@ def handle_access_command(cmd: JunosCommand, context: JuniperContextConfig) -> b
     key_start = 4 if len(toks) > 3 and toks[2].lower() == "profile" else 3
     item.settings["_".join(sanitize_tokens(toks[key_start:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.consumed, cmd.handler = True, "access"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

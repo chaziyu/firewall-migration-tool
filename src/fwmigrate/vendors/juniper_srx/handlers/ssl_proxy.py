@@ -21,4 +21,4 @@ def handle_ssl_proxy_command(cmd, context: JuniperContextConfig) -> bool:
         profile.settings.setdefault("_".join(sanitize_tokens(rest)), []).append(sanitize_source_attributes({"raw": cmd.raw_sanitized}))
     profile.source_attributes.update(sanitize_source_attributes({"raw": cmd.raw_sanitized})); return _done(cmd)
 def _done(cmd):
-    cmd.consumed, cmd.handler, cmd.extraction_status = True, "ssl_proxy", ExtractionStatus.EXTRACT_ONLY; return True
+    cmd.consumed, cmd.handler, cmd.extraction_status = True, "ssl_proxy", ExtractionStatus.SOURCE_ONLY; return True
