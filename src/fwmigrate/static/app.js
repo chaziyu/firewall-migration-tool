@@ -663,7 +663,7 @@ document.addEventListener("DOMContentLoaded", () => {
       modeExtractForm.classList.toggle("hidden", mode !== "extract");
     reportContainer?.classList.toggle("hidden", mode !== "report" || !currentReport);
     if (targetVendorGroup)
-      targetVendorGroup.classList.toggle("hidden", mode === "extract");
+      targetVendorGroup.classList.toggle("hidden", ["extract", "report"].includes(mode));
     if (vendorSelectorGrid)
       vendorSelectorGrid.classList.toggle("extract-mode", mode === "extract");
     document
