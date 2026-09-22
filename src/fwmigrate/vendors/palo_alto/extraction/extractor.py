@@ -8,13 +8,14 @@ from ..schema_registry import PANPathSpec, match_path_spec
 from ..source_context import PANWalkContext
 from .address import extract_address
 from .interface import extract_interface
+from .vpn import extract_ipsec_tunnel
 from .nat import extract_nat
 from .policy import extract_default_security_rule, extract_security_rule
 from .routing import extract_routing
 from .schedule import extract_schedule
 from .service import extract_service
 from .zone import extract_zone
-from ..model import PANSecurityProfileGroup
+from ..model import PANSecurityProfileGroup, PANTag
 from .common import source_fields, value, values
 
 
@@ -23,7 +24,14 @@ def extract_security_profile_group(element, path, context, source_order, spec):
     return PANSecurityProfileGroup(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, antivirus=values(element, "virus"), anti_spyware=values(element, "spyware"), vulnerability=values(element, "vulnerability"), url_filtering=values(element, "url-filtering"), file_blocking=values(element, "file-blocking"), wildfire_analysis=values(element, "wildfire-analysis"), data_filtering=values(element, "data-filtering"), gtp=values(element, "gtp"), sctp=values(element, "sctp"), ai_security=values(element, "ai-security"), disable_override=value(element, "disable-override"), raw_extra=extra, explicit_fields=explicit)
 
 
+def extract_tag(element, path, context, source_order, spec):
+    extra, explicit = source_fields(element, spec)
+    return PANTag(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order,
+                  color=value(element, "color"), comments=value(element, "comments"), raw_extra=extra, explicit_fields=explicit)
+
+
 _EXTRACTORS = {
+    "tag": ("tags", extract_tag),
     "address": ("addresses", extract_address),
     "address_group": ("address_groups", extract_address),
     "service": ("services", extract_service),
@@ -39,6 +47,7 @@ _EXTRACTORS = {
     "interface_unit": ("interface_units", extract_interface),
     "virtual_router": ("virtual_routers", extract_routing),
     "logical_router": ("logical_routers", extract_routing),
+    "ipsec_tunnel": ("ipsec_tunnels", extract_ipsec_tunnel),
 }
 _EXTRACTORS.update({f"interface_{family}": ("interfaces", extract_interface) for family in ("ethernet", "aggregate-ethernet", "loopback", "tunnel", "vlan")})
 

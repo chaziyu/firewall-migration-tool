@@ -27,6 +27,7 @@ class PANReferenceResolution:
     resolved_target_scope: PANScope | None = None
     target_source_path: str | None = None
     resolution_reason: str = ""
+    owner_family: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

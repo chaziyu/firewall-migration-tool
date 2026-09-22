@@ -38,3 +38,33 @@ def test_derived_views_are_non_mutating_for_required_fixtures():
         before = config.model_dump(mode="json")
         build_derived_views(config)
         assert config.model_dump(mode="json") == before
+
+
+def test_literals_predefined_services_tags_and_interface_units_are_classified_from_source():
+    config = build_panos_config("""<config><devices><entry name='fw'><network><interface><tunnel><units><entry name='tunnel.1'/></units></tunnel></interface></network>
+      <vsys><entry name='vsys1'><tag><entry name='production'><color>color1</color><comments>keep</comments></entry></tag>
+      <import><network><interface><member>tunnel.1</member></interface></network></import>
+      <rulebase><security><rules><entry name='allow'><from><member>any</member></from><to><member>any</member></to>
+      <source><member>72.5.65.111/32</member><member>::1</member><member>panw-highrisk-ip-list</member><member>panw-known-ip-list</member><member>MY</member><member>unknown-address</member></source><destination><member>any</member></destination>
+      <service><member>service-http</member><member>service-https</member><member>unknown-service</member></service>
+      <application><member>any</member></application><tag><member>production</member></tag><action>allow</action></entry></rules></security></rulebase>
+      </entry></vsys></entry></devices></config>""")
+
+    derived = build_derived_views(config)
+    status = {(item.owner_field, item.reference_name): item.status for item in derived.reference_resolutions}
+
+    assert config.tags[0].name == "production"
+    assert config.tags[0].comments == "keep"
+    assert status[("tags", "production")] == "RESOLVED"
+    assert status[("source", "72.5.65.111/32")] == "SOURCE_ONLY"
+    assert status[("source", "::1")] == "SOURCE_ONLY"
+    assert status[("source", "panw-highrisk-ip-list")] == "SOURCE_ONLY"
+    assert status[("source", "panw-known-ip-list")] == "SOURCE_ONLY"
+    assert status[("source", "MY")] == "SOURCE_ONLY"
+    assert status[("source", "unknown-address")] == "UNRESOLVED"
+    assert status[("service", "service-http")] == "SOURCE_ONLY"
+    assert status[("service", "service-https")] == "SOURCE_ONLY"
+    assert status[("service", "unknown-service")] == "UNRESOLVED"
+    tunnel = next(item for item in derived.interface_topology if item.interface == "tunnel.1")
+    assert tunnel.imported_vsys == ("vsys1",)
+    assert "import of missing interface" not in tunnel.issues

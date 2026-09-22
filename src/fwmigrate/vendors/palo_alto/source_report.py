@@ -40,7 +40,7 @@ class PaloAltoSourceReporter:
     def export_excel(self, analysis: PaloAltoSourceResult, output: Any, **options: Any) -> Any:
         from .export.excel import export_panos_excel
 
-        export_panos_excel(analysis, output)
+        export_panos_excel(analysis, output, source_name=options.get("source_name"))
         return output
 
 

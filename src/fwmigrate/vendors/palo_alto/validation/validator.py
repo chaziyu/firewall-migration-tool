@@ -6,15 +6,17 @@ from collections import defaultdict
 from typing import Any
 
 from ..model.source import PANOSConfig
-from ..source_model import PANOSDerivedViews
+from ..source_model import PANOSDerivedViews, pan_scope_identity
 from .models import PANOSValidationIssue, PANOSValidationResult
 
 _PORT = re.compile(r"^(\d+)(?:\s*-\s*(\d+))?$")
 
 
-def _issue(issues, severity, domain, message, item=None, field=None):
+def _issue(issues, severity, domain, message, item=None, field=None, *, scope=None, object_type=None, source_name=None):
+    scope = scope or getattr(item, "scope", None)
     issues.append(PANOSValidationIssue(severity, domain, message,
-        getattr(item, "source_path", None), getattr(item, "name", None), field))
+        getattr(item, "source_path", None), source_name if source_name is not None else getattr(item, "name", None), field,
+        scope, pan_scope_identity(scope) if scope else None, object_type or domain))
 
 
 def _scope_key(item: Any) -> str:
@@ -74,14 +76,14 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
         for item in items:
             key = (_scope_key(item), getattr(item, "name", None))
             if key[1] and key in seen:
-                _issue(issues, "error", "identity", f"duplicate {family} name {key[1]!r} in the same scope", item, "name")
+                _issue(issues, "error", "identity", f"duplicate {family} name {key[1]!r} in the same scope", item, "name", object_type=family)
             elif key[1]:
                 seen[key] = item
 
     for name, rules in _by_name(config.security_rules).items():
         scopes = {_scope_key(rule) for rule in rules}
         if len(rules) > len(scopes):
-            _issue(issues, "error", "identity", f"duplicate security rule name {name!r} in the same scope", rules[-1], "name")
+            _issue(issues, "error", "identity", f"duplicate security rule name {name!r} in the same scope", rules[-1], "name", object_type="policy")
 
     for message in getattr(derived.scope_hierarchy, "issues", ()):
         _issue(issues, "error", "scope", message)
@@ -89,7 +91,7 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
         if item.status in {"UNRESOLVED", "AMBIGUOUS"}:
             _issue(issues, "error" if item.status == "UNRESOLVED" else "warning", "reference",
                    f"{item.status.lower()} PAN-OS reference {item.reference_name!r} in {item.owner_name or '<unnamed>'}.{item.owner_field}",
-                   field=item.owner_field)
+                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference")
     for message in derived.relationship_issues:
         _issue(issues, "warning", "relationship", message)
 

@@ -17,6 +17,10 @@ class PANInterfaceIPv6Address(BaseModel):
 class PANInterfaceUnit(BaseModel):
     name: str | None = None
     parent: str | None = None
+    interface_family: str | None = None
+    source_path: str
+    scope: PANScope | None = None
+    source_order: int | None = None
     tag: str | None = None
     ipv4_addresses: list[str] | None = None
     ipv6_addresses: list[PANInterfaceIPv6Address] | None = None
@@ -36,6 +40,7 @@ class PANInterface(BaseModel):
     source_order: int | None = None
 
     interface_family: str | None = None
+    aggregate_group: str | None = None
     mode: str | list[str] | None = None
 
     comment: str | None = None

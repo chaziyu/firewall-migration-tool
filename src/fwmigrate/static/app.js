@@ -406,7 +406,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const reportColumns = {
-    interfaces: [["display_name", "Topology"], ["kind", "Kind"], ["ip", "IP / Remote Gateway"], ["role", "Role"], ["parent", "Parent"], ["aggregate", "Aggregate"], ["status", "Status"], ["review", "Review"]],
+    interfaces: [["display_name", "Topology"], ["kind", "Kind"], ["ip", "IP / Remote Gateway"], ["role", "Role"], ["parent", "Parent"], ["aggregate", "Aggregate"], ["physical_interfaces", "Physical Interfaces"], ["attached_tunnels", "Attached Tunnels"], ["status", "Status"], ["review", "Review"]],
     addresses: [["name", "Name"], ["value", "Value"], ["type", "Type"], ["address_family", "Family"], ["associated_interface", "Interface"], ["review", "Review"]],
     address_groups: [["name", "Name"], ["members", "Members"], ["address_family", "Family"], ["exclude_members", "Excluded"], ["review", "Review"]],
     services: [["name", "Name"], ["protocol", "Protocol"], ["port", "Port"], ["source_port", "Source Port"], ["generated", "Generated"], ["review", "Review"]],
@@ -430,7 +430,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (section === "interfaces") return sections.interface_topology || sections.interfaces || [];
     if (section === "objects") return sections[activeObjectSection] || [];
     if (section === "vpn") return [
-      ...(sections.vpn_tunnels || []).map((row) => ({ ...row, kind: "Tunnel", attachment: row.interface, peer: row.remote_gateway, crypto: row.ike_version, topology: row.topology_path })),
+      ...(sections.vpn_tunnels || []).map((row) => ({ ...row, kind: "Tunnel", attachment: row.interface, peer: row.remote_gateway || row.ike_gateways, crypto: row.ike_version || row.ipsec_crypto_profile, topology: row.topology_path })),
       ...(sections.vpn_phase2 || []).map((row) => ({ ...row, kind: "Phase 2", attachment: row.phase1, peer: [row.source_range, row.destination_range].filter(Boolean).join(" → "), crypto: row.proposal, topology: [] })),
     ];
     return sections[section] || [];
@@ -485,7 +485,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function syncWorkspace() {
     const hasFile = Boolean(currentFile);
     const hasInput = hasFile;
-    tabReport?.classList.toggle("hidden", selectedSourceVendor !== "fortigate");
+    tabReport?.classList.toggle("hidden", !["fortigate", "palo_alto"].includes(selectedSourceVendor));
     if (btnGenerateBundle)
       btnGenerateBundle.disabled =
         !hasFile || !sourceReady || busyButtons.has(btnGenerateBundle) || liveOperationRunning;
@@ -665,7 +665,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (targetVendorGroup)
       targetVendorGroup.classList.toggle("hidden", ["extract", "report"].includes(mode));
     if (vendorSelectorGrid)
-      vendorSelectorGrid.classList.toggle("extract-mode", mode === "extract");
+      vendorSelectorGrid.classList.toggle(
+        "extract-mode",
+        ["extract", "report"].includes(mode),
+      );
     document
       .getElementById("optimizer-controls")
       ?.classList.toggle("hidden", mode === "extract");

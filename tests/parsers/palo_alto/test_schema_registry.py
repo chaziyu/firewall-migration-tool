@@ -26,6 +26,7 @@ EXPECTED_PATHS = {
     "interface_loopback",
     "interface_tunnel",
     "interface_unit",
+    "ipsec_tunnel",
     "virtual_router_import",
     "interface_vlan",
     "logical_router",
@@ -35,6 +36,7 @@ EXPECTED_PATHS = {
     "security_rule",
     "service",
     "service_group",
+    "tag",
     "virtual_router",
     "zone",
 }
