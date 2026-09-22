@@ -138,7 +138,7 @@ def _cycle_issues(kind: str, groups: Iterable[Any], indexes: Dict[str, Dict[str,
     return issues
 
 
-def _resolve_network_group_families(indexes: Dict[str, Dict[str, Any]]) -> None:
+def derive_group_address_families(indexes: Dict[str, Dict[str, Any]]) -> Dict[str, Optional[str]]:
     groups = indexes["network_group"]
     resolved: Dict[str, Optional[str]] = {}
     visiting: Set[str] = set()
@@ -165,7 +165,6 @@ def _resolve_network_group_families(indexes: Dict[str, Dict[str, Any]]) -> None:
                 target = groups.get(target_name)
                 family = visit(target_name) if target is not None else None
                 uncertain = uncertain or target is None or family is None
-                _entry_set(entry, "address_family", family)
             else:
                 continue
             if family == "mixed":
@@ -177,18 +176,11 @@ def _resolve_network_group_families(indexes: Dict[str, Dict[str, Any]]) -> None:
         visiting.remove(name)
         family = None if uncertain else (next(iter(families)) if len(families) == 1 else "mixed" if families else None)
         resolved[name] = family
-        group.address_family = family
-        if uncertain and group.member_entries:
-            group.requires_manual_review = True
-            if group.migration_status != "PARSE_ERROR":
-                group.migration_status = "PARTIALLY_NORMALIZED"
-            reason = "Network-group address family is unresolved"
-            if reason not in group.review_reasons:
-                group.review_reasons.append(reason)
         return family
 
     for name in sorted(groups):
         visit(name)
+    return resolved
 
 
 def validate_references(config: Any) -> List[ReferenceIssue]:
@@ -267,24 +259,23 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
             kind = {"network_object": "network_object", "network_group": "network_group"}.get(_entry_get(entry, "type"))
             if kind:
                 name = _entry_get(entry, "value")
-                target = indexes[kind].get(name)
-                if target is None:
-                    _entry_set(entry, "resolved", False)
-                    _entry_set(entry, "address_family", None)
-                    reason = f"Unresolved {kind.replace('_', ' ')} reference: {name}"
-                    _entry_reason(entry, reason)
-                    add(kind, group.name, name)
-                else:
-                    _entry_set(entry, "resolved", True)
-                    _entry_set(entry, "resolved_target_type", kind)
-                    _entry_set(entry, "address_family", getattr(target, "address_family", None))
+                add(kind, group.name, name)
         if not group.member_entries:
             for name in group.members:
                 add("network_group" if name in indexes["network_group"] else "network_object", group.name, name)
 
     for source_context in source_contexts:
         select_context(source_context)
-        _resolve_network_group_families(indexes)
+        families = derive_group_address_families(indexes)
+        for group in config.network_groups:
+            if _source_context(group) != source_context:
+                continue
+            if families.get(group.name) is None and group.member_entries:
+                issues.append(ReferenceIssue(
+                    "network_group", group.name, group.name, False,
+                    "Network-group address family is unresolved",
+                    source_context, "address-family",
+                ))
 
     for group in config.service_groups:
         select_context(_source_context(group))
@@ -293,12 +284,6 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
                 kind = {"service_object": "service_object", "service_group": "service_group"}.get(_entry_get(entry, "type"))
                 if kind:
                     name = _entry_get(entry, "value")
-                    target = indexes[kind].get(name)
-                    _entry_set(entry, "resolved", target is not None)
-                    if target is not None:
-                        _entry_set(entry, "resolved_target_type", kind)
-                    else:
-                        _entry_reason(entry, f"Unresolved {kind.replace('_', ' ')} reference: {name}")
                     add(kind, group.name, name)
         else:
             for name in group.members:
@@ -325,12 +310,6 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
                 for entry in item.member_entries:
                     if _entry_get(entry, "type") in {"protocol_group", "icmp_group"}:
                         name = _entry_get(entry, "value")
-                        target = indexes[nested_kind].get(name)
-                        _entry_set(entry, "resolved", target is not None)
-                        if target is not None:
-                            _entry_set(entry, "resolved_target_type", nested_kind)
-                        else:
-                            _entry_reason(entry, f"Unresolved {nested_kind.replace('_', ' ')} reference: {name}")
                         add(nested_kind, item.name, name)
             else:
                 for name in item.members:
@@ -413,12 +392,6 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         for match in item.matches:
             if match.match_type != "access_list" or not match.acl_name:
                 continue
-            target = indexes["acl"].get(match.acl_name)
-            match.resolved = target is not None
-            if target is not None:
-                match.resolved_target_type = "acl"
-            else:
-                _entry_reason(match, f"Unresolved ACL reference: {match.acl_name}")
             add("acl", item.name, match.acl_name, "class-map")
     for item in config.policy_maps:
         select_context(_source_context(item))
@@ -438,10 +411,6 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
     for item in config.dhcp_relays:
         select_context(_source_context(item))
         for entry in item.server_entries:
-            target = indexes["interface"].get(entry.interface) if entry.interface else None
-            entry.resolved_interface = target.name if target is not None else None
-            if entry.interface and target is None:
-                entry.review_reasons.append(f"Unresolved interface reference: {entry.interface}")
             add("interface", item.name, entry.interface, "dhcprelay-server")
         for interface in item.enabled_interfaces:
             add("interface", item.name, interface, "dhcprelay-enable")
@@ -487,7 +456,7 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         for item in config.aaa_records:
             raw = item.source_attributes.get("raw_command", "")
             if raw.lower().startswith("aaa-server "):
-                item.source_attributes["aaa_server_group"] = item.name
+                pass
             else:
                 match = re.match(r"aaa\s+(?:authentication|authorization|accounting)\s+\S+\s+(\S+)", raw, re.I)
                 add("aaa_server_group", item.name, match.group(1) if match else None)

@@ -12,8 +12,8 @@ def handle_policy_options_command(cmd: JunosCommand, context: JuniperContextConf
     cmd.consumed, cmd.handler = True, "policy_options"
     if len(t) >= 5:
         obj.entries.extend(v for v in extract_value_list(t[4:]) if v not in obj.entries)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
     else:
         obj.source_attributes["_".join(sanitize_tokens(t[4:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

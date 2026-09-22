@@ -14,5 +14,5 @@ def handle_user_identification_command(cmd: JunosCommand, context: JuniperContex
     item = context.user_identification.setdefault(name, JuniperSourceHierarchyItem(name=name))
     item.settings["_".join(sanitize_tokens(toks[4:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.consumed, cmd.handler = True, "user_identification"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

@@ -9,7 +9,7 @@ from fwmigrate.vendors.juniper_srx.tokenizer import JunosCommand
 def handle_link_monitor_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool:
     if len(cmd.tokens) < 2 or cmd.tokens[1].lower() != "link-monitor":
         return False
-    cmd.consumed, cmd.handler, cmd.extraction_status = True, "link-monitor", ExtractionStatus.EXTRACT_ONLY
+    cmd.consumed, cmd.handler, cmd.extraction_status = True, "link-monitor", ExtractionStatus.SOURCE_ONLY
     context.source_attributes.setdefault("link_monitor", []).append(
         sanitize_source_attributes({"path": sanitize_tokens(cmd.tokens[1:]), "raw": cmd.raw_sanitized})
     )

@@ -42,7 +42,7 @@ def _parse_ip_monitoring(group: JuniperRedundancyGroup, cmd: JunosCommand, path:
     monitoring.source_attributes.setdefault("raw", cmd.raw_sanitized)
 
     if not path:
-        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.extraction_status = ExtractionStatus.PARTIAL
         cmd.requires_manual_review = True
         return
 
@@ -90,7 +90,7 @@ def _parse_ip_monitoring(group: JuniperRedundancyGroup, cmd: JunosCommand, path:
             rest = rest[2:]
         if rest:
             cmd.remaining_tokens = rest
-            cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+            cmd.extraction_status = ExtractionStatus.PARTIAL
             cmd.requires_manual_review = True
         return
 
@@ -98,7 +98,7 @@ def _parse_ip_monitoring(group: JuniperRedundancyGroup, cmd: JunosCommand, path:
         sanitize_source_attributes({"tokens": path, "raw": cmd.raw_sanitized})
     )
     cmd.remaining_tokens = path
-    cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+    cmd.extraction_status = ExtractionStatus.PARTIAL
     cmd.requires_manual_review = True
 
 
@@ -138,7 +138,7 @@ def _parse_preempt(group: JuniperRedundancyGroup, cmd: JunosCommand, path: list[
         sanitize_source_attributes({"tokens": path, "raw": cmd.raw_sanitized})
     )
     cmd.remaining_tokens = path
-    cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+    cmd.extraction_status = ExtractionStatus.PARTIAL
     cmd.requires_manual_review = True
 
 
@@ -202,11 +202,11 @@ def handle_chassis_cluster_command(cmd: JunosCommand, context: JuniperContextCon
                             cmd.parse_error = f"Invalid interface-monitor weight: {path[5]}"
                         elif len(path) > 6:
                             cmd.remaining_tokens = path[6:]
-                            cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+                            cmd.extraction_status = ExtractionStatus.PARTIAL
                             cmd.requires_manual_review = True
             elif len(path) > 4:
                 cmd.remaining_tokens = path[4:]
-                cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+                cmd.extraction_status = ExtractionStatus.PARTIAL
                 cmd.requires_manual_review = True
             monitor["source_attributes"] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
         else:
@@ -225,5 +225,5 @@ def handle_chassis_cluster_command(cmd: JunosCommand, context: JuniperContextCon
     cmd.consumed = True
     cmd.handler = "chassis_cluster"
     if cmd.extraction_status is None:
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

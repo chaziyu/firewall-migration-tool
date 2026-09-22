@@ -11,16 +11,16 @@ def handle_class_of_service_command(cmd: JunosCommand, context: JuniperContextCo
     obj = context.cos_schedulers.setdefault(t[4], JuniperCoSScheduler(name=t[4]))
     cmd.consumed, cmd.handler = True, "class_of_service"
     if len(t) == 5:
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     key, values = t[5].lower(), t[6:]
     if key in {"transmit-rate", "shaping-rate", "priority"} and values:
         setattr(obj, key.replace("-", "_"), " ".join(values))
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
     elif key in {"apply-groups", "scheduler-map", "forwarding-class"} and values:
         obj.references.extend(v for v in values if v not in obj.references)
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     else:
         obj.source_attributes["_".join(sanitize_tokens(t[5:]))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

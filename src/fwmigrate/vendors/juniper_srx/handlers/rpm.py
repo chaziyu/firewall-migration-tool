@@ -45,7 +45,7 @@ def handle_rpm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
         return _capture(cmd, test.source_attributes, rest)
     cmd.consumed = True
     cmd.handler = "rpm"
-    cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+    cmd.extraction_status = ExtractionStatus.PARTIAL
     cmd.requires_manual_review = True
     return True
 
@@ -55,7 +55,7 @@ def _capture(cmd, attrs, toks):
     attrs["_".join(safe) or "root"] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.consumed = True
     cmd.handler = "rpm"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True
 
 

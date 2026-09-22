@@ -15,7 +15,7 @@ def handle_pki_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
     if rest and rest[0].lower() == "ca-profile":
         config.pki.ca_profiles.setdefault(name, {})["_".join(sanitize_tokens(rest))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
         cmd.consumed, cmd.handler = True, "pki"
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
     item = config.pki.certificates.setdefault(name, JuniperCertificate(name=name))
     key = "_".join(sanitize_tokens(rest)) or "configured"
@@ -24,5 +24,5 @@ def handle_pki_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
         i = [x.lower() for x in rest].index("certificate-id")
         if i + 1 < len(rest): item.certificate_id = rest[i + 1]
     cmd.consumed, cmd.handler = True, "pki"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

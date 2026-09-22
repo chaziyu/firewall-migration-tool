@@ -21,4 +21,4 @@ def handle_security_intelligence_command(cmd, context: JuniperContextConfig) -> 
         else: obj.settings.setdefault("_".join(sanitize_tokens(rest)), []).append(sanitize_source_attributes({"raw": cmd.raw_sanitized}))
     obj.source_attributes.update(sanitize_source_attributes({"raw": cmd.raw_sanitized})); return _done(cmd)
 def _done(cmd):
-    cmd.consumed, cmd.handler, cmd.extraction_status = True, "security_intelligence", ExtractionStatus.EXTRACT_ONLY; return True
+    cmd.consumed, cmd.handler, cmd.extraction_status = True, "security_intelligence", ExtractionStatus.SOURCE_ONLY; return True

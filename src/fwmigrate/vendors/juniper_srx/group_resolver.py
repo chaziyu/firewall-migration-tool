@@ -176,7 +176,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
                     nested[owner].append((path[:marker], ref, excluded, command, list_priority))
             command.consumed = True
             command.handler = "groups"
-            command.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            command.extraction_status = ExtractionStatus.SOURCE_ONLY
             continue
 
         marker = next((i for i, t in enumerate(tokens) if t.lower() in _APPLY), None)
@@ -190,7 +190,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
             applications.append((target, [], refs, command))
         command.consumed = True
         command.handler = "groups"
-        command.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        command.extraction_status = ExtractionStatus.SOURCE_ONLY
 
     inherited: list[JunosCommand] = []
 

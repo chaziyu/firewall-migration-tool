@@ -12,7 +12,7 @@ def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
         return False
     cmd.consumed = True
     cmd.handler = "groups"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     group_index = next((i for i, token in enumerate(tokens) if token.lower() == "groups"), None)
     apply_index = next((i for i, token in enumerate(tokens) if token.lower() in {"apply-groups", "apply-groups-except"}), None)
     if group_index is not None and len(tokens) > group_index + 2:

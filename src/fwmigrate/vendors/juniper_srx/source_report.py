@@ -71,19 +71,19 @@ def _account(commands: list[JunosCommand]) -> tuple[list[SourceSectionResult], l
         grouped.setdefault(get_command_section_path(command), []).append(command)
     sections, inventory, unsupported = [], [], []
     for path, items in grouped.items():
-        statuses = [item.extraction_status or (ExtractionStatus.NORMALIZED if item.consumed else ExtractionStatus.UNSUPPORTED)
+        statuses = [item.extraction_status or (ExtractionStatus.EXTRACTED if item.consumed else ExtractionStatus.UNSUPPORTED)
                     for item in items]
         status = (ExtractionStatus.PARSE_ERROR if ExtractionStatus.PARSE_ERROR in statuses else
-                  ExtractionStatus.PARTIALLY_NORMALIZED if ExtractionStatus.UNSUPPORTED in statuses or ExtractionStatus.PARTIALLY_NORMALIZED in statuses else
-                  ExtractionStatus.NORMALIZED)
+                  ExtractionStatus.PARTIAL if ExtractionStatus.UNSUPPORTED in statuses or ExtractionStatus.PARTIAL in statuses else
+                  ExtractionStatus.EXTRACTED)
         commands_out = []
         for item in items:
             safe = item.to_sanitized_copy()
-            command_status = item.extraction_status or (ExtractionStatus.NORMALIZED if item.consumed else ExtractionStatus.UNSUPPORTED)
+            command_status = item.extraction_status or (ExtractionStatus.EXTRACTED if item.consumed else ExtractionStatus.UNSUPPORTED)
             commands_out.append(SourceCommand(operation=item.operation.value if isinstance(item.operation, JunosOperation) else str(item.operation),
                                               key=" ".join(safe.tokens[1:3]), values=safe.tokens[3:], line_number=item.line_number,
                                               status=command_status, parser_handler=item.handler,
-                                              requires_manual_review=item.requires_manual_review or command_status != ExtractionStatus.NORMALIZED,
+                                              requires_manual_review=item.requires_manual_review or command_status != ExtractionStatus.EXTRACTED,
                                               source_context=item.context_name))
             if command_status in (ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR):
                 unsupported.append(UnsupportedItem(source_path=path, source_name=" ".join(safe.tokens),
@@ -91,7 +91,7 @@ def _account(commands: list[JunosCommand]) -> tuple[list[SourceSectionResult], l
                                                    raw_capture=safe.raw_sanitized, source_context=item.context_name))
         sections.append(SourceSectionResult(path=path, line_start=min(i.line_number for i in items), line_end=max(i.line_number for i in items),
                                             object_count_source=len(items), object_count_parsed=sum(i.consumed for i in items),
-                                            object_count_normalized=sum(s == ExtractionStatus.NORMALIZED for s in statuses),
+                                            object_count_extracted=sum(s == ExtractionStatus.EXTRACTED for s in statuses),
                                             status=status, parser_handler=items[0].handler))
         inventory.append(SourceInventoryItem(domain="juniper_srx", source_path=path, name=path,
                                              source_context=next((i.context_name for i in items if i.context_name), None),

@@ -11,5 +11,5 @@ def handle_security_flow_command(cmd: JunosCommand, context: JuniperContextConfi
     key = "_".join(sanitize_tokens(toks)) or "flow"
     context.security_flow.settings[key] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.consumed, cmd.handler = True, "security_flow"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

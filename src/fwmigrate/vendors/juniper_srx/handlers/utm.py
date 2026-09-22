@@ -56,7 +56,7 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
             sanitize_source_attributes({"raw": cmd.raw_sanitized})
         )
         cmd.consumed, cmd.handler = True, "utm"
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     if (
@@ -83,7 +83,7 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
                 )
         profile.source_attributes.update(sanitize_source_attributes({"raw": cmd.raw_sanitized}))
         cmd.consumed, cmd.handler = True, "utm"
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     if (
@@ -111,7 +111,7 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
             profile.syntax_variant = key
         profile.source_attributes.update(sanitize_source_attributes({"raw": cmd.raw_sanitized}))
         cmd.consumed, cmd.handler = True, "utm"
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     if (
@@ -145,7 +145,7 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
                 )
         profile.source_attributes.update(sanitize_source_attributes({"raw": cmd.raw_sanitized}))
         cmd.consumed, cmd.handler = True, "utm"
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     if len(toks) > 4 and toks[3].lower() == "utm-policy":
@@ -155,7 +155,7 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
     item = context.utm_policies.setdefault(name, JuniperSourceHierarchyItem(name=name))
     item.settings["_".join(sanitize_tokens(rest))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.consumed, cmd.handler = True, "utm"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True
 
 

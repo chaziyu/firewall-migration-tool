@@ -26,7 +26,7 @@ def scan_cisco_ftd_sections(text: str) -> list[SourceSectionResult]:
             path = "management" if first in {"configure", "management", "show-network-style"} else "other"
         current = SourceSectionResult(
             path=path, line_start=number, line_end=number,
-            object_count_source=1, status=ExtractionStatus.EXTRACT_ONLY,
+            object_count_source=1, status=ExtractionStatus.SOURCE_ONLY,
             parser_handler="CiscoFTDParser.parse",
         )
         sections.append(current)

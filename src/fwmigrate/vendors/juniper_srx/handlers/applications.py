@@ -110,7 +110,7 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
         )
 
         if len(toks) == 4:
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 
         sub_key = toks[4].lower()
@@ -120,7 +120,7 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
                 if m not in appset.applications:
                     appset.applications.append(m)
                 record_list_candidate(appset.member_candidate_history, "application", m, cmd)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
         elif sub_key == "application-set" and len(toks) >= 6:
             # Canonical IR service groups already allow member references by name.
@@ -135,19 +135,19 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
                 if m not in nested:
                     nested.append(m)
                 record_list_candidate(appset.member_candidate_history, "application", m, cmd)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
         elif sub_key == "description" and len(toks) >= 6:
             appset.description = toks[5]
             record_scalar_candidate(appset.field_provenance, appset.field_candidate_history, "description", appset.description, cmd)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 
         safe_toks = sanitize_tokens(toks)
         appset.source_attributes["_".join(safe_toks[4:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     if sub == "application" and len(toks) >= 4:
@@ -161,7 +161,7 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
         )
 
         if len(toks) == 4:
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 
         # Check if term-based: set applications application <app> term <term> ...
@@ -169,7 +169,7 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
             term_name = toks[5]
             term = _get_or_create_term(app, term_name)
             if len(toks) == 6:
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
             return _parse_term_settings(cmd, toks[6:], term, app)
         else:
@@ -196,7 +196,7 @@ def _parse_term_settings(
     app: JuniperApplication,
 ) -> bool:
     if not toks:
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
 
     i = 0
@@ -276,14 +276,14 @@ def _parse_term_settings(
             term.source_attributes["_".join(safe_toks[i:])] = sanitize_source_attributes(
                 {"raw": cmd.raw_sanitized}
             )
-            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
             return True
 
     if handled_any:
         cmd.extraction_status = (
-            ExtractionStatus.PARTIALLY_NORMALIZED
+            ExtractionStatus.PARTIAL
             if is_partially_norm
-            else ExtractionStatus.NORMALIZED
+            else ExtractionStatus.EXTRACTED
         )
         cmd.requires_manual_review = is_partially_norm
         return True

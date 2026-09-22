@@ -39,7 +39,7 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
             dst = toks[4]
             route = _get_or_create_route(context, dst, routing_instance=None)
             if len(toks) == 5:
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
             return _parse_route_settings(cmd, toks[5:], route)
 
@@ -48,7 +48,7 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
         context.source_attributes["_".join(safe_toks[1:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     if first == "routing-instances" and len(toks) >= 3:
@@ -69,7 +69,7 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
             route = _get_or_create_route(context, dst, routing_instance=inst_name)
             route.rib = toks[5]
             if len(toks) == 9:
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
             return _parse_route_settings(cmd, toks[9:], route)
 
@@ -82,7 +82,7 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
             dst = toks[6]
             route = _get_or_create_route(context, dst, routing_instance=inst_name)
             if len(toks) == 7:
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
             return _parse_route_settings(cmd, toks[7:], route)
 
@@ -109,7 +109,7 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
         context.source_attributes[f"routing_instance_{inst_name}_{'_'.join(safe_toks[3:])}"] = (
             sanitize_source_attributes({"raw": cmd.raw_sanitized})
         )
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     return False
@@ -136,13 +136,13 @@ def _get_or_create_route(
 
 
 def _normalized(cmd: JunosCommand) -> bool:
-    cmd.extraction_status = ExtractionStatus.NORMALIZED
+    cmd.extraction_status = ExtractionStatus.EXTRACTED
     return True
 
 
 def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRoute) -> bool:
     if not toks:
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
 
     key = toks[0].lower()
@@ -206,7 +206,7 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
                 else:
                     i += 1
         _append_next_hop(route, nh)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "qualified-next-hop" and len(toks) >= 2:
         nh_val = toks[1]
@@ -267,31 +267,31 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
                 else:
                     i += 1
         _append_next_hop(route, nh)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "discard":
         _record_action(route, "discard", cmd)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "reject":
         _record_action(route, "reject", cmd)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "receive":
         _record_action(route, "receive", cmd)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "next-table" and len(toks) >= 2:
         route.next_table = toks[1]
         record_scalar_candidate(route.field_provenance, route.field_candidate_history, "next_table", route.next_table, cmd)
         _record_action(route, "next-table", cmd)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "metric" and len(toks) >= 2:
         try:
             route.metric = int(toks[1])
             record_scalar_candidate(route.field_provenance, route.field_candidate_history, "metric", route.metric, cmd)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
         except ValueError:
             cmd.extraction_status = ExtractionStatus.PARSE_ERROR
             cmd.parse_error = f"Invalid route metric: {toks[1]}"
@@ -301,7 +301,7 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
         try:
             route.preference = int(toks[1])
             record_scalar_candidate(route.field_provenance, route.field_candidate_history, "preference", route.preference, cmd)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
         except ValueError:
             cmd.extraction_status = ExtractionStatus.PARSE_ERROR
             cmd.parse_error = f"Invalid route preference: {toks[1]}"
@@ -311,7 +311,7 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
         try:
             route.tag = int(toks[1])
             record_scalar_candidate(route.field_provenance, route.field_candidate_history, "tag", route.tag, cmd)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
         except ValueError:
             cmd.extraction_status = ExtractionStatus.PARSE_ERROR
             cmd.parse_error = f"Invalid route tag: {toks[1]}"
@@ -320,33 +320,33 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
     elif key == "disable":
         route.disabled = True
         record_scalar_candidate(route.field_provenance, route.field_candidate_history, "disabled", True, cmd)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "retain":
         route.retain = True
         record_scalar_candidate(route.field_provenance, route.field_candidate_history, "retain", True, cmd)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "no-install":
         route.no_install = True
         route.installation = "no-install"
         record_scalar_candidate(route.field_provenance, route.field_candidate_history, "no_install", True, cmd)
         record_scalar_candidate(route.field_provenance, route.field_candidate_history, "installation", route.installation, cmd)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "install":
         route.no_install = False
         route.installation = "install"
         record_scalar_candidate(route.field_provenance, route.field_candidate_history, "no_install", False, cmd)
         record_scalar_candidate(route.field_provenance, route.field_candidate_history, "installation", route.installation, cmd)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
 
     safe_toks = sanitize_tokens(toks)
     route.source_attributes["_".join(safe_toks)] = sanitize_source_attributes(
         {"raw": cmd.raw_sanitized}
     )
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True
 
 

@@ -22,5 +22,5 @@ def handle_snmp_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
     else:
         target.options["_".join(sanitize_tokens(toks))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     cmd.consumed, cmd.handler = True, "snmp"
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True

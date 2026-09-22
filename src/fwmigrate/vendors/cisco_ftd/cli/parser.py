@@ -72,8 +72,11 @@ class CiscoFTDParser:
                     ))
                 except ValueError:
                     record.source_attributes.setdefault("invalid_ipv6_addresses", []).append(child)
-                    record.requires_manual_review = True
-                    record.review_reasons.append("Invalid IPv6 interface address")
+                    self.config.unsupported_evidence.append({
+                        "source_path": "ftd-cli/interfaces",
+                        "source_name": record.name,
+                        "reason": "Invalid IPv6 interface address",
+                    })
             elif len(parts) >= 2 and lower_parts[0] == "vlan" and parts[1].isdigit():
                 record.vlan_id = int(parts[1])
             elif lower_parts[:1] == ["channel-group"] and len(parts) >= 2 and parts[1].isdigit():
@@ -92,9 +95,11 @@ class CiscoFTDParser:
                 record.shutdown = False
             else:
                 record.source_attributes.setdefault("unmodeled_lines", []).append(child)
-                record.migration_status = "PARTIALLY_NORMALIZED"
-                record.requires_manual_review = True
-                record.review_reasons.append("Unsupported FTD interface command is source-preserved")
+                self.config.unsupported_evidence.append({
+                    "source_path": "ftd-cli/interfaces",
+                    "source_name": record.name,
+                    "reason": "Unsupported FTD interface command is source-preserved",
+                })
             index += 1
         if record.nameif and record.nameif.lower() == "diagnostic":
             self.config.diagnostic_interface = record.name
@@ -121,9 +126,12 @@ class CiscoFTDParser:
         if len(parts) < offset + 4:
             self.config.static_routes.append(CiscoFTDStaticRoute(
                 name=f"route_{line_number}", raw_line=line,
-                migration_status="PARSE_ERROR", requires_manual_review=True,
-                review_reasons=["Malformed FTD static route"],
             ))
+            self.config.unsupported_evidence.append({
+                "source_path": "ftd-cli/routes",
+                "source_name": f"route_{line_number}",
+                "reason": "Malformed FTD static route",
+            })
             return
         interface = parts[offset + 1]
         destination = parts[offset + 2]
@@ -150,9 +158,12 @@ class CiscoFTDParser:
             name=f"route_{line_number}", interface=interface, destination=destination,
             mask=mask, gateway=gateway, address_family="ipv6" if ipv6 else "ipv4",
             administrative_distance=distance, raw_line=line,
-            migration_status="PARSE_ERROR" if errors else "NORMALIZED",
-            requires_manual_review=bool(errors), review_reasons=errors,
         ))
+        self.config.unsupported_evidence.extend({
+            "source_path": "ftd-cli/routes",
+            "source_name": f"route_{line_number}",
+            "reason": reason,
+        } for reason in errors)
 
     def parse_raw(self) -> CiscoFTDConfig:
         self.config = CiscoFTDConfig()

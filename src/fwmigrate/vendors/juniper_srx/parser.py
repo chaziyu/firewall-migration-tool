@@ -127,7 +127,7 @@ class JuniperSRXParser:
                 self._record_inactive_child(effective_cmd, context)
                 cmd.consumed = True
                 cmd.handler = "activation"
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 cmd.context_type = effective_cmd.context_type
                 cmd.context_name = effective_cmd.context_name
                 continue
@@ -162,7 +162,7 @@ class JuniperSRXParser:
                 self._record_inactive_child(effective_cmd, context)
                 cmd.consumed = True
                 cmd.handler = "activation"
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 continue
 
             # Tenant security-profile is a binding reference, not a resource
@@ -180,8 +180,8 @@ class JuniperSRXParser:
                 effective_cmd.consumed = cmd.consumed = True
                 effective_cmd.handler = cmd.handler = "security-profile"
                 effective_cmd.extraction_status = cmd.extraction_status = (
-                    ExtractionStatus.NORMALIZED if len(effective_cmd.tokens) == 3
-                    else ExtractionStatus.EXTRACT_ONLY
+                    ExtractionStatus.EXTRACTED if len(effective_cmd.tokens) == 3
+                    else ExtractionStatus.SOURCE_ONLY
                 )
                 continue
 
@@ -233,8 +233,8 @@ class JuniperSRXParser:
             cmd.context_type = effective_cmd.context_type
             cmd.context_name = effective_cmd.context_name
 
-            if handled and cmd.extraction_status == ExtractionStatus.NORMALIZED and cmd.remaining_tokens:
-                cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+            if handled and cmd.extraction_status == ExtractionStatus.EXTRACTED and cmd.remaining_tokens:
+                cmd.extraction_status = ExtractionStatus.PARTIAL
                 cmd.requires_manual_review = True
 
             if not handled:

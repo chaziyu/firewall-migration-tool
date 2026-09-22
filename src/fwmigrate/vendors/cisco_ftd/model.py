@@ -10,8 +10,6 @@ class CiscoFTDManagementSetting(BaseModel):
     values: List[str] = Field(default_factory=list)
     raw_lines: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-    migration_status: str = "EXTRACT_ONLY"
-    requires_manual_review: bool = True
 
 
 class CiscoFTDInterface(BaseModel):
@@ -34,9 +32,6 @@ class CiscoFTDInterface(BaseModel):
     shutdown: bool = False
     raw_lines: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-    migration_status: str = "NORMALIZED"
-    requires_manual_review: bool = False
-    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoFTDIPv6Address(BaseModel):
@@ -57,9 +52,6 @@ class CiscoFTDStaticRoute(BaseModel):
     address_family: str = "ipv4"
     administrative_distance: Optional[int] = None
     raw_line: str
-    migration_status: str = "NORMALIZED"
-    requires_manual_review: bool = False
-    review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -72,8 +64,6 @@ class CiscoFTDSourceRecord(BaseModel):
     source_context: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     raw: Dict[str, Any] = Field(default_factory=dict)
-    migration_status: str = "EXTRACT_ONLY"
-    requires_manual_review: bool = False
 
 
 class CiscoFTDObject(CiscoFTDSourceRecord):
@@ -150,4 +140,3 @@ class CiscoFTDConfig(BaseModel):
     acp_rules: List[CiscoFTDACPRule] = Field(default_factory=list)
     nat_policies: List[CiscoFTDNATRule] = Field(default_factory=list)
     unsupported_evidence: List[Dict[str, Any]] = Field(default_factory=list)
-    unresolved_references: List[Dict[str, Any]] = Field(default_factory=list)

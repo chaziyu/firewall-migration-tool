@@ -31,7 +31,7 @@ def handle_nat_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
     cmd.handler = "nat"
 
     if len(toks) < 4:
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
 
     nat_sub = toks[3].lower()
@@ -40,18 +40,18 @@ def handle_nat_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
         context.nat.source_attributes.setdefault("ipv6", []).append(
             sanitize_source_attributes({"nat_family": "nptv6", "raw": cmd.raw_sanitized})
         )
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         cmd.requires_manual_review = True
         return True
 
     if nat_sub == "proxy-arp":
         context.nat.proxy_arp.append(sanitize_source_attributes({"raw": cmd.raw_sanitized}))
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     if nat_sub == "proxy-ndp":
         context.nat.proxy_ndp.append(sanitize_source_attributes({"raw": cmd.raw_sanitized}))
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     if nat_sub == "source" and len(toks) >= 5:
@@ -65,7 +65,7 @@ def handle_nat_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
     context.nat.source_attributes["_".join(safe_toks[3:])] = sanitize_source_attributes(
         {"raw": cmd.raw_sanitized}
     )
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True
 
 
@@ -87,7 +87,7 @@ def _handle_source_or_dest_nat(
         pool = target_pools[pool_name]
 
         if len(toks) == 2:
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 
         sub = toks[2].lower()
@@ -118,7 +118,7 @@ def _handle_source_or_dest_nat(
                 record_member_candidate(pool.member_candidate_history, "ports", port, cmd)
                 if port not in pool.ports:
                     pool.ports.append(port)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 
         if sub == "routing-instance" and len(toks) >= 4:
@@ -132,14 +132,14 @@ def _handle_source_or_dest_nat(
                     pool.routing_instance,
                     cmd,
                 )
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
 
         if sub in {"address-range", "address-range-start"} and len(toks) >= 5:
             value = {"start": toks[3], "end": toks[4]}
             record_member_candidate(pool.member_candidate_history, "address_ranges", value, cmd)
             pool.address_ranges.append(value)
-            cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+            cmd.extraction_status = ExtractionStatus.PARTIAL
             cmd.requires_manual_review = True
             return True
 
@@ -149,21 +149,21 @@ def _handle_source_or_dest_nat(
                 record_member_candidate(pool.member_candidate_history, "ports", port, cmd)
                 if port not in pool.ports:
                     pool.ports.append(port)
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 
         if sub not in {"address", "port"}:
             pool.options["_".join(sanitize_tokens(toks[2:]))] = sanitize_source_attributes(
                 {"raw": cmd.raw_sanitized}
             )
-            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
             return True
 
         safe_toks = sanitize_tokens(toks)
         pool.source_attributes["_".join(safe_toks[2:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     if kind == "rule-set" and len(toks) >= 2:
@@ -173,7 +173,7 @@ def _handle_source_or_dest_nat(
         rs = target_rule_sets[rs_name]
 
         if len(toks) == 2:
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 
         sub = toks[2].lower()
@@ -189,7 +189,7 @@ def _handle_source_or_dest_nat(
             else:
                 _record_unknown_context(rs, "from", ctx_type, vals, cmd)
                 return True
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 
         if nat_type == "source" and sub == "to" and len(toks) >= 5:
@@ -206,7 +206,7 @@ def _handle_source_or_dest_nat(
             else:
                 _record_unknown_context(rs, "to", ctx_type, vals, cmd)
                 return True
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 
         if nat_type == "destination" and sub == "to":
@@ -217,7 +217,7 @@ def _handle_source_or_dest_nat(
             rule_name = toks[3]
             rule = _get_or_create_nat_rule(rs, rule_name, nat_type)
             if len(toks) == 4:
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
             return _parse_nat_rule_body(cmd, toks[4:], rule)
 
@@ -225,7 +225,7 @@ def _handle_source_or_dest_nat(
         rs.source_attributes["_".join(safe_toks[2:])] = sanitize_source_attributes(
             {"raw": cmd.raw_sanitized}
         )
-        cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
         return True
 
     return False
@@ -242,7 +242,7 @@ def _handle_static_nat(cmd: JunosCommand, toks: list[str], context: JuniperConte
     rs = context.nat.static_rule_sets[rs_name]
 
     if len(toks) == 2:
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
 
     sub = toks[2].lower()
@@ -258,7 +258,7 @@ def _handle_static_nat(cmd: JunosCommand, toks: list[str], context: JuniperConte
         else:
             _record_unknown_context(rs, "from", ctx_type, vals, cmd)
             return True
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
 
     if sub == "to":
@@ -269,7 +269,7 @@ def _handle_static_nat(cmd: JunosCommand, toks: list[str], context: JuniperConte
         rule_name = toks[3]
         rule = _get_or_create_nat_rule(rs, rule_name, "static")
         if len(toks) == 4:
-            cmd.extraction_status = ExtractionStatus.NORMALIZED
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
         return _parse_nat_rule_body(cmd, toks[4:], rule)
 
@@ -277,7 +277,7 @@ def _handle_static_nat(cmd: JunosCommand, toks: list[str], context: JuniperConte
     rs.source_attributes["_".join(safe_toks[2:])] = sanitize_source_attributes(
         {"raw": cmd.raw_sanitized}
     )
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True
 
 
@@ -299,7 +299,7 @@ def _record_unknown_context(
         )
     )
     _sync_rule_set_context_to_rules(rs)
-    cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+    cmd.extraction_status = ExtractionStatus.PARTIAL
     cmd.requires_manual_review = True
 
 
@@ -308,7 +308,7 @@ def _record_unsupported_nat_context(rs: JuniperNATRuleSet, toks: list[str], cmd:
         sanitize_source_attributes({"tokens": toks, "raw": cmd.raw_sanitized})
     )
     _sync_rule_set_context_to_rules(rs)
-    cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+    cmd.extraction_status = ExtractionStatus.PARTIAL
     cmd.requires_manual_review = True
 
 
@@ -325,7 +325,7 @@ def _get_or_create_nat_rule(rs: JuniperNATRuleSet, name: str, nat_type: str) -> 
 
 def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperNATRule) -> bool:
     if not body_toks:
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
 
     key = body_toks[0].lower()
@@ -333,13 +333,13 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
     if key == "description" and len(body_toks) >= 2:
         rule.description = " ".join(body_toks[1:])
         record_scalar_candidate(rule.field_provenance, rule.field_candidate_history, "description", rule.description, cmd)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
 
     if key == "disable":
         rule.disabled = True
         record_scalar_candidate(rule.field_provenance, rule.field_candidate_history, "disabled", True, cmd)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
 
     if key == "match" and len(body_toks) >= 3:
@@ -371,11 +371,11 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
             rule.source_attributes.setdefault("junos_match", {})[
                 "unknown_match_conditions"
             ] = list(rule.match.unknown_match_conditions)
-            cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+            cmd.extraction_status = ExtractionStatus.PARTIAL
             cmd.requires_manual_review = True
             return True
 
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
 
     if key == "then" and len(body_toks) >= 2:
@@ -397,7 +397,7 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
                     persistent_tokens = body_toks[5:] if body_toks[4].lower() == "persistent-nat" else body_toks[4:]
                     return _parse_persistent_nat(cmd, persistent_tokens, rule, action)
                 _record_action(rule, action, cmd)
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
 
             if sub == "interface":
@@ -413,17 +413,17 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
                     persistent_tokens = body_toks[4:] if body_toks[3].lower() == "persistent-nat" else body_toks[3:]
                     return _parse_persistent_nat(cmd, persistent_tokens, rule, action)
                 _record_action(rule, action, cmd)
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
 
             if sub == "off":
                 _record_action(rule, {"type": "off"}, cmd)
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
 
             safe_action_toks = sanitize_tokens(body_toks[1:])
             _record_action(rule, {"type": "unknown", "raw": " ".join(safe_action_toks)}, cmd)
-            cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+            cmd.extraction_status = ExtractionStatus.PARTIAL
             cmd.requires_manual_review = True
             return True
 
@@ -431,16 +431,16 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
             sub = body_toks[2].lower()
             if sub == "pool" and len(body_toks) >= 4:
                 _record_action(rule, {"type": "pool", "pool_name": body_toks[3]}, cmd)
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
             if sub == "off":
                 _record_action(rule, {"type": "off"}, cmd)
-                cmd.extraction_status = ExtractionStatus.NORMALIZED
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
 
             safe_action_toks = sanitize_tokens(body_toks[1:])
             _record_action(rule, {"type": "unknown", "raw": " ".join(safe_action_toks)}, cmd)
-            cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+            cmd.extraction_status = ExtractionStatus.PARTIAL
             cmd.requires_manual_review = True
             return True
 
@@ -454,7 +454,7 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
                             {"type": "static_prefix", "prefix": rule.action.get("prefix")},
                             cmd,
                         )
-                    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+                    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
                     cmd.requires_manual_review = True
                     return True
 
@@ -485,10 +485,10 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
                     return _parse_static_nat_child(cmd, [sub, *body_toks[4:]], rule)
 
                 if sub == "prefix-name":
-                    cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+                    cmd.extraction_status = ExtractionStatus.PARTIAL
                     cmd.requires_manual_review = True
                 else:
-                    cmd.extraction_status = ExtractionStatus.NORMALIZED
+                    cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
 
             if sub == "mapped-port":
@@ -497,13 +497,13 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
             rule.source_attributes.setdefault("junos_static_nat_unmodeled_children", []).append(
                 sanitize_source_attributes({"tokens": body_toks[2:], "raw": cmd.raw_sanitized})
             )
-            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
             cmd.requires_manual_review = True
             return True
 
         safe_action_toks = sanitize_tokens(body_toks[1:])
         _record_action(rule, {"type": "unknown", "raw": " ".join(safe_action_toks)}, cmd)
-        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.extraction_status = ExtractionStatus.PARTIAL
         cmd.requires_manual_review = True
         return True
 
@@ -511,7 +511,7 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
     rule.source_attributes["_".join(safe_body_toks)] = sanitize_source_attributes(
         {"raw": cmd.raw_sanitized}
     )
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     return True
 
 
@@ -586,7 +586,7 @@ def _parse_persistent_nat(cmd: JunosCommand, toks: list[str], rule: JuniperNATRu
     persistent = action.get("persistent_nat") or JuniperPersistentNAT()
     if not toks:
         _record_action(rule, {**action, "persistent_nat": persistent}, cmd)
-        cmd.extraction_status = ExtractionStatus.NORMALIZED
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
 
     key = toks[0].lower()
@@ -608,7 +608,7 @@ def _parse_persistent_nat(cmd: JunosCommand, toks: list[str], rule: JuniperNATRu
         except ValueError:
             _record_persistent_unknown(persistent, toks, cmd)
             _record_action(rule, {**action, "persistent_nat": persistent}, cmd)
-            cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+            cmd.extraction_status = ExtractionStatus.PARTIAL
             cmd.requires_manual_review = True
             return True
         setattr(persistent, field, value)
@@ -631,12 +631,12 @@ def _parse_persistent_nat(cmd: JunosCommand, toks: list[str], rule: JuniperNATRu
     else:
         _record_persistent_unknown(persistent, toks, cmd)
         _record_action(rule, {**action, "persistent_nat": persistent}, cmd)
-        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.extraction_status = ExtractionStatus.PARTIAL
         cmd.requires_manual_review = True
         return True
 
     _record_action(rule, {**action, "persistent_nat": persistent}, cmd)
-    cmd.extraction_status = ExtractionStatus.NORMALIZED
+    cmd.extraction_status = ExtractionStatus.EXTRACTED
     return True
 
 
@@ -672,7 +672,7 @@ def _parse_static_nat_child(cmd: JunosCommand, toks: list[str], rule: JuniperNAT
         action = dict(rule.action)
         action["routing_instance"] = value
         _record_action(rule, action, cmd)
-        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.extraction_status = ExtractionStatus.PARTIAL
         cmd.requires_manual_review = True
         return True
 
@@ -686,7 +686,7 @@ def _parse_static_nat_child(cmd: JunosCommand, toks: list[str], rule: JuniperNAT
             rule.source_attributes.setdefault("junos_static_nat_unmodeled_children", []).append(
                 sanitize_source_attributes({"tokens": toks, "raw": cmd.raw_sanitized})
             )
-            cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+            cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
             cmd.requires_manual_review = True
             return True
         try:
@@ -711,13 +711,13 @@ def _parse_static_nat_child(cmd: JunosCommand, toks: list[str], rule: JuniperNAT
             mapped_port_end=end,
         )
         _record_action(rule, action, cmd)
-        cmd.extraction_status = ExtractionStatus.PARTIALLY_NORMALIZED
+        cmd.extraction_status = ExtractionStatus.PARTIAL
         cmd.requires_manual_review = True
         return True
 
     rule.source_attributes.setdefault("junos_static_nat_unmodeled_children", []).append(
         sanitize_source_attributes({"tokens": toks, "raw": cmd.raw_sanitized})
     )
-    cmd.extraction_status = ExtractionStatus.EXTRACT_ONLY
+    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
     cmd.requires_manual_review = True
     return True
