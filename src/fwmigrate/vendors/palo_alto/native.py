@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
-
 from .source_builder import build_panos_config
 from .model.source import PANOSConfig
 from .source_model import (
@@ -35,6 +33,7 @@ def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
     return PANOSDerivedViews(
         counts=counts,
         scope_identities=tuple(pan_scope_identity(scope) for scope in config.scopes),
+        unresolved_references=(),
     )
 
 

@@ -6,6 +6,29 @@ from typing import Any
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
 
+def value(element: ET.Element | None, tag: str) -> str | None:
+    return text_or_none(element.find(tag)) if element is not None else None
+
+
+def values(element: ET.Element | None, tag: str) -> list[str] | None:
+    child = element.find(tag) if element is not None else None
+    if child is None:
+        return None
+    return [(item.text or item.get("name") or "").strip() for item in child]
+
+
+def raw_extra(element: ET.Element, known: set[str]) -> dict[str, Any]:
+    result = capture_unknown_children(element, known)
+    attributes = capture_unknown_attributes(element)
+    if attributes:
+        result["@attributes"] = attributes
+    return sanitize_source_attributes(result)
+
+
+def typed_fields(element: ET.Element, known: set[str]) -> tuple[dict[str, Any], set[str]]:
+    return raw_extra(element, known), {child.tag for child in element if child.tag in known}
+
+
 def text_or_none(element: ET.Element | None) -> str | None:
     if element is None:
         return None
