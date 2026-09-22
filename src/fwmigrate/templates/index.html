@@ -63,6 +63,17 @@
         aria-orientation="vertical"
       >
         <button
+          id="tab-report"
+          class="tab-btn"
+          role="tab"
+          aria-selected="false"
+          aria-controls="report-container"
+          data-tab="report"
+        >
+          {{ icon('activity') }}<span>View Report</span
+          ><span class="nav-active-dot"></span>
+        </button>
+        <button
           id="tab-extract"
           class="tab-btn"
           role="tab"
@@ -172,6 +183,7 @@
         <div class="workspace-grid">
           <div class="workspace-main">
             {% include 'partials/source_configuration.html' %} {% include
+            'partials/report.html' %} {% include
             'partials/exports.html' %} {% include 'partials/live_migration.html'
             %}
             <div

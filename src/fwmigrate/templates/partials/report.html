@@ -1,0 +1,42 @@
+<section class="card report-shell hidden" id="report-container" aria-labelledby="report-heading">
+  <div class="card-header">
+    <div class="section-heading">
+      <h2 id="report-heading"><span class="step-num">02</span>Configuration report</h2>
+      <span class="section-meta" id="report-filename"></span>
+    </div>
+  </div>
+
+  <nav class="report-tabs" aria-label="Report sections">
+    {% for key, label in (
+      ('overview', 'Overview'), ('interfaces', 'Interfaces'), ('objects', 'Objects'),
+      ('policies', 'Policies'), ('nat', 'NAT'), ('routes', 'Routes'),
+      ('vpn', 'VPN'), ('validation', 'Validation')
+    ) %}
+      <button type="button" class="report-tab{% if loop.first %} active{% endif %}" data-report-section="{{ key }}">{{ label }}</button>
+    {% endfor %}
+  </nav>
+
+  <div id="report-overview" class="report-overview">
+    <div class="report-summary" id="report-summary"></div>
+    <p class="report-status" id="report-vdom-summary"></p>
+  </div>
+
+  <div id="report-data" class="hidden">
+    <div class="report-object-tabs hidden" id="report-object-tabs">
+      {% for key, label in (('addresses', 'Addresses'), ('address_groups', 'Address Groups'), ('services', 'Services'), ('service_groups', 'Service Groups')) %}
+        <button type="button" class="report-object-tab{% if loop.first %} active{% endif %}" data-object-section="{{ key }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <div class="report-toolbar">
+      <label><span class="sr-only">Search report rows</span><input id="report-search" type="search" placeholder="Search this section" /></label>
+      <select id="report-vdom-filter" aria-label="Filter by VDOM"><option value="">All VDOMs</option></select>
+      <select id="report-severity-filter" class="hidden" aria-label="Filter validation severity">
+        <option value="">All severities</option><option value="error">Errors</option><option value="warning">Warnings</option>
+      </select>
+    </div>
+    <div class="report-table-wrap">
+      <table class="report-table"><thead id="report-table-head"></thead><tbody id="report-table-body"></tbody></table>
+      <p class="report-empty hidden" id="report-empty">No matching rows.</p>
+    </div>
+  </div>
+</section>

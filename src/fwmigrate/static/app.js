@@ -8,8 +8,9 @@ document.addEventListener("DOMContentLoaded", () => {
   let selectedSourceVendor = "fortigate";
   let selectedTargetVendor = "palo_alto";
   let offlineTargetVendor = "palo_alto";
-  let activeMode = "download"; // 'download', 'live', or 'extract'
+  let activeMode = "download"; // 'download', 'live', 'extract', or 'report'
   let currentPolicies = [];
+  let currentReport = null;
   let sourceReady = false;
   let sourceFailed = false;
   let sourceRevision = 0;
@@ -19,6 +20,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const busyButtons = new Set();
 
   const MODE_COPY = {
+    report: [
+      "View report",
+      "Review the extracted source configuration before downloading Excel.",
+    ],
     download: [
       "Convert configuration",
       "Bring your firewall configuration to its next home.",
@@ -299,11 +304,27 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
   // Mode Switcher Tabs
   const tabDownload = document.getElementById("tab-download");
+  const tabReport = document.getElementById("tab-report");
   const tabLive = document.getElementById("tab-live");
   const tabExtract = document.getElementById("tab-extract");
   const modeDownloadForm = document.getElementById("mode-download-form");
   const modeLiveForm = document.getElementById("mode-live-form");
   const modeExtractForm = document.getElementById("mode-extract-form");
+  const reportContainer = document.getElementById("report-container");
+  const reportOverview = document.getElementById("report-overview");
+  const reportData = document.getElementById("report-data");
+  const reportSummary = document.getElementById("report-summary");
+  const reportFilename = document.getElementById("report-filename");
+  const reportVdomSummary = document.getElementById("report-vdom-summary");
+  const reportObjectTabs = document.getElementById("report-object-tabs");
+  const reportSearch = document.getElementById("report-search");
+  const reportVdomFilter = document.getElementById("report-vdom-filter");
+  const reportSeverityFilter = document.getElementById("report-severity-filter");
+  const reportTableHead = document.getElementById("report-table-head");
+  const reportTableBody = document.getElementById("report-table-body");
+  const reportEmpty = document.getElementById("report-empty");
+  let activeReportSection = "overview";
+  let activeObjectSection = "addresses";
 
   // Ingestion Method Tabs
   const btnIngestFile = document.getElementById("btn-ingest-file");
@@ -328,6 +349,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const optPruneObjects = document.getElementById("opt-prune-objects");
   const statTotalRules = document.getElementById("stat-total-rules");
   const statTotalObjects = document.getElementById("stat-total-objects");
+  const statErrors = document.getElementById("stat-errors");
+  const statWarnings = document.getElementById("stat-warnings");
 
   // Mode A Components
   const btnGenerateBundle = document.getElementById("btn-generate-bundle");
@@ -382,9 +405,87 @@ document.addEventListener("DOMContentLoaded", () => {
     return Math.max(0, Number(value) || 0);
   }
 
+  const reportColumns = {
+    interfaces: [["display_name", "Topology"], ["kind", "Kind"], ["ip", "IP / Remote Gateway"], ["role", "Role"], ["parent", "Parent"], ["aggregate", "Aggregate"], ["status", "Status"], ["review", "Review"]],
+    addresses: [["name", "Name"], ["value", "Value"], ["type", "Type"], ["address_family", "Family"], ["associated_interface", "Interface"], ["review", "Review"]],
+    address_groups: [["name", "Name"], ["members", "Members"], ["address_family", "Family"], ["exclude_members", "Excluded"], ["review", "Review"]],
+    services: [["name", "Name"], ["protocol", "Protocol"], ["port", "Port"], ["source_port", "Source Port"], ["generated", "Generated"], ["review", "Review"]],
+    service_groups: [["name", "Name"], ["members", "Members"], ["generated", "Generated"], ["review", "Review"]],
+    policies: [["policy_id", "ID"], ["name", "Name"], ["source_interfaces", "Source"], ["destination_interfaces", "Destination"], ["services", "Service"], ["action", "Action"], ["nat", "NAT"], ["review", "Review"]],
+    nat: [["policy_id", "Policy ID"], ["policy_name", "Policy"], ["translation_type", "Type"], ["translated_addresses", "Address"], ["egress_interfaces", "Egress"], ["review", "Review"]],
+    routes: [["route_id", "ID"], ["destination", "Destination"], ["gateway", "Gateway"], ["device", "Device"], ["distance", "Distance"], ["status", "Status"], ["review", "Review"]],
+    vpn: [["kind", "Type"], ["name", "Name"], ["attachment", "Interface / Phase 1"], ["peer", "Gateway / Selectors"], ["crypto", "IKE / Proposal"], ["topology", "Topology"], ["review", "Review"]],
+    validation: [["severity", "Severity"], ["domain", "Domain"], ["object_name", "Object"], ["field", "Field"], ["message", "Issue"]],
+  };
+
+  function reportCell(value) {
+    if (value === null || value === undefined || value === "") return "—";
+    if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    return String(value);
+  }
+
+  function reportRows(section) {
+    const sections = currentReport?.sections || {};
+    if (section === "interfaces") return sections.interface_topology || sections.interfaces || [];
+    if (section === "objects") return sections[activeObjectSection] || [];
+    if (section === "vpn") return [
+      ...(sections.vpn_tunnels || []).map((row) => ({ ...row, kind: "Tunnel", attachment: row.interface, peer: row.remote_gateway, crypto: row.ike_version, topology: row.topology_path })),
+      ...(sections.vpn_phase2 || []).map((row) => ({ ...row, kind: "Phase 2", attachment: row.phase1, peer: [row.source_range, row.destination_range].filter(Boolean).join(" → "), crypto: row.proposal, topology: [] })),
+    ];
+    return sections[section] || [];
+  }
+
+  function renderReportTable() {
+    if (!currentReport || activeReportSection === "overview") return;
+    const columnKey = activeReportSection === "objects" ? activeObjectSection : activeReportSection;
+    const columns = reportColumns[columnKey] || [];
+    const search = reportSearch?.value.trim().toLowerCase() || "";
+    const vdom = reportVdomFilter?.value || "";
+    const severity = reportSeverityFilter?.value || "";
+    const rows = reportRows(activeReportSection).filter((row) => {
+      if (vdom && row.vdom !== vdom) return false;
+      if (severity && row.severity !== severity) return false;
+      return !search || Object.values(row).some((value) => reportCell(value).toLowerCase().includes(search));
+    });
+    const head = document.createElement("tr");
+    columns.forEach(([, label]) => { const th = document.createElement("th"); th.scope = "col"; th.textContent = label; head.appendChild(th); });
+    reportTableHead?.replaceChildren(head);
+    const body = document.createDocumentFragment();
+    rows.forEach((row) => {
+      const tr = document.createElement("tr");
+      columns.forEach(([key]) => { const td = document.createElement("td"); td.textContent = reportCell(row[key]); if (columnKey === "interfaces" && key === "display_name") td.className = "report-topology-name"; tr.appendChild(td); });
+      body.appendChild(tr);
+    });
+    reportTableBody?.replaceChildren(body);
+    reportEmpty?.classList.toggle("hidden", rows.length > 0);
+  }
+
+  function renderReport() {
+    if (!currentReport || !reportSummary) return;
+    const summary = currentReport.summary || {};
+    const objects = summary.objects || {};
+    const severity = summary.validation?.severity_counts || {};
+    const objectTotal = ["addresses", "address_groups", "services", "service_groups"].reduce((total, key) => total + count(objects[key]), 0);
+    const stats = [["Interfaces", objects.interfaces], ["Policies", objects.policies], ["Objects", objectTotal], ["Errors", severity.error], ["Warnings", severity.warning]];
+    const fragment = document.createDocumentFragment();
+    stats.forEach(([label, value]) => { const stat = document.createElement("div"); stat.className = "report-stat"; const number = document.createElement("strong"); number.textContent = String(count(value)); const caption = document.createElement("span"); caption.textContent = label; stat.append(number, caption); fragment.appendChild(stat); });
+    reportSummary.replaceChildren(fragment);
+    if (reportFilename) reportFilename.textContent = currentFile?.name || "";
+    if (reportVdomSummary) reportVdomSummary.textContent = (summary.vdoms || []).length ? `VDOMs: ${summary.vdoms.join(", ")}` : "No VDOM data found.";
+    const overview = activeReportSection === "overview";
+    reportOverview?.classList.toggle("hidden", !overview);
+    reportData?.classList.toggle("hidden", overview);
+    reportObjectTabs?.classList.toggle("hidden", activeReportSection !== "objects");
+    reportSeverityFilter?.classList.toggle("hidden", activeReportSection !== "validation");
+    document.querySelectorAll("[data-report-section]").forEach((button) => button.classList.toggle("active", button.dataset.reportSection === activeReportSection));
+    if (!overview) renderReportTable();
+  }
+
   function syncWorkspace() {
     const hasFile = Boolean(currentFile);
     const hasInput = hasFile;
+    tabReport?.classList.toggle("hidden", selectedSourceVendor !== "fortigate");
     if (btnGenerateBundle)
       btnGenerateBundle.disabled =
         !hasFile || !sourceReady || busyButtons.has(btnGenerateBundle) || liveOperationRunning;
@@ -423,6 +524,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (targetVendorSelect)
       targetVendorSelect.disabled =
         liveOperationRunning || activeMode === "live";
+    reportContainer?.classList.toggle("hidden", activeMode !== "report" || !currentReport);
   }
 
   function setBusy(button, busy) {
@@ -469,8 +571,10 @@ document.addEventListener("DOMContentLoaded", () => {
     sourceFailed = false;
     currentPreviewId = null;
     currentPolicies = [];
+    currentReport = null;
+    reportContainer?.classList.add("hidden");
     optimizerPanel?.classList.add("hidden");
-    [statTotalRules, statTotalObjects].forEach((element) => {
+    [statTotalRules, statTotalObjects, statErrors, statWarnings].forEach((element) => {
       if (element) element.textContent = "0";
     });
     setPreviewStatus("");
@@ -515,6 +619,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (tabDownload) {
     tabDownload.addEventListener("click", () => switchMode("download"));
   }
+  if (tabReport) tabReport.addEventListener("click", () => switchMode("report"));
   if (tabLive) {
     tabLive.addEventListener("click", () => switchMode("live"));
   }
@@ -540,6 +645,7 @@ document.addEventListener("DOMContentLoaded", () => {
     activeMode = mode;
     [
       [tabDownload, "download"],
+      [tabReport, "report"],
       [tabLive, "live"],
       [tabExtract, "extract"],
     ].forEach(([tab, tabMode]) => {
@@ -555,6 +661,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (modeLiveForm) modeLiveForm.classList.toggle("hidden", mode !== "live");
     if (modeExtractForm)
       modeExtractForm.classList.toggle("hidden", mode !== "extract");
+    reportContainer?.classList.toggle("hidden", mode !== "report" || !currentReport);
     if (targetVendorGroup)
       targetVendorGroup.classList.toggle("hidden", mode === "extract");
     if (vendorSelectorGrid)
@@ -566,7 +673,10 @@ document.addEventListener("DOMContentLoaded", () => {
     setText("page-description", MODE_COPY[mode][1]);
     syncWorkspace();
 
-    if (mode === "download") {
+    if (mode === "report") {
+      renderReport();
+      logToTerminal("[MODE] Switched to FortiGate source report view.", "term-system");
+    } else if (mode === "download") {
       logToTerminal(
         "[MODE] Switched to Package Export Mode (XML/CLI & Terraform Bundle).",
         "term-system",
@@ -616,7 +726,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }),
     );
   }
-  enableTabKeys([tabDownload, tabExtract, tabLive]);
+  enableTabKeys([tabReport, tabDownload, tabExtract, tabLive]);
   enableTabKeys([btnIngestFile]);
 
   // =========================================================================
@@ -804,6 +914,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  document.querySelectorAll("[data-report-section]").forEach((button) => button.addEventListener("click", () => {
+    activeReportSection = button.dataset.reportSection;
+    renderReport();
+  }));
+  document.querySelectorAll("[data-object-section]").forEach((button) => button.addEventListener("click", () => {
+    activeObjectSection = button.dataset.objectSection;
+    document.querySelectorAll("[data-object-section]").forEach((item) => item.classList.toggle("active", item === button));
+    renderReportTable();
+  }));
+  reportSearch?.addEventListener("input", renderReportTable);
+  reportVdomFilter?.addEventListener("change", renderReportTable);
+  reportSeverityFilter?.addEventListener("change", renderReportTable);
+
   function clearSource() {
     currentFile = null;
     if (fileInput) fileInput.value = "";
@@ -847,14 +970,20 @@ document.addEventListener("DOMContentLoaded", () => {
       if (requestRevision !== sourceRevision) return;
       currentPreviewId = data.preview_id || null;
       const stats = data.stats || data.summary || {};
+      const objects = stats.objects || stats;
+      const severityCounts = stats.validation?.severity_counts || {};
       if (optimizerPanel) optimizerPanel.classList.remove("hidden");
-      if (statTotalRules) statTotalRules.textContent = count(stats.policies);
+      if (statTotalRules) statTotalRules.textContent = count(objects.policies);
       if (statTotalObjects)
         statTotalObjects.textContent =
-          count(stats.addresses) + count(stats.services);
+          Object.values(objects).reduce((total, value) => total + count(value), 0);
+      if (statErrors) statErrors.textContent = count(severityCounts.error);
+      if (statWarnings) statWarnings.textContent = count(severityCounts.warning);
       currentPolicies = Array.isArray(data.policies) ? data.policies : [];
+      currentReport = data;
+      renderReport();
       sourceReady = true;
-      const itemCount = Object.values(stats).reduce(
+      const itemCount = Object.values(objects).reduce(
         (total, value) => total + count(value),
         0,
       );
