@@ -139,7 +139,7 @@ class CiscoHTTPServerConfig(BaseModel):
     session_timeout: Optional[int] = None
     raw_lines: List[str] = Field(default_factory=list)
     source_order: Optional[int] = None
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
 
@@ -167,7 +167,7 @@ class CiscoTrustpointRecord(BaseModel):
     certificate_references: List[str] = Field(default_factory=list)
     raw_lines: List[str] = Field(default_factory=list)
     source_order: int = 0
-    migration_status: str = "EXTRACT_ONLY"
+    extraction_status: str = "SOURCE_ONLY"
     requires_manual_review: bool = True
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)

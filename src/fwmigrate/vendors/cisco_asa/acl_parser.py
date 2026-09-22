@@ -104,7 +104,7 @@ def parse_acl_binding(line: str, line_number: int) -> Optional[CiscoACLBinding]:
         raw_line=line,
         line_number=line_number,
         source_attributes={"raw_tokens": tokens[2:], "binding_scope": "global" if direction == "global" else "interface"},
-        migration_status="PARTIALLY_NORMALIZED" if review_reasons else "NORMALIZED",
+        extraction_status="PARTIAL" if review_reasons else "EXTRACTED",
         requires_manual_review=bool(review_reasons),
         review_reasons=review_reasons,
     )
@@ -230,7 +230,7 @@ def parse_acl_line(
         destination_security_group_value=destination_sg_value,
         remark="\n".join(remarks.pop(acl_name, [])) or None,
         raw_line=line,
-        migration_status="PARTIALLY_NORMALIZED" if acl_type == "standard" else "NORMALIZED",
+        extraction_status="PARTIAL" if acl_type == "standard" else "EXTRACTED",
         requires_manual_review=acl_type == "standard",
         review_reasons=["Standard ACL is source-only and is not an extended ACL rule"] if acl_type == "standard" else [],
         source_attributes={
@@ -241,18 +241,18 @@ def parse_acl_line(
         },
     )
 
-    def mark(reason: str, status: str = "PARTIALLY_NORMALIZED") -> None:
+    def mark(reason: str, status: str = "PARTIAL") -> None:
         rule.requires_manual_review = True
-        if status == "PARSE_ERROR" or rule.migration_status == "PARSE_ERROR":
-            rule.migration_status = "PARSE_ERROR"
-        elif rule.migration_status == "NORMALIZED":
-            rule.migration_status = status
+        if status == "PARSE_ERROR" or rule.extraction_status == "PARSE_ERROR":
+            rule.extraction_status = "PARSE_ERROR"
+        elif rule.extraction_status == "EXTRACTED":
+            rule.extraction_status = status
         rule.review_reasons.append(reason)
 
     if identity_type:
         mark("Identity condition requires target review")
     if source_sg_type or destination_sg_type:
-        mark("TrustSec security-group condition is source-specific", "PARSE_ERROR" if "malformed" in {source_sg_type, destination_sg_type} else "PARTIALLY_NORMALIZED")
+        mark("TrustSec security-group condition is source-specific", "PARSE_ERROR" if "malformed" in {source_sg_type, destination_sg_type} else "PARTIAL")
     if protocol is not None and protocol not in KNOWN_PROTOCOLS and not protocol.isdigit() and protocol not in {"object", "object-group"}:
         mark(f"Unknown protocol selector '{protocol}' was not converted to IP")
     if not source.valid or (destination is not None and not destination.valid):

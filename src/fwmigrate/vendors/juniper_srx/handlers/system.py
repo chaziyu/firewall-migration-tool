@@ -157,7 +157,7 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig,
             elif sub == "syslog" and len(toks) >= 4:
                 return _handle_syslog(toks[3:], config, cmd, context.system_syslog if context else None)
 
-        # Other system attributes (e.g. login, ntp, syslog) -> EXTRACT_ONLY
+        # Other system attributes (e.g. login, ntp, syslog) -> SOURCE_ONLY
         root_ctx = config.get_context("root")
         safe_toks = sanitize_tokens(toks)
         key = " ".join(safe_toks[2:]) if len(safe_toks) > 2 else "system"

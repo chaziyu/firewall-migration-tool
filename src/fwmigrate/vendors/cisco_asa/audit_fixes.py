@@ -69,7 +69,7 @@ def _normalize_standard_acls(config: Any) -> None:
         if endpoint is None:
             continue
         if endpoint.address_family == "ipv6" or endpoint.value == "any6":
-            rule.migration_status = "PARSE_ERROR"
+            rule.extraction_status = "PARSE_ERROR"
             rule.requires_manual_review = True
             reason = "ASA standard ACLs are IPv4-only"
             if reason not in rule.review_reasons:
@@ -101,8 +101,8 @@ def _normalize_nat_source_model(config: Any) -> None:
         if "interface" in rule.raw_options:
             rule.raw_options.remove("interface")
         rule.requires_manual_review = True
-        if rule.migration_status == "NORMALIZED":
-            rule.migration_status = "PARTIALLY_NORMALIZED"
+        if rule.extraction_status == "EXTRACTED":
+            rule.extraction_status = "PARTIAL"
         reason = "Dynamic NAT interface PAT fallback is source-preserved"
         if reason not in rule.review_reasons:
             rule.review_reasons.append(reason)
@@ -227,7 +227,7 @@ def _parse_nat_line_audit(original: Any):
                     nat_exemption=True,
                     raw_line=line,
                     raw_options=remainder.split() if remainder else [],
-                    migration_status="EXTRACT_ONLY",
+                    extraction_status="SOURCE_ONLY",
                     requires_manual_review=True,
                     review_reasons=["ASA legacy NAT exemption is preserved as source-only access-list semantics"],
                     source_attributes={"raw_command": sanitize_raw_text(line), "legacy_nat": True},

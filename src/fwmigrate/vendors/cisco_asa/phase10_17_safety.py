@@ -61,7 +61,7 @@ def _parse_unverified_global_conn(self: Any, line: str, line_number: int) -> Cis
             "raw_command": safe,
             "unmodeled_tokens": line.split()[1:],
         },
-        migration_status="UNSUPPORTED",
+        extraction_status="UNSUPPORTED",
         requires_manual_review=True,
         review_reasons=[
             "Standalone conn-prefixed syntax is not modeled as a global equivalent of MPF set connection",
@@ -83,7 +83,7 @@ def _wrap_class_map_block(original: Any):
         for line_number, _, child, _ in phase._raw_child_rows(lines, index):
             if re.fullmatch(r"match(?:\s+(?:access-list|protocol|port|class-map))?\s*", child, re.I):
                 reason = "Malformed class-map match syntax"
-                if record.migration_status != "PARSE_ERROR":
+                if record.extraction_status != "PARSE_ERROR":
                     self._mpf_parse_error(record, line_number, child, "class-map", reason)
                 elif not any(
                     diagnostic.line_number == line_number and diagnostic.section == "class-map"
@@ -117,7 +117,7 @@ def _wrap_threat_detection(original: Any):
             values=effective[2:],
             raw_parameters=effective[2:],
             source_attributes={"raw_command": safe, "negated": negated},
-            migration_status="PARTIALLY_NORMALIZED",
+            extraction_status="PARTIAL",
             requires_manual_review=False,
         )
         values = effective[2:]
@@ -131,7 +131,7 @@ def _wrap_threat_detection(original: Any):
                 break
             value = values[position + 1]
             if not value.isdigit():
-                item.migration_status = "PARSE_ERROR"
+                item.extraction_status = "PARSE_ERROR"
                 item.requires_manual_review = True
                 item.review_reasons.append(f"Threat-detection {key} must be numeric")
                 self._record_diagnostic(line_number, line, f"Malformed threat-detection {key}", "threat-detection")
