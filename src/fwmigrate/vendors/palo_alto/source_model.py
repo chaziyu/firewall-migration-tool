@@ -45,21 +45,6 @@ class PANSourceRecord(BaseModel):
     unsupported: bool = False
 
 
-class PANOSConfig(BaseModel):
-    """Vendor-native PAN-OS source configuration."""
-
-    hostname: Optional[str] = None
-    source_version: Optional[str] = None
-    source_format: str = "xml"
-    scopes: List[PANScope] = Field(default_factory=list)
-    records: List[PANSourceRecord] = Field(default_factory=list)
-    unknown_paths: List[str] = Field(default_factory=list)
-
-    def records_of(self, *kinds: str) -> list[PANSourceRecord]:
-        wanted = set(kinds)
-        return [record for record in self.records if record.kind in wanted]
-
-
 @dataclass(frozen=True)
 class PANOSDerivedViews:
     """Read-only views over PAN-OS source state."""

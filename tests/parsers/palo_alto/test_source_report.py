@@ -45,9 +45,9 @@ def test_palo_alto_reporter_keeps_source_result_native_and_scope_aware():
     analysis = PaloAltoSourceReporter().analyze_source(FIXTURE.read_text())
 
     assert analysis.config.source_format == "xml"
-    assert analysis.config.records
+    assert analysis.config.source_inventory
     assert analysis.config.scopes
-    assert analysis.config.records[0].source_path
+    assert analysis.config.source_inventory[0].source_path
     assert not hasattr(analysis.config, "canonical_ir")
     assert not hasattr(analysis, "legacy_extraction")
 

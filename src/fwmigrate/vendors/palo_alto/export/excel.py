@@ -26,7 +26,7 @@ def export_panos_excel(analysis: PaloAltoSourceResult, output: BinaryIO | str | 
     summary.append(["Hostname", config.hostname])
     summary.append(["Source Version", config.source_version])
     summary.append(["Scopes", len(config.scopes)])
-    summary.append(["Source Records", len(config.records)])
+    summary.append(["Source Records", len(config.source_inventory)])
 
     scopes = workbook.create_sheet("Scopes")
     scopes.append(["Kind", "Name", "Device", "Serial", "Device Group", "Template Stack"])
@@ -35,21 +35,22 @@ def export_panos_excel(analysis: PaloAltoSourceResult, output: BinaryIO | str | 
 
     records = workbook.create_sheet("Source Inventory")
     records.append(["Order", "Kind", "Source Path", "Name", "Scope", "Values"])
-    for record in config.records:
+    for record in config.source_inventory:
         records.append([record.source_order, record.kind, record.source_path, record.name, record.scope.name if record.scope else None, _safe(record.values)])
 
-    for sheet_name, needles in {
-        "Interfaces": ("interface",),
-        "Addresses": ("address",),
-        "Policies": ("rule",),
-        "NAT Rules": ("nat",),
-        "Routes": ("route",),
-    }.items():
+    domain_rows = {
+        "Interfaces": [*config.interfaces, *config.interface_units],
+        "Addresses": [*config.addresses, *config.address_groups],
+        "Policies": [*config.security_rules, *config.default_security_rules],
+        "NAT Rules": config.nat_rules,
+        "Routes": [route for router in config.virtual_routers for route in (router.static_routes or [])],
+    }
+    for sheet_name, items in domain_rows.items():
         sheet = workbook.create_sheet(sheet_name)
         sheet.append(["Order", "Kind", "Source Path", "Name", "Scope", "Values"])
-        for record in config.records:
-            if any(needle in record.source_path.lower() for needle in needles):
-                sheet.append([record.source_order, record.kind, record.source_path, record.name, record.scope.name if record.scope else None, _safe(record.values)])
+        for item in items:
+            scope = getattr(item, "scope", None)
+            sheet.append([getattr(item, "source_order", None), type(item).__name__, getattr(item, "source_path", None), getattr(item, "name", None), scope.name if scope else None, _safe(item.model_dump())])
 
     validation = workbook.create_sheet("Validation")
     validation.append(["Severity", "Domain", "Source Path", "Source Name", "Message"])

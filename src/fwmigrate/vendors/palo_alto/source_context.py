@@ -18,6 +18,8 @@ class PANWalkContext:
     parent_device_group: str | None = None
     scope: PANScope | None = None
     rulebase_position: str | None = None
+    interface_name: str | None = None
+    interface_family: str | None = None
 
 
 def _serial(element: ET.Element) -> str | None:
@@ -33,6 +35,9 @@ def _transition(element: ET.Element, path: tuple[str, ...], parent: PANWalkConte
         context = replace(context, scope=PANScope(kind="shared", name="shared"))
 
     parent_tag = path[-1] if path else None
+    interface_families = {"ethernet", "aggregate-ethernet", "loopback", "tunnel", "vlan"}
+    if element.tag == "entry" and parent_tag in interface_families:
+        context = replace(context, interface_name=element.get("name"), interface_family=parent_tag)
     if element.tag == "entry" and parent_tag in {"devices", "device"}:
         if "device-group" in path:
             context = replace(context, device_serial=_serial(element) or element.get("name"))

@@ -7,7 +7,8 @@ from typing import Any
 
 from .native import build_derived_views, validate_panos_config
 from .source_builder import build_panos_config
-from .source_model import PANOSConfig, PANOSDerivedViews, PANOSValidationResult
+from .model.source import PANOSConfig
+from .source_model import PANOSDerivedViews, PANOSValidationResult
 
 
 @dataclass(frozen=True)

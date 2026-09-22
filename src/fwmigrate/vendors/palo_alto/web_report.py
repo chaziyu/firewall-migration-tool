@@ -7,7 +7,7 @@ from .source_report import PaloAltoSourceResult
 
 def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
     config = analysis.config
-    records = config.records
+    records = config.source_inventory
     return {
         "vendor": "palo_alto",
         "hostname": config.hostname,
@@ -15,11 +15,16 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
         "summary": {
             "scopes": len(config.scopes),
             "records": len(records),
-            "interfaces": sum(record.kind == "interface" for record in records),
-            "addresses": sum(record.kind == "address" for record in records),
-            "policies": sum("rule" in record.source_path for record in records),
-            "nat_rules": sum("nat" in record.source_path for record in records),
-            "routes": sum("route" in record.source_path for record in records),
+            "interfaces": len(config.interfaces),
+            "addresses": len(config.addresses) + len(config.address_groups),
+            "services": len(config.services) + len(config.service_groups),
+            "schedules": len(config.schedules),
+            "policies": len(config.security_rules),
+            "default_security_rules": len(config.default_security_rules),
+            "nat_rules": len(config.nat_rules),
+            "routes": len(config.static_routes),
+            "virtual_routers": len(config.virtual_routers),
+            "logical_routers": len(config.logical_routers),
         },
         "scopes": [scope.model_dump() for scope in config.scopes],
         "records": [
