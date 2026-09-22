@@ -3,14 +3,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // Application State
   // =========================================================================
   let currentFile = null;
-  let currentLiveCollectionId = null;
   let currentPreviewId = null;
   let currentSessionId = null;
   let selectedSourceVendor = "fortigate";
   let selectedTargetVendor = "palo_alto";
   let offlineTargetVendor = "palo_alto";
   let activeMode = "download"; // 'download', 'live', or 'extract'
-  let activeIngestMethod = "file"; // 'file' or 'api'
   let currentPolicies = [];
   let sourceReady = false;
   let sourceFailed = false;
@@ -40,54 +38,9 @@ document.addEventListener("DOMContentLoaded", () => {
     fortigate: {
       name: "Fortinet FortiGate",
       icon: "🛡️",
-      protocol: "FortiGate SSH",
-      desc: "Connects over SSH to retrieve the complete read-only FortiGate CLI configuration.",
-      defaultPort: 22,
-      authTypes: [{ id: "userpass", label: "SSH Username & Password" }],
       fileAccept: ".conf,.cfg,.txt",
       dropText:
         "Supports FortiOS <code>.conf</code>, <code>.cfg</code>, or <code>.txt</code> backup files",
-      fields: [
-        {
-          id: "api-host",
-          label: "FortiGate IP / Hostname",
-          type: "text",
-          required: true,
-          placeholder: "192.168.1.99 or fg.corp.local",
-          col: "col-8",
-        },
-        {
-          id: "api-port",
-          label: "SSH Port",
-          type: "number",
-          required: true,
-          value: 22,
-          col: "col-4",
-        },
-        {
-          id: "api-username",
-          label: "SSH Username",
-          type: "text",
-          required: true,
-          placeholder: "admin",
-          col: "col-6",
-        },
-        {
-          id: "api-password",
-          label: "SSH Password",
-          type: "password",
-          required: true,
-          placeholder: "••••••••",
-          col: "col-6",
-        },
-        {
-          id: "api-verify-host-key",
-          label: "Verify SSH host key",
-          type: "checkbox",
-          checked: false,
-          col: "col-12",
-        },
-      ],
     },
     palo_alto: {
       name: "Palo Alto Networks",
@@ -354,9 +307,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Ingestion Method Tabs
   const btnIngestFile = document.getElementById("btn-ingest-file");
-  const btnIngestApi = document.getElementById("btn-ingest-api");
-  const ingestFileContainer = document.getElementById("ingest-file-container");
-  const ingestApiContainer = document.getElementById("ingest-api-container");
 
   // Vendor Selection Dropdowns
   const sourceVendorSelect = document.getElementById("source-vendor-select");
@@ -372,19 +322,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const selectedFilename = document.getElementById("selected-filename");
   const selectedFilesize = document.getElementById("selected-filesize");
   const btnRemoveFile = document.getElementById("btn-remove-file");
-
-  // API Ingest Components
-  const apiCredentialFields = document.getElementById("api-credential-fields");
-  const btnApiExtract = document.getElementById("btn-api-extract");
-  const apiIngestSuccess = document.getElementById("api-ingest-success");
-  const apiHostname = document.getElementById("api-hostname");
-  const apiStatsSummary = document.getElementById("api-stats-summary");
-  const btnClearApiIngest = document.getElementById("btn-clear-api-ingest");
-  const apiIngestError = document.getElementById("api-ingest-error");
-  const apiErrorTitle = document.getElementById("api-error-title");
-  const apiErrorDetail = document.getElementById("api-error-detail");
-  const apiErrorHint = document.getElementById("api-error-hint");
-  const btnDismissApiError = document.getElementById("btn-dismiss-api-error");
 
   // Optimizer Panel Stats
   const optimizerPanel = document.getElementById("optimizer-panel");
@@ -445,32 +382,9 @@ document.addEventListener("DOMContentLoaded", () => {
     return Math.max(0, Number(value) || 0);
   }
 
-  function supportsLiveIngestion(vendorId) {
-    return vendorId === "fortigate";
-  }
-
-  function syncLiveIngestCapability() {
-    const supported = supportsLiveIngestion(selectedSourceVendor);
-    if (btnIngestApi) {
-      btnIngestApi.disabled = !supported;
-      btnIngestApi.setAttribute("aria-disabled", String(!supported));
-      btnIngestApi.title = supported
-        ? "Connect to FortiGate over SSH"
-        : "Live device ingestion is not supported for this vendor";
-    }
-    setText(
-      "live-ingest-note",
-      supported
-        ? "Connect to the FortiGate over SSH to retrieve its configuration."
-        : "Live device ingestion is not supported for this vendor. Upload a configuration file instead.",
-    );
-    if (!supported && activeIngestMethod === "api") switchIngestMethod("file");
-  }
-
   function syncWorkspace() {
     const hasFile = Boolean(currentFile);
-    const hasLiveCollection = Boolean(currentLiveCollectionId);
-    const hasInput = hasFile || hasLiveCollection;
+    const hasInput = hasFile;
     if (btnGenerateBundle)
       btnGenerateBundle.disabled =
         !hasFile || !sourceReady || busyButtons.has(btnGenerateBundle) || liveOperationRunning;
@@ -480,42 +394,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnPlanDryrun)
       btnPlanDryrun.disabled =
         !hasFile || !sourceReady || busyButtons.has(btnPlanDryrun) || liveOperationRunning;
-    setText(
-      "summary-source",
-      VENDOR_CONFIGS[selectedSourceVendor]?.name || selectedSourceVendor,
-    );
-    setText(
-      "summary-target",
-      activeMode === "extract"
-        ? "Source inventory"
-        : VENDOR_CONFIGS[selectedTargetVendor]?.name || selectedTargetVendor,
-    );
-    setText(
-      "summary-file",
-      currentFile?.name ||
-        (currentLiveCollectionId
-          ? "Live device configuration"
-          : "No configuration selected"),
-    );
-    setText(
-      "summary-state",
-      sourceReady
-        ? "Ready for review"
-        : sourceFailed
-          ? "Review source"
-          : hasInput
-            ? "Reading configuration"
-            : "Awaiting source",
-    );
-    const summaryState = document.getElementById("summary-state");
-    if (summaryState)
-      summaryState.dataset.state = sourceReady
-        ? "ready"
-        : sourceFailed
-          ? "error"
-          : hasInput
-            ? "loading"
-            : "idle";
     const exportHint = document.querySelector(
       "#mode-download-form .export-hint",
     );
@@ -595,8 +473,6 @@ document.addEventListener("DOMContentLoaded", () => {
     [statTotalRules, statTotalObjects].forEach((element) => {
       if (element) element.textContent = "0";
     });
-    setText("inventory-interface-count", "—");
-    setText("inventory-policy-count", "—");
     setPreviewStatus("");
     resetDeployment();
     syncWorkspace();
@@ -608,11 +484,8 @@ document.addEventListener("DOMContentLoaded", () => {
       sourceVendorSelect,
       targetVendorSelect,
       btnRemoveFile,
-      btnClearApiIngest,
       btnIngestFile,
-      btnIngestApi,
       fileInput,
-      btnApiExtract,
       panHost,
       panPort,
       panApikey,
@@ -622,7 +495,6 @@ document.addEventListener("DOMContentLoaded", () => {
       optPruneObjects,
       document.getElementById("btn-new-workspace"),
       ...radioAuthTypes,
-      ...document.querySelectorAll("#api-credential-fields input"),
     ].forEach((element) => {
       if (element) element.disabled = running;
     });
@@ -712,39 +584,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // =========================================================================
-  // 2. Ingestion Method Tabs (Upload File vs Live Device)
-  // =========================================================================
-  function switchIngestMethod(method) {
-    if (liveOperationRunning || activeIngestMethod === method) return;
-    if (method === "api" && !supportsLiveIngestion(selectedSourceVendor)) {
-      showToast(
-        "info",
-        "Live ingestion unavailable",
-        "This vendor does not have a live collector yet. Upload a configuration file instead.",
-      );
-      return;
-    }
-    activeIngestMethod = method;
-    clearSource();
-    [btnIngestFile, btnIngestApi].forEach((button, index) => {
-      if (!button) return;
-      const selected = method === (index === 0 ? "file" : "api");
-      button.classList.toggle("active", selected);
-      button.setAttribute("aria-selected", String(selected));
-      button.tabIndex = selected ? 0 : -1;
-    });
-    ingestFileContainer?.classList.toggle("hidden", method !== "file");
-    ingestApiContainer?.classList.toggle("hidden", method !== "api");
-    logToTerminal(
-      `[INGEST] Switched to ${method === "file" ? "configuration upload" : "FortiGate SSH extraction"}.`,
-      "term-system",
-    );
-  }
-
-  btnIngestFile?.addEventListener("click", () => switchIngestMethod("file"));
-  btnIngestApi?.addEventListener("click", () => switchIngestMethod("api"));
-
   function enableTabKeys(tabs) {
     const available = tabs.filter(Boolean);
     available.forEach((tab) =>
@@ -778,7 +617,7 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   }
   enableTabKeys([tabDownload, tabExtract, tabLive]);
-  enableTabKeys([btnIngestFile, btnIngestApi]);
+  enableTabKeys([btnIngestFile]);
 
   // =========================================================================
   // 3. Vendor Selector Dropdowns
@@ -802,8 +641,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (fileInput) fileInput.accept = cfg.fileAccept;
       }
 
-      renderApiCredentialFields(selectedSourceVendor);
-      syncLiveIngestCapability();
       syncWorkspace();
     });
   }
@@ -866,283 +703,6 @@ document.addEventListener("DOMContentLoaded", () => {
         tfDesc.innerHTML =
           "Production HCL targeting <code>PaloAltoNetworks/panos</code> (<code>main.tf</code>, <code>terraform.tfvars</code>)";
     }
-  }
-
-  // =========================================================================
-  // 4. Dynamic API Credential Form Generator
-  // =========================================================================
-  function renderApiCredentialFields(vendorId) {
-    if (!apiCredentialFields) return;
-    const config = VENDOR_CONFIGS[vendorId] || VENDOR_CONFIGS["fortigate"];
-
-    // Build HTML for fields
-    let html = "";
-
-    // If vendor supports multiple auth types, render an auth switcher
-    if (config.authTypes && config.authTypes.length > 1) {
-      html += `
-                <div class="form-group col-12">
-                    <label>Authentication Method</label>
-                    <div class="radio-toggle" id="api-auth-toggle-group">
-                        ${config.authTypes
-                          .map(
-                            (at, idx) => `
-                            <label class="radio-label">
-                                <input type="radio" name="api-auth-type" value="${at.id}" ${idx === 0 ? "checked" : ""}>
-                                <span>${at.label}</span>
-                            </label>
-                        `,
-                          )
-                          .join("")}
-                    </div>
-                </div>
-            `;
-    }
-
-    // Render input fields
-    config.fields.forEach((field) => {
-      const colClass = field.col || "col-6";
-      const authFilter = field.authType
-        ? `data-auth-type="${field.authType}"`
-        : "";
-      const hideClass =
-        field.authType && field.authType !== config.authTypes?.[0]?.id
-          ? "hidden"
-          : "";
-
-      if (field.type === "checkbox") {
-        html += `
-                    <div class="form-group ${colClass} ${hideClass}" ${authFilter}>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="${field.id}" ${field.checked ? "checked" : ""}>
-                            <span>${field.label}</span>
-                        </label>
-                    </div>
-                `;
-      } else if (field.type === "password") {
-        html += `
-                    <div class="form-group ${colClass} ${hideClass}" ${authFilter} id="group-${field.id}">
-                        <label for="${field.id}">${field.label} ${field.required ? '<span class="req">*</span>' : ""}</label>
-                        <div class="password-wrapper">
-                            <input type="password" id="${field.id}" placeholder="${field.placeholder || ""}" ${field.required ? "required" : ""}>
-                            <button type="button" class="btn-toggle-password" data-target="${field.id}" aria-label="Show password" aria-pressed="false">Show</button>
-                        </div>
-                    </div>
-                `;
-      } else {
-        html += `
-                    <div class="form-group ${colClass} ${hideClass}" ${authFilter} id="group-${field.id}">
-                        <label for="${field.id}">${field.label} ${field.required ? '<span class="req">*</span>' : ""}</label>
-                        <input type="${field.type}" id="${field.id}" value="${field.value !== undefined ? field.value : ""}" placeholder="${field.placeholder || ""}" ${field.required ? "required" : ""}>
-                    </div>
-                `;
-      }
-    });
-
-    apiCredentialFields.innerHTML = html;
-
-    // Wire up auth radio toggle if present
-    const authRadios = apiCredentialFields.querySelectorAll(
-      'input[name="api-auth-type"]',
-    );
-    authRadios.forEach((radio) => {
-      radio.addEventListener("change", (e) => {
-        if (currentLiveCollectionId || busyButtons.has(btnApiExtract))
-          clearSource();
-        const selectedAuth = e.target.value;
-        apiCredentialFields
-          .querySelectorAll("[data-auth-type]")
-          .forEach((el) => {
-            if (el.getAttribute("data-auth-type") === selectedAuth) {
-              el.classList.remove("hidden");
-            } else {
-              el.classList.add("hidden");
-            }
-          });
-      });
-    });
-
-    // Clear validation errors on typing
-    apiCredentialFields.querySelectorAll("input").forEach((inp) => {
-      inp.addEventListener("input", () => {
-        inp.classList.remove("input-invalid");
-        inp.removeAttribute("aria-invalid");
-        const parent = inp.closest(".form-group") || inp.parentElement;
-        const err = parent.querySelector(".field-error-text");
-        if (err) err.remove();
-        if (currentLiveCollectionId || busyButtons.has(btnApiExtract))
-          clearSource();
-      });
-    });
-  }
-
-  // Initial render for default vendor
-  renderApiCredentialFields(selectedSourceVendor);
-  syncLiveIngestCapability();
-
-  // =========================================================================
-  // 5. Live FortiGate SSH Ingestion Handler
-  // =========================================================================
-  if (btnApiExtract) {
-    btnApiExtract.addEventListener("click", async () => {
-      clearInputErrors();
-      hideApiIngestError();
-      hideError();
-
-      if (!supportsLiveIngestion(selectedSourceVendor)) {
-        showApiIngestError(
-          "Live device ingestion is currently supported for FortiGate only.",
-          VENDOR_CONFIGS[selectedSourceVendor]?.name || selectedSourceVendor,
-        );
-        return;
-      }
-
-      const hostEl = document.getElementById("api-host");
-      const portEl = document.getElementById("api-port");
-      const userEl = document.getElementById("api-username");
-      const passEl = document.getElementById("api-password");
-      const verifyHostKeyEl = document.getElementById("api-verify-host-key");
-
-      const host = hostEl ? hostEl.value.trim() : "";
-      const port = portEl ? parseInt(portEl.value.trim() || "22") : 22;
-      const username = userEl ? userEl.value.trim() : "";
-      const password = passEl ? passEl.value : "";
-
-      // Validation
-      if (!host) {
-        showInputError("api-host", "Host or IP address is required.");
-        showToast(
-          "error",
-          "Missing Host",
-          "Please specify a device IP address or hostname.",
-        );
-        return;
-      }
-      if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        showInputError("api-port", "Enter a port between 1 and 65535.");
-        return;
-      }
-
-      let hasErr = false;
-      if (!username) {
-        showInputError("api-username", "SSH username is required.");
-        hasErr = true;
-      }
-      if (!password) {
-        showInputError("api-password", "SSH password is required.");
-        hasErr = true;
-      }
-      if (hasErr) {
-        showToast(
-          "error",
-          "Missing Credentials",
-          "Please provide the SSH username and password.",
-        );
-        return;
-      }
-
-      // Prepare Payload
-      const payload = {
-        host,
-        port,
-        username,
-        password,
-        verify_host_key: Boolean(verifyHostKeyEl?.checked),
-      };
-
-      clearSource();
-      const requestRevision = sourceRevision;
-      setBusy(btnApiExtract, true);
-      const btnText = btnApiExtract.querySelector(".btn-text");
-      const spinner = btnApiExtract.querySelector(".spinner");
-      if (btnText) btnText.textContent = `Connecting to ${host}:${port}...`;
-      if (spinner) spinner.classList.remove("hidden");
-      if (apiIngestSuccess) apiIngestSuccess.classList.add("hidden");
-
-      const vendorName =
-        VENDOR_CONFIGS[selectedSourceVendor]?.name || selectedSourceVendor;
-      logToTerminal(
-        `[INGEST] Connecting to ${vendorName} over SSH (${host}:${port})...`,
-        "term-system",
-      );
-
-      try {
-        const resp = await fetch("/api/source/fortigate/pull", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        const data = await readJson(
-          resp,
-          `Failed to extract configuration from ${vendorName}`,
-        );
-        if (requestRevision !== sourceRevision) return;
-        if (!data.collection_id || !data.complete)
-          throw new Error(
-            "The server did not return a complete source collection. Please reconnect.",
-          );
-        const stats = data.stats || {};
-
-        currentLiveCollectionId = data.collection_id;
-        currentFile = null; // Clear active file
-        sourceReady = true;
-        sourceFailed = false;
-
-        if (apiHostname)
-          apiHostname.textContent = `${data.hostname || host} (Live Connected)`;
-        if (apiStatsSummary) {
-          apiStatsSummary.textContent = `${stats.interfaces || 0} interfaces • ${stats.addresses || 0} addresses • ${stats.policies || 0} policies • ${stats.nat_rules || 0} NAT rules`;
-        }
-        if (apiIngestSuccess) apiIngestSuccess.classList.remove("hidden");
-        hideApiIngestError();
-
-        showToast(
-          "success",
-          "Extraction Successful",
-          `Pulled complete configuration from ${vendorName} '${data.hostname || host}'`,
-        );
-        logToTerminal(
-          `[INGEST] Pulled running configuration from '${data.hostname || host}' (${stats.interfaces || 0} interfaces, ${stats.policies || 0} policies).`,
-          "term-success",
-        );
-
-        setPreviewStatus(
-          "Complete source snapshot pulled. Download the source inventory workbook to continue.",
-          "ready",
-        );
-      } catch (err) {
-        if (requestRevision !== sourceRevision) return;
-        currentLiveCollectionId = null;
-        if (apiIngestSuccess) apiIngestSuccess.classList.add("hidden");
-        if (!currentFile) {
-          if (btnGenerateBundle) btnGenerateBundle.disabled = true;
-          if (btnExtractExcel) btnExtractExcel.disabled = true;
-          if (btnPlanDryrun) btnPlanDryrun.disabled = true;
-        }
-        showApiIngestError(err.message, vendorName);
-        logToTerminal(
-          `[ERROR] Live SSH extraction failed: ${err.message}`,
-          "term-error",
-        );
-      } finally {
-        setBusy(btnApiExtract, false);
-        if (btnText)
-          btnText.textContent = "Connect & Pull Running Configuration";
-        if (spinner) spinner.classList.add("hidden");
-      }
-    });
-  }
-
-  if (btnClearApiIngest) {
-    btnClearApiIngest.addEventListener("click", () => {
-      clearSource();
-      logToTerminal("[INGEST] Live SSH collection cleared.", "term-system");
-    });
-  }
-
-  if (btnDismissApiError) {
-    btnDismissApiError.addEventListener("click", hideApiIngestError);
   }
 
   // =========================================================================
@@ -1220,7 +780,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     clearSource();
     currentFile = file;
-    currentLiveCollectionId = null;
 
     if (selectedFilename) selectedFilename.textContent = file.name;
     if (selectedFilesize) selectedFilesize.textContent = formatBytes(file.size);
@@ -1247,12 +806,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function clearSource() {
     currentFile = null;
-    currentLiveCollectionId = null;
     if (fileInput) fileInput.value = "";
     selectedFileCard?.classList.add("hidden");
     dropzone?.classList.remove("hidden");
-    apiIngestSuccess?.classList.add("hidden");
-    hideApiIngestError();
     hideError();
     resetPreview();
   }
@@ -1290,14 +846,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await readJson(resp, "Could not read this configuration");
       if (requestRevision !== sourceRevision) return;
       currentPreviewId = data.preview_id || null;
-      const stats = data.stats || {};
+      const stats = data.stats || data.summary || {};
       if (optimizerPanel) optimizerPanel.classList.remove("hidden");
       if (statTotalRules) statTotalRules.textContent = count(stats.policies);
       if (statTotalObjects)
         statTotalObjects.textContent =
           count(stats.addresses) + count(stats.services);
-      setText("inventory-interface-count", count(stats.interfaces));
-      setText("inventory-policy-count", count(stats.policies));
       currentPolicies = Array.isArray(data.policies) ? data.policies : [];
       sourceReady = true;
       const itemCount = Object.values(stats).reduce(
@@ -1317,14 +871,10 @@ document.addEventListener("DOMContentLoaded", () => {
       sourceFailed = true;
       setPreviewStatus(err.message, "error");
       showError(`Configuration preview failed: ${err.message}`);
-      setText("summary-state", "Could not read source");
     } finally {
       if (requestRevision === sourceRevision) {
         previewController = null;
         syncWorkspace();
-        if (!sourceReady) {
-          setText("summary-state", "Review source file");
-        }
       }
     }
   }
@@ -1430,15 +980,15 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // =========================================================================
-  // 8b. Vendor-neutral Excel source inventory
+  // 8b. Vendor-native Excel source report
   // =========================================================================
   if (btnExtractExcel) {
     btnExtractExcel.addEventListener("click", async () => {
-      if (!currentFile && !currentLiveCollectionId) {
+      if (!currentFile) {
         showToast(
           "info",
           "No Input",
-          "Please upload a configuration file or pull a complete FortiGate SSH collection first.",
+          "Please upload a configuration file first.",
         );
         return;
       }
@@ -1461,17 +1011,10 @@ document.addEventListener("DOMContentLoaded", () => {
       formData.append("excel_profile", "fast");
 
       try {
-        const live = !currentFile && currentLiveCollectionId;
-        const resp = live
-          ? await fetch("/api/source/fortigate/extract/excel", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ collection_id: currentLiveCollectionId }),
-            })
-          : await fetch("/api/extract/excel", {
-              method: "POST",
-              body: formData,
-            });
+        const resp = await fetch("/api/extract/excel", {
+          method: "POST",
+          body: formData,
+        });
         if (!resp.ok) {
           const errData = await resp.json().catch(() => ({}));
           throw new Error(
@@ -2109,79 +1652,6 @@ document.addEventListener("DOMContentLoaded", () => {
     el.focus();
   }
 
-  function formatApiErrorMessage(errMessage, vendorName = "Firewall") {
-    const msg = (errMessage || "").toLowerCase();
-
-    if (
-      msg.includes("401") ||
-      msg.includes("403") ||
-      msg.includes("authentication failed") ||
-      msg.includes("login failed") ||
-      msg.includes("unauthorized") ||
-      msg.includes("forbidden")
-    ) {
-      return {
-        title: `${vendorName} Authentication Failed`,
-        detail: errMessage || "Invalid SSH username or password.",
-        hint: `💡 <strong>Troubleshooting:</strong> Verify your REST API token or admin credentials. Ensure the user profile has configuration read permissions.`,
-      };
-    }
-    if (
-      msg.includes("ssl") ||
-      msg.includes("certificate") ||
-      msg.includes("cert") ||
-      msg.includes("tlsv1")
-    ) {
-      return {
-        title: "SSH Host Key Verification Error",
-        detail: errMessage,
-        hint: `💡 <strong>Troubleshooting:</strong> If this firewall uses a self-signed HTTPS certificate, check <em>'Allow Self-Signed TLS Certificates'</em>.`,
-      };
-    }
-    if (
-      msg.includes("connection refused") ||
-      msg.includes("timed out") ||
-      msg.includes("timeout") ||
-      msg.includes("failed to reach") ||
-      msg.includes("name or service not known") ||
-      msg.includes("gaierror")
-    ) {
-      return {
-        title: `${vendorName} Host Unreachable`,
-        detail: errMessage,
-        hint: `💡 <strong>Troubleshooting:</strong> Check the host IP address and HTTPS port. Ensure line-of-sight and that management API access is enabled on the interface.`,
-      };
-    }
-    return {
-      title: `${vendorName} Connection Error`,
-      detail:
-        errMessage ||
-        "An unexpected error occurred while communicating with the device.",
-      hint: `💡 <strong>Troubleshooting:</strong> Check device connection parameters and network routing.`,
-    };
-  }
-
-  function showApiIngestError(errMessage, vendorName = "Firewall") {
-    if (!apiIngestError) return;
-    const parsed = formatApiErrorMessage(errMessage, vendorName);
-    if (apiErrorTitle) apiErrorTitle.textContent = parsed.title;
-    if (apiErrorDetail) apiErrorDetail.textContent = parsed.detail;
-    if (apiErrorHint) {
-      if (parsed.hint) {
-        apiErrorHint.innerHTML = parsed.hint;
-        apiErrorHint.classList.remove("hidden");
-      } else {
-        apiErrorHint.classList.add("hidden");
-      }
-    }
-    apiIngestError.classList.remove("hidden");
-    showToast("error", parsed.title, parsed.detail);
-  }
-
-  function hideApiIngestError() {
-    if (apiIngestError) apiIngestError.classList.add("hidden");
-  }
-
   function showToast(type, title, msg, duration = 5000) {
     if (!toastContainer) return;
     const toast = document.createElement("div");
@@ -2324,7 +1794,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ?.addEventListener("click", () => {
       if (liveOperationRunning) return;
       if (
-        (currentFile || currentLiveCollectionId || currentSessionId) &&
+        (currentFile || currentSessionId) &&
         !confirm(
           "Start a new workspace? This clears the current source and plan from this window. Downloaded files are kept.",
         )
@@ -2332,7 +1802,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       clearSource();
       clearInputErrors();
-      renderApiCredentialFields(selectedSourceVendor);
       [panHost, panApikey, panUser, panPass].forEach((input) => {
         if (input) input.value = "";
       });

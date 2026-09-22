@@ -2,7 +2,6 @@ import os
 import sys
 import io
 import click
-from pathlib import Path
 
 # Safe stdout/stderr fallback in windowed (GUI) mode
 if sys.stdout is None:
@@ -11,12 +10,9 @@ if sys.stderr is None:
     sys.stderr = io.StringIO()
 
 from fwmigrate.builtin_plugins import register_builtin_plugins
+from fwmigrate.source_reporting import source_reporters
 
 register_builtin_plugins()
-
-from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.application import MigrationPipeline, MigrationRequest
-from fwmigrate.config import MigrationConfig
 
 @click.group()
 def cli():
@@ -25,16 +21,15 @@ def cli():
 
 @cli.command()
 def vendors():
-    """List all registered source and target vendor plugins."""
+    """List all registered source-reporting vendor plugins."""
     click.echo("\n--- Supported Source Vendors ---")
-    for s in PluginRegistry.list_source_vendors():
-        exts = s.get('file_extensions') or s.get('supported_extensions') or []
-        click.echo(f"  • {s['vendor_id']:<15} : {s['display_name']} (Ext: {', '.join(exts)})")
+    for s in source_reporters.list():
+        click.echo(
+            f"  • {s.vendor_id:<15} : {s.display_name} "
+            f"(Ext: {', '.join(s.supported_extensions)})"
+        )
 
-    click.echo("\n--- Supported Target Platforms ---")
-    for t in PluginRegistry.list_target_vendors():
-        click.echo(f"  • {t['vendor_id']:<15} : {t['display_name']} (Formats: {', '.join(t['supported_formats'])})")
-    click.echo("")
+    click.echo("\nConfiguration conversion is temporarily unavailable.")
 
 @cli.command()
 @click.option('--input', '-i', required=True, type=click.Path(exists=True), help='Input configuration file (.conf, .cfg, .json, .set)')
@@ -45,83 +40,23 @@ def vendors():
 @click.option('--format', type=click.Choice(['xml', 'set', 'terraform', 'cli']), default='xml', help='Output format')
 @click.option('--optimize', is_flag=True, default=False, help='Prune unused objects and optimize rules')
 def migrate(input, output, source_vendor, target_vendor, zone_map, format, optimize):
-    """Migrate a firewall configuration between vendors."""
-    try:
-        # 1. Load config
-        migration_config = MigrationConfig()
-        if zone_map:
-            migration_config = MigrationConfig.from_yaml(zone_map)
-
-        # 2. Ingest Configuration (File)
-        click.echo(f"Parsing {source_vendor} config: {input}")
-        with open(input, 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        if optimize:
-            click.echo("Running rule & object optimizer...")
-
-        result = MigrationPipeline().run(MigrationRequest(
-            source_vendor=source_vendor,
-            target_vendor=target_vendor,
-            source_content=content,
-            target_format=format,
-            optimize=optimize,
-            source_name=Path(input).name,
-            zone_mapping=migration_config.zone_mapping,
-            context_mapping=migration_config.context_mapping,
-        ))
-
-        if not result.generation_allowed:
-            click.echo("Migration blocked: generation safety checks failed.", err=True)
-            for reason in result.blocking_reasons:
-                click.echo(f"  - {reason}", err=True)
-            if result.requires_manual_review:
-                click.echo("Manual review is required before generation.", err=True)
-            sys.exit(1)
-
-        if result.capability_analysis and len(result.capability_analysis):
-            click.echo(
-                f"Capability analysis: {result.capability_analysis.partial_count} partial, "
-                f"{result.capability_analysis.unsupported_count} unsupported, "
-                f"{result.capability_analysis.manual_review_count} manual review."
-            )
-
-        ir_config = result.final_ir
-        if ir_config is None:
-            raise RuntimeError("Migration pipeline returned no final IR")
-        click.echo(f"  Parsed {len(result.source_ir.interfaces)} interfaces, {len(result.source_ir.policies)} policies.")
-
-        # Optional Optimization
-        if optimize:
-            unused = result.unused_objects
-            click.echo(f"  Found {len(unused['unused_addresses'])} unused addresses, {len(unused['unused_services'])} unused services. Pruning...")
-
-        # Generate Target Artifacts
-        click.echo(f"Generating {target_vendor.upper()} ({format.upper()}) configuration...")
-        out_dir = Path(output)
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        for artifact in result.artifacts:
-            out_path = out_dir / artifact.filename
-            with open(out_path, 'w', encoding='utf-8') as f:
-                f.write(artifact.content)
-            click.echo(f"  Saved {out_path}")
-
-        click.echo("Migration complete!")
-
-    except Exception as e:
-        click.echo(f"Error during migration: {e}", err=True)
-        sys.exit(1)
+    """Reserved compatibility command; pair-specific conversion is unavailable."""
+    del input, output, source_vendor, target_vendor, zone_map, format, optimize
+    click.echo(
+        'Configuration conversion is temporarily unavailable while the '
+        'pair-specific conversion architecture is being implemented.',
+        err=True,
+    )
+    raise click.exceptions.Exit(1)
 
 @cli.command()
 @click.option('--port', default=5000, help='Port to run the web server on')
 def serve(port):
-    """Start the migration web interface with live source extraction enabled."""
+    """Start the migration web interface."""
     try:
         from fwmigrate.web_live import create_app
         app = create_app()
         click.echo(f"Starting web server on http://localhost:{port}")
-        click.echo("FortiGate live source extraction: Extract Data to Excel > Live Firewall")
         app.run(host='0.0.0.0', port=port, debug=False)
     except ImportError:
         click.echo("Flask is required to run the web server. Install with: pip install flask", err=True)

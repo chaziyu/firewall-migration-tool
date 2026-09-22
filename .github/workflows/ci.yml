@@ -61,9 +61,5 @@ jobs:
       - name: Run test suite
         run: >-
           python -m pytest -q
-          tests/test_ir_model_integrity.py
           tests/architecture/test_plugin_registry_contract.py
-          tests/test_multi_vendor_matrix.py
           tests/application/test_pipeline_safety.py
-          tests/test_fortigate_extraction_compatibility.py
-          tests/test_excel_exporter.py

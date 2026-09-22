@@ -44,10 +44,10 @@ from fwmigrate.ir.service import (
 )
 from fwmigrate.ir.vpn import IRVPNTunnel
 from fwmigrate.ir.enums import AddressType, NATFamily, NATTranslationMode, NATType, PolicyAction, ServiceProtocol
-from fwmigrate.parsers.juniper_srx.handlers.applications import resolve_icmp_code, resolve_icmp_type
-from fwmigrate.parsers.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig
-from fwmigrate.parsers.juniper_srx.resolver import JuniperReferenceResolver
-from fwmigrate.parsers.juniper_srx.provenance import effective_candidates
+from fwmigrate.vendors.juniper_srx.handlers.applications import resolve_icmp_code, resolve_icmp_type
+from fwmigrate.vendors.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig
+from fwmigrate.vendors.juniper_srx.resolver import JuniperReferenceResolver
+from fwmigrate.vendors.juniper_srx.provenance import effective_candidates
 
 
 class JuniperToIRTransformer:

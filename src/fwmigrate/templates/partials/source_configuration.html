@@ -59,17 +59,7 @@
       aria-selected="true"
       aria-controls="ingest-file-container"
     >
-      {{ icon('upload') }}Upload file</button
-    ><button
-      type="button"
-      id="btn-ingest-api"
-      class="ingest-tab-btn"
-      role="tab"
-      aria-selected="false"
-      aria-controls="ingest-api-container"
-      tabindex="-1"
-    >
-      {{ icon('activity') }}Connect FortiGate over SSH
+      {{ icon('upload') }}Upload file
     </button>
   </div>
   <div
@@ -121,59 +111,6 @@
       >
         {{ icon('close') }}
       </button>
-    </div>
-  </div>
-  <div
-    id="ingest-api-container"
-    class="hidden"
-    role="tabpanel"
-    aria-labelledby="btn-ingest-api"
-  >
-    <div class="connection-note">
-      {{ icon('network') }}<span id="live-ingest-note"
-        >Connect to the FortiGate over SSH to retrieve its configuration.</span
-      >
-    </div>
-    <div class="form-grid" id="api-credential-fields"></div>
-    <div class="action-footer">
-      <button type="button" id="btn-api-extract" class="btn btn-primary">
-        <span class="spinner hidden" aria-hidden="true"></span
-        ><span class="btn-text">Connect & retrieve configuration</span>
-      </button>
-    </div>
-    <div
-      id="api-ingest-success"
-      class="selected-file api-success-card hidden"
-      role="status"
-    >
-      <div class="file-icon">{{ icon('check') }}</div>
-      <div class="file-details">
-        <span class="filename" id="api-hostname">Device connected</span
-        ><span class="filesize" id="api-stats-summary"></span>
-      </div>
-      <button
-        type="button"
-        id="btn-clear-api-ingest"
-        class="btn-icon"
-        aria-label="Clear retrieved configuration"
-      >
-        {{ icon('close') }}
-      </button>
-    </div>
-    <div id="api-ingest-error" class="api-error-card hidden" role="alert">
-      <div class="api-error-header">
-        {{ icon('info') }}<strong id="api-error-title">Connection failed</strong
-        ><button
-          type="button"
-          id="btn-dismiss-api-error"
-          class="btn-icon"
-          aria-label="Dismiss connection error"
-        >
-          {{ icon('close') }}
-        </button>
-      </div>
-      <div class="api-error-body" id="api-error-detail"></div>
-      <div class="api-error-hint hidden" id="api-error-hint"></div>
     </div>
   </div>
   <div

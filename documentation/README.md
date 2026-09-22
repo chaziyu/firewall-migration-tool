@@ -1,6 +1,28 @@
 # Firewall Migration Tool Documentation
 
-This directory contains the canonical IR documentation, vendor mappings, and reference materials for the parser.
+This directory contains source-reporting architecture notes, retained vendor
+references, and historical conversion material.
+
+## Current architecture
+
+The supported path is:
+
+```text
+Vendor source → VendorConfig → DerivedViews → validation → vendor preview / Excel
+```
+
+Source reporting does not depend on canonical IR. Configuration conversion is
+temporarily unavailable. The reserved future boundary is documented in
+[`src/fwmigrate/conversion/README.md`](../src/fwmigrate/conversion/README.md):
+
+```text
+source-native model → pair-specific mapper → target-native model
+→ target validator → target renderer
+```
+
+Planned examples are `cisco_asa_to_fortigate`, `juniper_srx_to_fortigate`,
+`cisco_ftd_to_fortigate`, and `checkpoint_to_fortigate`. They are not
+implemented.
 
 ## Directory Layout
 
@@ -25,13 +47,13 @@ Every mapping file must use this standardized table structure:
 
 ## Sources of Truth (Authority)
 
-The extraction architecture is:
-`vendor source -> ExtractionResult -> IR V2 -> Excel`
+The source-reporting architecture is vendor-native. Retained IR and mapping
+files are historical/conversion references only.
 
 - **Implementation**: Executable source code and regression tests define actual behavior.
 - **Vendor Syntax**: `official-cli-references/` (derived from official docs) define source syntax, *not* parser support.
 - **Mapping Docs**: `vendor-mapping/` describe implemented mappings. They must not claim support without backing code/tests.
 
 **When updating:**
-- **IR changes**: Update executable models, tests, and `ir-model.md` together.
-- **Vendor parser changes**: Update only the specific vendor's mapping file (unless canonical IR contract changes).
+- **Source-reporting changes**: Update the affected vendor source model, derived views, validation, preview, Excel, and tests together.
+- **Historical IR changes**: Keep them separate from source-reporting changes.

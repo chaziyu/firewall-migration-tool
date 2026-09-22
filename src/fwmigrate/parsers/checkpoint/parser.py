@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 from fwmigrate.ir import IRConfig
-from fwmigrate.parsers.checkpoint.extractor import extract_checkpoint_config
+from fwmigrate.vendors.checkpoint.extractor import extract_checkpoint_config
 
 
 class CheckPointParser:

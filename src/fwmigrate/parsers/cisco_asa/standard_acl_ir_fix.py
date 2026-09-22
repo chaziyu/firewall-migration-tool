@@ -28,7 +28,7 @@ def _destination_reference(ir: Any, rule: Any) -> List[str]:
         value = endpoint.value
         if endpoint.type == "host" and "/" not in value:
             value = f"{value}/32"
-        from fwmigrate.parsers.cisco_asa.parser import _safe_name
+        from fwmigrate.vendors.cisco_asa.parser import _safe_name
 
         prefix = "asa_inline_host" if endpoint.type == "host" or "/32" in value else "asa_inline_net"
         name = _safe_name(prefix, value)

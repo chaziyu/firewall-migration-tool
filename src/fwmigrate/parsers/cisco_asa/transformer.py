@@ -14,14 +14,14 @@ from fwmigrate.ir.nat import IRNATRule
 from fwmigrate.ir.policy import IRLocalDeviceAccessRule, IRPolicy
 from fwmigrate.ir.routing import IRPolicyRoute, IRRoute
 from fwmigrate.ir.service import IRSchedule, IRService, IRServiceGroup
-from fwmigrate.parsers.cisco_asa.acl_parser import KNOWN_PROTOCOLS
-from fwmigrate.parsers.cisco_asa.model import (
+from fwmigrate.vendors.cisco_asa.acl_parser import KNOWN_PROTOCOLS
+from fwmigrate.vendors.cisco_asa.model import (
     CiscoAccessRule,
     CiscoNamedGroupMember,
     CiscoServicePort,
 )
-from fwmigrate.parsers.cisco_asa.net_utils import normalize_ipv4_network
-from .parser import _nat_port_range, _pbr_acl_match_evidence, _safe_name
+from fwmigrate.vendors.cisco_asa.net_utils import normalize_ipv4_network
+from fwmigrate.vendors.cisco_asa.parser import _nat_port_range, _pbr_acl_match_evidence, _safe_name
 from . import audit_fixes as audit
 from . import remaining_fixes as remaining
 from . import standard_acl_ir_fix as standard_acl
@@ -830,4 +830,3 @@ class ASAtoIRTransformer:
             },
             ))
         return ir
-
