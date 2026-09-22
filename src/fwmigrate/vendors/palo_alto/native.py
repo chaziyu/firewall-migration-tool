@@ -10,6 +10,7 @@ from .source_model import (
 )
 from .xml_loader import load_pan_source
 from .relationships import build_interface_topology, build_policy_order, build_reference_index, build_scope_hierarchy
+from .relationships.topology import PANRelationshipIssue
 from .relationships.references import resolve_references
 from .transform.nat import transform_nat
 from .validation import PANOSValidationIssue, PANOSValidationResult, validate_panos_config
@@ -38,6 +39,17 @@ def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
     resolutions, shadowing = resolve_references(config, index)
     topology = build_interface_topology(config)
     policy_order = build_policy_order(config, hierarchy)
+    scopes = {pan_scope_identity(scope): scope for scope in config.scopes}
+    relationship_issues = [PANRelationshipIssue("scope", message) for message in hierarchy.issues]
+    for item in topology:
+        scope = scopes.get(item.scope)
+        for message in item.issues:
+            relationship_issues.append(PANRelationshipIssue(
+                "interface-import" if message == "import of missing interface" else "interface-topology",
+                "imported interface was not found in device network configuration" if message == "import of missing interface" else message,
+                item.interface, scope, scope if message == "import of missing interface" else None,
+                "interfaces" if message == "import of missing interface" else None,
+            ))
     return PANOSDerivedViews(
         counts=counts,
         scope_identities=tuple(pan_scope_identity(scope) for scope in config.scopes),
@@ -49,7 +61,7 @@ def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
         interface_topology=topology,
         policy_order=policy_order,
         nat=transform_nat(config.nat_rules),
-        relationship_issues=tuple(hierarchy.issues) + tuple(issue for item in topology for issue in item.issues),
+        relationship_issues=tuple(relationship_issues),
     )
 
 

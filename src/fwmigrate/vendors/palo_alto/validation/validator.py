@@ -92,8 +92,9 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
             _issue(issues, "error" if item.status == "UNRESOLVED" else "warning", "reference",
                    f"{item.status.lower()} PAN-OS reference {item.reference_name!r} in {item.owner_name or '<unnamed>'}.{item.owner_field}",
                    field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference")
-    for message in derived.relationship_issues:
-        _issue(issues, "warning", "relationship", message)
+    for item in derived.relationship_issues:
+        _issue(issues, "warning", "relationship", item.message, field=item.field,
+               scope=item.source_scope, source_name=item.source_name, object_type=item.category)
 
     for address in config.addresses:
         for field in ("ip_netmask", "ip_range", "ip_wildcard"):
