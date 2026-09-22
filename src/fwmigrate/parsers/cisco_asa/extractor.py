@@ -4,11 +4,11 @@ from typing import Dict, Optional
 
 from fwmigrate.extraction.models import ExtractionResult
 from fwmigrate.extraction.sanitize import sanitize_extraction_result
-from fwmigrate.parsers.cisco_asa.accounting import build_asa_source_accounting
-from fwmigrate.parsers.cisco_asa.coverage import classify_cisco_asa_coverage
-from fwmigrate.parsers.cisco_asa.stages import get_asa_parser_class
+from fwmigrate.vendors.cisco_asa.accounting import build_asa_source_accounting
+from fwmigrate.vendors.cisco_asa.coverage import classify_cisco_asa_coverage
+from fwmigrate.vendors.cisco_asa.stages import get_asa_parser_class
 from fwmigrate.parsers.cisco_asa.transformer import ASAtoIRTransformer
-from fwmigrate.parsers.cisco_asa.section_scanner import scan_cisco_asa_sections
+from fwmigrate.vendors.cisco_asa.section_scanner import scan_cisco_asa_sections
 
 
 def extract_cisco_asa_config(

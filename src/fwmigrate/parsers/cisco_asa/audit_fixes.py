@@ -7,8 +7,8 @@ from typing import Any, Iterable, List, Optional
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 from fwmigrate.ir.enums import NATTranslationAddressSource, NATTranslationMode
 from fwmigrate.ir.nat import IRNATSourceTranslationFallback, IRNATTranslationAddressSelection
-from fwmigrate.parsers.cisco_asa.model import CiscoNATRule, CiscoTimeRangeClause
-from fwmigrate.parsers.cisco_asa.reference_validation import ReferenceIssue
+from fwmigrate.vendors.cisco_asa.model import CiscoNATRule, CiscoTimeRangeClause
+from fwmigrate.vendors.cisco_asa.reference_validation import ReferenceIssue
 
 
 _PATCHED = False
@@ -311,7 +311,7 @@ def _wrap_parse_raw(original: Any):
         _normalize_standard_acls(config)
         _normalize_nat_source_model(config)
         _apply_global_mtu(self)
-        import fwmigrate.parsers.cisco_asa.parser as parser_module
+        import fwmigrate.vendors.cisco_asa.parser as parser_module
         parser_module.apply_reference_issues(config, parser_module.validate_references(config))
         self._compute_object_nat_order()
         return config
@@ -378,7 +378,7 @@ def apply_cisco_asa_audit_fixes(parser_cls: Any) -> None:
         return
     _PATCHED = True
 
-    import fwmigrate.parsers.cisco_asa.parser as parser_module
+    import fwmigrate.vendors.cisco_asa.parser as parser_module
 
     parser_module.validate_references = _wrap_reference_validation(parser_module.validate_references)
     parser_cls._parse_nat_line = _parse_nat_line_audit(parser_cls._parse_nat_line)

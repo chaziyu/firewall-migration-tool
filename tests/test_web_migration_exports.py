@@ -1,40 +1,9 @@
 import io
-import zipfile
-
-from openpyxl import load_workbook
-
 from fwmigrate.web import create_app
 from tests.fixture_paths import CISCO_ASA_FIXTURE
 
 
-FORTIGATE_ADMIN_ONLY_SOURCE = """
-config system interface
-    edit port1
-    next
-    edit port2
-    next
-end
-config firewall policy
-    edit 1
-        set srcintf port1
-        set dstintf port2
-        set srcaddr all
-        set dstaddr all
-        set service ALL
-        set action accept
-    next
-end
-config system accprofile
-    edit admin-profile
-        config utmgrp-permission
-            set cli-read enable
-        end
-    next
-end
-"""
-
-
-def test_migration_zip_contains_artifacts_and_inventory_only():
+def test_migration_endpoint_is_explicitly_unavailable():
     client = create_app({"TESTING": True}).test_client()
     response = client.post(
         "/api/migrate",
@@ -47,34 +16,18 @@ def test_migration_zip_contains_artifacts_and_inventory_only():
         content_type="multipart/form-data",
     )
 
-    assert response.status_code == 200
-    names = zipfile.ZipFile(io.BytesIO(response.data)).namelist()
-    assert names
-    assert not any(name.endswith((".md", ".html")) for name in names)
-    assert any(name.endswith(".xlsx") for name in names)
+    assert response.status_code == 503
+    assert response.get_json() == {
+        "error": (
+            "Configuration conversion is temporarily unavailable while the "
+            "pair-specific conversion architecture is being implemented."
+        )
+    }
 
 
-def test_fortigate_admin_only_source_config_still_generates_zip():
+def test_terraform_prepare_is_explicitly_unavailable():
     client = create_app({"TESTING": True}).test_client()
-    response = client.post(
-        "/api/migrate",
-        data={
-            "source_vendor": "fortigate",
-            "target_vendor": "palo_alto",
-            "file": (io.BytesIO(FORTIGATE_ADMIN_ONLY_SOURCE.encode()), "fortigate.conf"),
-        },
-        content_type="multipart/form-data",
-    )
+    response = client.post("/api/terraform/prepare")
 
-    assert response.status_code == 200
-    names = zipfile.ZipFile(io.BytesIO(response.data)).namelist()
-    assert any(name.endswith(".xlsx") for name in names)
-    assert any(
-        name.endswith((".xml", ".tf")) and not name.endswith(".xlsx")
-        for name in names
-    )
-    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
-        workbook_name = next(name for name in names if name.endswith(".xlsx"))
-        workbook = load_workbook(io.BytesIO(archive.read(workbook_name)), read_only=True)
-        assert "Source Inventory" not in workbook.sheetnames
-        assert "Extraction Coverage" in workbook.sheetnames
+    assert response.status_code == 503
+    assert "Configuration conversion is temporarily unavailable" in response.get_json()["error"]

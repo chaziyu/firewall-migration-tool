@@ -2,6 +2,7 @@ from typing import List, Optional, Dict
 from fwmigrate.core.base_parser import BaseSourceParser
 from fwmigrate.extraction import ExtractionResult, finalize_extraction
 from fwmigrate.parsers.juniper_srx.parser import JuniperSRXParser
+from fwmigrate.vendors.juniper_srx.source_report import JuniperSRXSourceReporter, extract_juniper_source
 
 class JuniperSRXSourceParser(BaseSourceParser):
     @property
@@ -22,4 +23,4 @@ class JuniperSRXSourceParser(BaseSourceParser):
         return finalize_extraction(parser.extract())
 
 
-__all__ = ["JuniperSRXSourceParser"]
+__all__ = ["JuniperSRXSourceParser", "JuniperSRXSourceReporter", "extract_juniper_source"]

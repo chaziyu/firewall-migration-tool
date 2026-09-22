@@ -3,9 +3,17 @@
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)
 
-A Python 3.10+ multi-vendor firewall configuration extraction and migration platform.
+A Python 3.10+ multi-vendor firewall configuration extraction and reporting platform.
 
-The core goal of this project is **reliable, auditable extraction** of firewall intent into a vendor-neutral intermediate representation (IR) before converting it into target configurations or reports.
+The current product is **reliable, auditable vendor-native extraction**:
+
+```text
+Vendor source → VendorConfig → DerivedViews → validation → vendor preview / Excel
+```
+
+Configuration conversion is temporarily unavailable. The future boundary is
+reserved in [`src/fwmigrate/conversion/`](src/fwmigrate/conversion/README.md)
+for pair-specific converters; no converter or replacement IR is implemented.
 
 ## Supported source vendors
 
@@ -18,7 +26,7 @@ The core goal of this project is **reliable, auditable extraction** of firewall 
 
 ## Documentation & Architecture
 
-- **[Documentation Index](documentation/README.md)**: Details on the canonical IR model and vendor-specific mappings.
+- **[Documentation Index](documentation/README.md)**: Source-reporting architecture and retained reference material.
 - **[AGENTS.md](AGENTS.md)**: Core architectural rules, extraction pipeline steps, and safety principles (fail-closed, no silent loss).
 
 ## Installation
@@ -28,7 +36,6 @@ git clone https://github.com/chaziyu/firewall-migration-tool.git
 cd firewall-migration-tool
 python -m pip install -e .
 ```
-
 ## Basic Usage
 
 Start the web application:
@@ -46,12 +53,3 @@ python -m compileall -q src tests
 python -m py_compile scripts/*.py scripts/docs/*.py
 python -m pytest -q
 ```
-
-## License
-
-Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). See [LICENSE](LICENSE).
-
-Copyright © 2025 GSW Systems.  
-Modified in 2026 by Cha Zi Yu.
-
-This project is derived from [gswsystems/fortigate-palo-migration](https://github.com/gswsystems/fortigate-palo-migration) and remains distributed under AGPL-3.0.

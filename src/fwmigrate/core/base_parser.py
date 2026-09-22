@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
-from fwmigrate.ir import IRConfig
+from typing import Any, Dict, List, Optional
 from fwmigrate.extraction.models import ExtractionResult
 
 class BaseSourceParser(ABC):
@@ -24,8 +23,8 @@ class BaseSourceParser(ABC):
         """Supported file extensions (e.g. ['.conf', '.cfg', '.txt'])."""
         ...
 
-    def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> IRConfig:
-        """Compatibility projection of the authoritative extraction result."""
+    def parse(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> Any:
+        """Legacy compatibility projection; source reporting uses ``extract`` directly."""
         return self.extract(content, zone_mapping=zone_mapping).canonical_ir
 
     @abstractmethod

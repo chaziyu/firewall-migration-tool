@@ -38,7 +38,7 @@ documents:
     status: current
     document_type: reference
     source_of_truth:
-      - src/fwmigrate/parsers/cisco_ftd/
+      - src/fwmigrate/vendors/cisco_ftd/
     last_verified: 2026-09-15
 
   documentation/vendor-mapping/fortigate.md:

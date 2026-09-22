@@ -125,10 +125,18 @@ def sanitize_raw_text(text: str) -> str:
         r"password(?:-hash)?|phash|one-time-password|shared-secret|sic-name|sic-password|"
         r"secret|key|password|login-password|common-password|bind-password|new-?pass(?:word)?|pre-?shared-key|preshared-key|private-key|api-key|token|psk|community|ddns-key|ddns_key|agent-user-override-key|agent_user_override_key"
     )
+    # Cisco-style credentials may place an encryption type between the key
+    # and the secret (for example, ``password 0 value``).
+    sanitized = re.sub(
+        rf"((?:password|secret|pre-?shared-key|preshared-key))(\s+)(?:0|7)(\s+)(?:\"[^\"]*\"|'[^']*'|[^\s\r\n]+)",
+        rf"\1\2[REDACTED]",
+        text,
+        flags=re.IGNORECASE,
+    )
     sanitized = re.sub(
         rf"({key_pattern})(\s+)(?:\"[^\"]*\"|'[^']*'|[^\s\r\n]+)",
         rf"\1\2{REDACTED_PLACEHOLDER}",
-        text,
+        sanitized,
         flags=re.IGNORECASE,
     )
     # Also cover serialized Python/JSON dictionaries used in diagnostic raw_capture.
