@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..model.source import PANOSConfig
+from ..model.interface import PANInterfaceUnit
 from ..source_model import PANScope, pan_scope_identity
 
 
@@ -33,8 +34,10 @@ class PANInterfaceTopologyEntry:
     attached_tunnels: tuple[str, ...] = ()
 
 
-def _kind(family: str | None) -> str:
-    return {"aggregate-ethernet": "aggregate", "ethernet": "physical", "vlan": "vlan", "tunnel": "tunnel"}.get(family or "", "logical")
+def _kind(item) -> str:
+    if isinstance(item, PANInterfaceUnit):
+        return "subinterface" if item.parent else {"tunnel": "tunnel", "vlan": "vlan"}.get(item.interface_family or "", "logical")
+    return {"aggregate-ethernet": "aggregate", "ethernet": "physical", "loopback": "loopback", "tunnel": "tunnel", "vlan": "vlan"}.get(item.interface_family or "", "logical")
 
 
 def _device_identity(scope: PANScope | None) -> str | None:
@@ -100,7 +103,7 @@ def build_interface_topology(config: PANOSConfig) -> tuple[PANInterfaceTopologyE
         parent = parent_for(key)
         if parent and (key[0], parent) in objects:
             return physical((key[0], parent), seen)
-        return (key[1],) if _kind(getattr(objects[key], "interface_family", None)) == "physical" else ()
+        return (key[1],) if _kind(objects[key]) == "physical" else ()
 
     entries: list[PANInterfaceTopologyEntry] = []
     for key, item in objects.items():
@@ -117,11 +120,11 @@ def build_interface_topology(config: PANOSConfig) -> tuple[PANInterfaceTopologyE
         parent = path[1] if len(path) > 1 else None
         aggregate_owners_for_item = aggregate_owners(key)
         aggregate = aggregate_owners_for_item[0] if len(aggregate_owners_for_item) == 1 else None
-        tunnel_names = tuple(tunnel.name for tunnel in config.ipsec_tunnels if tunnel.tunnel_interface == key[1] and tunnel.name)
+        tunnel_names = tuple(tunnel.name for tunnel in config.ipsec_tunnels if tunnel.tunnel_interface == key[1] and _device_identity(tunnel.scope) is not None and _device_identity(tunnel.scope) == _device_identity(item.scope) and tunnel.name)
         child_units = tuple(unit.name for unit in units if unit.parent == key[1] and scope_for(unit) == key[0] and unit.name)
         if len(aggregate_owners_for_item) > 1:
             issues.append(f"interface belongs to multiple aggregate interfaces: {', '.join(aggregate_owners_for_item)}")
-        entries.append(PANInterfaceTopologyEntry(key[1], key[0], child_units, imports, zones, routers, tuple(dict.fromkeys(issues)), _kind(getattr(item, "interface_family", None)), parent, path, aggregate, physical(key), tunnel_names))
+        entries.append(PANInterfaceTopologyEntry(key[1], key[0], child_units, imports, zones, routers, tuple(dict.fromkeys(issues)), _kind(item), parent, path, aggregate, physical(key), tunnel_names))
 
     known = set(interface_by_device)
     existing = {(item.scope, item.interface) for item in entries}

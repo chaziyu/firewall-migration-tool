@@ -374,7 +374,7 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
 
     "Interfaces": (
         "Name",
-        "Interface Type",
+        "Kind",
         "Parent Interface",
         "Aggregate Interface",
         "Topology Path",

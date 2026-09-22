@@ -72,5 +72,8 @@ def test_interface_topology_preserves_aggregate_units_and_ipsec_tunnel_attachmen
     assert config.ipsec_tunnels[0].tunnel_interface == "tunnel.1"
     assert by_name[("device:fw:device:fw", "ethernet1/1")].aggregate == "ae1"
     assert by_name[("device:fw:device:fw", "ethernet1/1.10")].parent == "ethernet1/1"
+    assert by_name[("device:fw:device:fw", "ethernet1/1.10")].kind == "subinterface"
     assert by_name[("device:fw:device:fw", "ethernet1/1.10")].path == ("ethernet1/1.10", "ethernet1/1", "ae1")
+    assert by_name[("device:fw:device:fw", "ethernet1/1.10")].physical_interfaces == ("ethernet1/1",)
+    assert by_name[("device:fw:device:fw", "tunnel.1")].kind == "tunnel"
     assert by_name[("device:fw:device:fw", "tunnel.1")].attached_tunnels == ("vpn1",)

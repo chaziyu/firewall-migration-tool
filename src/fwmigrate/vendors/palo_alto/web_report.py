@@ -74,7 +74,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
     for item in analysis.derived.interface_topology:
         source = interface_by_key.get((item.scope, item.interface))
         interface_rows.append({"name": item.interface, "display_name": item.interface, "kind": item.kind,
-                               "ip": getattr(source, "ipv4_addresses", None), "role": item.zones, "parent": item.parent,
+                               "ip": getattr(source, "ipv4_addresses", None), "zone": item.zones, "parent": item.parent,
                                "aggregate": item.aggregate, "physical_interfaces": item.physical_interfaces,
                                "status": "EXTRACTED", "review": item.issues,
                                "vdom": item.imported_vsys[0] if item.imported_vsys else vdom(source), "_scope": item.scope,
@@ -106,7 +106,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             emit(child, prefix + ("└─ " if last else "├─ "))
         for index, tunnel in enumerate(tunnels, len(child_keys) + 1):
             rendered.append({"display_name": f"{prefix}{'└─ ' if index == total else '├─ '}◈ {tunnel}", "name": tunnel,
-                             "kind": "vpn", "parent": key[1], "role": None, "status": "EXTRACTED", "review": [], "vdom": row.get("vdom")})
+                             "kind": "vpn", "parent": key[1], "zone": None, "status": "EXTRACTED", "review": [], "vdom": row.get("vdom")})
 
     for key in sorted(topology_rows, key=lambda value: (ranks.get(topology_rows[value]["kind"], 9), value[1])):
         if not topology_rows[key]["parent"] or (key[0], topology_rows[key]["parent"]) not in topology_rows:
