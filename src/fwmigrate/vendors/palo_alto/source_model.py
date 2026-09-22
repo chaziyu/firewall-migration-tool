@@ -59,7 +59,7 @@ class PANOSDerivedViews:
     interface_topology: tuple[Any, ...] = ()
     policy_order: tuple[Any, ...] = ()
     nat: tuple[Any, ...] = ()
-    relationship_issues: tuple[str, ...] = ()
+    relationship_issues: tuple[Any, ...] = ()
 
 
 @dataclass(frozen=True)

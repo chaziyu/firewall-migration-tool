@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fwmigrate.vendors.palo_alto.native import build_derived_views
 from fwmigrate.vendors.palo_alto.source_builder import build_panos_config
+from fwmigrate.vendors.palo_alto.validation import validate_panos_config
 
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "palo_alto"
@@ -68,3 +69,23 @@ def test_literals_predefined_services_tags_and_interface_units_are_classified_fr
     tunnel = next(item for item in derived.interface_topology if item.interface == "tunnel.1")
     assert tunnel.imported_vsys == ("vsys1",)
     assert "import of missing interface" not in tunnel.issues
+
+
+def test_vsys_interface_imports_use_device_ownership_and_report_real_missing_imports():
+    config = build_panos_config("""<config><devices><entry name='fw'><network><interface><ethernet>
+      <entry name='ethernet1/1'/><entry name='ethernet1/2'/></ethernet><tunnel><units><entry name='tunnel.1'/></units></tunnel>
+      </interface></network><vsys><entry name='vsys1'><import><network><interface>
+      <member>ethernet1/1</member><member>tunnel.1</member><member>ethernet1/99</member>
+      </interface></network></import></entry></vsys></entry></devices></config>""")
+    before = config.model_dump(mode="json")
+    derived = build_derived_views(config)
+
+    assert config.model_dump(mode="json") == before
+    assert not any(item.message == "imported interface was not found in device network configuration" and item.source_name != "ethernet1/99" for item in derived.relationship_issues)
+    missing = [item for item in derived.relationship_issues if item.source_name == "ethernet1/99"]
+    assert len(missing) == 1
+    assert missing[0].field == "interfaces"
+    validation = validate_panos_config(config, derived)
+    warnings = [item for item in validation.warnings if item.source_name == "ethernet1/99"]
+    assert len(warnings) == 1
+    assert warnings[0].scope_identity.endswith(":device:fw")

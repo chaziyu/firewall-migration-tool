@@ -3,7 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..model.source import PANOSConfig
-from ..source_model import pan_scope_identity
+from ..source_model import PANScope, pan_scope_identity
+
+
+@dataclass(frozen=True, slots=True)
+class PANRelationshipIssue:
+    category: str
+    message: str
+    source_name: str | None = None
+    source_scope: PANScope | None = None
+    related_scope: PANScope | None = None
+    field: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,10 +37,15 @@ def _kind(family: str | None) -> str:
     return {"aggregate-ethernet": "aggregate", "ethernet": "physical", "vlan": "vlan", "tunnel": "tunnel"}.get(family or "", "logical")
 
 
+def _device_identity(scope: PANScope | None) -> str | None:
+    return (scope.device_serial or scope.device_name) if scope else None
+
+
 def build_interface_topology(config: PANOSConfig) -> tuple[PANInterfaceTopologyEntry, ...]:
     interfaces = [item for item in config.interfaces if item.name]
     units = [item for item in config.interface_units if item.name]
     objects = {(pan_scope_identity(item.scope), item.name): item for item in [*interfaces, *units]}
+    interface_by_device = {(_device_identity(item.scope), item.name): item for item in [*interfaces, *units]}
     aggregate_members: dict[tuple[str, str], list[str]] = {}
     for item in interfaces:
         if item.aggregate_group:
@@ -108,9 +123,11 @@ def build_interface_topology(config: PANOSConfig) -> tuple[PANInterfaceTopologyE
             issues.append(f"interface belongs to multiple aggregate interfaces: {', '.join(aggregate_owners_for_item)}")
         entries.append(PANInterfaceTopologyEntry(key[1], key[0], child_units, imports, zones, routers, tuple(dict.fromkeys(issues)), _kind(getattr(item, "interface_family", None)), parent, path, aggregate, physical(key), tunnel_names))
 
-    known = set(objects)
+    known = set(interface_by_device)
+    existing = {(item.scope, item.interface) for item in entries}
     for item in config.interface_imports:
         for name in item.interfaces or ():
-            if (pan_scope_identity(item.scope), name) not in known:
+            key = (_device_identity(item.scope), name)
+            if key not in known and (pan_scope_identity(item.scope), name) not in existing:
                 entries.append(PANInterfaceTopologyEntry(name, pan_scope_identity(item.scope), imported_vsys=(item.scope.vsys,) if item.scope and item.scope.vsys else (), issues=("import of missing interface",)))
     return tuple(entries)
