@@ -21,6 +21,10 @@ class PANInterfaceUnit(BaseModel):
     ipv4_addresses: list[str] | None = None
     ipv6_addresses: list[PANInterfaceIPv6Address] | None = None
     management_profile: str | None = None
+    sdwan_enabled: str | None = None
+    ipv6_sdwan_enabled: str | None = None
+    sdwan_interface_profile: str | None = None
+    upstream_nat: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
 
@@ -44,6 +48,10 @@ class PANInterface(BaseModel):
     ipv6_addresses: list[PANInterfaceIPv6Address] | None = None
     vlan: str | None = None
     lldp_enable: str | None = None
+    sdwan_enabled: str | None = None
+    ipv6_sdwan_enabled: str | None = None
+    sdwan_interface_profile: str | None = None
+    upstream_nat: str | None = None
 
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)

@@ -51,6 +51,7 @@ class PANSecurityRule(BaseModel):
 
     disable_inspect: str | None = None
     disable_server_response_inspection: str | None = None
+    icmp_unreachable: str | None = None
     saas_user_list: list[str] | None = None
     saas_tenant_list: list[str] | None = None
 

@@ -15,6 +15,7 @@ class PANDNSRewrite(BaseModel):
 
 
 class PANDynamicIPAndPortTranslation(BaseModel):
+    translation_type: str | None = None
     translated_addresses: list[str] | None = None
     interface: str | None = None
     ip: str | None = None
@@ -22,7 +23,18 @@ class PANDynamicIPAndPortTranslation(BaseModel):
     explicit_fields: set[str] = Field(default_factory=set)
 
 
+class PANDynamicIPTranslation(BaseModel):
+    translation_type: str | None = None
+    translated_addresses: list[str] | None = None
+    interface: str | None = None
+    ip: str | None = None
+    fallback: dict[str, Any] | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
 class PANStaticIPTranslation(BaseModel):
+    translation_type: str | None = None
     translated_address: str | None = None
     bi_directional: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
@@ -32,12 +44,14 @@ class PANStaticIPTranslation(BaseModel):
 class PANDestinationTranslation(BaseModel):
     translated_address: str | None = None
     translated_port: str | None = None
+    dns_rewrite: PANDNSRewrite | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
 
 
 class PANDynamicDestinationTranslation(BaseModel):
     translated_addresses: list[str] | None = None
+    translated_port: str | None = None
     distribution: str | None = None
     dns_rewrite: PANDNSRewrite | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
@@ -57,7 +71,11 @@ class PANNATRule(BaseModel):
     service: str | None = None
     disabled: str | None = None
     active_active_device_binding: str | None = None
-    source_translation: PANDynamicIPAndPortTranslation | PANStaticIPTranslation | None = None
+    nat_type: str | None = None
+    to_interface: str | None = None
+    tags: list[str] | None = None
+    description: str | None = None
+    source_translation: PANDynamicIPAndPortTranslation | PANDynamicIPTranslation | PANStaticIPTranslation | None = None
     destination_translation: PANDestinationTranslation | None = None
     dynamic_destination_translation: PANDynamicDestinationTranslation | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)

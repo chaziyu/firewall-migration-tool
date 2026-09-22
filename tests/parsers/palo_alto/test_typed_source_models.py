@@ -18,7 +18,7 @@ def test_explicit_fields_distinguish_missing_empty_and_explicit_no():
     addresses = build_panos_config((FIXTURES / "objects.xml").read_text()).addresses
     missing = next(item for item in addresses if item.name == "Missing-Type")
     assert missing.ip_netmask is None
-    assert "ip-netmask" not in missing.explicit_fields
+    assert "ip_netmask" not in missing.explicit_fields
 
 
 def test_address_variants_preserve_explicit_forms_and_unknown_content():
@@ -28,15 +28,15 @@ def test_address_variants_preserve_explicit_forms_and_unknown_content():
 
     assert addresses["Missing-Type"].ip_netmask is None
     assert addresses["Missing-Type"].fqdn is None
-    assert not {"ip-netmask", "fqdn"} & addresses["Missing-Type"].explicit_fields
+    assert not {"ip_netmask", "fqdn"} & addresses["Missing-Type"].explicit_fields
     assert addresses["Multiple-Types"].ip_netmask == "192.0.2.30/32"
     assert addresses["Multiple-Types"].fqdn == "duplicate.example.test"
-    assert {"ip-netmask", "fqdn"} <= addresses["Multiple-Types"].explicit_fields
+    assert {"ip_netmask", "fqdn"} <= addresses["Multiple-Types"].explicit_fields
     assert addresses["Has-Unknown"].raw_extra["future-field"] == "retain-me"
     assert groups["Unknown-Group"].raw_extra["future-setting"] == "retain-me"
     assert groups["Both-Group"].static_members == ["IPv4-Net"]
     assert groups["Both-Group"].dynamic_filter == "'production'"
-    assert {"static", "dynamic"} <= groups["Both-Group"].explicit_fields
+    assert {"static_members", "dynamic_filter"} <= groups["Both-Group"].explicit_fields
 
 
 def test_service_variants_preserve_missing_ports_both_protocols_and_unknowns():
