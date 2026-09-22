@@ -29,6 +29,6 @@ def test_checkpoint_reporting_modules_are_ir_free():
         ), path
 
 
-def test_checkpoint_ir_adapter_is_separate_from_source_reporting():
-    assert (VENDOR / "ir_adapter.py").is_file()
+def test_checkpoint_ir_adapter_is_removed():
+    assert not (VENDOR / "ir_adapter.py").exists()
     assert (VENDOR / "source_report.py").is_file()

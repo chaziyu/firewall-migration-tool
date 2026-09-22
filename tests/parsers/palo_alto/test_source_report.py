@@ -4,7 +4,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from fwmigrate.web import create_app
-from fwmigrate.parsers.palo_alto.source_report import PaloAltoSourceReporter
+from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter
 
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "example_palo_alto.xml"

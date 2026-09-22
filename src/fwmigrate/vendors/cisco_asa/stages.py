@@ -1,9 +1,4 @@
-"""Explicit ASA parser stages.
-
-The old compatibility modules remain importable, but their behavior is wired
-as ordinary methods on the extraction-only parser subclass. No shared parser
-class or parser-module globals are modified while the package is imported.
-"""
+"""Explicit stages for the vendor-native ASA source parser."""
 
 from functools import lru_cache
 
@@ -13,7 +8,7 @@ from fwmigrate.vendors.cisco_asa.parser import (
     validate_references,
 )
 
-from fwmigrate.parsers.cisco_asa import audit_fixes as audit
+from . import audit_fixes as audit
 from . import phase10_17 as phase
 from . import phase10_17_safety as safety
 

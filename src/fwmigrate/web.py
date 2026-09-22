@@ -1,9 +1,7 @@
 import os
 import sys
 import io
-import json
 import uuid
-import zipfile
 import re
 import hashlib
 import logging
@@ -11,26 +9,20 @@ import threading
 import time
 from copy import deepcopy
 from dataclasses import dataclass
-from pathlib import Path
 from time import perf_counter
-from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
+from flask import Flask, render_template, request, send_file, jsonify
 
-from fwmigrate.builtin_plugins import register_builtin_plugins
+from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 
-register_builtin_plugins()
+register_builtin_source_reporters()
 
-from fwmigrate.application.metrics import PipelineMetrics
-from fwmigrate.report import (
+from fwmigrate.source_reporting import (
     ExcelExportUnavailableError,
     ExcelExportProfile,
+    SourceReportMetrics,
     XLSX_MIMETYPE,
+    source_reporters,
 )
-from fwmigrate.source_reporting import source_reporters
-from fwmigrate.engine.diagnostics import PaloAltoDiagnostics
-from fwmigrate.engine.runner import TerraformSandbox, TerraformRunner
-
-# In-memory session registry (session_id -> metadata/sandbox)
-ACTIVE_SESSIONS = {}
 _LOGGER = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class _PreviewCacheEntry:
@@ -214,7 +206,7 @@ def create_app(test_config=None):
             if 'file' not in request.files or request.files['file'].filename == '':
                 return jsonify({'success': False, 'error': 'A configuration file is required'}), 400
 
-            metrics = PipelineMetrics() if _parse_bool(request.form.get('collect_metrics')) else None
+            metrics = SourceReportMetrics() if _parse_bool(request.form.get('collect_metrics')) else None
             started = perf_counter()
             file = request.files['file']
             raw_content = file.read()
@@ -257,7 +249,7 @@ def create_app(test_config=None):
             source_vendor = request.form.get('source_vendor') or payload.get('source_vendor') or 'fortigate'
             preview_id = request.form.get('preview_id') or payload.get('preview_id') or ''
             metrics = (
-                PipelineMetrics()
+                SourceReportMetrics()
                 if _parse_bool(request.form.get('collect_metrics') or payload.get('collect_metrics'))
                 or _LOGGER.isEnabledFor(logging.DEBUG)
                 else None
@@ -336,33 +328,8 @@ def create_app(test_config=None):
 
     @app.route('/api/diagnostics', methods=['POST'])
     def run_diagnostics():
-        """Pre-flight diagnostic probe for Terraform CLI, Registry, and firewall target."""
-        data = request.get_json() or {}
-        host = data.get('host', '').strip()
-        port = int(data.get('port', 443))
-        api_key = data.get('api_key', '').strip() or None
-        username = data.get('username', '').strip() or None
-        password = data.get('password', '').strip() or None
-        verify_ssl = bool(data.get('verify_ssl', True))
-        auto_download_tf = bool(data.get('auto_download_tf', False))
-
-        try:
-            diag = PaloAltoDiagnostics()
-            results = diag.run_all(
-                host=host if host else None,
-                port=port,
-                api_key=api_key,
-                username=username,
-                password=password,
-                verify_ssl=verify_ssl,
-                auto_download_tf=auto_download_tf
-            )
-            return jsonify({
-                'success': True,
-                'results': [r.model_dump() for r in results]
-            })
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
+        """Target diagnostics are unavailable without a conversion pair."""
+        return _conversion_unavailable()
 
     @app.route('/api/terraform/prepare', methods=['POST'])
     def terraform_prepare():
@@ -371,198 +338,32 @@ def create_app(test_config=None):
 
     @app.route('/api/terraform/plan', methods=['POST'])
     def terraform_plan():
-        """Executes `terraform init` and `terraform plan` in the session sandbox."""
+        """Target planning is unavailable without a conversion pair."""
         return _conversion_unavailable()
-
-        data = request.get_json() or {}
-        session_id = data.get('session_id')
-
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            return jsonify({'success': False, 'error': f'Session {session_id} not found or expired'}), 404
-
-        session = ACTIVE_SESSIONS[session_id]
-        sandbox_dir = session['sandbox_dir']
-        secret_env = session.get('secret_env')
-        secrets = session.get('secrets', [])
-
-        try:
-            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets, secret_env=secret_env)
-
-            # 1. Terraform Init
-            init_ok, init_log = runner.run_init()
-            if not init_ok:
-                return jsonify({
-                    'success': False,
-                    'stage': 'init',
-                    'init_log': init_log,
-                    'error': 'Terraform init failed. Review provider configuration.'
-                })
-
-            # 2. Terraform Plan
-            plan_ok, plan_log, plan_summary = runner.run_plan()
-            if not plan_ok:
-                return jsonify({
-                    'success': False,
-                    'stage': 'plan',
-                    'init_log': init_log,
-                    'plan_log': plan_log,
-                    'error': 'Terraform plan failed. Review firewall connectivity or schema constraints.'
-                })
-
-            return jsonify({
-                'success': True,
-                'stage': 'ready_to_apply',
-                'init_log': init_log,
-                'plan_log': plan_log,
-                'summary': plan_summary
-            })
-
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
 
     @app.route('/api/terraform/apply/stream')
     def terraform_apply_stream():
-        """Server-Sent Events (SSE) streaming endpoint for live `terraform apply`."""
+        """Target apply is unavailable without a conversion pair."""
         return _conversion_unavailable()
-
-        session_id = request.args.get('session_id')
-
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            def error_gen():
-                yield f"data: {json.dumps({'event': 'error', 'message': f'Session {session_id} not found'})}\n\n"
-            return Response(error_gen(), mimetype='text/event-stream')
-
-        session = ACTIVE_SESSIONS[session_id]
-        
-        # Security Boundary: Server-side apply gate
-        status = session.get('status', 'CREATED')
-        if status != 'APPROVED':
-            def error_gen():
-                yield f"data: {json.dumps({'event': 'error', 'message': f'Server-side rejection: Job is not APPROVED (current status: {status})'})}\n\n"
-            return Response(error_gen(), mimetype='text/event-stream')
-
-        sandbox_dir = session['sandbox_dir']
-        secrets = session['secrets']
-        secret_env = session.get('secret_env')
-
-        def generate_sse():
-            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets, secret_env=secret_env)
-            for event in runner.run_apply_stream():
-                yield f"data: {json.dumps(event)}\n\n"
-
-        return Response(
-            stream_with_context(generate_sse()),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no',
-                'Connection': 'keep-alive'
-            }
-        )
 
     @app.route('/api/terraform/destroy/stream')
     def terraform_destroy_stream():
-        """Server-Sent Events (SSE) streaming endpoint for live `terraform destroy` (rollback)."""
+        """Target rollback is unavailable without a conversion pair."""
         return _conversion_unavailable()
-
-        session_id = request.args.get('session_id')
-
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            def error_gen():
-                yield f"data: {json.dumps({'event': 'error', 'message': f'Session {session_id} not found'})}\n\n"
-            return Response(error_gen(), mimetype='text/event-stream')
-
-        session = ACTIVE_SESSIONS[session_id]
-        
-        # Security Boundary: Server-side destroy gate
-        status = session.get('status', 'CREATED')
-        if status != 'APPROVED':
-            def error_gen():
-                yield f"data: {json.dumps({'event': 'error', 'message': f'Server-side rejection: Job is not APPROVED (current status: {status})'})}\n\n"
-            return Response(error_gen(), mimetype='text/event-stream')
-            
-        sandbox_dir = session['sandbox_dir']
-        secrets = session.get('secrets', [])
-        secret_env = session.get('secret_env')
-
-        def generate_sse():
-            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets, secret_env=secret_env)
-            for event in runner.run_destroy_stream():
-                yield f"data: {json.dumps(event)}\n\n"
-
-        return Response(
-            stream_with_context(generate_sse()),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no',
-                'Connection': 'keep-alive'
-            }
-        )
 
     @app.route('/api/terraform/approve', methods=['POST'])
     def terraform_approve():
         return _conversion_unavailable()
 
-        data = request.get_json() or {}
-        session_id = data.get('session_id')
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            return jsonify({'success': False, 'error': f'Session {session_id} not found'}), 404
-            
-        session = ACTIVE_SESSIONS[session_id]
-        if session.get('status') == 'REVIEW_REQUIRED':
-            session['status'] = 'APPROVED'
-            return jsonify({'success': True, 'message': 'Session approved for deployment.'})
-        return jsonify({'success': False, 'error': f'Invalid status: {session.get("status")}'}), 400
-
     @app.route('/api/download/state')
     def download_state():
-        """Downloads current `terraform.tfstate`."""
+        """Target state is unavailable without a conversion pair."""
         return _conversion_unavailable()
-
-        session_id = request.args.get('session_id')
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            return jsonify({'error': 'Session not found'}), 404
-
-        session = ACTIVE_SESSIONS[session_id]
-        state_file = session['sandbox_dir'] / 'terraform.tfstate'
-
-        if not state_file.exists():
-            return jsonify({'error': 'No terraform.tfstate file exists for this session'}), 404
-
-        return send_file(
-            state_file,
-            mimetype='application/json',
-            as_attachment=True,
-            download_name=f'terraform_{session_id}.tfstate'
-        )
 
     @app.route('/api/download/package')
     def download_package():
-        """Downloads session directory as ZIP."""
+        """Target packages are unavailable without a conversion pair."""
         return _conversion_unavailable()
-
-        session_id = request.args.get('session_id')
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            return jsonify({'error': 'Session not found'}), 404
-
-        session = ACTIVE_SESSIONS[session_id]
-        sandbox_dir = session['sandbox_dir']
-
-        memory_file = io.BytesIO()
-        with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for file_path in sandbox_dir.rglob('*'):
-                if file_path.is_file() and not file_path.name.startswith('.'):
-                    rel_path = file_path.relative_to(sandbox_dir)
-                    zf.write(file_path, arcname=str(rel_path))
-
-        memory_file.seek(0)
-        return send_file(
-            memory_file,
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name=f'terraform_package_{session_id}.zip'
-        )
 
     return app
 

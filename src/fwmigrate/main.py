@@ -9,10 +9,10 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = io.StringIO()
 
-from fwmigrate.builtin_plugins import register_builtin_plugins
+from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.source_reporting import source_reporters
 
-register_builtin_plugins()
+register_builtin_source_reporters()
 
 @click.group()
 def cli():

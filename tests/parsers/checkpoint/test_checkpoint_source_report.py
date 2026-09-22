@@ -4,7 +4,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from fwmigrate.parsers.checkpoint.source_report import extract_checkpoint_source
+from fwmigrate.vendors.checkpoint.source_report import extract_checkpoint_source
 
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "checkpoint"
@@ -39,7 +39,7 @@ def test_checkpoint_source_report_resolves_group_and_rule_references():
 
 def test_checkpoint_source_report_excel_has_traceability_and_redacts_secrets():
     result = extract_checkpoint_source(_source("single_gateway_full.json"))
-    from fwmigrate.parsers.checkpoint.export.excel import export_checkpoint_excel
+    from fwmigrate.vendors.checkpoint.export.excel import export_checkpoint_excel
 
     output = io.BytesIO()
     export_checkpoint_excel(result, output)

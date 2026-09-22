@@ -11,11 +11,33 @@ from fwmigrate.extraction.models import (
 )
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 
-from .coverage import get_command_section_path
 from .derived import JuniperDerivedViews, build_juniper_derived_views
 from .parser import JuniperSRXParser
 from .tokenizer import JunosCommand, JunosOperation
 from .validation import JuniperValidationResult, validate_juniper_config
+
+
+def get_command_section_path(command: JunosCommand) -> str:
+    """Return the native Junos hierarchy section for one source command."""
+    if len(command.tokens) < 2:
+        return "root"
+    tokens = command.tokens[1:]
+    first = tokens[0].lower()
+    if first in {"logical-systems", "tenants"} and len(tokens) > 2:
+        nested = JunosCommand(
+            operation=command.operation,
+            tokens=[command.tokens[0], *tokens[2:]],
+            raw_sanitized=command.raw_sanitized,
+            line_number=command.line_number,
+        )
+        return f"{first} {tokens[1]} {get_command_section_path(nested)}"
+    if first == "security":
+        return f"security {tokens[1].lower()}" if len(tokens) > 1 else "security"
+    if first == "routing-options":
+        return f"routing-options {tokens[1].lower()}" if len(tokens) > 1 else first
+    if first == "routing-instances":
+        return f"routing-instances {tokens[1]}" if len(tokens) > 2 else first
+    return first
 
 
 def _sanitize(value: Any) -> Any:

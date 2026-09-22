@@ -24,9 +24,8 @@ for pair-specific converters; no converter or replacement IR is implemented.
 - Check Point R80/R81
 - Juniper SRX / Junos
 
-## Documentation & Architecture
+## Architecture
 
-- **[Documentation Index](documentation/README.md)**: Source-reporting architecture and retained reference material.
 - **[AGENTS.md](AGENTS.md)**: Core architectural rules, extraction pipeline steps, and safety principles (fail-closed, no silent loss).
 
 ## Installation
@@ -50,6 +49,5 @@ Before submitting changes, ensure all validations pass:
 
 ```bash
 python -m compileall -q src tests
-python -m py_compile scripts/*.py scripts/docs/*.py
 python -m pytest -q
 ```

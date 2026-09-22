@@ -2667,85 +2667,6 @@ class CiscoASAParser:
             self._record_acl_consumer(rule.access_list, "nat-exemption", line_number, line)
 
     @staticmethod
-    def _protocol(protocol: str):
-        from fwmigrate.ir.enums import ServiceProtocol
-
-        return {
-            "tcp": ServiceProtocol.TCP, "udp": ServiceProtocol.UDP, "sctp": ServiceProtocol.SCTP,
-            "icmp": ServiceProtocol.ICMP, "icmp6": ServiceProtocol.ICMPV6, "ip": ServiceProtocol.IP,
-        }.get(protocol.lower())
-
-    @staticmethod
-    def _port_values(spec: Optional[CiscoPortSpec]) -> Optional[List[str]]:
-        if spec is None:
-            return []
-        if spec.operator == "eq" and spec.values:
-            return [spec.values[0]]
-        if spec.operator == "range" and len(spec.values) == 2:
-            return [f"{spec.values[0]}-{spec.values[1]}"]
-        if spec.operator in {"object", "object-group"} and spec.values:
-            return [spec.object_name or spec.values[0]]
-        if spec.operator in {"lt", "gt", "neq"} and spec.values:
-            try:
-                value = int(spec.values[0])
-            except ValueError:
-                # Cisco-local names must not be guessed as IANA ports.
-                return [f"{spec.operator} {spec.values[0]}"]
-            if not 1 <= value <= 65535:
-                return None
-            if spec.operator == "lt":
-                return [f"1-{value - 1}"] if value > 1 else []
-            if spec.operator == "gt":
-                return [f"{value + 1}-65535"] if value < 65535 else []
-            result = []
-            if value > 1:
-                result.append(f"1-{value - 1}")
-            if value < 65535:
-                result.append(f"{value + 1}-65535")
-            return result
-        return None
-
-    def _ir_service_ports(self, ports: Iterable[CiscoServicePort]):
-        from fwmigrate.ir.enums import ServiceProtocol
-        from fwmigrate.ir.service import IRServicePort
-
-        result: List[IRServicePort] = []
-        errors: List[str] = []
-        for item in ports:
-            protocol = self._protocol(item.protocol)
-            if protocol is None:
-                protocol = ServiceProtocol.IP
-                errors.append(f"IP protocol '{item.protocol}' is source-preserved and requires target capability review")
-            destinations = self._port_values(item.destination)
-            sources = self._port_values(item.source)
-            if item.destination and destinations is None:
-                errors.append(f"Unsupported destination-port operator '{item.destination.operator}'")
-                continue
-            if item.source and sources is None:
-                errors.append(f"Unsupported source-port operator '{item.source.operator}'")
-                continue
-            if item.destination is None:
-                destinations = ["any" if protocol in {ServiceProtocol.ICMP, ServiceProtocol.ICMPV6, ServiceProtocol.IP} else "1-65535"]
-            elif not destinations:
-                errors.append("Destination-port expression matches no ports")
-                continue
-            if item.source is None:
-                sources = [None]
-            elif not sources:
-                errors.append("Source-port expression matches no ports")
-                continue
-            icmp_type = int(item.icmp_type) if item.icmp_type and item.icmp_type.isdigit() else None
-            for destination in destinations:
-                for source in sources:
-                    result.append(IRServicePort(
-                        protocol=protocol, port=destination, source_port=source, raw_source_value=item.raw,
-                        icmptype=icmp_type, icmpcode=item.icmp_code,
-                    ))
-            if item.icmp_type and icmp_type is None:
-                errors.append(f"Named ICMP type '{item.icmp_type}' requires review")
-        return result, errors
-
-    @staticmethod
     def _validate_time_range_clock(value: str) -> bool:
         return bool(re.fullmatch(r"(?:\d|[01]\d|2[0-3]):[0-5]\d", value))
 
@@ -2825,9 +2746,4 @@ class CiscoASAParser:
         clause.start, clause.end = parts[to_index - 1], parts[-1]
         return clause, None
 
-    def transform_to_ir(self) -> Any:
-        """Compatibility delegate; canonical construction lives in transformer.py."""
-        from fwmigrate.parsers.cisco_asa.transformer import ASAtoIRTransformer
-
-        return ASAtoIRTransformer(self).transform()
 
