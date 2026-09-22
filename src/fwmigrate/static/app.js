@@ -406,7 +406,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const reportColumns = {
-    interfaces: [["display_name", "Topology"], ["kind", "Kind"], ["ip", "IP / Remote Gateway"], ["role", "Role"], ["parent", "Parent"], ["aggregate", "Aggregate"], ["physical_interfaces", "Physical Interfaces"], ["attached_tunnels", "Attached Tunnels"], ["status", "Status"], ["review", "Review"]],
+    interfaces: [["display_name", "Topology"], ["kind", "Kind"], ["ip", "IP / Remote Gateway"], ["zone", "Zone"], ["parent", "Parent"], ["aggregate", "Aggregate"], ["physical_interfaces", "Physical Interfaces"], ["attached_tunnels", "Attached Tunnels"], ["status", "Status"], ["review", "Review"]],
     addresses: [["name", "Name"], ["value", "Value"], ["type", "Type"], ["address_family", "Family"], ["associated_interface", "Interface"], ["review", "Review"]],
     address_groups: [["name", "Name"], ["members", "Members"], ["address_family", "Family"], ["exclude_members", "Excluded"], ["review", "Review"]],
     services: [["name", "Name"], ["protocol", "Protocol"], ["port", "Port"], ["source_port", "Source Port"], ["generated", "Generated"], ["review", "Review"]],

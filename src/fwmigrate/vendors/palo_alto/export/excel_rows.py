@@ -180,7 +180,7 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
     for item in context.config.interfaces:
         view = topology.get((_scope_id(item.scope), item.name or ""))
         row = _base(context, item, "interface")
-        row.update({"Interface Type": item.interface_family, "Aggregate Interface": view.aggregate if view else item.aggregate_group,
+        row.update({"Kind": view.kind if view else item.interface_family, "Aggregate Interface": view.aggregate if view else item.aggregate_group,
                     "Topology Path": _text(view.path if view else (item.name,)), "Physical Interfaces": _text(view.physical_interfaces if view else ()),
                     "Attached Tunnels": _text(view.attached_tunnels if view else ()),
                     "Layer": _text(item.mode), "IPv4 Addresses": _text(item.ipv4_addresses),
@@ -192,7 +192,7 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
             if unit.parent == item.name:
                 unit_view = topology.get((_scope_id(unit.scope), unit.name or ""))
                 unit_row = _base(context, unit, "interface")
-                unit_row.update({"Interface Type": unit.interface_family or item.interface_family, "Parent Interface": unit.parent,
+                unit_row.update({"Kind": unit_view.kind if unit_view else unit.interface_family or item.interface_family, "Parent Interface": unit.parent,
                                  "Aggregate Interface": unit_view.aggregate if unit_view else None, "Topology Path": _text(unit_view.path if unit_view else (unit.name,)),
                                  "Physical Interfaces": _text(unit_view.physical_interfaces if unit_view else ()), "Attached Tunnels": _text(unit_view.attached_tunnels if unit_view else ()), "Layer": _text(item.mode),
                                  "IPv4 Addresses": _text(unit.ipv4_addresses), "IPv6 Addresses": _text(address.address for address in unit.ipv6_addresses or ()),
@@ -204,7 +204,7 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
             continue
         unit_view = topology.get((_scope_id(unit.scope), unit.name or ""))
         row = _base(context, unit, "interface")
-        row.update({"Interface Type": unit.interface_family, "Parent Interface": unit.parent,
+        row.update({"Kind": unit_view.kind if unit_view else unit.interface_family, "Parent Interface": unit.parent,
                     "Aggregate Interface": unit_view.aggregate if unit_view else None, "Topology Path": _text(unit_view.path if unit_view else (unit.name,)),
                     "Physical Interfaces": _text(unit_view.physical_interfaces if unit_view else ()), "Attached Tunnels": _text(unit_view.attached_tunnels if unit_view else ()), "IPv4 Addresses": _text(unit.ipv4_addresses),
                     "IPv6 Addresses": _text(address.address for address in unit.ipv6_addresses or ()),
