@@ -27,10 +27,10 @@ def _mode_extra(element: ET.Element, modes: set[str]) -> dict[str, object]:
 
 def extract_interface(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> object | None:
     common = {"source_path": "/".join(path), "scope": context.scope, "source_order": source_order}
-    if spec.name == "interface_import":
+    if spec.name in {"interface_import", "virtual_router_import"}:
         interfaces = [child.text.strip() for child in element if child.tag == "member" and child.text]
         extra, explicit = source_fields(element, spec)
-        return PANInterfaceImport(scope=context.scope, interfaces=interfaces, source_path="/".join(path), raw_extra=extra, explicit_fields=explicit)
+        return PANInterfaceImport(scope=context.scope, interfaces=interfaces if spec.name == "interface_import" else None, virtual_routers=interfaces if spec.name == "virtual_router_import" else None, source_path="/".join(path), raw_extra=extra, explicit_fields=explicit)
     if spec.name == "interface_unit" and context.interface_name:
         extra, explicit = source_fields(element, spec)
         return PANInterfaceUnit(name=element.get("name"), parent=context.interface_name, tag=value(element, "tag"), ipv4_addresses=_ipv4(element), ipv6_addresses=_ipv6(element), management_profile=value(element, "interface-management-profile"), raw_extra=extra, explicit_fields=explicit)

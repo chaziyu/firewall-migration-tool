@@ -52,6 +52,14 @@ class PANOSDerivedViews:
     counts: Dict[str, int] = field(default_factory=dict)
     scope_identities: tuple[str, ...] = ()
     unresolved_references: tuple[str, ...] = ()
+    scope_hierarchy: Any = None
+    reference_index: Any = None
+    reference_resolutions: tuple[Any, ...] = ()
+    shadowing: tuple[Any, ...] = ()
+    interface_topology: tuple[Any, ...] = ()
+    policy_order: tuple[Any, ...] = ()
+    nat: tuple[Any, ...] = ()
+    relationship_issues: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

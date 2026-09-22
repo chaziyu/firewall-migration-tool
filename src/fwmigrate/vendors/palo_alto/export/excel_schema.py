@@ -6,6 +6,7 @@ from __future__ import annotations
 SHEET_ORDER: tuple[str, ...] = (
     "Summary",
     "Review Required",
+    "Validation",
 
     # Objects
     "Tags",
@@ -90,6 +91,17 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     "Review Required": (
         "Severity",
         "Category",
+        "Object",
+        "Scope Type",
+        "Scope Name",
+        "Field",
+        "Issue / Review Reason",
+        "Source Sheet",
+    ),
+
+    "Validation": (
+        "Severity",
+        "Domain",
         "Object",
         "Scope Type",
         "Scope Name",
@@ -1052,4 +1064,3 @@ TECHNICAL_COLUMNS_BY_SHEET: dict[str, tuple[str, ...]] = {
 
 
 HIDDEN_COLUMNS_BY_DEFAULT = TECHNICAL_COLUMNS_BY_SHEET
-

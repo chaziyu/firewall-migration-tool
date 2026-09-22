@@ -13,6 +13,14 @@ from .policy import extract_default_security_rule, extract_security_rule
 from .routing import extract_routing
 from .schedule import extract_schedule
 from .service import extract_service
+from .zone import extract_zone
+from ..model import PANSecurityProfileGroup
+from .common import source_fields, value, values
+
+
+def extract_security_profile_group(element, path, context, source_order, spec):
+    extra, explicit = source_fields(element, spec)
+    return PANSecurityProfileGroup(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, antivirus=values(element, "virus"), anti_spyware=values(element, "spyware"), vulnerability=values(element, "vulnerability"), url_filtering=values(element, "url-filtering"), file_blocking=values(element, "file-blocking"), wildfire_analysis=values(element, "wildfire-analysis"), data_filtering=values(element, "data-filtering"), gtp=values(element, "gtp"), sctp=values(element, "sctp"), ai_security=values(element, "ai-security"), disable_override=value(element, "disable-override"), raw_extra=extra, explicit_fields=explicit)
 
 
 _EXTRACTORS = {
@@ -25,6 +33,9 @@ _EXTRACTORS = {
     "default_security_rule": ("default_security_rules", extract_default_security_rule),
     "nat_rule": ("nat_rules", extract_nat),
     "interface_import": ("interface_imports", extract_interface),
+    "virtual_router_import": ("interface_imports", extract_interface),
+    "zone": ("zones", extract_zone),
+    "security_profile_group": ("security_profile_groups", extract_security_profile_group),
     "interface_unit": ("interface_units", extract_interface),
     "virtual_router": ("virtual_routers", extract_routing),
     "logical_router": ("logical_routers", extract_routing),

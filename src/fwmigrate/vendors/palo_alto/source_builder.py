@@ -33,7 +33,7 @@ def build_panos_config(content: str) -> PANOSConfig:
     scopes: list[PANScope] = []
     records: list[PANSourceRecord] = []
     unknown_paths: list[str] = []
-    typed: dict[str, list[object]] = {"addresses": [], "address_groups": [], "services": [], "service_groups": [], "schedules": [], "security_rules": [], "default_security_rules": [], "interfaces": [], "interface_imports": [], "interface_units": [], "nat_rules": [], "static_routes": [], "virtual_routers": [], "logical_routers": []}
+    typed: dict[str, list[object]] = {"addresses": [], "address_groups": [], "services": [], "service_groups": [], "schedules": [], "security_rules": [], "default_security_rules": [], "interfaces": [], "interface_imports": [], "interface_units": [], "nat_rules": [], "zones": [], "security_profile_groups": [], "static_routes": [], "virtual_routers": [], "logical_routers": []}
     for element, path, context in walk_pan_source(source.root):
         if context.scope and pan_scope_identity(context.scope) not in {pan_scope_identity(item) for item in scopes}:
             scopes.append(context.scope)

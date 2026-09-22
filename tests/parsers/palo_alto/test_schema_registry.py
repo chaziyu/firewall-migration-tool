@@ -26,14 +26,17 @@ EXPECTED_PATHS = {
     "interface_loopback",
     "interface_tunnel",
     "interface_unit",
+    "virtual_router_import",
     "interface_vlan",
     "logical_router",
     "nat_rule",
     "schedule",
+    "security_profile_group",
     "security_rule",
     "service",
     "service_group",
     "virtual_router",
+    "zone",
 }
 
 
