@@ -142,6 +142,12 @@ def sanitize_raw_text(text: str) -> str:
         sanitized,
         flags=re.IGNORECASE | re.DOTALL,
     )
+    sanitized = re.sub(
+        r"(<[^>]*(?:password|secret|token|private-key|shared-secret|psk|community)[^>]*>).*?(</[^>]+>)",
+        rf"\1{REDACTED_PLACEHOLDER}\2",
+        sanitized,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
     return sanitized
 
 

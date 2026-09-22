@@ -10,7 +10,7 @@ PANORAMA = FIXTURES / "palo_alto" / "integrated_panorama.xml"
 
 
 def _records(path: Path):
-    return {record.name: record for record in build_panos_config(path.read_text()).records}
+    return {record.name: record for record in build_panos_config(path.read_text()).source_inventory}
 
 
 def test_standalone_vsys_and_local_rulebase_keep_device_context():
@@ -56,7 +56,7 @@ def test_sibling_devices_do_not_leak_vsys_context_or_scope_identity():
           <entry name="fw-b"><vsys><entry name="vsys1"><address><entry name="b"/></address></entry></vsys></entry>
         </devices></config>"""
     )
-    records = {record.name: record for record in config.records}
+    records = {record.name: record for record in config.source_inventory}
 
     assert records["a"].scope.device_name == "fw-a"
     assert records["b"].scope.device_name == "fw-b"
