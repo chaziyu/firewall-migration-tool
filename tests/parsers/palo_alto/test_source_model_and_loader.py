@@ -87,9 +87,9 @@ def test_typed_source_models_preserve_absent_and_explicit_empty_values():
 
     absent, empty = config.addresses
     assert absent.ip_netmask is None
-    assert "ip-netmask" not in absent.explicit_fields
+    assert "ip_netmask" not in absent.explicit_fields
     assert empty.tags == []
-    assert "tag" in empty.explicit_fields
+    assert "tags" in empty.explicit_fields
     assert config.security_rules[0].disabled == "no"
     assert "disabled" in config.security_rules[0].explicit_fields
     assert config.source_inventory
@@ -147,7 +147,7 @@ def test_address_models_preserve_object_variants_and_scope():
     assert addresses["IPv4-Host"].scope.kind == "vsys"
     assert addresses["IPv4-Host"].scope.name == "vsys1"
     assert addresses["IPv4-Host"].source_order is not None
-    assert "ip-netmask" in addresses["IPv4-Host"].explicit_fields
+    assert "ip_netmask" in addresses["IPv4-Host"].explicit_fields
 
 
 def test_address_groups_preserve_static_dynamic_and_both_forms():
@@ -163,8 +163,8 @@ def test_address_groups_preserve_static_dynamic_and_both_forms():
     assert groups["Both-Group"].dynamic_filter == "'production'"
     assert groups["Nested-Group"].static_members == ["Static-Group", "Scoped-Web"]
     assert groups["Unknown-Group"].raw_extra == {"future-setting": "retain-me"}
-    assert "static" in groups["Static-Group"].explicit_fields
-    assert "dynamic" in groups["Dynamic-Group"].explicit_fields
+    assert "static_members" in groups["Static-Group"].explicit_fields
+    assert "dynamic_filter" in groups["Dynamic-Group"].explicit_fields
     assert groups["Static-Group"].scope.name == "vsys1"
     assert groups["Scoped-Group"].scope.name == "vsys2"
 
@@ -246,7 +246,7 @@ def test_schedules_preserve_recurring_and_non_recurring_structure():
     assert schedules["Bad-Time"].recurring.daily == ["25:00-26:00"]
     assert schedules["Bad-Date"].non_recurring == ["2026/99/01@08:00-2026/99/01@17:00"]
     assert schedules["Unknown-Schedule"].raw_extra == {"future-setting": "retain-me"}
-    assert "schedule-type" in schedules["Daily-One"].explicit_fields
+    assert "recurring" in schedules["Daily-One"].explicit_fields
     assert schedules["Daily-One"].source_order is not None
 
 

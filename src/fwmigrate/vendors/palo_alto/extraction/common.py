@@ -5,6 +5,8 @@ from typing import Any
 
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
+from ..schema_registry import PANPathSpec
+
 
 def value(element: ET.Element | None, tag: str) -> str | None:
     return text_or_none(element.find(tag)) if element is not None else None
@@ -25,8 +27,45 @@ def raw_extra(element: ET.Element, known: set[str]) -> dict[str, Any]:
     return sanitize_source_attributes(result)
 
 
-def typed_fields(element: ET.Element, known: set[str]) -> tuple[dict[str, Any], set[str]]:
-    return raw_extra(element, known), {child.tag for child in element if child.tag in known}
+def typed_fields(
+    element: ET.Element,
+    known: set[str],
+    field_map: dict[str, str] | None = None,
+    nested_fields: dict[str, str] | None = None,
+) -> tuple[dict[str, Any], set[str]]:
+    explicit = {(field_map or {}).get(child.tag, child.tag) for child in element if child.tag in known}
+    explicit.update(target for source, target in (nested_fields or {}).items() if element.find(source) is not None)
+    return raw_extra(element, known), explicit
+
+
+def source_fields(
+    element: ET.Element,
+    spec: PANPathSpec,
+    handled_nested: dict[str, str] | None = None,
+) -> tuple[dict[str, Any], set[str]]:
+    """Capture unknown XML and explicit model field names from a registry spec."""
+    known = spec.scalar_fields | spec.member_list_fields | spec.entry_list_fields | spec.nested_fields
+    explicit = {spec.field_map.get(child.tag, child.tag) for child in element if child.tag in known}
+    explicit.update(
+        target for source, target in (handled_nested or {}).items() if element.find(source) is not None
+    )
+    return raw_extra(element, set(known)), explicit
+
+
+def source_scalar(element: ET.Element | None, tag: str) -> str | None:
+    return value(element, tag)
+
+
+def source_members(element: ET.Element | None, tag: str) -> list[str] | None:
+    return values(element, tag)
+
+
+def source_entry_names(element: ET.Element | None, tag: str) -> list[str] | None:
+    return values(element, tag)
+
+
+def source_model_metadata(element: ET.Element, spec: PANPathSpec) -> tuple[dict[str, Any], set[str]]:
+    return source_fields(element, spec)
 
 
 def text_or_none(element: ET.Element | None) -> str | None:

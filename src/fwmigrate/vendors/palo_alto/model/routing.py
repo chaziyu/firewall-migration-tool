@@ -7,15 +7,42 @@ from pydantic import BaseModel, Field
 from ..source_model import PANScope
 
 
+class PANRoutePathMonitorTarget(BaseModel):
+    name: str | None = None
+    enabled: str | None = None
+    source: str | None = None
+    destination: str | None = None
+    destination_fqdn: str | None = None
+    interval: str | None = None
+    count: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class PANRoutePathMonitor(BaseModel):
+    enabled: str | None = None
+    failure_condition: str | None = None
+    hold_time: str | None = None
+    targets: list[PANRoutePathMonitorTarget] | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
 class PANStaticRoute(BaseModel):
     name: str | None = None
     source_path: str = ""
     scope: PANScope | None = None
     source_order: int | None = None
     destination: str | None = None
+    address_family: str | None = None
+    nexthop_type: str | None = None
     nexthop_ip_address: str | None = None
     interface: str | None = None
     metric: str | None = None
+    admin_distance: str | None = None
+    route_table: str | None = None
+    bfd_profile: str | None = None
+    path_monitor: PANRoutePathMonitor | None = None
     nexthop: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
@@ -68,6 +95,7 @@ class PANOSPFInterface(BaseModel):
 
 class PANOSPFArea(BaseModel):
     name: str | None = None
+    area_type: str | None = None
     interfaces: list[PANOSPFInterface] | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
@@ -118,6 +146,7 @@ class PANVirtualRouter(BaseModel):
 
 class PANVRF(BaseModel):
     name: str | None = None
+    static_routes: list[PANStaticRoute] | None = None
     routing_protocol: dict[str, Any] | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
