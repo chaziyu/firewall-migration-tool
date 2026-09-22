@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 import xml.etree.ElementTree as ET
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,6 @@ class PANScope(BaseModel):
     vsys: Optional[str] = None
     device_group: Optional[str] = None
     parent_device_group: Optional[str] = None
-    rulebase_position: Optional[str] = None
     template_stack: Optional[str] = None
     template_provenance: Dict[str, Any] = Field(default_factory=dict)
 
@@ -39,6 +38,7 @@ class PANSourceRecord(BaseModel):
     source_path: str
     name: Optional[str] = None
     scope: Optional[PANScope] = None
+    rulebase_position: Literal["pre", "local", "post"] | None = None
     values: Dict[str, Any] = Field(default_factory=dict)
     source_order: Optional[int] = None
     raw_xml: Optional[str] = None
@@ -88,8 +88,12 @@ class PANOSValidationResult:
 
 
 def pan_scope_identity(scope: PANScope) -> str:
-    """Return a stable, device-qualified source scope identity."""
+    """Return a stable identity for explicit source ownership context."""
     identity = f"{scope.kind}:{scope.name}"
-    if scope.device_serial:
-        identity += f":device:{scope.device_serial}"
+    if scope.kind == "shared":
+        return identity
+
+    qualifier = scope.device_serial or scope.device_name
+    if qualifier:
+        identity += f":device:{qualifier}"
     return identity

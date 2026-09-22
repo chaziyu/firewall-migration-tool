@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .native import build_derived_views, build_panos_config, validate_panos_config
+from .native import build_derived_views, validate_panos_config
+from .source_builder import build_panos_config
 from .source_model import PANOSConfig, PANOSDerivedViews, PANOSValidationResult
 
 
