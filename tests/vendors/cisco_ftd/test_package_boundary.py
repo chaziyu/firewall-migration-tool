@@ -17,6 +17,6 @@ def test_source_reporting_is_vendor_native_and_keeps_source_planes_separate():
     assert (ROOT / "fdm").is_dir()
 
 
-def test_legacy_parser_path_is_only_a_compatibility_facade():
+def test_legacy_parser_path_is_removed():
     facade = Path(__file__).parents[3] / "src" / "fwmigrate" / "parsers" / "cisco_ftd"
-    assert "vendors.cisco_ftd" in (facade / "__init__.py").read_text(encoding="utf-8")
+    assert not list(facade.glob("*.py"))

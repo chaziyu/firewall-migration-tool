@@ -5,9 +5,6 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from fwmigrate.ir import IRConfig
-
-
 class ExtractionStatus(str, Enum):
     NORMALIZED = "NORMALIZED"
     PARTIALLY_NORMALIZED = "PARTIALLY_NORMALIZED"
@@ -155,26 +152,4 @@ class UnsupportedItem(BaseModel):
     source_context: Optional[str] = None
     migration_impact: MigrationImpact = MigrationImpact.REVIEW
 
-
-class ExtractionResult(BaseModel):
-    canonical_ir: IRConfig
-
-    source_sections: List[SourceSectionResult] = Field(default_factory=list)
-    coverage: List[CoverageSummary] = Field(default_factory=list)
-    inventory_items: List[SourceInventoryItem] = Field(default_factory=list)
-    unsupported_items: List[UnsupportedItem] = Field(default_factory=list)
-    dependencies: List[DependencyRecord] = Field(default_factory=list)
-
-    # Derived migration safety state. These additive fields intentionally keep
-    # the existing ExtractionResult API and serialized shape backward
-    # compatible for consumers that ignore unknown/new fields.
-    requires_manual_review: bool = False
-    migration_complete: bool = True
-    generation_safe: bool = True
-    blocking_reasons: List[str] = Field(default_factory=list)
-
-    input_source_type: str = "unknown"
-    policy_extraction_supported: bool = True
-    nat_extraction_supported: bool = True
-    object_extraction_supported: bool = True
 

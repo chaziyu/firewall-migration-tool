@@ -5,30 +5,22 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "firewall-migration-tool"
 version = "0.2.0"
-description = "Universal Multi-Vendor Firewall Migration Platform using an Intermediate Representation"
+description = "Multi-vendor firewall configuration extraction and reporting"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0,<3.0",
-    "lxml>=5.0",
     "click>=8.0",
     "pyyaml>=6.0",
     "flask>=3.0.0",
-    "requests>=2.28.0",
-    "jinja2>=3.1.0",
-    "cryptography>=42.0",
-    "sqlalchemy>=2.0,<3.0",
+    "openpyxl>=3.1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "openpyxl>=3.1.0",
     "tomli>=2.0; python_version < '3.11'",
-]
-cisco = [
-    "ciscoconfparse>=1.9.0",
 ]
 reports = [
     "openpyxl>=3.1.0",
@@ -36,4 +28,3 @@ reports = [
 
 [project.scripts]
 fwmigrate = "fwmigrate.main:cli"
-fg2pan = "fwmigrate.main:cli"

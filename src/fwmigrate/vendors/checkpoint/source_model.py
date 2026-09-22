@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Dict, Iterable, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,7 +10,66 @@ from pydantic import BaseModel, ConfigDict, Field
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
 from .models import CheckPointExportBundle, CheckPointResponse, CollectionStatus
-from .resolver import infer_semantic_kind, iter_dictionary_objects
+
+
+class SemanticKind(str, Enum):
+    ADDRESS = "ADDRESS"
+    ADDRESS_GROUP = "ADDRESS_GROUP"
+    SECURITY_ZONE = "SECURITY_ZONE"
+    SERVICE = "SERVICE"
+    SERVICE_GROUP = "SERVICE_GROUP"
+    APPLICATION = "APPLICATION"
+    APPLICATION_GROUP = "APPLICATION_GROUP"
+    APPLICATION_CATEGORY = "APPLICATION_CATEGORY"
+    TIME = "TIME"
+    TIME_GROUP = "TIME_GROUP"
+    INSTALL_TARGET = "INSTALL_TARGET"
+    UNKNOWN = "UNKNOWN"
+
+
+def iter_dictionary_objects(objects: Any) -> Iterable[Dict[str, Any]]:
+    if isinstance(objects, dict):
+        for key, item in objects.items():
+            if not isinstance(item, dict):
+                continue
+            normalized = dict(item)
+            if not normalized.get("uid") and key:
+                normalized["uid"] = str(key)
+            yield normalized
+    elif isinstance(objects, list):
+        yield from (dict(item) for item in objects if isinstance(item, dict))
+
+
+def infer_semantic_kind(obj_type: Optional[str], name: Optional[str]) -> SemanticKind:
+    del name
+    value = (obj_type or "").strip().lower()
+    if value in {"host", "network", "address-range", "multicast-address-range", "wildcard"}:
+        return SemanticKind.ADDRESS
+    if value in {"group", "group-with-exclusion"}:
+        return SemanticKind.ADDRESS_GROUP
+    if value == "security-zone":
+        return SemanticKind.SECURITY_ZONE
+    if value.startswith("service-"):
+        return SemanticKind.SERVICE
+    if value == "service-group":
+        return SemanticKind.SERVICE_GROUP
+    if value in {"application-site", "application"}:
+        return SemanticKind.APPLICATION
+    if value in {"application-site-group", "application-group"}:
+        return SemanticKind.APPLICATION_GROUP
+    if value in {"application-site-category", "application-category"}:
+        return SemanticKind.APPLICATION_CATEGORY
+    if value == "time":
+        return SemanticKind.TIME
+    if value == "time-group":
+        return SemanticKind.TIME_GROUP
+    if value in {
+        "checkpointgateway", "checkpointcluster", "simplegateway", "simplecluster",
+        "simple-gateway", "simple-cluster", "checkpoint-gateway", "checkpoint-cluster",
+        "gateway", "cluster",
+    }:
+        return SemanticKind.INSTALL_TARGET
+    return SemanticKind.UNKNOWN
 
 
 class CheckPointSourceRecord(BaseModel):

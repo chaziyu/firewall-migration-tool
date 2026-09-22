@@ -2,9 +2,9 @@ from io import BytesIO
 
 from openpyxl import load_workbook
 
-from fwmigrate.parsers.cisco_asa import extract_cisco_asa_source
-from fwmigrate.parsers.cisco_asa.export.excel import export_asa_excel
-from fwmigrate.parsers.cisco_asa.web_report import build_asa_preview
+from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
+from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
+from fwmigrate.vendors.cisco_asa.web_report import build_asa_preview
 
 
 def test_source_pipeline_preserves_acl_nat_order_and_uses_source_model():

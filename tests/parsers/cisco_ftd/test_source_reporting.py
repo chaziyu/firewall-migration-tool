@@ -1,7 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 
-from fwmigrate.parsers.cisco_ftd.source_report import (
+from fwmigrate.vendors.cisco_ftd.source_report import (
     CiscoFTDSourceReporter,
     extract_cisco_ftd_source,
 )

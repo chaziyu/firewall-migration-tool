@@ -750,11 +750,3 @@ class JuniperSRXParser:
             return ["tenants", context.name.lower()]
         return []
 
-    def parse_raw(self) -> JuniperSRXConfig:
-        """Helper for backward compatibility returning parsed source config."""
-        self.extract()
-        return self.config
-
-    def transform_to_ir(self) -> IRConfig:
-        """Helper for backward compatibility returning canonical IRConfig."""
-        return self.extract().canonical_ir

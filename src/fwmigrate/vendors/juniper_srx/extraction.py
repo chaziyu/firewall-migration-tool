@@ -1,4 +1,4 @@
-"""Helpers for secret sanitization and ExtractionResult helpers for Juniper SRX."""
+"""Helpers for preserving and sanitizing Juniper SRX source evidence."""
 
 from __future__ import annotations
 

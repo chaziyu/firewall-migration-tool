@@ -2,18 +2,8 @@
 
 from __future__ import annotations
 
-import copy
 import re
-from typing import Any, Dict, List, Set, Union
-
-from pydantic import BaseModel
-
-from fwmigrate.extraction.models import (
-    ExtractionResult,
-    SourceInventoryItem,
-    SourceSectionResult,
-    UnsupportedItem,
-)
+from typing import Any, Dict
 
 SENSITIVE_KEY_PREFIXES = (
     "password",
@@ -155,68 +145,3 @@ def sanitize_raw_text(text: str) -> str:
     return sanitized
 
 
-def _sanitize_canonical_evidence(value: Any, field_name: str = "") -> None:
-    """Redact source-preservation fields inside canonical IR without changing semantics."""
-    if isinstance(value, BaseModel):
-        # PSKs are presence metadata only; plaintext is never portable IR.
-        if hasattr(value, "psk") and getattr(value, "psk", None) is not None:
-            if hasattr(value, "has_psk"):
-                setattr(value, "has_psk", True)
-            setattr(value, "psk", None)
-        for name in value.__class__.model_fields:
-            child = getattr(value, name, None)
-            if isinstance(child, dict) and (
-                name in {"source_attributes", "source_extra_settings"}
-                or name.startswith("source_")
-            ):
-                setattr(value, name, sanitize_source_attributes(child))
-            else:
-                _sanitize_canonical_evidence(child, name)
-    elif isinstance(value, list):
-        for child in value:
-            _sanitize_canonical_evidence(child, field_name)
-    elif isinstance(value, dict) and (
-        field_name in {"source_attributes", "source_extra_settings"}
-        or field_name.startswith("source_")
-    ):
-        sanitized = sanitize_source_attributes(value)
-        value.clear()
-        value.update(sanitized)
-
-
-def sanitize_inventory_item(item: SourceInventoryItem) -> SourceInventoryItem:
-    """Sanitize a single SourceInventoryItem and its children."""
-    item.source_attributes = sanitize_source_attributes(item.source_attributes)
-    for cmd in item.commands:
-        if _is_sensitive_key(cmd.key):
-            cmd.values = [REDACTED_PLACEHOLDER]
-    for child in item.children:
-        sanitize_inventory_item(child)
-    return item
-
-
-def sanitize_extraction_result(result: ExtractionResult) -> ExtractionResult:
-    """
-    Recursively sanitize all sensitive metadata in an ExtractionResult before export or persistence.
-    Operates on a deep copy to ensure clean separation.
-    """
-    res = result.model_copy(deep=True)
-
-    # 1. Sanitize inventory items
-    for item in res.inventory_items:
-        sanitize_inventory_item(item)
-
-    # 2. Sanitize unsupported items raw capture
-    for unsupp in res.unsupported_items:
-        if unsupp.raw_capture:
-            unsupp.raw_capture = sanitize_raw_text(unsupp.raw_capture)
-
-    # 3. Sanitize source sections notes if needed
-    for sec in res.source_sections:
-        sec.notes = [sanitize_raw_text(n) for n in sec.notes]
-
-    # 4. Canonical IR can retain sanitized source evidence, but never credentials.
-    if res.canonical_ir is not None:
-        _sanitize_canonical_evidence(res.canonical_ir)
-
-    return res

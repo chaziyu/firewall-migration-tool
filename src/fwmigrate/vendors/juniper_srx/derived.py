@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .coverage import build_juniper_dependencies
+from .relationships import build_juniper_dependencies
 
 
 @dataclass(frozen=True)

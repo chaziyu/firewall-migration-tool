@@ -1,113 +1,66 @@
+"""Vendor-native adapter for offline FMC REST bundles."""
+
 from __future__ import annotations
 
-from typing import Any, List, Tuple
+import json
+from typing import Any
 
-from fwmigrate.ir import IRConfig
-from .fmc_bundle import (
-    CiscoFMCBundleParser as _RawCiscoFMCBundleParser,
-    FMC_BUNDLE_FORMAT,
-    _items,
-    is_fmc_bundle,
-)
 from ..model import (
     CiscoFTDACPRule, CiscoFTDConfig, CiscoFTDInterfaceSource,
     CiscoFTDNATRule, CiscoFTDObject, CiscoFTDService, CiscoFTDZone,
 )
 
+FMC_BUNDLE_FORMAT = "cisco-fmc-rest-export-v1"
 
-class CiscoFMCBundleParser(_RawCiscoFMCBundleParser):
-    """Production FMC bundle adapter with canonical safety gates.
 
-    The raw parser owns FMC REST payload decoding. This wrapper owns the
-    target-neutral safety decisions that must not be guessed from FMC fields.
-    """
+def _items(value: Any) -> list[dict]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, dict) and isinstance(value.get("items"), list):
+        return [item for item in value["items"] if isinstance(item, dict)]
+    return []
 
-    @staticmethod
-    def _fail_closed_refs(result: Tuple[List[str], bool]) -> Tuple[List[str], bool]:
-        values, unresolved = result
-        if unresolved and values == [IR_KEYWORD_ANY]:
-            return [], True
-        return values, unresolved
 
-    @staticmethod
-    def _coerce_nat_order_index(value: Any) -> int | None:
-        if isinstance(value, bool) or value is None:
-            return None
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str):
-            text = value.strip()
-            if text and text.lstrip("+-").isdigit():
-                return int(text)
-        return None
-
-    @classmethod
-    def _order_values_conflict(cls, rules: List[Any], key: str) -> bool:
-        values = []
-        for position, rule in enumerate(rules, 1):
-            value = cls._coerce_nat_order_index(rule.source_attributes.get(key))
-            if value is not None:
-                values.append((position, value))
-        if len(values) < 2:
-            return False
-        numeric = [value for _, value in values]
-        return len(set(numeric)) != len(numeric) or any(
-            current <= previous for previous, current in zip(numeric, numeric[1:])
+def is_fmc_bundle(content: str) -> bool:
+    try:
+        payload = json.loads(content)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(payload, dict) and (
+        payload.get("format") == FMC_BUNDLE_FORMAT
+        or (
+            any(key in payload for key in ("access_policies", "nat_policies", "objects"))
+            and payload.get("source") in {"fmc-rest-api", "cisco-fmc-rest-api"}
         )
+    )
 
-    @classmethod
-    def _mark_nat_order_conflicts(cls, rules: List[Any]) -> None:
-        grouped: dict[tuple[Any, Any], List[Any]] = {}
-        for rule in rules:
-            key = (
-                rule.source_attributes.get("fmc_policy_id"),
-                rule.source_attributes.get("fmc_nat_section"),
-            )
-            grouped.setdefault(key, []).append(rule)
 
-        reason = (
-            "FMC NAT ordering metadata conflicts with bundle traversal order; "
-            "effective order is source-preserved and requires review"
+class CiscoFMCBundleParser:
+    """Decode authoritative FMC API data into Cisco FTD source state."""
+
+    def __init__(self, content: str):
+        payload = json.loads(content)
+        if not isinstance(payload, dict):
+            raise ValueError("FMC bundle must be a JSON object")
+        if payload.get("format") not in {None, FMC_BUNDLE_FORMAT}:
+            raise ValueError(f"Unsupported FMC bundle format: {payload.get('format')!r}")
+        self.payload = payload
+        domain = payload.get("domain") if isinstance(payload.get("domain"), dict) else {}
+        self.domain_id = domain.get("id") or payload.get("domainUUID")
+        self.domain_name = domain.get("name") or "Global"
+        self.context = f"fmc:{self.domain_name}"
+
+    def _object_collections(self) -> dict[str, list[dict]]:
+        objects = self.payload.get("objects") if isinstance(self.payload.get("objects"), dict) else {}
+        names = (
+            "hosts", "networks", "ranges", "networkgroups", "protocolportobjects",
+            "portobjectgroups", "securityzones", "interfacegroups", "interfaces",
+            "applications", "users", "ips", "filepolicies", "variablesets",
+            "urlcategories", "vlanobjects",
         )
-        for section_rules in grouped.values():
-            for position, rule in enumerate(section_rules, 1):
-                rule.source_attributes["fmc_bundle_position"] = position
-
-            conflict = cls._order_values_conflict(section_rules, "fmc_target_index") or cls._order_values_conflict(
-                section_rules, "fmc_source_index"
-            )
-            for rule in section_rules:
-                rule.source_attributes["fmc_order_consistent"] = not conflict
-                if not conflict:
-                    continue
-                rule.source_attributes["fmc_order_review_reason"] = reason
-                if reason not in rule.review_reasons:
-                    rule.review_reasons.append(reason)
-                rule.requires_manual_review = True
-                rule.migration_status = "PARTIALLY_NORMALIZED"
-
-    def _network_refs(self, container: Any, *, owner: str, field: str) -> Tuple[List[str], bool]:
-        return self._fail_closed_refs(
-            super()._network_refs(container, owner=owner, field=field)
-        )
-
-    def _zone_refs(self, container: Any, *, owner: str, field: str) -> Tuple[List[str], bool]:
-        return self._fail_closed_refs(
-            super()._zone_refs(container, owner=owner, field=field)
-        )
-
-    def _service_refs(self, container: Any, *, owner: str, field: str) -> Tuple[List[str], bool]:
-        return self._fail_closed_refs(
-            super()._service_refs(container, owner=owner, field=field)
-        )
-
-    def parse(self) -> IRConfig:
-        from ..transformer import FMCToIRTransformer
-
-        return FMCToIRTransformer(self).transform()
+        return {name: _items(objects.get(name)) for name in names}
 
     def parse_source(self) -> CiscoFTDConfig:
-        """Build FTD source state directly from the FMC REST payload."""
         objects = self._object_collections()
         plane = "fmc-rest-bundle"
 
@@ -119,6 +72,12 @@ class CiscoFMCBundleParser(_RawCiscoFMCBundleParser):
                 value = value.get("name") or value.get("id")
             return str(value) if value is not None else None
 
+        def refs(value: Any) -> list[str]:
+            return [
+                str(item.get("name") or item.get("id") or item) if isinstance(item, dict) else str(item)
+                for item in _items(value)
+            ]
+
         def record(item: dict, index: int, cls, **values):
             return cls(
                 name=name(item, index), source_id=str(item.get("id") or "") or None,
@@ -127,68 +86,76 @@ class CiscoFMCBundleParser(_RawCiscoFMCBundleParser):
                 **values,
             )
 
-        network_names = {name(item, i) for i, item in enumerate(
-            objects.get("hosts", []) + objects.get("networks", []) + objects.get("ranges", []), 1
-        )}
-        groups = [record(item, i, CiscoFTDObject, object_type="network-group",
-                         members=[str(x.get("name") or x.get("id") or x) if isinstance(x, dict) else str(x)
-                                  for x in item.get("objects", item.get("members", []))])
-                  for i, item in enumerate(objects.get("networkgroups", []), 1)]
-        managed = [record(item, i, CiscoFTDObject, object_type=kind)
-                   for kind, collection in objects.items()
-                   if kind not in {
-                       "networkgroups", "protocolportobjects", "portobjectgroups",
-                       "securityzones", "interfaces",
-                   }
-                   for i, item in enumerate(collection, 1)]
-        services = [record(item, i, CiscoFTDService, protocol=item.get("protocol"),
-                           ports=item.get("ports", []))
-                    for i, item in enumerate(objects.get("protocolportobjects", []), 1)]
-        services += [record(item, i, CiscoFTDService, protocol=item.get("protocol"),
-                            members=[str(x.get("name") or x.get("id") or x) if isinstance(x, dict) else str(x)
-                                     for x in item.get("objects", item.get("members", []))])
-                     for i, item in enumerate(objects.get("portobjectgroups", []), 1)]
-        zones = [record(item, i, CiscoFTDZone,
-                        interfaces=[str(x.get("name") or x.get("id") or x) if isinstance(x, dict) else str(x)
-                                   for x in item.get("interfaces", [])])
-                 for i, item in enumerate(objects.get("securityzones", []), 1)]
-        interfaces = [record(item, i, CiscoFTDInterfaceSource,
-                             interface_type=item.get("type"), address=item.get("address"),
-                             zone=(item.get("securityZone") or {}).get("name")
-                             if isinstance(item.get("securityZone"), dict) else item.get("securityZone"))
-                      for i, item in enumerate(objects.get("interfaces", []), 1)]
+        groups = [
+            record(item, index, CiscoFTDObject, object_type="network-group", members=refs(item.get("objects", item.get("members", []))))
+            for index, item in enumerate(objects.get("networkgroups", []), 1)
+        ]
+        excluded = {"networkgroups", "protocolportobjects", "portobjectgroups", "securityzones", "interfaces"}
+        managed = [
+            record(item, index, CiscoFTDObject, object_type=kind)
+            for kind, collection in objects.items() if kind not in excluded
+            for index, item in enumerate(collection, 1)
+        ]
+        services = [
+            record(item, index, CiscoFTDService, protocol=item.get("protocol"), ports=item.get("ports", []))
+            for index, item in enumerate(objects.get("protocolportobjects", []), 1)
+        ]
+        services.extend(
+            record(item, index, CiscoFTDService, protocol=item.get("protocol"), members=refs(item.get("objects", item.get("members", []))))
+            for index, item in enumerate(objects.get("portobjectgroups", []), 1)
+        )
+        zones = [
+            record(item, index, CiscoFTDZone, interfaces=refs(item.get("interfaces", [])))
+            for index, item in enumerate(objects.get("securityzones", []), 1)
+        ]
+        interfaces = [
+            record(
+                item, index, CiscoFTDInterfaceSource,
+                interface_type=item.get("type"), address=item.get("address"),
+                zone=(item.get("securityZone") or {}).get("name")
+                if isinstance(item.get("securityZone"), dict) else item.get("securityZone"),
+            )
+            for index, item in enumerate(objects.get("interfaces", []), 1)
+        ]
 
         acp_rules = []
         for policy_index, policy in enumerate(_items(self.payload.get("access_policies")), 1):
             policy_name = str(policy.get("name") or policy.get("id") or policy_index)
             for rule_index, item in enumerate(_items(policy.get("rules")), 1):
-                acp_rules.append(record(item, rule_index, CiscoFTDACPRule,
-                    policy=policy_name, action=item.get("action"), order=rule_index,
-                    source=[str(x.get("name") or x.get("id") or x) if isinstance(x, dict) else str(x)
-                            for x in _items(item.get("source"))],
-                    destination=[str(x.get("name") or x.get("id") or x) if isinstance(x, dict) else str(x)
-                                 for x in _items(item.get("destination"))],
-                    services=[str(x.get("name") or x.get("id") or x) if isinstance(x, dict) else str(x)
-                              for x in _items(item.get("sourcePorts") or item.get("destinationPorts"))],
+                acp_rules.append(record(
+                    item, rule_index, CiscoFTDACPRule, policy=policy_name,
+                    action=item.get("action"), order=rule_index,
+                    source=refs(item.get("source")), destination=refs(item.get("destination")),
+                    services=refs(item.get("sourcePorts") or item.get("destinationPorts")),
                 ))
+
         nat_rules = []
         for policy_index, policy in enumerate(_items(self.payload.get("nat_policies")), 1):
             policy_name = str(policy.get("name") or policy.get("id") or policy_index)
-            raw_rules = _items(policy.get("manual_rules_before_auto")) + _items(policy.get("manual_rules")) + _items(policy.get("auto_rules")) + _items(policy.get("manual_rules_after_auto"))
+            raw_rules = (
+                _items(policy.get("manual_rules_before_auto")) + _items(policy.get("manual_rules"))
+                + _items(policy.get("auto_rules")) + _items(policy.get("manual_rules_after_auto"))
+            )
             for rule_index, item in enumerate(raw_rules, 1):
-                nat_rules.append(record(item, rule_index, CiscoFTDNATRule,
-                    policy=policy_name, source_interface=ref_name(item.get("sourceInterface")),
+                original = item.get("originalSource", item.get("source", {}))
+                translated = item.get("translatedSource", item.get("translated", {}))
+                nat_rules.append(record(
+                    item, rule_index, CiscoFTDNATRule, policy=policy_name,
+                    source_interface=ref_name(item.get("sourceInterface")),
                     destination_interface=ref_name(item.get("destinationInterface")),
-                    original=item.get("originalSource", item.get("source", {})) if isinstance(item.get("originalSource", item.get("source", {})), dict) else {},
-                    translated=item.get("translatedSource", item.get("translated", {})) if isinstance(item.get("translatedSource", item.get("translated", {})), dict) else {},
-                    order=rule_index))
+                    original=original if isinstance(original, dict) else {},
+                    translated=translated if isinstance(translated, dict) else {}, order=rule_index,
+                ))
+
         return CiscoFTDConfig(
             input_source_type=plane, source_plane=plane,
-            source_metadata={"domain_id": self.domain_id, "domain_name": self.domain_name,
-                             "source": self.payload.get("source", "fmc-rest-api")},
+            source_metadata={
+                "domain_id": self.domain_id, "domain_name": self.domain_name,
+                "source": self.payload.get("source", "fmc-rest-api"),
+            },
             managed_objects=managed, object_groups=groups, services=services,
-            security_zones=zones, source_interfaces=interfaces, acp_rules=acp_rules,
-            nat_policies=nat_rules,
+            security_zones=zones, source_interfaces=interfaces,
+            acp_rules=acp_rules, nat_policies=nat_rules,
         )
 
 
