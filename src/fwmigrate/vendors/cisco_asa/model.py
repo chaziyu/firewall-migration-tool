@@ -41,7 +41,7 @@ class CiscoInterface(BaseModel):
     description: Optional[str] = None
     shutdown: bool = False
     raw_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     policy_route_maps: List[str] = Field(default_factory=list)
@@ -59,7 +59,7 @@ class CiscoNetworkObject(BaseModel):
     description: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
     nat_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "NORMALIZED"
+    extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     address_family: Optional[str] = None
@@ -89,7 +89,7 @@ class CiscoNetworkGroup(BaseModel):
     members: List[str] = Field(default_factory=list)
     description: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "NORMALIZED"
+    extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     address_family: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -121,7 +121,7 @@ class CiscoNamedGroup(BaseModel):
     members: List[str] = Field(default_factory=list)
     description: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     member_entries: List[CiscoNamedGroupMember] = Field(default_factory=list)
@@ -134,7 +134,7 @@ class CiscoNetworkServiceObject(BaseModel):
     members: List[str] = Field(default_factory=list)
     description: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -175,7 +175,7 @@ class CiscoServiceObject(BaseModel):
     ports: List[CiscoServicePort] = Field(default_factory=list)
     description: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "NORMALIZED"
+    extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -188,7 +188,7 @@ class CiscoServiceGroup(BaseModel):
     service_objects: List[CiscoServicePort] = Field(default_factory=list)
     description: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "NORMALIZED"
+    extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     member_entries: List[CiscoServiceGroupMember] = Field(default_factory=list)
@@ -213,7 +213,7 @@ class CiscoACLBinding(BaseModel):
     raw_line: str
     line_number: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
-    migration_status: str = "NORMALIZED"
+    extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
 
@@ -253,7 +253,7 @@ class CiscoAccessRule(BaseModel):
     icmp_object_group: Optional[str] = None
     remark: Optional[str] = None
     raw_line: str = ""
-    migration_status: str = "NORMALIZED"
+    extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -309,7 +309,7 @@ class CiscoNATRule(BaseModel):
     effective_source_order: Optional[int] = None
     raw_line: str = ""
     description: Optional[str] = None
-    migration_status: str = "NORMALIZED"
+    extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -329,7 +329,7 @@ class CiscoStaticRoute(BaseModel):
     tunneled: bool = False
     raw_options: List[str] = Field(default_factory=list)
     raw_line: str = ""
-    migration_status: str = "NORMALIZED"
+    extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -339,7 +339,7 @@ class CiscoTrack(BaseModel):
     name: str
     source_context: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     track_id: int
@@ -353,7 +353,7 @@ class CiscoSLAMonitor(BaseModel):
     name: str
     source_context: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "EXTRACT_ONLY"
+    extraction_status: str = "SOURCE_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     sla_id: int
@@ -376,7 +376,7 @@ class CiscoRouteMapRule(BaseModel):
     output_interfaces: List[str] = Field(default_factory=list)
     raw_lines: List[str] = Field(default_factory=list)
     raw_options: List[str] = Field(default_factory=list)
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -403,7 +403,7 @@ class CiscoTimeRange(BaseModel):
     source_context: Optional[str] = None
     clauses: List[CiscoTimeRangeClause] = Field(default_factory=list)
     raw_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "NORMALIZED"
+    extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -413,7 +413,7 @@ class CiscoSourceRecord(BaseModel):
     name: str
     source_context: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "EXTRACT_ONLY"
+    extraction_status: str = "SOURCE_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -633,7 +633,7 @@ class CiscoInspectAction(BaseModel):
     parameters: List[str] = Field(default_factory=list)
     raw: str = ""
     source_order: int = 0
-    migration_status: str = "NORMALIZED"
+    extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
 
@@ -669,7 +669,7 @@ class CiscoPolicyMapClass(BaseModel):
     police_actions: List[CiscoMPFPoliceAction] = Field(default_factory=list)
     tcp_map: Optional[str] = None
     raw_lines: List[str] = Field(default_factory=list)
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     requires_manual_review: bool = True
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -792,7 +792,7 @@ class CiscoManagementSetting(CiscoSourceRecord):
 
 
 class CiscoSystemSettings(CiscoSourceRecord):
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     hostname: Optional[str] = None
     domain_name: Optional[str] = None
     timezone_name: Optional[str] = None
@@ -805,7 +805,7 @@ class CiscoSystemSettings(CiscoSourceRecord):
 
 
 class CiscoNTPServer(CiscoSourceRecord):
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     server: Optional[str] = None
     interface: Optional[str] = None
     prefer: bool = False
@@ -816,7 +816,7 @@ class CiscoNTPServer(CiscoSourceRecord):
 
 
 class CiscoManagementAccessRule(CiscoSourceRecord):
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     protocol: str
     source: Optional[str] = None
     mask_or_prefix: Optional[str] = None
@@ -838,7 +838,7 @@ class CiscoICMPManagementRule(CiscoSourceRecord):
 
 
 class CiscoSNMPSetting(CiscoSourceRecord):
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     setting_type: str
     host: Optional[str] = None
     interface: Optional[str] = None
@@ -854,7 +854,7 @@ class CiscoSNMPSetting(CiscoSourceRecord):
 
 
 class CiscoLoggingSetting(CiscoSourceRecord):
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     setting_type: str
     enabled: Optional[bool] = None
     host: Optional[str] = None
@@ -869,7 +869,7 @@ class CiscoLoggingSetting(CiscoSourceRecord):
 
 
 class CiscoEnableCredential(CiscoSourceRecord):
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     password_present: bool = False
     secret_present: bool = False
     encrypted: bool = False
@@ -883,7 +883,7 @@ class CiscoFailoverSetting(CiscoSourceRecord):
 
 
 class CiscoFailoverGroup(CiscoSourceRecord):
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     group_id: Optional[int] = None
     unit_role: Optional[str] = None
     priority: Optional[int] = None
@@ -892,7 +892,7 @@ class CiscoFailoverGroup(CiscoSourceRecord):
 
 
 class CiscoFailoverInterfaceIP(CiscoSourceRecord):
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     logical_name: Optional[str] = None
     interface: Optional[str] = None
     active_ip: Optional[str] = None
@@ -905,7 +905,7 @@ class CiscoFailoverInterfaceIP(CiscoSourceRecord):
 
 
 class CiscoFailoverMACAddress(CiscoSourceRecord):
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     interface: Optional[str] = None
     active_mac: Optional[str] = None
     standby_mac: Optional[str] = None
@@ -915,7 +915,7 @@ class CiscoFailoverMACAddress(CiscoSourceRecord):
 
 
 class CiscoFailoverConfig(CiscoSourceRecord):
-    migration_status: str = "PARTIALLY_NORMALIZED"
+    extraction_status: str = "PARTIAL"
     enabled: Optional[bool] = None
     unit_role: Optional[str] = None
     lan_interface_name: Optional[str] = None
@@ -951,7 +951,7 @@ class CiscoDiagnostic(BaseModel):
     raw_line: str
     severity: str = "error"
     reason: str
-    migration_effect: str = "PARSE_ERROR"
+    extraction_effect: str = "PARSE_ERROR"
 
 
 class CiscoASAConfig(BaseModel):

@@ -9,13 +9,9 @@ class ExtractionStatus(str, Enum):
     EXTRACTED = "EXTRACTED"
     PARTIAL = "PARTIAL"
     SOURCE_ONLY = "SOURCE_ONLY"
-    # Compatibility alias for the conservative unknown-section fallback.  It
-    # intentionally retains the historical serialized value so existing
-    # clients that only understand UNSUPPORTED remain safe.
-    SOURCE_ONLY_UNKNOWN = "UNSUPPORTED"
-    VENDOR_EXTENSION = "VENDOR_EXTENSION"
     UNSUPPORTED = "UNSUPPORTED"
-    IGNORED_BY_POLICY = "IGNORED_BY_POLICY"
+    UNKNOWN = "UNKNOWN"
+    IGNORED = "IGNORED"
     PARSE_ERROR = "PARSE_ERROR"
 
 
@@ -38,7 +34,7 @@ class SourceSectionResult(BaseModel):
     domain_name: Optional[str] = None
     object_count_total: Optional[int] = None
     object_count_partial: int = 0
-    object_count_extract_only: int = 0
+    object_count_source_only: int = 0
     object_count_unsupported: int = 0
     object_count_parse_error: int = 0
     supported_empty: bool = False
@@ -125,7 +121,7 @@ class CoverageSummary(BaseModel):
     total: int = 0
     extracted: int = 0
     partial: int = 0
-    extract_only: int = 0
+    source_only: int = 0
     unsupported: int = 0
     parse_errors: int = 0
     supported_empty: bool = False

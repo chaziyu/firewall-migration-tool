@@ -136,7 +136,7 @@ def _parse_class_map_block_phase(self: Any, lines: List[str], index: int) -> Cis
         match_all=(mode == "match-all") if mode else None,
         raw_lines=[sanitize_raw_text(line)],
         source_attributes={"raw_command": sanitize_raw_text(line), "source_line_number": index + 1},
-        migration_status="PARTIALLY_NORMALIZED",
+        extraction_status="PARTIAL",
         requires_manual_review=True,
     )
     if malformed:
@@ -236,7 +236,7 @@ def _parse_policy_map_block_phase(self: Any, lines: List[str], index: int) -> Ci
         name=name, policy_map_type=map_type, inspection_protocol=protocol,
         typed=map_type == "inspect", raw_lines=[sanitize_raw_text(line)],
         source_attributes={"raw_command": sanitize_raw_text(line), "source_line_number": index + 1},
-        migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+        extraction_status="PARTIAL", requires_manual_review=True,
     )
     if malformed:
         self._mpf_parse_error(record, index + 1, line, "policy-map", "Malformed or unsupported policy-map header")
@@ -318,7 +318,7 @@ def _parse_policy_map_block_phase(self: Any, lines: List[str], index: int) -> Ci
             class_name = class_parts[1] if len(class_parts) == 2 else _header_error_name("class", line_number)
             current = CiscoPolicyMapClassPhase10(
                 class_name=class_name, source_order=line_number,
-                raw_lines=[safe_child], migration_status="PARTIALLY_NORMALIZED",
+                raw_lines=[safe_child], extraction_status="PARTIAL",
                 requires_manual_review=True, source_attributes={"raw_header": safe_child},
             )
             record.classes.append(current)
@@ -352,12 +352,12 @@ def _parse_mpf_action_phase(self: Any, section: CiscoPolicyMapClassPhase10, line
         extras = parts[2:]
         if negated:
             action.parameters.append("no")
-            action.migration_status = "PARTIALLY_NORMALIZED"
+            action.extraction_status = "PARTIAL"
             action.requires_manual_review = True
             action.review_reasons.append("Negated inspect action retained for effective-state review")
         if protocol not in _INSPECT_ENGINES:
             action.parameters.extend(extras)
-            action.migration_status = "PARTIALLY_NORMALIZED"
+            action.extraction_status = "PARTIAL"
             action.requires_manual_review = True
             action.review_reasons.append("Unknown inspect protocol retained as structured source data")
             section.inspect_actions.append(action)
@@ -383,7 +383,7 @@ def _parse_mpf_action_phase(self: Any, section: CiscoPolicyMapClassPhase10, line
         elif extras:
             action.parameters.extend(extras)
         if action.policy_name:
-            action.migration_status = "PARTIALLY_NORMALIZED"
+            action.extraction_status = "PARTIAL"
             action.requires_manual_review = True
             action.review_reasons.append("Referenced inspection policy requires target review")
         section.inspect_actions.append(action)
@@ -524,7 +524,7 @@ def _parse_tcp_map_block_phase(self: Any, lines: List[str], index: int) -> Cisco
     record = CiscoTCPMapPhase11(
         name=name, raw_lines=[sanitize_raw_text(line)],
         source_attributes={"raw_command": sanitize_raw_text(line), "source_line_number": index + 1},
-        migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+        extraction_status="PARTIAL", requires_manual_review=True,
     )
     if len(parts) != 2:
         self._mpf_parse_error(record, index + 1, line, "tcp-map", "Malformed tcp-map header")
@@ -575,7 +575,7 @@ def _parse_service_policy_line_phase(self: Any, line: str, line_number: int) -> 
     if not parts or parts[0].lower() != "service-policy":
         return CiscoServicePolicyPhase10(
             name=_header_error_name("service-policy", line_number), raw_lines=[safe],
-            source_order=line_number, migration_status="PARSE_ERROR", requires_manual_review=True,
+            source_order=line_number, extraction_status="PARSE_ERROR", requires_manual_review=True,
             review_reasons=["Malformed service-policy command"],
         )
     policy_name = parts[1] if len(parts) > 1 else None
@@ -597,7 +597,7 @@ def _parse_service_policy_line_phase(self: Any, line: str, line_number: int) -> 
         enabled=not negated, negated=negated, fail_close=fail_close,
         source_order=line_number, raw_lines=[safe],
         source_attributes={"raw_command": safe, "negated": negated},
-        migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False,
+        extraction_status="PARTIAL", requires_manual_review=False,
     )
     if not policy_name:
         self._mpf_parse_error(record, line_number, line, "service-policy", "Malformed service-policy: missing policy name")
@@ -615,11 +615,11 @@ def _parse_threat_detection_phase(self: Any, line: str, line_number: int) -> Cis
         name=f"threat-detection:{line_number}", setting="threat-detection",
         control_type="threat_detection", raw_lines=[sanitize_raw_text(line)],
         source_order=line_number, source_attributes={"raw_command": sanitize_raw_text(line), "negated": negated},
-        migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False,
+        extraction_status="PARTIAL", requires_manual_review=False,
         negated=negated, enabled=not negated,
     )
     if len(parts) < 2 or parts[0].lower() != "threat-detection":
-        item.migration_status = "PARSE_ERROR"
+        item.extraction_status = "PARSE_ERROR"
         item.requires_manual_review = True
         item.review_reasons.append("Malformed threat-detection command")
         self._record_diagnostic(line_number, line, "Malformed threat-detection command", "threat-detection")
@@ -642,7 +642,7 @@ def _parse_threat_detection_phase(self: Any, line: str, line_number: int) -> Cis
                 break
             value = params[pos + 1]
             if not value.isdigit():
-                item.migration_status = "PARSE_ERROR"
+                item.extraction_status = "PARSE_ERROR"
                 item.requires_manual_review = True
                 item.review_reasons.append(f"Threat-detection {key} must be numeric")
                 self._record_diagnostic(line_number, line, f"Malformed threat-detection {key}", "threat-detection")
@@ -719,7 +719,7 @@ def _parse_dhcpd_command_phase(self: Any, line: str, line_number: int) -> None:
             item.pool = item.pool_start = item.pool_end = None
             return
         if "-" not in pool_expression:
-            item.migration_status = "PARSE_ERROR"
+            item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
             item.review_reasons.append("Malformed DHCP address pool")
             self._record_diagnostic(line_number, line, "Malformed DHCP address pool", "dhcpd")
@@ -731,7 +731,7 @@ def _parse_dhcpd_command_phase(self: Any, line: str, line_number: int) -> None:
         except ValueError:
             valid = False
         if not valid:
-            item.migration_status = "PARSE_ERROR"
+            item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
             item.review_reasons.append("Invalid or reversed DHCP address pool")
             self._record_diagnostic(line_number, line, "Invalid or reversed DHCP address pool", "dhcpd")
@@ -743,7 +743,7 @@ def _parse_dhcpd_command_phase(self: Any, line: str, line_number: int) -> None:
         item.interface = interface or item.interface
         item.enabled = not negated
         if not interface:
-            item.migration_status = "PARSE_ERROR"
+            item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
             self._record_diagnostic(line_number, line, "DHCP enable requires an interface", "dhcpd")
         return
@@ -752,7 +752,7 @@ def _parse_dhcpd_command_phase(self: Any, line: str, line_number: int) -> None:
             item.dns_servers = []
             return
         if not values:
-            item.migration_status = "PARSE_ERROR"
+            item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
             self._record_diagnostic(line_number, line, "Malformed DHCP DNS server", "dhcpd")
             return
@@ -761,7 +761,7 @@ def _parse_dhcpd_command_phase(self: Any, line: str, line_number: int) -> None:
             try:
                 address = ipaddress.ip_address(value)
             except ValueError:
-                item.migration_status = "PARSE_ERROR"
+                item.extraction_status = "PARSE_ERROR"
                 item.requires_manual_review = True
                 item.review_reasons.append(f"Invalid DHCP DNS server: {value}")
                 self._record_diagnostic(line_number, line, "Malformed DHCP DNS server", "dhcpd")
@@ -775,7 +775,7 @@ def _parse_dhcpd_command_phase(self: Any, line: str, line_number: int) -> None:
         elif values:
             item.domain_name = " ".join(values)
         else:
-            item.migration_status = "PARSE_ERROR"
+            item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
             self._record_diagnostic(line_number, line, "Malformed DHCP domain", "dhcpd")
         return
@@ -785,7 +785,7 @@ def _parse_dhcpd_command_phase(self: Any, line: str, line_number: int) -> None:
         elif len(values) == 1 and values[0].isdigit():
             item.lease_seconds = int(values[0])
         else:
-            item.migration_status = "PARSE_ERROR"
+            item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
             self._record_diagnostic(line_number, line, "Malformed DHCP lease", "dhcpd")
         return
@@ -816,12 +816,12 @@ def _parse_management_command_phase(self: Any, line: str, line_number: int) -> N
                 if effective_parts[3].isdigit() and 1 <= int(effective_parts[3]) <= 65535:
                     http.port = int(effective_parts[3])
                 else:
-                    http.migration_status = "PARSE_ERROR"
+                    http.extraction_status = "PARSE_ERROR"
                     http.requires_manual_review = True
                     http.review_reasons.append("Invalid HTTP server port")
                     self._record_diagnostic(line_number, line, "Invalid HTTP server port", "http")
             elif len(effective_parts) > 4:
-                http.migration_status = "PARSE_ERROR"
+                http.extraction_status = "PARSE_ERROR"
                 http.requires_manual_review = True
                 self._record_diagnostic(line_number, line, "Malformed HTTP server enable command", "http")
             return
@@ -832,7 +832,7 @@ def _parse_management_command_phase(self: Any, line: str, line_number: int) -> N
             elif len(effective_parts) == 4 and effective_parts[3].isdigit():
                 setattr(http, field, int(effective_parts[3]))
             else:
-                http.migration_status = "PARSE_ERROR"
+                http.extraction_status = "PARSE_ERROR"
                 http.requires_manual_review = True
                 self._record_diagnostic(line_number, line, f"Malformed HTTP server {effective_parts[2]}", "http")
             return
@@ -859,7 +859,7 @@ def _parse_management_command_phase(self: Any, line: str, line_number: int) -> N
                 source_attributes={"raw_command": safe, "negated": negated},
             )
             if network is None or network.version != 6:
-                item.migration_status = "PARSE_ERROR"
+                item.extraction_status = "PARSE_ERROR"
                 item.requires_manual_review = True
                 item.review_reasons.append("Invalid management IPv6 prefix")
                 self._record_diagnostic(line_number, line, "Invalid management IPv6 prefix", command)
@@ -965,7 +965,7 @@ def _postprocess_interface_dhcprelay(self: Any) -> None:
     lines = self.raw_lines
     relay = next((item for item in self.config.dhcp_relays if item.name == "dhcprelay"), None)
     if relay is None:
-        relay = CiscoDHCPRelay(name="dhcprelay", migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False)
+        relay = CiscoDHCPRelay(name="dhcprelay", extraction_status="PARTIAL", requires_manual_review=False)
     found = False
     for index, raw in enumerate(lines):
         if raw[:1].isspace():
@@ -988,7 +988,7 @@ def _postprocess_interface_dhcprelay(self: Any) -> None:
                 try:
                     ipaddress.ip_address(address)
                 except ValueError:
-                    relay.migration_status = "PARSE_ERROR"
+                    relay.extraction_status = "PARSE_ERROR"
                     relay.requires_manual_review = True
                     relay.review_reasons.append("DHCP relay server must be an IP address")
                     self._record_diagnostic(line_number, child, "Malformed DHCP relay server", "dhcprelay")
@@ -1218,8 +1218,8 @@ def _extend_reference_validation(original_validate: Any):
                     if reason not in match.review_reasons:
                         match.review_reasons.append(reason)
                     class_map.requires_manual_review = True
-                    if class_map.migration_status != "PARSE_ERROR":
-                        class_map.migration_status = "PARTIALLY_NORMALIZED"
+                    if class_map.extraction_status != "PARSE_ERROR":
+                        class_map.extraction_status = "PARTIAL"
                     issues.append(ReferenceIssue("class_map", class_map.name, match.class_map_name, False, "Unresolved class map reference", context, "class-map"))
 
         for policy in config.policy_maps:
@@ -1232,8 +1232,8 @@ def _extend_reference_validation(original_validate: Any):
                 target = scoped(config.class_maps, section.class_name, context)
                 if target is None:
                     policy.requires_manual_review = True
-                    if policy.migration_status != "PARSE_ERROR":
-                        policy.migration_status = "PARTIALLY_NORMALIZED"
+                    if policy.extraction_status != "PARSE_ERROR":
+                        policy.extraction_status = "PARTIAL"
                     issues.append(ReferenceIssue("class_map", policy.name, section.class_name, False, "Unresolved inspection class map reference", context, section.class_name))
 
         if config.dns_settings.default_server_group:

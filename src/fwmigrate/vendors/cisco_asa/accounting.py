@@ -19,10 +19,10 @@ _SEVERITY = {
     ExtractionStatus.EXTRACTED: 0,
     ExtractionStatus.SOURCE_ONLY: 1,
     ExtractionStatus.PARTIAL: 2,
-    ExtractionStatus.VENDOR_EXTENSION: 2,
     ExtractionStatus.UNSUPPORTED: 3,
+    ExtractionStatus.UNKNOWN: 3,
     ExtractionStatus.PARSE_ERROR: 4,
-    ExtractionStatus.IGNORED_BY_POLICY: 0,
+    ExtractionStatus.IGNORED: 0,
 }
 
 
@@ -95,7 +95,7 @@ def build_asa_source_accounting(
     actual_status_by_line: Dict[int, ExtractionStatus] = {}
     review_by_line: Dict[int, bool] = {}
     for record in _walk_models(config):
-        record_status = _status(getattr(record, "migration_status", None))
+        record_status = _status(getattr(record, "extraction_status", None))
         line_number = _record_line(record, source_positions)
         if record_status is not None and line_number is not None:
             _set_worst(actual_status_by_line, line_number, record_status)
@@ -104,7 +104,7 @@ def build_asa_source_accounting(
 
     diagnostics_by_line = {item.line_number: item for item in config.diagnostics}
     for diagnostic in config.diagnostics:
-        diagnostic_status = _status(diagnostic.migration_effect) or ExtractionStatus.PARSE_ERROR
+        diagnostic_status = _status(diagnostic.extraction_effect) or ExtractionStatus.PARSE_ERROR
         _set_worst(actual_status_by_line, diagnostic.line_number, diagnostic_status)
         review_by_line[diagnostic.line_number] = True
 
@@ -140,7 +140,7 @@ def build_asa_source_accounting(
             ExtractionStatus.PARTIAL,
             ExtractionStatus.UNSUPPORTED,
             ExtractionStatus.PARSE_ERROR,
-            ExtractionStatus.VENDOR_EXTENSION,
+            ExtractionStatus.UNKNOWN,
         }
         source_path = next(
             (s.path for s in sections if (s.line_start or 0) <= number <= (s.line_end or s.line_start or 0)),

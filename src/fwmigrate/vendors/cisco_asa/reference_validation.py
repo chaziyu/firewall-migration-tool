@@ -320,7 +320,7 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         add("time_range", rule.acl_name, rule.time_range)
         if rule.time_range:
             schedule = indexes["time_range"].get(rule.time_range)
-            if schedule is not None and schedule.migration_status == "PARSE_ERROR":
+            if schedule is not None and schedule.extraction_status == "PARSE_ERROR":
                 issues.append(ReferenceIssue(
                     "time_range", rule.acl_name, rule.time_range, True,
                     f"Referenced time-range {rule.time_range} contains parse errors",
@@ -506,7 +506,7 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
         if issue.reference_type == "route_tracking":
             for route in config.static_routes:
                 if route.track_id == int(issue.reference_name) and _source_context(route) == issue.source_context:
-                    route.migration_status = "PARTIALLY_NORMALIZED" if route.migration_status != "PARSE_ERROR" else route.migration_status
+                    route.extraction_status = "PARTIAL" if route.extraction_status != "PARSE_ERROR" else route.extraction_status
                     route.requires_manual_review = True
                     if reason not in route.review_reasons:
                         route.review_reasons.append(reason)
@@ -514,26 +514,26 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
             continue
         if issue.reference_type == "class_map" and any(item.name == issue.source_object and _source_context(item) == issue.source_context for item in config.policy_maps):
             policy = next(item for item in config.policy_maps if item.name == issue.source_object and _source_context(item) == issue.source_context)
-            policy.migration_status = "PARTIALLY_NORMALIZED" if policy.migration_status != "PARSE_ERROR" else policy.migration_status
+            policy.extraction_status = "PARTIAL" if policy.extraction_status != "PARSE_ERROR" else policy.extraction_status
             policy.requires_manual_review = True
             if reason not in policy.review_reasons:
                 policy.review_reasons.append(reason)
             for section in policy.classes:
                 if section.class_name == issue.reference_context:
-                    section.migration_status = "PARTIALLY_NORMALIZED" if section.migration_status != "PARSE_ERROR" else section.migration_status
+                    section.extraction_status = "PARTIAL" if section.extraction_status != "PARSE_ERROR" else section.extraction_status
                     section.requires_manual_review = True
                     if reason not in section.review_reasons:
                         section.review_reasons.append(reason)
             continue
         if issue.reference_type == "tcp_map" and any(item.name == issue.source_object and _source_context(item) == issue.source_context for item in config.policy_maps):
             policy = next(item for item in config.policy_maps if item.name == issue.source_object and _source_context(item) == issue.source_context)
-            policy.migration_status = "PARTIALLY_NORMALIZED" if policy.migration_status != "PARSE_ERROR" else policy.migration_status
+            policy.extraction_status = "PARTIAL" if policy.extraction_status != "PARSE_ERROR" else policy.extraction_status
             policy.requires_manual_review = True
             if reason not in policy.review_reasons:
                 policy.review_reasons.append(reason)
             for section in policy.classes:
                 if section.class_name == issue.reference_context:
-                    section.migration_status = "PARTIALLY_NORMALIZED" if section.migration_status != "PARSE_ERROR" else section.migration_status
+                    section.extraction_status = "PARTIAL" if section.extraction_status != "PARSE_ERROR" else section.extraction_status
                     section.requires_manual_review = True
                     if reason not in section.review_reasons:
                         section.review_reasons.append(reason)
@@ -541,7 +541,7 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
         if issue.reference_type == "acl" and issue.reference_context == "class-map":
             item = next((item for item in config.class_maps if item.name == issue.source_object and _source_context(item) == issue.source_context), None)
             if item is not None:
-                item.migration_status = "PARTIALLY_NORMALIZED" if item.migration_status != "PARSE_ERROR" else item.migration_status
+                item.extraction_status = "PARTIAL" if item.extraction_status != "PARSE_ERROR" else item.extraction_status
                 item.requires_manual_review = True
                 if reason not in item.review_reasons:
                     item.review_reasons.append(reason)
@@ -557,7 +557,7 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
                 and (issue.reference_type != "interface" or item.interface == issue.reference_name)
             ]
             for item in matched:
-                item.migration_status = "PARTIALLY_NORMALIZED" if item.migration_status != "PARSE_ERROR" else item.migration_status
+                item.extraction_status = "PARTIAL" if item.extraction_status != "PARSE_ERROR" else item.extraction_status
                 item.requires_manual_review = True
                 if reason not in item.review_reasons:
                     item.review_reasons.append(reason)
@@ -581,9 +581,9 @@ def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
                     continue
                 if getattr(item, "name", None) != issue.source_object and getattr(item, "acl_name", None) != issue.source_object:
                     continue
-                if hasattr(item, "migration_status"):
-                    if item.migration_status != "PARSE_ERROR":
-                        item.migration_status = "PARTIALLY_NORMALIZED"
+                if hasattr(item, "extraction_status"):
+                    if item.extraction_status != "PARSE_ERROR":
+                        item.extraction_status = "PARTIAL"
                 if hasattr(item, "requires_manual_review"):
                     item.requires_manual_review = True
                 if hasattr(item, "review_reasons"):

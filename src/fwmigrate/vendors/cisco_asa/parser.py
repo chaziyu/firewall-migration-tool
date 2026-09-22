@@ -199,15 +199,15 @@ class CiscoASAParser:
 
     def _record_diagnostic(
         self, line_number: int, line: str, reason: str, section: str,
-        object_name: Optional[str] = None, migration_effect: str = "PARSE_ERROR",
+        object_name: Optional[str] = None, extraction_effect: str = "PARSE_ERROR",
     ) -> None:
         diagnostic = CiscoDiagnostic(
             line_number=line_number, section=section, object_name=object_name,
-            raw_line=sanitize_raw_text(line), reason=reason, migration_effect=migration_effect,
-            severity="error" if migration_effect == "PARSE_ERROR" else "warning",
+            raw_line=sanitize_raw_text(line), reason=reason, extraction_effect=extraction_effect,
+            severity="error" if extraction_effect == "PARSE_ERROR" else "warning",
         )
         self.config.diagnostics.append(diagnostic)
-        if migration_effect == "PARSE_ERROR":
+        if extraction_effect == "PARSE_ERROR":
             self.config.parse_errors.append(diagnostic.model_dump())
 
     def _record_acl_consumer(self, acl_name: str, consumer_type: str, line_number: int, line: str) -> None:
@@ -228,7 +228,7 @@ class CiscoASAParser:
         system.raw_lines.append(sanitize_raw_text(line))
         system.source_attributes.setdefault("raw_commands", []).append(sanitize_raw_text(line))
         if command == "hostname" and len(parts) == 2:
-            system.hostname = parts[1]; system.migration_status = "NORMALIZED"; system.requires_manual_review = False; return
+            system.hostname = parts[1]; system.extraction_status = "EXTRACTED"; system.requires_manual_review = False; return
         if lower == "no logging enable":
             self.config.logging_settings.append(CiscoLoggingSetting(name=f"logging:{line_number}", setting_type="enable", enabled=False, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number))
             return
@@ -239,7 +239,7 @@ class CiscoASAParser:
         if lower.startswith("clock timezone ") and len(parts) >= 4:
             system.timezone_name = parts[2]
             try: system.timezone_offset = int(parts[3])
-            except ValueError: system.migration_status = "PARSE_ERROR"; system.requires_manual_review = True; self._record_diagnostic(line_number, line, "Malformed timezone offset", "timezone")
+            except ValueError: system.extraction_status = "PARSE_ERROR"; system.requires_manual_review = True; self._record_diagnostic(line_number, line, "Malformed timezone offset", "timezone")
             if len(parts) >= 5 and parts[4].lstrip("-").isdigit(): system.source_attributes["timezone_minutes"] = int(parts[4])
             return
         if lower.startswith("management-access ") and len(parts) == 2:
@@ -256,7 +256,7 @@ class CiscoASAParser:
         if lower.startswith("ntp server "):
             item = CiscoNTPServer(name=f"ntp:{line_number}", server=parts[2] if len(parts) > 2 else None, source_order=line_number, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
             try: ipaddress.ip_address(item.server or "")
-            except ValueError: item.migration_status = "PARSE_ERROR"; item.requires_manual_review = True; item.review_reasons.append("NTP server must be an IP address"); self._record_diagnostic(line_number, line, item.review_reasons[0], "ntp")
+            except ValueError: item.extraction_status = "PARSE_ERROR"; item.requires_manual_review = True; item.review_reasons.append("NTP server must be an IP address"); self._record_diagnostic(line_number, line, item.review_reasons[0], "ntp")
             for pos, token in enumerate(parts[3:], 3):
                 if token.lower() in {"prefer", "source"} and token.lower() == "prefer": item.prefer = True
                 elif token.lower() == "source" and pos + 1 < len(parts): item.interface = parts[pos + 1]
@@ -265,9 +265,9 @@ class CiscoASAParser:
         if command in {"ssh", "http", "telnet"}:
             item = CiscoManagementAccessRule(name=f"{command}:{line_number}", protocol=command, source=parts[1] if len(parts)>1 else None, mask_or_prefix=parts[2] if len(parts)>2 else None, interface=parts[3] if len(parts)>3 else None, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number, source_attributes={"raw_command": sanitize_raw_text(line)})
             if len(parts) < 4:
-                item.migration_status = "PARSE_ERROR"; item.requires_manual_review = True; item.review_reasons.append("Malformed management access rule"); self._record_diagnostic(line_number, line, item.review_reasons[0], command)
+                item.extraction_status = "PARSE_ERROR"; item.requires_manual_review = True; item.review_reasons.append("Malformed management access rule"); self._record_diagnostic(line_number, line, item.review_reasons[0], command)
             elif normalize_ipv4_network(item.source or "", item.mask_or_prefix or "") is None:
-                item.migration_status = "PARSE_ERROR"; item.requires_manual_review = True; item.review_reasons.append("Invalid management source IPv4 address/netmask"); self._record_diagnostic(line_number, line, item.review_reasons[0], command)
+                item.extraction_status = "PARSE_ERROR"; item.requires_manual_review = True; item.review_reasons.append("Invalid management source IPv4 address/netmask"); self._record_diagnostic(line_number, line, item.review_reasons[0], command)
             if "port" in [x.lower() for x in parts]:
                 pos = [x.lower() for x in parts].index("port")
                 if pos + 1 < len(parts) and parts[pos + 1].isdigit(): item.port = int(parts[pos + 1])
@@ -282,7 +282,7 @@ class CiscoASAParser:
                 if "version" in [x.lower() for x in parts]: item.version = parts[[x.lower() for x in parts].index("version") + 1]
                 if "username" in [x.lower() for x in parts]: item.username = parts[[x.lower() for x in parts].index("username") + 1]
             elif len(parts) > 1 and parts[1].lower() == "community": item.setting_type = "community"; item.community_present = True
-            else: item.migration_status = "PARTIALLY_NORMALIZED"; item.requires_manual_review = True; item.review_reasons.append("Unsupported SNMP syntax")
+            else: item.extraction_status = "PARTIAL"; item.requires_manual_review = True; item.review_reasons.append("Unsupported SNMP syntax")
             self.config.snmp_settings.append(item); return
         if lower.startswith("logging "):
             item = CiscoLoggingSetting(name=f"logging:{line_number}", setting_type=parts[1] if len(parts)>1 else "command", raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number, source_attributes={"raw_command": sanitize_raw_text(line)})
@@ -290,7 +290,7 @@ class CiscoASAParser:
             elif lower == "no logging enable": item.enabled = False; item.setting_type = "enable"
             elif len(parts) > 2 and parts[1].lower() == "host": item.setting_type = "host"; item.interface, item.host = parts[2], parts[3] if len(parts)>3 else None
             elif len(parts) > 2 and parts[1].lower() in {"buffered", "trap", "console", "monitor"}: item.severity = parts[2]
-            else: item.migration_status = "PARTIALLY_NORMALIZED"; item.requires_manual_review = True
+            else: item.extraction_status = "PARTIAL"; item.requires_manual_review = True
             self.config.logging_settings.append(item); return
         if command == "enable":
             item = CiscoEnableCredential(name=f"enable:{line_number}", password_present="password" in lower, secret_present="secret" in lower, encrypted="encrypted" in lower, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number, source_attributes={"raw_command": sanitize_raw_text(line)})
@@ -312,7 +312,7 @@ class CiscoASAParser:
             source_attributes={"raw_command": sanitize_raw_text(line), "source_endpoint": endpoint.raw},
         )
         if not endpoint.valid:
-            rule.migration_status = "PARSE_ERROR"
+            rule.extraction_status = "PARSE_ERROR"
             rule.requires_manual_review = True
             rule.review_reasons.append("Invalid ICMP management source selector")
             self._record_diagnostic(line_number, line, rule.review_reasons[0], "icmp")
@@ -321,7 +321,7 @@ class CiscoASAParser:
     def _parse_failover_command(self, line: str, line_number: int, children: Optional[List[str]] = None) -> None:
         parts = line.split(); lower = line.lower(); cfg = self.config.failover_config
         safe = sanitize_raw_text(line); cfg.raw_lines.append(safe); cfg.source_attributes.setdefault("raw_commands", []).append(safe)
-        setting = CiscoFailoverSetting(name="failover", setting=parts[0], migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False, raw_lines=[safe], source_attributes={"raw_command": safe})
+        setting = CiscoFailoverSetting(name="failover", setting=parts[0], extraction_status="PARTIAL", requires_manual_review=False, raw_lines=[safe], source_attributes={"raw_command": safe})
         self.config.failover_settings.append(setting)
         if lower in {"failover", "no failover"}: cfg.enabled = lower == "failover"
         elif len(parts) >= 4 and lower.startswith("failover lan unit "): cfg.unit_role = parts[3].lower()
@@ -339,11 +339,11 @@ class CiscoASAParser:
             item = CiscoFailoverInterfaceIP(name=f"failover-ip:{line_number}", logical_name=parts[3], interface=parts[3], active_ip=active, netmask_or_prefix=prefix, address_family=family, standby_ip=parts[standby_pos + 1] if standby_pos is not None and standby_pos + 1 < len(parts) else None, raw_line=safe, raw_lines=[safe], source_order=line_number)
             for value in (item.active_ip, item.standby_ip):
                 try: ipaddress.ip_interface(value or "") if "/" in (value or "") else ipaddress.ip_address(value or "")
-                except ValueError: item.migration_status="PARSE_ERROR"; item.requires_manual_review=True; item.review_reasons.append("Malformed failover interface IP")
+                except ValueError: item.extraction_status="PARSE_ERROR"; item.requires_manual_review=True; item.review_reasons.append("Malformed failover interface IP")
             cfg.interface_ips.append(item)
         elif len(parts) >= 5 and lower.startswith("failover mac address "):
             item = CiscoFailoverMACAddress(name=f"failover-mac:{line_number}", interface=parts[3], active_mac=parts[4], standby_mac=parts[6] if len(parts)>6 and parts[5].lower()=="standby" else None, raw_line=safe, raw_lines=[safe], source_order=line_number)
-            if not all(re.fullmatch(r"[0-9a-fA-F]{4}(?:\.[0-9a-fA-F]{4}){2}", x or "") for x in (item.active_mac, item.standby_mac) if x): item.migration_status="PARSE_ERROR"; item.requires_manual_review=True; item.review_reasons.append("Malformed failover MAC address")
+            if not all(re.fullmatch(r"[0-9a-fA-F]{4}(?:\.[0-9a-fA-F]{4}){2}", x or "") for x in (item.active_mac, item.standby_mac) if x): item.extraction_status="PARSE_ERROR"; item.requires_manual_review=True; item.review_reasons.append("Malformed failover MAC address")
             cfg.mac_addresses.append(item)
         elif lower.startswith("failover replication http"): cfg.replication_http = True
         elif len(parts) >= 3 and lower.startswith("failover polltime "): cfg.polltime = " ".join(parts[2:])
@@ -361,7 +361,7 @@ class CiscoASAParser:
                     except ValueError: group.review_reasons.append("Malformed failover group priority")
                 group.raw_lines.append(sanitize_raw_text(child))
             cfg.failover_groups.append(group)
-        else: cfg.migration_status="PARTIALLY_NORMALIZED"; cfg.requires_manual_review=True; cfg.review_reasons.append("Unsupported failover syntax")
+        else: cfg.extraction_status="PARTIAL"; cfg.requires_manual_review=True; cfg.review_reasons.append("Unsupported failover syntax")
 
     @staticmethod
     def _append_unique(values: List[str], additions: Iterable[str]) -> None:
@@ -373,7 +373,7 @@ class CiscoASAParser:
         parts = line.split()
         offset = 2
         if len(parts) <= offset + 1 or not parts[offset + 1].isdigit():
-            self._record_diagnostic(line_number, line, "Malformed crypto map sequence", "crypto map", migration_effect="PARSE_ERROR")
+            self._record_diagnostic(line_number, line, "Malformed crypto map sequence", "crypto map", extraction_effect="PARSE_ERROR")
             return
         name, sequence = parts[offset], int(parts[offset + 1])
         source_context = self._line_contexts.get(line_number)
@@ -404,7 +404,7 @@ class CiscoASAParser:
                 setattr(record, f"security_association_lifetime_{lowered[3]}", int(tokens[4]))
             else:
                 record.raw_options.append(safe_line)
-                record.migration_status = "PARSE_ERROR"
+                record.extraction_status = "PARSE_ERROR"
                 record.requires_manual_review = True
         elif lowered[:2] == ["set", "connection-type"] and len(tokens) >= 3:
             record.raw_options.append(safe_line)
@@ -416,7 +416,7 @@ class CiscoASAParser:
                 record.dynamic_map = tokens[lowered.index("dynamic") + 1]
             elif tokens:
                 record.raw_options.append(safe_line)
-                record.migration_status = "PARTIALLY_NORMALIZED"
+                record.extraction_status = "PARTIAL"
                 record.review_reasons.append("Unsupported crypto-map child syntax")
 
     def _parse_ike_child(self, record: CiscoIKEPolicy, children: List[str], line_number: int) -> None:
@@ -445,12 +445,12 @@ class CiscoASAParser:
             elif key == "lifetime" and len(parts) == 2 and parts[1].isdigit():
                 record.lifetime_seconds = int(parts[1])
             elif key == "lifetime":
-                record.migration_status = "PARSE_ERROR"
+                record.extraction_status = "PARSE_ERROR"
                 record.requires_manual_review = True
                 record.raw_options.append(sanitize_raw_text(child))
                 self._record_diagnostic(line_number, child, "Malformed IKE lifetime", "crypto ike policy", record.name)
             else:
-                record.migration_status = "PARTIALLY_NORMALIZED"
+                record.extraction_status = "PARTIAL"
                 record.requires_manual_review = True
                 record.raw_options.append(sanitize_raw_text(child))
                 record.review_reasons.append("Unsupported IKE policy child syntax")
@@ -482,7 +482,7 @@ class CiscoASAParser:
             group.raw_lines.append(sanitize_raw_text(line))
             group.source_attributes.setdefault("raw_commands", []).append(sanitize_raw_text(line))
             if protocol.lower() not in {"radius", "tacacs+", "ldap"}:
-                group.migration_status = "PARTIALLY_NORMALIZED"
+                group.extraction_status = "PARTIAL"
                 group.requires_manual_review = True
                 group.review_reasons.append("AAA server protocol is preserved but not semantically verified")
             self._aaa_record(line, index, group_name)
@@ -512,7 +512,7 @@ class CiscoASAParser:
             key, value = tokens[0].lower(), tokens[1:]
             if key in {"authentication-port", "accounting-port", "timeout", "retries", "retry"}:
                 if len(value) != 1 or not value[0].isdigit():
-                    record.migration_status = "PARSE_ERROR"
+                    record.extraction_status = "PARSE_ERROR"
                     record.requires_manual_review = True
                     self._record_diagnostic(index + 1, child, f"Malformed AAA {key}", "aaa-server", record.name)
                 else:
@@ -527,7 +527,7 @@ class CiscoASAParser:
             elif key in {"ldap-over-ssl", "ldap-over-ssl-enabled"}:
                 record.ldap_over_ssl = True
             else:
-                record.migration_status = "PARTIALLY_NORMALIZED"
+                record.extraction_status = "PARTIAL"
                 record.requires_manual_review = True
                 record.source_attributes.setdefault("unmodeled_lines", []).append(safe)
                 record.review_reasons.append("Unsupported AAA server-host option")
@@ -566,7 +566,7 @@ class CiscoASAParser:
         cls = {"authentication": CiscoAAAAuthenticationRule, "authorization": CiscoAAAAuthorizationRule, "accounting": CiscoAAAAccountingRule}[family]
         record = cls(name=f"{family}:{index + 1}", service=service, management_protocol=service, target=target, server_group=server_group, fallback_local=fallback, interface=target, options=options, acl_reference=acl_reference, user_identity=user_identity, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
         if not server_group and not fallback:
-            record.migration_status = "PARTIALLY_NORMALIZED"
+            record.extraction_status = "PARTIAL"
             record.requires_manual_review = True
             record.review_reasons.append("AAA rule has no resolvable server group or LOCAL fallback")
         target_collection.append(self._with_source_context(record, index + 1))
@@ -599,7 +599,7 @@ class CiscoASAParser:
             history.append(previous.raw_line)
             record.source_attributes["definition_history"] = [*history, record.raw_line]
         if previous and (previous.privilege, previous.authentication_type) != (record.privilege, record.authentication_type):
-            record.migration_status = previous.migration_status = "PARTIALLY_NORMALIZED"
+            record.extraction_status = previous.extraction_status = "PARTIAL"
             record.requires_manual_review = previous.requires_manual_review = True
             record.review_reasons.append("Conflicting duplicate local-user definition")
             previous.review_reasons.append("Conflicting duplicate local-user definition")
@@ -673,7 +673,7 @@ class CiscoASAParser:
                     if parts and parts[0].lower() == "group" and len(parts) > 1:
                         self._append_unique(record.dh_groups, parts[1:])
                         continue
-                    record.migration_status = "PARTIALLY_NORMALIZED"
+                    record.extraction_status = "PARTIAL"
                     record.review_reasons.append("Unsupported IKEv2 proposal child syntax")
                 self.config.ikev2_proposals.append(self._with_source_context(record, index + 1))
             elif re.match(r"^crypto\s+ca\s+trustpoint\s+\S+", lower):
@@ -694,7 +694,7 @@ class CiscoASAParser:
                     else:
                         record.source_attributes.setdefault("unmodeled_lines", []).append(sanitize_raw_text(child))
                 if not values:
-                    record.migration_status = "PARSE_ERROR"
+                    record.extraction_status = "PARSE_ERROR"
                     record.requires_manual_review = True
             elif re.match(r"^crypto\s+dynamic-map\s+", lower):
                 self._parse_crypto_map_line(line, index + 1, True)
@@ -718,11 +718,11 @@ class CiscoASAParser:
                             raise ValueError
                         record.address_family = f"ipv{start.version}"
                     except ValueError:
-                        record.migration_status = "PARSE_ERROR"
+                        record.extraction_status = "PARSE_ERROR"
                         record.requires_manual_review = True
                         self._record_diagnostic(index + 1, line, "Malformed VPN address pool", "ip local pool", record.name)
                 else:
-                    record.migration_status = "PARSE_ERROR"
+                    record.extraction_status = "PARSE_ERROR"
                     record.requires_manual_review = True
                 self.config.vpn_address_pools.append(self._with_source_context(record, index + 1))
             elif lower.startswith("tunnel-group "):
@@ -763,7 +763,7 @@ class CiscoASAParser:
                     elif child_parts:
                         attrs.setdefault("raw_subcommands", []).append(sanitize_raw_text(child))
                 if record.raw_lines:
-                    record.migration_status = "PARTIALLY_NORMALIZED"
+                    record.extraction_status = "PARTIAL"
             elif lower.startswith("group-policy "):
                 try:
                     parts = shlex.split(line)
@@ -798,8 +798,8 @@ class CiscoASAParser:
                     elif key == "group-policy": record.parent = values[-1]
                     else:
                         record.raw_attributes.setdefault("unmodeled_lines", []).append(sanitize_raw_text(child))
-                        record.migration_status = "PARTIALLY_NORMALIZED"
-                record.migration_status = "PARTIALLY_NORMALIZED"
+                        record.extraction_status = "PARTIAL"
+                record.extraction_status = "PARTIAL"
             elif lower.startswith("aaa-server "):
                 self._parse_aaa_server(line, children, index)
             elif lower.startswith(("aaa authentication ", "aaa authorization ", "aaa accounting ")):
@@ -827,13 +827,13 @@ class CiscoASAParser:
 
     @staticmethod
     def _mpf_partial(record: Any, reason: str) -> None:
-        record.migration_status = "PARTIALLY_NORMALIZED"
+        record.extraction_status = "PARTIAL"
         record.requires_manual_review = True
         if reason not in record.review_reasons:
             record.review_reasons.append(reason)
 
     def _mpf_parse_error(self, record: Any, line_number: int, line: str, section: str, reason: str) -> None:
-        record.migration_status = "PARSE_ERROR"
+        record.extraction_status = "PARSE_ERROR"
         record.requires_manual_review = True
         if hasattr(record, "review_reasons") and reason not in record.review_reasons:
             record.review_reasons.append(reason)
@@ -858,7 +858,7 @@ class CiscoASAParser:
             match_all=mode == "match-all" if mode else None,
             raw_lines=[sanitize_raw_text(line)],
             source_attributes={"raw_command": sanitize_raw_text(line)},
-            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+            extraction_status="PARTIAL", requires_manual_review=True,
         )
         if malformed:
             self._mpf_parse_error(record, index + 1, line, "class-map", "Malformed class-map header")
@@ -912,7 +912,7 @@ class CiscoASAParser:
         record = CiscoPolicyMap(
             name=name, raw_lines=[sanitize_raw_text(line)],
             source_attributes={"raw_command": sanitize_raw_text(line)},
-            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+            extraction_status="PARTIAL", requires_manual_review=True,
         )
         if len(parts) != 2:
             self._mpf_parse_error(record, index + 1, line, "policy-map", "Malformed policy-map header")
@@ -928,7 +928,7 @@ class CiscoASAParser:
                 class_name = class_parts[1] if len(class_parts) == 2 else "unknown"
                 current = CiscoPolicyMapClass(
                     class_name=class_name, source_order=line_number,
-                    raw_lines=[safe_child], migration_status="PARTIALLY_NORMALIZED",
+                    raw_lines=[safe_child], extraction_status="PARTIAL",
                     requires_manual_review=True, source_attributes={"raw_header": safe_child},
                 )
                 record.classes.append(current)
@@ -956,7 +956,7 @@ class CiscoASAParser:
             supported = {"dns", "ftp", "http", "icmp", "sip", "esmtp", "netbios", "sunrpc", "tftp", "ip-options", "skinny"}
             extras = parts[2:]
             if protocol not in supported:
-                action.migration_status = "PARTIALLY_NORMALIZED"
+                action.extraction_status = "PARTIAL"
                 action.requires_manual_review = True
                 action.review_reasons.append("Unsupported inspect protocol")
             elif protocol == "icmp" and extras == ["error"]:
@@ -967,17 +967,17 @@ class CiscoASAParser:
                     return
                 action.policy_name = extras[1]
                 action.parameters = extras[2:]
-                action.migration_status = "PARTIALLY_NORMALIZED"
+                action.extraction_status = "PARTIAL"
                 action.requires_manual_review = True
                 action.review_reasons.append("Referenced inspect policy requires target review")
             elif extras and protocol in {"dns", "http", "sip", "esmtp"}:
                 action.policy_name, action.parameters = extras[0], extras[1:]
-                action.migration_status = "PARTIALLY_NORMALIZED"
+                action.extraction_status = "PARTIAL"
                 action.requires_manual_review = True
                 action.review_reasons.append("Referenced inspect policy requires target review")
             elif extras:
                 action.parameters = extras
-                action.migration_status = "PARTIALLY_NORMALIZED"
+                action.extraction_status = "PARTIAL"
                 action.requires_manual_review = True
                 action.review_reasons.append("Unsupported inspect action option")
             section.inspect_actions.append(action)
@@ -1035,7 +1035,7 @@ class CiscoASAParser:
         item = CiscoConnectionControl(
             name="conn", setting="conn", values=parts[1:], control_type="connection_limit",
             raw_lines=[line], source_order=line_number, source_attributes={"raw_command": line},
-            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False,
+            extraction_status="PARTIAL", requires_manual_review=False,
         )
         fields = {
             "conn-max": "max_connections", "embryonic-conn-max": "max_embryonic",
@@ -1047,7 +1047,7 @@ class CiscoASAParser:
             item.review_reasons.append("Unsupported global connection-control syntax")
             return item
         if not parts[1].isdigit():
-            item.migration_status = "PARSE_ERROR"
+            item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
             item.review_reasons.append("Connection limit must be numeric")
             self._record_diagnostic(line_number, line, "Malformed global connection limit", "conn")
@@ -1060,7 +1060,7 @@ class CiscoASAParser:
         item = CiscoConnectionControl(
             name="timeout", setting="timeout", values=parts[1:], control_type="timeout",
             raw_lines=[line], source_order=line_number, source_attributes={"raw_command": line},
-            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False,
+            extraction_status="PARTIAL", requires_manual_review=False,
         )
         fields = {
             "embryonic": "timeout_embryonic", "half-closed": "timeout_half_closed",
@@ -1076,7 +1076,7 @@ class CiscoASAParser:
             item.review_reasons.append("Unsupported timeout domain")
             return item
         if len(parts) != 3 or not self._valid_timeout(value):
-            item.migration_status = "PARSE_ERROR"
+            item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
             item.review_reasons.append("Malformed ASA timeout duration")
             self._record_diagnostic(line_number, line, "Malformed timeout duration", "timeout")
@@ -1091,11 +1091,11 @@ class CiscoASAParser:
         item = CiscoConnectionControl(
             name="threat-detection", setting="threat-detection", values=parts[type_index + 1:],
             control_type="threat_detection", raw_lines=[line], source_order=line_number,
-            source_attributes={"raw_command": line}, migration_status="PARTIALLY_NORMALIZED",
+            source_attributes={"raw_command": line}, extraction_status="PARTIAL",
             requires_manual_review=False,
         )
         if len(parts) <= type_index:
-            item.migration_status = "PARSE_ERROR"
+            item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
             item.review_reasons.append("Missing threat-detection type")
             self._record_diagnostic(line_number, line, "Malformed threat-detection command", "threat-detection")
@@ -1111,7 +1111,7 @@ class CiscoASAParser:
                 key, value = values[index].lower(), values[index + 1]
                 if key in {"average-rate", "burst-rate", "interval"}:
                     if not value.isdigit():
-                        item.migration_status = "PARSE_ERROR"
+                        item.extraction_status = "PARSE_ERROR"
                         item.requires_manual_review = True
                         item.review_reasons.append("Threat-detection rate must be numeric")
                         self._record_diagnostic(line_number, line, "Malformed threat-detection rate", "threat-detection")
@@ -1145,7 +1145,7 @@ class CiscoASAParser:
         if item is None:
             item = CiscoDHCPServer(
                 name=f"dhcpd:{key}", interface=interface, source_order=line_number,
-                migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False,
+                extraction_status="PARTIAL", requires_manual_review=False,
             )
             self.config.dhcp_servers.append(item)
         return item
@@ -1168,13 +1168,13 @@ class CiscoASAParser:
         item.source_attributes.setdefault("raw_commands", []).append(line)
         if command == "address":
             if len(values) != 1 or "-" not in values[0]:
-                item.migration_status = "PARSE_ERROR"
+                item.extraction_status = "PARSE_ERROR"
                 item.review_reasons.append("Malformed DHCP address pool")
                 self._record_diagnostic(line_number, line, "Malformed DHCP address pool", "dhcpd")
                 return
             start, end = values[0].split("-", 1)
             if not self._ip(start) or not self._ip(end) or ipaddress.ip_address(start) > ipaddress.ip_address(end):
-                item.migration_status = "PARSE_ERROR"
+                item.extraction_status = "PARSE_ERROR"
                 item.review_reasons.append("Invalid or reversed DHCP address pool")
                 self._record_diagnostic(line_number, line, "Invalid or reversed DHCP address pool", "dhcpd")
                 return
@@ -1185,7 +1185,7 @@ class CiscoASAParser:
             item.enabled = True
         elif command == "dns":
             if not values or any(not self._ip(value) for value in values):
-                item.migration_status = "PARSE_ERROR"
+                item.extraction_status = "PARSE_ERROR"
                 item.review_reasons.append("DHCP DNS servers must be IP addresses")
                 self._record_diagnostic(line_number, line, "Malformed DHCP DNS server", "dhcpd")
             else:
@@ -1195,7 +1195,7 @@ class CiscoASAParser:
                 item.domain_name = " ".join(values)
         elif command == "lease":
             if len(values) != 1 or not values[0].isdigit():
-                item.migration_status = "PARSE_ERROR"
+                item.extraction_status = "PARSE_ERROR"
                 item.review_reasons.append("DHCP lease must be numeric")
                 self._record_diagnostic(line_number, line, "Malformed DHCP lease", "dhcpd")
             else:
@@ -1211,7 +1211,7 @@ class CiscoASAParser:
         command = parts[1].lower() if len(parts) > 1 else ""
         relay = next((item for item in self.config.dhcp_relays if item.name == "dhcprelay"), None)
         if relay is None:
-            relay = CiscoDHCPRelay(name="dhcprelay", migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False)
+            relay = CiscoDHCPRelay(name="dhcprelay", extraction_status="PARTIAL", requires_manual_review=False)
             self.config.dhcp_relays.append(relay)
         relay.raw_lines.append(line)
         relay.source_attributes.setdefault("raw_commands", []).append(line)
@@ -1225,7 +1225,7 @@ class CiscoASAParser:
             relay.server = relay.server or server
             relay.interface = relay.interface or interface
             if not self._ip(server):
-                relay.migration_status = "PARSE_ERROR"
+                relay.extraction_status = "PARSE_ERROR"
                 relay.review_reasons.append("DHCP relay server must be an IP address")
                 self._record_diagnostic(line_number, line, "Malformed DHCP relay server", "dhcprelay")
         elif command == "enable" and len(parts) >= 3:
@@ -1282,7 +1282,7 @@ class CiscoASAParser:
         record = CiscoTCPMap(
             name=name, raw_lines=[sanitize_raw_text(line)],
             source_attributes={"raw_command": sanitize_raw_text(line)},
-            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+            extraction_status="PARTIAL", requires_manual_review=True,
         )
         if len(parts) != 2:
             self._mpf_parse_error(record, index + 1, line, "tcp-map", "Malformed tcp-map header")
@@ -1318,7 +1318,7 @@ class CiscoASAParser:
             global_attachment=len(parts) == 3 and parts[2].lower() == "global",
             source_order=line_number, raw_lines=[sanitize_raw_text(line)],
             source_attributes={"raw_command": sanitize_raw_text(line)},
-            migration_status="PARTIALLY_NORMALIZED", requires_manual_review=True,
+            extraction_status="PARTIAL", requires_manual_review=True,
         )
         if len(parts) < 2:
             self._mpf_parse_error(record, line_number, line, "service-policy", "Malformed service-policy: missing policy name")
@@ -1342,7 +1342,7 @@ class CiscoASAParser:
                     value = str(address)
                     if defined and (obj.type, obj.value) != ("host", value):
                         obj.source_attributes.setdefault("conflicting_definitions", []).append(sub)
-                        obj.migration_status = "PARSE_ERROR"
+                        obj.extraction_status = "PARSE_ERROR"
                         obj.requires_manual_review = True
                     elif not defined:
                         obj.type, obj.value = "host", value
@@ -1350,15 +1350,15 @@ class CiscoASAParser:
                         defined = True
                 except ValueError:
                     obj.source_attributes["invalid_host"] = parts[1]
-                    obj.migration_status = "PARSE_ERROR"
+                    obj.extraction_status = "PARSE_ERROR"
                     obj.requires_manual_review = True
             elif lower.startswith("host "):
-                obj.migration_status = "PARSE_ERROR"
+                obj.extraction_status = "PARSE_ERROR"
                 obj.requires_manual_review = True
                 obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
             elif lower.startswith("subnet ") and len(parts) >= 2:
                 if len(parts) not in {2, 3} or (len(parts) == 3 and ":" in parts[1]):
-                    obj.migration_status = "PARSE_ERROR"
+                    obj.extraction_status = "PARSE_ERROR"
                     obj.requires_manual_review = True
                     obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
                     continue
@@ -1373,19 +1373,19 @@ class CiscoASAParser:
                     value = normalize_ipv4_network(parts[1], parts[2])
                     obj.address_family = "ipv4" if value else None
                 if value is None:
-                    obj.migration_status = "PARSE_ERROR"
+                    obj.extraction_status = "PARSE_ERROR"
                     obj.requires_manual_review = True
                     obj.source_attributes["invalid_subnet"] = " ".join(parts[1:])
                 else:
                     if defined and (obj.type, obj.value) != ("subnet", value):
                         obj.source_attributes.setdefault("conflicting_definitions", []).append(sub)
-                        obj.migration_status = "PARSE_ERROR"
+                        obj.extraction_status = "PARSE_ERROR"
                         obj.requires_manual_review = True
                     elif not defined:
                         obj.type, obj.value = "subnet", value
                         defined = True
             elif lower.startswith("subnet "):
-                obj.migration_status = "PARSE_ERROR"
+                obj.extraction_status = "PARSE_ERROR"
                 obj.requires_manual_review = True
                 obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
             elif lower.startswith("range ") and len(parts) == 3:
@@ -1396,24 +1396,24 @@ class CiscoASAParser:
                     value = f"{start}-{end}"
                     if defined and (obj.type, obj.value) != ("range", value):
                         obj.source_attributes.setdefault("conflicting_definitions", []).append(sub)
-                        obj.migration_status = "PARSE_ERROR"
+                        obj.extraction_status = "PARSE_ERROR"
                         obj.requires_manual_review = True
                     elif not defined:
                         obj.type, obj.value = "range", value
                         obj.address_family = f"ipv{start.version}"
                         defined = True
                 except ValueError:
-                    obj.migration_status = "PARSE_ERROR"
+                    obj.extraction_status = "PARSE_ERROR"
                     obj.requires_manual_review = True
                     obj.source_attributes["invalid_range"] = " ".join(parts[1:3])
             elif lower.startswith("range "):
-                obj.migration_status = "PARSE_ERROR"
+                obj.extraction_status = "PARSE_ERROR"
                 obj.requires_manual_review = True
                 obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
             elif lower.startswith("fqdn "):
                 values = parts[1:]
                 if len(values) not in {1, 2} or len(values) == 2 and values[0].lower() not in {"v4", "v6"}:
-                    obj.migration_status = "PARSE_ERROR"
+                    obj.extraction_status = "PARSE_ERROR"
                     obj.requires_manual_review = True
                     obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
                     continue
@@ -1425,14 +1425,14 @@ class CiscoASAParser:
                     value = " ".join(values)
                     if defined and (obj.type, obj.value) != ("fqdn", value):
                         obj.source_attributes.setdefault("conflicting_definitions", []).append(sub)
-                        obj.migration_status = "PARSE_ERROR"
+                        obj.extraction_status = "PARSE_ERROR"
                         obj.requires_manual_review = True
                     elif not defined:
                         obj.type, obj.value = "fqdn", value
                         defined = True
             elif lower == "description" or lower.startswith("description "):
                 if len(parts) < 2:
-                    obj.migration_status = "PARSE_ERROR"
+                    obj.extraction_status = "PARSE_ERROR"
                     obj.requires_manual_review = True
                     obj.source_attributes.setdefault("invalid_definitions", []).append(sub)
                     continue
@@ -1442,10 +1442,10 @@ class CiscoASAParser:
             else:
                 obj.source_attributes.setdefault("unmodeled_lines", []).append(sub)
         if obj.type is None or obj.value is None:
-            obj.migration_status = "PARSE_ERROR"
+            obj.extraction_status = "PARSE_ERROR"
             obj.requires_manual_review = True
         elif obj.source_attributes.get("unmodeled_lines"):
-            obj.migration_status = "PARTIALLY_NORMALIZED"
+            obj.extraction_status = "PARTIAL"
             obj.requires_manual_review = True
         return obj
 
@@ -1527,7 +1527,7 @@ class CiscoASAParser:
                     name=dns_group.group(1), raw_lines=[line],
                     source_order=line_number,
                     source_attributes={"raw_command": line, "raw_commands": [line]},
-                    migration_status="PARTIALLY_NORMALIZED", requires_manual_review=False,
+                    extraction_status="PARTIAL", requires_manual_review=False,
                 )
                 i += 1
                 while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
@@ -1540,7 +1540,7 @@ class CiscoASAParser:
                         try:
                             ipaddress.ip_address(address)
                         except ValueError:
-                            group.migration_status = "PARSE_ERROR"
+                            group.extraction_status = "PARSE_ERROR"
                             group.review_reasons.append("DNS name-server must be an IP address")
                             self._record_diagnostic(i + 1, child, "Malformed DNS name-server address", "dns", group.name)
                         else:
@@ -1667,7 +1667,7 @@ class CiscoASAParser:
                         if len(parts) > 1:
                             context.allocated_interfaces.append(parts[1])
                         else:
-                            context.migration_status = "PARSE_ERROR"
+                            context.extraction_status = "PARSE_ERROR"
                             context.requires_manual_review = True
                             context.review_reasons.append("Malformed allocate-interface command")
                             self._record_diagnostic(line_number, line, "Malformed allocate-interface command", "context", context.name)
@@ -1676,7 +1676,7 @@ class CiscoASAParser:
                         if len(parts) > 1:
                             context.config_url = parts[1]
                         else:
-                            context.migration_status = "PARSE_ERROR"
+                            context.extraction_status = "PARSE_ERROR"
                             context.requires_manual_review = True
                             context.review_reasons.append("Malformed config-url command")
                             self._record_diagnostic(line_number, line, "Malformed config-url command", "context", context.name)
@@ -1685,7 +1685,7 @@ class CiscoASAParser:
                         if len(parts) > 1:
                             context.resource_class = parts[1]
                         else:
-                            context.migration_status = "PARSE_ERROR"
+                            context.extraction_status = "PARSE_ERROR"
                             context.requires_manual_review = True
                             context.review_reasons.append("Malformed resource-class command")
                             self._record_diagnostic(line_number, line, "Malformed resource-class command", "context", context.name)
@@ -1739,7 +1739,7 @@ class CiscoASAParser:
                         try:
                             interface.security_level = int(parts[1])
                         except (IndexError, ValueError):
-                            interface.migration_status = "PARSE_ERROR"
+                            interface.extraction_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
                     elif lower == "no security-level":
                         interface.security_level = None
@@ -1760,7 +1760,7 @@ class CiscoASAParser:
                                         raise ValueError
                             interface.interface_type = "subinterface"
                         except (IndexError, ValueError):
-                            interface.migration_status = "PARSE_ERROR"
+                            interface.extraction_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
                             interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
                     elif lower.startswith("channel-group "):
@@ -1768,7 +1768,7 @@ class CiscoASAParser:
                             interface.channel_group = int(parts[1])
                             interface.channel_group_mode = parts[3] if len(parts) >= 4 and parts[2].lower() == "mode" else None
                         except (IndexError, ValueError):
-                            interface.migration_status = "PARSE_ERROR"
+                            interface.extraction_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
                             interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
                     elif lower.startswith("member-interface "):
@@ -1780,7 +1780,7 @@ class CiscoASAParser:
                             if interface.interface_type == "physical":
                                 interface.interface_type = "bridge-member"
                         except (IndexError, ValueError):
-                            interface.migration_status = "PARSE_ERROR"
+                            interface.extraction_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
                             interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
                     elif lower.startswith("mtu "):
@@ -1789,12 +1789,12 @@ class CiscoASAParser:
                                 interface.source_attributes.setdefault("mtu_history", []).append(interface.mtu)
                             interface.mtu = int(parts[1])
                         except (IndexError, ValueError):
-                            interface.migration_status = "PARSE_ERROR"
+                            interface.extraction_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
                             interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
                     elif lower.startswith(("routing-context ", "vrf forwarding ")):
                         if len(parts) != 2:
-                            interface.migration_status = "PARSE_ERROR"
+                            interface.extraction_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
                             interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
                             i += 1
@@ -1837,7 +1837,7 @@ class CiscoASAParser:
                                     link_local=link_local, raw=sub,
                                 ))
                             except (ValueError, IndexError):
-                                interface.migration_status = "PARSE_ERROR"
+                                interface.extraction_status = "PARSE_ERROR"
                                 interface.requires_manual_review = True
                                 interface.source_attributes.setdefault("invalid_ipv6_addresses", []).append(sub)
                     elif lower.startswith("tunnel source ") and len(parts) >= 3:
@@ -1847,7 +1847,7 @@ class CiscoASAParser:
                     elif lower.startswith("tunnel protection ipsec profile ") and len(parts) >= 5:
                         interface.ipsec_profile = parts[4]
                         interface.source_attributes["route_based_vpn"] = True
-                        interface.migration_status = "PARTIALLY_NORMALIZED"
+                        interface.extraction_status = "PARTIAL"
                         interface.requires_manual_review = True
                     elif lower == "management-only":
                         interface.management_only = True
@@ -1880,7 +1880,7 @@ class CiscoASAParser:
                         interface.source_attributes.setdefault("unmodeled_lines", []).append(sub)
                     i += 1
                 if interface.ip_mode == "static" and normalize_ipv4_network(interface.ip or "", interface.mask or "") is None:
-                    interface.migration_status = "PARSE_ERROR"
+                    interface.extraction_status = "PARSE_ERROR"
                     interface.requires_manual_review = True
                     interface.source_attributes["invalid_ip_address"] = f"{interface.ip or ''} {interface.mask or ''}".strip()
                     self._record_diagnostic(line_number, line, "Invalid interface IPv4 address/netmask", "interface", interface.name)
@@ -1896,11 +1896,11 @@ class CiscoASAParser:
                 })
                 if interface.source_attributes.get("unmodeled_lines"):
                     interface.requires_manual_review = True
-                    interface.migration_status = "PARTIALLY_NORMALIZED"
+                    interface.extraction_status = "PARTIAL"
                 if interface.dhcp_setroute or interface.ipv6_dhcp_setroute or interface.management_only or interface.ipv6_addresses:
                     interface.requires_manual_review = True
-                    if interface.migration_status == "NORMALIZED":
-                        interface.migration_status = "PARTIALLY_NORMALIZED"
+                    if interface.extraction_status == "EXTRACTED":
+                        interface.extraction_status = "PARTIAL"
                 self.config.interfaces.append(self._with_source_context(interface, line_number))
                 continue
 
@@ -1913,7 +1913,7 @@ class CiscoASAParser:
                     i += 1
                 obj = self._parse_network_object(match.group(1), block)
                 self.config.network_objects.append(self._with_source_context(obj, line_number))
-                if obj.migration_status == "PARSE_ERROR":
+                if obj.extraction_status == "PARSE_ERROR":
                     self._record_diagnostic(
                         line_number, line, "Network object contains malformed or incomplete address syntax",
                         "object network", obj.name,
@@ -1987,13 +1987,13 @@ class CiscoASAParser:
                     elif lower.startswith("description "):
                         group.description = sub.split(maxsplit=1)[1]
                     else:
-                        group.migration_status = "PARTIALLY_NORMALIZED"
+                        group.extraction_status = "PARTIAL"
                         group.requires_manual_review = True
                         group.source_attributes.setdefault("unmodeled_lines", []).append(sub)
                     if member is not None:
                         group.member_entries.append(member)
                     if error:
-                        group.migration_status = "PARSE_ERROR"
+                        group.extraction_status = "PARSE_ERROR"
                         group.requires_manual_review = True
                         group.review_reasons.append(error)
                         group.source_attributes.setdefault("invalid_members", []).append({"raw": sub, "reason": error})
@@ -2059,7 +2059,7 @@ class CiscoASAParser:
                                     type="protocol_group", value=parts[1], raw=sub,
                                 ))
                             else:
-                                group.migration_status = "PARSE_ERROR"
+                                group.extraction_status = "PARSE_ERROR"
                                 group.review_reasons.append("Malformed protocol-group member syntax")
                         elif group_type == "icmp-type" and parts:
                             if parts[0].lower() == "icmp-object" and len(parts) == 2:
@@ -2072,7 +2072,7 @@ class CiscoASAParser:
                                     type="icmp_group", value=parts[1], raw=sub,
                                 ))
                             else:
-                                group.migration_status = "PARSE_ERROR"
+                                group.extraction_status = "PARSE_ERROR"
                                 group.review_reasons.append("Malformed ICMP-type-group member syntax")
                     i += 1
                 target = {
@@ -2095,20 +2095,20 @@ class CiscoASAParser:
                         ports, error = parse_service_clause(sub.split()[1:])
                         obj.ports.extend(ports)
                         if error:
-                            obj.migration_status = "PARSE_ERROR"
+                            obj.extraction_status = "PARSE_ERROR"
                             obj.requires_manual_review = True
                     elif sub.lower().startswith("description "):
                         obj.description = sub.split(maxsplit=1)[1]
                     else:
-                        obj.migration_status = "PARTIALLY_NORMALIZED"
+                        obj.extraction_status = "PARTIAL"
                         obj.requires_manual_review = True
                     i += 1
                 if not obj.ports:
-                    obj.migration_status = "PARSE_ERROR"
+                    obj.extraction_status = "PARSE_ERROR"
                     obj.requires_manual_review = True
                 obj.source_attributes["raw_lines"] = obj.raw_lines
                 self.config.service_objects.append(self._with_source_context(obj, line_number))
-                if obj.migration_status == "PARSE_ERROR":
+                if obj.extraction_status == "PARSE_ERROR":
                     self._record_diagnostic(line_number, line, "Service object contains malformed or missing service syntax", "object service", obj.name)
                 continue
 
@@ -2144,12 +2144,12 @@ class CiscoASAParser:
                                 icmp_type=port.icmp_type, icmp_code=port.icmp_code, raw=sub,
                             ))
                         if error:
-                            group.migration_status = "PARSE_ERROR"
+                            group.extraction_status = "PARSE_ERROR"
                             group.requires_manual_review = True
                             group.review_reasons.append(error)
                     elif lower.startswith("port-object "):
                         if not group.protocol:
-                            group.migration_status = "PARTIALLY_NORMALIZED"
+                            group.extraction_status = "PARTIAL"
                             group.requires_manual_review = True
                             group.review_reasons.append("port-object requires a declared service-group protocol")
                             group.member_entries.append(CiscoServiceGroupMember(
@@ -2165,17 +2165,17 @@ class CiscoASAParser:
                                     destination=port.destination, raw=sub,
                                 ))
                             if error:
-                                group.migration_status = "PARSE_ERROR"
+                                group.extraction_status = "PARSE_ERROR"
                                 group.requires_manual_review = True
                                 group.review_reasons.append(error)
                     elif lower.startswith("description "):
                         group.description = sub.split(maxsplit=1)[1]
                     else:
-                        group.migration_status = "PARTIALLY_NORMALIZED"
+                        group.extraction_status = "PARTIAL"
                         group.requires_manual_review = True
                     i += 1
                 self.config.service_groups.append(self._with_source_context(group, line_number))
-                if group.migration_status == "PARSE_ERROR":
+                if group.extraction_status == "PARSE_ERROR":
                     self._record_diagnostic(line_number, line, "Service group contains malformed service syntax", "object-group service", group.name)
                 group.source_attributes["raw_lines"] = group.raw_lines
                 continue
@@ -2193,25 +2193,25 @@ class CiscoASAParser:
                         clause, error = self._parse_time_range_absolute_clause(sub, len(schedule.clauses) + 1)
                         schedule.clauses.append(clause)
                         if error:
-                            schedule.migration_status = "PARSE_ERROR"
+                            schedule.extraction_status = "PARSE_ERROR"
                             schedule.requires_manual_review = True
                             schedule.review_reasons.append(error)
                     elif lower_parts and lower_parts[0] == "periodic":
                         clause, error = self._parse_time_range_periodic_clause(sub, len(schedule.clauses) + 1)
                         schedule.clauses.append(clause)
                         if error:
-                            schedule.migration_status = "PARSE_ERROR"
+                            schedule.extraction_status = "PARSE_ERROR"
                             schedule.requires_manual_review = True
                             schedule.review_reasons.append(error)
                     else:
-                        schedule.migration_status = "PARTIALLY_NORMALIZED"
+                        schedule.extraction_status = "PARTIAL"
                         schedule.requires_manual_review = True
                         schedule.review_reasons.append(f"Unmodeled time-range clause: {sub}")
                         schedule.source_attributes.setdefault("unmodeled_lines", []).append(sub)
                     i += 1
                 schedule.source_attributes["clauses"] = [item.model_dump() for item in schedule.clauses]
                 self.config.time_ranges.append(self._with_source_context(schedule, line_number))
-                if schedule.migration_status == "PARSE_ERROR":
+                if schedule.extraction_status == "PARSE_ERROR":
                     self._record_diagnostic(line_number, line, "; ".join(schedule.review_reasons), "time-range", schedule.name)
                 continue
 
@@ -2219,7 +2219,7 @@ class CiscoASAParser:
                 rule, error = parse_acl_line(line, line_number, remarks)
                 if rule:
                     self.config.access_rules.append(self._with_source_context(rule, line_number))
-                    if rule.migration_status == "PARSE_ERROR":
+                    if rule.extraction_status == "PARSE_ERROR":
                         self._record_diagnostic(line_number, line, "; ".join(rule.review_reasons), "access-list", rule.acl_name)
                 if error:
                     if error.startswith("Unsupported ACL type"):
@@ -2365,23 +2365,23 @@ class CiscoASAParser:
                 rule.object_nat_precedence = None
                 rule.object_nat_specificity = None
                 rule.requires_manual_review = True
-                if rule.migration_status != "PARSE_ERROR":
-                    rule.migration_status = "PARTIALLY_NORMALIZED"
+                if rule.extraction_status != "PARSE_ERROR":
+                    rule.extraction_status = "PARTIAL"
                 rule.review_reasons.append("Object NAT type is unresolved")
-            elif owner is None or owner.type is None or owner.value is None or owner.migration_status == "PARSE_ERROR":
+            elif owner is None or owner.type is None or owner.value is None or owner.extraction_status == "PARSE_ERROR":
                 rule.object_nat_precedence = 0 if rule.source_mode == "static" else 1
                 rule.object_nat_specificity = None
                 rule.requires_manual_review = True
-                if rule.migration_status != "PARSE_ERROR":
-                    rule.migration_status = "PARTIALLY_NORMALIZED"
+                if rule.extraction_status != "PARSE_ERROR":
+                    rule.extraction_status = "PARTIAL"
                 rule.review_reasons.append("Object NAT owning object is missing or malformed")
             else:
                 details["address_kind"] = owner.type
                 if owner.type == "fqdn":
                     rule.object_nat_specificity = None
                     rule.requires_manual_review = True
-                    if rule.migration_status != "PARSE_ERROR":
-                        rule.migration_status = "PARTIALLY_NORMALIZED"
+                    if rule.extraction_status != "PARSE_ERROR":
+                        rule.extraction_status = "PARTIAL"
                     rule.review_reasons.append("FQDN object NAT address size and lowest IP are unresolved")
                 else:
                     try:
@@ -2407,8 +2407,8 @@ class CiscoASAParser:
                         rule.object_nat_specificity = quantity
                     except ValueError:
                         rule.requires_manual_review = True
-                        if rule.migration_status != "PARSE_ERROR":
-                            rule.migration_status = "PARTIALLY_NORMALIZED"
+                        if rule.extraction_status != "PARSE_ERROR":
+                            rule.extraction_status = "PARTIAL"
                         rule.review_reasons.append("Object NAT owning object address characteristics are unresolved")
                 rule.object_nat_precedence = 0 if rule.source_mode == "static" else 1
 
@@ -2444,7 +2444,7 @@ class CiscoASAParser:
         interface = tokens[index] if len(tokens) > index else None
         if len(tokens) - index < required:
             return CiscoStaticRoute(interface=interface, address_family="ipv6" if ipv6 else "ipv4", raw_line=line,
-                                    migration_status="PARSE_ERROR", requires_manual_review=True), "Incomplete static route statement"
+                                    extraction_status="PARSE_ERROR", requires_manual_review=True), "Incomplete static route statement"
         if ipv6:
             destination, mask, gateway = tokens[index + 1], None, tokens[index + 2]
             index += 3
@@ -2454,7 +2454,7 @@ class CiscoASAParser:
             except ValueError:
                 return CiscoStaticRoute(
                     interface=interface, destination=destination, gateway=gateway,
-                    address_family="ipv6", raw_line=line, migration_status="PARSE_ERROR",
+                    address_family="ipv6", raw_line=line, extraction_status="PARSE_ERROR",
                     requires_manual_review=True,
                 ), "Invalid IPv6 route prefix or next hop"
         else:
@@ -2464,14 +2464,14 @@ class CiscoASAParser:
                 ipaddress.IPv4Address(gateway)
             except ValueError:
                 return CiscoStaticRoute(interface=interface, destination=destination, mask=mask, gateway=gateway,
-                                        address_family="ipv4", raw_line=line, migration_status="PARSE_ERROR",
+                                        address_family="ipv4", raw_line=line, extraction_status="PARSE_ERROR",
                                         requires_manual_review=True), "Invalid IPv4 route next hop"
         route = CiscoStaticRoute(
             interface=interface, destination=destination, mask=mask, gateway=gateway,
             address_family="ipv6" if ipv6 else "ipv4", raw_line=line,
         )
         if not ipv6 and normalize_ipv4_network(destination, mask or "") is None:
-            route.migration_status = "PARSE_ERROR"
+            route.extraction_status = "PARSE_ERROR"
             route.requires_manual_review = True
             return route, "Invalid IPv4 route destination/netmask"
         while index < len(tokens):
@@ -2501,7 +2501,7 @@ class CiscoASAParser:
             "effective_administrative_distance": route.effective_administrative_distance,
         })
         if route.review_reasons:
-            route.migration_status = "PARTIALLY_NORMALIZED"
+            route.extraction_status = "PARTIAL"
             route.requires_manual_review = True
         return route, None
 
@@ -2631,13 +2631,13 @@ class CiscoASAParser:
             rule.access_list = tail[1]
             rule.identity_nat = rule.nat_exemption = True
             rule.syntax_family = "legacy-exemption"
-            rule.migration_status = "EXTRACT_ONLY"
+            rule.extraction_status = "SOURCE_ONLY"
             rule.requires_manual_review = True
             rule.review_reasons.append("ASA NAT exemption is preserved as source-only access-list semantics")
         elif rule.source_mode == "static" and rule.real_source == rule.mapped_source:
             rule.identity_nat = True
         elif not rule.real_source or not rule.mapped_source:
-            rule.migration_status = "PARSE_ERROR"
+            rule.extraction_status = "PARSE_ERROR"
             rule.requires_manual_review = True
             rule.review_reasons.append("NAT source translation operands are incomplete")
         partial_details = []
@@ -2654,13 +2654,13 @@ class CiscoASAParser:
             partial_details.append(f"NAT modifiers: {' '.join(noncanonical_options)}")
         if rule.raw_options:
             partial_details.append(f"Unparsed NAT tokens: {' '.join(rule.raw_options)}")
-        if partial_details and rule.migration_status != "PARSE_ERROR":
-            rule.migration_status = "PARTIALLY_NORMALIZED"
+        if partial_details and rule.extraction_status != "PARSE_ERROR":
+            rule.extraction_status = "PARTIAL"
             rule.requires_manual_review = True
             rule.review_reasons.extend(partial_details)
         if rule.nat_exemption:
-            rule.migration_status = "EXTRACT_ONLY"
-        if rule.migration_status == "PARSE_ERROR":
+            rule.extraction_status = "SOURCE_ONLY"
+        if rule.extraction_status == "PARSE_ERROR":
             self._record_diagnostic(line_number, line, "; ".join(rule.review_reasons), "nat", owning_object)
         self.config.nat_rules.append(self._with_source_context(rule, line_number))
         if rule.access_list:

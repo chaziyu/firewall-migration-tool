@@ -3,11 +3,13 @@ from pathlib import Path
 
 import pytest
 
+from fwmigrate.extraction.models import ExtractionStatus
 import fwmigrate.web as web
 from fwmigrate.source_reporting import SourceReportRegistry
 
 
 SOURCE_REPORTING = Path(__file__).parents[2] / "src" / "fwmigrate" / "source_reporting"
+SOURCE_ROOT = Path(__file__).parents[2] / "src" / "fwmigrate"
 
 
 def test_source_reporting_modules_do_not_import_legacy_ir():
@@ -68,3 +70,23 @@ def test_source_excel_endpoint_does_not_use_legacy_ir_exporter():
         isinstance(node, ast.Attribute) and node.attr == "export_excel"
         for node in ast.walk(endpoint)
     )
+
+
+def test_source_models_do_not_reintroduce_migration_fields():
+    forbidden = {"migration_status", "migration_impact"}
+    found = []
+    for path in SOURCE_ROOT.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for class_node in (node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)):
+            for node in class_node.body:
+                target = node.target if isinstance(node, ast.AnnAssign) else None
+                if target is None and isinstance(node, ast.Assign) and len(node.targets) == 1:
+                    target = node.targets[0]
+                if isinstance(target, ast.Name) and target.id in forbidden:
+                    found.append(f"{path}:{target.id}")
+
+    assert not found, "Forbidden source-model fields: " + ", ".join(found)
+
+
+def test_shared_extraction_status_has_no_migration_enum_members():
+    assert not {"NORMALIZED", "PARTIALLY_NORMALIZED"} & ExtractionStatus.__members__.keys()
