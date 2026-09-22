@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from collections.abc import Iterable
+
+from ..model.source import PANOSConfig
+from ..source_model import PANScope, pan_scope_identity
+from .models import PANIndexedObject, PANReferenceResolution, PANShadowedObject
+from .scopes import PANDeviceGroupHierarchy, build_scope_hierarchy, visible_scopes
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceIndex:
+    objects: tuple[PANIndexedObject, ...]
+    hierarchy: PANDeviceGroupHierarchy
+
+    def candidates(self, family: str, name: str, scope: PANScope | None) -> tuple[PANIndexedObject, ...]:
+        allowed = visible_scopes(scope, self.hierarchy)
+        def visible(item):
+            if item.scope is None:
+                return False
+            if item.scope.kind == "shared":
+                return "shared:shared" in allowed
+            if item.scope.kind == "device-group":
+                return f"device-group:{item.scope.name}" in allowed
+            return pan_scope_identity(item.scope) in allowed
+        return tuple(item for item in self.objects if item.family == family and item.name == name and visible(item))
+
+
+def _objects(config: PANOSConfig) -> Iterable[PANIndexedObject]:
+    fields = {
+        "address": config.addresses, "address-group": config.address_groups,
+        "service": config.services, "service-group": config.service_groups,
+        "schedule": config.schedules, "security-profile-group": config.security_profile_groups,
+        "tag": config.tags, "zone": config.zones,
+    }
+    for family, values in fields.items():
+        for item in values:
+            name = getattr(item, "name", None)
+            if name:
+                yield PANIndexedObject(family, name, getattr(item, "scope", None), getattr(item, "source_path", ""))
+
+
+def build_reference_index(config: PANOSConfig) -> ReferenceIndex:
+    return ReferenceIndex(tuple(_objects(config)), build_scope_hierarchy(config.scopes))
+
+
+def _resolve(index: ReferenceIndex, owner, field: str, name: str, families: tuple[str, ...], *, source_only: bool = False) -> PANReferenceResolution:
+    if name in {"any", "application-default"}:
+        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="PAN-OS special value")
+    if source_only:
+        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="typed source coverage is not authoritative")
+    candidates = tuple(candidate for family in families for candidate in index.candidates(family, name, owner.scope))
+    if len(candidates) == 1:
+        target = candidates[0]
+        return PANReferenceResolution("RESOLVED", owner.name, field, name, target.family, owner.scope, target.scope, target.source_path, "one visible candidate")
+    if not candidates:
+        return PANReferenceResolution("UNRESOLVED", owner.name, field, name, families[0], owner.scope, resolution_reason="no visible typed source object")
+    return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, families[0], owner.scope, resolution_reason="multiple visible candidates; precedence is not explicitly extracted")
+
+
+def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None) -> tuple[tuple[PANReferenceResolution, ...], tuple[PANShadowedObject, ...]]:
+    index = index or build_reference_index(config)
+    result: list[PANReferenceResolution] = []
+    for group in config.address_groups:
+        for name in group.static_members or ():
+            result.append(_resolve(index, group, "static_members", name, ("address", "address-group")))
+    for group in config.service_groups:
+        for name in group.members or ():
+            result.append(_resolve(index, group, "members", name, ("service", "service-group")))
+    for rule in config.security_rules:
+        for field, names, families, source_only in (
+            ("from_zones", rule.from_zones, ("zone",), False), ("to_zones", rule.to_zones, ("zone",), False),
+            ("source", rule.source, ("address", "address-group"), False), ("destination", rule.destination, ("address", "address-group"), False),
+            ("service", rule.service, ("service", "service-group"), False), ("schedule", (rule.schedule,) if rule.schedule else (), ("schedule",), False),
+            ("profile_setting.groups", rule.profile_setting.groups if rule.profile_setting else (), ("security-profile-group",), False),
+            ("tags", rule.tags, ("tag",), False), ("application", rule.application, ("application",), True),
+        ):
+            for name in names or ():
+                result.append(_resolve(index, rule, field, name, families, source_only=source_only))
+    for rule in config.nat_rules:
+        for field, names, families in (("from_zones", rule.from_zones, ("zone",)), ("to_zones", rule.to_zones, ("zone",)), ("source", rule.source, ("address", "address-group")), ("destination", rule.destination, ("address", "address-group")), ("service", (rule.service,) if rule.service else (), ("service", "service-group"))):
+            for name in names or ():
+                result.append(_resolve(index, rule, field, name, families))
+    shadowing: list[PANShadowedObject] = []
+    for obj in index.objects:
+        candidates = index.candidates(obj.family, obj.name, obj.scope)
+        if len(candidates) > 1:
+            shadowing.append(PANShadowedObject(obj.family, obj.name, pan_scope_identity(obj.scope), candidates, "ambiguous unless effective precedence is explicitly extracted"))
+    unique_shadowing = {(item.family, item.name, item.visible_from): item for item in shadowing}
+    return tuple(result), tuple(unique_shadowing.values())

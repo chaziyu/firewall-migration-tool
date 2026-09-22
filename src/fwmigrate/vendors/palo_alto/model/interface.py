@@ -60,6 +60,7 @@ class PANInterface(BaseModel):
 class PANInterfaceImport(BaseModel):
     scope: PANScope | None = None
     interfaces: list[str] | None = None
+    virtual_routers: list[str] | None = None
     source_path: str
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
