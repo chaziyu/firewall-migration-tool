@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes, sanitize_source_value
 
-from .extraction.extractor import extract_typed
+from .extraction.extractor import extract_typed, registered_typed_collections
 from .model import PANOSConfig
 from .schema_registry import match_path_spec
 from .source_context import walk_pan_source
@@ -33,7 +33,7 @@ def build_panos_config(content: str) -> PANOSConfig:
     scopes: list[PANScope] = []
     records: list[PANSourceRecord] = []
     unknown_paths: list[str] = []
-    typed: dict[str, list[object]] = {"tags": [], "addresses": [], "address_groups": [], "services": [], "service_groups": [], "schedules": [], "security_rules": [], "default_security_rules": [], "interfaces": [], "interface_imports": [], "interface_units": [], "nat_rules": [], "zones": [], "security_profile_groups": [], "static_routes": [], "virtual_routers": [], "logical_routers": [], "ipsec_tunnels": []}
+    typed: dict[str, list[object]] = {collection: [] for collection in registered_typed_collections()}
     for element, path, context in walk_pan_source(source.root):
         if context.scope and pan_scope_identity(context.scope) not in {pan_scope_identity(item) for item in scopes}:
             scopes.append(context.scope)

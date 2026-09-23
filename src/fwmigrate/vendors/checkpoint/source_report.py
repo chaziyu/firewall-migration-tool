@@ -7,7 +7,8 @@ from typing import Any
 
 from .derived import CheckPointDerivedViews, build_checkpoint_derived_views
 from .loader import load_checkpoint_input
-from .source_model import CheckPointConfig, build_checkpoint_config
+from .source_model import CheckPointConfig
+from .extraction import extract_checkpoint_config
 from .validation import CheckPointValidationResult, validate_checkpoint_config
 
 
@@ -25,7 +26,7 @@ class CheckPointSourceReporter:
 
     def analyze_source(self, source: str, **options: Any) -> CheckPointSourceResult:
         bundle, _scope = load_checkpoint_input(source)
-        config = build_checkpoint_config(bundle)
+        config = extract_checkpoint_config(bundle).config
         derived = build_checkpoint_derived_views(config)
         return CheckPointSourceResult(config, derived, validate_checkpoint_config(config, derived))
 

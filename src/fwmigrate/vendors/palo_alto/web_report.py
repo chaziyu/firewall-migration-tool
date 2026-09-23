@@ -141,7 +141,11 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
                        for item in analysis.validation.issues]
     object_counts = {"interfaces": sum(row.get("kind") != "vpn" for row in interface_rows), "addresses": len(addresses), "address_groups": len(address_groups),
                      "services": len(services), "service_groups": len(service_groups), "policies": len(policies),
-                     "nat": len(nat_rows), "routes": len(routes)}
+                     "nat": len(nat_rows), "routes": len(routes), "vulnerability_profiles": len(config.vulnerability_profiles),
+                     "dhcp_servers": len(config.dhcp_servers), "sdwan_rules": len(config.sdwan_rules),
+                     "administrators": len(config.administrators), "ike_gateways": len(config.ike_gateways),
+                     "ipsec_tunnels": len(config.ipsec_tunnels), "globalprotect_portals": len(config.globalprotect_portals),
+                     "globalprotect_gateways": len(config.globalprotect_gateways)}
     vdoms = sorted({scope.vsys for scope in config.scopes if scope.vsys})
     return {
         "vendor": "palo_alto",
@@ -162,6 +166,17 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "routes": len(config.static_routes),
             "virtual_routers": len(config.virtual_routers),
             "logical_routers": len(config.logical_routers),
+            "vulnerability_profiles": len(config.vulnerability_profiles),
+            "dhcp_servers": len(config.dhcp_servers),
+            "sdwan_rules": len(config.sdwan_rules),
+            "administrators": len(config.administrators),
+            "admin_roles": len(config.admin_roles),
+            "ike_gateways": len(config.ike_gateways),
+            "ike_crypto_profiles": len(config.ike_crypto_profiles),
+            "ipsec_crypto_profiles": len(config.ipsec_crypto_profiles),
+            "ipsec_tunnels": len(config.ipsec_tunnels),
+            "globalprotect_portals": len(config.globalprotect_portals),
+            "globalprotect_gateways": len(config.globalprotect_gateways),
             "unresolved_references": len(analysis.derived.unresolved_references),
             "relationship_issues": len(analysis.derived.relationship_issues),
             "validation_errors": len(analysis.validation.errors),
@@ -206,5 +221,13 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "vpn_phase2": [],
             "validation": validation_rows,
             "unresolved_references": [_jsonable(item) for item in analysis.derived.unresolved_references],
+            "vulnerability_profiles": [{"name": item.name, "rules": len(item.rules or ()), "exceptions": len(item.exceptions or ()), "vdom": vdom(item)} for item in config.vulnerability_profiles],
+            "dhcp_servers": [{"name": item.name, "interface": item.interface, "mode": item.mode, "vdom": vdom(item)} for item in config.dhcp_servers],
+            "sdwan_rules": [{"name": item.name, "path_quality_profile": item.path_quality_profile, "saas_quality_profile": item.saas_quality_profile, "vdom": vdom(item)} for item in config.sdwan_rules],
+            "administrators": [{"name": item.name, "custom_admin_role": item.custom_admin_role, "password_configured": item.password_configured, "vdom": vdom(item)} for item in config.administrators],
+            "ike_gateways": [{"name": item.name, "ike_version": item.ike_version, "pre_shared_key_configured": item.pre_shared_key_configured, "vdom": vdom(item)} for item in config.ike_gateways],
+            "ipsec_tunnels": [{"name": item.name, "ike_gateways": item.ike_gateways, "ipsec_crypto_profile": item.ipsec_crypto_profile, "manual_key_configured": item.manual_key_configured, "vdom": vdom(item)} for item in config.ipsec_tunnels],
+            "globalprotect_portals": [{"name": item.name, "ssl_tls_service_profile": item.ssl_tls_service_profile, "vdom": vdom(item)} for item in config.globalprotect_portals],
+            "globalprotect_gateways": [{"name": item.name, "local_interface": item.local_interface, "vdom": vdom(item)} for item in config.globalprotect_gateways],
         },
     }

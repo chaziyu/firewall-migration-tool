@@ -45,6 +45,8 @@ def _object_counts(config: FGConfig) -> dict[str, int]:
         "address_groups": len(config.address_groups),
         "services": len(config.services),
         "service_groups": len(config.service_groups),
+        "schedules": len(config.one_time_schedules) + len(config.recurring_schedules),
+        "schedule_groups": len(config.schedule_groups),
         "policies": len(config.policies),
         "ip_pools": len(config.ip_pools),
         "vips": len(config.vips),
@@ -317,6 +319,42 @@ def build_web_report(
         for item in derived.services.groups
     ]
 
+    schedules = [
+        {
+            "name": item.name,
+            "type": "one-time",
+            "vdom": item.vdom,
+            "start": item.start,
+            "end": item.end,
+            "start_utc": item.start_utc,
+            "end_utc": item.end_utc,
+            "expiration_days": item.expiration_days,
+            "review": _review(_messages(validation, vdom=item.vdom, names=(item.name,), domains=("schedule",))),
+        }
+        for item in config.one_time_schedules
+    ] + [
+        {
+            "name": item.name,
+            "type": "recurring",
+            "vdom": item.vdom,
+            "days": list(item.days),
+            "start": item.start,
+            "end": item.end,
+            "review": _review(_messages(validation, vdom=item.vdom, names=(item.name,), domains=("schedule",))),
+        }
+        for item in config.recurring_schedules
+    ]
+
+    schedule_groups = [
+        {
+            "name": item.name,
+            "vdom": item.vdom,
+            "members": list(item.members),
+            "review": _review(_messages(validation, vdom=item.vdom, names=(item.name,), domains=("schedule_group",))),
+        }
+        for item in config.schedule_groups
+    ]
+
     policies = []
     for item in config.policies:
         key = (item.vdom, item.policy_id)
@@ -466,6 +504,8 @@ def build_web_report(
                 address_groups,
                 services,
                 service_groups,
+                schedules,
+                schedule_groups,
                 policies,
                 routes,
                 vpn_tunnels,
@@ -498,6 +538,8 @@ def build_web_report(
             "address_groups": address_groups,
             "services": services,
             "service_groups": service_groups,
+            "schedules": schedules,
+            "schedule_groups": schedule_groups,
             "policies": policies,
             "nat": nat_rows,
             "routes": routes,

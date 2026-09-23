@@ -225,6 +225,8 @@ def _rows_for_sheet(
         "Service Categories": _service_category_rows,
         "Services": _service_rows,
         "Service Groups": _service_group_rows,
+        "Schedules": _schedule_rows,
+        "Schedule Groups": _schedule_group_rows,
         "Policies": _policy_rows,
         "IP Pools": _ip_pool_rows,
         "Virtual IPs": _vip_rows,
@@ -2364,6 +2366,47 @@ def _generic_source_rows(
 
                 rows.append(row)
 
+    return rows
+
+
+def _schedule_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    rows = []
+    for item, kind in (
+        *((item, "one-time") for item in context.config.one_time_schedules),
+        *((item, "recurring") for item in context.config.recurring_schedules),
+    ):
+        row = {
+            "Name": item.name,
+            "Type": kind,
+            "Days": getattr(item, "days", []),
+            "Start": item.start,
+            "End": item.end,
+            "Start UTC": getattr(item, "start_utc", None),
+            "End UTC": getattr(item, "end_utc", None),
+            "Expiration Days": getattr(item, "expiration_days", None),
+            "VDOM": item.vdom,
+            "Source Explicit Fields": sorted(item.explicit_fields),
+            "Additional Settings": _additional_settings(item),
+        }
+        _add_analysis_status(context=context, row=row, vdom=item.vdom, names=(item.name,))
+        _overlay_raw(row, item.raw_extra, headers)
+        rows.append(row)
+    return rows
+
+
+def _schedule_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    rows = []
+    for item in context.config.schedule_groups:
+        row = {
+            "Name": item.name,
+            "Members": item.members,
+            "VDOM": item.vdom,
+            "Source Explicit Fields": sorted(item.explicit_fields),
+            "Additional Settings": _additional_settings(item),
+        }
+        _add_analysis_status(context=context, row=row, vdom=item.vdom, names=(item.name,))
+        _overlay_raw(row, item.raw_extra, headers)
+        rows.append(row)
     return rows
 
 

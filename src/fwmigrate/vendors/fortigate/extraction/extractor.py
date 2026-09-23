@@ -14,6 +14,7 @@ from .ips import extract_ips
 from .policies import extract_policies
 from .profiles_group import extract_profile_groups
 from .result import ExtractionResult
+from .schedules import extract_schedules
 from .source_inventory import capture_source_objects
 from .source_metadata import capture_source_metadata
 from .routing import extract_routes
@@ -48,6 +49,7 @@ def extract_fortigate_config(
     # Reusable firewall objects.
     extract_addresses(tree, source)
     extract_services(tree, source)
+    extract_schedules(tree, source)
 
     # NAT source objects.
     extract_ip_pools(tree, source)

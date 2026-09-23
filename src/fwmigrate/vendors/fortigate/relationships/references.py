@@ -23,6 +23,8 @@ class ReferenceKind(str, Enum):
 
     SERVICE = "service"
     SERVICE_GROUP = "service_group"
+    SCHEDULE = "schedule"
+    SCHEDULE_GROUP = "schedule_group"
 
     VIP = "vip"
     VIP_GROUP = "vip_group"
@@ -239,6 +241,10 @@ def build_reference_index(
         config.service_groups,
     )
 
+    _add_named(index, ReferenceKind.SCHEDULE, config.one_time_schedules)
+    _add_named(index, ReferenceKind.SCHEDULE, config.recurring_schedules)
+    _add_named(index, ReferenceKind.SCHEDULE_GROUP, config.schedule_groups)
+
     _add_named(
         index,
         ReferenceKind.VIP,
@@ -345,6 +351,7 @@ def collect_broken_references(
         ReferenceKind.SERVICE,
         ReferenceKind.SERVICE_GROUP,
     )
+    schedule_like = (ReferenceKind.SCHEDULE, ReferenceKind.SCHEDULE_GROUP)
 
     def check(
         *,
@@ -459,6 +466,16 @@ def collect_broken_references(
             kinds=service_like,
         )
 
+    for group in config.schedule_groups:
+        check(
+            source_kind="schedule_group",
+            vdom=group.vdom,
+            source_name=group.name,
+            source_field="members",
+            names=group.members,
+            kinds=(ReferenceKind.SCHEDULE,),
+        )
+
     for group in config.vip_groups:
         check(
             source_kind="vip_group",
@@ -547,6 +564,16 @@ def collect_broken_references(
             names=policy.service,
             kinds=service_like,
         )
+
+        if policy.schedule:
+            check(
+                source_kind="policy",
+                vdom=policy.vdom,
+                source_name=source_name,
+                source_field="schedule",
+                names=(policy.schedule,),
+                kinds=schedule_like,
+            )
 
         check(
             source_kind="policy",
@@ -665,6 +692,17 @@ def collect_broken_references(
                     ),
                 )
 
+    for administrator in config.administrators:
+        if administrator.schedule:
+            check(
+                source_kind="administrator",
+                vdom="root",
+                source_name=administrator.name,
+                source_field="schedule",
+                names=(administrator.schedule,),
+                kinds=schedule_like,
+            )
+
     return issues
 
 
@@ -698,6 +736,10 @@ def _implicit_reference(
             name
         ):
             return ReferenceKind.SERVICE
+
+    if ReferenceKind.SCHEDULE in kinds or ReferenceKind.SCHEDULE_GROUP in kinds:
+        if name.lower() == "always":
+            return ReferenceKind.SCHEDULE
 
     if ReferenceKind.ADDRESS6 in kinds:
         if name.lower() in {"all", "all6"}:

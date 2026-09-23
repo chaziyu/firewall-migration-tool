@@ -75,6 +75,37 @@ def _simple_rows(context: _PANExcelContext, items: Iterable[Any], object_type: s
     return rows
 
 
+def _object_rows(context: _PANExcelContext, items: Iterable[Any], object_type: str, fields: dict[str, str]) -> list[dict[str, Any]]:
+    rows = []
+    for item in items:
+        row = _base(context, item, object_type)
+        for header, attribute in fields.items():
+            row[header] = _text(getattr(item, attribute, None))
+        rows.append(row)
+    return rows
+
+
+def _child_rows(context: _PANExcelContext, parents: Iterable[Any], child_attr: str, object_type: str, fields: dict[str, str], parent_header: str = "Profile") -> list[dict[str, Any]]:
+    rows = []
+    for parent in parents:
+        for child in getattr(parent, child_attr, None) or ():
+            row = _base(context, parent, object_type)
+            row[parent_header] = parent.name
+            for header, attribute in fields.items():
+                row[header] = _text(getattr(child, attribute, None))
+            rows.append(row)
+    return rows
+
+
+def _vulnerability_profile_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
+    rows = []
+    for item in context.config.vulnerability_profiles:
+        row = _base(context, item, "vulnerability-profile")
+        row.update({"Rule Count": len(item.rules or ()), "Exception Count": len(item.exceptions or ())})
+        rows.append(row)
+    return rows
+
+
 def _address_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
     rows = []
     for item in context.config.addresses:
@@ -304,4 +335,31 @@ ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], list[dict[str, Any]]]] = {
     "Unresolved References": _unresolved_rows,
     "Unsupported": lambda c: [{"Source Path": path, "Status": "UNSUPPORTED", "Reason": "typed extraction failed or is not registered"} for path in c.config.unknown_paths],
     "PAN-OS Source Inventory": _inventory_rows, "Extraction Coverage": _coverage_rows,
+    "Vulnerability Profiles": _vulnerability_profile_rows,
+    "Vulnerability Rules": lambda c: _child_rows(c, c.config.vulnerability_profiles, "rules", "vulnerability-rule", {"Rule Name": "name", "Threat Name": "threat_name", "Host": "host", "Vendor IDs": "vendor_ids", "Severities": "severities", "Category": "category", "Action": "action", "Packet Capture": "packet_capture"}),
+    "Vulnerability Exceptions": lambda c: _child_rows(c, c.config.vulnerability_profiles, "exceptions", "vulnerability-exception", {"Exception Name": "name", "Action": "action", "Packet Capture": "packet_capture", "Time Interval": "time_interval", "Time Threshold": "time_threshold", "Time Track By": "time_track_by", "Exempt IP Configuration": "exempt_ips"}),
+    "DHCP Servers": lambda c: _object_rows(c, c.config.dhcp_servers, "dhcp-server", {header: field for header, field in (("Interface", "interface"), ("Mode", "mode"), ("Probe IP", "probe_ip"), ("Lease Type", "lease_type"), ("Lease Timeout", "lease_timeout"), ("Inheritance Source", "inheritance_source"), ("Gateway", "gateway"), ("Subnet Mask", "subnet_mask"), ("DNS Primary", "dns_primary"), ("DNS Secondary", "dns_secondary"), ("WINS", "wins"), ("NTP", "ntp"), ("POP3 Server", "pop3_server"), ("SMTP Server", "smtp_server"), ("DNS Suffix", "dns_suffix"))}),
+    "SD-WAN Interface Profiles": lambda c: _object_rows(c, c.config.sdwan_interface_profiles, "sdwan-interface-profile", {"Link Tag": "link_tag", "Link Type": "link_type", "VPN Data Tunnel Support": "vpn_data_tunnel_support", "Maximum Download": "maximum_download", "Maximum Upload": "maximum_upload", "Error Correction": "error_correction", "Path Monitoring": "path_monitoring", "VPN Failover Metric": "vpn_failover_metric", "Probe Frequency": "probe_frequency", "Probe Idle Time": "probe_idle_time", "Failback Hold Time": "failback_hold_time", "Comment": "comment"}),
+    "SD-WAN Path Quality": lambda c: _object_rows(c, c.config.sdwan_path_quality_profiles, "sdwan-path-quality-profile", {"Latency Threshold": "latency_threshold", "Latency Sensitivity": "latency_sensitivity", "Packet Loss Threshold": "packet_loss_threshold", "Packet Loss Sensitivity": "packet_loss_sensitivity", "Jitter Threshold": "jitter_threshold", "Jitter Sensitivity": "jitter_sensitivity"}),
+    "SD-WAN Traffic Distribution": lambda c: _object_rows(c, c.config.sdwan_traffic_distribution_profiles, "sdwan-traffic-distribution-profile", {"Distribution Mode": "distribution_mode"}),
+    "SD-WAN Traffic Distribution Links": lambda c: _child_rows(c, c.config.sdwan_traffic_distribution_profiles, "links", "sdwan-traffic-distribution-link", {"Link Tag": "link_tag", "Weight": "weight"}),
+    "SD-WAN SaaS Quality": lambda c: _object_rows(c, c.config.sdwan_saas_quality_profiles, "sdwan-saas-quality-profile", {"Monitor Mode": "monitor_mode", "Probe Configuration": "probe_configuration", "Targets": "targets"}),
+    "SD-WAN Error Correction": lambda c: _object_rows(c, c.config.sdwan_error_correction_profiles, "sdwan-error-correction-profile", {"Activation Threshold": "activation_threshold", "Mode": "mode"}),
+    "SD-WAN Rules": lambda c: _object_rows(c, c.config.sdwan_rules, "sdwan-rule", {"Rule Order": "source_order", "From Zones": "from_zones", "To Zones": "to_zones", "Source Addresses": "source", "Source Users": "source_user", "Destination Addresses": "destination", "Applications": "application", "Services": "service", "Tags": "tags", "Source Negate": "negate_source", "Destination Negate": "negate_destination", "Disabled": "disabled", "Path Quality Profile": "path_quality_profile", "SaaS Quality Profile": "saas_quality_profile", "Error Correction Profile": "error_correction_profile", "Traffic Distribution Profile": "traffic_distribution_profile", "NAT Session Failover Action": "nat_session_failover_action", "Group Tag": "group_tag", "Description": "description"}),
+    "Administrators": lambda c: _object_rows(c, c.config.administrators, "administrator", {"Role Type": "role_type", "Built-In Role": "built_in_role", "Custom Admin Role": "custom_admin_role", "Authentication Profile": "authentication_profile", "Password Configured": "password_configured"}),
+    "Admin Roles": lambda c: _object_rows(c, c.config.admin_roles, "admin-role", {"Role Scope": "role_scope"}),
+    "Admin Role Permissions": lambda c: _child_rows(c, c.config.admin_roles, "permissions", "admin-role-permission", {"Role Scope": "role_scope", "Channel": "channel", "Permission Path": "permission_path", "Setting": "setting", "Value": "value"}, "Role"),
+    "IKE Gateways": lambda c: _object_rows(c, c.config.ike_gateways, "ike-gateway", {"Local Interface": "local_interface", "Local IP": "local_ip", "Peer Address Type": "peer_address_type", "Peer Address": "peer_address", "IKE Version": "ike_version", "IKEv1 Exchange Mode": "ikev1_exchange_mode", "IKEv1 Crypto Profile": "ikev1_crypto_profile", "IKEv2 Crypto Profile": "ikev2_crypto_profile", "Authentication Method": "authentication_method", "Pre-Shared Key Configured": "pre_shared_key_configured", "Local ID": "local_id", "Peer ID": "peer_id", "IKEv1 DPD Enabled": "ikev1_dpd_enabled", "IKEv1 DPD Interval": "ikev1_dpd_interval", "IKEv1 DPD Retry": "ikev1_dpd_retry", "IKEv2 DPD Enabled": "ikev2_dpd_enabled", "IKEv2 DPD Interval": "ikev2_dpd_interval", "NAT Traversal": "nat_traversal", "NAT Traversal Keepalive": "nat_traversal_keepalive", "Passive Mode": "passive_mode", "Fragmentation": "fragmentation"}),
+    "IKE Crypto Profiles": lambda c: _object_rows(c, c.config.ike_crypto_profiles, "ike-crypto-profile", {"Encryption Algorithms": "encryption_algorithms", "Authentication Algorithms": "authentication_algorithms", "DH / AKE Groups": "dh_groups", "Lifetime Value": "lifetime_value", "Lifetime Unit": "lifetime_unit", "Authentication Multiple": "authentication_multiple"}),
+    "IPsec Crypto Profiles": lambda c: _object_rows(c, c.config.ipsec_crypto_profiles, "ipsec-crypto-profile", {"Protocol": "protocol", "ESP Encryption": "esp_encryption", "ESP Authentication": "esp_authentication", "AH Authentication": "ah_authentication", "DH Group": "dh_group", "Lifetime Value": "lifetime_value", "Lifetime Unit": "lifetime_unit"}),
+    "IPsec Tunnels": lambda c: _object_rows(c, c.config.ipsec_tunnels, "ipsec-tunnel", {"Tunnel Interface": "tunnel_interface", "Key Type": "key_type", "IKE Gateways": "ike_gateways", "IPsec Crypto Profile": "ipsec_crypto_profile", "Tunnel Monitor": "tunnel_monitor", "GlobalProtect Satellite": "globalprotect_satellite", "Manual Key Configured": "manual_key_configured"}),
+    "IPsec Proxy IDs": lambda c: _child_rows(c, c.config.ipsec_tunnels, "proxy_ids", "ipsec-proxy-id", {"Name": "name", "Address Family": "address_family", "Local": "local", "Remote": "remote", "Protocol": "protocol", "Protocol Number": "protocol_number", "Local Port": "local_port", "Remote Port": "remote_port"}, "Tunnel"),
+    "GlobalProtect Portals": lambda c: _object_rows(c, c.config.globalprotect_portals, "globalprotect-portal", {"SSL/TLS Service Profile": "ssl_tls_service_profile", "Certificate Profile": "certificate_profile", "Clientless VPN Enabled": "clientless_vpn_enabled"}),
+    "GlobalProtect Gateways": lambda c: _object_rows(c, c.config.globalprotect_gateways, "globalprotect-gateway", {"Tunnel Mode": "tunnel_mode", "Local Interface": "local_interface", "Local Address": "local_address", "IP Address Family": "ip_address_family", "SSL/TLS Service Profile": "ssl_tls_service_profile", "Certificate Profile": "certificate_profile"}),
+    "Local Users": lambda c: _simple_rows(c, c.config.local_users, "local-user", {"Disabled": "disabled", "Password Configured": "password_configured"}),
+    "Local User Groups": lambda c: _simple_rows(c, c.config.local_user_groups, "local-user-group", {"Members": "members"}),
+    "Group Mappings": lambda c: _simple_rows(c, c.config.group_mappings, "group-mapping", {"Server Profile": "server_profile", "Disabled": "disabled"}),
+    "Route Path Monitors": lambda c: [], "DHCP IP Pools": lambda c: [], "DHCP Reservations": lambda c: [], "DHCP Options": lambda c: [],
+    "SD-WAN Interface Bindings": lambda c: [], "GP Portal Client Configs": lambda c: [], "GP Portal Gateway Entries": lambda c: [],
+    "GP Clientless VPN": lambda c: [], "GP Gateway Client Auth": lambda c: [], "GP Remote User Tunnels": lambda c: [],
 }

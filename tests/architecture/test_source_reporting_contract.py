@@ -56,6 +56,14 @@ def test_source_report_registry_rejects_duplicate_vendors():
         registry.register(_Reporter())
 
 
+def test_source_report_registry_keeps_vendor_results_opaque():
+    registry = SourceReportRegistry()
+    reporter = _Reporter()
+    registry.register(reporter)
+    result = reporter.analyze_source("opaque")
+    assert registry.get("example").build_preview(result) == {"source": "opaque"}
+
+
 def test_source_excel_endpoint_does_not_use_legacy_ir_exporter():
     tree = ast.parse((Path(web.__file__)).read_text(encoding="utf-8"))
     endpoint = next(

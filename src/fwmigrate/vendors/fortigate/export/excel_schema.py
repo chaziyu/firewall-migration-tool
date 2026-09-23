@@ -7,7 +7,7 @@ SHEET_ORDER: tuple[str, ...] = (
     "Summary", "Review Required",
     "System Settings", "DNS Settings", "NTP Settings", "NTP Servers",
     "Interfaces", "Interface Secondary IPs", "Zones",
-    "Addresses", "Wildcard FQDN", "Address Groups", "Services", "Service Groups",
+    "Addresses", "Wildcard FQDN", "Address Groups", "Services", "Service Groups", "Schedules", "Schedule Groups",
     "Policies", "NAT Rules", "IP Pools", "Virtual IPs", "VIP Real Servers", "VIP Groups",
     "Routes", "VPN Tunnels", "VPN Phase 2",
     "DHCP Servers", "DHCP IP Ranges", "DHCP Reservations",
@@ -41,6 +41,8 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     "Address Groups": ("Name", "Address Family", "Group Type", "Members", "Exclusion Enabled", "Exclude Members", "Allow Routing", "Tags", "Description", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "Services": ("Name", "Source Service", "Protocol", "Destination Port", "Source Port", "Protocol Number", "ICMP Type", "ICMP Code", "Generated", "Description", "VDOM", "Analysis Status", "Review Reasons"),
     "Service Groups": ("Name", "Members", "Generated", "Description", "VDOM", "Analysis Status", "Review Reasons"),
+    "Schedules": ("Name", "Type", "Days", "Start", "End", "Start UTC", "End UTC", "Expiration Days", "VDOM", "Analysis Status", "Review Reasons", "Source Explicit Fields", "Additional Settings"),
+    "Schedule Groups": ("Name", "Members", "VDOM", "Analysis Status", "Review Reasons", "Source Explicit Fields", "Additional Settings"),
     "Policies": (
         "Rule #", "Policy Name", "Source Name", "Source Interface", "Source Addresses", "Source Address Negate",
         "Destination Interface", "Destination Addresses", "Destination Address Negate", "Services", "Service Negate",

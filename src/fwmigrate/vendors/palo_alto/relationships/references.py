@@ -50,6 +50,16 @@ def _objects(config: PANOSConfig) -> Iterable[PANIndexedObject]:
         "address": config.addresses, "address-group": config.address_groups,
         "service": config.services, "service-group": config.service_groups,
         "schedule": config.schedules, "security-profile-group": config.security_profile_groups,
+        "vulnerability-profile": config.vulnerability_profiles,
+        "administrator": config.administrators, "admin-role": config.admin_roles,
+        "ike-gateway": config.ike_gateways, "ike-crypto-profile": config.ike_crypto_profiles,
+        "ipsec-crypto-profile": config.ipsec_crypto_profiles, "ipsec-tunnel": config.ipsec_tunnels,
+        "sdwan-interface-profile": config.sdwan_interface_profiles,
+        "sdwan-path-quality-profile": config.sdwan_path_quality_profiles,
+        "sdwan-traffic-distribution-profile": config.sdwan_traffic_distribution_profiles,
+        "sdwan-saas-quality-profile": config.sdwan_saas_quality_profiles,
+        "sdwan-error-correction-profile": config.sdwan_error_correction_profiles,
+        "sdwan-rule": config.sdwan_rules,
         "tag": config.tags, "zone": config.zones,
     }
     for family, values in fields.items():
@@ -108,6 +118,30 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
         for field, names, families in (("from_zones", rule.from_zones, ("zone",)), ("to_zones", rule.to_zones, ("zone",)), ("source", rule.source, ("address", "address-group")), ("destination", rule.destination, ("address", "address-group")), ("service", (rule.service,) if rule.service else (), ("service", "service-group"))):
             for name in names or ():
                 result.append(_resolve(index, rule, field, name, families, owner_family="nat"))
+    for group in config.security_profile_groups:
+        for name in group.vulnerability or ():
+            result.append(_resolve(index, group, "vulnerability", name, ("vulnerability-profile",), owner_family="security-profile-group"))
+        for field in ("antivirus", "anti_spyware", "url_filtering", "file_blocking", "wildfire_analysis", "data_filtering", "gtp", "sctp", "ai_security"):
+            for name in getattr(group, field) or ():
+                result.append(_resolve(index, group, field, name, (field.replace("_", "-") + "-profile",), owner_family="security-profile-group", source_only=True))
+    for administrator in config.administrators:
+        if administrator.custom_admin_role:
+            result.append(_resolve(index, administrator, "custom_admin_role", administrator.custom_admin_role, ("admin-role",), owner_family="administrator"))
+    for tunnel in config.ipsec_tunnels:
+        for name in tunnel.ike_gateways or ():
+            result.append(_resolve(index, tunnel, "ike_gateways", name, ("ike-gateway",), owner_family="ipsec-tunnel"))
+        if tunnel.ipsec_crypto_profile:
+            result.append(_resolve(index, tunnel, "ipsec_crypto_profile", tunnel.ipsec_crypto_profile, ("ipsec-crypto-profile",), owner_family="ipsec-tunnel"))
+    for gateway in config.ike_gateways:
+        for field in ("ikev1_crypto_profile", "ikev2_crypto_profile"):
+            name = getattr(gateway, field)
+            if name:
+                result.append(_resolve(index, gateway, field, name, ("ike-crypto-profile",), owner_family="ike-gateway"))
+    for rule in config.sdwan_rules:
+        for field, family in (("path_quality_profile", "sdwan-path-quality-profile"), ("saas_quality_profile", "sdwan-saas-quality-profile"), ("error_correction_profile", "sdwan-error-correction-profile"), ("traffic_distribution_profile", "sdwan-traffic-distribution-profile")):
+            name = getattr(rule, field)
+            if name:
+                result.append(_resolve(index, rule, field, name, (family,), owner_family="sdwan-rule"))
     shadowing: list[PANShadowedObject] = []
     for obj in index.objects:
         candidates = index.candidates(obj.family, obj.name, obj.scope)

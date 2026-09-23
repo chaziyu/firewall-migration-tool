@@ -16,6 +16,9 @@ ASA_SOURCE = (
     "access-list OUT extended permit tcp object WEB any eq 443\n"
 )
 
+PALO_SOURCE = '<config><shared><address><entry name="web"><ip-netmask>203.0.113.10</ip-netmask><future-password>palo-web-secret</future-password></entry></address></shared></config>'
+CHECKPOINT_SOURCE = '{"format":"checkpoint-export-v1","domain":"SMC User","gateway":"CP-Enterprise-Gateway","selected_domain":"SMC User","selected_package":"Standard","selected_access_layer":"Network","selected_gateway":"CP-Enterprise-Gateway","responses":[{"command":"show-hosts","domain":"SMC User","data":{"objects":[{"name":"web","type":"host","ipv4-address":"203.0.113.10","password":"checkpoint-web-secret"}],"from":1,"to":1,"total":1}}]}'
+
 
 def _post(client, path, **fields):
     data = {"source_vendor": "cisco_asa", **fields}
@@ -62,3 +65,23 @@ def test_source_excel_vendor_mismatch_does_not_use_cached_preview():
         content_type="multipart/form-data",
     )
     assert response.status_code == 422
+
+
+def test_palo_alto_upload_cached_preview_and_excel_redact_secrets():
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post("/api/preview", data={"source_vendor": "palo_alto", "file": (io.BytesIO(PALO_SOURCE.encode()), "pan.xml")}, content_type="multipart/form-data")
+    assert response.status_code == 200
+    payload = response.get_json()
+    workbook = client.post("/api/extract/excel", data={"source_vendor": "palo_alto", "preview_id": payload["preview_id"]}, content_type="multipart/form-data")
+    assert workbook.status_code == 200
+    assert b"palo-web-secret" not in response.data + workbook.data
+
+
+def test_check_point_upload_cached_preview_and_excel_redact_secrets():
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post("/api/preview", data={"source_vendor": "checkpoint", "file": (io.BytesIO(CHECKPOINT_SOURCE.encode()), "cp.json")}, content_type="multipart/form-data")
+    assert response.status_code == 200
+    payload = response.get_json()
+    workbook = client.post("/api/extract/excel", data={"source_vendor": "checkpoint", "preview_id": payload["preview_id"]}, content_type="multipart/form-data")
+    assert workbook.status_code == 200
+    assert b"checkpoint-web-secret" not in response.data + workbook.data

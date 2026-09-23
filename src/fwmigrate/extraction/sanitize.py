@@ -41,6 +41,7 @@ SENSITIVE_KEY_PREFIXES = (
     "newpass",
     "new-pass",
     "new-password",
+    "key",
 )
 
 SENSITIVE_EXACT_KEYS = {

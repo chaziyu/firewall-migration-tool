@@ -212,7 +212,7 @@ class ExcelReportTest(unittest.TestCase):
         workbook = self._workbook()
         self.assertEqual(list(SHEET_ORDER), workbook.sheetnames)
         removed = {
-            "Address Group Tags", "Schedules", "Schedule Groups", "Local-In Policies",
+            "Address Group Tags", "Local-In Policies",
             "Multicast Policies", "Policy Routes", "DHCP Exclude Ranges", "Routing Protocol Settings",
             "Session TTL Settings", "Session TTL Overrides", "SD-WAN SLAs", "SD-WAN Duplication",
             "SD-WAN Neighbors", "SD-WAN Rule SLAs", "SSL VPN Host Checks", "SSL VPN Host Check Items",

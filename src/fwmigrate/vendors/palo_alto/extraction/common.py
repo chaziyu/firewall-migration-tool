@@ -84,6 +84,16 @@ def child_present(element: ET.Element, tag: str) -> bool:
     return element.find(tag) is not None
 
 
+def secret_leaf_exists(element: ET.Element | None, *paths: str) -> bool | None:
+    """Return presence metadata without ever reading a secret value."""
+    if element is None:
+        return None
+    for path in paths:
+        if element.find(path) is not None:
+            return True
+    return False
+
+
 def entry_name(element: ET.Element) -> str | None:
     return element.get("name")
 
