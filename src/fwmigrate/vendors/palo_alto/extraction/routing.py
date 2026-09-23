@@ -5,7 +5,8 @@ import xml.etree.ElementTree as ET
 from ..model import (
     PANBGPConfig, PANBGPPeer, PANBGPPeerGroup, PANLogicalRouter, PANOSPFConfig,
     PANOSPFInterface, PANOSPFArea, PANOSPFv3Config, PANRIPConfig,
-    PANRedistributionProfile, PANStaticRoute, PANVRF, PANVirtualRouter,
+    PANRedistributionProfile, PANRoutePathMonitor, PANRoutePathMonitorTarget,
+    PANStaticRoute, PANVRF, PANVirtualRouter,
 )
 from ..schema_registry import PANPathSpec
 from ..source_context import PANWalkContext
@@ -90,6 +91,17 @@ def _extract_redistribution_profiles(element: ET.Element) -> list[PANRedistribut
     return profiles or None
 
 
+def _extract_path_monitor(element: ET.Element | None) -> PANRoutePathMonitor | None:
+    if element is None:
+        return None
+    extra, explicit = typed_fields(element, {"enable", "failure-condition", "hold-time", "monitor-destinations"}, {"enable": "enabled", "failure-condition": "failure_condition", "hold-time": "hold_time", "monitor-destinations": "targets"})
+    targets = []
+    for item in element.findall("monitor-destinations/entry"):
+        target_extra, target_explicit = typed_fields(item, {"enable", "source", "destination", "destination-fqdn", "interval", "count"}, {"enable": "enabled", "destination-fqdn": "destination_fqdn"})
+        targets.append(PANRoutePathMonitorTarget(name=item.get("name"), enabled=value(item, "enable"), source=value(item, "source"), destination=value(item, "destination"), destination_fqdn=value(item, "destination-fqdn"), interval=value(item, "interval"), count=value(item, "count"), raw_extra=target_extra, explicit_fields=target_explicit))
+    return PANRoutePathMonitor(enabled=value(element, "enable"), failure_condition=value(element, "failure-condition"), hold_time=value(element, "hold-time"), targets=targets if element.find("monitor-destinations") is not None else None, raw_extra=extra, explicit_fields=explicit)
+
+
 def _extract_static_routes(element: ET.Element, path: tuple[str, ...], context: PANWalkContext) -> list[PANStaticRoute] | None:
     node = element.find("routing-table/ip/static-route")
     if node is None:
@@ -97,19 +109,29 @@ def _extract_static_routes(element: ET.Element, path: tuple[str, ...], context: 
     routes: list[PANStaticRoute] = []
     for route_order, route in enumerate(node, start=1):
         hop = route.find("nexthop")
-        extra, explicit = typed_fields(route, {"destination", "nexthop", "interface", "metric"})
-        routes.append(PANStaticRoute(name=route.get("name"), source_path="/".join(path) + "/routing-table/ip/static-route/entry", scope=context.scope, source_order=route_order, destination=value(route, "destination"), nexthop_ip_address=value(hop, "ip-address"), nexthop=value(hop, "ip-address"), interface=value(route, "interface"), metric=value(route, "metric"), raw_extra=extra, explicit_fields=explicit))
+        extra, explicit = typed_fields(route, {"destination", "nexthop", "interface", "metric", "admin-dist", "route-table", "bfd", "path-monitor"}, {"admin-dist": "admin_distance", "route-table": "route_table", "bfd": "bfd_profile", "path-monitor": "path_monitor"})
+        branch = next(iter(hop), None) if hop is not None else None
+        if branch is not None:
+            explicit.update({"nexthop_type", "nexthop"})
+            if branch.tag == "ip-address":
+                explicit.add("nexthop_ip_address")
+        bfd = route.find("bfd")
+        routes.append(PANStaticRoute(name=route.get("name"), source_path="/".join(path) + "/routing-table/ip/static-route/entry", scope=context.scope, source_order=route_order, destination=value(route, "destination"), address_family="ipv4", nexthop_type=branch.tag if branch is not None else None, nexthop_ip_address=value(hop, "ip-address"), nexthop=(branch.text or "").strip() if branch is not None else None, interface=value(route, "interface"), metric=value(route, "metric"), admin_distance=value(route, "admin-dist"), route_table=value(route, "route-table"), bfd_profile=value(bfd, "profile"), path_monitor=_extract_path_monitor(route.find("path-monitor")), raw_extra=extra, explicit_fields=explicit))
     return routes or None
 
 
-def _extract_logical_router_vrfs(element: ET.Element) -> list[PANVRF] | None:
+def _extract_logical_router_vrfs(element: ET.Element, path: tuple[str, ...], context: PANWalkContext) -> list[PANVRF] | None:
     node = element.find("vrf")
     if node is None:
         return None
     vrfs: list[PANVRF] = []
     for vrf in node:
         protocol = vrf.find("routing-protocol")
-        vrfs.append(PANVRF(name=vrf.get("name"), routing_protocol=structured_xml_capture(protocol) if protocol is not None else None, raw_extra=raw_extra(vrf, {"routing-protocol"}), explicit_fields={"routing_protocol"} if protocol is not None else set()))
+        routes = _extract_static_routes(vrf, path + ("vrf", "entry"), context)
+        explicit = {"routing_protocol"} if protocol is not None else set()
+        if vrf.find("routing-table/ip/static-route") is not None:
+            explicit.add("static_routes")
+        vrfs.append(PANVRF(name=vrf.get("name"), static_routes=routes, routing_protocol=structured_xml_capture(protocol) if protocol is not None else None, raw_extra=raw_extra(vrf, {"routing-protocol", "routing-table"}), explicit_fields=explicit))
     return vrfs or None
 
 
@@ -130,7 +152,7 @@ def _extract_virtual_router(element: ET.Element, path: tuple[str, ...], context:
 
 def _extract_logical_router(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> PANLogicalRouter:
     extra, explicit = source_fields(element, spec)
-    return PANLogicalRouter(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, vrfs=_extract_logical_router_vrfs(element), raw_extra=extra, explicit_fields=explicit)
+    return PANLogicalRouter(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, vrfs=_extract_logical_router_vrfs(element, path, context), raw_extra=extra, explicit_fields=explicit)
 
 
 def extract_routing(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> object | None:

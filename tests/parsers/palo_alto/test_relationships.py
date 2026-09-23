@@ -20,7 +20,7 @@ def test_relationship_views_preserve_source_and_extract_firewall_topology():
     assert ethernet.imported_vsys == ("vsys1",)
     assert ethernet.zones == ("trust",)
     assert ethernet.virtual_routers == ("vr-main",)
-    assert derived.nat[0].source_translation_mode == "PANDynamicIPAndPortTranslation"
+    assert derived.nat[0].source_translation_mode == "dynamic-ip-and-port"
 
 
 def test_panorama_shadowing_and_effective_order_are_explicitly_ambiguous():

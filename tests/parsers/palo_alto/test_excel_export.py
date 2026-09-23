@@ -94,9 +94,9 @@ def test_interface_sheet_contains_topology_relationships():
 def test_nat_rows_join_derived_values_by_full_source_identity():
     sheet = _workbook("nat_pipeline_conformance.xml")["NAT Rules"]
     headers = {cell.value: cell.column for cell in sheet[3]}
-    assert sheet.cell(4, headers["Derived Source Translation Mode"]).value == "PANDynamicIPAndPortTranslation"
-    assert sheet.cell(6, headers["Derived Source Translation Mode"]).value == "PANStaticIPTranslation"
-    assert sheet.cell(6, headers["Derived Destination Translation Mode"]).value == "PANDestinationTranslation"
+    assert sheet.cell(4, headers["Derived Source Translation Mode"]).value == "dynamic-ip-and-port"
+    assert sheet.cell(6, headers["Derived Source Translation Mode"]).value == "static-ip"
+    assert sheet.cell(6, headers["Derived Destination Translation Mode"]).value == "destination-translation"
 
 
 def test_row_builders_do_not_reimplement_relationships_or_transforms():

@@ -287,6 +287,14 @@ let currentRenderedArtifactId = null;
   const liveContainer = document.getElementById("ingest-live-container");
   let ingestMode = "file";
   const collectionCapabilities = {};
+  const collectionGuides = {
+    fortigate: "Live collection is unavailable for FortiGate. Export a FortiOS configuration backup and use Upload Config.",
+    palo_alto: "Live collection is unavailable for PAN-OS. Export an XML configuration and use Upload Config.",
+    cisco_asa: "Connect directly to the ASA over SSH. The collector runs 'show running-config' and uses that output as the source. The SSH host key must already be trusted, and the account needs permission to read the running configuration.",
+    juniper_srx: "Connect directly to the SRX over SSH. The collector runs 'show configuration | display set' and uses the set-format output as the source. The SSH host key must already be trusted, and the account needs permission to read the configuration.",
+    cisco_ftd: "Connect to Firepower Management Center over HTTPS, not to the FTD device. The collector authenticates to the FMC REST API and reads objects, access policies and rules, and NAT policies and rules. Enter a domain name or UUID when FMC has multiple domains; certificate verification is enabled by default.",
+    checkpoint: "Connect to the Check Point management server over HTTPS. The collector reads Management API objects and policy data; enter the policy package and access layer to include their scoped data. To also collect gateway settings, provide the optional Gaia SSH host and credentials. Certificate verification is enabled by default; incomplete API or Gaia results are reported as partial collection.",
+  };
 
   async function loadCollectionCapabilities() {
     try {
@@ -303,6 +311,9 @@ let currentRenderedArtifactId = null;
     if (!container) return;
     container.replaceChildren();
     const capability = collectionCapabilities[selectedSourceVendor];
+    document.getElementById("collection-guide-title").textContent = `${sourceVendorSelect.options[sourceVendorSelect.selectedIndex]?.text || selectedSourceVendor} live collection`;
+    document.getElementById("collection-guide-details").textContent = collectionGuides[selectedSourceVendor] || "Live collection is unavailable for this vendor. Upload a configuration file instead.";
+    document.getElementById("collection-guide-workflow").classList.toggle("hidden", !capability);
     document.getElementById("btn-test-collection").disabled = !capability;
     document.getElementById("btn-collect-configuration").disabled = !capability;
     if (!capability) {
@@ -329,6 +340,12 @@ let currentRenderedArtifactId = null;
       container.append(label);
     }
   }
+  document.getElementById("btn-collection-guide")?.addEventListener("click", (event) => {
+    const guide = document.getElementById("collection-guide");
+    const expanded = event.currentTarget.getAttribute("aria-expanded") === "true";
+    event.currentTarget.setAttribute("aria-expanded", String(!expanded));
+    guide.classList.toggle("hidden", expanded);
+  });
 
   // Vendor Selection Dropdowns
   const sourceVendorSelect = document.getElementById("source-vendor-select");

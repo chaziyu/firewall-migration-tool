@@ -148,6 +148,14 @@
     </div>
   </div>
   <div id="ingest-live-container" class="hidden" role="tabpanel" aria-label="Live Collection">
+    <button type="button" class="btn btn-secondary btn-sm" id="btn-collection-guide" aria-expanded="false" aria-controls="collection-guide">
+      {{ icon('info') }}<span>Collection guide</span>
+    </button>
+    <div id="collection-guide" class="preview-status hidden">
+      <strong id="collection-guide-title"></strong>
+      <p id="collection-guide-details"></p>
+      <p id="collection-guide-workflow">Test Connection checks access. Collect retrieves the source configuration, prepares a preview, and downloads a reusable JSON snapshot. It does not change the device.</p>
+    </div>
     <div class="form-grid" id="collection-fields"></div>
     <div class="button-row">
       <button type="button" class="btn btn-secondary" id="btn-test-collection">Test Connection</button>

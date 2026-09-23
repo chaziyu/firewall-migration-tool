@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
-from ..schema_registry import registered_paths
+from ..schema_registry import match_path_spec, registered_paths
 from ..source_model import PANScope, pan_scope_identity
 from ..source_report import PaloAltoSourceResult
 
@@ -45,6 +45,11 @@ _TYPED_COUNT_FIELDS = {
     "sdwan_traffic_distribution_profile": "sdwan_traffic_distribution_profiles",
     "sdwan_saas_quality_profile": "sdwan_saas_quality_profiles",
     "sdwan_error_correction_profile": "sdwan_error_correction_profiles",
+    "sdwan_interface_profile_cli": "sdwan_interface_profiles",
+    "sdwan_path_quality_profile_cli": "sdwan_path_quality_profiles",
+    "sdwan_traffic_distribution_profile_cli": "sdwan_traffic_distribution_profiles",
+    "sdwan_saas_quality_profile_cli": "sdwan_saas_quality_profiles",
+    "sdwan_error_correction_profile_cli": "sdwan_error_correction_profiles",
     "sdwan_rule": "sdwan_rules",
     "local_user": "local_users",
     "local_user_database": "local_users",
@@ -77,6 +82,8 @@ class _PANExcelContext:
     source_name: str | None = None
     validation_by_object: dict[tuple[str, str, str | None], tuple[Any, ...]] = field(init=False)
     validation_by_scope: dict[str, tuple[Any, ...]] = field(init=False)
+    typed_identities: set[tuple[str, str | None, str]] = field(init=False)
+    typed_paths: set[str] = field(init=False)
 
     def __post_init__(self) -> None:
         objects: dict[tuple[str, str, str | None], list[Any]] = defaultdict(list)
@@ -87,6 +94,9 @@ class _PANExcelContext:
             scopes[scope].append(issue)
         self.validation_by_object = {key: tuple(value) for key, value in objects.items()}
         self.validation_by_scope = {key: tuple(value) for key, value in scopes.items()}
+        typed = (item for field in set(_TYPED_COUNT_FIELDS.values()) | {"static_routes"} for item in getattr(self.analysis.config, field))
+        self.typed_identities = {(item.source_path, getattr(item, "name", None), _scope_id(getattr(item, "scope", None))) for item in typed}
+        self.typed_paths = {path for path, _, _ in self.typed_identities}
 
     @property
     def config(self): return self.analysis.config
@@ -381,24 +391,43 @@ def _inventory_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
         rows.append({"Scope Type": scope.kind if scope else None, "Scope Name": scope.name if scope else None, "Device": scope.device_name if scope else None,
                      "Serial": scope.device_serial if scope else None, "Device Group": scope.device_group if scope else None, "Source Path": item.source_path,
                      "Kind": item.kind, "Object": item.name, "Rulebase Position": item.rulebase_position, "Source Order": item.source_order,
-                     "Values": _text(item.values), "Extraction Status": "UNSUPPORTED" if item.unsupported else "EXTRACTED"})
+                     "Values": _text(item.values), "Extraction Status": _inventory_status(context, item)})
+    return rows
+
+
+def _inventory_status(context: _PANExcelContext, record: Any) -> str:
+    if record.unsupported or record.source_path in context.config.unknown_paths:
+        return "UNSUPPORTED"
+    identity = (record.source_path, record.name, _scope_id(record.scope))
+    if identity in context.typed_identities:
+        return "EXTRACTED"
+    return "SOURCE_ONLY"
+
+
+def _unsupported_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
+    rows = []
+    for item in context.config.source_inventory:
+        status = _inventory_status(context, item)
+        if status == "EXTRACTED" or (status == "SOURCE_ONLY" and (item.source_path.endswith(("devices/entry", "device-group/entry", "vsys/entry")) or any(item.source_path.startswith(path + "/") for path in context.typed_paths))):
+            continue
+        rows.append({"Source Path": item.source_path, "Status": status, "Reason": "typed extraction failed" if status == "UNSUPPORTED" else "no standalone typed source object"})
     return rows
 
 
 def _typed_counts(context: _PANExcelContext) -> dict[str, int]:
     config = context.config
-    counts = {domain: len(getattr(config, field)) for domain, field in _TYPED_COUNT_FIELDS.items()}
-    counts.update({f"interface_{family}": sum(item.interface_family == family for item in config.interfaces)
-                   for family in ("ethernet", "aggregate-ethernet", "loopback", "tunnel", "vlan")})
+    counts = {domain: sum((spec := match_path_spec(tuple(item.source_path.split("/")))) is not None and spec.name == domain for item in getattr(config, field)) for domain, field in _TYPED_COUNT_FIELDS.items()}
+    counts["static_route"] = len(config.static_routes)
     return counts
 
 
 def _coverage_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    source = Counter(item.kind.replace("-", "_") for item in context.config.source_inventory)
+    source = Counter((spec.name if (spec := match_path_spec(tuple(item.source_path.split("/")))) else item.kind.replace("-", "_")) for item in context.config.source_inventory)
+    extracted = Counter((spec.name if (spec := match_path_spec(tuple(item.source_path.split("/")))) else item.kind.replace("-", "_")) for item in context.config.source_inventory if _inventory_status(context, item) == "EXTRACTED")
     typed = _typed_counts(context)
     domains = sorted(set(registered_paths()) | set(source) | set(typed))
     return [{"Source Domain": domain, "Found": "yes" if source[domain] else "no", "Source Records": source[domain], "Typed Objects": typed.get(domain, 0),
-             "Status": "EXTRACTED" if domain in registered_paths() else "SOURCE_ONLY",
+             "Status": "EXTRACTED" if extracted[domain] == source[domain] and source[domain] else "PARTIAL" if extracted[domain] else "SOURCE_ONLY" if source[domain] else "EXTRACTED" if typed.get(domain, 0) else "NOT_PRESENT",
              "Unknown Paths": _text(path for path in context.config.unknown_paths if domain.replace("_", "-") in path), "Notes": None} for domain in domains]
 
 
@@ -418,7 +447,7 @@ ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], list[dict[str, Any]]]] = {
     "Zones": lambda c: _simple_rows(c, c.config.zones, "zone", {"Network Type": "network_type", "Members": "members", "Zone Protection Profile": "zone_protection_profile", "Log Setting": "log_setting", "User Identification": "user_identification", "Device Identification": "device_identification"}),
     "Virtual Router Routes": lambda c: _route_rows(c, False), "Logical Router Routes": lambda c: _route_rows(c, True),
     "Unresolved References": _unresolved_rows,
-    "Unsupported": lambda c: [{"Source Path": path, "Status": "UNSUPPORTED", "Reason": "typed extraction failed or is not registered"} for path in c.config.unknown_paths],
+    "Unsupported": _unsupported_rows,
     "PAN-OS Source Inventory": _inventory_rows, "Extraction Coverage": _coverage_rows,
     "Vulnerability Profiles": _vulnerability_profile_rows,
     "Vulnerability Rules": lambda c: _child_rows(c, c.config.vulnerability_profiles, "rules", "vulnerability-rule", {"Rule Name": "name", "Threat Name": "threat_name", "Host": "host", "Vendor IDs": "vendor_ids", "Severities": "severities", "Category": "category", "Action": "action", "Packet Capture": "packet_capture"}),
@@ -427,7 +456,7 @@ ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], list[dict[str, Any]]]] = {
     "SD-WAN Interface Profiles": lambda c: _object_rows(c, c.config.sdwan_interface_profiles, "sdwan-interface-profile", {"Link Tag": "link_tag", "Link Type": "link_type", "VPN Data Tunnel Support": "vpn_data_tunnel_support", "Maximum Download": "maximum_download", "Maximum Upload": "maximum_upload", "Error Correction": "error_correction", "Path Monitoring": "path_monitoring", "VPN Failover Metric": "vpn_failover_metric", "Probe Frequency": "probe_frequency", "Probe Idle Time": "probe_idle_time", "Failback Hold Time": "failback_hold_time", "Comment": "comment"}),
     "SD-WAN Path Quality": lambda c: _object_rows(c, c.config.sdwan_path_quality_profiles, "sdwan-path-quality-profile", {"Latency Threshold": "latency_threshold", "Latency Sensitivity": "latency_sensitivity", "Packet Loss Threshold": "packet_loss_threshold", "Packet Loss Sensitivity": "packet_loss_sensitivity", "Jitter Threshold": "jitter_threshold", "Jitter Sensitivity": "jitter_sensitivity"}),
     "SD-WAN Traffic Distribution": lambda c: _object_rows(c, c.config.sdwan_traffic_distribution_profiles, "sdwan-traffic-distribution-profile", {"Distribution Mode": "distribution_mode"}),
-    "SD-WAN Traffic Distribution Links": lambda c: _child_rows(c, c.config.sdwan_traffic_distribution_profiles, "links", "sdwan-traffic-distribution-link", {"Link Tag": "link_tag", "Weight": "weight"}),
+    "SD-WAN Distribution Links": lambda c: _child_rows(c, c.config.sdwan_traffic_distribution_profiles, "links", "sdwan-traffic-distribution-link", {"Link Tag": "link_tag", "Weight": "weight"}),
     "SD-WAN SaaS Quality": lambda c: _object_rows(c, c.config.sdwan_saas_quality_profiles, "sdwan-saas-quality-profile", {"Monitor Mode": "monitor_mode", "Probe Configuration": "probe_configuration", "Targets": "targets"}),
     "SD-WAN Error Correction": lambda c: _object_rows(c, c.config.sdwan_error_correction_profiles, "sdwan-error-correction-profile", {"Activation Threshold": "activation_threshold", "Mode": "mode"}),
     "SD-WAN Rules": lambda c: _object_rows(c, c.config.sdwan_rules, "sdwan-rule", {"Rule Order": "source_order", "From Zones": "from_zones", "To Zones": "to_zones", "Source Addresses": "source", "Source Users": "source_user", "Destination Addresses": "destination", "Applications": "application", "Services": "service", "Tags": "tags", "Source Negate": "negate_source", "Destination Negate": "negate_destination", "Disabled": "disabled", "Path Quality Profile": "path_quality_profile", "SaaS Quality Profile": "saas_quality_profile", "Error Correction Profile": "error_correction_profile", "Traffic Distribution Profile": "traffic_distribution_profile", "NAT Session Failover Action": "nat_session_failover_action", "Group Tag": "group_tag", "Description": "description"}),

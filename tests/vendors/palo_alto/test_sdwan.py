@@ -42,9 +42,9 @@ def test_sdwan_missing_and_empty_links_preserve_source_presence():
 
     missing, empty = config.sdwan_traffic_distribution_profiles
     assert missing.links is None
-    assert "link" not in missing.explicit_fields
+    assert "links" not in missing.explicit_fields
     assert empty.links == []
-    assert "link" in empty.explicit_fields
+    assert "links" in empty.explicit_fields
 
 
 def test_sdwan_unknown_source_is_retained_separately():

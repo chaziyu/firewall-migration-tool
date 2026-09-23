@@ -46,7 +46,7 @@ SHEET_ORDER: tuple[str, ...] = (
     "SD-WAN Interface Bindings",
     "SD-WAN Path Quality",
     "SD-WAN Traffic Distribution",
-    "SD-WAN Traffic Distribution Links",
+    "SD-WAN Distribution Links",
     "SD-WAN SaaS Quality",
     "SD-WAN Error Correction",
     "SD-WAN Rules",
@@ -632,7 +632,7 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
         "Additional Settings",
     ),
 
-    "SD-WAN Traffic Distribution Links": (
+    "SD-WAN Distribution Links": (
         "Profile",
         "Link Tag",
         "Weight",
@@ -1142,7 +1142,7 @@ SHEET_IMPLEMENTATION_STATUS.update({
     "SD-WAN Interface Bindings": "IMPLEMENTED",
     "SD-WAN Path Quality": "IMPLEMENTED",
     "SD-WAN Traffic Distribution": "IMPLEMENTED",
-    "SD-WAN Traffic Distribution Links": "IMPLEMENTED",
+    "SD-WAN Distribution Links": "IMPLEMENTED",
     "SD-WAN SaaS Quality": "IMPLEMENTED",
     "SD-WAN Error Correction": "IMPLEMENTED",
     "SD-WAN Rules": "IMPLEMENTED",
