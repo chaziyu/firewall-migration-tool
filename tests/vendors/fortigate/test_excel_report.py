@@ -208,6 +208,85 @@ class ExcelReportTest(unittest.TestCase):
         headers = [sheet.cell(3, column).value for column in range(1, sheet.max_column + 1)]
         return headers, list(sheet.iter_rows(min_row=4, values_only=True))
 
+    def test_additional_settings_are_stable_across_repeated_exports(self):
+        source = _SAMPLE_CONFIG + r'''
+config firewall policy
+    edit 101
+        set name "deterministic-policy"
+        set custom-policy-option "policy-marker"
+    next
+end
+config vpn ipsec phase1-interface
+    edit "deterministic-tunnel"
+        set custom-tunnel-option "tunnel-marker"
+    next
+end
+config vpn ipsec phase2-interface
+    edit "deterministic-phase2"
+        set phase1name "deterministic-tunnel"
+        set custom-phase2-option "phase2-marker"
+    next
+end
+config firewall vip
+    edit "deterministic-vip"
+        config realservers
+            edit 1
+                set ip 10.0.0.1
+                set custom-realserver-option "realserver-marker"
+            next
+        end
+    next
+end
+config system accprofile
+    edit "deterministic-profile"
+        set custom-profile-option "profile-marker"
+        config fwgrp-permission
+            set policy read-write
+            set custom-permission-option "permission-marker"
+        end
+    next
+end
+config ips sensor
+    edit "deterministic-sensor"
+        config entries
+            edit 9
+                set rule 100
+                set custom-entry-option "entry-marker"
+            next
+        end
+    next
+end
+'''
+        first = self._workbook(source)
+        second = self._workbook(source)
+        sheets = (
+            "Policies", "VPN Tunnels", "VPN Phase 2", "VIP Real Servers",
+            "Admin Profiles", "Admin Profile Permissions", "IPS Sensor Entries",
+        )
+        for name in sheets:
+            self.assertEqual(
+                list(first[name].iter_rows(values_only=True)),
+                list(second[name].iter_rows(values_only=True)),
+                name,
+            )
+        expected_markers = {
+            "Policies": "policy-marker",
+            "VPN Tunnels": "tunnel-marker",
+            "VPN Phase 2": "phase2-marker",
+            "VIP Real Servers": "realserver-marker",
+            "Admin Profiles": "profile-marker",
+            "Admin Profile Permissions": "permission-marker",
+            "IPS Sensor Entries": "entry-marker",
+        }
+        for name, marker in expected_markers.items():
+            values = [
+                str(cell.value)
+                for row in first[name].iter_rows()
+                for cell in row
+                if cell.value is not None
+            ]
+            self.assertTrue(any(marker in value for value in values), name)
+
     def test_workbook_order_headers_and_removed_sheets(self):
         workbook = self._workbook()
         self.assertEqual(list(SHEET_ORDER), workbook.sheetnames)

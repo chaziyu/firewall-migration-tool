@@ -23,10 +23,10 @@ from fwmigrate.vendors.fortigate.transform.services import (
 def _options():
     return PANMigrationOptions(
         vdoms={"root": {"vsys": "vsys1", "virtual_router": "default"}},
-        interfaces={
+        interfaces={"root": {
             "lan": {"target_interface": "ethernet1/1", "target_zone": "trust"},
             "wan": {"target_interface": "ethernet1/2", "target_zone": "untrust"},
-        },
+        }},
     )
 
 
@@ -56,7 +56,7 @@ def test_schedules_and_schedule_groups_preserve_source_semantics():
 
 
 def test_topology_requires_every_zone_member_mapping():
-    source = FGConfig(zones=[FGZone(name="lan-zone", members=["lan", "missing"])])
+    source = FGConfig(policies=[FGPolicy(srcintf=["lan-zone"])], zones=[FGZone(name="lan-zone", members=["lan", "missing"])])
     derived = SimpleNamespace(topology=SimpleNamespace(interfaces=()))
     plan = FortiGateToPaloAltoPlanner().plan(source, derived, options=_options())
 

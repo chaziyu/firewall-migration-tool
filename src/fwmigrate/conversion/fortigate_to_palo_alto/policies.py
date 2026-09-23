@@ -9,8 +9,8 @@ def plan_policies(source: Any, options: Any):
     result = []
     for policy in getattr(source, "policies", ()):
         warnings = []
-        from_zones = _zones(policy.srcintf, options, warnings)
-        to_zones = _zones(policy.dstintf, options, warnings)
+        from_zones = _zones(policy.srcintf, policy.vdom, options, warnings)
+        to_zones = _zones(policy.dstintf, policy.vdom, options, warnings)
         if policy.service_negate in {"enable", "yes", "1"}:
             warnings.append("service negation is unsupported")
         if policy.users or policy.groups:
@@ -43,12 +43,16 @@ def plan_policies(source: Any, options: Any):
     return tuple(result)
 
 
-def _zones(names, options, warnings):
+def _zones(names, vdom, options, warnings):
     result = []
     for name in names:
-        mapping = getattr(options, "interfaces", {}).get(name)
+        mapping = _interface_mapping(options, vdom, name)
         if mapping and mapping.target_zone:
             result.append(mapping.target_zone)
         else:
             warnings.append(f"missing target zone mapping for {name!r}")
     return tuple(result)
+
+
+def _interface_mapping(options, vdom, name):
+    return getattr(options, "interfaces", {}).get(vdom or "root", {}).get(name)

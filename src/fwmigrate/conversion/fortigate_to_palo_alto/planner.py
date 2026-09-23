@@ -10,6 +10,7 @@ from .routing import plan_routes
 from .schedules import plan_schedules
 from .services import plan_services
 from .topology import plan_topology
+from .requirements import build_mapping_requirements
 from .models import PANMigrationPlan
 from .options import PANMigrationOptions
 
@@ -34,7 +35,8 @@ class FortiGateToPaloAltoPlanner:
         addresses, groups, issues = plan_addresses(source, options)
         services, service_groups = plan_services(derived, options)
         schedules = plan_schedules(source, options)
-        zones = plan_topology(source, derived, options)
+        requirements = build_mapping_requirements(source, derived)
+        zones = plan_topology(source, derived, options, requirements["required_zone_keys"])
         routes = plan_routes(source, options)
         policies = plan_policies(source, options)
         nat_rules = plan_nat(source, derived, options)

@@ -2,31 +2,57 @@
 
 
 def build_mapping_requirements(config, derived):
-    references = getattr(derived, "references", None)
-    reference_objects = getattr(references, "objects", {})
-    interface_refs = reference_objects.get("interface", {})
-    zone_refs = reference_objects.get("zone", {})
-    vdoms = sorted({
-        getattr(item, "vdom", None) or "root"
-        for field in ("interfaces", "addresses", "address_groups", "policies", "zones", "static_routes")
-        for item in getattr(config, field, ())
-    } or {"root"})
-    vdoms = sorted(set(vdoms) | {
-        vdom for bucket in reference_objects.values() for vdom, _ in bucket
-    })
-    interfaces = sorted({item.name for item in getattr(config, "interfaces", ()) if item.name} | {name for _, name in interface_refs})
-    zones = sorted({item.name for item in getattr(config, "zones", ()) if item.name} | {name for _, name in zone_refs})
-    policy_interface_refs = set()
+    required = {}
+    zone_names = {(item.vdom or "root", item.name) for item in getattr(config, "zones", ())}
+
+    def need(vdom, name, kind, reason, *fields):
+        if not name:
+            return
+        key = (vdom or "root", name)
+        item = required.setdefault(key, {"source_vdom": key[0], "source_name": name,
+            "kind": kind, "requires": [], "reasons": [], "reference_count": 0})
+        item["requires"] = list(dict.fromkeys([*item["requires"], *fields]))
+        item["reasons"] = list(dict.fromkeys([*item["reasons"], reason]))
+        item["reference_count"] += 1
+
     for policy in getattr(config, "policies", ()):
-        policy_interface_refs.update((*getattr(policy, "srcintf", ()), *getattr(policy, "dstintf", ())))
-    known_interfaces = set(interfaces)
-    return {
-        "vdoms": [{"source_vdom": name, "requires": ["vsys", "virtual_router"]} for name in vdoms],
-        "interfaces": [{"source_interface": name, "is_interface": name in known_interfaces, "requires": ["target_zone", *( ["target_interface"] if name in known_interfaces else [])]} for name in sorted(known_interfaces | policy_interface_refs | set(zones))],
-        "zones": [{"source_zone": name, "requires": ["target_zone"]} for name in zones],
-        "policy_interface_references": sorted(policy_interface_refs),
-        "topology_issues": [
-            {"source_vdom": item.vdom, "source_interface": item.name, "issues": list(item.issues)}
-            for item in getattr(getattr(derived, "topology", None), "interfaces", ()) if item.issues
-        ],
-    }
+        for name in (*getattr(policy, "srcintf", ()), *getattr(policy, "dstintf", ())):
+            kind = "zone" if ((policy.vdom or "root", name) in zone_names) else "interface"
+            need(policy.vdom, name, kind, "security_policy", "target_zone")
+            if kind == "zone":
+                zone = next(item for item in config.zones if (item.vdom or "root", item.name) == (policy.vdom or "root", name))
+                for member in zone.members or ():
+                    need(policy.vdom, member, "interface", "zone_membership", "target_interface")
+            for zone in getattr(config, "zones", ()):
+                if (zone.vdom or "root") == (policy.vdom or "root") and name in (zone.members or ()):
+                    need(zone.vdom, zone.name, "zone", "security_policy", "target_zone")
+                    for member in zone.members or ():
+                        need(zone.vdom, member, "interface", "zone_membership", "target_interface")
+    for route in getattr(config, "static_routes", ()):
+        if route.device:
+            need(route.vdom, route.device, "interface", "static_route", "target_interface", "target_zone")
+    policies = {item.policy_id: item for item in getattr(config, "policies", ())}
+    for nat in getattr(derived, "nat", ()):
+        if len(getattr(nat, "egress_interfaces", ())) == 1 and len(getattr(nat, "translated_addresses", ())) == 1:
+            policy = policies.get(nat.policy_id)
+            if policy:
+                for name in (*policy.srcintf, *nat.egress_interfaces):
+                    need(policy.vdom, name, "interface", "source_nat", "target_zone")
+                need(policy.vdom, nat.egress_interfaces[0], "interface", "source_nat", "target_interface")
+    vdoms = sorted({vdom for vdom, _ in required} | {getattr(item, "vdom", None) or "root" for item in getattr(config, "static_routes", ())} | {getattr(item, "vdom", None) or "root" for item in getattr(config, "policies", ())} or {"root"})
+    interfaces = [dict(value, source_interface=value["source_name"], is_interface=value["kind"] == "interface")
+                  for _, value in sorted(required.items())]
+    zones = [{"source_vdom": vdom, "source_zone": name, "requires": ["target_zone"]}
+             for (vdom, name), item in sorted(required.items()) if item["kind"] == "zone"]
+    optional = [{"source_vdom": item.vdom or "root", "source_name": item.name, "kind": "interface"}
+                for item in getattr(config, "interfaces", ())
+                if item.name and (item.vdom or "root", item.name) not in required]
+    optional.extend({"source_vdom": item.vdom or "root", "source_name": item.name, "kind": "zone"}
+                    for item in getattr(config, "zones", ())
+                    if item.name and (item.vdom or "root", item.name) not in required)
+    return {"vdoms": [{"source_vdom": name, "requires": ["vsys", "virtual_router"]} for name in vdoms],
+            "interfaces": interfaces, "zones": zones,
+            "required_zones": [item["source_zone"] for item in zones],
+            "required_zone_keys": [(item["source_vdom"], item["source_zone"]) for item in zones],
+            "policy_interface_references": sorted({name for policy in getattr(config, "policies", ()) for name in (*policy.srcintf, *policy.dstintf)}),
+            "optional": optional, "topology_issues": []}

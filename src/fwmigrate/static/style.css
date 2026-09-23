@@ -189,6 +189,13 @@ strong {
   font: 600 24px/1 var(--font-display);
   letter-spacing: -0.8px;
 }
+.brand-wordmark > #brand-name {
+  display: inline;
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
 .brand-wordmark > span {
   display: block;
   margin-top: 9px;
@@ -2234,3 +2241,10 @@ select {
     scroll-behavior: auto !important;
   }
 }
+.mapping-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; margin: 1rem 0; }
+.mapping-table { width: 100%; border-collapse: collapse; }
+.mapping-table th, .mapping-table td { padding: .55rem; text-align: left; border-bottom: 1px solid var(--border-color, #ddd); }
+.mapping-table input:not([type="checkbox"]) { width: 100%; min-width: 8rem; }
+#migration-mapping-fields details { margin: .5rem 0; }
+#migration-mapping-fields summary { cursor: pointer; font-weight: 600; padding: .5rem 0; }
+@media (max-width: 720px) { .mapping-table, .mapping-table tbody, .mapping-table tr, .mapping-table td { display: block; } .mapping-table thead { display: none; } .mapping-table tr { padding: .75rem 0; border-bottom: 1px solid var(--border-color, #ddd); } }

@@ -4,9 +4,9 @@
       <h2 id="source-heading">
         <span class="step-num">01</span>Source configuration
       </h2>
-      <span class="section-meta">START HERE</span>
+      <span class="section-meta" id="source-section-meta">START HERE</span>
     </div>
-    <p class="card-desc">
+    <p class="card-desc" id="source-card-description">
       Choose your source vendor and bring in your firewall configuration.
     </p>
   </div>
@@ -121,13 +121,13 @@
   ></div>
   <div class="optimizer-panel hidden" id="optimizer-panel">
     <div class="optimizer-header">
-      <strong>{{ icon('activity') }}Configuration overview</strong
+      <strong id="preview-heading">{{ icon('activity') }}Configuration overview</strong
       >
     </div>
     <div class="optimizer-stats-grid">
       <div class="opt-stat-box">
         <div class="opt-stat-value" id="stat-total-rules">0</div>
-        <div class="opt-stat-label">Security policies</div>
+        <div class="opt-stat-label">Policies</div>
       </div>
       <div class="opt-stat-box">
         <div class="opt-stat-value" id="stat-total-objects">0</div>
@@ -141,6 +141,11 @@
         <div class="opt-stat-value" id="stat-warnings">0</div>
         <div class="opt-stat-label">Warnings</div>
       </div>
+    </div>
+    <div class="export-footer extract-export-footer">
+      <button type="button" id="btn-extract-excel" class="btn btn-primary" disabled>
+        {{ icon('table') }}<span>Download Excel Report</span>
+      </button>
     </div>
   </div>
 </section>
