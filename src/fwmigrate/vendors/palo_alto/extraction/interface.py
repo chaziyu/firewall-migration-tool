@@ -36,7 +36,7 @@ def _sdwan_link_settings(element: ET.Element | None) -> tuple[str | None, str | 
     upstream_nat = _scalar_or_member(settings, "upstream-nat")
     if upstream_nat is None and settings.find("upstream-nat") is not None:
         upstream_nat = _scalar_or_member(settings.find("upstream-nat"), "enable")
-    present = {"sdwan_enabled", "ipv6_sdwan_enabled", "sdwan_interface_profile", "upstream_nat"}
+    present = {field for field, tag in (("sdwan_enabled", "enable"), ("ipv6_sdwan_enabled", "ipv6-enable"), ("sdwan_interface_profile", "sdwan-interface-profile"), ("upstream_nat", "upstream-nat")) if settings.find(tag) is not None}
     return value(settings, "enable"), value(settings, "ipv6-enable"), value(settings, "sdwan-interface-profile"), upstream_nat, present
 
 

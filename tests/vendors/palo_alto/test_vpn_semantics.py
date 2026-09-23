@@ -18,7 +18,8 @@ def test_vpn_xml_reaches_typed_gateways_profiles_and_tunnels():
     assert gateway.name == "gw1"
     assert gateway.peer_address == "198.51.100.1"
     assert ike_profile.name == "ike-strong"
-    assert "encryption" in ike_profile.explicit_fields
+    assert ike_profile.encryption_algorithms == ["aes-256-cbc"]
+    assert "encryption_algorithms" in ike_profile.explicit_fields
     assert ipsec_profile.name == "ipsec-strong"
     assert ipsec_profile.protocol == "esp"
     assert tunnel.name == "vpn-main"

@@ -27,7 +27,7 @@ def test_excel_report_activates_typed_dhcp_sdwan_identity_and_globalprotect_shee
     output = io.BytesIO()
     reporter.export_excel(reporter.analyze_source(source), output)
     workbook = load_workbook(io.BytesIO(output.getvalue()), read_only=True)
-    expected = {"DHCP Servers", "DHCP IP Pools", "DHCP Reservations", "DHCP Options", "SD-WAN Interface Profiles", "SD-WAN Interface Bindings", "SD-WAN Path Quality", "SD-WAN Traffic Distribution", "SD-WAN Traffic Distribution Links", "SD-WAN SaaS Quality", "SD-WAN Error Correction", "SD-WAN Rules", "Local Users", "Local User Groups", "Group Mappings", "GlobalProtect Portals", "GP Portal Client Configs", "GP Portal Gateway Entries", "GP Clientless VPN", "GlobalProtect Gateways", "GP Gateway Client Auth", "GP Remote User Tunnels"}
+    expected = {"DHCP Servers", "DHCP IP Pools", "DHCP Reservations", "DHCP Options", "SD-WAN Interface Profiles", "SD-WAN Interface Bindings", "SD-WAN Path Quality", "SD-WAN Traffic Distribution", "SD-WAN Distribution Links", "SD-WAN SaaS Quality", "SD-WAN Error Correction", "SD-WAN Rules", "Local Users", "Local User Groups", "Group Mappings", "GlobalProtect Portals", "GP Portal Client Configs", "GP Portal Gateway Entries", "GP Clientless VPN", "GlobalProtect Gateways", "GP Gateway Client Auth", "GP Remote User Tunnels"}
     assert expected <= set(workbook.sheetnames)
     assert "Route Path Monitors" not in workbook.sheetnames
     for name in expected:

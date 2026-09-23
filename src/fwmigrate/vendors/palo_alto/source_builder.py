@@ -51,8 +51,11 @@ def build_panos_config(content: str) -> PANOSConfig:
             # Inventory is source evidence; a typed-model defect must not make
             # the source disappear or prevent the remaining tree from loading.
             unknown_paths.append("/".join(path))
+            if element.tag == "entry":
+                records[-1].unsupported = True
             continue
         if result is not None:
             collection, model = result
             typed[collection].append(model)
+    typed["static_routes"] = [route for router in typed["virtual_routers"] for route in router.static_routes or ()] + [route for router in typed["logical_routers"] for vrf in router.vrfs or () for route in vrf.static_routes or ()]
     return PANOSConfig(hostname=source.hostname, source_version=source.source_version, scopes=scopes, **typed, source_inventory=records, unknown_paths=unknown_paths)

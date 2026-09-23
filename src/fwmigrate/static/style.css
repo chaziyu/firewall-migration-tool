@@ -1249,6 +1249,8 @@ select {
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 17px;
 }
+#collection-fields { margin-top: 16px; }
+#collection-guide p { margin: 8px 0 0; }
 .form-group {
   min-width: 0;
   display: flex;

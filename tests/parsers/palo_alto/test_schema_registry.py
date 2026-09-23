@@ -43,6 +43,9 @@ EXPECTED_PATHS = {
     "ipsec_crypto_profile", "dhcp_server", "dhcp_interface", "sdwan_interface_profile",
     "sdwan_path_quality_profile", "sdwan_traffic_distribution_profile", "sdwan_saas_quality_profile",
     "sdwan_error_correction_profile", "sdwan_rule", "local_user", "local_user_database",
+    "sdwan_interface_profile_cli", "sdwan_path_quality_profile_cli",
+    "sdwan_traffic_distribution_profile_cli", "sdwan_saas_quality_profile_cli",
+    "sdwan_error_correction_profile_cli",
     "local_user_group", "group_mapping", "globalprotect_portal", "globalprotect_gateway",
 }
 
@@ -239,7 +242,7 @@ def test_routing_extracts_nested_order_and_source_shapes():
 
     integrated = build_panos_config((fixture_dir / "integrated_firewall.xml").read_text())
     assert [route.name for route in integrated.virtual_routers[0].static_routes] == ["default"]
-    assert integrated.static_routes == []
+    assert [route.name for route in integrated.static_routes] == ["default"]
 
 
 def test_nested_unknowns_stay_with_the_nearest_typed_owner():
