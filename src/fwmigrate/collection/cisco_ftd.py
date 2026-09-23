@@ -22,13 +22,33 @@ class CiscoFTDCollector:
         {"name": "domain", "label": "Domain name or UUID", "type": "text", "required": False},
         {"name": "verify_tls", "label": "Verify TLS certificate", "type": "checkbox", "default": True},
     )
-    _objects = {
-        "hosts": "object/hosts", "networks": "object/networks", "ranges": "object/ranges",
+    # FMC roots are grouped by ownership so collection completeness stays diagnosable.
+    _domain_objects = {
+        "networkaddresses": "object/networkaddresses", "hosts": "object/hosts", "networks": "object/networks", "ranges": "object/ranges",
         "networkgroups": "object/networkgroups", "protocolportobjects": "object/protocolportobjects",
         "portobjectgroups": "object/portobjectgroups", "securityzones": "object/securityzones",
         "interfacegroups": "object/interfacegroups", "interfaces": "object/interfaceobjects",
-        "applications": "object/applications", "filepolicies": "policy/filepolicies",
+        "applications": "object/applications", "timeranges": "object/timeranges",
+        "realms": "object/realms", "realmusergroups": "object/realmusergroups",
+        "realmusers": "object/realmusers", "localrealmusers": "object/localrealmusers",
+        "slamonitors": "object/slamonitors",
         "variablesets": "object/variablesets", "urlcategories": "object/urlcategories",
+    }
+    _domain_policies = {
+        "filepolicies": "policy/filepolicies", "decryptionpolicies": "policy/decryptionpolicies",
+        "dnspolicies": "policy/dnspolicies", "intrusionpolicies": "policy/intrusionpolicies",
+        "s2svpns": "policy/ftds2svpns", "ravpns": "policy/ravpns",
+    }
+    _domain_administration = {
+        "fmc_users": "users/users", "fmc_roles": "users/authroles",
+    }
+    _policy_children = {
+        "filepolicies": ("rules", "filepolicyrules"),
+        "decryptionpolicies": ("rules", "decryptionrules"),
+        "dnspolicies": ("rules", "dnsrules"),
+        "intrusionpolicies": ("rule_groups", "intrusionrulegroups"),
+        "s2svpns": ("endpoints", "endpoints"),
+        "ravpns": ("connection_profiles", "ra-vpn-connection-profiles"),
     }
 
     def validate_options(self, connection):
@@ -79,6 +99,9 @@ class CiscoFTDCollector:
                 data = response.json()
                 page = data.get("items")
                 if not isinstance(page, list):
+                    # Some FMC resources, including DHCP server settings, return one object.
+                    if "items" not in data and isinstance(data, dict) and data:
+                        return [data], True
                     raise CollectionError("FMC returned an unexpected item list.")
                 for item in page:
                     if not isinstance(item, dict):
@@ -113,10 +136,27 @@ class CiscoFTDCollector:
             session, base, domain = self._session(options)
             prefix = f'/api/fmc_config/v1/domain/{domain["id"]}'
             bundle = {"format": FMC_BUNDLE_FORMAT, "source": "fmc-rest-api", "domain": domain,
-                      "objects": {}, "access_policies": [], "nat_policies": []}
+                      "objects": {}, "access_policies": [], "nat_policies": [], "devices": []}
             parts = []
-            for name, path in self._objects.items():
-                self._collect_family(session, base, prefix + "/" + path, bundle["objects"], name, parts)
+            # Device ownership is collected first; device child resources stay attached to each UUID.
+            self._collect_family(session, base, prefix + "/devices/devicerecords", bundle, "devices", parts)
+            for device in bundle["devices"]:
+                device_id = str(device.get("id", ""))
+                if not re.fullmatch(r"[A-Za-z0-9_-]+", device_id):
+                    parts.append(CollectionPart("device_resources/unknown", "FAILED", False))
+                    continue
+                device["resources"] = {}
+                for key, suffix in (("static_routes", f"devices/devicerecords/{device_id}/routing/staticroutes"),
+                                    ("dhcp_servers", f"devices/devicerecords/{device_id}/dhcp/dhcpserver"),
+                                    ("ecmp_zones", f"devices/devicerecords/{device_id}/routing/ecmpzones"),
+                                    ("pbr_policies", f"devices/devicerecords/{device_id}/routing/policybasedroutes")):
+                    self._collect_family(session, base, prefix + "/" + suffix, device["resources"], key, parts,
+                                         f"device/{device_id}/{key}")
+            for roots, target in ((self._domain_objects, bundle["objects"]),
+                                  (self._domain_policies, bundle["objects"]),
+                                  (self._domain_administration, bundle)):
+                for name, path in roots.items():
+                    self._collect_family(session, base, prefix + "/" + path, target, name, parts)
             self._collect_family(session, base, prefix + "/policy/accesspolicies", bundle, "access_policies", parts)
             self._collect_family(session, base, prefix + "/policy/ftdnatpolicies", bundle, "nat_policies", parts)
             for policy in bundle["access_policies"]:
@@ -125,6 +165,15 @@ class CiscoFTDCollector:
                     continue
                 self._collect_family(session, base, prefix + f'/policy/accesspolicies/{policy["id"]}/accessrules', policy, "rules", parts,
                                      f'access_rules/{policy["id"]}')
+            for family, (key, endpoint) in self._policy_children.items():
+                for policy in bundle["objects"].get(family, []):
+                    policy_id = str(policy.get("id", ""))
+                    if not re.fullmatch(r"[A-Za-z0-9_-]+", policy_id):
+                        parts.append(CollectionPart(f"{family}_children/unknown", "FAILED", False))
+                        continue
+                    path = f'/policy/{family}/{policy_id}/{endpoint}'
+                    self._collect_family(session, base, prefix + path, policy, key, parts,
+                                         f"{family}/{policy_id}/{key}")
             for policy in bundle["nat_policies"]:
                 if not re.fullmatch(r"[A-Za-z0-9_-]+", str(policy.get("id", ""))):
                     parts.append(CollectionPart("nat_rules", "FAILED", False))

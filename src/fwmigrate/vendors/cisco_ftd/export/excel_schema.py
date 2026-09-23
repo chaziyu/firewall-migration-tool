@@ -1,6 +1,6 @@
 SHEET_ORDER = (
     "Summary", "Managed Objects", "Object Groups", "Services", "Zones",
-    "Interfaces", "Routes", "ACP Rules", "NAT Rules", "Source Evidence", "Validation",
+    "Interfaces", "Routes", "ACP Rules", "NAT Rules", "Native Sources", "Source Evidence", "Validation",
 )
 
 SHEET_HEADERS = {
@@ -13,5 +13,6 @@ SHEET_HEADERS = {
     "ACP Rules": ("Name", "Policy", "Action", "Source", "Destination", "Services", "Source Plane"),
     "NAT Rules": ("Name", "Policy", "Source Interface", "Destination Interface", "Original", "Translated", "Source Plane"),
     "Source Evidence": ("Path", "Reason"),
+    "Native Sources": ("Collection", "Name", "ID", "Source Context", "Source Attributes", "Raw Source"),
     "Validation": ("Severity", "Category", "Message", "Source Plane", "Object"),
 }

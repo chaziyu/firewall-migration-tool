@@ -1,0 +1,28 @@
+{
+  "format": "cisco-fmc-rest-export-v1",
+  "source": "fmc-rest-api",
+  "domain": {"id": "domain-1", "name": "Global"},
+  "objects": {
+    "networkaddresses": [{"id": "fqdn-1", "name": "updates", "type": "FQDN", "value": "updates.example.test"}],
+    "timeranges": [{"id": "tr-1", "name": "business-hours", "startTime": "08:00"}],
+    "realms": [{"id": "realm-1", "name": "Corp"}],
+    "realmusergroups": [{"id": "group-1", "name": "Employees", "realm": {"id": "realm-1", "name": "Corp"}}],
+    "realmusers": [{"id": "user-1", "name": "alice", "realm": {"id": "realm-1", "name": "Corp"}}],
+    "localrealmusers": [{"id": "local-1", "name": "breakglass", "password": "must-redact"}],
+    "intrusionpolicies": [{"id": "ips-1", "name": "IPS", "rule_groups": [{"id": "rg-1", "name": "Overrides", "rules": [{"id": "rule-1", "action": "BLOCK"}]}]}],
+    "filepolicies": [{"id": "file-1", "name": "Files", "rules": [{"id": "fr-1", "order": 1}]}],
+    "decryptionpolicies": [{"id": "dec-1", "name": "Decrypt", "rules": [{"id": "dr-1", "order": 1}]}],
+    "dnspolicies": [{"id": "dns-1", "name": "DNS", "rules": [{"id": "dnsr-1", "order": 1}]}],
+    "s2svpns": [{"id": "vpn-1", "name": "Site VPN", "endpoints": [{"id": "ep-1", "name": "HQ", "ikePolicy": {"name": "IKEv2"}}]}],
+    "ravpns": [{"id": "ra-1", "name": "Remote Access", "connection_profiles": [{"id": "cp-1", "name": "Staff"}]}]
+  },
+  "fmc_roles": [{"id": "role-1", "name": "Read Only"}],
+  "fmc_users": [{"id": "admin-1", "name": "operator", "role": {"id": "role-1", "name": "Read Only"}}],
+  "devices": [{"id": "device-1", "name": "FTD-A", "resources": {
+    "static_routes": [{"id": "route-1", "name": "default", "network": {"name": "Default"}, "metric": 20, "addressFamily": "ipv4"}],
+    "dhcp_servers": [{"id": "dhcp-1", "name": "inside DHCP", "interfaceName": "inside"}],
+    "pbr_policies": [{"id": "pbr-1", "name": "PBR"}], "ecmp_zones": [{"id": "ecmp-1", "name": "WAN"}]
+  }}],
+  "access_policies": [{"id": "acp-1", "name": "Access", "defaultAction": {"name": "Allow"}, "rules": [{"id": "r-1", "name": "Allow updates", "sourceZones": [{"name": "inside"}], "destinationZones": [{"name": "outside"}], "timeRange": {"name": "business-hours"}, "intrusionPolicy": {"name": "IPS"}, "filePolicy": {"name": "Files"}}]}],
+  "nat_policies": []
+}

@@ -63,7 +63,7 @@ REDACTED_PLACEHOLDER = "[REDACTED]"
 
 def is_sensitive_key(key: str) -> bool:
     """Check if a dictionary key name matches sensitive prefixes/names."""
-    k = key.strip().lower().replace("_", "-")
+    k = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", key.strip()).lower().replace("_", "-")
     if k in {item.replace("_", "-") for item in SENSITIVE_EXACT_KEYS}:
         return True
     if k.startswith("private-key-") or k.startswith("sic-password-"):
@@ -77,6 +77,9 @@ def is_sensitive_key(key: str) -> bool:
 
 def sanitize_source_value(key: str, value: Any) -> Any:
     """Sanitize a value if its key is sensitive, or recursively sanitize dicts and lists."""
+    normalized_key = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", key.strip()).lower().replace("_", "-")
+    if isinstance(value, bool) and normalized_key.endswith(("configured", "present")):
+        return value
     if is_sensitive_key(key):
         return REDACTED_PLACEHOLDER
 
