@@ -32,15 +32,15 @@
     <script src="{{ url_for('static', filename='theme.js') }}?v=5.0"></script>
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='style.css') }}?v=5.3"
+      href="{{ url_for('static', filename='style.css') }}?v=5.5"
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='themes.css') }}?v=5.3"
+      href="{{ url_for('static', filename='themes.css') }}?v=5.4"
     />
     <script
       defer
-      src="{{ url_for('static', filename='app.js') }}?v=5.2"
+      src="{{ url_for('static', filename='app.js') }}?v=5.5"
     ></script>
     <script
       defer
@@ -179,6 +179,9 @@
               ><span id="theme-label">Dark mode</span>
             </button>
           </div>
+        </div>
+        <div id="development-banner" class="development-banner hidden" role="status">
+          <strong>Under development.</strong> Plan migration and Live migration are not functional yet.
         </div>
         <div class="workspace-grid">
           <div class="workspace-main">

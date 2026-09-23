@@ -123,64 +123,20 @@ let currentRenderedArtifactId = null;
       ],
     },
     cisco_asa: {
-      name: "Cisco ASA / FTD",
+      name: "Cisco ASA",
       icon: "🌐",
-      protocol: "Cisco Firepower Management Center (FMC) / ASA REST API",
-      desc: "Authenticates with Cisco FMC REST API / ASA to pull network objects, ACL policies, and NAT definitions.",
-      defaultPort: 443,
-      authTypes: [{ id: "userpass", label: "Admin Credentials" }],
+      protocol: "SSH",
+      desc: "Collects the running configuration over SSH.",
+      defaultPort: 22,
+      authTypes: [{ id: "userpass", label: "SSH Credentials" }],
       fileAccept: ".cfg,.txt,.conf",
       dropText:
-        "Supports Cisco ASA / Firepower <code>.cfg</code> or <code>.txt</code> configuration files",
+        "Supports Cisco ASA <code>.cfg</code> or <code>.txt</code> configuration files",
       fields: [
-        {
-          id: "api-host",
-          label: "FMC / ASA Host or IP",
-          type: "text",
-          required: true,
-          placeholder: "fmc.corp.local or 192.168.1.1",
-          col: "col-8",
-        },
-        {
-          id: "api-port",
-          label: "HTTPS Port",
-          type: "number",
-          required: true,
-          value: 443,
-          col: "col-4",
-        },
-        {
-          id: "api-username",
-          label: "Admin Username",
-          type: "text",
-          required: true,
-          placeholder: "apiadmin",
-          col: "col-6",
-        },
-        {
-          id: "api-password",
-          label: "Admin Password",
-          type: "password",
-          required: true,
-          placeholder: "••••••••",
-          col: "col-6",
-        },
-        {
-          id: "api-domain",
-          label: "Domain UUID / Context",
-          type: "text",
-          required: false,
-          placeholder: "e276abec-e0f2-11e3-8169-6d9ed49b625f",
-          col: "col-12",
-        },
-        {
-          id: "api-insecure",
-          label:
-            "Allow Self-Signed TLS Certificates (Disable SSL Verification)",
-          type: "checkbox",
-          checked: true,
-          col: "col-12",
-        },
+        { id: "collection-host", label: "Host", type: "text", required: true, col: "col-8" },
+        { id: "collection-port", label: "SSH Port", type: "number", required: true, value: 22, col: "col-4" },
+        { id: "collection-username", label: "Username", type: "text", required: true, col: "col-6" },
+        { id: "collection-password", label: "Password", type: "password", required: true, col: "col-6" },
       ],
     },
     checkpoint: {
@@ -306,6 +262,7 @@ let currentRenderedArtifactId = null;
   const tabReport = document.getElementById("tab-report");
   const tabLive = document.getElementById("tab-live");
   const tabExtract = document.getElementById("tab-extract");
+  const developmentBanner = document.getElementById("development-banner");
   const modeDownloadForm = document.getElementById("mode-download-form");
   const modeLiveForm = document.getElementById("mode-live-form");
   const modeExtractForm = document.getElementById("mode-extract-form");
@@ -332,6 +289,10 @@ let currentRenderedArtifactId = null;
 
   // Ingestion Method Tabs
   const btnIngestFile = document.getElementById("btn-ingest-file");
+  const btnIngestSnapshot = document.getElementById("btn-ingest-snapshot");
+  const btnIngestLive = document.getElementById("btn-ingest-live");
+  const liveContainer = document.getElementById("ingest-live-container");
+  let ingestMode = "file";
 
   // Vendor Selection Dropdowns
   const sourceVendorSelect = document.getElementById("source-vendor-select");
@@ -514,7 +475,7 @@ let currentRenderedArtifactId = null;
 
   function syncWorkspace() {
     const hasFile = Boolean(currentFile);
-    const hasInput = hasFile;
+    const hasInput = hasFile || Boolean(currentPreviewId);
     const migrationPairSupported = selectedSourceVendor === "fortigate" && selectedTargetVendor === "palo_alto";
     tabReport?.classList.toggle("hidden", !["fortigate", "palo_alto"].includes(selectedSourceVendor));
     if (btnGenerateBundle)
@@ -638,7 +599,6 @@ let currentRenderedArtifactId = null;
     }
     if (targetVendorSelect) targetVendorSelect.value = selectedTargetVendor;
     activeMode = mode;
-    document.body.dataset.mode = mode;
     [
       [tabDownload, "download"],
       [tabReport, "report"],
@@ -657,6 +617,8 @@ let currentRenderedArtifactId = null;
     if (modeLiveForm) modeLiveForm.classList.toggle("hidden", mode !== "live");
     if (modeExtractForm)
       modeExtractForm.classList.toggle("hidden", mode !== "extract");
+    developmentBanner?.classList.toggle("hidden", !["download", "live"].includes(mode));
+    btnExtractExcel?.parentElement?.classList.toggle("hidden", mode !== "extract");
     reportContainer?.classList.toggle("hidden", mode !== "report" || !currentReport);
     if (targetVendorGroup)
       targetVendorGroup.classList.toggle("hidden", ["extract", "report"].includes(mode));
@@ -667,21 +629,6 @@ let currentRenderedArtifactId = null;
       );
     setText("page-title", MODE_COPY[mode][0]);
     setText("page-description", MODE_COPY[mode][1]);
-    setText("preview-heading", mode === "extract" ? "Extraction preview" : "Configuration overview");
-    const vendorName = VENDOR_CONFIGS[selectedSourceVendor]?.name || "Firewall";
-    setText("brand-name", mode === "extract" && selectedSourceVendor === "fortigate" ? "FortiGate" : "Firewall");
-    setText("brand-tagline", mode === "extract" && selectedSourceVendor === "fortigate" ? "CONFIG REPORT" : "MIGRATION TOOL");
-    setText("page-eyebrow", mode === "extract" ? `${vendorName.toUpperCase()} CONFIGURATION ANALYSIS` : "FIREWALL OPERATIONS");
-    setText(
-      "source-section-meta",
-      mode !== "extract" ? "START HERE" : selectedSourceVendor === "fortigate" ? "FORTIGATE CLI" : vendorName.toUpperCase(),
-    );
-    setText(
-      "source-card-description",
-      mode === "extract"
-        ? `Upload one ${vendorName} backup. The configuration is parsed and analyzed for report viewing or Excel export.`
-        : "Choose your source vendor and bring in your firewall configuration.",
-    );
     syncWorkspace();
 
     if (mode === "report") {
@@ -747,6 +694,10 @@ let currentRenderedArtifactId = null;
     selectedSourceVendor = sourceVendorSelect.value || "fortigate";
     sourceVendorSelect.addEventListener("change", (e) => {
       selectedSourceVendor = e.target.value;
+      ["collection-host", "collection-username", "collection-password"].forEach((id) => { const field = document.getElementById(id); if (field) field.value = ""; });
+      const collectionStatus = document.getElementById("collection-status");
+      collectionStatus?.classList.add("hidden");
+      if (btnIngestLive) btnIngestLive.disabled = selectedSourceVendor !== "cisco_asa";
       currentRenderedArtifactId = null;
       clearSource();
       const vendorName =
@@ -762,8 +713,6 @@ let currentRenderedArtifactId = null;
         if (dropzoneSubtext) dropzoneSubtext.innerHTML = cfg.dropText;
         if (fileInput) fileInput.accept = cfg.fileAccept;
       }
-
-      if (activeMode === "extract") switchMode("extract");
 
       syncWorkspace();
     });
@@ -1067,6 +1016,62 @@ let currentRenderedArtifactId = null;
     if (btnCommitCandidate) btnCommitCandidate.disabled = true;
   }
 
+  function switchIngestMode(mode) {
+    ingestMode = mode;
+    clearSource();
+    const filePanel = document.getElementById("ingest-file-container");
+    filePanel?.classList.toggle("hidden", mode === "live");
+    liveContainer?.classList.toggle("hidden", mode !== "live");
+    [[btnIngestFile, "file"], [btnIngestSnapshot, "snapshot"], [btnIngestLive, "live"]].forEach(([tab, value]) => {
+      tab?.classList.toggle("active", value === mode);
+      tab?.setAttribute("aria-selected", String(value === mode));
+    });
+    if (mode === "live" && selectedSourceVendor !== "cisco_asa") {
+      document.getElementById("collection-status").textContent = "Live collection is currently available for Cisco ASA.";
+      document.getElementById("collection-status").classList.remove("hidden");
+    }
+  }
+  btnIngestFile?.addEventListener("click", () => switchIngestMode("file"));
+  btnIngestSnapshot?.addEventListener("click", () => switchIngestMode("snapshot"));
+  btnIngestLive?.addEventListener("click", () => switchIngestMode("live"));
+  if (btnIngestLive) btnIngestLive.disabled = selectedSourceVendor !== "cisco_asa";
+
+  function collectionPayload() {
+    return { vendor: selectedSourceVendor, connection: {
+      host: document.getElementById("collection-host").value.trim(),
+      port: Number(document.getElementById("collection-port").value || 22),
+      username: document.getElementById("collection-username").value.trim(),
+      password: document.getElementById("collection-password").value,
+    }};
+  }
+  async function collectionRequest(path) {
+    const status = document.getElementById("collection-status");
+    status.textContent = path.endsWith("/test") ? "Testing connection…" : "Collecting configuration and preparing preview…";
+    status.classList.remove("hidden");
+    try {
+      const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collectionPayload()) });
+      const data = await readJson(response, "Collection failed");
+      if (path.endsWith("/test")) status.textContent = "✓ Connected";
+      else {
+        currentPreviewId = data.preview_id;
+        sourceReady = true;
+        currentRenderedArtifactId = null;
+        status.textContent = "✓ Connected · ✓ Configuration collected · ✓ Secrets sanitized · ✓ Ready for extraction";
+        const report = data.preview || {};
+        if (report.summary) {
+          statTotalRules.textContent = report.summary.rules ?? 0;
+          statTotalObjects.textContent = report.summary.objects ?? 0;
+          statErrors.textContent = report.summary.errors ?? 0;
+          statWarnings.textContent = report.summary.warnings ?? 0;
+          optimizerPanel?.classList.remove("hidden");
+        }
+        syncWorkspace();
+      }
+    } catch (error) { status.textContent = `Collection failed: ${error.message}`; }
+  }
+  document.getElementById("btn-test-collection")?.addEventListener("click", () => collectionRequest("/api/collection/test"));
+  document.getElementById("btn-collect-configuration")?.addEventListener("click", () => collectionRequest("/api/collection/collect"));
+
   function updateMappingCompletion() {
     const inputs = [...document.querySelectorAll("#migration-mapping-fields input[data-mapping-scope]")];
     const completed = inputs.filter(input => input.value.trim()).length;
@@ -1177,7 +1182,7 @@ let currentRenderedArtifactId = null;
   // =========================================================================
   if (btnExtractExcel) {
     btnExtractExcel.addEventListener("click", async () => {
-      if (!currentFile) {
+      if (!currentFile && !currentPreviewId) {
         showToast(
           "info",
           "No Input",
