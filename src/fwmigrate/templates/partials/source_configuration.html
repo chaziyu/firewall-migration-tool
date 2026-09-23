@@ -65,9 +65,6 @@
     <button type="button" id="btn-ingest-snapshot" class="ingest-tab-btn" role="tab" aria-selected="false" aria-controls="ingest-file-container" tabindex="-1">
       {{ icon('file') }}Upload Snapshot
     </button>
-    <button type="button" id="btn-ingest-live" class="ingest-tab-btn" role="tab" aria-selected="false" aria-controls="ingest-live-container" tabindex="-1">
-      {{ icon('activity') }}Live Collection
-    </button>
   </div>
   <div
     id="ingest-file-container"
@@ -150,7 +147,7 @@
       </div>
     </div>
   </div>
-  <div id="ingest-live-container" class="hidden" role="tabpanel" aria-labelledby="btn-ingest-live">
+  <div id="ingest-live-container" class="hidden" role="tabpanel" aria-label="Live Collection">
     <div class="form-grid">
       <label class="form-group col-8"><span>Host</span><input id="collection-host" autocomplete="off" required></label>
       <label class="form-group col-4"><span>SSH port</span><input id="collection-port" type="number" value="22" min="1" max="65535" required></label>
