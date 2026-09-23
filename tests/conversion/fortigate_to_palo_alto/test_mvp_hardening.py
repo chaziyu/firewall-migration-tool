@@ -116,6 +116,10 @@ def test_validation_blocks_manual_review_from_rendered_artifact(tmp_path):
     plan = PANMigrationPlan(addresses=(PlannedAddress(source_name="review", status=PANMigrationStatus.MANUAL_REVIEW),))
     rendered = PANSetRenderer().render_files(plan, tmp_path)
     assert rendered.commands == ()
+    assert (tmp_path / "migration_report.json").exists()
+    assert not (tmp_path / "conversion_report.json").exists()
+    assert rendered.report["items"][0]["renderable"] is False
+    assert rendered.report["items"][0]["render_blockers"]
 
 
 def test_renderer_rejects_validation_for_another_plan():

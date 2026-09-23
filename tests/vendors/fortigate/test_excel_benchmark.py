@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from openpyxl import load_workbook
 
-from fwmigrate.vendors.fortigate.benchmark import BenchmarkResult, BenchmarkTimings
+from fwmigrate.vendors.fortigate.benchmark import BenchmarkResult, BenchmarkTimings, ExcelSheetBenchmark
 from fwmigrate.vendors.fortigate.config import ExtractionConfig
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export import export_excel
@@ -59,7 +59,10 @@ def _result(source: bytes) -> BenchmarkResult:
         warmup_runs=1,
         timings=BenchmarkTimings(
             1, 2, 3, 4, 5, 2, 4, 6, 21,
-            {"Summary": 0.5, "Policies": 0.7},
+            {
+                "Summary": ExcelSheetBenchmark("Summary", 0, 0, 0.5, 0.5),
+                "Policies": ExcelSheetBenchmark("Policies", 1, 0.2, 0.5, 0.7),
+            },
         ),
         peak_memory_bytes=2 * 1024 * 1024,
         top_level_sections=2,
@@ -89,6 +92,22 @@ def _workbook(benchmark: BenchmarkResult | None):
 
 
 class ExcelBenchmarkTest(unittest.TestCase):
+    def test_timed_rows_stays_lazy_and_counts_consumed_rows(self):
+        generated = []
+
+        def rows():
+            generated.append("row")
+            yield {"value": 1}
+            generated.append("row")
+            yield {"value": 2}
+
+        metrics = {"elapsed_ms": 0.0, "rows": 0}
+        timed = excel_module._timed_rows(rows(), metrics)
+        self.assertEqual([], generated)
+        self.assertEqual(2, len(list(timed)))
+        self.assertEqual(["row", "row"], generated)
+        self.assertEqual(2, metrics["rows"])
+
     def test_benchmark_sheet_is_opt_in_and_appended_once(self):
         normal = _workbook(None)
         self.assertEqual(list(SHEET_ORDER), normal.sheetnames)
@@ -118,6 +137,7 @@ class ExcelBenchmarkTest(unittest.TestCase):
             "Peak Traced Memory", "Excel Sheet Performance", "Policies", "Summary",
             "Source Objects", "tracemalloc disabled", "Separate full pipeline run",
             "MiB, max; separate traced run",
+            "Rows", "Row Generation (ms)", "Worksheet Writing (ms)", "Total (ms)",
         ):
             self.assertIn(expected, values)
 
@@ -133,7 +153,7 @@ class ExcelBenchmarkTest(unittest.TestCase):
                 output.write(b"workbook")
 
         def build(context, *, sheet_timings):
-            sheet_timings.update({"Summary": 1.0, "Policies": 2.0})
+            sheet_timings.update({"Summary": ExcelSheetBenchmark("Summary", 0, 0, 1, 1), "Policies": ExcelSheetBenchmark("Policies", 1, 1, 1, 2)})
             return FakeWorkbook()
 
         with (
@@ -151,7 +171,7 @@ class ExcelBenchmarkTest(unittest.TestCase):
         self.assertAlmostEqual(5.0, save_ms)
         self.assertAlmostEqual(8.0, total_ms)
         self.assertEqual(build_ms + save_ms, total_ms)
-        self.assertEqual({"Summary": 1.0, "Policies": 2.0}, sheet_timings)
+        self.assertEqual(2.0, sheet_timings["Policies"].total_ms)
 
     def test_normal_export_does_not_collect_sheet_timings(self):
         with patch.object(
@@ -176,6 +196,13 @@ class ExcelBenchmarkTest(unittest.TestCase):
         self.assertEqual(set(SHEET_ORDER), set(sheet_timings))
         self.assertIn("FortiGate Source Inventory", sheet_timings)
         self.assertIn("Extraction Coverage", sheet_timings)
+        for name in ("Addresses", "Services", "Policies", "FortiGate Source Inventory"):
+            self.assertGreaterEqual(sheet_timings[name].row_count, 0)
+            self.assertAlmostEqual(
+                sheet_timings[name].total_ms,
+                sheet_timings[name].row_generation_ms + sheet_timings[name].worksheet_write_ms,
+                delta=0.1,
+            )
 
     def test_benchmark_sheet_contains_no_source_configuration(self):
         workbook = _workbook(_result(_SOURCE.encode()))

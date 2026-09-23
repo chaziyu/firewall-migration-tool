@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from fwmigrate.vendors.fortigate.benchmark import (
     BenchmarkTimings,
+    ExcelSheetBenchmark,
     git_identity,
     median_timings,
     sha256_bytes,
@@ -18,6 +19,16 @@ from fwmigrate.vendors.fortigate.benchmark import (
 
 
 class BenchmarkHelpersTest(unittest.TestCase):
+    @staticmethod
+    def _load_harness():
+        root = Path(__file__).parents[3]
+        spec = importlib.util.spec_from_file_location(
+            "benchmark_fortigate_harness", root / "bin" / "benchmark_fortigate.py"
+        )
+        harness = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(harness)
+        return harness
+
     def test_timing_aggregation_uses_medians(self):
         samples = [
             BenchmarkTimings(
@@ -30,7 +41,7 @@ class BenchmarkHelpersTest(unittest.TestCase):
                 excel_save_ms=save,
                 excel_total_ms=build + save,
                 total_ms=parse + 14 + build + save,
-                sheet_timings={"Policies": sheet},
+                sheet_timings={"Policies": ExcelSheetBenchmark("Policies", 10, sheet, sheet + 1, sheet + 2)},
             )
             for parse, build, save, sheet in ((1, 10, 20, 4), (3, 2, 10, 6), (100, 100, 12, 8))
         ]
@@ -40,7 +51,7 @@ class BenchmarkHelpersTest(unittest.TestCase):
         self.assertEqual(12, result.excel_save_ms)
         self.assertEqual(result.excel_build_ms + result.excel_save_ms, result.excel_total_ms)
         self.assertEqual(39, result.total_ms)
-        self.assertEqual(6, result.sheet_timings["Policies"])
+        self.assertEqual(6, result.sheet_timings["Policies"].row_generation_ms)
 
     def test_sha256_uses_exact_input_bytes(self):
         self.assertEqual(
@@ -52,13 +63,59 @@ class BenchmarkHelpersTest(unittest.TestCase):
         with patch("fwmigrate.vendors.fortigate.benchmark.subprocess.run", side_effect=subprocess.CalledProcessError(1, "git")):
             self.assertEqual((None, None), git_identity(Path.cwd()))
 
+    def test_pipeline_gates_excel_timing_and_export_by_measurement_mode(self):
+        harness = self._load_harness()
+        if tracemalloc.is_tracing():
+            tracemalloc.stop()
+        tree = SimpleNamespace(configs=[])
+        extracted = SimpleNamespace(config=object())
+        derived = object()
+        validation = SimpleNamespace(issues=[])
+
+        def checked(value):
+            def call(*args, **kwargs):
+                self.assertFalse(tracemalloc.is_tracing())
+                return value
+            return call
+
+        with (
+            patch.object(harness, "parse_fortigate_config", checked(tree)),
+            patch.object(harness, "extract_fortigate_config", checked(extracted)),
+            patch.object(harness, "build_derived_views", checked(derived)),
+            patch.object(harness, "validate_config", checked(validation)),
+            patch.object(harness, "build_web_report", checked({})),
+            patch.object(harness, "_benchmark_excel_export", checked((2.0, 3.0, 5.0, {}))),
+        ):
+            measured = harness._run_pipeline("source", "source.conf", measure=True)
+        self.assertEqual(5.0, measured[4].excel_total_ms)
+
+        tracemalloc.start()
+        try:
+            def checked_traced(value):
+                def call(*args, **kwargs):
+                    self.assertTrue(tracemalloc.is_tracing())
+                    return value
+                return call
+
+            with (
+                patch.object(harness, "parse_fortigate_config", checked_traced(tree)),
+                patch.object(harness, "extract_fortigate_config", checked_traced(extracted)),
+                patch.object(harness, "build_derived_views", checked_traced(derived)),
+                patch.object(harness, "validate_config", checked_traced(validation)),
+                patch.object(harness, "build_web_report", checked_traced({})),
+                patch.object(harness, "_benchmark_excel_export") as excel_timing,
+                patch.object(harness, "export_excel") as normal_export,
+                patch.object(harness, "_timed", side_effect=AssertionError("timing during memory run")),
+            ):
+                memory_run = harness._run_pipeline("source", "source.conf", measure=False)
+        finally:
+            tracemalloc.stop()
+        self.assertIsNone(memory_run[4])
+        excel_timing.assert_not_called()
+        normal_export.assert_called_once()
+
     def test_timing_runs_are_untraced_and_memory_run_is_separate(self):
-        root = Path(__file__).parents[3]
-        spec = importlib.util.spec_from_file_location(
-            "benchmark_fortigate_harness", root / "bin" / "benchmark_fortigate.py"
-        )
-        harness = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(harness)
+        harness = self._load_harness()
 
         config = SimpleNamespace(**{
             name: [] for name in (
@@ -94,7 +151,7 @@ class BenchmarkHelpersTest(unittest.TestCase):
                     excel_save_ms=7,
                     excel_total_ms=13,
                     total_ms=value + 27,
-                    sheet_timings={"Summary": float(value)},
+                    sheet_timings={"Summary": ExcelSheetBenchmark("Summary", 0, 0, float(value), float(value))},
                 )
             return tree, extracted, derived, validation, timings
 
@@ -110,7 +167,7 @@ class BenchmarkHelpersTest(unittest.TestCase):
 
         self.assertEqual([(True, False)] * 4 + [(False, True)], traced_states)
         self.assertEqual(20, result.timings.parse_ms)
-        self.assertEqual(20, result.timings.sheet_timings["Summary"])
+        self.assertEqual(20, result.timings.sheet_timings["Summary"].total_ms)
         self.assertGreater(result.peak_memory_bytes, 0)
         self.assertFalse(tracemalloc.is_tracing())
 

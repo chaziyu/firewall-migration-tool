@@ -15,7 +15,7 @@ def plan_routes(source: Any, options: Any):
         interface = None
         if route.device:
             interface_mapping = getattr(options, "interfaces", {}).get(route.device)
-            if interface_mapping:
+            if interface_mapping and interface_mapping.target_interface:
                 interface = interface_mapping.target_interface
             else:
                 warnings.append(f"missing target interface mapping for {route.device!r}")

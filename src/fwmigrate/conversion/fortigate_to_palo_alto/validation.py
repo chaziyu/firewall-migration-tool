@@ -37,7 +37,16 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         if item.source_name and key in seen:
             issues.append(_issue("duplicate_target_name", "duplicate target name", item)); errors.add(key)
         seen.add(key)
-        if not item.target_vsys:
+        if item.source_object_type == "static_route":
+            if not getattr(item, "virtual_router", None):
+                issues.append(_issue("missing_virtual_router", "missing target virtual-router mapping", item)); errors.add(key)
+            if not getattr(item, "destination", None):
+                issues.append(_issue("missing_route_destination", "route has no explicit destination", item)); errors.add(key)
+            if getattr(item, "nexthop_type", None) not in {None, "ip-address", "discard"} or (not item.nexthop and item.nexthop_type != "discard"):
+                issues.append(_issue("unsupported_route_nexthop", "route has no supported nexthop", item)); errors.add(key)
+            if getattr(item, "interface", None) is None and any("interface mapping" in warning for warning in item.warnings):
+                issues.append(_issue("missing_route_interface", "missing target interface mapping", item)); errors.add(key)
+        elif not item.target_vsys:
             issues.append(_issue("missing_target_vsys", "missing target VSYS mapping", item)); errors.add(key)
     for group in (*plan.address_groups, *plan.service_groups):
         for member in group.members:

@@ -12,6 +12,15 @@ from typing import Mapping, Sequence
 
 
 @dataclass(frozen=True, slots=True)
+class ExcelSheetBenchmark:
+    sheet: str
+    row_count: int
+    row_generation_ms: float
+    worksheet_write_ms: float
+    total_ms: float
+
+
+@dataclass(frozen=True, slots=True)
 class BenchmarkTimings:
     parse_ms: float
     extraction_ms: float
@@ -22,7 +31,7 @@ class BenchmarkTimings:
     excel_save_ms: float
     excel_total_ms: float
     total_ms: float
-    sheet_timings: Mapping[str, float] = field(default_factory=dict)
+    sheet_timings: Mapping[str, ExcelSheetBenchmark] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "sheet_timings", MappingProxyType(dict(self.sheet_timings)))
@@ -73,7 +82,19 @@ def median_timings(samples: Sequence[BenchmarkTimings]) -> BenchmarkTimings:
     return BenchmarkTimings(
         **medians,
         sheet_timings={
-            name: statistics.median(sample.sheet_timings[name] for sample in samples)
+            name: ExcelSheetBenchmark(
+                sheet=name,
+                row_count=samples[0].sheet_timings[name].row_count,
+                row_generation_ms=statistics.median(
+                    sample.sheet_timings[name].row_generation_ms for sample in samples
+                ),
+                worksheet_write_ms=statistics.median(
+                    sample.sheet_timings[name].worksheet_write_ms for sample in samples
+                ),
+                total_ms=statistics.median(
+                    sample.sheet_timings[name].total_ms for sample in samples
+                ),
+            )
             for name in sheet_names
             if all(name in sample.sheet_timings for sample in samples)
         },
