@@ -202,6 +202,12 @@ upload source configuration
 
 For FortiGate input, the web application also supports migration planning, a downloadable command bundle, and optional candidate deployment.
 
+Live collection for ASA, Juniper SRX, FMC, and Check Point uses the optional `collection` extra. SSH collection verifies device host keys against the operating system's known hosts; add the device key before connecting. FMC and Check Point HTTPS certificate verification is enabled by default. A successful collection downloads a secret-sanitized snapshot that can be uploaded later for preview and Excel export.
+
+```bash
+python -m pip install -e ".[collection]"
+```
+
 ### Plan a FortiGate to Palo Alto Migration
 
 ```bash

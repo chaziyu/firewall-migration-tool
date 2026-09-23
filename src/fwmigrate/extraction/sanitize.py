@@ -16,6 +16,8 @@ SENSITIVE_KEY_PREFIXES = (
     "apikey",
     "sid",
     "token",
+    "set-cookie",
+    "x-chkp-sid",
     "shared-secret",
     "shared_secret",
     "secret",
@@ -46,6 +48,8 @@ SENSITIVE_KEY_PREFIXES = (
 )
 
 SENSITIVE_EXACT_KEYS = {
+    "authorization",
+    "cookie",
     "private-key-data", "private_key_data", "key-data", "key_data",
     "activation-key", "activation_key", "sic-password-hash", "sic_password_hash",
     "otp", "pkcs12-password", "pkcs12_password", "one-time-password",
@@ -76,8 +80,12 @@ def sanitize_source_value(key: str, value: Any) -> Any:
 
     if isinstance(value, dict):
         return sanitize_source_attributes(value)
-    elif isinstance(value, list):
-        return [sanitize_source_value(key, item) if not isinstance(item, (dict, list)) else (sanitize_source_attributes(item) if isinstance(item, dict) else [sanitize_source_value(key, x) for x in item]) for item in value]
+    if isinstance(value, list):
+        return [sanitize_source_value(key, item) for item in value]
+    if isinstance(value, str) and key.strip().lower().replace("_", "-") in {
+        "raw", "raw-command", "cli-text", "error", "command-output"
+    }:
+        return sanitize_raw_text(value)
     return value
 
 
@@ -86,31 +94,16 @@ def sanitize_source_attributes(attrs: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(attrs, dict):
         return attrs
 
-    sanitized: Dict[str, Any] = {}
-    for k, v in attrs.items():
-        if is_sensitive_key(str(k)):
-            sanitized[k] = REDACTED_PLACEHOLDER
-        elif isinstance(v, dict):
-            sanitized[k] = sanitize_source_attributes(v)
-        elif isinstance(v, list):
-            sanitized[k] = [
-                sanitize_source_attributes(item) if isinstance(item, dict)
-                else (REDACTED_PLACEHOLDER if is_sensitive_key(str(k)) else item)
-                for item in v
-            ]
-        elif isinstance(v, str) and str(k).strip().lower().replace("_", "-") in {
-            "raw", "raw-command", "cli-text", "error", "command-output"
-        }:
-            sanitized[k] = sanitize_raw_text(v)
-        else:
-            sanitized[k] = v
-    return sanitized
+    return {key: sanitize_source_value(str(key), value) for key, value in attrs.items()}
 
 
 def sanitize_raw_text(text: str) -> str:
     """Sanitize secrets in raw command output, Gaia lines, or config text."""
     if not text:
         return text
+
+    text = re.sub(r"(?im)^(\s*(?:authorization|cookie|set-cookie|x-chkp-sid)\s*:\s*).+$",
+                  rf"\1{REDACTED_PLACEHOLDER}", text)
 
     # Mask password hashes or cleartext in known CLI patterns (e.g. set user admin password-hash ...)
     key_pattern = (
@@ -126,8 +119,8 @@ def sanitize_raw_text(text: str) -> str:
         flags=re.IGNORECASE,
     )
     sanitized = re.sub(
-        rf"({key_pattern})(\s+)(?:\"[^\"]*\"|'[^']*'|[^\s\r\n]+)",
-        rf"\1\2{REDACTED_PLACEHOLDER}",
+        rf"({key_pattern})(\s+)((?:ascii|plain-text|cleartext|hex|encrypted|0|7)\s+)?(?:\"[^\"]*\"|'[^']*'|[^\s\r\n]+)",
+        lambda match: f"{match.group(1)}{match.group(2)}{match.group(3) or ''}{REDACTED_PLACEHOLDER}",
         sanitized,
         flags=re.IGNORECASE,
     )

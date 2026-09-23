@@ -118,7 +118,7 @@ let currentRenderedArtifactId = null;
           label:
             "Allow Self-Signed TLS Certificates (Disable SSL Verification)",
           type: "checkbox",
-          checked: true,
+          checked: false,
           col: "col-12",
         },
       ],
@@ -133,12 +133,11 @@ let currentRenderedArtifactId = null;
       fileAccept: ".cfg,.txt,.conf",
       dropText:
         "Supports Cisco ASA <code>.cfg</code> or <code>.txt</code> configuration files",
-      fields: [
-        { id: "collection-host", label: "Host", type: "text", required: true, col: "col-8" },
-        { id: "collection-port", label: "SSH Port", type: "number", required: true, value: 22, col: "col-4" },
-        { id: "collection-username", label: "Username", type: "text", required: true, col: "col-6" },
-        { id: "collection-password", label: "Password", type: "password", required: true, col: "col-6" },
-      ],
+    },
+    cisco_ftd: {
+      name: "Cisco FTD / FMC",
+      fileAccept: ".json,.txt",
+      dropText: "Supports FMC REST export JSON files",
     },
     checkpoint: {
       name: "Check Point",
@@ -196,7 +195,7 @@ let currentRenderedArtifactId = null;
           label:
             "Allow Self-Signed TLS Certificates (Disable SSL Verification)",
           type: "checkbox",
-          checked: true,
+          checked: false,
           col: "col-12",
         },
       ],
@@ -204,10 +203,10 @@ let currentRenderedArtifactId = null;
     juniper_srx: {
       name: "Juniper SRX",
       icon: "🌲",
-      protocol: "JunOS NETCONF over SSH / PyEZ",
-      desc: "Connects via NETCONF (Port 830) to retrieve JunOS security zones, address books, and policy sets.",
-      defaultPort: 830,
-      authTypes: [{ id: "userpass", label: "NETCONF SSH Admin Credentials" }],
+      protocol: "Junos SSH CLI",
+      desc: "Collects Junos configuration in set format over SSH.",
+      defaultPort: 22,
+      authTypes: [{ id: "userpass", label: "SSH Admin Credentials" }],
       fileAccept: ".set,.conf,.txt",
       dropText:
         "Supports JunOS SRX <code>.set</code>, <code>.conf</code>, or <code>.txt</code> files",
@@ -222,10 +221,10 @@ let currentRenderedArtifactId = null;
         },
         {
           id: "api-port",
-          label: "NETCONF Port",
+          label: "SSH Port",
           type: "number",
           required: true,
-          value: 830,
+          value: 22,
           col: "col-4",
         },
         {
@@ -243,13 +242,6 @@ let currentRenderedArtifactId = null;
           required: true,
           placeholder: "••••••••",
           col: "col-6",
-        },
-        {
-          id: "api-insecure",
-          label: "Allow Self-Signed / Host Key Bypass",
-          type: "checkbox",
-          checked: true,
-          col: "col-12",
         },
       ],
     },
@@ -294,6 +286,49 @@ let currentRenderedArtifactId = null;
   const btnIngestSnapshot = document.getElementById("btn-ingest-snapshot");
   const liveContainer = document.getElementById("ingest-live-container");
   let ingestMode = "file";
+  const collectionCapabilities = {};
+
+  async function loadCollectionCapabilities() {
+    try {
+      const response = await fetch("/api/vendors");
+      const data = await readJson(response, "Could not load vendors");
+      for (const source of data.sources || []) if (source.live_collection) collectionCapabilities[source.vendor_id] = source.collection;
+      renderCollectionFields();
+    } catch (_) { /* File upload remains available. */ }
+  }
+
+  function renderCollectionFields() {
+    const container = document.getElementById("collection-fields");
+    const status = document.getElementById("collection-status");
+    if (!container) return;
+    container.replaceChildren();
+    const capability = collectionCapabilities[selectedSourceVendor];
+    document.getElementById("btn-test-collection").disabled = !capability;
+    document.getElementById("btn-collect-configuration").disabled = !capability;
+    if (!capability) {
+      status.textContent = "Live collection is unavailable for this vendor.";
+      status.classList.remove("hidden");
+      return;
+    }
+    status.classList.add("hidden");
+    for (const field of capability.connection_fields) {
+      const label = document.createElement("label");
+      label.className = "form-group " + (field.type === "checkbox" ? "col-12" : "col-6");
+      const title = document.createElement("span");
+      title.textContent = field.label;
+      const input = document.createElement("input");
+      input.id = `collection-${field.name}`;
+      input.dataset.collectionField = field.name;
+      input.type = field.type;
+      input.required = !!field.required;
+      if (field.type === "checkbox") input.checked = field.default === true;
+      else if (field.default !== undefined) input.value = field.default;
+      if (field.type === "number") { input.min = "1"; input.max = "65535"; }
+      if (field.type === "password") input.autocomplete = "new-password";
+      label.append(title, input);
+      container.append(label);
+    }
+  }
 
   // Vendor Selection Dropdowns
   const sourceVendorSelect = document.getElementById("source-vendor-select");
@@ -379,7 +414,7 @@ let currentRenderedArtifactId = null;
     if (section === "objects") return sections[activeObjectSection] || [];
     if (section === "vpn") return [
       ...(sections.vpn_tunnels || []).map((row) => ({ ...row, kind: "Tunnel", attachment: row.interface, peer: row.remote_gateway || row.ike_gateways, crypto: row.ike_version || row.ipsec_crypto_profile, topology: row.topology_path })),
-      ...(sections.vpn_phase2 || []).map((row) => ({ ...row, kind: "Phase 2", attachment: row.phase1, peer: [row.source_range, row.destination_range].filter(Boolean).join(" → "), crypto: row.proposal, topology: [] })),
+      ...(sections.vpn_phase2 || []).map((row) => ({ ...row, kind: "Phase 2", attachment: row.phase1, peer: [["IPv4 src", row.source_range], ["IPv4 dst", row.destination_range], ["IPv6 src", row.source_range6], ["IPv6 dst", row.destination_range6]].filter(([, value]) => value).map(([label, value]) => `${label}: ${value}`).join(" → "), crypto: row.proposal, topology: [] })),
     ];
     return sections[section] || [];
   }
@@ -624,11 +659,7 @@ let currentRenderedArtifactId = null;
     document.querySelector(".ingest-tabs")?.classList.toggle("hidden", mode === "collect");
     document.getElementById("ingest-file-container")?.classList.toggle("hidden", mode === "collect");
     liveContainer?.classList.toggle("hidden", mode !== "collect");
-    if (mode === "collect" && selectedSourceVendor !== "cisco_asa") {
-      const status = document.getElementById("collection-status");
-      status.textContent = "Live collection is currently available for Cisco ASA.";
-      status.classList.remove("hidden");
-    }
+    if (mode === "collect") renderCollectionFields();
     developmentBanner?.classList.toggle("hidden", !["download", "live"].includes(mode));
     btnExtractExcel?.parentElement?.classList.toggle("hidden", mode !== "extract");
     reportContainer?.classList.toggle("hidden", mode !== "report" || !currentReport);
@@ -708,13 +739,7 @@ let currentRenderedArtifactId = null;
     selectedSourceVendor = sourceVendorSelect.value || "fortigate";
     sourceVendorSelect.addEventListener("change", (e) => {
       selectedSourceVendor = e.target.value;
-      ["collection-host", "collection-username", "collection-password"].forEach((id) => { const field = document.getElementById(id); if (field) field.value = ""; });
-      const collectionStatus = document.getElementById("collection-status");
-      collectionStatus?.classList.add("hidden");
-      if (activeMode === "collect" && selectedSourceVendor !== "cisco_asa") {
-        collectionStatus.textContent = "Live collection is currently available for Cisco ASA.";
-        collectionStatus.classList.remove("hidden");
-      }
+      renderCollectionFields();
       currentRenderedArtifactId = null;
       clearSource();
       const vendorName =
@@ -728,7 +753,7 @@ let currentRenderedArtifactId = null;
       const cfg = VENDOR_CONFIGS[selectedSourceVendor];
       if (cfg) {
         if (dropzoneSubtext) dropzoneSubtext.innerHTML = cfg.dropText;
-        if (fileInput) fileInput.accept = cfg.fileAccept;
+        if (fileInput) fileInput.accept = ingestMode === "snapshot" ? ".json" : cfg.fileAccept;
       }
 
       syncWorkspace();
@@ -841,7 +866,8 @@ let currentRenderedArtifactId = null;
       "term-system",
     );
 
-    fetchMigrationPreview();
+    if (ingestMode === "snapshot") importSnapshot(file);
+    else fetchMigrationPreview();
   }
 
   if (btnRemoveFile) {
@@ -1034,31 +1060,53 @@ let currentRenderedArtifactId = null;
   }
 
   function switchIngestMode(mode) {
+    if (!["file", "snapshot"].includes(mode)) return;
     ingestMode = mode;
     clearSource();
-    const filePanel = document.getElementById("ingest-file-container");
-    filePanel?.classList.toggle("hidden", mode === "live");
-    liveContainer?.classList.toggle("hidden", mode !== "live");
-    [[btnIngestFile, "file"], [btnIngestSnapshot, "snapshot"], [btnIngestLive, "live"]].forEach(([tab, value]) => {
+    [[btnIngestFile, "file"], [btnIngestSnapshot, "snapshot"]].forEach(([tab, value]) => {
       tab?.classList.toggle("active", value === mode);
       tab?.setAttribute("aria-selected", String(value === mode));
     });
-    if (mode === "live" && selectedSourceVendor !== "cisco_asa") {
-      document.getElementById("collection-status").textContent = "Live collection is currently available for Cisco ASA.";
-      document.getElementById("collection-status").classList.remove("hidden");
-    }
+    fileInput.accept = mode === "snapshot" ? ".json" : VENDOR_CONFIGS[selectedSourceVendor]?.fileAccept || ".txt";
+    fileInput.setAttribute("aria-label", mode === "snapshot" ? "Collection snapshot file" : "Firewall configuration file");
+    dropzone?.setAttribute("aria-label", mode === "snapshot" ? "Choose a collection snapshot file" : "Choose a firewall configuration file");
+    dropzoneSubtext.textContent = mode === "snapshot" ? "Select a previously downloaded collection snapshot (.json)" : "Select a configuration file";
   }
   btnIngestFile?.addEventListener("click", () => switchIngestMode("file"));
   btnIngestSnapshot?.addEventListener("click", () => switchIngestMode("snapshot"));
-  btnIngestLive?.addEventListener("click", () => switchIngestMode("live"));
 
   function collectionPayload() {
-    return { vendor: selectedSourceVendor, connection: {
-      host: document.getElementById("collection-host").value.trim(),
-      port: Number(document.getElementById("collection-port").value || 22),
-      username: document.getElementById("collection-username").value.trim(),
-      password: document.getElementById("collection-password").value,
-    }};
+    const connection = {};
+    document.querySelectorAll("[data-collection-field]").forEach((field) => {
+      connection[field.dataset.collectionField] = field.type === "checkbox" ? field.checked : field.type === "number" ? Number(field.value) : field.value.trim();
+    });
+    return { vendor: selectedSourceVendor, connection };
+  }
+
+  function applyCollectionPreview(data) {
+    currentPreviewId = data.preview_id;
+    sourceReady = true;
+    currentRenderedArtifactId = null;
+    const summary = data.preview?.summary || {};
+    for (const [element, value] of [[statTotalRules, summary.rules], [statTotalObjects, summary.objects], [statErrors, summary.errors], [statWarnings, summary.warnings]]) {
+      if (element) element.textContent = typeof value === "number" ? value : 0;
+    }
+    optimizerPanel?.classList.toggle("hidden", ![summary.rules, summary.objects, summary.errors, summary.warnings].some(value => typeof value === "number"));
+    syncWorkspace();
+  }
+
+  async function importSnapshot(file) {
+    const body = new FormData();
+    body.append("file", file);
+    try {
+      const response = await fetch("/api/collection/snapshot/import", { method: "POST", body });
+      const data = await readJson(response, "Snapshot import failed");
+      selectedSourceVendor = data.vendor_id;
+      sourceVendorSelect.value = data.vendor_id;
+      currentFile = null;
+      applyCollectionPreview(data);
+      setPreviewStatus("Snapshot imported. Preview and Excel are ready.");
+    } catch (error) { setPreviewStatus(error.message, "error"); }
   }
   async function collectionRequest(path) {
     const status = document.getElementById("collection-status");
@@ -1069,19 +1117,10 @@ let currentRenderedArtifactId = null;
       const data = await readJson(response, "Collection failed");
       if (path.endsWith("/test")) status.textContent = "✓ Connected";
       else {
-        currentPreviewId = data.preview_id;
-        sourceReady = true;
-        currentRenderedArtifactId = null;
-        status.textContent = "✓ Connected · ✓ Configuration collected · ✓ Secrets sanitized · ✓ Ready for extraction";
-        const report = data.preview || {};
-        if (report.summary) {
-          statTotalRules.textContent = report.summary.rules ?? 0;
-          statTotalObjects.textContent = report.summary.objects ?? 0;
-          statErrors.textContent = report.summary.errors ?? 0;
-          statWarnings.textContent = report.summary.warnings ?? 0;
-          optimizerPanel?.classList.remove("hidden");
-        }
-        syncWorkspace();
+        applyCollectionPreview(data);
+        status.textContent = `Configuration collected (${data.collection.status}). ${data.collection.warnings?.length || 0} warnings. Snapshot download ready.`;
+        const filename = `firewall_snapshot_${selectedSourceVendor}_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+        await downloadBlob(new Blob([JSON.stringify(data.snapshot)], { type: "application/json" }), filename);
       }
     } catch (error) { status.textContent = `Collection failed: ${error.message}`; }
   }
@@ -1689,6 +1728,7 @@ let currentRenderedArtifactId = null;
   else themePreference?.addListener?.(followSystemTheme);
   applyTheme(explicitTheme || (themePreference?.matches ? "dark" : "light"));
 
+  loadCollectionCapabilities();
   switchMode(activeMode);
   syncWorkspace();
 });

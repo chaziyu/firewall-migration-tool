@@ -17,10 +17,6 @@ from .transform.nat import (
     NormalizedSourceNAT,
     transform_nat,
 )
-from .transform.policies import (
-    NormalizedPolicyName,
-    normalize_policy_names,
-)
 from .transform.services import (
     ServiceTransformResult,
     transform_services,
@@ -40,11 +36,6 @@ class DerivedViews:
     services: ServiceTransformResult
 
     nat: tuple[NormalizedSourceNAT, ...]
-
-    policy_names: tuple[
-        NormalizedPolicyName,
-        ...
-    ]
 
     vpn: VPNTransformResult
 
@@ -75,11 +66,6 @@ def build_derived_views(
             transform_nat(
                 config,
                 references=references,
-            )
-        ),
-        policy_names=tuple(
-            normalize_policy_names(
-                config
             )
         ),
         vpn=normalize_vpn_phase2(

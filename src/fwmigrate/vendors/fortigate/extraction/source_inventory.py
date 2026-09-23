@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from fwmigrate.extraction.sanitize import sanitize_raw_text
+
+from ..security.extraction import sanitize_source_value
+
 from ..nodes import (
     CommandNode,
     UnknownCommandNode,
@@ -140,7 +144,10 @@ def _make_record(
         source_path=source_path,
         object_name=object_name,
         parent_objects=parent_objects,
-        values=settings,
+        values={
+            key: _safe_evidence_value(key, value)
+            for key, value in settings.items()
+        },
         explicit_fields=tuple(sorted(evaluation.explicit_fields)),
         unset_fields=tuple(sorted(evaluation.unset_fields)),
         commands=tuple(
@@ -174,7 +181,7 @@ def _command_record(
             parent_objects=parent_objects,
             operation="unknown",
             key=command.keyword,
-            values=tuple(command.values),
+            values=_safe_unknown_values(command.keyword, command.values),
             line_number=command.line_number,
         )
 
@@ -185,6 +192,30 @@ def _command_record(
         parent_objects=parent_objects,
         operation=command.operation,
         key=command.key,
-        values=tuple(command.values),
+        values=_safe_command_values(command.key, command.values),
         line_number=command.line_number,
     )
+
+
+def _safe_command_values(key: str, values: list[str]) -> tuple[str, ...]:
+    safe = sanitize_source_value(key, values)
+    return (safe,) if isinstance(safe, str) else tuple(safe)
+
+
+def _safe_evidence_value(key: str, value: Any) -> Any:
+    if key.startswith("unknown_command:") and isinstance(value, list):
+        return list(_safe_unknown_values(key.partition(":")[2], value))
+    source_key = key.rsplit(":", 1)[-1]
+    source_key = source_key.removeprefix("unparsed_").removeprefix("unsupported_append_")
+    return sanitize_source_value(source_key, value)
+
+
+def _safe_unknown_values(key: str, values: list[str]) -> tuple[str, ...]:
+    safe = sanitize_source_value(key, values)
+    if isinstance(safe, str):
+        return (safe,)
+    if values:
+        safe = sanitize_source_value(values[0], values[1:])
+        if isinstance(safe, str):
+            return (values[0], safe)
+    return tuple(sanitize_raw_text(" ".join(values)).split())

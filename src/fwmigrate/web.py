@@ -24,7 +24,9 @@ from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
-from fwmigrate.collection import cisco_asa
+from fwmigrate.collection import CollectionStatus, source_collectors
+from fwmigrate.collection.builtin import register_builtin_collectors
+from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot, MAX_BYTES
 
 register_builtin_source_reporters()
 register_builtin_migration_planners()
@@ -168,6 +170,7 @@ def _safe_vendor_filename(vendor_id: str) -> str:
     return re.sub(r'[^A-Za-z0-9_.-]+', '_', vendor_id).strip('._') or 'source'
 
 def create_app(test_config=None):
+    register_builtin_collectors()
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         base_dir = os.path.join(sys._MEIPASS, 'fwmigrate')
         if not os.path.exists(os.path.join(base_dir, 'templates')):
@@ -207,6 +210,10 @@ def create_app(test_config=None):
                 'vendor_id': reporter.vendor_id,
                 'display_name': getattr(reporter, 'display_name', reporter.vendor_id),
                 'file_extensions': list(reporter.supported_extensions),
+                'live_collection': reporter.vendor_id in {collector.vendor_id for collector in source_collectors.list()},
+                'collection': ({'method': source_collectors.get(reporter.vendor_id).method,
+                                'connection_fields': source_collectors.get(reporter.vendor_id).fields}
+                               if reporter.vendor_id in {collector.vendor_id for collector in source_collectors.list()} else None),
             }
             for reporter in source_reporters.list()
         ]
@@ -256,50 +263,65 @@ def create_app(test_config=None):
 
     def collection_options():
         payload = request.get_json(silent=True) or {}
-        if payload.get('vendor') != 'cisco_asa':
-            raise ValueError('Live collection is not supported for this vendor.')
-        connection = payload.get('connection')
-        if not isinstance(connection, dict):
-            raise ValueError('Connection details are required.')
-        host = str(connection.get('host', '')).strip()
-        username = str(connection.get('username', '')).strip()
-        password = str(connection.get('password', ''))
-        try:
-            port = int(connection.get('port', 22))
-        except (TypeError, ValueError) as exc:
-            raise ValueError('Port must be between 1 and 65535.') from exc
-        if not host or not username or not password or not 1 <= port <= 65535:
-            raise ValueError('Host, username, password, and a valid port are required.')
-        return {'host': host, 'port': port, 'username': username, 'password': password}
+        if not isinstance(payload, dict):
+            raise ValueError('Collection request must be a JSON object.')
+        collector = source_collectors.get(payload.get('vendor'))
+        return collector, collector.validate_options(payload.get('connection'))
 
     @app.route('/api/collection/test', methods=['POST'])
     def test_collection_connection():
         try:
-            cisco_asa.test_connection(collection_options())
-            return jsonify({'success': True, 'status': 'CONNECTED'})
+            collector, options = collection_options()
         except ValueError as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
+        try:
+            collector.test_connection(options)
+            return jsonify({'success': True, 'status': 'CONNECTED'})
         except Exception:
             return jsonify({'success': False, 'error': 'Connection failed. Check the device and credentials.'}), 502
 
     @app.route('/api/collection/collect', methods=['POST'])
     def collect_configuration():
         try:
-            source = cisco_asa.collect(collection_options())
-            raw = source.source_text.encode('utf-8')
+            collector, options = collection_options()
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        try:
+            source = collector.collect(options)
+            if source.status == CollectionStatus.FAILED or not source.source_text.strip():
+                return jsonify({'success': False, 'error': 'Collection returned no usable source.'}), 502
+            snapshot = make_snapshot(source)
+            raw = snapshot['source_text'].encode('utf-8')
             reporter = source_reporters.get(source.vendor_id)
-            analysis = reporter.analyze_source(source.source_text)
+            analysis = reporter.analyze_source(snapshot['source_text'])
             entry = _cache_preview(source.vendor_id, raw, analysis, source.source_name)
             return jsonify({
                 'success': True,
                 'preview_id': entry.preview_id,
-                'collection': {'vendor': source.vendor_id, 'method': 'ssh', 'status': 'SUCCESS'},
+                'collection': {'vendor': source.vendor_id, 'method': source.method, 'status': source.status.value,
+                               'parts': snapshot['parts'], 'warnings': snapshot['warnings']},
                 'preview': reporter.build_preview(analysis),
+                'snapshot': snapshot,
             })
-        except ValueError as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception:
             return jsonify({'success': False, 'error': 'Collection or extraction failed. Check the device configuration and connection.'}), 502
+
+    @app.route('/api/collection/snapshot/import', methods=['POST'])
+    def import_collection_snapshot():
+        try:
+            uploaded = request.files.get('file')
+            raw = uploaded.read(MAX_BYTES + 1) if uploaded else request.stream.read(MAX_BYTES + 1)
+            source = parse_snapshot(raw)
+            reporter = source_reporters.get(source.vendor_id)
+            analysis = reporter.analyze_source(source.source_text)
+            entry = _cache_preview(source.vendor_id, source.source_text.encode('utf-8'), analysis, source.source_name)
+            return jsonify({'success': True, 'vendor_id': source.vendor_id, 'preview_id': entry.preview_id,
+                            'collection': {'status': source.status.value, 'parts': [asdict(part) for part in source.parts],
+                                           'warnings': source.warnings}, 'preview': reporter.build_preview(analysis)})
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid or unsupported collection snapshot.'}), 400
+        except Exception:
+            return jsonify({'success': False, 'error': 'Snapshot import failed.'}), 400
 
     @app.route('/api/migration/requirements', methods=['POST'])
     def migration_requirements():

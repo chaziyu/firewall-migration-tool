@@ -43,6 +43,9 @@ class FGIPsecPhase1(BaseModel):
 
     # Credential presence metadata; the credential itself is never retained.
     psk_configured: bool = False
+    ppk_secret_configured: bool = False
+    auth_password_configured: bool = False
+    group_authentication_secret_configured: bool = False
 
     # Metadata
     comments: str | None = None
@@ -73,6 +76,10 @@ class FGIPsecPhase2(BaseModel):
     src_start_ip: str | None = None
     src_end_ip: str | None = None
     src_name: str | None = None
+    src_subnet6: str | None = None
+    src_start_ip6: str | None = None
+    src_end_ip6: str | None = None
+    src_name6: str | None = None
 
     # Destination selector
     dst_addr_type: str | None = None
@@ -80,6 +87,10 @@ class FGIPsecPhase2(BaseModel):
     dst_start_ip: str | None = None
     dst_end_ip: str | None = None
     dst_name: str | None = None
+    dst_subnet6: str | None = None
+    dst_start_ip6: str | None = None
+    dst_end_ip6: str | None = None
+    dst_name6: str | None = None
 
     # Tunnel behavior
     replay: str | None = None

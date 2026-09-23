@@ -37,7 +37,7 @@ class WebReportTest(unittest.TestCase):
             policies=[
                 FGPolicy(
                     policy_id=1,
-                    name="A" * 40,
+                    name="A" * 34,
                     srcintf=["port1"],
                     dstintf=["port1"],
                     srcaddr=["all"],
@@ -106,7 +106,7 @@ class WebReportTest(unittest.TestCase):
         self.assertTrue(all(item["generated"] for item in services))
 
         policy = self.report["sections"]["policies"][0]
-        self.assertEqual("-L", policy["name"][-2:])
+        self.assertEqual("A" * 34, policy["name"])
         self.assertEqual("192.0.2.1", self.report["sections"]["nat"][0]["translated_addresses"][0])
 
         phase2 = self.report["sections"]["vpn_phase2"][0]

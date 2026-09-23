@@ -675,19 +675,14 @@ end
 
         policies, rows = self._rows(workbook["Policies"])
         self.assertIsNotNone(rows[0][policies.index("Source Name")])
-        self.assertTrue(rows[0][policies.index("Policy Name")].endswith("-L"))
+        self.assertEqual(rows[0][policies.index("Source Name")], rows[0][policies.index("Policy Name")])
         self.assertIsNotNone(rows[1][policies.index("Source Name")])
         self.assertIsNotNone(rows[2][policies.index("Source Name")])
         self.assertNotEqual(
             rows[1][policies.index("Policy Name")],
             rows[2][policies.index("Policy Name")],
         )
-        self.assertTrue(
-            all(
-                len(rows[index][policies.index("Policy Name")]) <= 32
-                for index in (1, 2)
-            )
-        )
+        self.assertTrue(all(rows[index][policies.index("Policy Name")] == rows[index][policies.index("Source Name")] for index in (1, 2)))
         self.assertNotIn(
             "Normalized policy name collision",
             rows[1][policies.index("Review Reasons")] or "",
@@ -696,7 +691,7 @@ end
             "Normalized policy name collision",
             rows[2][policies.index("Review Reasons")] or "",
         )
-        self.assertIsNone(rows[3][policies.index("Source Name")])
+        self.assertEqual(rows[3][policies.index("Policy Name")], rows[3][policies.index("Source Name")])
         self.assertEqual("pool1", rows[1][policies.index("IP Pool Name")])
         self.assertIsNone(rows[2][policies.index("SNAT Address")])
 

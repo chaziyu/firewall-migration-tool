@@ -188,45 +188,6 @@ def validate_config(
         )
 
     # --------------------------------------------------------------
-    # Policy-name transformation
-    # --------------------------------------------------------------
-
-    for policy_name in derived.policy_names:
-        if not policy_name.collision:
-            continue
-
-        issues.append(
-            ValidationIssue(
-                severity=(
-                    ValidationSeverity.ERROR
-                ),
-                domain="policy",
-                vdom=policy_name.vdom,
-                object_name=(
-                    policy_name.source_name
-                    or (
-                        str(
-                            policy_name.policy_id
-                        )
-                        if (
-                            policy_name.policy_id
-                            is not None
-                        )
-                        else None
-                    )
-                ),
-                field="name",
-                message=(
-                    "Normalized policy name "
-                    f"{policy_name.normalized_name!r} "
-                    "collides with another policy "
-                    "after the target name-length "
-                    "limit is applied."
-                ),
-            )
-        )
-
-    # --------------------------------------------------------------
     # VPN Phase-2 selector transformation
     # --------------------------------------------------------------
 
