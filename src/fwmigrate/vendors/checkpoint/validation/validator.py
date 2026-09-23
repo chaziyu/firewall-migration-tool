@@ -5,7 +5,7 @@ from __future__ import annotations
 from ipaddress import ip_network
 from typing import Any
 
-from fwmigrate.extraction.sanitize import REDACTED_PLACEHOLDER, is_sensitive_key
+from fwmigrate.extraction.sanitize import REDACTED_PLACEHOLDER, is_sensitive_key, sanitize_raw_text
 
 from ..derived import CheckPointDerivedViews
 from ..model.common import CheckPointSourceObject
@@ -31,7 +31,7 @@ def validate_checkpoint_config(
         _validate_scope(scope),
         _validate_duplicates(config),
         _validate_references(derived),
-        _validate_policy_structure(derived),
+        _validate_policy_structure(config, derived),
         _validate_inline_layers(config, derived),
         _validate_nat(config, derived),
         _validate_interface_topology(derived),
@@ -54,6 +54,7 @@ def _issue(code: str, category: str, message: str, *, severity: str = "warning",
            domain: str | None = None, domain_uid: str | None = None,
            package: str | None = None, package_uid: str | None = None,
            layer: str | None = None, layer_uid: str | None = None, gateway: str | None = None,
+           expected_kinds: tuple[str, ...] = (), scope: str | None = None,
            object_type: str | None = None, object_uid: str | None = None,
            object_name: str | None = None, command: str | None = None) -> CheckPointValidationIssue:
     return CheckPointValidationIssue(
@@ -69,6 +70,7 @@ def _issue(code: str, category: str, message: str, *, severity: str = "warning",
         object_uid=object_uid or getattr(source, "uid", None),
         object_name=object_name or getattr(source, "name", None),
         field=field, command=command or getattr(source, "command", None), reference=reference,
+        expected_kinds=expected_kinds, scope=scope,
     )
 
 
@@ -81,7 +83,7 @@ def _validate_collection(items):
                                 CollectionStatus.PERMISSION_DENIED, CollectionStatus.ERROR}
         code = "selected_area_unsupported" if item.status == CollectionStatus.UNSUPPORTED_COMMAND else "collection_incomplete"
         result.append(_issue(code, "unsupported" if not error else "collection",
-            item.error or (f"Unsupported collection command: {item.command}" if code == "selected_area_unsupported"
+            sanitize_raw_text(item.error) if item.error else (f"Unsupported collection command: {item.command}" if code == "selected_area_unsupported"
                            else f"Collection incomplete: {item.command}"),
             severity="error" if error else "warning", command=item.command,
             field="collection", domain=item.domain, package=item.package,
@@ -139,17 +141,25 @@ def _validate_references(derived):
         result.append(_issue(codes.get(item.status, "reference_missing"), "reference",
             item.message or f"Check Point reference {item.status}: {item.reference}", source=source,
             field=item.source_field, reference=item.reference,
-            command=getattr(source, "command", None)))
+            command=getattr(source, "command", None),
+            expected_kinds=tuple(kind.value for kind in item.expected_kinds), scope=item.scope))
     return result
 
 
-def _validate_policy_structure(derived):
+def _validate_policy_structure(config, derived):
     result = []
     for relation in derived.policy_structure.package_layers:
         if relation.issue:
             result.append(_issue("package_layer_missing",
                 "policy_structure", relation.issue.message or "Package references a missing access layer.",
                 source=relation.package, field=relation.source_field, reference=relation.issue.reference))
+    related_layer_ids = {id(item.layer) for item in derived.policy_structure.package_layers if item.layer}
+    for layer in config.access_layers:
+        if (layer.package_uid or layer.package) and id(layer) not in related_layer_ids:
+            result.append(_issue("policy_layer_owner_invalid", "policy_structure",
+                "Access layer package ownership does not resolve to a package.", source=layer,
+                field="package_uid" if layer.package_uid else "package",
+                reference=layer.package_uid or layer.package))
     for section in derived.policy_structure.sections:
         if section.layer is None:
             result.append(_issue("policy_section_orphan", "policy_structure",
@@ -204,6 +214,10 @@ def _validate_inline_layers(config, derived):
             result.append(_issue("inline_layer_parent_rule_mismatch", "policy_structure",
                 "Inline layer parent rule does not match its referencing rule.", source=rule,
                 field="parent_rule_uid", reference=child.parent_rule_uid))
+        if child.parent_rule_uid and child.parent_rule_uid not in {item.uid for item in derived.policy_structure.rules}:
+            result.append(_issue("inline_layer_parent_rule_invalid", "policy_structure",
+                "Inline layer parent rule UID does not exist in the policy structure.", source=child,
+                field="parent_rule_uid", reference=child.parent_rule_uid))
         if relation.parent_layer and child.parent_layer_uid and child.parent_layer_uid != relation.parent_layer.uid:
             result.append(_issue("inline_layer_parent_mismatch", "policy_structure",
                 "Inline layer parent does not match the referencing rule layer.", source=child,
@@ -213,7 +227,10 @@ def _validate_inline_layers(config, derived):
 
 def _validate_nat(config, derived):
     result = []
+    order_owners = {}
     for rule in config.nat_rules:
+        if rule.order is not None:
+            order_owners.setdefault((_domain(rule), rule.order), []).append(rule)
         if isinstance(rule, CPNATRule):
             if any((rule.translated_source, rule.translated_destination, rule.translated_service)) and not any(
                 (rule.original_source, rule.original_destination, rule.original_service)
@@ -234,6 +251,11 @@ def _validate_nat(config, derived):
         result.append(_issue("nat_structure_incomplete", "nat", item.message,
             domain=item.domain, object_uid=item.source_uid, object_name=item.source_name,
             field=item.source_field, reference=item.reference))
+    for (_, order), rules in order_owners.items():
+        if len(rules) > 1:
+            result.append(_issue("nat_order_malformed", "nat",
+                f"Multiple NAT rules share ordering value {order}.", source=rules[0],
+                field="order", reference=str(order)))
     return result
 
 
@@ -261,6 +283,12 @@ def _validate_vpn_topology(derived):
             result.append(_issue("vpn_community_ambiguous", "vpn_topology",
                 "VTI matches multiple VPN communities.", source=relation.vti,
                 field="matching_communities", reference=getattr(relation.vti, "name", None)))
+    for item in derived.vpn_views.issues:
+        if item.relationship_status:
+            result.append(_issue("vpn_member_missing" if item.relationship_status == "missing"
+                else f"vpn_reference_{item.relationship_status}", "vpn_topology", item.message,
+                object_type="CPVPNCommunity", object_uid=item.source_uid, object_name=item.source_name,
+                field=item.source_field, reference=item.reference))
     return result
 
 
@@ -297,12 +325,14 @@ def _validate_gaia(config, inventory):
 def _dhcp_issues(server):
     result = []
     for subnet in server.subnets:
+        if not subnet.subnet:
+            result.append(_issue("gaia_dhcp_malformed", "gaia", "DHCP subnet identity is missing.", source=subnet, field="subnet"))
         try:
             if subnet.subnet:
                 ip_network(f"{subnet.subnet}/{subnet.prefix}" if subnet.prefix is not None else subnet.subnet, strict=False)
             elif subnet.prefix is not None:
                 raise ValueError
-        except ValueError:
+        except (ValueError, TypeError):
             result.append(_issue("gaia_dhcp_malformed", "gaia", "DHCP subnet address or prefix is malformed.", source=subnet, field="subnet"))
         for group_name in ("included_pools", "excluded_pools"):
             for pool in getattr(subnet, group_name):
@@ -312,7 +342,7 @@ def _dhcp_issues(server):
                     try:
                         if ip_network(f"{pool.start}/32", strict=False).network_address > ip_network(f"{pool.end}/32", strict=False).network_address:
                             raise ValueError
-                    except ValueError:
+                    except (ValueError, TypeError):
                         result.append(_issue("gaia_dhcp_malformed", "gaia", "DHCP pool range is malformed or reversed.", source=pool, field=group_name))
     return result
 
@@ -328,7 +358,7 @@ def _validate_secret_safety(config, inventory):
                 safe_metadata = str(key).lower().replace("-", "_").endswith(("_configured", "_present")) and child in (True, "yes", "configured")
                 if is_sensitive_key(str(key)) and not safe_metadata and child not in (None, False, "", REDACTED_PLACEHOLDER, "[configured]"):
                     result.append(_issue("secret_material_detected", "secret_safety",
-                        "Secret-bearing source material survived sanitization.", field=child_path))
+                        "Secret-bearing source material survived sanitization.", severity="error", field=child_path))
                 else:
                     scan(child, child_path)
         elif isinstance(value, (list, tuple)):

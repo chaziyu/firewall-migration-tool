@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import importlib.util
 import subprocess
+import tempfile
+import tracemalloc
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fwmigrate.vendors.fortigate.benchmark import (
     BenchmarkTimings,
     git_identity,
-    max_peak_memory,
     median_timings,
     sha256_bytes,
 )
@@ -17,13 +20,27 @@ from fwmigrate.vendors.fortigate.benchmark import (
 class BenchmarkHelpersTest(unittest.TestCase):
     def test_timing_aggregation_uses_medians(self):
         samples = [
-            BenchmarkTimings(*(float(value) for value in values))
-            for values in ((1, 10, 4, 5, 6, 20, 46), (3, 2, 6, 7, 8, 10, 36), (100, 3, 8, 9, 10, 12, 142))
+            BenchmarkTimings(
+                parse_ms=parse,
+                extraction_ms=2,
+                derived_ms=3,
+                validation_ms=4,
+                web_report_ms=5,
+                excel_build_ms=build,
+                excel_save_ms=save,
+                excel_total_ms=build + save,
+                total_ms=parse + 14 + build + save,
+                sheet_timings={"Policies": sheet},
+            )
+            for parse, build, save, sheet in ((1, 10, 20, 4), (3, 2, 10, 6), (100, 100, 12, 8))
         ]
         result = median_timings(samples)
         self.assertEqual(3, result.parse_ms)
-        self.assertEqual(12, result.excel_export_ms)
-        self.assertEqual(46, result.total_ms)
+        self.assertEqual(10, result.excel_build_ms)
+        self.assertEqual(12, result.excel_save_ms)
+        self.assertEqual(result.excel_build_ms + result.excel_save_ms, result.excel_total_ms)
+        self.assertEqual(39, result.total_ms)
+        self.assertEqual(6, result.sheet_timings["Policies"])
 
     def test_sha256_uses_exact_input_bytes(self):
         self.assertEqual(
@@ -31,12 +48,71 @@ class BenchmarkHelpersTest(unittest.TestCase):
             sha256_bytes(b"config system global\r\nend\r\n"),
         )
 
-    def test_peak_memory_uses_maximum(self):
-        self.assertEqual(9, max_peak_memory([2, 9, 4]))
-
     def test_git_metadata_failure_is_nonfatal(self):
         with patch("fwmigrate.vendors.fortigate.benchmark.subprocess.run", side_effect=subprocess.CalledProcessError(1, "git")):
             self.assertEqual((None, None), git_identity(Path.cwd()))
+
+    def test_timing_runs_are_untraced_and_memory_run_is_separate(self):
+        root = Path(__file__).parents[3]
+        spec = importlib.util.spec_from_file_location(
+            "benchmark_fortigate_harness", root / "bin" / "benchmark_fortigate.py"
+        )
+        harness = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(harness)
+
+        config = SimpleNamespace(**{
+            name: [] for name in (
+                "interfaces", "zones", "addresses", "address_groups", "services",
+                "service_groups", "policies", "ip_pools", "vips", "static_routes",
+                "ipsec_phase1", "ipsec_phase2", "dhcp_servers", "sdwans",
+                "ssl_vpn_portals", "local_users", "administrators", "ips_sensors",
+                "external_resources",
+            )
+        })
+        tree = SimpleNamespace(configs=[object()])
+        extracted = SimpleNamespace(config=config, source_objects=[object()])
+        derived = object()
+        validation = SimpleNamespace(issues=[object()])
+        traced_states = []
+        timing_samples = iter((999, 10, 20, 30))
+
+        def fake_run_pipeline(source, source_name, *, measure):
+            traced_states.append((measure, tracemalloc.is_tracing()))
+            self.assertEqual(not measure, tracemalloc.is_tracing())
+            if not measure:
+                bytearray(128 * 1024)
+                timings = None
+            else:
+                value = next(timing_samples)
+                timings = BenchmarkTimings(
+                    parse_ms=value,
+                    extraction_ms=2,
+                    derived_ms=3,
+                    validation_ms=4,
+                    web_report_ms=5,
+                    excel_build_ms=6,
+                    excel_save_ms=7,
+                    excel_total_ms=13,
+                    total_ms=value + 27,
+                    sheet_timings={"Summary": float(value)},
+                )
+            return tree, extracted, derived, validation, timings
+
+        with tempfile.TemporaryDirectory() as directory:
+            input_path = Path(directory) / "input.conf"
+            input_path.write_bytes(b"synthetic config")
+            with (
+                patch.object(harness, "_run_pipeline", side_effect=fake_run_pipeline),
+                patch.object(harness, "export_excel"),
+                patch.object(harness, "git_identity", return_value=("branch", "commit")),
+            ):
+                result = harness.benchmark(input_path, Path(directory) / "out.xlsx", 3, 1, None)
+
+        self.assertEqual([(True, False)] * 4 + [(False, True)], traced_states)
+        self.assertEqual(20, result.timings.parse_ms)
+        self.assertEqual(20, result.timings.sheet_timings["Summary"])
+        self.assertGreater(result.peak_memory_bytes, 0)
+        self.assertFalse(tracemalloc.is_tracing())
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import unittest
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 
@@ -10,6 +11,7 @@ from fwmigrate.vendors.fortigate.benchmark import BenchmarkResult, BenchmarkTimi
 from fwmigrate.vendors.fortigate.config import ExtractionConfig
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export import export_excel
+from fwmigrate.vendors.fortigate.export import excel as excel_module
 from fwmigrate.vendors.fortigate.export.excel_schema import SHEET_ORDER
 from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
@@ -55,7 +57,10 @@ def _result(source: bytes) -> BenchmarkResult:
         input_sha256=hashlib.sha256(source).hexdigest(),
         runs=3,
         warmup_runs=1,
-        timings=BenchmarkTimings(1, 2, 3, 4, 5, 6, 21),
+        timings=BenchmarkTimings(
+            1, 2, 3, 4, 5, 2, 4, 6, 21,
+            {"Summary": 0.5, "Policies": 0.7},
+        ),
         peak_memory_bytes=2 * 1024 * 1024,
         top_level_sections=2,
         source_object_count=5,
@@ -108,8 +113,69 @@ class ExcelBenchmarkTest(unittest.TestCase):
         self.assertIn("Input SHA-256", values)
         self.assertIn(hashlib.sha256(raw).hexdigest(), values)
         self.assertIn(len(raw), values)
-        for expected in ("Parse", "Extraction", "Excel Export", "Peak Traced Memory", "Policies", "Source Objects"):
+        for expected in (
+            "Parse", "Extraction", "Excel Build", "Excel Save", "Excel Total", "Total",
+            "Peak Traced Memory", "Excel Sheet Performance", "Policies", "Summary",
+            "Source Objects", "tracemalloc disabled", "Separate full pipeline run",
+            "MiB, max; separate traced run",
+        ):
             self.assertIn(expected, values)
+
+    def test_excel_build_and_save_are_measured_separately_and_sheet_collection_is_opt_in(self):
+        extracted = extract_fortigate_config(
+            parse_fortigate_config(_SOURCE), config=ExtractionConfig()
+        )
+        derived = build_derived_views(extracted.config)
+        validation = validate_config(extracted.config, derived=derived)
+
+        class FakeWorkbook:
+            def save(self, output):
+                output.write(b"workbook")
+
+        def build(context, *, sheet_timings):
+            sheet_timings.update({"Summary": 1.0, "Policies": 2.0})
+            return FakeWorkbook()
+
+        with (
+            patch.object(excel_module, "_build_workbook", side_effect=build),
+            patch.object(excel_module, "perf_counter", side_effect=(0.0, 0.003, 0.010, 0.015)),
+        ):
+            build_ms, save_ms, total_ms, sheet_timings = excel_module._benchmark_excel_export(
+                extracted=extracted,
+                derived=derived,
+                validation=validation,
+                source_name="sanitized.conf",
+            )
+
+        self.assertAlmostEqual(3.0, build_ms)
+        self.assertAlmostEqual(5.0, save_ms)
+        self.assertAlmostEqual(8.0, total_ms)
+        self.assertEqual(build_ms + save_ms, total_ms)
+        self.assertEqual({"Summary": 1.0, "Policies": 2.0}, sheet_timings)
+
+    def test_normal_export_does_not_collect_sheet_timings(self):
+        with patch.object(
+            excel_module, "_build_workbook", wraps=excel_module._build_workbook
+        ) as build:
+            workbook = _workbook(None)
+        self.assertEqual(list(SHEET_ORDER), workbook.sheetnames)
+        self.assertNotIn("sheet_timings", build.call_args.kwargs)
+
+    def test_sheet_performance_covers_every_normal_workbook_sheet(self):
+        extracted = extract_fortigate_config(
+            parse_fortigate_config(_SOURCE), config=ExtractionConfig()
+        )
+        derived = build_derived_views(extracted.config)
+        validation = validate_config(extracted.config, derived=derived)
+        _, _, _, sheet_timings = excel_module._benchmark_excel_export(
+            extracted=extracted,
+            derived=derived,
+            validation=validation,
+            source_name="sanitized.conf",
+        )
+        self.assertEqual(set(SHEET_ORDER), set(sheet_timings))
+        self.assertIn("FortiGate Source Inventory", sheet_timings)
+        self.assertIn("Extraction Coverage", sheet_timings)
 
     def test_benchmark_sheet_contains_no_source_configuration(self):
         workbook = _workbook(_result(_SOURCE.encode()))
