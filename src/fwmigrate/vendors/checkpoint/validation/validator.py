@@ -22,12 +22,12 @@ def validate_checkpoint_config(config: CheckPointConfig, derived: CheckPointDeri
         command=item.command,
     ) for item in collection if item.status == CollectionStatus.UNSUPPORTED_COMMAND)
     issues.extend(CheckPointValidationIssue(
-        severity="error",
+        severity="error" if item.status in {"wrong_type", "conflicting_relationship"} else "warning",
         category="reference",
-        message=f"Unresolved Check Point reference: {item['reference']}",
-        command=item.get("command"),
-        reference=item.get("reference"),
-    ) for item in derived.unresolved_references)
+        message=f"Check Point reference {item.status}: {item.reference}",
+        command=getattr(item.source, "command", None),
+        reference=item.reference,
+    ) for item in derived.broken_references)
     return CheckPointValidationResult(tuple(issues))
 
 
