@@ -1,6 +1,7 @@
 """Deterministic Palo Alto set-command rendering."""
 
 import json
+import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,7 +82,9 @@ def _key(item):
 
 def _report(plan, commands, validation):
     items = list(_items(plan))
+    command_text = "\n".join(commands)
     return {"counts": {status.value: sum(item.status is status for item in items) for status in PANMigrationStatus},
+            "command_sha256": hashlib.sha256(command_text.encode("utf-8")).hexdigest(),
             "commands": len(commands), "issues": [issue.message for issue in (validation.issues if validation else plan.issues)],
             "items": [{"source_vdom": item.source_vdom, "source_kind": item.source_kind, "source_name": item.source_name,
                         "source_policy_id": item.source_policy_id, "target_vsys": item.target_vsys, "target_name": item.target_name,

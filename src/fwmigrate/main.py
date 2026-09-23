@@ -2,6 +2,7 @@ import os
 import sys
 import io
 import json
+import hashlib
 import click
 import yaml
 
@@ -83,7 +84,9 @@ def deploy(commands_file, host, port, username, password):
         commands = tuple(line.strip() for line in stream if line.strip())
     with open(artifact_path, encoding='utf-8') as stream:
         report = json.load(stream)
-    if not isinstance(report, dict) or report.get('commands') != len(commands):
+    digest = hashlib.sha256("\n".join(commands).encode("utf-8")).hexdigest()
+    if (not isinstance(report, dict) or report.get('commands') != len(commands)
+            or report.get('command_sha256') != digest):
         raise click.ClickException('The .set file does not match its rendered migration report')
     rendered = RenderedMigration(commands, report)
     result = PANSSHDeployer(PANDeploymentOptions(host, username, password, port=port)).deploy(rendered)
