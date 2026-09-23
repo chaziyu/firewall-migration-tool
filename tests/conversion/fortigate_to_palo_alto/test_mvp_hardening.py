@@ -120,7 +120,7 @@ def test_validation_blocks_manual_review_from_rendered_artifact(tmp_path):
 
 def test_renderer_rejects_validation_for_another_plan():
     first = PANMigrationPlan()
-    second = PANMigrationPlan()
+    second = PANMigrationPlan(addresses=(PlannedAddress(source_name="different"),))
     with pytest.raises(ValueError, match="does not match"):
         PANSetRenderer().render(first, validate_plan(second))
 
