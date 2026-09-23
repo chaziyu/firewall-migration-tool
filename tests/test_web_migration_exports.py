@@ -32,3 +32,17 @@ def test_terraform_endpoints_are_removed():
         "/api/download/package",
     ):
         assert client.post(path).status_code == 404
+
+
+def test_migration_workflow_uses_planning_terminology():
+    client = create_app({"TESTING": True}).test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Plan migration" in html
+    assert "Planned PAN-OS configuration" in html
+    assert "Live migration" in html
+    assert "Convert config" not in html
+    assert "Convert configuration" not in html
+    assert "Target configuration" not in html

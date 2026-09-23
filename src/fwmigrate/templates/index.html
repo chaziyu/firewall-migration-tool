@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#172321" />
     <meta
       name="description"
-      content="A focused workspace for firewall configuration conversion, source inventory extraction, and live migration."
+      content="Firewall source analysis, migration planning, Excel inventory, and controlled live migration."
     />
     <title>Firewall Migration Tool · Workspace</title>
     <link
@@ -94,7 +94,7 @@
           aria-controls="mode-download-form"
           data-tab="download"
         >
-          {{ icon('switch') }}<span>Convert config</span
+          {{ icon('switch') }}<span>Plan migration</span
           ><span class="nav-active-dot"></span>
         </button>
         <button
@@ -132,9 +132,9 @@
         <div class="page-heading reveal">
           <div>
             <p class="eyebrow">FIREWALL OPERATIONS</p>
-            <h1 id="page-title">Convert configuration</h1>
+            <h1 id="page-title">Plan migration</h1>
             <p id="page-description">
-              A clear path from your existing firewall to what comes next.
+              Review what can be migrated, what needs attention, and generate supported PAN-OS commands.
             </p>
           </div>
           <div class="page-heading-actions">
@@ -232,10 +232,10 @@
           <li>
             <span>01</span>
             <div>
-              <strong>Convert configuration</strong>
+              <strong>Plan migration</strong>
               <p>
-                Select a source and target, upload a backup, then download a
-                migration bundle with configuration artifacts and source inventory.
+                Select a source and target, upload a backup, review supported and
+                manual-review items, then generate the PAN-OS migration bundle.
               </p>
             </div>
           </li>

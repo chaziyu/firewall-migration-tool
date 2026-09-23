@@ -40,7 +40,10 @@ class CheckPointSourceReporter:
         derived = build_checkpoint_derived_views(extracted.config, extracted.collection)
         return CheckPointSourceResult(
             extracted.config, derived,
-            validate_checkpoint_config(extracted.config, derived, extracted.collection),
+            validate_checkpoint_config(
+                extracted.config, derived, collection=extracted.collection,
+                scope=extracted.scope, source_inventory=extracted.source_inventory,
+            ),
             extracted.collection, extracted.source_objects, extracted.source_metadata, extracted.scope,
         )
 
