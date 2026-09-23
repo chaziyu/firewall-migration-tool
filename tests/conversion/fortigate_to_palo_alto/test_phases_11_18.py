@@ -26,13 +26,13 @@ def test_validation_reports_item_warnings_without_mutating_plan():
 
 def test_renderer_emits_only_supported_commands_and_complete_report():
     plan = PANMigrationPlan(addresses=(
-        PlannedAddress(source_name="net", status=PANMigrationStatus.SUPPORTED, address_type="ip-netmask", value="10.0.0.0/24"),
+        PlannedAddress(source_name="net", target_vsys="vsys1", status=PANMigrationStatus.SUPPORTED, address_type="ip-netmask", value="10.0.0.0/24"),
         PlannedAddress(source_name="review", status=PANMigrationStatus.MANUAL_REVIEW),
     ))
 
     rendered = PANSetRenderer().render(plan)
 
-    assert rendered.commands == ("set address net ip-netmask 10.0.0.0/24",)
+    assert rendered.commands == ("set system setting target-vsys vsys1", "set address net ip-netmask 10.0.0.0/24")
     assert rendered.report["counts"]["SUPPORTED"] == 1
     assert rendered.report["counts"]["MANUAL_REVIEW"] == 1
 

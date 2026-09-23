@@ -34,7 +34,7 @@ def test_checkpoint_source_report_resolves_group_and_rule_references():
     result = extract_checkpoint_source(_source("r81_golden_matrix.json"))
 
     assert result.config.hosts
-    assert isinstance(result.derived.unresolved_references, tuple)
+    assert isinstance(result.derived.broken_references, tuple)
 
 
 def test_checkpoint_source_report_excel_has_traceability_and_redacts_secrets():

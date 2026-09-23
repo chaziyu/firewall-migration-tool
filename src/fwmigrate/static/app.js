@@ -2,7 +2,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
   // Application State
   // =========================================================================
-  let currentFile = null;
+let currentFile = null;
+let currentRenderedArtifactId = null;
   let currentPreviewId = null;
   let selectedSourceVendor = "fortigate";
   let selectedTargetVendor = "palo_alto";
@@ -361,15 +362,14 @@ document.addEventListener("DOMContentLoaded", () => {
   // Mode B Target Form & Diagnostics
   const panHost = document.getElementById("pan-host");
   const panPort = document.getElementById("pan-port");
-  const radioAuthTypes = document.querySelectorAll('input[name="auth-type"]');
-  const authApikeyGroup = document.getElementById("auth-apikey-group");
-  const authUserGroup = document.getElementById("auth-user-group");
-  const authPassGroup = document.getElementById("auth-pass-group");
-  const panApikey = document.getElementById("pan-apikey");
   const panUser = document.getElementById("pan-user");
   const panPass = document.getElementById("pan-pass");
-  const panInsecure = document.getElementById("pan-insecure");
-  const btnRunDiagnostics = document.getElementById("btn-run-diagnostics");
+
+  const btnPushCandidate = document.getElementById("btn-push-candidate");
+  const btnValidateCandidate = document.getElementById("btn-validate-candidate");
+  const btnCommitCandidate = document.getElementById("btn-commit-candidate");
+  let candidatePushed = false;
+  let candidateValidated = false;
 
   // Terminal
   const terminalStreamBody = document.getElementById("terminal-stream-body");
@@ -521,6 +521,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnExtractExcel)
       btnExtractExcel.disabled =
         !hasInput || !sourceReady || busyButtons.has(btnExtractExcel);
+    if (btnPushCandidate && !busyButtons.has(btnPushCandidate))
+      btnPushCandidate.disabled = !hasFile || !sourceReady;
     const exportHint = document.querySelector(
       "#mode-download-form .export-hint",
     );
@@ -578,6 +580,11 @@ document.addEventListener("DOMContentLoaded", () => {
     sourceReady = false;
     sourceFailed = false;
     currentPreviewId = null;
+    candidatePushed = false;
+    candidateValidated = false;
+    if (btnPushCandidate) btnPushCandidate.disabled = true;
+    if (btnValidateCandidate) btnValidateCandidate.disabled = true;
+    if (btnCommitCandidate) btnCommitCandidate.disabled = true;
     currentPolicies = [];
     currentReport = null;
     reportContainer?.classList.add("hidden");
@@ -718,6 +725,7 @@ document.addEventListener("DOMContentLoaded", () => {
     selectedSourceVendor = sourceVendorSelect.value || "fortigate";
     sourceVendorSelect.addEventListener("change", (e) => {
       selectedSourceVendor = e.target.value;
+      currentRenderedArtifactId = null;
       clearSource();
       const vendorName =
         sourceVendorSelect.options[sourceVendorSelect.selectedIndex]?.text ||
@@ -741,6 +749,7 @@ document.addEventListener("DOMContentLoaded", () => {
     selectedTargetVendor = targetVendorSelect.value || "palo_alto";
     targetVendorSelect.addEventListener("change", (e) => {
       selectedTargetVendor = e.target.value;
+      currentRenderedArtifactId = null;
       const targetName =
         targetVendorSelect.options[targetVendorSelect.selectedIndex]?.text ||
         selectedTargetVendor;
@@ -855,6 +864,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     clearSource();
     currentFile = file;
+    currentRenderedArtifactId = null;
 
     if (selectedFilename) selectedFilename.textContent = file.name;
     if (selectedFilesize) selectedFilesize.textContent = formatBytes(file.size);
@@ -1044,10 +1054,12 @@ document.addEventListener("DOMContentLoaded", () => {
           );
         }
 
-        const blob = await resp.blob();
+        const artifact = await resp.json();
+        currentRenderedArtifactId = artifact.artifact_id;
+        const blob = new Blob([JSON.stringify({ commands: artifact.commands, report: artifact.report }, null, 2)], { type: "application/json" });
         const saved = await downloadBlob(
           blob,
-          `migration_${exportSource}_to_${exportTarget}.zip`,
+          `migration_${exportSource}_to_${exportTarget}.json`,
         );
         if (saved) {
           showToast(
@@ -1056,7 +1068,7 @@ document.addEventListener("DOMContentLoaded", () => {
             `Your migration bundle for ${VENDOR_CONFIGS[exportTarget]?.name || exportTarget} is ready.`,
           );
           logToTerminal(
-            `[EXPORT] Generated migration_${exportSource}_to_${exportTarget}.zip`,
+            `[EXPORT] Generated migration_${exportSource}_to_${exportTarget}.json`,
             "term-success",
           );
         }
@@ -1140,20 +1152,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
   // 9. Mode B: Target Authentication Switcher & Diagnostics
   // =========================================================================
-  radioAuthTypes.forEach((radio) => {
-    radio.addEventListener("change", (e) => {
-      if (e.target.value === "apikey") {
-        if (authApikeyGroup) authApikeyGroup.classList.remove("hidden");
-        if (authUserGroup) authUserGroup.classList.add("hidden");
-        if (authPassGroup) authPassGroup.classList.add("hidden");
-      } else {
-        if (authApikeyGroup) authApikeyGroup.classList.add("hidden");
-        if (authUserGroup) authUserGroup.classList.remove("hidden");
-        if (authPassGroup) authPassGroup.classList.remove("hidden");
-      }
-    });
-  });
-
   document.addEventListener("click", (event) => {
     const button = event.target.closest(".btn-toggle-password");
     if (!button) return;
@@ -1168,7 +1166,7 @@ document.addEventListener("DOMContentLoaded", () => {
     );
     button.setAttribute("aria-pressed", String(visible));
   });
-  [panHost, panPort, panApikey, panUser, panPass, panInsecure].forEach(
+  [panHost, panPort, panUser, panPass].forEach(
     (element) => {
       element?.addEventListener("input", () => {
         element.classList.remove("input-invalid");
@@ -1181,116 +1179,86 @@ document.addEventListener("DOMContentLoaded", () => {
     },
   );
 
-  if (btnRunDiagnostics) {
-    btnRunDiagnostics.addEventListener("click", async () => {
-      const host = panHost ? panHost.value.trim() : "";
-      const port = panPort ? parseInt(panPort.value.trim() || "443") : 443;
-      const authType =
-        document.querySelector('input[name="auth-type"]:checked')?.value ||
-        "apikey";
-      const apiKey = panApikey ? panApikey.value.trim() : "";
-      const username = panUser ? panUser.value.trim() : "";
-      const password = panPass ? panPass.value.trim() : "";
-      const verifySsl = panInsecure ? !panInsecure.checked : true;
+  function sshPayload() {
+    return {
+      host: panHost?.value.trim() || "",
+      port: Number(panPort?.value || 22),
+      username: panUser?.value.trim() || "",
+      password: panPass?.value || "",
+    };
+  }
 
-      logToTerminal(
-        `[DIAGNOSTICS] Probing environment and target diagnostics (${host}:${port})...`,
-        "term-system",
-      );
-      btnRunDiagnostics.disabled = true;
-      setDiagLoadingAll();
-
-      try {
-        const payload = {
-          host,
-          port,
-          verify_ssl: verifySsl,
-        };
-
-        if (authType === "apikey") {
-          payload.api_key = apiKey;
-        } else {
-          payload.username = username;
-          payload.password = password;
-        }
-
-        const resp = await fetch("/api/diagnostics", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        const data = await readJson(resp, "Diagnostics failed");
-        if (!Array.isArray(data.results))
-          throw new Error("The server returned no diagnostic results.");
-        data.results.forEach((res) => {
-          updateDiagCard(res.name, res.status, res.message);
-          logToTerminal(
-            `[DIAGNOSTICS] ${res.name.toUpperCase()}: ${res.status.toUpperCase()} - ${res.message}`,
-            res.status === "ok"
-              ? "term-success"
-              : res.status === "error"
-                ? "term-error"
-                : "term-system",
-          );
-        });
-        showToast(
-          "info",
-          "Diagnostics Complete",
-          "Environment and line-of-sight checks finished.",
-        );
-      } catch (err) {
-        document.querySelectorAll(".diag-card.running").forEach((card) => {
-          card.className = "diag-card failed";
-          const message = card.querySelector(".diag-msg");
-          if (message) message.textContent = "Unable to complete check";
-        });
-        showError(`Diagnostics error: ${err.message}`);
-        logToTerminal(
-          `[ERROR] Diagnostics failed: ${err.message}`,
-          "term-error",
-        );
-      } finally {
-        btnRunDiagnostics.disabled = false;
-        document.querySelectorAll(".diag-card.running").forEach((card) => {
-          card.className = "diag-card pending";
-          const message = card.querySelector(".diag-msg");
-          if (message) message.textContent = "No result returned";
-        });
-      }
+  async function postSSH(path, payload) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
+    return readJson(response, "SSH operation failed");
   }
 
-  function setDiagLoadingAll() {
-    ["diag-cli", "diag-ssh", "diag-tcp", "diag-panos"].forEach((id) => {
-      const card = document.getElementById(id);
-      if (card) {
-        card.className = "diag-card running";
-        const msg = document.getElementById(`${id}-msg`);
-        if (msg) msg.textContent = "Probing...";
+  btnPushCandidate?.addEventListener("click", async () => {
+    if (!currentFile || !sourceReady) return;
+    btnPushCandidate.disabled = true;
+    try {
+      if (!currentRenderedArtifactId) {
+        const form = new FormData();
+        form.append("file", currentFile);
+        form.append("source_vendor", selectedSourceVendor);
+        form.append("target_vendor", selectedTargetVendor);
+        const renderedResponse = await fetch("/api/migrate", { method: "POST", body: form });
+        const artifact = await readJson(renderedResponse, "Migration rendering failed");
+        currentRenderedArtifactId = artifact.artifact_id;
       }
-    });
-  }
-
-  function updateDiagCard(name, status, msg) {
-    let cardId = "diag-cli";
-    if (name === "cli") cardId = "diag-cli";
-    else if (name === "ssh") cardId = "diag-ssh";
-    else if (name === "palo_alto_line_of_sight") cardId = "diag-tcp";
-    else if (name === "palo_alto_auth") cardId = "diag-panos";
-
-    const card = document.getElementById(cardId);
-    const msgEl = document.getElementById(`${cardId}-msg`);
-
-    if (card) {
-      const cardClass =
-        status === "ok" ? "success" : status === "error" ? "failed" : "pending";
-      card.className = `diag-card ${cardClass}`;
+      const response = await fetch("/api/deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...sshPayload(), artifact_id: currentRenderedArtifactId }),
+      });
+      const data = await readJson(response, "Candidate push failed");
+      candidatePushed = true;
+      btnValidateCandidate.disabled = false;
+      logToTerminal(`[DEPLOY] Pushed ${data.result.commands_succeeded} candidate commands.`, "term-success");
+    } catch (err) {
+      candidatePushed = false;
+      btnValidateCandidate.disabled = true;
+      logToTerminal(`[ERROR] Candidate push failed: ${err.message}`, "term-error");
+      showError(err.message);
+    } finally {
+      btnPushCandidate.disabled = !sourceReady;
     }
-    if (msgEl) {
-      msgEl.textContent = msg;
+  });
+
+  btnValidateCandidate?.addEventListener("click", async () => {
+    if (!candidatePushed) return;
+    btnValidateCandidate.disabled = true;
+    try {
+      const data = await postSSH("/api/validate-candidate", sshPayload());
+      candidateValidated = data.result.status === "SUCCESS";
+      btnCommitCandidate.disabled = !candidateValidated;
+      logToTerminal(`[VALIDATE] Candidate ${data.result.status.toLowerCase()}: ${data.result.response}`, candidateValidated ? "term-success" : "term-error");
+    } catch (err) {
+      candidateValidated = false;
+      btnCommitCandidate.disabled = true;
+      logToTerminal(`[ERROR] Candidate validation failed: ${err.message}`, "term-error");
+      showError(err.message);
+    } finally {
+      btnValidateCandidate.disabled = false;
     }
-  }
+  });
+
+  btnCommitCandidate?.addEventListener("click", async () => {
+    if (!candidateValidated || !confirm("Commit the validated candidate configuration to the firewall?")) return;
+    btnCommitCandidate.disabled = true;
+    try {
+      const data = await postSSH("/api/commit", sshPayload());
+      logToTerminal(`[COMMIT] Commit submitted (job ${data.result.job_id || "unknown"}).`, "term-success");
+    } catch (err) {
+      btnCommitCandidate.disabled = false;
+      logToTerminal(`[ERROR] Commit failed: ${err.message}`, "term-error");
+      showError(err.message);
+    }
+  });
 
   // =========================================================================
   // 10. Terminal Helpers (Clear, Copy, Log)
@@ -1526,7 +1494,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       clearSource();
       clearInputErrors();
-      [panHost, panApikey, panUser, panPass].forEach((input) => {
+      [panHost, panUser, panPass].forEach((input) => {
         if (input) input.value = "";
       });
       if (terminalStreamBody) terminalStreamBody.replaceChildren();

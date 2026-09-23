@@ -42,3 +42,4 @@ class PANDeploymentOptions:
     password: str = field(repr=False)
     validate: bool = True
     commit: bool = False
+    port: int = 22

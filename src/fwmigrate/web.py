@@ -8,6 +8,7 @@ import logging
 import threading
 import time
 import json
+from dataclasses import asdict
 from copy import deepcopy
 from dataclasses import dataclass
 from time import perf_counter
@@ -19,6 +20,7 @@ from fwmigrate.conversion import migration_planners
 from fwmigrate.conversion.fortigate_to_palo_alto import PANMigrationOptions
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
+from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
 
 register_builtin_source_reporters()
 register_builtin_migration_planners()
@@ -182,6 +184,8 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
+    rendered_artifacts = {}
+
     @app.route('/')
     def index():
         return render_template('index.html')
@@ -262,14 +266,64 @@ def create_app(test_config=None):
                 analysis.extracted.config, analysis.derived, options=PANMigrationOptions(**mapping)
             )
             validation = validate_plan(plan)
-            rendered = PANSetRenderer().render(plan)
+            rendered = PANSetRenderer().render(plan, validation)
+            artifact_id = uuid.uuid4().hex
+            rendered_artifacts[artifact_id] = rendered
             return jsonify({
                 'success': True,
+                'artifact_id': artifact_id,
                 'commands': list(rendered.commands),
                 'report': rendered.report,
                 'validation': {'issues': [issue.message for issue in validation.issues]},
             })
         except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
+    def _deployment_options(payload):
+        try:
+            host, username, password = payload['host'], payload['username'], payload['password']
+            if not all(isinstance(value, str) for value in (host, username, password)):
+                raise ValueError
+            options = PANDeploymentOptions(
+                host=host.strip(), username=username.strip(),
+                password=password, port=int(payload.get('port', 22)),
+                validate=False,
+            )
+        except (KeyError, TypeError, ValueError):
+            raise ValueError('Host, SSH username, and password are required; port must be numeric')
+        if not options.host or not options.username or not options.password or not 1 <= options.port <= 65535:
+            raise ValueError('Host, SSH username, password, and a valid port are required')
+        return options
+
+    @app.route('/api/deploy', methods=['POST'])
+    def deploy_candidate():
+        try:
+            payload = request.get_json(silent=True) or {}
+            options = _deployment_options(payload)
+            artifact_id = payload.get('artifact_id')
+            rendered = rendered_artifacts.get(artifact_id)
+            if rendered is None:
+                raise ValueError('A current validated rendered migration is required')
+            result = PANSSHDeployer(options).deploy(rendered)
+            return jsonify({'success': result.failure_message is None and result.failed_command_index is None,
+                            'result': asdict(result)}), (200 if result.failure_message is None and result.failed_command_index is None else 502)
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
+    @app.route('/api/validate-candidate', methods=['POST'])
+    def validate_candidate():
+        try:
+            result = PANSSHDeployer(_deployment_options(request.get_json(silent=True) or {})).validate()
+            return jsonify({'success': result.status == 'SUCCESS', 'result': asdict(result)}), (200 if result.status == 'SUCCESS' else 502)
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
+    @app.route('/api/commit', methods=['POST'])
+    def commit_candidate():
+        try:
+            result = PANSSHDeployer(_deployment_options(request.get_json(silent=True) or {})).commit()
+            return jsonify({'success': result.status == 'SUCCESS', 'result': asdict(result)}), (200 if result.status == 'SUCCESS' else 502)
+        except ValueError as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
     @app.route('/api/extract/excel', methods=['POST'])
