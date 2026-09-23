@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from typing import Any
 
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
@@ -26,6 +27,10 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
         "ACP Rules": [(x.name, x.policy, x.action, x.source, x.destination, x.services, x.source_plane) for x in config.acp_rules],
         "NAT Rules": [(x.name, x.policy, x.source_interface, x.destination_interface, x.original, x.translated, x.source_plane) for x in config.nat_policies],
     }
+    native_collections = ("time_ranges", "intrusion_policies", "intrusion_rule_overrides", "file_policies",
+        "decryption_policies", "dns_policies", "fmc_user_roles", "fmc_users", "dhcp_servers", "realms",
+        "realm_user_groups", "realm_users", "local_realm_users", "s2s_vpn_topologies", "s2s_vpn_endpoints",
+        "ike_policies", "ipsec_proposals", "ra_vpn_policies", "ra_vpn_connection_profiles", "native_resources")
     for name in SHEET_ORDER:
         sheet = workbook.create_sheet(name)
         if name == "Summary":
@@ -42,6 +47,12 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
             sheet.append(SHEET_HEADERS[name])
             for item in result.validation.issues:
                 sheet.append((item.severity, item.category, item.message, item.source_plane, item.source_object))
+        elif name == "Native Sources":
+            sheet.append(SHEET_HEADERS[name])
+            for collection in native_collections:
+                for item in getattr(config, collection):
+                    sheet.append((collection, item.name, item.source_id, item.source_context,
+                        json.dumps(item.source_attributes, default=str), json.dumps(item.raw, default=str)))
         else:
             sheet.append(SHEET_HEADERS[name])
             for row in rows[name]:

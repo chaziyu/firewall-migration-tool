@@ -60,7 +60,17 @@ def _inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
         ("managed_objects", "objects"), ("object_groups", "object-groups"),
         ("services", "services"), ("security_zones", "security-zones"),
         ("source_interfaces", "interfaces"), ("routes", "routes"),
-        ("acp_rules", "acp"), ("nat_policies", "nat"),
+        ("acp_policies", "acp-policies"), ("acp_rules", "acp"), ("nat_policies", "nat"),
+        ("time_ranges", "time-ranges"), ("intrusion_policies", "intrusion-policies"),
+        ("intrusion_rule_overrides", "intrusion-rule-overrides"), ("file_policies", "file-policies"),
+        ("decryption_policies", "decryption-policies"), ("dns_policies", "dns-policies"),
+        ("fmc_user_roles", "fmc-user-roles"), ("fmc_users", "fmc-users"),
+        ("dhcp_servers", "dhcp-servers"), ("realms", "realms"),
+        ("realm_user_groups", "realm-user-groups"), ("realm_users", "realm-users"),
+        ("local_realm_users", "local-realm-users"), ("s2s_vpn_topologies", "s2s-vpn-topologies"),
+        ("s2s_vpn_endpoints", "s2s-vpn-endpoints"), ("ike_policies", "ike-policies"),
+        ("ipsec_proposals", "ipsec-proposals"), ("ra_vpn_policies", "ra-vpn-policies"),
+        ("ra_vpn_connection_profiles", "ra-vpn-connection-profiles"), ("native_resources", "native-resources"),
     )
     items = []
     for attribute, path in collections:
@@ -101,6 +111,11 @@ def extract_cisco_ftd_source(text: str, zone_mapping: dict[str, str] | None = No
                                          object_count_parsed=len(config.interfaces) + len(config.static_routes),
                                          object_count_extracted=0)]
     config = _sanitize(deepcopy(config))
+    collection = config.source_metadata.get("collection", {})
+    if collection.get("status") == "PARTIAL":
+        sections.append(SourceSectionResult(path="fmc/collection", status=ExtractionStatus.PARTIAL,
+            source_context=config.source_metadata.get("domain_name"), object_count_source=len(collection.get("parts", [])),
+            object_count_parsed=len(collection.get("parts", [])), object_count_extracted=sum(bool(p.get("complete")) for p in collection.get("parts", []))))
     derived = build_ftd_derived_views(config)
     validation = validate_ftd_config(config, derived)
     return FTDSourceResult(config, sections, _inventory(config), config.unsupported_evidence, derived, validation)
