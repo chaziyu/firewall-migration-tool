@@ -1,0 +1,11 @@
+vdoms:
+  root:
+    vsys: vsys1
+    virtual_router: default
+interfaces:
+  lan:
+    target_interface: ethernet1/1
+    target_zone: trust
+  wan:
+    target_interface: ethernet1/2
+    target_zone: untrust

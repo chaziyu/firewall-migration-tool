@@ -13,5 +13,5 @@ def test_management_objects_rules_and_domains_are_extracted():
         ("domain-a", "SharedName"),
         ("domain-b", "SharedName"),
     }
-    assert len(result.derived.by_name[("domain-a", "SharedName")]) == 1
-    assert len(result.derived.by_name[("domain-b", "SharedName")]) == 1
+    assert len(result.derived.references.by_name[("domain-a", "SharedName")]) == 1
+    assert len(result.derived.references.by_name[("domain-b", "SharedName")]) == 1

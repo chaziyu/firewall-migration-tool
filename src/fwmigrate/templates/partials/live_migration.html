@@ -33,12 +33,12 @@
       </div>
       <div class="form-group col-4">
         <label for="pan-port"
-          >HTTPS port <span class="req" aria-hidden="true">*</span></label
+          >SSH port <span class="req" aria-hidden="true">*</span></label
         >
         <input
           type="number"
           id="pan-port"
-          value="443"
+          value="22"
           min="1"
           max="65535"
           inputmode="numeric"
@@ -46,50 +46,7 @@
         />
       </div>
 
-      <div
-        class="form-group col-12"
-        role="group"
-        aria-labelledby="target-auth-label"
-      >
-        <span id="target-auth-label" class="field-label">Authentication</span>
-        <div class="radio-toggle">
-          <label class="radio-label">
-            <input type="radio" name="auth-type" value="apikey" checked />
-            <span>API key</span>
-          </label>
-          <label class="radio-label">
-            <input type="radio" name="auth-type" value="credentials" />
-            <span>Username &amp; password</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="form-group col-12" id="auth-apikey-group">
-        <label for="pan-apikey"
-          >PAN-OS API key <span class="req" aria-hidden="true">*</span></label
-        >
-        <div class="password-wrapper">
-          <input
-            type="password"
-            id="pan-apikey"
-            placeholder="Enter your target API key"
-            autocomplete="off"
-            spellcheck="false"
-          />
-          <button
-            type="button"
-            class="btn-toggle-password"
-            data-target="pan-apikey"
-            aria-controls="pan-apikey"
-            aria-label="Show API key"
-            aria-pressed="false"
-          >
-            Show
-          </button>
-        </div>
-      </div>
-
-      <div class="form-group col-6 hidden" id="auth-user-group">
+      <div class="form-group col-6">
         <label for="pan-user"
           >Admin username <span class="req" aria-hidden="true">*</span></label
         >
@@ -102,7 +59,7 @@
           spellcheck="false"
         />
       </div>
-      <div class="form-group col-6 hidden" id="auth-pass-group">
+      <div class="form-group col-6">
         <label for="pan-pass"
           >Admin password <span class="req" aria-hidden="true">*</span></label
         >
@@ -126,58 +83,8 @@
         </div>
       </div>
 
-      <div class="form-group col-12">
-        <label class="checkbox-label">
-          <input type="checkbox" id="pan-insecure" checked />
-          <span
-            >Allow self-signed certificates (disables TLS verification)</span
-          >
-        </label>
-      </div>
     </div>
 
-    <div class="diagnostics-section" aria-labelledby="diagnostics-title">
-      <div class="section-title">
-        <h3 id="diagnostics-title">Connection checks</h3>
-        <button
-          type="button"
-          id="btn-run-diagnostics"
-          class="btn btn-secondary btn-sm"
-        >
-          <span>Run diagnostics</span>
-        </button>
-      </div>
-      <div class="diag-grid" aria-live="polite" aria-atomic="false">
-        <div class="diag-card pending" id="diag-cli">
-          <div class="diag-header">
-            <span class="diag-dot" aria-hidden="true"></span
-            ><strong>CLI renderer</strong>
-          </div>
-          <span class="diag-msg" id="diag-cli-msg">Not checked</span>
-        </div>
-        <div class="diag-card pending" id="diag-ssh">
-          <div class="diag-header">
-            <span class="diag-dot" aria-hidden="true"></span
-            ><strong>SSH connectivity</strong>
-          </div>
-          <span class="diag-msg" id="diag-ssh-msg">Not checked</span>
-        </div>
-        <div class="diag-card pending" id="diag-tcp">
-          <div class="diag-header">
-            <span class="diag-dot" aria-hidden="true"></span
-            ><strong>Target connectivity</strong>
-          </div>
-          <span class="diag-msg" id="diag-tcp-msg">Not checked</span>
-        </div>
-        <div class="diag-card pending" id="diag-panos">
-          <div class="diag-header">
-            <span class="diag-dot" aria-hidden="true"></span
-            ><strong>API authentication</strong>
-          </div>
-          <span class="diag-msg" id="diag-panos-msg">Not checked</span>
-        </div>
-      </div>
-    </div>
   </section>
 
   <section class="card" aria-labelledby="deployment-title">
@@ -195,10 +102,10 @@
         <div class="step-badge" aria-hidden="true">1</div>
         <div class="step-info">
           <strong>Validate target</strong>
-          <span role="status">CLI/SSH validation will be available in the MVP.</span>
+          <span role="status">Send generated commands to the candidate configuration.</span>
         </div>
-        <button type="button" class="btn btn-secondary" disabled title="CLI/SSH workflow coming soon">
-          <span>Validate target</span>
+        <button type="button" class="btn btn-secondary" id="btn-push-candidate" disabled>
+          <span>Push Candidate</span>
         </button>
       </div>
 
@@ -206,10 +113,10 @@
         <div class="step-badge" aria-hidden="true">2</div>
         <div class="step-info">
           <strong>Deploy configuration</strong>
-          <span role="status">SSH deployment will be available after validation.</span>
+          <span role="status">Validate the candidate configuration on the target.</span>
         </div>
-        <button type="button" class="btn btn-success" disabled title="CLI/SSH workflow coming soon">
-          <span>Deploy configuration</span>
+        <button type="button" class="btn btn-success" id="btn-validate-candidate" disabled>
+          <span>Validate Candidate</span>
         </button>
       </div>
 
@@ -217,10 +124,10 @@
         <div class="step-badge" aria-hidden="true">3</div>
         <div class="step-info">
           <strong>Commit configuration</strong>
-          <span role="status">Commit confirmation will be available after deployment.</span>
+          <span role="status">Submit an explicit commit after successful validation.</span>
         </div>
-        <button type="button" class="btn btn-outline" disabled title="CLI/SSH workflow coming soon">
-          <span>Commit configuration</span>
+        <button type="button" class="btn btn-outline" id="btn-commit-candidate" disabled>
+          <span>Commit</span>
         </button>
       </div>
     </div>
@@ -267,7 +174,7 @@
         tabindex="0"
       >
         <div class="term-line term-system">
-          [SYSTEM] Ready. CLI/SSH Validate → Deploy → Commit workflow is coming soon.
+          [SYSTEM] Candidate deployment is ready. Push → Validate → Commit.
         </div>
       </div>
     </div>

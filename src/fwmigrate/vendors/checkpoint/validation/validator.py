@@ -28,6 +28,13 @@ def validate_checkpoint_config(config: CheckPointConfig, derived: CheckPointDeri
         command=getattr(item.source, "command", None),
         reference=item.reference,
     ) for item in derived.broken_references)
+    issues.extend(CheckPointValidationIssue(
+        severity="warning",
+        category="nat-transform",
+        message=item.message,
+        command="show-nat-rulebase",
+        reference=item.reference or item.source_name,
+    ) for item in derived.nat.issues)
     return CheckPointValidationResult(tuple(issues))
 
 

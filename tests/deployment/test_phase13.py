@@ -1,5 +1,6 @@
 from fwmigrate.deployment.models import PANDeploymentOptions
 from fwmigrate.deployment.palo_alto_ssh import PANSSHDeployer
+from fwmigrate.conversion.fortigate_to_palo_alto.renderer import RenderedMigration
 
 
 class _Connection:
@@ -22,7 +23,7 @@ def test_push_candidate_stops_after_rejected_command():
     deployer = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret"))
     deployer.connection = _Connection(["ok", "ERROR: invalid value", "ok"])
 
-    result = deployer.push_candidate(["set one", "set two", "set three"])
+    result = deployer.push_candidate(RenderedMigration(("set one", "set two", "set three"), {}))
 
     assert result.failed_command_index == 1
     assert result.commands_attempted == 2
@@ -35,7 +36,7 @@ def test_command_exception_is_contextual_and_secret_safe():
     deployer = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret"))
     deployer.connection = _Connection([RuntimeError("device rejected secret")])
 
-    result = deployer.push_candidate(["set password secret"])
+    result = deployer.push_candidate(RenderedMigration(("set password secret",), {}))
 
     assert result.failed_command_index == 0
     assert "command 0 failed" in result.failure_message

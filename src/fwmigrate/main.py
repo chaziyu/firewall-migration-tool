@@ -1,6 +1,7 @@
 import os
 import sys
 import io
+import json
 import click
 import yaml
 
@@ -15,8 +16,9 @@ from fwmigrate.source_reporting import source_reporters
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
 from fwmigrate.conversion import migration_planners
 from fwmigrate.conversion.fortigate_to_palo_alto import PANMigrationOptions
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer, RenderedMigration
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
+from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
 
 register_builtin_source_reporters()
 register_builtin_migration_planners()
@@ -63,9 +65,43 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
         analysis.extracted.config, analysis.derived, options=PANMigrationOptions(**mapping)
     )
     validation = validate_plan(plan)
-    rendered = PANSetRenderer().render_files(plan, output)
+    rendered = PANSetRenderer().render(plan, validation)
+    PANSetRenderer().write_files(rendered, output)
     click.echo(f"Generated {len(rendered.commands)} commands in {output}")
     click.echo(f"Validation findings: {len(validation.issues)}")
+
+@cli.command()
+@click.argument('commands_file', type=click.Path(exists=True, dir_okay=False))
+@click.option('--host', required=True)
+@click.option('--port', default=22, show_default=True, type=click.IntRange(1, 65535))
+@click.option('--username', required=True)
+@click.option('--password', prompt=True, hide_input=True)
+def deploy(commands_file, host, port, username, password):
+    """Push a .set file as a candidate and validate it. Does not commit."""
+    artifact_path = os.path.join(os.path.dirname(commands_file), 'conversion_report.json')
+    with open(commands_file, encoding='utf-8') as stream:
+        commands = tuple(line.strip() for line in stream if line.strip())
+    with open(artifact_path, encoding='utf-8') as stream:
+        report = json.load(stream)
+    if not isinstance(report, dict) or report.get('commands') != len(commands):
+        raise click.ClickException('The .set file does not match its rendered migration report')
+    rendered = RenderedMigration(commands, report)
+    result = PANSSHDeployer(PANDeploymentOptions(host, username, password, port=port)).deploy(rendered)
+    if result.failure_message or result.validation.status == 'FAILED':
+        raise click.ClickException(result.failure_message or result.validation.response or 'Candidate validation failed')
+    click.echo(f"Pushed {result.commands_succeeded} candidate commands; validation {result.validation.status}")
+
+@cli.command()
+@click.option('--host', required=True)
+@click.option('--port', default=22, show_default=True, type=click.IntRange(1, 65535))
+@click.option('--username', required=True)
+@click.option('--password', prompt=True, hide_input=True)
+def commit(host, port, username, password):
+    """Explicitly commit the current Palo Alto candidate configuration."""
+    result = PANSSHDeployer(PANDeploymentOptions(host, username, password, port=port)).commit()
+    if result.status != 'SUCCESS':
+        raise click.ClickException(result.response or 'Commit failed')
+    click.echo(f"Commit submitted (job {result.job_id or 'unknown'})")
 
 @cli.command()
 @click.option('--port', default=5000, help='Port to run the web server on')

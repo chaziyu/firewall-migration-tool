@@ -28,11 +28,12 @@ def build_checkpoint_preview(result: CheckPointSourceResult) -> dict[str, Any]:
             "vpn_topology": _jsonable(result.derived.vpn_topology),
             "identity": _jsonable(result.derived.identity),
             "broken_references": _jsonable(result.derived.broken_references),
-            "groups": result.derived.group_memberships,
-            "package_layers": result.derived.package_layers,
-            "inline_layers": result.derived.inline_layers,
-            "unresolved_references": list(result.derived.unresolved_references),
+            "groups": _jsonable(result.derived.references.memberships),
+            "package_layers": _jsonable(result.derived.policy_structure.package_layer_map),
+            "inline_layers": _jsonable(result.derived.policy_structure.inline_layer_map),
+            "unresolved_references": _jsonable(result.derived.broken_references),
         },
+        "transforms": {"nat": _jsonable(result.derived.nat)},
         "validation": [issue.__dict__ for issue in result.validation.issues],
     }
 

@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import cli_paths
 from .models import PANMigrationPlan, PANMigrationStatus
 from .validation import MigrationValidationResult, validate_plan
 
@@ -22,97 +23,56 @@ def _v(value):
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
 
 
-def _words(values):
-    return " ".join(_v(value) for value in values)
-
-
-def _prefix(item, path):
-    return ["set", "vsys", _v(item.target_vsys), *path] if item.target_vsys else ["set", *path]
-
-
 class PANSetRenderer:
     def render(self, plan: PANMigrationPlan, validation: MigrationValidationResult | None = None, **options) -> RenderedMigration:
         del options
-        if validation is None and any(item.target_vsys for item in _items(plan)):
-            validation = validate_plan(plan)
-        allowed = validation.renderable_item_keys if validation else None
+        actual_validation = validate_plan(plan)
+        if validation is not None and validation != actual_validation:
+            raise ValueError("validation result does not match this migration plan")
+        validation = actual_validation
+        allowed = validation.renderable_item_keys
         commands = []
-        for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "zones", "static_routes", "nat_rules", "security_rules"):
-            for item in getattr(plan, name):
-                if item.status is not PANMigrationStatus.SUPPORTED or (allowed is not None and _key(item) not in allowed):
-                    continue
-                commands.extend(getattr(self, f"_render_{name}")(item))
+        scopes = (("addresses", cli_paths.address), ("address_groups", cli_paths.address_group),
+                  ("services", cli_paths.service), ("service_groups", cli_paths.service_group),
+                  ("schedules", cli_paths.schedule), ("zones", cli_paths.zone),
+                  ("nat_rules", cli_paths.nat_rule), ("security_rules", cli_paths.security_rule))
+        vsys_items = [(item, path(item)) for name, path in scopes for item in getattr(plan, name)
+                      if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed]
+        vsys_commands = []
+        for vsys in dict.fromkeys(item.target_vsys for item, _ in vsys_items if item.target_vsys is not None):
+            vsys_commands.extend(self._render_vsys_scope(vsys, [(item, paths) for item, paths in vsys_items if item.target_vsys == vsys]))
+        routes = [(item, cli_paths.static_route(item)) for item in plan.static_routes
+                  if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed]
+        commands.extend(vsys_commands)
+        commands.extend(self._render_device_scope(routes, reset_vsys=bool(vsys_commands)))
         return RenderedMigration(tuple(commands), _report(plan, commands, validation))
+
+    def _render_vsys_scope(self, vsys, items):
+        return [f"set system setting target-vsys {_v(vsys)}", *(
+            _serialize(path[1:]) for _, paths in items for path in paths
+        )]
+
+    def _render_device_scope(self, items, *, reset_vsys):
+        if not items:
+            return []
+        commands = ["set system target-vsys none"] if reset_vsys else []
+        commands.extend(_serialize(path[1:]) for _, paths in items for path in paths)
+        return commands
 
     def render_files(self, plan: PANMigrationPlan, output: str | Path) -> RenderedMigration:
         validation = validate_plan(plan)
         rendered = self.render(plan, validation)
+        self.write_files(rendered, output)
+        return rendered
+
+    def write_files(self, rendered: RenderedMigration, output: str | Path) -> None:
         output = Path(output)
         output.mkdir(parents=True, exist_ok=True)
         (output / "palo_alto_config.set").write_text("\n".join(rendered.commands) + "\n", encoding="utf-8")
         (output / "conversion_report.json").write_text(json.dumps(rendered.report, indent=2), encoding="utf-8")
-        return rendered
 
-    def _render_addresses(self, item):
-        return [" ".join((*_prefix(item, ["address", _v(item.target_name or item.source_name)]), _v(item.address_type), _v(item.value)))]
-
-    def _render_address_groups(self, item):
-        return [" ".join((*_prefix(item, ["address-group", _v(item.target_name or item.source_name), "static"]), _v(member))) for member in item.members]
-
-    def _render_services(self, item):
-        result = [" ".join((*_prefix(item, ["service", _v(item.target_name or item.source_name), "protocol"]), _v(item.protocol)))]
-        if item.destination_port:
-            result.append(" ".join((*_prefix(item, ["service", _v(item.target_name or item.source_name), "port"]), _v(item.destination_port))))
-        if item.source_port:
-            result.append(" ".join((*_prefix(item, ["service", _v(item.target_name or item.source_name), "source-port"]), _v(item.source_port))))
-        return result
-
-    def _render_service_groups(self, item):
-        return [" ".join((*_prefix(item, ["service-group", _v(item.target_name or item.source_name), "members"]), _v(member))) for member in item.members]
-
-    def _render_schedules(self, item):
-        base = ["schedule", _v(item.target_name or item.source_name)]
-        if item.schedule_type in {"weekly", "recurring"}:
-            return [" ".join((*_prefix(item, base + ["weekly", day, "start-time"]), _v(start))) for day, start, _ in item.weekly] + [" ".join((*_prefix(item, base + ["weekly", day, "end-time"]), _v(end))) for day, _, end in item.weekly]
-        return [" ".join((*_prefix(item, base + ["non-recurring", start]), _v(end))) for start, end in item.non_recurring]
-
-    def _render_zones(self, item):
-        return [" ".join((*_prefix(item, ["zone", _v(item.target_name or item.source_name), "network", "layer3"]), _v(interface))) for interface in item.interfaces]
-
-    def _render_routes(self, item):
-        base = ["network", "virtual-router", _v(item.virtual_router), "routing-table", "ip", "static-route", _v(item.target_name or item.source_name)]
-        result = [" ".join((*_prefix(item, base + ["destination"]), _v(item.destination)))]
-        if item.interface: result.append(" ".join((*_prefix(item, base + ["interface"]), _v(item.interface))))
-        if item.nexthop: result.append(" ".join((*_prefix(item, base + ["nexthop", item.nexthop_type or "ip-address"]), _v(item.nexthop))))
-        if item.admin_distance is not None: result.append(" ".join((*_prefix(item, base + ["admin-dist"]), _v(item.admin_distance))))
-        return result
-
-    def _render_nat_rules(self, item):
-        base = ["rulebase", "nat", "rules", _v(item.target_name or item.source_name)]
-        result = []
-        for key, values in (("from", item.from_zones), ("to", item.to_zones), ("source", item.source_addresses), ("destination", item.destination_addresses)):
-            if values: result.append(" ".join((*_prefix(item, base + [key]), _words(values))))
-        if item.service: result.append(" ".join((*_prefix(item, base + ["service"]), _v(item.service))))
-        if item.to_interface: result.append(" ".join((*_prefix(item, base + ["to-interface"]), _v(item.to_interface))))
-        if item.source_translation_type:
-            path = base + ["source-translation", item.source_translation_type]
-            if item.source_interface_address: result.append(" ".join((*_prefix(item, path + ["interface-address"]),)))
-            for address in item.translated_addresses: result.append(" ".join((*_prefix(item, path + ["translated-address"]), _v(address))))
-        if item.destination_translated_address: result.append(" ".join((*_prefix(item, base + ["destination-translation", "static-ip"]), _v(item.destination_translated_address))))
-        return result
-
-    def _render_security_rules(self, item):
-        base = ["rulebase", "security", "rules", _v(item.target_name or item.source_name)]
-        result = []
-        for key, values in (("from", item.from_zones), ("to", item.to_zones), ("source", item.sources), ("destination", item.destinations), ("service", item.services)):
-            result.append(" ".join((*_prefix(item, base + [key]), _words(values))))
-        if item.schedule: result.append(" ".join((*_prefix(item, base + ["schedule"]), _v(item.schedule))))
-        if item.negate_source: result.append(" ".join((*_prefix(item, base + ["negate-source"]), "yes")))
-        if item.negate_destination: result.append(" ".join((*_prefix(item, base + ["negate-destination"]), "yes")))
-        if item.disabled: result.append(" ".join((*_prefix(item, base + ["disabled"]), "yes")))
-        if item.description: result.append(" ".join((*_prefix(item, base + ["description"]), _v(item.description))))
-        if item.action: result.append(" ".join((*_prefix(item, base + ["action"]), _v(item.action))))
-        return result
+def _serialize(path):
+    return "set " + " ".join(value if value in {"[", "]"} else _v(value) for value in path)
 
 
 def _key(item):

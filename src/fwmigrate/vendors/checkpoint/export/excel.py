@@ -37,6 +37,16 @@ def _row(item: Any, sheet: str) -> tuple[Any, ...]:
     raise KeyError(sheet)
 
 
+def _nat_references(values: tuple[Any, ...] | None) -> str:
+    if values is None:
+        return "UNKNOWN"
+    return ", ".join(
+        f"{item.reference} (resolved: {item.resolved_uid or item.resolved_name})"
+        if item.resolved_uid or item.resolved_name else item.reference
+        for item in values
+    )
+
+
 def export_checkpoint_excel(result: Any, output: Any) -> Any:
     from openpyxl import Workbook
 
@@ -74,6 +84,18 @@ def export_checkpoint_excel(result: Any, output: Any) -> Any:
             sheet.append(SHEET_HEADERS[name])
             for issue in result.validation.issues:
                 sheet.append((issue.severity, issue.category, issue.message, issue.command, issue.reference))
+        elif name == "NAT Migration View":
+            sheet.append(SHEET_HEADERS[name])
+            for item in result.derived.nat.views:
+                sheet.append((
+                    item.source_kind, item.source_uid, item.source_name, item.domain,
+                    item.rule_order, item.enabled, _nat_references(item.original_source),
+                    _nat_references(item.original_destination), _nat_references(item.original_service),
+                    _nat_references(item.translated_source), _nat_references(item.translated_destination),
+                    _nat_references(item.translated_service), item.translation_method,
+                    item.owner_uid, item.owner_name, _nat_references(item.install_on),
+                    "; ".join(issue.message for issue in item.issues),
+                ))
         else:
             sheet.append(SHEET_HEADERS[name])
             for item in rows.get(name, ()):

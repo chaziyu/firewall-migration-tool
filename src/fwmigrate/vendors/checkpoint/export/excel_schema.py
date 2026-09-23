@@ -2,7 +2,7 @@ SHEET_ORDER = (
     "Summary", "Collection", "Domains", "Packages", "Access Layers",
     "Network Objects", "Groups", "Services", "Applications", "Schedules",
     "Access Rules", "NAT Rules", "VPN Communities", "Gateways", "Gaia",
-    "Validation",
+    "NAT Migration View", "Validation",
 )
 
 SHEET_HEADERS = {
@@ -16,6 +16,12 @@ SHEET_HEADERS = {
     "Schedules": ("UID", "Name", "Type", "Domain", "Command"),
     "Access Rules": ("UID", "Name", "Order", "Package", "Layer", "Domain", "Command"),
     "NAT Rules": ("UID", "Name", "Order", "Package", "Domain", "Command"),
+    "NAT Migration View": (
+        "Source Kind", "Source UID", "Source Name", "Domain", "Rule Order", "Enabled",
+        "Original Source", "Original Destination", "Original Service", "Translated Source",
+        "Translated Destination", "Translated Service", "Translation Method", "Owner UID",
+        "Owner Name", "Install On", "Issues",
+    ),
     "VPN Communities": ("UID", "Name", "Domain", "Command"),
     "Gateways": ("UID", "Name", "Domain", "Gateway", "Command"),
     "Gaia": ("Name", "Type", "Gateway", "Command"),

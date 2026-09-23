@@ -12,6 +12,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ..config import ExtractionConfig
+from ..benchmark import BenchmarkResult
 from ..derived import DerivedViews, build_derived_views
 from ..extraction.result import ExtractionResult
 from ..extraction.source_inventory import SourceObjectRecord
@@ -85,6 +86,7 @@ def export_excel(
     config: ExtractionConfig | None = None,
     derived: DerivedViews | None = None,
     source_name: str | None = None,
+    benchmark: BenchmarkResult | None = None,
 ) -> None:
     """Write the FortiGate configuration report."""
 
@@ -100,6 +102,8 @@ def export_excel(
     )
 
     workbook = _build_workbook(context)
+    if benchmark is not None:
+        _write_performance_benchmark_sheet(workbook, benchmark)
 
     if isinstance(output, (str, Path)):
         path = Path(output)
@@ -108,6 +112,81 @@ def export_excel(
         return
 
     workbook.save(output)
+
+
+def _write_performance_benchmark_sheet(
+    workbook: Workbook,
+    benchmark: BenchmarkResult,
+) -> None:
+    sheet = workbook.create_sheet("Performance Benchmark")
+    sheet.sheet_view.showGridLines = False
+    sheet.freeze_panes = "A5"
+    sheet.merge_cells("A1:C1")
+    sheet["A1"] = "FortiGate Performance Benchmark"
+    sheet["A1"].fill = _TITLE_FILL
+    sheet["A1"].font = _TITLE_FONT
+    sheet["A1"].alignment = Alignment(vertical="center")
+    sheet.row_dimensions[1].height = 24
+
+    environment = (
+        ("Benchmark Timestamp UTC", benchmark.timestamp_utc, "UTC"),
+        ("Scenario", benchmark.scenario, ""),
+        ("Git Branch", benchmark.git_branch, ""),
+        ("Git Commit", benchmark.git_commit, ""),
+        ("Python Version", benchmark.python_version, ""),
+        ("Runs", benchmark.runs, "timed runs"),
+        ("Warm-up Runs", benchmark.warmup_runs, "excluded"),
+        ("Input Size", benchmark.input_size_bytes, "bytes"),
+        ("Input SHA-256", benchmark.input_sha256, "exact source bytes"),
+    )
+    row = _write_benchmark_section(sheet, "Environment", environment, 3)
+    timings = benchmark.timings
+    performance = (
+        ("Parse", timings.parse_ms, "ms, median"),
+        ("Extraction", timings.extraction_ms, "ms, median"),
+        ("Derived Views", timings.derived_ms, "ms, median"),
+        ("Validation", timings.validation_ms, "ms, median"),
+        ("Web Report", timings.web_report_ms, "ms, median"),
+        ("Excel Export", timings.excel_export_ms, "ms, median"),
+        ("Total", timings.total_ms, "ms, median"),
+        (
+            "Peak Traced Memory",
+            benchmark.peak_memory_bytes / (1024 * 1024)
+            if benchmark.peak_memory_bytes is not None else None,
+            "MiB, max",
+        ),
+    )
+    row = _write_benchmark_section(sheet, "Performance", performance, row + 1)
+    workload = (
+        ("Top-Level Sections", benchmark.top_level_sections, ""),
+        ("Source Objects", benchmark.source_object_count, ""),
+        *((name, count, "") for name, count in benchmark.object_counts.items()),
+        ("Validation Issues", benchmark.validation_issue_count, ""),
+    )
+    _write_benchmark_section(sheet, "Workload", workload, row + 1)
+
+    sheet.column_dimensions["A"].width = 32
+    sheet.column_dimensions["B"].width = 45
+    sheet.column_dimensions["C"].width = 28
+
+
+def _write_benchmark_section(sheet, title: str, rows, start_row: int) -> int:
+    sheet.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=3)
+    title_cell = sheet.cell(start_row, 1, title)
+    title_cell.fill = _HEADER_FILL
+    title_cell.font = _WHITE_FONT
+    header_row = start_row + 1
+    for column, value in enumerate(("Metric", "Value", "Unit / Notes"), start=1):
+        cell = sheet.cell(header_row, column, value)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.border = _BORDER
+    for row_number, values in enumerate(rows, start=header_row + 1):
+        for column, value in enumerate(values, start=1):
+            cell = sheet.cell(row_number, column, _excel_safe(value))
+            cell.border = _BORDER
+            cell.alignment = Alignment(vertical="top", wrap_text=column != 1)
+    return header_row + len(rows) + 1
 
 
 class _ExcelContext:
