@@ -8,7 +8,7 @@ Vendor-native firewall configuration extraction, validation, preview, and Excel 
 >
 > This branch focuses on **source extraction and reporting**.
 >
-> Cross-vendor configuration conversion is currently unavailable while the conversion architecture is being redesigned around pair-specific converters.
+> FortiGate to Palo Alto migration planning is available for a supported subset of configuration. Other conversion pairs are not implemented.
 
 Website: https://firewall-migration-tool.onrender.com/
 
@@ -58,7 +58,7 @@ The current branch supports:
 - Secret sanitization for reportable source evidence.
 - Multiple source formats where supported by the vendor implementation.
 
-Cross-vendor configuration generation is not currently available.
+FortiGate to Palo Alto migration can generate PAN-OS `set` commands for supported items. The plan reports partial, manual-review, and unsupported items separately.
 
 ## Supported Source Vendors
 
@@ -200,24 +200,38 @@ upload source configuration
 → export vendor-native Excel report
 ```
 
+For FortiGate input, the web application also supports migration planning, a downloadable command bundle, and optional candidate deployment.
+
+### Plan a FortiGate to Palo Alto Migration
+
+```bash
+fwmigrate migrate --input fortigate.conf --output output --format set
+```
+
+Use `--zone-map mapping.yaml` to supply target VSYS, virtual-router, and interface mappings when needed. The command writes PAN-OS `set` commands and a migration report for the supported portion of the source configuration. Review the report and generated commands before deployment.
+
+SSH candidate deployment uses the optional dependency group:
+
+```bash
+python -m pip install -e ".[deployment]"
+```
+
 ## Conversion Status
 
-Cross-vendor configuration conversion is currently disabled.
+The implemented conversion pair is FortiGate to Palo Alto. It plans supported source items and renders PAN-OS `set` commands. It does not produce a complete target configuration; partial, manual-review, and unsupported items remain in the migration report.
 
-The existing `migrate` CLI command is retained as a compatibility boundary but does not perform conversion.
-
-Future conversion is intended to use directional, pair-specific pipelines:
+Conversion uses a directional, pair-specific pipeline:
 
 ```text
 VendorSourceConfig
 → VendorDerivedViews
-→ pair-specific converter
-→ TargetVendorConfig
-→ target validation
-→ target renderer
+→ pair-specific migration planner
+→ pair-specific MigrationPlan
+→ plan validation
+→ target command renderer
 ```
 
-The reserved conversion boundary is located at:
+The conversion boundary is located at:
 
 [`src/fwmigrate/conversion/`](src/fwmigrate/conversion/)
 
@@ -225,7 +239,7 @@ See:
 
 [`src/fwmigrate/conversion/README.md`](src/fwmigrate/conversion/README.md)
 
-No pair-specific converter is currently implemented.
+No other conversion pair is currently implemented.
 
 The source-reporting architecture does not use a vendor-neutral migration IR.
 
@@ -456,7 +470,7 @@ src/fwmigrate/
 │   └── Vendor-owned extraction and reporting implementations
 │
 ├── conversion/
-│   └── Reserved future pair-specific conversion boundary
+│   └── Pair-specific migration planning and rendering
 │
 ├── web.py
 │   └── Shared web host and source-report dispatch
@@ -508,11 +522,7 @@ target-vendor concepts inside source models
 shared semantic Excel exporter
 ```
 
-The future `conversion/` boundary should remain separate from source extraction and reporting until individual conversion pairs are implemented.
-
-Current branch-specific priorities are documented in:
-
-[`Refactor Plan.md`](Refactor%20Plan.md)
+The `conversion/` boundary remains separate from source extraction and reporting.
 
 ## Testing
 
@@ -574,8 +584,7 @@ Cross-vendor conversion tests should remain separate from source extraction test
 Repository architecture and implementation guidance:
 
 - [`AGENTS.md`](AGENTS.md) — architecture rules and development constraints.
-- [`Refactor Plan.md`](Refactor%20Plan.md) — current source-architecture stabilization priorities.
-- [`src/fwmigrate/conversion/README.md`](src/fwmigrate/conversion/README.md) — reserved future conversion architecture.
+- [`src/fwmigrate/conversion/README.md`](src/fwmigrate/conversion/README.md) — pair-specific conversion architecture.
 
 Official vendor documentation should be used as the primary semantic reference when implementing or validating vendor behavior.
 

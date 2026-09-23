@@ -14,7 +14,7 @@ def plan_routes(source: Any, options: Any):
         destination = route.dst or route.dstaddr
         interface = None
         if route.device:
-            interface_mapping = getattr(options, "interfaces", {}).get(route.device)
+            interface_mapping = getattr(options, "interfaces", {}).get(route.vdom or "root", {}).get(route.device)
             if interface_mapping and interface_mapping.target_interface:
                 interface = interface_mapping.target_interface
             else:

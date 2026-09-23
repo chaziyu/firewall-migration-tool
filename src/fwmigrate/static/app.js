@@ -28,8 +28,8 @@ let currentRenderedArtifactId = null;
       "Review supported mappings, manual-review items, and generated PAN-OS commands.",
     ],
     extract: [
-      "Extract an inventory",
-      "Explore your source configuration in a reviewable Excel workbook.",
+      "Export to Excel",
+      "Upload once, then download the complete Excel workbook.",
     ],
     live: [
       "Live migration",
@@ -638,6 +638,7 @@ let currentRenderedArtifactId = null;
     }
     if (targetVendorSelect) targetVendorSelect.value = selectedTargetVendor;
     activeMode = mode;
+    document.body.dataset.mode = mode;
     [
       [tabDownload, "download"],
       [tabReport, "report"],
@@ -666,6 +667,21 @@ let currentRenderedArtifactId = null;
       );
     setText("page-title", MODE_COPY[mode][0]);
     setText("page-description", MODE_COPY[mode][1]);
+    setText("preview-heading", mode === "extract" ? "Extraction preview" : "Configuration overview");
+    const vendorName = VENDOR_CONFIGS[selectedSourceVendor]?.name || "Firewall";
+    setText("brand-name", mode === "extract" && selectedSourceVendor === "fortigate" ? "FortiGate" : "Firewall");
+    setText("brand-tagline", mode === "extract" && selectedSourceVendor === "fortigate" ? "CONFIG REPORT" : "MIGRATION TOOL");
+    setText("page-eyebrow", mode === "extract" ? `${vendorName.toUpperCase()} CONFIGURATION ANALYSIS` : "FIREWALL OPERATIONS");
+    setText(
+      "source-section-meta",
+      mode !== "extract" ? "START HERE" : selectedSourceVendor === "fortigate" ? "FORTIGATE CLI" : vendorName.toUpperCase(),
+    );
+    setText(
+      "source-card-description",
+      mode === "extract"
+        ? `Upload one ${vendorName} backup. The configuration is parsed and analyzed for report viewing or Excel export.`
+        : "Choose your source vendor and bring in your firewall configuration.",
+    );
     syncWorkspace();
 
     if (mode === "report") {
@@ -746,6 +762,8 @@ let currentRenderedArtifactId = null;
         if (dropzoneSubtext) dropzoneSubtext.innerHTML = cfg.dropText;
         if (fileInput) fileInput.accept = cfg.fileAccept;
       }
+
+      if (activeMode === "extract") switchMode("extract");
 
       syncWorkspace();
     });
@@ -936,29 +954,63 @@ let currentRenderedArtifactId = null;
           const fragment = document.createDocumentFragment();
           result.requirements.vdoms.forEach(({ source_vdom }) => {
             currentMigrationMapping.vdoms[source_vdom] = { vsys: "", virtual_router: "" };
-            const group = document.createElement("fieldset");
-            const legend = document.createElement("legend"); legend.textContent = `FortiGate VDOM: ${source_vdom}`; group.appendChild(legend);
+            const group = document.createElement("details"); group.open = true;
+            const legend = document.createElement("summary"); legend.textContent = `VDOM ${source_vdom} · Scope`; group.appendChild(legend);
             [["vsys", "Target VSYS"], ["virtual_router", "Virtual Router"]].forEach(([key, label]) => {
-              const input = document.createElement("input"); input.type = "text"; input.required = true; input.placeholder = label; input.setAttribute("aria-label", `${label} for ${source_vdom}`);
-              input.addEventListener("input", () => { currentMigrationMapping.vdoms[source_vdom][key] = input.value.trim(); invalidateMigrationPlan(); });
-              group.append(label, input);
+              const row = document.createElement("label"); row.textContent = label;
+              const input = document.createElement("input"); input.type = "text"; input.placeholder = label; input.setAttribute("aria-label", `${label} for ${source_vdom}`);
+              input.dataset.mappingScope = "vdom"; input.dataset.vdom = source_vdom; input.dataset.field = key;
+              input.addEventListener("input", () => { currentMigrationMapping.vdoms[source_vdom][key] = input.value.trim(); invalidateMigrationPlan(); updateMappingCompletion(); });
+              row.append(input); group.append(row);
             });
             fragment.appendChild(group);
           });
-          result.requirements.interfaces.forEach(({ source_interface, is_interface }) => {
-            currentMigrationMapping.interfaces[source_interface] = { target_interface: "", target_zone: "" };
-            const group = document.createElement("fieldset");
-            const legend = document.createElement("legend"); legend.textContent = `FortiGate ${is_interface ? "interface" : "policy reference"}: ${source_interface}`; group.appendChild(legend);
-            [["target_interface", "PAN Interface", is_interface], ["target_zone", "PAN Zone", true]].forEach(([key, label, required]) => {
-              if (!required) return;
-              const input = document.createElement("input"); input.type = "text"; input.required = true; input.placeholder = label; input.setAttribute("aria-label", `${label} for ${source_interface}`);
-              input.addEventListener("input", () => { currentMigrationMapping.interfaces[source_interface][key] = input.value.trim(); invalidateMigrationPlan(); });
-              group.append(label, input);
-            });
-            fragment.appendChild(group);
+          result.requirements.interfaces.forEach((item) => {
+            const { source_vdom, source_interface, kind, requires, reasons, reference_count } = item;
+            const vdom = source_vdom || "root";
+            currentMigrationMapping.interfaces[vdom] ||= {};
+            currentMigrationMapping.interfaces[vdom][source_interface] ||= { target_interface: "", target_zone: "" };
           });
+          const optionalPanel = document.getElementById("optional-mappings");
+          const optionalList = document.getElementById("optional-mapping-list");
+          if (optionalPanel && optionalList) {
+            optionalList.replaceChildren(...(result.requirements.optional || []).map(item => { const li = document.createElement("li"); li.textContent = `${item.source_vdom} · ${item.kind} · ${item.source_name}`; return li; }));
+            optionalPanel.classList.toggle("hidden", !(result.requirements.optional || []).length);
+          }
+          const section = document.createElement("details"); section.open = true;
+          const summary = document.createElement("summary"); summary.textContent = `Zones and interfaces · ${result.requirements.interfaces.length} required`; section.append(summary);
+          const table = document.createElement("table"); table.className = "mapping-table";
+          const head = document.createElement("tr");
+          ["FortiGate", "Used by", "PAN Interface", "PAN Zone"].forEach(text => { const th = document.createElement("th"); th.textContent = text; head.append(th); });
+          const thead = document.createElement("thead"); thead.append(head); table.append(thead);
+          const body = document.createElement("tbody");
+          result.requirements.interfaces.forEach(item => {
+            const { source_vdom, source_interface, kind, requires, reasons, reference_count } = item;
+            const vdom = source_vdom || "root"; const tr = document.createElement("tr");
+            tr.dataset.kind = kind; tr.dataset.reasons = (reasons || []).join(","); tr.dataset.vdom = vdom;
+            tr.dataset.name = source_interface;
+            const source = document.createElement("td");
+            const select = document.createElement("input"); select.type = "checkbox"; select.className = "mapping-select"; select.setAttribute("aria-label", `Select ${source_interface} in ${vdom}`); source.append(select, ` ${source_interface} (${vdom})`);
+            const used = document.createElement("td"); used.textContent = `${(reasons || []).join(", ")} · ${reference_count || 1}`;
+            tr.append(source, used);
+            [["target_interface", "PAN interface"], ["target_zone", "PAN zone"]].forEach(([key, label]) => {
+              const td = document.createElement("td");
+              if ((requires || []).includes(key)) {
+                const input = document.createElement("input"); input.type = "text"; input.placeholder = label; input.setAttribute("aria-label", `${label} for ${source_interface} in ${vdom}`);
+                input.dataset.mappingScope = "interface"; input.dataset.vdom = vdom; input.dataset.name = source_interface; input.dataset.field = key;
+                input.addEventListener("input", () => { currentMigrationMapping.interfaces[vdom][source_interface][key] = input.value.trim(); invalidateMigrationPlan(); updateMappingCompletion(); }); td.append(input);
+                if (key === "target_zone" && kind === "zone") {
+                  const suggest = document.createElement("button"); suggest.type = "button"; suggest.textContent = "Use same name"; suggest.title = "Apply the source zone name as a suggestion";
+                  suggest.addEventListener("click", () => { input.value = source_interface; input.dispatchEvent(new Event("input", { bubbles: true })); }); td.append(suggest);
+                }
+              } else td.textContent = "—";
+              tr.append(td);
+            }); body.append(tr);
+          });
+          table.append(body); section.append(table); fragment.append(section);
           container.replaceChildren(fragment);
           panel.classList.remove("hidden");
+          updateMappingCompletion();
         }
       }
       const stats = data.stats || data.summary || {};
@@ -982,7 +1034,7 @@ let currentRenderedArtifactId = null;
       );
       setPreviewStatus(
         itemCount
-          ? "Configuration read. Review the inventory before continuing."
+          ? "Configuration parsed successfully. The report is ready."
           : "No supported objects were found. Review the source file and extraction warnings in the Excel workbook.",
         itemCount ? "ready" : "empty",
       );
@@ -1014,6 +1066,67 @@ let currentRenderedArtifactId = null;
     if (btnValidateCandidate) btnValidateCandidate.disabled = true;
     if (btnCommitCandidate) btnCommitCandidate.disabled = true;
   }
+
+  function updateMappingCompletion() {
+    const inputs = [...document.querySelectorAll("#migration-mapping-fields input[data-mapping-scope]")];
+    const completed = inputs.filter(input => input.value.trim()).length;
+    const status = document.getElementById("mapping-completion");
+    const categories = { VSYS: inputs.filter(input => input.dataset.mappingScope === "vdom" && input.dataset.field === "vsys"), "Virtual routers": inputs.filter(input => input.dataset.mappingScope === "vdom" && input.dataset.field === "virtual_router"), Zones: [...document.querySelectorAll('.mapping-table input[data-field="target_zone"]')], Interfaces: [...document.querySelectorAll('.mapping-table input[data-field="target_interface"]')] };
+    const breakdown = Object.entries(categories).map(([name, rows]) => `${name} ${rows.filter(input => input.value.trim()).length}/${rows.length}`).join(" · ");
+    if (status) { status.textContent = `Required: ${inputs.length} · Completed: ${completed} · Missing: ${inputs.length - completed}  |  ${breakdown}`; status.onclick = () => { document.getElementById("mapping-filter").value = "unmapped"; document.getElementById("mapping-filter").dispatchEvent(new Event("change")); }; }
+  }
+
+  document.getElementById("mapping-filter")?.addEventListener("change", event => {
+    const filter = event.target.value;
+    document.querySelectorAll(".mapping-table tbody tr").forEach(row => {
+      const reasons = row.dataset.reasons.split(",");
+      const inputs = [...row.querySelectorAll("input")];
+      const mapped = inputs.every(input => input.value.trim());
+      row.hidden = filter === "unmapped" ? mapped : filter === "mapped" ? !mapped : filter === "zones" ? row.dataset.kind !== "zone" : filter === "interfaces" ? row.dataset.kind !== "interface" : filter === "route-nat" ? !reasons.some(reason => ["static_route", "source_nat"].includes(reason)) : false;
+    });
+  });
+
+  document.getElementById("bulk-zone-apply")?.addEventListener("click", () => {
+    const value = document.getElementById("bulk-zone-value")?.value.trim(); if (!value) return;
+    document.querySelectorAll(".mapping-table tbody tr:has(.mapping-select:checked)").forEach(row => {
+      const input = row.querySelector('input[data-field="target_zone"]'); if (input) { input.value = value; input.dispatchEvent(new Event("input", { bubbles: true })); }
+    });
+  });
+
+  document.getElementById("bulk-zone-name")?.addEventListener("click", () => {
+    document.querySelectorAll(".mapping-table tbody tr:has(.mapping-select:checked)").forEach(row => {
+      if (row.dataset.kind !== "zone") return;
+      const input = row.querySelector('input[data-field="target_zone"]'); if (input) { input.value = row.dataset.name; input.dispatchEvent(new Event("input", { bubbles: true })); }
+    });
+  });
+
+  document.getElementById("bulk-mapping-clear")?.addEventListener("click", () => {
+    document.querySelectorAll(".mapping-table tbody tr:has(.mapping-select:checked) input[data-mapping-scope]").forEach(input => { input.value = ""; input.dispatchEvent(new Event("input", { bubbles: true })); });
+  });
+
+  document.getElementById("mapping-template")?.addEventListener("click", () => {
+    const yaml = ["vdoms:", ...Object.keys(currentMigrationMapping.vdoms).flatMap(vdom => [`  ${JSON.stringify(vdom)}:`, "    vsys:", "    virtual_router:"]), "interfaces:", ...Object.entries(currentMigrationMapping.interfaces).flatMap(([vdom, items]) => [`  ${JSON.stringify(vdom)}:`, ...Object.keys(items).flatMap(name => [`    ${JSON.stringify(name)}:`, "      target_interface:", "      target_zone:"])])].join("\n") + "\n";
+    const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([yaml], { type: "text/yaml" })); link.download = "target-mapping.yaml"; link.click(); URL.revokeObjectURL(link.href);
+  });
+
+  document.getElementById("mapping-import")?.addEventListener("change", async event => {
+    const file = event.target.files?.[0]; if (!file) return;
+    try {
+      const response = await fetch("/api/migration/mapping/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ yaml: await file.text() }) });
+      const imported = await readJson(response, "Could not import mapping YAML");
+      currentMigrationMapping = JSON.parse(JSON.stringify(currentMigrationMapping));
+      for (const [vdom, value] of Object.entries(imported.mapping.vdoms || {})) Object.assign(currentMigrationMapping.vdoms[vdom] ||= {}, value);
+      for (const [vdom, entries] of Object.entries(imported.mapping.interfaces || {})) {
+        currentMigrationMapping.interfaces[vdom] ||= {};
+        for (const [name, value] of Object.entries(entries)) Object.assign(currentMigrationMapping.interfaces[vdom][name] ||= {}, value);
+      }
+      document.querySelectorAll("#migration-mapping-fields input[data-mapping-scope]").forEach(input => {
+        input.value = input.dataset.mappingScope === "vdom" ? currentMigrationMapping.vdoms?.[input.dataset.vdom]?.[input.dataset.field] || "" : currentMigrationMapping.interfaces?.[input.dataset.vdom]?.[input.dataset.name]?.[input.dataset.field] || "";
+      });
+      invalidateMigrationPlan(); updateMappingCompletion();
+    } catch (error) { showError(error.message); }
+    event.target.value = "";
+  });
 
   if (btnGenerateBundle) {
     btnGenerateBundle.addEventListener("click", async () => {

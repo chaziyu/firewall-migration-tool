@@ -4,9 +4,7 @@ from collections import defaultdict
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from io import BytesIO
 from pathlib import Path
-from time import perf_counter
 from typing import Any, BinaryIO, Iterable, Iterator, Mapping, Sequence
 
 from openpyxl import Workbook
@@ -14,7 +12,6 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ..config import ExtractionConfig
-from ..benchmark import BenchmarkResult, ExcelSheetBenchmark
 from ..derived import DerivedViews, build_derived_views
 from ..extraction.result import ExtractionResult
 from ..extraction.source_inventory import SourceObjectRecord
@@ -89,7 +86,6 @@ def export_excel(
     config: ExtractionConfig | None = None,
     derived: DerivedViews | None = None,
     source_name: str | None = None,
-    benchmark: BenchmarkResult | None = None,
 ) -> None:
     """Write the FortiGate configuration report."""
 
@@ -105,9 +101,6 @@ def export_excel(
     )
 
     workbook = _build_workbook(context)
-    if benchmark is not None:
-        _write_performance_benchmark_sheet(workbook, benchmark)
-
     if isinstance(output, (str, Path)):
         path = Path(output)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -115,138 +108,6 @@ def export_excel(
         return
 
     workbook.save(output)
-
-
-def _write_performance_benchmark_sheet(
-    workbook: Workbook,
-    benchmark: BenchmarkResult,
-) -> None:
-    sheet = workbook.create_sheet("Performance Benchmark")
-    sheet.sheet_view.showGridLines = False
-    sheet.freeze_panes = "A5"
-    sheet.merge_cells("A1:C1")
-    sheet["A1"] = "FortiGate Performance Benchmark"
-    sheet["A1"].fill = _TITLE_FILL
-    sheet["A1"].font = _TITLE_FONT
-    sheet["A1"].alignment = Alignment(vertical="center")
-    sheet.row_dimensions[1].height = 24
-
-    environment = (
-        ("Benchmark Timestamp UTC", benchmark.timestamp_utc, "UTC"),
-        ("Scenario", benchmark.scenario, ""),
-        ("Git Branch", benchmark.git_branch, ""),
-        ("Git Commit", benchmark.git_commit, ""),
-        ("Python Version", benchmark.python_version, ""),
-        ("Runs", benchmark.runs, "timed runs"),
-        ("Warm-up Runs", benchmark.warmup_runs, "excluded"),
-        ("Input Size", benchmark.input_size_bytes, "bytes"),
-        ("Input SHA-256", benchmark.input_sha256, "exact source bytes"),
-        ("Timing Method", "Median of timed runs", "tracemalloc disabled"),
-        ("Memory Method", "Separate full pipeline run", "tracemalloc enabled"),
-    )
-    row = _write_benchmark_section(sheet, "Environment", environment, 3)
-    timings = benchmark.timings
-    performance = (
-        ("Parse", timings.parse_ms, "ms, median; tracemalloc disabled"),
-        ("Extraction", timings.extraction_ms, "ms, median; tracemalloc disabled"),
-        ("Derived Views", timings.derived_ms, "ms, median; tracemalloc disabled"),
-        ("Validation", timings.validation_ms, "ms, median; tracemalloc disabled"),
-        ("Web Report", timings.web_report_ms, "ms, median; tracemalloc disabled"),
-        ("Excel Build", timings.excel_build_ms, "ms, median; tracemalloc disabled"),
-        ("Excel Save", timings.excel_save_ms, "ms, median; tracemalloc disabled"),
-        ("Excel Total", timings.excel_total_ms, "ms, Excel Build + Save medians"),
-        ("Total", timings.total_ms, "ms, sum of stage medians; tracemalloc disabled"),
-        (
-            "Peak Traced Memory",
-            benchmark.peak_memory_bytes / (1024 * 1024)
-            if benchmark.peak_memory_bytes is not None else None,
-            "MiB, max; separate traced run",
-        ),
-    )
-    row = _write_benchmark_section(sheet, "Performance", performance, row + 1)
-    sheet_performance = tuple(
-        (
-            item.sheet,
-            item.row_count,
-            item.row_generation_ms,
-            item.worksheet_write_ms,
-            item.total_ms,
-        )
-        for item in timings.sheet_timings.values()
-    )
-    row = _write_benchmark_section(
-        sheet,
-        "Excel Sheet Performance",
-        sheet_performance,
-        row + 1,
-        headers=("Sheet", "Rows", "Row Generation (ms)", "Worksheet Writing (ms)", "Total (ms)"),
-    )
-    workload = (
-        ("Top-Level Sections", benchmark.top_level_sections, ""),
-        ("Source Objects", benchmark.source_object_count, ""),
-        *((name, count, "") for name, count in benchmark.object_counts.items()),
-        ("Validation Issues", benchmark.validation_issue_count, ""),
-    )
-    _write_benchmark_section(sheet, "Workload", workload, row + 1)
-
-    for column, width in enumerate((32, 14, 24, 26, 18), start=1):
-        sheet.column_dimensions[get_column_letter(column)].width = width
-
-
-def _write_benchmark_section(
-    sheet,
-    title: str,
-    rows,
-    start_row: int,
-    *,
-    headers: tuple[str, ...] = ("Metric", "Value", "Unit / Notes"),
-) -> int:
-    sheet.merge_cells(
-        start_row=start_row,
-        start_column=1,
-        end_row=start_row,
-        end_column=len(headers),
-    )
-    title_cell = sheet.cell(start_row, 1, title)
-    title_cell.fill = _HEADER_FILL
-    title_cell.font = _WHITE_FONT
-    header_row = start_row + 1
-    for column, value in enumerate(headers, start=1):
-        cell = sheet.cell(header_row, column, value)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
-        cell.border = _BORDER
-    for row_number, values in enumerate(rows, start=header_row + 1):
-        for column, value in enumerate(values, start=1):
-            cell = sheet.cell(row_number, column, _excel_safe(value))
-            cell.border = _BORDER
-            cell.alignment = Alignment(vertical="top", wrap_text=column != 1)
-    return header_row + len(rows) + 1
-
-
-def _benchmark_excel_export(
-    *,
-    extracted: ExtractionResult,
-    validation: ValidationResult,
-    derived: DerivedViews,
-    source_name: str | None,
-) -> tuple[float, float, float, dict[str, ExcelSheetBenchmark]]:
-    """Measure normal workbook build and save without adding benchmark data."""
-    context = _ExcelContext(
-        extracted=extracted,
-        derived=derived,
-        validation=validation,
-        source_name=source_name,
-    )
-    sheet_timings: dict[str, ExcelSheetBenchmark] = {}
-    started = perf_counter()
-    workbook = _build_workbook(context, sheet_timings=sheet_timings)
-    build_ms = (perf_counter() - started) * 1000
-    output = BytesIO()
-    started = perf_counter()
-    workbook.save(output)
-    save_ms = (perf_counter() - started) * 1000
-    return build_ms, save_ms, build_ms + save_ms, sheet_timings
 
 
 class _ExcelContext:
@@ -320,76 +181,28 @@ class _ExcelContext:
         return found
 
 
-def _build_workbook(
-    context: _ExcelContext,
-    *,
-    sheet_timings: dict[str, ExcelSheetBenchmark] | None = None,
-) -> Workbook:
+def _build_workbook(context: _ExcelContext) -> Workbook:
     workbook = Workbook()
     workbook.remove(workbook.active)
 
     order = list(SHEET_ORDER)
 
     for sheet_name in order:
-        started = perf_counter() if sheet_timings is not None else None
-        row_generation_ms = 0.0
-        row_metrics = {"elapsed_ms": 0.0, "rows": 0}
         if sheet_name == "Summary":
-            _build_summary(
-                workbook,
-                context,
-                order,
-            )
+            _build_summary(workbook, context, order)
         elif sheet_name == "FortiGate Source Inventory":
-            _write_source_inventory_sheet(
-                workbook,
-                context,
-                row_metrics=row_metrics if sheet_timings is not None else None,
-            )
+            _write_source_inventory_sheet(workbook, context)
         else:
             headers = list(SHEET_HEADERS[sheet_name])
-            row_started = perf_counter() if sheet_timings is not None else None
-            rows = _rows_for_sheet(sheet_name, context, headers)
-            row_generation_ms = (
-                (perf_counter() - row_started) * 1000
-                if row_started is not None else 0.0
-            )
-            if sheet_timings is not None:
-                rows = _timed_rows(rows, row_metrics)
             _write_table_sheet(
                 workbook,
                 sheet_name,
                 headers,
-                rows,
+                _rows_for_sheet(sheet_name, context, headers),
                 context=context,
-            )
-        if sheet_timings is not None and started is not None:
-            total_ms = (perf_counter() - started) * 1000
-            row_generation_ms += row_metrics["elapsed_ms"]
-            sheet_timings[sheet_name] = ExcelSheetBenchmark(
-                sheet=sheet_name,
-                row_count=int(row_metrics["rows"]),
-                row_generation_ms=row_generation_ms,
-                worksheet_write_ms=total_ms - row_generation_ms,
-                total_ms=total_ms,
             )
 
     return workbook
-
-
-def _timed_rows(rows, metrics: dict[str, float | int]):
-    iterator = iter(rows)
-    while True:
-        started = perf_counter()
-        try:
-            row = next(iterator)
-        except StopIteration:
-            metrics["elapsed_ms"] += (perf_counter() - started) * 1000
-            return
-        metrics["elapsed_ms"] += (perf_counter() - started) * 1000
-        metrics["rows"] += 1
-        yield row
-
 
 def _rows_for_sheet(
     sheet_name: str,
@@ -636,8 +449,6 @@ def _write_table_sheet(
 def _write_source_inventory_sheet(
     workbook: Workbook,
     context: _ExcelContext,
-    *,
-    row_metrics: dict[str, float | int] | None = None,
 ) -> None:
     sheet_name = "FortiGate Source Inventory"
     headers = SHEET_HEADERS[sheet_name]
@@ -667,10 +478,7 @@ def _write_source_inventory_sheet(
         cell.alignment = Alignment(wrap_text=True, vertical="center")
         cell.border = _BORDER
 
-    rows = _iter_fortigate_source_inventory_rows(context)
-    if row_metrics is not None:
-        rows = _timed_rows(rows, row_metrics)
-    for values in rows:
+    for values in _iter_fortigate_source_inventory_rows(context):
         sheet.append(values)
 
     sheet.auto_filter.ref = f"A3:J{row_count + 3}"
@@ -2695,10 +2503,12 @@ def _additional_settings_from_data(
     visible = list(visible_values)
     settings = dict(data.get("raw_extra", {}))
 
-    for field in data.get("explicit_fields", ()):
+    explicit_fields = set(data.get("explicit_fields", ()))
+    for field, value in data.items():
+        if field not in explicit_fields:
+            continue
         if field in {"name", "vdom", "raw_extra", "explicit_fields"}:
             continue
-        value = data.get(field)
         if value in (None, "", [], {}) or value in visible:
             continue
         settings[field] = value

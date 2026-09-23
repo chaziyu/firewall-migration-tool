@@ -53,8 +53,8 @@ def test_builtin_registration_function_registers_the_pair_once():
 def test_options_coerce_mapping_documents_to_explicit_mapping_models():
     options = PANMigrationOptions(
         vdoms={"root": {"vsys": "vsys1", "virtual_router": "default"}},
-        interfaces={"port1": {"target_interface": "ethernet1/1", "target_zone": "trust"}},
+        interfaces={"root": {"port1": {"target_interface": "ethernet1/1", "target_zone": "trust"}}},
     )
 
     assert options.vdoms["root"] == VDOMMapping("vsys1", "default")
-    assert options.interfaces["port1"] == InterfaceMapping("ethernet1/1", "trust")
+    assert options.interfaces["root"]["port1"] == InterfaceMapping("ethernet1/1", "trust")

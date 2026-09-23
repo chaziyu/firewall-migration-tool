@@ -274,6 +274,18 @@ def create_app(test_config=None):
         except Exception as exc:
             return jsonify({'success': False, 'error': str(exc)}), 500
 
+    @app.route('/api/migration/mapping/import', methods=['POST'])
+    def import_migration_mapping():
+        try:
+            import yaml
+            mapping = yaml.safe_load(request.get_json(force=True).get('yaml', '')) or {}
+            if not isinstance(mapping, dict):
+                raise ValueError('Mapping YAML must contain an object')
+            PANMigrationOptions(**mapping)
+            return jsonify({'success': True, 'mapping': mapping})
+        except Exception as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
     @app.route('/api/migrate', methods=['POST'])
     def migrate():
         """Plan the supported FortiGate to Palo Alto configuration."""

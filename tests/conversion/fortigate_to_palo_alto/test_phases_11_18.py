@@ -44,7 +44,7 @@ def test_source_nat_item_with_transform_issue_is_not_renderable():
         pool_names=("missing",), translated_addresses=(), egress_interfaces=("wan",),
         issues=("IP pool 'missing' was not found.",),
     ),))
-    options = PANMigrationOptions(interfaces={"wan": {"target_zone": "untrust"}})
+    options = PANMigrationOptions(interfaces={"root": {"wan": {"target_zone": "untrust"}}})
 
     from fwmigrate.conversion.fortigate_to_palo_alto.nat import plan_nat
     item = plan_nat(source, derived, options)[0]

@@ -31,6 +31,13 @@ def test_migration_endpoint_rejects_unsupported_pair():
     assert response.get_json() == {"success": False, "error": "Only fortigate -> palo_alto is supported"}
 
 
+def test_mapping_yaml_import_preserves_vdom_scopes():
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post("/api/migration/mapping/import", json={"yaml": "vdoms:\n  root:\n    vsys: vsys1\ninterfaces:\n  root:\n    port1:\n      target_zone: trust\n  blue:\n    port1:\n      target_zone: dmz\n"})
+    assert response.status_code == 200
+    assert response.get_json()["mapping"]["interfaces"]["blue"]["port1"]["target_zone"] == "dmz"
+
+
 def test_plan_reports_missing_mappings_and_blocks_empty_bundle():
     client = create_app({"TESTING": True}).test_client()
     preview_id = _preview(client)
@@ -49,12 +56,12 @@ def test_complete_mappings_create_zip_for_same_plan_artifact():
     preview_id = _preview(client)
     mapping = {
         "vdoms": {"root": {"vsys": "vsys1", "virtual_router": "default"}},
-        "interfaces": {
+        "interfaces": {"root": {
             "lan": {"target_interface": "ethernet1/1", "target_zone": "trust"},
             "wan": {"target_interface": "ethernet1/2", "target_zone": "untrust"},
             "trust": {"target_zone": "trust"},
             "untrust": {"target_zone": "untrust"},
-        },
+        }},
     }
     plan = client.post("/api/migrate", json={"preview_id": preview_id, "mapping": mapping}).get_json()
     assert plan["commands"] > 0

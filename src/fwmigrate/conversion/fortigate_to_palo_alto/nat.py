@@ -62,8 +62,8 @@ def _policy_zones(policy, names, options):
     if policy is None:
         return ()
     return tuple(
-        getattr(options, "interfaces", {}).get(name).target_zone
+        getattr(options, "interfaces", {}).get(getattr(policy, "vdom", None) or "root", {}).get(name).target_zone
         for name in names
-        if getattr(options, "interfaces", {}).get(name)
-        and getattr(options, "interfaces", {}).get(name).target_zone
+        if getattr(options, "interfaces", {}).get(getattr(policy, "vdom", None) or "root", {}).get(name)
+        and getattr(options, "interfaces", {}).get(getattr(policy, "vdom", None) or "root", {}).get(name).target_zone
     )

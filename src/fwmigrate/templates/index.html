@@ -36,11 +36,11 @@
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='themes.css') }}?v=5.2"
+      href="{{ url_for('static', filename='themes.css') }}?v=5.3"
     />
     <script
       defer
-      src="{{ url_for('static', filename='app.js') }}?v=5.1"
+      src="{{ url_for('static', filename='app.js') }}?v=5.2"
     ></script>
     <script
       defer
@@ -53,7 +53,7 @@
       <a class="brand" href="/" aria-label="Firewall Migration Tool home"
         ><span class="brand-mark">{{ icon('switch') }}</span
         ><span class="brand-wordmark"
-          >Firewall<span>MIGRATION TOOL</span></span
+          ><span id="brand-name">Firewall</span><span id="brand-tagline">MIGRATION TOOL</span></span
         ></a
       >
       <nav
@@ -131,7 +131,7 @@
       <main class="main-content" id="main-content" tabindex="-1">
         <div class="page-heading reveal">
           <div>
-            <p class="eyebrow">FIREWALL OPERATIONS</p>
+            <p class="eyebrow" id="page-eyebrow">FIREWALL OPERATIONS</p>
             <h1 id="page-title">Plan migration</h1>
             <p id="page-description">
               Review what can be migrated, what needs attention, and generate supported PAN-OS commands.
