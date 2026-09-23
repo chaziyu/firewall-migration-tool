@@ -11,8 +11,7 @@
       </h2>
       <p class="card-desc">
         Live deployment currently supports PAN-OS targets. Connect to your
-        management interface, then check connectivity before planning a
-        deployment.
+        management interface, then validate the CLI/SSH deployment path.
       </p>
     </div>
 
@@ -149,19 +148,19 @@
         </button>
       </div>
       <div class="diag-grid" aria-live="polite" aria-atomic="false">
-        <div class="diag-card pending" id="diag-tf-local">
+        <div class="diag-card pending" id="diag-cli">
           <div class="diag-header">
             <span class="diag-dot" aria-hidden="true"></span
-            ><strong>Terraform CLI</strong>
+            ><strong>CLI renderer</strong>
           </div>
-          <span class="diag-msg" id="diag-tf-local-msg">Not checked</span>
+          <span class="diag-msg" id="diag-cli-msg">Not checked</span>
         </div>
-        <div class="diag-card pending" id="diag-tf-reg">
+        <div class="diag-card pending" id="diag-ssh">
           <div class="diag-header">
             <span class="diag-dot" aria-hidden="true"></span
-            ><strong>Provider registry</strong>
+            ><strong>SSH connectivity</strong>
           </div>
-          <span class="diag-msg" id="diag-tf-reg-msg">Not checked</span>
+          <span class="diag-msg" id="diag-ssh-msg">Not checked</span>
         </div>
         <div class="diag-card pending" id="diag-tcp">
           <div class="diag-header">
@@ -187,71 +186,41 @@
         <span class="step-num">03</span> Review &amp; deploy
       </h2>
       <p class="card-desc">
-        Preview the proposed changes, review the plan, and choose when to apply
-        them to your target.
+        Validate the target, deploy the generated CLI commands, then commit.
       </p>
     </div>
 
     <div class="workflow-stepper">
-      <div class="step-box" id="step-box-plan">
-        <div class="step-badge" id="step2-badge" aria-hidden="true">1</div>
+      <div class="step-box" id="step-box-validate">
+        <div class="step-badge" aria-hidden="true">1</div>
         <div class="step-info">
-          <strong>Preview changes</strong>
-          <span id="plan-status-msg" role="status"
-            >Create a Terraform plan without applying configuration.</span
-          >
-          <div
-            class="plan-summary-badges hidden"
-            id="plan-summary-badges"
-            aria-label="Planned resource changes"
-          >
-            <span class="badge badge-add" id="badge-add">+0 add</span>
-            <span class="badge badge-change" id="badge-change">~0 change</span>
-            <span class="badge badge-destroy" id="badge-destroy"
-              >-0 destroy</span
-            >
-          </div>
+          <strong>Validate target</strong>
+          <span role="status">CLI/SSH validation will be available in the MVP.</span>
         </div>
-        <button type="button" id="btn-plan-dryrun" class="btn btn-secondary">
-          <span>Run dry-run plan</span>
+        <button type="button" class="btn btn-secondary" disabled title="CLI/SSH workflow coming soon">
+          <span>Validate target</span>
         </button>
       </div>
 
-      <div class="step-box" id="step-box-apply">
-        <div class="step-badge" id="step3-badge" aria-hidden="true">2</div>
+      <div class="step-box" id="step-box-deploy">
+        <div class="step-badge" aria-hidden="true">2</div>
         <div class="step-info">
-          <strong>Apply deployment</strong>
-          <span id="apply-status-msg" role="status"
-            >Available after a successful plan. Review its output before
-            proceeding.</span
-          >
+          <strong>Deploy configuration</strong>
+          <span role="status">SSH deployment will be available after validation.</span>
         </div>
-        <button
-          type="button"
-          id="btn-apply-live"
-          class="btn btn-success"
-          disabled
-        >
-          <span>Start live apply</span>
+        <button type="button" class="btn btn-success" disabled title="CLI/SSH workflow coming soon">
+          <span>Deploy configuration</span>
         </button>
       </div>
 
-      <div class="step-box" id="step-box-rollback">
-        <div class="step-badge" id="step4-badge" aria-hidden="true">3</div>
+      <div class="step-box" id="step-box-commit">
+        <div class="step-badge" aria-hidden="true">3</div>
         <div class="step-info">
-          <strong>Rollback deployment</strong>
-          <span id="rollback-status-msg" role="status"
-            >Destroys the provisioned resources tracked in this session's
-            Terraform state.</span
-          >
+          <strong>Commit configuration</strong>
+          <span role="status">Commit confirmation will be available after deployment.</span>
         </div>
-        <button
-          type="button"
-          id="btn-rollback"
-          class="btn btn-outline"
-          disabled
-        >
-          <span>Rollback deployment</span>
+        <button type="button" class="btn btn-outline" disabled title="CLI/SSH workflow coming soon">
+          <span>Commit configuration</span>
         </button>
       </div>
     </div>
@@ -298,34 +267,10 @@
         tabindex="0"
       >
         <div class="term-line term-system">
-          [SYSTEM] Ready. Run a plan to preview your deployment.
+          [SYSTEM] Ready. CLI/SSH Validate → Deploy → Commit workflow is coming soon.
         </div>
       </div>
     </div>
 
-    <div class="post-actions-bar hidden" id="post-actions-bar">
-      <div class="post-info" role="status">
-        <span
-          >Deployment complete. Your state and audit report are ready to
-          download.</span
-        >
-      </div>
-      <div class="post-actions-btns">
-        <button
-          type="button"
-          id="btn-download-state"
-          class="btn btn-secondary btn-sm"
-        >
-          <span>Download state (.tfstate)</span>
-        </button>
-        <button
-          type="button"
-          id="btn-download-audit"
-          class="btn btn-primary btn-sm"
-        >
-          <span>Download audit bundle (.zip)</span>
-        </button>
-      </div>
-    </div>
   </section>
 </div>

@@ -10,7 +10,6 @@ from ..model.dhcp import (
 )
 from ..nodes import (
     ConfigNode,
-    FortiGateConfigTree,
 )
 
 from .common import (
@@ -19,6 +18,7 @@ from .common import (
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class DHCPConfig(Protocol):
@@ -28,7 +28,7 @@ class DHCPConfig(Protocol):
 
 
 def extract_dhcp(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: DHCPConfig,
 ) -> None:
     """Extract FortiGate DHCP server source objects."""

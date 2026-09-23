@@ -1,23 +1,22 @@
 from __future__ import annotations
 
-from .section_registry import is_supported_gaia_section
-from .tokenizer import tokenize_gaia
+from .nodes import GaiaCommandNode, GaiaCommentNode, GaiaConfigTree, GaiaUnknownCommandNode
+from .tokenizer import GaiaTokenType, tokenize_gaia
 
 
-def parse_gaia(text: str) -> list[dict[str, object]]:
-    result = []
+def parse_gaia(text: str) -> GaiaConfigTree:
+    tree = GaiaConfigTree()
     for tokens in tokenize_gaia(text):
-        if len(tokens) < 2 or tokens[0] not in {"set", "add", "show", "create"}:
-            result.append({"kind": "unsupported", "tokens": tokens})
+        if not tokens:
             continue
-        section = tokens[1]
-        if not is_supported_gaia_section(section):
-            result.append({"kind": "unsupported", "tokens": tokens})
-            continue
-        values: dict[str, object] = {"kind": section, "tokens": tokens}
-        if len(tokens) > 2:
-            values["name"] = tokens[2]
-        for index in range(3, len(tokens) - 1, 2):
-            values[tokens[index].replace("-", "_")] = tokens[index + 1]
-        result.append(values)
-    return result
+        first = tokens[0]
+        values = tuple(token.value for token in tokens[1:])
+        if first.type is GaiaTokenType.COMMENT:
+            tree.comments.append(GaiaCommentNode(first.value, first.line_number))
+        elif first.type in {GaiaTokenType.SET, GaiaTokenType.ADD, GaiaTokenType.SHOW,
+                            GaiaTokenType.CREATE, GaiaTokenType.DELETE}:
+            tree.commands.append(GaiaCommandNode(first.value.lower(), values, first.line_number))
+        else:
+            reason = "malformed syntax" if first.value.startswith("malformed syntax") else "unsupported"
+            tree.unknown_commands.append(GaiaUnknownCommandNode(first.value, values, first.line_number, reason))
+    return tree

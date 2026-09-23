@@ -15,6 +15,7 @@ from ..nodes import (
     EditNode,
     FortiGateConfigTree,
 )
+from .section_index import SectionIndex
 from ..section_registry import get_section_spec
 
 
@@ -372,7 +373,7 @@ def get_child_config(
 
 
 def iter_section_edits(
-    tree: FortiGateConfigTree,
+    tree: FortiGateConfigTree | SectionIndex,
     section_path: str,
 ) -> Iterator[SectionEdit]:
     """
@@ -390,22 +391,16 @@ def iter_section_edits(
     from their parent with `get_child_config()`.
     """
 
-    for node, vdom in _iter_configs_with_context(
+    index = (
         tree
-    ):
-        if node.name != section_path:
-            continue
-
-        for edit in node.edits:
-            yield SectionEdit(
-                section_path=section_path,
-                edit=edit,
-                vdom=vdom,
-            )
+        if isinstance(tree, SectionIndex)
+        else SectionIndex.build(tree)
+    )
+    yield from index.iter_edits(section_path)
 
 
 def iter_section_configs(
-    tree: FortiGateConfigTree,
+    tree: FortiGateConfigTree | SectionIndex,
     section_path: str,
 ) -> Iterator[SectionConfig]:
     """
@@ -415,21 +410,16 @@ def iter_section_configs(
     directly to the ConfigNode rather than inside an edit block.
     """
 
-    for node, vdom in _iter_configs_with_context(
+    index = (
         tree
-    ):
-        if node.name != section_path:
-            continue
-
-        yield SectionConfig(
-            section_path=section_path,
-            config=node,
-            vdom=vdom,
-        )
+        if isinstance(tree, SectionIndex)
+        else SectionIndex.build(tree)
+    )
+    yield from index.iter_configs(section_path)
 
 
 def _iter_configs_with_context(
-    tree: FortiGateConfigTree,
+    tree: FortiGateConfigTree | SectionIndex,
 ) -> Iterator[tuple[ConfigNode, str]]:
     """
     Traverse every ConfigNode while deriving its FortiGate VDOM context.
@@ -437,6 +427,13 @@ def _iter_configs_with_context(
     Both edit-based and config-based extraction use this traversal so
     VDOM handling cannot diverge between extractors.
     """
+
+    if isinstance(tree, SectionIndex):
+        yield from (
+            (entry.node, entry.vdom)
+            for entry in tree.entries
+        )
+        return
 
     def walk_config(
         node: ConfigNode,

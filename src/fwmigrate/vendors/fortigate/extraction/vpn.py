@@ -8,7 +8,6 @@ from ..model.vpn import (
 )
 from ..nodes import (
     CommandNode,
-    FortiGateConfigTree,
 )
 
 from .common import (
@@ -16,6 +15,7 @@ from .common import (
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 _PHASE1_SECRET_FIELDS = {
@@ -35,7 +35,7 @@ class VPNConfig(Protocol):
 
 
 def extract_vpn(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: VPNConfig,
 ) -> None:
     """Extract FortiGate route-based IPsec source objects."""
@@ -45,7 +45,7 @@ def extract_vpn(
 
 
 def _extract_phase1(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: VPNConfig,
 ) -> None:
     section_path = "vpn ipsec phase1-interface"
@@ -110,7 +110,7 @@ def _extract_phase1(
 
 
 def _extract_phase2(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: VPNConfig,
 ) -> None:
     section_path = "vpn ipsec phase2-interface"

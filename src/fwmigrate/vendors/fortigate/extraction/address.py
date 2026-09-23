@@ -11,7 +11,6 @@ from ..model.address import (
 )
 from ..nodes import (
     ConfigNode,
-    FortiGateConfigTree,
 )
 
 from .common import (
@@ -20,6 +19,7 @@ from .common import (
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class AddressConfig(Protocol):
@@ -36,7 +36,7 @@ class AddressConfig(Protocol):
 
 
 def extract_addresses(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: AddressConfig,
 ) -> None:
     """Extract FortiGate address-domain source objects."""
@@ -76,7 +76,7 @@ def extract_addresses(
 
 
 def _extract_address_family(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: AddressConfig,
     *,
     section_path: str,
@@ -154,7 +154,7 @@ def _extract_address_tagging(
 
 
 def _extract_address_groups(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: AddressConfig,
     *,
     section_path: str,
@@ -228,7 +228,7 @@ def _extract_group_tagging(
 
 
 def _extract_wildcard_fqdns(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: AddressConfig,
 ) -> None:
     section_path = "firewall wildcard-fqdn custom"

@@ -8,19 +8,19 @@ from ..model.source import CheckPointConfig
 from .models import CheckPointValidationIssue, CheckPointValidationResult
 
 
-def validate_checkpoint_config(config: CheckPointConfig, derived: CheckPointDerivedViews) -> CheckPointValidationResult:
+def validate_checkpoint_config(config: CheckPointConfig, derived: CheckPointDerivedViews, collection: tuple = ()) -> CheckPointValidationResult:
     issues = [CheckPointValidationIssue(
         severity="error" if item.status in {CollectionStatus.API_ERROR, CollectionStatus.TRANSPORT_ERROR, CollectionStatus.PERMISSION_DENIED} else "warning",
         category="collection",
         message=item.error or f"Collection incomplete: {item.command}",
         command=item.command,
-    ) for item in config.collection if not item.complete]
+    ) for item in collection if not item.complete]
     issues.extend(CheckPointValidationIssue(
         severity="warning",
         category="unsupported",
         message=f"Unsupported collection command: {item.command}",
         command=item.command,
-    ) for item in config.collection if item.status == CollectionStatus.UNSUPPORTED_COMMAND)
+    ) for item in collection if item.status == CollectionStatus.UNSUPPORTED_COMMAND)
     issues.extend(CheckPointValidationIssue(
         severity="error",
         category="reference",

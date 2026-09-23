@@ -3,7 +3,7 @@ from fwmigrate.web import create_app
 from tests.fixture_paths import CISCO_ASA_FIXTURE
 
 
-def test_migration_endpoint_is_explicitly_unavailable():
+def test_migration_endpoint_rejects_unsupported_pair():
     client = create_app({"TESTING": True}).test_client()
     response = client.post(
         "/api/migrate",
@@ -16,18 +16,19 @@ def test_migration_endpoint_is_explicitly_unavailable():
         content_type="multipart/form-data",
     )
 
-    assert response.status_code == 503
-    assert response.get_json() == {
-        "error": (
-            "Configuration conversion is temporarily unavailable while the "
-            "pair-specific conversion architecture is being implemented."
-        )
-    }
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Only fortigate -> palo_alto is supported"}
 
 
-def test_terraform_prepare_is_explicitly_unavailable():
+def test_terraform_endpoints_are_removed():
     client = create_app({"TESTING": True}).test_client()
-    response = client.post("/api/terraform/prepare")
-
-    assert response.status_code == 503
-    assert "Configuration conversion is temporarily unavailable" in response.get_json()["error"]
+    for path in (
+        "/api/terraform/prepare",
+        "/api/terraform/plan",
+        "/api/terraform/approve",
+        "/api/terraform/apply/stream",
+        "/api/terraform/destroy/stream",
+        "/api/download/state",
+        "/api/download/package",
+    ):
+        assert client.post(path).status_code == 404

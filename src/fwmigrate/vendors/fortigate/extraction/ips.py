@@ -9,7 +9,6 @@ from ..model.ips import (
 )
 from ..nodes import (
     ConfigNode,
-    FortiGateConfigTree,
 )
 
 from .common import (
@@ -18,6 +17,7 @@ from .common import (
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class IPSConfig(Protocol):
@@ -27,7 +27,7 @@ class IPSConfig(Protocol):
 
 
 def extract_ips(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: IPSConfig,
 ) -> None:
     """Extract FortiGate IPS sensor source objects."""

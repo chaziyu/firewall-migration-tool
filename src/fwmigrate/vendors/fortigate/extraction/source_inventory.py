@@ -5,12 +5,10 @@ from typing import Any
 
 from ..nodes import (
     CommandNode,
-    ConfigNode,
-    EditNode,
-    FortiGateConfigTree,
     UnknownCommandNode,
 )
 from .common import evaluate_config, evaluate_edit
+from .section_index import SectionIndex
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +52,7 @@ class SourceObjectRecord:
 
 
 def capture_source_objects(
-    tree: FortiGateConfigTree,
+    index: SectionIndex,
 ) -> tuple[SourceObjectRecord, ...]:
     """
     Capture all explicit config/edit blocks, including sections without a
@@ -67,30 +65,11 @@ def capture_source_objects(
 
     records: list[SourceObjectRecord] = []
 
-    def walk_config(
-        node: ConfigNode,
-        *,
-        vdom: str,
-        parent_path: str | None,
-        parent_objects: tuple[str, ...],
-    ) -> None:
-        if node.name == "vdom":
-            for edit in node.edits:
-                for child in edit.children:
-                    walk_config(
-                        child,
-                        vdom=edit.name,
-                        parent_path=None,
-                        parent_objects=(),
-                    )
-            return
-
-        source_path = (
-            f"{parent_path} {node.name}"
-            if parent_path
-            else node.name
-        )
-
+    for entry in index.source_entries:
+        node = entry.node
+        source_path = entry.source_path
+        vdom = entry.vdom
+        parent_objects = entry.parent_objects
         if node.commands:
             evaluation = evaluate_config(
                 source_path,
@@ -126,33 +105,6 @@ def capture_source_objects(
                     end_line_number=edit.end_line_number,
                 )
             )
-
-            for child in edit.children:
-                walk_config(
-                    child,
-                    vdom=vdom,
-                    parent_path=source_path,
-                    parent_objects=(
-                        *parent_objects,
-                        edit.name,
-                    ),
-                )
-
-        for child in node.children:
-            walk_config(
-                child,
-                vdom=vdom,
-                parent_path=source_path,
-                parent_objects=parent_objects,
-            )
-
-    for root in tree.configs:
-        walk_config(
-            root,
-            vdom="root",
-            parent_path=None,
-            parent_objects=(),
-        )
 
     return tuple(records)
 

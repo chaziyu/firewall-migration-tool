@@ -10,5 +10,5 @@ def test_gaia_cli_is_extracted_by_the_gaia_front_end():
     config = extract_checkpoint_config(bundle).config
 
     assert [item.object_type for item in config.gaia_interfaces] == ["interface"]
-    assert [item.object_type for item in config.gaia_routes] == ["static-route"]
-    assert all(item.source_plane == "gaia" for item in config.gaia_interfaces + config.gaia_routes)
+    assert [item.object_type for item in config.gaia_static_routes] == ["static-route"]
+    assert all(item.source_plane == "gaia" for item in config.gaia_interfaces + config.gaia_static_routes)

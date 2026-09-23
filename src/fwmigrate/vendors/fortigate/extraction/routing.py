@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..model.route_static import FGStaticRoute
-from ..nodes import FortiGateConfigTree
 
 from .common import (
     evaluate_edit,
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class RouteConfig(Protocol):
@@ -19,7 +19,7 @@ class RouteConfig(Protocol):
 
 
 def extract_routes(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: RouteConfig,
 ) -> None:
     """Extract FortiGate static-route source objects."""
@@ -33,7 +33,7 @@ def extract_routes(
 
 
 def _extract_static_routes(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: RouteConfig,
     *,
     section_path: str,

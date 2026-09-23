@@ -352,6 +352,7 @@ def collect_broken_references(
         ReferenceKind.SERVICE_GROUP,
     )
     schedule_like = (ReferenceKind.SCHEDULE, ReferenceKind.SCHEDULE_GROUP)
+    resolution_cache: dict[tuple[str, str, tuple[ReferenceKind, ...]], bool] = {}
 
     def check(
         *,
@@ -366,14 +367,18 @@ def collect_broken_references(
             if not name:
                 continue
 
-            if (
-                index.resolve_any(
-                    vdom=vdom,
-                    name=name,
-                    kinds=kinds,
+            cache_key = (vdom, name, kinds)
+            if cache_key not in resolution_cache:
+                resolution_cache[cache_key] = (
+                    index.resolve_any(
+                        vdom=vdom,
+                        name=name,
+                        kinds=kinds,
+                    )
+                    is not None
                 )
-                is not None
-            ):
+
+            if resolution_cache[cache_key]:
                 continue
 
             issues.append(

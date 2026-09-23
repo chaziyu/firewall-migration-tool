@@ -7,14 +7,21 @@ import hashlib
 import logging
 import threading
 import time
+import json
 from copy import deepcopy
 from dataclasses import dataclass
 from time import perf_counter
 from flask import Flask, render_template, request, send_file, jsonify
 
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
+from fwmigrate.conversion.builtin import register_builtin_migration_planners
+from fwmigrate.conversion import migration_planners
+from fwmigrate.conversion.fortigate_to_palo_alto import PANMigrationOptions
+from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 
 register_builtin_source_reporters()
+register_builtin_migration_planners()
 
 from fwmigrate.source_reporting import (
     ExcelExportUnavailableError,
@@ -47,8 +54,8 @@ class ConfigurationDecodeError(ValueError):
 def _conversion_unavailable():
     return jsonify({
         'error': (
-            'Configuration conversion is temporarily unavailable while the '
-            'pair-specific conversion architecture is being implemented.'
+            'Migration planning is temporarily unavailable while the '
+            'pair-specific planning architecture is being implemented.'
         ),
     }), 503
 
@@ -240,8 +247,30 @@ def create_app(test_config=None):
 
     @app.route('/api/migrate', methods=['POST'])
     def migrate():
-        """Conversion is disabled while pair-specific pipelines are rebuilt."""
-        return _conversion_unavailable()
+        """Plan the supported FortiGate to Palo Alto configuration."""
+        source_vendor = request.form.get('source_vendor', 'fortigate')
+        target_vendor = request.form.get('target_vendor', 'palo_alto')
+        if (source_vendor.casefold(), target_vendor.casefold()) != ('fortigate', 'palo_alto'):
+            return jsonify({'error': 'Only fortigate -> palo_alto is supported'}), 400
+        uploaded = request.files.get('file')
+        if uploaded is None or not uploaded.filename:
+            return jsonify({'error': 'A configuration file is required'}), 400
+        try:
+            mapping = json.loads(request.form.get('mapping', '{}'))
+            analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(uploaded.read()))
+            plan = migration_planners.get(source_vendor, target_vendor).plan(
+                analysis.extracted.config, analysis.derived, options=PANMigrationOptions(**mapping)
+            )
+            validation = validate_plan(plan)
+            rendered = PANSetRenderer().render(plan)
+            return jsonify({
+                'success': True,
+                'commands': list(rendered.commands),
+                'report': rendered.report,
+                'validation': {'issues': [issue.message for issue in validation.issues]},
+            })
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
 
     @app.route('/api/extract/excel', methods=['POST'])
     def extract_excel():
@@ -331,41 +360,7 @@ def create_app(test_config=None):
 
     @app.route('/api/diagnostics', methods=['POST'])
     def run_diagnostics():
-        """Target diagnostics are unavailable without a conversion pair."""
-        return _conversion_unavailable()
-
-    @app.route('/api/terraform/prepare', methods=['POST'])
-    def terraform_prepare():
-        """Terraform preparation is disabled with legacy conversion."""
-        return _conversion_unavailable()
-
-    @app.route('/api/terraform/plan', methods=['POST'])
-    def terraform_plan():
-        """Target planning is unavailable without a conversion pair."""
-        return _conversion_unavailable()
-
-    @app.route('/api/terraform/apply/stream')
-    def terraform_apply_stream():
-        """Target apply is unavailable without a conversion pair."""
-        return _conversion_unavailable()
-
-    @app.route('/api/terraform/destroy/stream')
-    def terraform_destroy_stream():
-        """Target rollback is unavailable without a conversion pair."""
-        return _conversion_unavailable()
-
-    @app.route('/api/terraform/approve', methods=['POST'])
-    def terraform_approve():
-        return _conversion_unavailable()
-
-    @app.route('/api/download/state')
-    def download_state():
-        """Target state is unavailable without a conversion pair."""
-        return _conversion_unavailable()
-
-    @app.route('/api/download/package')
-    def download_package():
-        """Target packages are unavailable without a conversion pair."""
+        """Plan diagnostics are unavailable without a migration planner."""
         return _conversion_unavailable()
 
     return app
@@ -392,8 +387,8 @@ class DesktopAPI:
                 file_types = ('Zip Archive (*.zip)', 'All files (*.*)')
             elif ext == '.xlsx':
                 file_types = ('Excel Workbook (*.xlsx)', 'All files (*.*)')
-            elif ext in ('.json', '.tfstate'):
-                file_types = ('JSON/State (*.json;*.tfstate)', 'All files (*.*)')
+            elif ext == '.json':
+                file_types = ('JSON (*.json)', 'All files (*.*)')
             elif ext == '.md':
                 file_types = ('Markdown (*.md)', 'All files (*.*)')
             else:

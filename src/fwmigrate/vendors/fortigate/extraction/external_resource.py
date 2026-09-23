@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..model.external_resource import FGExternalResource
-from ..nodes import FortiGateConfigTree
 
 from .common import (
     evaluate_edit,
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class ExternalResourceConfig(Protocol):
@@ -17,7 +17,7 @@ class ExternalResourceConfig(Protocol):
 
 
 def extract_external_resources(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: ExternalResourceConfig,
 ) -> None:
     section_path = "system external-resource"

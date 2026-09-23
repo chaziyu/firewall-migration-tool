@@ -12,3 +12,4 @@ def test_excel_report_contains_traceability_sheets():
     from fwmigrate.vendors.checkpoint.export.excel import export_checkpoint_excel
     export_checkpoint_excel(extract_checkpoint_source(source), output)
     assert {"Collection", "Validation"}.issubset(load_workbook(io.BytesIO(output.getvalue()), read_only=True).sheetnames)
+    assert extract_checkpoint_source(source).config.hosts

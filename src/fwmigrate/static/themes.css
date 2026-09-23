@@ -387,17 +387,6 @@
   background: #4c4224;
   color: #e2ca8e;
 }
-[data-theme="dark"] .badge-destroy {
-  background: #523323;
-  color: #edb396;
-}
-[data-theme="dark"] .post-actions-bar {
-  background: #293a31;
-  border-color: #587164;
-}
-[data-theme="dark"] .post-info {
-  color: #cbd8d1;
-}
 [data-theme="dark"] .toast {
   background: #222c27;
   border-color: var(--dark-border);

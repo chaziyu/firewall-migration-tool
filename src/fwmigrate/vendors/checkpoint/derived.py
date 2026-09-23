@@ -21,14 +21,14 @@ class CheckPointDerivedViews:
     collection_incomplete: tuple[Any, ...] = ()
 
 
-def build_checkpoint_derived_views(config: CheckPointConfig) -> CheckPointDerivedViews:
+def build_checkpoint_derived_views(config: CheckPointConfig, collection: tuple[Any, ...] = ()) -> CheckPointDerivedViews:
     by_uid, by_name, memberships, unresolved = build_reference_views(config)
     package_layers, inline_layers = build_policy_structure(config)
     return CheckPointDerivedViews(
         by_uid=by_uid, by_name=by_name, group_memberships=memberships,
         package_layers=package_layers, inline_layers=inline_layers,
         unresolved_references=unresolved,
-        collection_incomplete=tuple(item for item in config.collection if not item.complete),
+        collection_incomplete=tuple(item for item in collection if not item.complete),
     )
 
 

@@ -34,9 +34,17 @@
         <option value="">All severities</option><option value="error">Errors</option><option value="warning">Warnings</option>
       </select>
     </div>
-    <div class="report-table-wrap">
-      <table class="report-table"><thead id="report-table-head"></thead><tbody id="report-table-body"></tbody></table>
-      <p class="report-empty hidden" id="report-empty">No matching rows.</p>
+    <div class="report-table-meta">
+      <p id="report-row-count" role="status" aria-live="polite"></p>
+      <p id="report-scroll-hint" class="hidden">Scroll horizontally to see all columns.</p>
     </div>
+    <div class="report-table-wrap" tabindex="0" role="region" aria-labelledby="report-table-caption" aria-describedby="report-scroll-hint">
+      <table class="report-table">
+        <caption class="sr-only" id="report-table-caption">Configuration report</caption>
+        <thead id="report-table-head"></thead>
+        <tbody id="report-table-body"></tbody>
+      </table>
+    </div>
+    <p class="report-empty hidden" id="report-empty" role="status">No matching rows.</p>
   </div>
 </section>

@@ -5,24 +5,20 @@ from typing import Any, Iterable
 
 from .derived import DerivedViews
 from .model.source import FGConfig
+from .validation.index import ValidationIssueIndex
 from .validation.models import ValidationResult
 
 
 def _messages(
-    validation: ValidationResult,
+    issue_index: ValidationIssueIndex,
     *,
     vdom: str,
     names: Iterable[object],
     domains: Iterable[str] = (),
 ) -> list[str]:
-    wanted_names = {str(name) for name in names if name is not None}
-    wanted_domains = set(domains)
     return [
         issue.message
-        for issue in validation.issues
-        if issue.vdom == vdom
-        and (not wanted_names or str(issue.object_name) in wanted_names)
-        and (not wanted_domains or issue.domain in wanted_domains)
+        for issue in issue_index.issues_for(vdom, names, domains)
     ]
 
 
@@ -178,6 +174,7 @@ def build_web_report(
 ) -> dict[str, Any]:
     """Build a secret-safe presentation model for the browser report."""
 
+    issue_index = ValidationIssueIndex(validation)
     topology = {(item.vdom, item.name): item for item in derived.topology.interfaces}
     vpn_topology = {(item.vdom, item.name): item for item in derived.topology.vpns}
     policy_names = {
@@ -225,7 +222,7 @@ def build_web_report(
                 "review": _review(
                     top.issues if top else (),
                     _messages(
-                        validation,
+                        issue_index,
                         vdom=item.vdom,
                         names=(item.name,),
                         domains=("interface", "interface_topology"),
@@ -245,7 +242,7 @@ def build_web_report(
             "comment": item.comment,
             "review": _review(
                 _messages(
-                    validation,
+                    issue_index,
                     vdom=item.vdom,
                     names=(item.name,),
                     domains=("address", "address6"),
@@ -265,7 +262,7 @@ def build_web_report(
             "comment": item.comment,
             "review": _review(
                 _messages(
-                    validation,
+                    issue_index,
                     vdom=item.vdom,
                     names=(item.name,),
                     domains=("address_group", "address_group6"),
@@ -290,7 +287,7 @@ def build_web_report(
             "comment": item.comment,
             "review": _review(
                 _messages(
-                    validation,
+                    issue_index,
                     vdom=item.vdom,
                     names=(item.source_name, item.name),
                     domains=("service",),
@@ -309,7 +306,7 @@ def build_web_report(
             "comment": item.comment,
             "review": _review(
                 _messages(
-                    validation,
+                    issue_index,
                     vdom=item.vdom,
                     names=(item.name,),
                     domains=("service_group", "service"),
@@ -329,7 +326,7 @@ def build_web_report(
             "start_utc": item.start_utc,
             "end_utc": item.end_utc,
             "expiration_days": item.expiration_days,
-            "review": _review(_messages(validation, vdom=item.vdom, names=(item.name,), domains=("schedule",))),
+            "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("schedule",))),
         }
         for item in config.one_time_schedules
     ] + [
@@ -340,7 +337,7 @@ def build_web_report(
             "days": list(item.days),
             "start": item.start,
             "end": item.end,
-            "review": _review(_messages(validation, vdom=item.vdom, names=(item.name,), domains=("schedule",))),
+            "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("schedule",))),
         }
         for item in config.recurring_schedules
     ]
@@ -350,7 +347,7 @@ def build_web_report(
             "name": item.name,
             "vdom": item.vdom,
             "members": list(item.members),
-            "review": _review(_messages(validation, vdom=item.vdom, names=(item.name,), domains=("schedule_group",))),
+            "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("schedule_group",))),
         }
         for item in config.schedule_groups
     ]
@@ -382,7 +379,7 @@ def build_web_report(
                         else ()
                     ),
                     _messages(
-                        validation,
+                        issue_index,
                         vdom=item.vdom,
                         names=(item.policy_id, item.name),
                         domains=("policy", "nat"),
@@ -419,7 +416,7 @@ def build_web_report(
             "status": item.status,
             "review": _review(
                 _messages(
-                    validation,
+                    issue_index,
                     vdom=item.vdom,
                     names=(item.seq_num,),
                     domains=("static_route", "static_route6"),
@@ -447,7 +444,7 @@ def build_web_report(
                 "review": _review(
                     top.issues if top else (),
                     _messages(
-                        validation,
+                        issue_index,
                         vdom=item.vdom,
                         names=(item.name,),
                         domains=("ipsec_phase1", "vpn_topology"),
@@ -474,7 +471,7 @@ def build_web_report(
                 "review": _review(
                     vpn_issues[(item.vdom, item.name)],
                     _messages(
-                        validation,
+                        issue_index,
                         vdom=item.vdom,
                         names=(item.name,),
                         domains=("vpn_phase2",),

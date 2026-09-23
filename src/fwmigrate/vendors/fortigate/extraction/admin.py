@@ -15,7 +15,6 @@ from ..model.admin import (
 from ..nodes import (
     CommandNode,
     ConfigNode,
-    FortiGateConfigTree,
     UnknownCommandNode,
 )
 
@@ -26,6 +25,7 @@ from .common import (
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class AdminConfig(Protocol):
@@ -36,7 +36,7 @@ class AdminConfig(Protocol):
 
 
 def extract_admin(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: AdminConfig,
 ) -> None:
     _extract_administrators(tree, config)
@@ -44,7 +44,7 @@ def extract_admin(
 
 
 def _extract_administrators(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: AdminConfig,
 ) -> None:
     section_path = "system admin"
@@ -118,7 +118,7 @@ def _extract_administrators(
 
 
 def _extract_admin_profiles(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: AdminConfig,
 ) -> None:
     section_path = "system accprofile"

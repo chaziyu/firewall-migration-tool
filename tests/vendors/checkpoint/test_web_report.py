@@ -10,3 +10,5 @@ def test_web_report_contains_source_and_validation_sections():
     preview = build_checkpoint_preview(report)
     assert preview["vendor"] == "checkpoint"
     assert "access_rules" in preview["sections"]
+    assert "source_inventory" in preview
+    assert "source_metadata" in preview

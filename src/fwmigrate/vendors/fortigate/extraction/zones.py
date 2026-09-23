@@ -8,7 +8,6 @@ from ..model.zone import (
 )
 from ..nodes import (
     ConfigNode,
-    FortiGateConfigTree,
 )
 
 from .common import (
@@ -17,6 +16,7 @@ from .common import (
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class ZoneConfig(Protocol):
@@ -26,7 +26,7 @@ class ZoneConfig(Protocol):
 
 
 def extract_zones(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: ZoneConfig,
 ) -> None:
     """Extract FortiGate system-zone source objects."""

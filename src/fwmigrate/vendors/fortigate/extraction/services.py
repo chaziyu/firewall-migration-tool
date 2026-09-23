@@ -7,13 +7,13 @@ from ..model.service import (
     FGServiceCategory,
     FGServiceGroup,
 )
-from ..nodes import FortiGateConfigTree
 
 from .common import (
     evaluate_edit,
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class ServiceConfig(Protocol):
@@ -29,7 +29,7 @@ class ServiceConfig(Protocol):
 
 
 def extract_services(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: ServiceConfig,
 ) -> None:
     """Extract FortiGate service-domain source objects."""
@@ -40,7 +40,7 @@ def extract_services(
 
 
 def _extract_categories(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: ServiceConfig,
 ) -> None:
     section_path = "firewall service category"
@@ -67,7 +67,7 @@ def _extract_categories(
 
 
 def _extract_custom_services(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: ServiceConfig,
 ) -> None:
     section_path = "firewall service custom"
@@ -94,7 +94,7 @@ def _extract_custom_services(
 
 
 def _extract_service_groups(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: ServiceConfig,
 ) -> None:
     section_path = "firewall service group"

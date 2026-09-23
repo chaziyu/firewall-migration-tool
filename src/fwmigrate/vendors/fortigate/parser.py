@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from .nodes import (
     CommandNode,
     CommentNode,
@@ -40,8 +42,9 @@ class FortiGateParser:
     """
 
     def __init__(self, tokenizer: FortiGateTokenizer):
-        self.tokens = list(tokenizer.tokenize())
-        self.pos = 0
+        self.tokens: Iterator[Token] = iter(tokenizer.tokenize())
+        self._lookahead: Token | None = None
+        self._has_lookahead = False
 
     def parse(self) -> FortiGateConfigTree:
         tree = FortiGateConfigTree()
@@ -287,16 +290,17 @@ class FortiGateParser:
     # ------------------------------------------------------------------
 
     def peek(self) -> Token | None:
-        if self.pos >= len(self.tokens):
-            return None
+        if not self._has_lookahead:
+            self._lookahead = next(self.tokens, None)
+            self._has_lookahead = True
 
-        return self.tokens[self.pos]
+        return self._lookahead
 
     def next_token(self) -> Token | None:
         token = self.peek()
 
-        if token is not None:
-            self.pos += 1
+        self._lookahead = None
+        self._has_lookahead = False
 
         return token
 

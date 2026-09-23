@@ -17,23 +17,23 @@ def _source(name: str) -> str:
 def test_checkpoint_source_report_keeps_collection_and_scope_separate():
     result = extract_checkpoint_source(_source("multidomain_full.json"))
 
-    assert result.config.network_objects
+    assert result.config.hosts
     assert result.config.access_rules
-    assert all(item.source_plane == "management" for item in result.config.network_objects)
-    assert result.config.collection
+    assert all(item.source_plane == "management" for item in result.config.hosts)
+    assert result.collection
 
 
 def test_checkpoint_source_report_does_not_treat_failed_collection_as_empty():
     result = extract_checkpoint_source(_source("partial_collection.json"))
 
-    assert any(not item.complete for item in result.config.collection)
+    assert any(not item.complete for item in result.collection)
     assert any(issue.category == "collection" for issue in result.validation.issues)
 
 
 def test_checkpoint_source_report_resolves_group_and_rule_references():
     result = extract_checkpoint_source(_source("r81_golden_matrix.json"))
 
-    assert result.config.network_objects
+    assert result.config.hosts
     assert isinstance(result.derived.unresolved_references, tuple)
 
 
