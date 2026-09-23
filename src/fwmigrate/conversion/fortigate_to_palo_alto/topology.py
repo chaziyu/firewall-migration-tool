@@ -25,6 +25,7 @@ def plan_topology(source: Any, derived: Any, options: Any):
         result.append(PlannedZone(
             source_vdom=zone.vdom, source_kind="zone", source_object_type="zone",
             source_name=zone.name, status=status, warnings=tuple(dict.fromkeys(warnings)),
+            target_vsys=getattr(getattr(options, "vdoms", {}).get(zone.vdom), "vsys", None), target_name=zone.name,
             interfaces=tuple(target_interfaces),
         ))
     return tuple(result)

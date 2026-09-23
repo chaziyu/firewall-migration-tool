@@ -30,9 +30,15 @@ def plan_policies(source: Any, options: Any):
         result.append(PlannedSecurityRule(
             source_vdom=policy.vdom, source_kind="policy", source_object_type="security_rule",
             source_name=policy.name or str(policy.policy_id), source_policy_id=policy.policy_id,
+            target_vsys=getattr(getattr(options, "vdoms", {}).get(policy.vdom), "vsys", None),
+            target_name=policy.name or str(policy.policy_id),
             status=status, warnings=tuple(warnings), from_zones=from_zones, to_zones=to_zones,
             sources=tuple(policy.srcaddr or policy.srcaddr6), destinations=tuple(policy.dstaddr or policy.dstaddr6),
             services=tuple(policy.service), schedule=policy.schedule, action=action,
+            negate_source=getattr(policy, "srcaddr_negate", None) in {"enable", "yes", "1"},
+            negate_destination=getattr(policy, "dstaddr_negate", None) in {"enable", "yes", "1"},
+            disabled=getattr(policy, "status", None) in {"disable", "disabled"},
+            description=getattr(policy, "comments", None),
         ))
     return tuple(result)
 

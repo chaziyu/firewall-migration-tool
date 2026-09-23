@@ -26,11 +26,16 @@ def plan_routes(source: Any, options: Any):
         if route.dynamic_gateway or route.sdwan_zone or route.src or route.vrf is not None:
             warnings.append("route uses unsupported source or dynamic routing semantics")
         status = PANMigrationStatus.SUPPORTED if not warnings else PANMigrationStatus.MANUAL_REVIEW
+        blackhole = getattr(route, "blackhole", None) in {"enable", "yes", "1"}
+        nexthop = None if blackhole else route.gateway
         result.append(PlannedStaticRoute(
             source_vdom=route.vdom, source_kind="static_route", source_object_type="static_route",
             source_name=str(route.seq_num) if route.seq_num is not None else destination,
             source_policy_id=route.seq_num, status=status, warnings=tuple(warnings),
-            destination=destination, gateway=("discard" if route.blackhole in {"enable", "yes", "1"} else route.gateway),
-            interface=interface, virtual_router=virtual_router,
+            target_vsys=getattr(mapping, "vsys", None), target_name=str(route.seq_num) if route.seq_num is not None else destination,
+            destination=destination, nexthop_type="discard" if blackhole else ("ip-address" if nexthop else None),
+            nexthop=nexthop, admin_distance=getattr(route, "distance", None), interface=interface,
+            virtual_router=virtual_router, disabled=getattr(route, "status", None) in {"disable", "disabled"},
+            description=getattr(route, "comment", None),
         ))
     return tuple(result)

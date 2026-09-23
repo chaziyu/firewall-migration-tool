@@ -21,6 +21,14 @@ class CPGaiaStaticRoute(CheckPointSourceObject):
     next_hop: str | None = None
     outgoing_interface: str | None = None
     enabled: bool | None = None
+    comment: str | None = None
+    priority: int | None = None
+    rank: int | None = None
+    blackhole: bool | None = None
+    reject: bool | None = None
+    ping: bool | None = None
+    ping6: bool | None = None
+    scopelocal: bool | None = None
 
 
 class CPGaiaDHCPPool(CheckPointSourceObject):
@@ -37,6 +45,8 @@ class CPGaiaDHCPSubnet(CheckPointSourceObject):
     included_pools: list[CPGaiaDHCPPool] = Field(default_factory=list)
     excluded_pools: list[CPGaiaDHCPPool] = Field(default_factory=list)
     lease: str | int | None = None
+    default_lease: str | int | None = None
+    maximum_lease: str | int | None = None
     gateway: str | None = None
     domain: str | None = None
     dns_servers: list[str] = Field(default_factory=list)
@@ -49,12 +59,23 @@ class CPGaiaDHCPServer(CheckPointSourceObject):
 
 
 class CPGaiaUser(CheckPointSourceObject):
+    uid: int | str | None = None
+    gid: int | str | None = None
+    home: str | None = None
+    real_name: str | None = None
+    lock_out: bool | None = None
+    force_password_change: bool | None = None
     authentication_method: str | None = None
     shell: str | None = None
     roles: list[CheckPointObjectReference | str] = Field(default_factory=list)
 
 
 class CPGaiaRBARole(CheckPointSourceObject):
+    domain_type: str | None = None
+    all_features: bool | None = None
+    read_only_features: list[str] = Field(default_factory=list)
+    read_write_features: list[str] = Field(default_factory=list)
+    virtual_system_access: list[str] = Field(default_factory=list)
     permissions: list[str] = Field(default_factory=list)
 
 
