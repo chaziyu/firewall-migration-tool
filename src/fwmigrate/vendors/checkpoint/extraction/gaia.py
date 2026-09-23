@@ -5,7 +5,7 @@ from typing import Iterable
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
 from ..models import CheckPointResponse
-from ..source_model import CheckPointSourceRecord
+from ..model.source import CheckPointSourceRecord
 from ..gaia.parser import parse_gaia
 
 

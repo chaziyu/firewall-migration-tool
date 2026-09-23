@@ -7,7 +7,7 @@ from typing import Any
 
 from .relationships.policy_structure import build_policy_structure
 from .relationships.references import build_reference_views
-from .source_model import CheckPointConfig
+from .model.source import CheckPointConfig
 
 
 @dataclass(frozen=True)

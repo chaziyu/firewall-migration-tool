@@ -18,6 +18,7 @@ from .validation import PANOSValidationIssue, PANOSValidationResult, validate_pa
 
 def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
     counts = {
+        "tag": len(config.tags),
         "address": len(config.addresses),
         "address-group": len(config.address_groups),
         "service": len(config.services),
@@ -46,6 +47,8 @@ def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
         "ike-gateway": len(config.ike_gateways), "ike-crypto-profile": len(config.ike_crypto_profiles),
         "ipsec-crypto-profile": len(config.ipsec_crypto_profiles), "ipsec-tunnel": len(config.ipsec_tunnels),
         "globalprotect-portal": len(config.globalprotect_portals), "globalprotect-gateway": len(config.globalprotect_gateways),
+        "local-user": len(config.local_users), "local-user-group": len(config.local_user_groups),
+        "group-mapping": len(config.group_mappings),
     }
     hierarchy = build_scope_hierarchy(config.scopes)
     index = build_reference_index(config)

@@ -1,34 +1,11 @@
-"""Check Point source validation."""
+"""Check Point source validation logic."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from .derived import CheckPointDerivedViews
-from .models import CollectionStatus
-from .source_model import CheckPointConfig
-
-
-@dataclass(frozen=True)
-class CheckPointValidationIssue:
-    severity: str
-    category: str
-    message: str
-    command: str | None = None
-    reference: str | None = None
-
-
-@dataclass(frozen=True)
-class CheckPointValidationResult:
-    issues: tuple[CheckPointValidationIssue, ...] = ()
-
-    @property
-    def errors(self) -> tuple[CheckPointValidationIssue, ...]:
-        return tuple(item for item in self.issues if item.severity == "error")
-
-    @property
-    def warnings(self) -> tuple[CheckPointValidationIssue, ...]:
-        return tuple(item for item in self.issues if item.severity == "warning")
+from ..derived import CheckPointDerivedViews
+from ..models import CollectionStatus
+from ..model.source import CheckPointConfig
+from .models import CheckPointValidationIssue, CheckPointValidationResult
 
 
 def validate_checkpoint_config(config: CheckPointConfig, derived: CheckPointDerivedViews) -> CheckPointValidationResult:
@@ -54,4 +31,4 @@ def validate_checkpoint_config(config: CheckPointConfig, derived: CheckPointDeri
     return CheckPointValidationResult(tuple(issues))
 
 
-__all__ = ["CheckPointValidationIssue", "CheckPointValidationResult", "validate_checkpoint_config"]
+__all__ = ["validate_checkpoint_config"]

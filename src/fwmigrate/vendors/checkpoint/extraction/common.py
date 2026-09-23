@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, Optional
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
 from ..models import CheckPointResponse
-from ..source_model import CheckPointSourceRecord
+from ..model.source import CheckPointSourceRecord
 
 
 class SemanticKind(str, Enum):

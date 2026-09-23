@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..source_model import CheckPointConfig
+from ..model.source import CheckPointConfig
 
 
 @dataclass(frozen=True)

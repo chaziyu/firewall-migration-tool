@@ -36,6 +36,18 @@ def test_admin_xml_reaches_typed_administrators_and_roles():
     assert role.permissions[0].permission_path == "network"
 
 
+def test_admin_role_missing_and_empty_permissions_preserve_source_presence():
+    config = build_panos_config("""<config><shared><admin-role>
+      <entry name='missing'/><entry name='empty'><permissions/></entry>
+    </admin-role></shared></config>""")
+
+    missing, empty = config.admin_roles
+    assert missing.permissions is None
+    assert "permissions" not in missing.explicit_fields
+    assert empty.permissions == []
+    assert "permissions" in empty.explicit_fields
+
+
 def test_identity_admin_unknown_source_is_retained_separately():
     config = build_panos_config("<config><shared><administrators><entry name='admin'><future-setting>retain-me</future-setting></entry></administrators></shared></config>")
     assert config.source_inventory

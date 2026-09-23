@@ -7,7 +7,7 @@ from typing import Any
 
 from .derived import CheckPointDerivedViews, build_checkpoint_derived_views
 from .loader import load_checkpoint_input
-from .source_model import CheckPointConfig
+from .model.source import CheckPointConfig
 from .extraction import extract_checkpoint_config
 from .validation import CheckPointValidationResult, validate_checkpoint_config
 

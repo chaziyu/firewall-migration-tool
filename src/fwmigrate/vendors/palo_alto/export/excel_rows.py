@@ -9,6 +9,52 @@ from ..source_model import PANScope, pan_scope_identity
 from ..source_report import PaloAltoSourceResult
 
 
+_TYPED_COUNT_FIELDS = {
+    "tag": "tags",
+    "address": "addresses",
+    "address_group": "address_groups",
+    "service": "services",
+    "service_group": "service_groups",
+    "schedule": "schedules",
+    "security_rule": "security_rules",
+    "default_security_rule": "default_security_rules",
+    "nat_rule": "nat_rules",
+    "interface_import": "interface_imports",
+    "virtual_router_import": "interface_imports",
+    "interface_ethernet": "interfaces",
+    "interface_aggregate-ethernet": "interfaces",
+    "interface_loopback": "interfaces",
+    "interface_tunnel": "interfaces",
+    "interface_vlan": "interfaces",
+    "zone": "zones",
+    "security_profile_group": "security_profile_groups",
+    "interface_unit": "interface_units",
+    "virtual_router": "virtual_routers",
+    "logical_router": "logical_routers",
+    "ipsec_tunnel": "ipsec_tunnels",
+    "vulnerability_profile": "vulnerability_profiles",
+    "administrator": "administrators",
+    "admin_role": "admin_roles",
+    "ike_gateway": "ike_gateways",
+    "ike_crypto_profile": "ike_crypto_profiles",
+    "ipsec_crypto_profile": "ipsec_crypto_profiles",
+    "dhcp_server": "dhcp_servers",
+    "dhcp_interface": "dhcp_servers",
+    "sdwan_interface_profile": "sdwan_interface_profiles",
+    "sdwan_path_quality_profile": "sdwan_path_quality_profiles",
+    "sdwan_traffic_distribution_profile": "sdwan_traffic_distribution_profiles",
+    "sdwan_saas_quality_profile": "sdwan_saas_quality_profiles",
+    "sdwan_error_correction_profile": "sdwan_error_correction_profiles",
+    "sdwan_rule": "sdwan_rules",
+    "local_user": "local_users",
+    "local_user_database": "local_users",
+    "local_user_group": "local_user_groups",
+    "group_mapping": "group_mappings",
+    "globalprotect_portal": "globalprotect_portals",
+    "globalprotect_gateway": "globalprotect_gateways",
+}
+
+
 def _scope_id(scope: PANScope | None) -> str:
     return pan_scope_identity(scope) if scope else "<unscoped>"
 
@@ -341,10 +387,7 @@ def _inventory_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
 
 def _typed_counts(context: _PANExcelContext) -> dict[str, int]:
     config = context.config
-    counts = {"address": len(config.addresses), "address_group": len(config.address_groups), "service": len(config.services),
-              "service_group": len(config.service_groups), "schedule": len(config.schedules), "security_rule": len(config.security_rules),
-              "default_security_rule": len(config.default_security_rules), "nat_rule": len(config.nat_rules), "zone": len(config.zones),
-              "interface_unit": len(config.interface_units), "virtual_router": len(config.virtual_routers), "logical_router": len(config.logical_routers)}
+    counts = {domain: len(getattr(config, field)) for domain, field in _TYPED_COUNT_FIELDS.items()}
     counts.update({f"interface_{family}": sum(item.interface_family == family for item in config.interfaces)
                    for family in ("ethernet", "aggregate-ethernet", "loopback", "tunnel", "vlan")})
     return counts
@@ -361,6 +404,7 @@ def _coverage_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
 
 ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], list[dict[str, Any]]]] = {
     "Review Required": _validation_rows,
+    "Validation": _validation_rows,
     "Tags": lambda c: _simple_rows(c, c.config.tags, "tag", {"Color": "color", "Comments": "comments"}),
     "Addresses": _address_rows, "Address Groups": _address_group_rows, "Services": _service_rows,
     "Service Groups": lambda c: _simple_rows(c, c.config.service_groups, "service-group", {"Members": "members", "Tags": "tags", "Description": "description"}),
@@ -400,7 +444,6 @@ ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], list[dict[str, Any]]]] = {
     "Local Users": lambda c: _simple_rows(c, c.config.local_users, "local-user", {"Disabled": "disabled", "Password Configured": "password_configured"}),
     "Local User Groups": lambda c: _simple_rows(c, c.config.local_user_groups, "local-user-group", {"Members": "members"}),
     "Group Mappings": lambda c: _simple_rows(c, c.config.group_mappings, "group-mapping", {"Server Profile": "server_profile", "Disabled": "disabled", "LDAP Serial Number Check": "ldap_serial_number_check", "Use Modify Timestamp": "use_modify_timestamp", "Limited Group Search": "limited_group_search", "Nested Group Level": "nested_group_level", "Group Object Attributes": "group_object_attributes", "Group Member Attributes": "group_member_attributes", "Group Name Attributes": "group_name_attributes", "User Object Attributes": "user_object_attributes", "User Name Attributes": "user_name_attributes", "User Email Attributes": "user_email_attributes", "Group Email Attributes": "group_email_attributes", "Alternate Username 1": "alternate_username_1", "Alternate Username 2": "alternate_username_2", "Alternate Username 3": "alternate_username_3", "Container Object Attributes": "container_object_attributes", "Last Modify Attribute": "last_modify_attribute", "Group Include List": "group_include_list"}),
-    "Route Path Monitors": lambda c: [],
     "DHCP IP Pools": lambda c: _child_rows(c, c.config.dhcp_servers, "ip_pools", "dhcp-ip-pool", {"Pool Entry": "name", "Start IP": "start_ip", "End IP": "end_ip"}, "Interface", "interface"),
     "DHCP Reservations": lambda c: _child_rows(c, c.config.dhcp_servers, "reservations", "dhcp-reservation", {"Reservation Name": "name", "IP Address": "ip_address", "MAC Address": "mac_address", "Description": "description"}, "Interface", "interface"),
     "DHCP Options": lambda c: _child_rows(c, c.config.dhcp_servers, "options", "dhcp-option", {"Option Name": "name", "Code": "code", "Vendor Class Identifier": "vendor_class_identifier", "Inherited": "inherited", "Value Type": "value_type", "IP Values": "ip_values", "ASCII Values": "ascii_values", "Hex Values": "hex_values"}, "Interface", "interface"),

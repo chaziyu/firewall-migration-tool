@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..source_model import CheckPointConfig
+from ..model.source import CheckPointConfig
 
 
 def build_policy_structure(config: CheckPointConfig) -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
