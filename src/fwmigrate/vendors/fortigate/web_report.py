@@ -30,7 +30,7 @@ def _review(*groups: Iterable[str]) -> str | None:
 def _address_value(item: Any) -> str | None:
     if item.start_ip and item.end_ip:
         return f"{item.start_ip}-{item.end_ip}"
-    return item.subnet or item.fqdn or item.wildcard or item.wildcard_fqdn
+    return item.subnet or item.ip6 or item.fqdn or item.wildcard or item.wildcard_fqdn
 
 
 def _object_counts(config: FGConfig) -> dict[str, int]:
@@ -177,9 +177,6 @@ def build_web_report(
     issue_index = ValidationIssueIndex(validation)
     topology = {(item.vdom, item.name): item for item in derived.topology.interfaces}
     vpn_topology = {(item.vdom, item.name): item for item in derived.topology.vpns}
-    policy_names = {
-        (item.vdom, item.policy_id): item for item in derived.policy_names
-    }
     nat = {(item.vdom, item.policy_id): item for item in derived.nat}
     vpn_phase2 = {(item.vdom, item.name): item for item in derived.vpn.phase2}
     vpn_issues: dict[tuple[str, str], list[str]] = defaultdict(list)
@@ -355,12 +352,11 @@ def build_web_report(
     policies = []
     for item in config.policies:
         key = (item.vdom, item.policy_id)
-        name_info = policy_names.get(key)
         nat_item = nat.get(key)
         policies.append(
             {
                 "policy_id": item.policy_id,
-                "name": name_info.normalized_name if name_info else item.name,
+                "name": item.name,
                 "source_name": item.name,
                 "vdom": item.vdom,
                 "source_interfaces": list(item.srcintf),
@@ -373,11 +369,6 @@ def build_web_report(
                 "status": item.status,
                 "review": _review(
                     nat_item.issues if nat_item else (),
-                    (
-                        ("Policy-name normalization collision",)
-                        if name_info and name_info.collision
-                        else ()
-                    ),
                     _messages(
                         issue_index,
                         vdom=item.vdom,
@@ -468,6 +459,8 @@ def build_web_report(
                 "destination_range": (
                     normalized.destination_range if normalized else None
                 ),
+                "source_range6": normalized.source_range6 if normalized else None,
+                "destination_range6": normalized.destination_range6 if normalized else None,
                 "review": _review(
                     vpn_issues[(item.vdom, item.name)],
                     _messages(

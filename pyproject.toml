@@ -28,6 +28,10 @@ reports = [
 deployment = [
     "netmiko>=4.0",
 ]
+collection = [
+    "netmiko>=4.0",
+    "requests>=2.28",
+]
 
 [project.scripts]
 fwmigrate = "fwmigrate.main:cli"

@@ -57,8 +57,8 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     "VIP Real Servers": ("VIP Name", "Server ID", "IP", "Address", "Port", "Status", "Weight", "Monitors", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "VIP Groups": ("Name", "Interface", "Members", "Comments", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "Routes": ("Route ID", "Destination", "Destination Address Object", "Interface", "Gateway", "Distance", "Priority", "Status", "SD-WAN Zone", "Preferred Source", "Source Prefix", "Dynamic Gateway", "Blackhole", "Description", "Address Family", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
-    "VPN Tunnels": ("Name", "Type", "Local Interface", "Attached Physical Interfaces", "Aggregate", "Topology Path", "Remote Gateway IPv4", "Remote Gateway DDNS", "IKE Version", "IKE Mode", "Authentication Method", "Remote Authentication Method", "PSK Configured", "Phase 1 Proposal", "Phase 1 DH Groups", "Key Lifetime (Seconds)", "NAT Traversal", "DPD Mode", "DPD Retry Count", "DPD Retry Interval", "Local Gateway", "Local ID", "Local ID Type", "Peer ID", "Certificate", "Description", "VDOM", "Topology Issues", "Analysis Status", "Review Reasons", "Additional Settings"),
-    "VPN Phase 2": ("Name", "Phase 1", "Proposal", "PFS", "DH Groups", "Key Lifetime Seconds", "Key Lifetime KB", "Source Range", "Destination Range", "Protocol", "Source Port", "Destination Port", "Auto Negotiate", "Comments", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
+    "VPN Tunnels": ("Name", "Type", "Local Interface", "Attached Physical Interfaces", "Aggregate", "Topology Path", "Remote Gateway IPv4", "Remote Gateway DDNS", "IKE Version", "IKE Mode", "Authentication Method", "Remote Authentication Method", "PSK Configured", "PPK Secret Configured", "Auth Password Configured", "Group Authentication Secret Configured", "Phase 1 Proposal", "Phase 1 DH Groups", "Key Lifetime (Seconds)", "NAT Traversal", "DPD Mode", "DPD Retry Count", "DPD Retry Interval", "Local Gateway", "Local ID", "Local ID Type", "Peer ID", "Certificate", "Description", "VDOM", "Topology Issues", "Analysis Status", "Review Reasons", "Additional Settings"),
+    "VPN Phase 2": ("Name", "Phase 1", "Proposal", "PFS", "DH Groups", "Key Lifetime Seconds", "Key Lifetime KB", "Source Range", "Destination Range", "Source Range IPv6", "Destination Range IPv6", "Protocol", "Source Port", "Destination Port", "Auto Negotiate", "Comments", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "DHCP Servers": ("Server ID", "Interface", "Status", "Server Type", "IP Mode", "Default Gateway", "Netmask", "Lease Time", "DNS Service", "DNS Server 1", "DNS Server 2", "DNS Server 3", "DNS Server 4", "Timezone Option", "Timezone", "Relay Agent", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "DHCP IP Ranges": ("Server ID", "Interface", "Range ID", "Start IP", "End IP", "Lease Time", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "DHCP Reservations": ("Server ID", "Interface", "Reservation ID", "IP Address", "MAC Address", "Description", "Action", "Type", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
@@ -91,11 +91,11 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
 
 DERIVED_COLUMNS_BY_SHEET: dict[str, tuple[str, ...]] = {
     "Interfaces": ("Aggregate", "Physical Interfaces", "Topology Path", "Topology Issues"),
-    "Policies": ("Policy Name", "SNAT Type", "SNAT Address", "IP Pool Name"),
+    "Policies": ("SNAT Type", "SNAT Address", "IP Pool Name"),
     "NAT Rules": ("SNAT Type", "SNAT Address", "Egress Interfaces"),
     "Routes": ("Destination Address Object", "SD-WAN Zone", "Preferred Source"),
     "VPN Tunnels": ("Attached Physical Interfaces", "Aggregate", "Topology Path", "Topology Issues"),
-    "VPN Phase 2": ("Source Range", "Destination Range"),
+    "VPN Phase 2": ("Source Range", "Destination Range", "Source Range IPv6", "Destination Range IPv6"),
     "SD-WAN Members": ("Aggregate", "Physical Interfaces"),
 }
 

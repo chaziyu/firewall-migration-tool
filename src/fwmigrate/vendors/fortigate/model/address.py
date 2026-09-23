@@ -23,6 +23,7 @@ class FGAddress(BaseModel):
     type: str | None = None
 
     subnet: str | None = None
+    ip6: str | None = None
     start_ip: str | None = None
     end_ip: str | None = None
     fqdn: str | None = None

@@ -30,6 +30,8 @@ class NormalizedVPNPhase2:
 
     source_range: str | None
     destination_range: str | None
+    source_range6: str | None
+    destination_range6: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +82,15 @@ def normalize_vpn_phase2(
             )
         )
 
+        source_range6 = _selector_range(
+            phase2, selector="source", references=references,
+            issues=result.issues, ipv6=True,
+        )
+        destination_range6 = _selector_range(
+            phase2, selector="destination", references=references,
+            issues=result.issues, ipv6=True,
+        )
+
         result.phase2.append(
             NormalizedVPNPhase2(
                 name=phase2.name,
@@ -104,6 +115,8 @@ def normalize_vpn_phase2(
                 destination_range=(
                     destination_range
                 ),
+                source_range6=source_range6,
+                destination_range6=destination_range6,
             )
         )
 
@@ -116,20 +129,21 @@ def _selector_range(
     selector: str,
     references: ReferenceIndex,
     issues: list[VPNSelectorIssue],
+    ipv6: bool = False,
 ) -> str | None:
     if selector == "source":
         addr_type = phase2.src_addr_type
-        start = phase2.src_start_ip
-        end = phase2.src_end_ip
-        subnet = phase2.src_subnet
-        name = phase2.src_name
+        start = phase2.src_start_ip6 if ipv6 else phase2.src_start_ip
+        end = phase2.src_end_ip6 if ipv6 else phase2.src_end_ip
+        subnet = phase2.src_subnet6 if ipv6 else phase2.src_subnet
+        name = phase2.src_name6 if ipv6 else phase2.src_name
 
     elif selector == "destination":
         addr_type = phase2.dst_addr_type
-        start = phase2.dst_start_ip
-        end = phase2.dst_end_ip
-        subnet = phase2.dst_subnet
-        name = phase2.dst_name
+        start = phase2.dst_start_ip6 if ipv6 else phase2.dst_start_ip
+        end = phase2.dst_end_ip6 if ipv6 else phase2.dst_end_ip
+        subnet = phase2.dst_subnet6 if ipv6 else phase2.dst_subnet
+        name = phase2.dst_name6 if ipv6 else phase2.dst_name
 
     else:
         raise ValueError(
@@ -137,14 +151,14 @@ def _selector_range(
         )
 
     # An explicit ip selector is one host, not an incomplete range.
-    if addr_type == "ip":
+    if addr_type == ("ip6" if ipv6 else "ip"):
         return f"{start}-{start}" if start else None
 
     # --------------------------------------------------------------
     # Explicit range
     # --------------------------------------------------------------
 
-    if addr_type == "range" and (start or end):
+    if addr_type == ("range6" if ipv6 else "range") and (start or end):
         if not start or not end:
             issues.append(
                 VPNSelectorIssue(
@@ -163,7 +177,7 @@ def _selector_range(
             f"{start}-{end}"
         )
 
-    if addr_type not in {"subnet", "name", "range"} and (start or end):
+    if addr_type not in {"subnet", "name", "range", "ip", "subnet6", "name6", "range6", "ip6"} and (start or end):
         if not start or not end:
             issues.append(
                 VPNSelectorIssue(
@@ -213,7 +227,7 @@ def _selector_range(
             vdom=phase2.vdom,
             name=name,
             kinds=(
-                ReferenceKind.ADDRESS,
+                ReferenceKind.ADDRESS6 if ipv6 else ReferenceKind.ADDRESS,
             ),
         )
 
@@ -280,6 +294,9 @@ def _address_to_range(
         return _subnet_to_range(
             address.subnet
         )
+
+    if address.ip6:
+        return _subnet_to_range(address.ip6)
 
     return None
 

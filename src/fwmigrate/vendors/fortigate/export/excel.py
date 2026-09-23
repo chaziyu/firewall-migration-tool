@@ -624,8 +624,6 @@ def _migration_indicators(context: _ExcelContext) -> list[tuple[str, Any]]:
         ("SD-WAN Present", "Yes" if config.sdwans else "No"),
         ("NAT Review Items", nat_review_items),
         ("Broken References", len(context.derived.broken_references)),
-        ("Policy Names Truncated", sum(item.truncated for item in context.derived.policy_names)),
-        ("Policy Name Collisions", sum(item.collision for item in context.derived.policy_names)),
         ("Topology Issues", topology_issues),
     ]
 
@@ -866,7 +864,7 @@ def _zone_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str,
 
 def _address_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for item in context.config.addresses:
-        value = item.subnet or (
+        value = item.subnet or item.ip6 or (
             f"{item.start_ip}-{item.end_ip}" if item.start_ip and item.end_ip else None
         ) or item.fqdn or item.wildcard or item.wildcard_fqdn
         row = {
@@ -1022,25 +1020,16 @@ def _service_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[
 
 
 def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
-    normalized = {
-        (item.vdom, item.policy_id): item
-        for item in context.derived.policy_names
-    }
     nat = {
         (item.vdom, item.policy_id): item
         for item in context.derived.nat
     }
     for item in context.config.policies:
-        name_info = normalized.get((item.vdom, item.policy_id))
         nat_item = nat.get((item.vdom, item.policy_id))
         row = {
             "Rule #": item.policy_id,
-            "Policy Name": name_info.normalized_name if name_info else item.name,
-            "Source Name": (
-                name_info.source_name
-                if name_info is not None and name_info.truncated
-                else None
-            ),
+            "Policy Name": item.name,
+            "Source Name": item.name,
             "Source Interface": item.srcintf,
             "Source Addresses": item.srcaddr,
             "Destination Interface": item.dstintf,
@@ -1078,14 +1067,8 @@ def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dic
             context,
             vdom=item.vdom,
             names=(item.name, item.policy_id),
-            extra_reasons=(
-                ("Policy-name normalization collision",)
-                if name_info is not None and name_info.collision
-                else ()
-            ),
         )
         _overlay_raw(row, item.raw_extra, headers)
-        _add_analysis_status(row, context, vdom=item.vdom, names=(item.name,))
         yield row
 
 
@@ -1331,6 +1314,9 @@ def _vpn_phase1_rows(
             "Authentication Method": item.authmethod,
             "Remote Authentication Method": item.authmethod_remote,
             "PSK Configured": "Yes" if item.psk_configured else "No",
+            "PPK Secret Configured": "Yes" if item.ppk_secret_configured else "No",
+            "Auth Password Configured": "Yes" if item.auth_password_configured else "No",
+            "Group Authentication Secret Configured": "Yes" if item.group_authentication_secret_configured else "No",
             "Phase 1 Proposal": item.proposal,
             "Phase 1 DH Groups": item.dhgrp,
             "Key Lifetime (Seconds)": item.keylife,
@@ -1429,6 +1415,8 @@ def _vpn_phase2_rows(
                 if norm
                 else None
             ),
+            "Source Range IPv6": norm.source_range6 if norm else None,
+            "Destination Range IPv6": norm.destination_range6 if norm else None,
             "Auto Negotiate": item.auto_negotiate,
             "VDOM": item.vdom,
             "Comments": item.comments,

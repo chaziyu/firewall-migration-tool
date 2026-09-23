@@ -148,15 +148,10 @@
     </div>
   </div>
   <div id="ingest-live-container" class="hidden" role="tabpanel" aria-label="Live Collection">
-    <div class="form-grid">
-      <label class="form-group col-8"><span>Host</span><input id="collection-host" autocomplete="off" required></label>
-      <label class="form-group col-4"><span>SSH port</span><input id="collection-port" type="number" value="22" min="1" max="65535" required></label>
-      <label class="form-group col-6"><span>Username</span><input id="collection-username" autocomplete="username" required></label>
-      <label class="form-group col-6"><span>Password</span><input id="collection-password" type="password" autocomplete="new-password" required></label>
-    </div>
+    <div class="form-grid" id="collection-fields"></div>
     <div class="button-row">
       <button type="button" class="btn btn-secondary" id="btn-test-collection">Test Connection</button>
-      <button type="button" class="btn btn-primary" id="btn-collect-configuration">Collect Configuration</button>
+      <button type="button" class="btn btn-primary" id="btn-collect-configuration">Collect &amp; Download Snapshot</button>
     </div>
     <div id="collection-status" class="preview-status hidden" role="status" aria-live="polite"></div>
   </div>
