@@ -32,7 +32,7 @@ def test_supported_fixtures_export_real_workbooks(name):
     workbook = _workbook(name)
     assert workbook.sheetnames[0] == "Summary"
     assert "Review Required" in workbook.sheetnames
-    assert "Validation" not in workbook.sheetnames
+    assert "Validation" in workbook.sheetnames
     assert "PAN-OS Source Inventory" in workbook.sheetnames
     assert {sheet for sheet, status in SHEET_IMPLEMENTATION_STATUS.items() if status != "NOT_IMPLEMENTED"} <= set(workbook.sheetnames)
     assert not ({sheet for sheet, status in SHEET_IMPLEMENTATION_STATUS.items() if status == "NOT_IMPLEMENTED"} & set(workbook.sheetnames))

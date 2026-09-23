@@ -36,3 +36,18 @@ def test_vulnerability_block_ip_and_exempt_ips_are_extracted_explicitly():
     assert rule.raw_extra["future-rule-field"] == "retain-rule"
     assert (exception.block_ip.track_by, exception.block_ip.duration) == ("source-and-destination", "60")
     assert exception.exempt_ips == ["192.0.2.10", "192.0.2.11"]
+
+
+def test_vulnerability_missing_and_empty_nested_sections_preserve_source_presence():
+    config = build_panos_config("""<config><shared><profiles><vulnerability>
+      <entry name='missing'/><entry name='empty'><rules/><exceptions/></entry>
+    </vulnerability></profiles></shared></config>""")
+
+    missing, empty = config.vulnerability_profiles
+    assert missing.rules is None
+    assert missing.exceptions is None
+    assert "rules" not in missing.explicit_fields
+    assert "exceptions" not in missing.explicit_fields
+    assert empty.rules == []
+    assert empty.exceptions == []
+    assert {"rules", "exceptions"} <= empty.explicit_fields

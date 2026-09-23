@@ -63,14 +63,14 @@ def extract_named(cls, *, secret_fields=()):
 
 def extract_vulnerability(element, path, context, source_order, spec):
     item = _named(PANVulnerabilityProfile, element, path, context, source_order, spec)
-    item.rules = []
-    item.exceptions = []
-    for child in element:
-        if child.tag not in {"rules", "exceptions"}:
+    for child_tag, model in (("rules", PANVulnerabilityRule), ("exceptions", PANVulnerabilityException)):
+        child = element.find(child_tag)
+        if child is None:
             continue
-        target = item.rules if child.tag == "rules" else item.exceptions
+        entries = []
+        setattr(item, child_tag, entries)
         for entry in child.findall("entry"):
-            exception = child.tag == "exceptions"
+            exception = child_tag == "exceptions"
             known = {"threat-name", "host", "vendor-ids", "severities", "category", "action", "block-ip", "packet-capture"}
             if exception:
                 known.update({"time-interval", "time-threshold", "time-track-by", "exempt-ips", "exempt-ip"})
@@ -90,7 +90,7 @@ def extract_vulnerability(element, path, context, source_order, spec):
             data["explicit_fields"] = {child.tag.replace("-", "_") for child in entry if child.tag in known}
             if block_ip is not None:
                 data["explicit_fields"].add("block_ip")
-            target.append((PANVulnerabilityRule if child.tag == "rules" else PANVulnerabilityException)(**data))
+            entries.append(model(**data))
     return item
 
 
@@ -118,8 +118,11 @@ def _exempt_ips(element):
 
 def extract_admin_role(element, path, context, source_order, spec):
     item = _named(PANAdminRole, element, path, context, source_order, spec)
+    section = element.find("permissions")
+    if section is None:
+        return item
     item.permissions = []
-    for entry in element.findall("permissions/entry"):
+    for entry in section.findall("entry"):
         item.permissions.append(PANAdminRolePermission(
             channel=_value(entry, "channel"), permission_path=_value(entry, "permission-path"), setting=_value(entry, "setting"), value=_value(entry, "value")))
     return item
@@ -162,8 +165,11 @@ def extract_ipsec(element, path, context, source_order, spec):
 
 def extract_traffic_distribution(element, path, context, source_order, spec):
     item = _named(PANSDWANTrafficDistributionProfile, element, path, context, source_order, spec)
+    section = element.find("link")
+    if section is None:
+        return item
     item.links = []
-    for entry in element.findall("link/entry"):
+    for entry in section.findall("entry"):
         known = {"link-tag", "weight"}
         item.links.append(PANSDWANTrafficDistributionLink(
             link_tag=_value(entry, "link-tag"),

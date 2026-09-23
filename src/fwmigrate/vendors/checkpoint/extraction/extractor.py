@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ..models import CheckPointExportBundle, CollectionStatus
-from ..source_model import CheckPointCollectionDiagnostic, CheckPointConfig
+from ..model.source import CheckPointCollectionDiagnostic, CheckPointConfig
 from .common import source_plane
 from .gaia import extract_gaia_records
 from .objects import extract_object_records

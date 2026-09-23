@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..source_model import CheckPointConfig, CheckPointSourceRecord
+from ..model.source import CheckPointConfig, CheckPointSourceRecord
 
 
 def _scope(item: CheckPointSourceRecord) -> str | None:

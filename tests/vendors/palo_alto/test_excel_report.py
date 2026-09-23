@@ -13,8 +13,7 @@ def test_excel_report_contains_native_domain_sheets():
     reporter = PaloAltoSourceReporter()
     reporter.export_excel(reporter.analyze_source(source), output)
     sheetnames = set(load_workbook(io.BytesIO(output.getvalue()), read_only=True).sheetnames)
-    assert {"Summary", "Review Required", "Interfaces", "Security Policies"}.issubset(sheetnames)
-    assert "Validation" not in sheetnames
+    assert {"Summary", "Review Required", "Validation", "Interfaces", "Security Policies"}.issubset(sheetnames)
 
 
 def test_excel_report_activates_typed_dhcp_sdwan_identity_and_globalprotect_sheets():
@@ -43,3 +42,13 @@ def test_excel_report_activates_typed_dhcp_sdwan_identity_and_globalprotect_shee
     assert workbook["DHCP IP Pools"].cell(4, 9).value == "future-field: retain-pool"
     values = " ".join(str(cell.value) for sheet in workbook.worksheets for row in sheet.iter_rows() for cell in row)
     assert all(secret not in values for secret in ("local-secret", "portal-secret", "gateway-secret"))
+
+
+def test_excel_validation_sheet_contains_validation_issue():
+    source = "<config><shared><address><entry name='bad'><ip-netmask>999.999.999.999</ip-netmask></entry></address></shared></config>"
+    output = io.BytesIO()
+    reporter = PaloAltoSourceReporter()
+    reporter.export_excel(reporter.analyze_source(source), output)
+    workbook = load_workbook(io.BytesIO(output.getvalue()), read_only=True, data_only=True)
+    rows = list(workbook["Validation"].iter_rows(min_row=4, values_only=True))
+    assert any("malformed ip_netmask" in str(row) for row in rows)

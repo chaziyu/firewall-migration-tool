@@ -1,4 +1,6 @@
+import ast
 import inspect
+import textwrap
 
 import pytest
 
@@ -57,7 +59,21 @@ def test_implemented_source_sheets_do_not_use_empty_placeholder_builders():
         if status != "IMPLEMENTED" or sheet == "Summary":
             continue
         assert sheet in ROW_BUILDERS
-        assert "lambda c: []" not in inspect.getsource(ROW_BUILDERS[sheet]).replace(" ", "")
+        source = textwrap.dedent(inspect.getsource(ROW_BUILDERS[sheet])).strip().rstrip(",")
+        if not source.startswith(("def ", "async def ")):
+            source = f"{{{source}}}"
+        tree = ast.parse(source)
+        assert not any(
+            isinstance(node, ast.Lambda)
+            and isinstance(node.body, ast.List)
+            and not node.body.elts
+            for node in ast.walk(tree)
+        )
+
+
+def test_not_implemented_sheets_need_no_row_builder():
+    assert SHEET_IMPLEMENTATION_STATUS["Route Path Monitors"] == "NOT_IMPLEMENTED"
+    assert "Route Path Monitors" not in ROW_BUILDERS
 
 
 def test_failed_typed_extraction_preserves_inventory_and_later_objects():

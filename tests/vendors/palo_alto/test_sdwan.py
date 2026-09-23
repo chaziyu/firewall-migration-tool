@@ -34,6 +34,19 @@ def test_sdwan_links_and_interface_bindings_reach_existing_typed_models():
     assert (unit.sdwan_enabled, unit.ipv6_sdwan_enabled, unit.sdwan_interface_profile, unit.upstream_nat) == ("yes", "yes", "wan-sub", "no")
 
 
+def test_sdwan_missing_and_empty_links_preserve_source_presence():
+    config = build_panos_config("""<config><shared><network><sdwan>
+      <traffic-distribution-profile><entry name='missing'/><entry name='empty'><link/></entry>
+    </traffic-distribution-profile>
+    </sdwan></network></shared></config>""")
+
+    missing, empty = config.sdwan_traffic_distribution_profiles
+    assert missing.links is None
+    assert "link" not in missing.explicit_fields
+    assert empty.links == []
+    assert "link" in empty.explicit_fields
+
+
 def test_sdwan_unknown_source_is_retained_separately():
     config = build_panos_config("<config><shared><network><sdwan><rules><entry name='r'><future-setting>retain-me</future-setting></entry></rules></sdwan></network></shared></config>")
     assert config.source_inventory
