@@ -31,6 +31,7 @@ let currentRenderedArtifactId = null;
       "Export to Excel",
       "Upload once, then download the complete Excel workbook.",
     ],
+    collect: ["Live Collection", "Connect to a supported device and collect its configuration."],
     live: [
       "Live migration",
       "Validate your target, deploy CLI commands, then commit with confidence.",
@@ -262,6 +263,7 @@ let currentRenderedArtifactId = null;
   const tabReport = document.getElementById("tab-report");
   const tabLive = document.getElementById("tab-live");
   const tabExtract = document.getElementById("tab-extract");
+  const tabCollect = document.getElementById("tab-collect");
   const developmentBanner = document.getElementById("development-banner");
   const modeDownloadForm = document.getElementById("mode-download-form");
   const modeLiveForm = document.getElementById("mode-live-form");
@@ -290,7 +292,6 @@ let currentRenderedArtifactId = null;
   // Ingestion Method Tabs
   const btnIngestFile = document.getElementById("btn-ingest-file");
   const btnIngestSnapshot = document.getElementById("btn-ingest-snapshot");
-  const btnIngestLive = document.getElementById("btn-ingest-live");
   const liveContainer = document.getElementById("ingest-live-container");
   let ingestMode = "file";
 
@@ -588,6 +589,7 @@ let currentRenderedArtifactId = null;
   if (tabExtract) {
     tabExtract.addEventListener("click", () => switchMode("extract"));
   }
+  tabCollect?.addEventListener("click", () => switchMode("collect"));
 
   function switchMode(mode) {
     if (!MODE_COPY[mode]) return;
@@ -598,12 +600,14 @@ let currentRenderedArtifactId = null;
       selectedTargetVendor = offlineTargetVendor;
     }
     if (targetVendorSelect) targetVendorSelect.value = selectedTargetVendor;
+    if (mode === "collect" && activeMode !== "collect") clearSource();
     activeMode = mode;
     [
       [tabDownload, "download"],
       [tabReport, "report"],
       [tabLive, "live"],
       [tabExtract, "extract"],
+      [tabCollect, "collect"],
     ].forEach(([tab, tabMode]) => {
       if (!tab) return;
       const selected = mode === tabMode;
@@ -617,15 +621,23 @@ let currentRenderedArtifactId = null;
     if (modeLiveForm) modeLiveForm.classList.toggle("hidden", mode !== "live");
     if (modeExtractForm)
       modeExtractForm.classList.toggle("hidden", mode !== "extract");
+    document.querySelector(".ingest-tabs")?.classList.toggle("hidden", mode === "collect");
+    document.getElementById("ingest-file-container")?.classList.toggle("hidden", mode === "collect");
+    liveContainer?.classList.toggle("hidden", mode !== "collect");
+    if (mode === "collect" && selectedSourceVendor !== "cisco_asa") {
+      const status = document.getElementById("collection-status");
+      status.textContent = "Live collection is currently available for Cisco ASA.";
+      status.classList.remove("hidden");
+    }
     developmentBanner?.classList.toggle("hidden", !["download", "live"].includes(mode));
     btnExtractExcel?.parentElement?.classList.toggle("hidden", mode !== "extract");
     reportContainer?.classList.toggle("hidden", mode !== "report" || !currentReport);
     if (targetVendorGroup)
-      targetVendorGroup.classList.toggle("hidden", ["extract", "report"].includes(mode));
+      targetVendorGroup.classList.toggle("hidden", ["extract", "report", "collect"].includes(mode));
     if (vendorSelectorGrid)
       vendorSelectorGrid.classList.toggle(
         "extract-mode",
-        ["extract", "report"].includes(mode),
+        ["extract", "report", "collect"].includes(mode),
       );
     setText("page-title", MODE_COPY[mode][0]);
     setText("page-description", MODE_COPY[mode][1]);
@@ -639,6 +651,8 @@ let currentRenderedArtifactId = null;
         "[MODE] Switched to migration planning.",
         "term-system",
       );
+    } else if (mode === "collect") {
+      logToTerminal("[MODE] Switched to Live Collection.", "term-system");
     } else if (mode === "live") {
       logToTerminal(
         "[MODE] Switched to Direct Live Migration Engine (Target Pre-Flight & Live Push).",
@@ -684,8 +698,8 @@ let currentRenderedArtifactId = null;
       }),
     );
   }
-  enableTabKeys([tabReport, tabDownload, tabExtract, tabLive]);
-  enableTabKeys([btnIngestFile]);
+  enableTabKeys([tabReport, tabExtract, tabCollect, tabDownload, tabLive]);
+  enableTabKeys([btnIngestFile, btnIngestSnapshot]);
 
   // =========================================================================
   // 3. Vendor Selector Dropdowns
@@ -697,7 +711,10 @@ let currentRenderedArtifactId = null;
       ["collection-host", "collection-username", "collection-password"].forEach((id) => { const field = document.getElementById(id); if (field) field.value = ""; });
       const collectionStatus = document.getElementById("collection-status");
       collectionStatus?.classList.add("hidden");
-      if (btnIngestLive) btnIngestLive.disabled = selectedSourceVendor !== "cisco_asa";
+      if (activeMode === "collect" && selectedSourceVendor !== "cisco_asa") {
+        collectionStatus.textContent = "Live collection is currently available for Cisco ASA.";
+        collectionStatus.classList.remove("hidden");
+      }
       currentRenderedArtifactId = null;
       clearSource();
       const vendorName =
@@ -1034,7 +1051,6 @@ let currentRenderedArtifactId = null;
   btnIngestFile?.addEventListener("click", () => switchIngestMode("file"));
   btnIngestSnapshot?.addEventListener("click", () => switchIngestMode("snapshot"));
   btnIngestLive?.addEventListener("click", () => switchIngestMode("live"));
-  if (btnIngestLive) btnIngestLive.disabled = selectedSourceVendor !== "cisco_asa";
 
   function collectionPayload() {
     return { vendor: selectedSourceVendor, connection: {
