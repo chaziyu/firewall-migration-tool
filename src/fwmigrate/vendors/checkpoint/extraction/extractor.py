@@ -23,6 +23,7 @@ _POLICY_EXTRACTORS = {
     "show-access-rulebase": extract_access_rulebase,
     "show-nat-rulebase": extract_nat_rulebase,
     "show-threat-rulebase": extract_threat_rulebase,
+    "show-threat-rule-exception-rulebase": extract_threat_rulebase,
     "show-https-rulebase": extract_https_rulebase,
     "show-https-inspection-rulebase": extract_https_rulebase,
 }
