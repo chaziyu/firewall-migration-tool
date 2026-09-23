@@ -12,7 +12,18 @@ Vendor Source
 → Preview / Excel
 ```
 
-Cross-vendor conversion is not implemented.
+Cross-vendor conversion is not implemented yet.
+
+For vendor-specific command and configuration coverage, use the matching selected reference in `documentation/official-cli-references-selected version/`:
+
+- FortiGate: `FortiGate Selected CLI References.md`
+- Cisco ASA: `Cisco_ASA_Selected_Configuration_References.md`
+- Cisco FTD: `Cisco_FTD_Selected_Configuration_References.md`
+- Juniper SRX: `Juniper_Selected_CLI_References.md`
+- Check Point R81: `Check_Point_R81_Selected_CLI_and_Management_API_References.md`
+- PAN-OS: `Palo_Alto_Selected_CLI_References.md`
+
+Use these files to check the selected extraction coverage for that vendor. They do not make vendor defaults explicit source configuration.
 
 ## Core invariants
 

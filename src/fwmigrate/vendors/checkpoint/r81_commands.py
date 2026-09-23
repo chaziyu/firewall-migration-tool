@@ -33,6 +33,10 @@ R81_COMMAND_REGISTRY: Dict[str, R81CommandSpec] = {
     "show-address-ranges": R81CommandSpec("show-address-ranges"),
     "show-wildcards": R81CommandSpec("show-wildcards"),
     "show-multicast-address-ranges": R81CommandSpec("show-multicast-address-ranges"),
+    "show-users": R81CommandSpec("show-users"),
+    "show-user-groups": R81CommandSpec("show-user-groups"),
+    "show-permission-profiles": R81CommandSpec("show-permission-profiles"),
+    "show-administrators": R81CommandSpec("show-administrators"),
     "show-dynamic-objects": R81CommandSpec("show-dynamic-objects"),
     "show-dns-domains": R81CommandSpec("show-dns-domains"),
     "show-network-feeds": R81CommandSpec("show-network-feeds"),
@@ -89,6 +93,9 @@ R81_COMMAND_REGISTRY: Dict[str, R81CommandSpec] = {
     "show-threat-rulebase": R81CommandSpec(
         "show-threat-rulebase", expected_response_shape="rulebase", scope_type="PACKAGE"
     ),
+    "show-threat-rule-exception-rulebase": R81CommandSpec(
+        "show-threat-rule-exception-rulebase", expected_response_shape="rulebase", scope_type="PACKAGE"
+    ),
     # Official R81 HTTPS Inspection rulebase command.
     "show-https-rulebase": R81CommandSpec(
         "show-https-rulebase", expected_response_shape="rulebase", scope_type="PACKAGE"
@@ -102,6 +109,7 @@ LEGACY_COMMAND_ALIASES: Mapping[str, str] = {
     "show-https-inspection-rulebase": "show-https-rulebase",
     "show-https-inspection-policy": "show-https-rulebase",
     "show-threat-prevention-profiles": "show-threat-profiles",
+    "show-wildcard-objects": "show-wildcards",
 }
 
 

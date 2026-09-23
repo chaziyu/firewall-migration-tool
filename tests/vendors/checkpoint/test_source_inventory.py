@@ -20,3 +20,12 @@ def test_unknown_objects_are_inventory_evidence_and_secrets_are_redacted():
     assert record.values["password"] == "[REDACTED]"
     assert secret not in str(result.config.model_dump())
     assert secret not in str(record.model_dump())
+
+
+def test_known_unmodeled_live_command_stays_in_source_inventory():
+    result = extract_checkpoint_config(CheckPointExportBundle.model_validate({"responses": [{
+        "command": "show-network-feeds",
+        "data": {"objects": [{"uid": "feed", "name": "feed", "type": "network-feed", "future-field": "preserve"}]},
+    }]}))
+    assert len(result.source_inventory) == 1
+    assert result.source_inventory[0].values["future-field"] == "preserve"

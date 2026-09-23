@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from fwmigrate.vendors.checkpoint.extraction import extract_checkpoint_config
 from fwmigrate.vendors.checkpoint.loader import load_checkpoint_input
 from fwmigrate.vendors.checkpoint.model.address import CPGroup, CPGroupWithExclusion, CPHost, CPNetwork
@@ -81,3 +83,37 @@ def test_policy_gateway_threat_and_vpn_families_remain_distinct():
     community = _extract("show-vpn-communities", [{"type": "vpn-community", "name": "community"}]).vpn_communities[0]
     assert type(community) is CPVPNCommunity
     assert not isinstance(nat, (CPHost,))
+
+
+@pytest.mark.parametrize(("command", "collection", "kind"), [
+    ("show-multicast-address-ranges", "address_ranges", "r81-specific-response"), ("show-wildcards", "wildcard_addresses", "r81-specific-response"),
+    ("show-services-sctp", "services", "r81-specific-response"), ("show-services-icmp6", "services", "r81-specific-response"),
+    ("show-services-citrix-tcp", "services", "r81-specific-response"), ("show-services-dce-rpc", "services", "r81-specific-response"),
+    ("show-services-rpc", "services", "r81-specific-response"), ("show-services-gtp", "services", "r81-specific-response"),
+    ("show-services-compound-tcp", "services", "r81-specific-response"), ("show-application-sites", "applications", "r81-specific-response"),
+    ("show-application-site-groups", "applications", "r81-specific-response"), ("show-application-site-categories", "applications", "r81-specific-response"),
+    ("show-vpn-communities-star", "vpn_communities", "r81-specific-response"), ("show-vpn-communities-meshed", "vpn_communities", "r81-specific-response"),
+    ("show-vpn-communities-remote-access", "vpn_communities", "r81-specific-response"), ("show-users", "users", "user"),
+    ("show-user-groups", "user_groups", "user-group"), ("show-permission-profiles", "permission_profiles", "permission-profile"),
+    ("show-administrators", "administrators", "administrator"),
+])
+def test_live_commands_dispatch_to_typed_models(command, collection, kind):
+    from fwmigrate.vendors.checkpoint.models import CheckPointExportBundle
+
+    result = extract_checkpoint_config(CheckPointExportBundle.model_validate({"responses": [{
+        "command": command,
+        "data": {"objects": [{"uid": "obj-1", "name": "obj", "type": kind}]},
+    }]}))
+    assert getattr(result.config, collection)
+    assert not result.source_inventory
+
+
+def test_exception_rulebase_keeps_exception_command_and_collection():
+    from fwmigrate.vendors.checkpoint.models import CheckPointExportBundle
+
+    result = extract_checkpoint_config(CheckPointExportBundle.model_validate({"responses": [{
+        "command": "show-threat-rule-exception-rulebase", "data": {"rulebase": [{"type": "exception", "name": "skip"}]},
+    }]}))
+    assert result.config.threat_rule_exceptions
+    assert not result.config.threat_rules
+    assert result.config.threat_rule_exceptions[0].command == "show-threat-rule-exception-rulebase"

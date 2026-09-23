@@ -20,6 +20,8 @@ SENSITIVE_KEY_PREFIXES = (
     "x-chkp-sid",
     "shared-secret",
     "shared_secret",
+    "challenge-response",
+    "challenge_response",
     "secret",
     "private-key",
     "private_key",
