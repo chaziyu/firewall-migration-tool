@@ -19,13 +19,13 @@ from fwmigrate.vendors.fortigate.benchmark import (  # noqa: E402
     BenchmarkResult,
     BenchmarkTimings,
     git_identity,
-    max_peak_memory,
     median_timings,
     sha256_bytes,
 )
 from fwmigrate.vendors.fortigate.derived import build_derived_views  # noqa: E402
 from fwmigrate.vendors.fortigate.config import ExtractionConfig  # noqa: E402
 from fwmigrate.vendors.fortigate.export import export_excel  # noqa: E402
+from fwmigrate.vendors.fortigate.export.excel import _benchmark_excel_export  # noqa: E402
 from fwmigrate.vendors.fortigate.extraction.extractor import (  # noqa: E402
     extract_fortigate_config,
 )
@@ -66,55 +66,85 @@ def _workload_counts(config) -> dict[str, int]:
     }
 
 
-def benchmark(input_path: Path, output_path: Path, runs: int, warmup: int, scenario: str | None) -> BenchmarkResult:
-    source_bytes = input_path.read_bytes()
-    source = source_bytes.decode("utf-8-sig")
-    samples: list[BenchmarkTimings] = []
-    measured_peaks: list[int] = []
-    final_tree = final_extracted = final_validation = final_derived = None
-    git_branch, git_commit = git_identity(ROOT)
+def _run_pipeline(source: str, source_name: str, *, measure: bool):
+    def run(call):
+        return _timed(call) if measure else (call(), None)
 
-    for run_number in range(warmup + runs):
-        tracemalloc.start()
-        tracemalloc.reset_peak()
-        tree, parse_ms = _timed(lambda: parse_fortigate_config(source))
-        extracted, extraction_ms = _timed(
-            lambda: extract_fortigate_config(tree, config=ExtractionConfig())
+    tree, parse_ms = run(lambda: parse_fortigate_config(source))
+    extracted, extraction_ms = run(
+        lambda: extract_fortigate_config(tree, config=ExtractionConfig())
+    )
+    derived, derived_ms = run(lambda: build_derived_views(extracted.config))
+    validation, validation_ms = run(
+        lambda: validate_config(extracted.config, derived=derived)
+    )
+    _, web_report_ms = run(
+        lambda: build_web_report(
+            extracted.config,
+            derived,
+            validation,
+            top_level_sections=len(tree.configs),
         )
-        derived, derived_ms = _timed(lambda: build_derived_views(extracted.config))
-        validation, validation_ms = _timed(lambda: validate_config(extracted.config, derived=derived))
-        _, web_report_ms = _timed(
-            lambda: build_web_report(
-                extracted.config, derived, validation,
-                top_level_sections=len(tree.configs),
-            )
-        )
-        _, excel_export_ms = _timed(
-            lambda: export_excel(
-                extracted=extracted,
-                derived=derived,
-                validation=validation,
-                output=io.BytesIO(),
-                source_name=input_path.name,
-                benchmark=None,
-            )
-        )
-        _, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+    )
 
-        timing = BenchmarkTimings(
+    if measure:
+        excel_build_ms, excel_save_ms, excel_total_ms, sheet_timings = _benchmark_excel_export(
+            extracted=extracted,
+            derived=derived,
+            validation=validation,
+            source_name=source_name,
+        )
+        excel_total_ms = excel_build_ms + excel_save_ms
+        timings = BenchmarkTimings(
             parse_ms=parse_ms,
             extraction_ms=extraction_ms,
             derived_ms=derived_ms,
             validation_ms=validation_ms,
             web_report_ms=web_report_ms,
-            excel_export_ms=excel_export_ms,
-            total_ms=sum((parse_ms, extraction_ms, derived_ms, validation_ms, web_report_ms, excel_export_ms)),
+            excel_build_ms=excel_build_ms,
+            excel_save_ms=excel_save_ms,
+            excel_total_ms=excel_total_ms,
+            total_ms=sum((parse_ms, extraction_ms, derived_ms, validation_ms, web_report_ms, excel_total_ms)),
+            sheet_timings=sheet_timings,
         )
-        if run_number >= warmup:
-            samples.append(timing)
-            measured_peaks.append(peak)
-            final_tree, final_extracted, final_derived, final_validation = tree, extracted, derived, validation
+    else:
+        export_excel(
+            extracted=extracted,
+            derived=derived,
+            validation=validation,
+            output=io.BytesIO(),
+            source_name=source_name,
+            benchmark=None,
+        )
+        timings = None
+
+    return tree, extracted, derived, validation, timings
+
+
+def benchmark(input_path: Path, output_path: Path, runs: int, warmup: int, scenario: str | None) -> BenchmarkResult:
+    source_bytes = input_path.read_bytes()
+    source = source_bytes.decode("utf-8-sig")
+    samples: list[BenchmarkTimings] = []
+    git_branch, git_commit = git_identity(ROOT)
+
+    if tracemalloc.is_tracing():
+        tracemalloc.stop()
+    for _ in range(warmup):
+        _run_pipeline(source, input_path.name, measure=True)
+    final_run = None
+    for _ in range(runs):
+        final_run = _run_pipeline(source, input_path.name, measure=True)
+        samples.append(final_run[4])
+
+    tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        _run_pipeline(source, input_path.name, measure=False)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    final_tree, final_extracted, final_derived, final_validation, _ = final_run
 
     result = BenchmarkResult(
         timestamp_utc=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
@@ -127,7 +157,7 @@ def benchmark(input_path: Path, output_path: Path, runs: int, warmup: int, scena
         runs=runs,
         warmup_runs=warmup,
         timings=median_timings(samples),
-        peak_memory_bytes=max_peak_memory(measured_peaks),
+        peak_memory_bytes=peak,
         top_level_sections=len(final_tree.configs),
         source_object_count=len(final_extracted.source_objects),
         validation_issue_count=len(final_validation.issues),
@@ -166,7 +196,9 @@ def main() -> None:
         ("Derived", timings.derived_ms),
         ("Validation", timings.validation_ms),
         ("Web report", timings.web_report_ms),
-        ("Excel export", timings.excel_export_ms),
+        ("Excel build", timings.excel_build_ms),
+        ("Excel save", timings.excel_save_ms),
+        ("Excel total", timings.excel_total_ms),
         ("Total", timings.total_ms),
     ):
         print(f"{label + ':':16}{value:9.1f} ms")

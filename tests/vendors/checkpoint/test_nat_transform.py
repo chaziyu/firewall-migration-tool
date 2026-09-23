@@ -139,13 +139,13 @@ def test_nat_transform_is_exposed_in_preview_and_excel():
 
     assert result.config.hosts[0].nat_settings == {"auto-rule": True}
     preview = build_checkpoint_preview(result)
-    assert preview["transforms"]["nat"]["views"][0]["source_kind"] == "automatic_object_settings"
+    assert preview["derived"]["nat"][0]["source_kind"] == "automatic_object_settings"
 
     output = BytesIO()
     export_checkpoint_excel(result, output)
     output.seek(0)
-    sheet = load_workbook(output, read_only=True)["NAT Migration View"]
+    sheet = load_workbook(output, read_only=True)["NAT Migration Views"]
     headers = next(sheet.iter_rows(values_only=True))
     row = next(sheet.iter_rows(min_row=2, values_only=True))
     assert row[headers.index("Source Kind")] == "automatic_object_settings"
-    assert row[headers.index("Translated Source")] == "UNKNOWN"
+    assert row[headers.index("Resolved Translation")] in (None, "")

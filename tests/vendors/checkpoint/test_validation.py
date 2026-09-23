@@ -1,10 +1,13 @@
 from pathlib import Path
 
-from fwmigrate.vendors.checkpoint.derived import CheckPointDerivedViews
+from fwmigrate.vendors.checkpoint.derived import CheckPointDerivedViews, build_checkpoint_derived_views
 from fwmigrate.vendors.checkpoint.model.address import CPHost
-from fwmigrate.vendors.checkpoint.model.gaia import CPGaiaStaticRoute
+from fwmigrate.vendors.checkpoint.model.gaia import CPGaiaDHCPServer, CPGaiaStaticRoute
+from fwmigrate.vendors.checkpoint.model.gateway import CPGateway, CPGatewayInterface
+from fwmigrate.vendors.checkpoint.model.policy import CPAccessLayer, CPAccessRule, CPNATRule, CPPolicyPackage
 from fwmigrate.vendors.checkpoint.model.source import CheckPointConfig
-from fwmigrate.vendors.checkpoint.models import ScopeSelectionResult
+from fwmigrate.vendors.checkpoint.model.vpn import CPVPNCommunity
+from fwmigrate.vendors.checkpoint.models import CheckPointCollectionDiagnostic, CollectionStatus, ScopeSelectionResult
 from fwmigrate.vendors.checkpoint.source_report import extract_checkpoint_source
 from fwmigrate.vendors.checkpoint.validation import CheckPointValidationIndex, validate_checkpoint_config
 
@@ -52,3 +55,42 @@ def test_secret_finding_never_includes_material():
     assert findings[0].field == "config.hosts[0].raw_extra.authentication.password"
     safe = CheckPointConfig(hosts=[CPHost(uid="h2", name="safe", password_configured=True)])
     assert not any(item.code == "secret_material_detected" for item in validate_checkpoint_config(safe, CheckPointDerivedViews()).issues)
+
+
+def test_relationship_findings_reuse_derived_evidence_and_keep_expected_kinds():
+    config = CheckPointConfig(
+        policy_packages=[CPPolicyPackage(uid="pkg", name="pkg", access_layers=["layer"])],
+        access_layers=[CPAccessLayer(uid="layer", name="layer")],
+        access_rules=[CPAccessRule(uid="rule", name="rule", layer_uid="layer", source=["missing"], inline_layer="missing-layer")],
+        nat_rules=[CPNATRule(uid="nat", name="nat", method="static", translated_source=["host"])],
+        gateways=[CPGateway(uid="gw", name="gw", interfaces=[CPGatewayInterface(name="eth0", zone="missing-zone")])],
+        vpn_communities=[CPVPNCommunity(uid="vpn", name="vpn", participating_gateways=["missing-gateway"])],
+    )
+    before = config.model_dump()
+    derived = build_checkpoint_derived_views(config)
+    derived_before = repr(derived)
+    result = validate_checkpoint_config(config, derived)
+    by_code = {issue.code: issue for issue in result.issues}
+    assert by_code["reference_missing"].expected_kinds
+    assert "inline_layer_missing" in by_code
+    assert "nat_structure_incomplete" in by_code
+    assert "zone_reference_missing" in by_code
+    assert "vpn_member_missing" in by_code
+    assert config.model_dump() == before
+    assert repr(derived) == derived_before
+
+
+def test_collection_and_dhcp_findings_preserve_operation_context():
+    diagnostic = CheckPointCollectionDiagnostic(
+        command="show-access-rulebase", source_plane="management", domain="Domain A",
+        package="Package A", layer="Layer A", status=CollectionStatus.PERMISSION_DENIED,
+        complete=False, error="denied",
+    )
+    config = CheckPointConfig(gaia_dhcp_servers=[CPGaiaDHCPServer(name="dhcp", subnets=[{
+        "name": "subnet", "subnet": "192.0.2.0", "prefix": 24,
+        "included_pools": [{"start": "192.0.2.20"}],
+    }])])
+    result = validate_checkpoint_config(config, CheckPointDerivedViews(), collection=(diagnostic,))
+    collection_issue = next(issue for issue in result.issues if issue.code == "collection_incomplete")
+    assert collection_issue.package == "Package A" and collection_issue.layer == "Layer A"
+    assert any(issue.code == "gaia_dhcp_malformed" for issue in result.issues)

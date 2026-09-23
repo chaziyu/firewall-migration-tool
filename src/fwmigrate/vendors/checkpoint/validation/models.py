@@ -24,6 +24,8 @@ class CheckPointValidationIssue:
     field: str | None = None
     command: str | None = None
     reference: str | None = None
+    expected_kinds: tuple[str, ...] = ()
+    scope: str | None = None
 
 
 @dataclass(frozen=True)
