@@ -16,7 +16,7 @@ def test_gaia_route_does_not_infer_fields_not_present_in_source():
 
     route = extract_checkpoint_config(bundle).config.gaia_static_routes[0]
 
-    assert route.address_family is None
-    assert route.ipv4_destination is None
+    assert route.address_family == "ipv4"
+    assert route.ipv4_destination == "10.0.0.0/8"
     assert route.ipv6_destination is None
-    assert route.next_hop is None
+    assert route.next_hop == "192.0.2.254"

@@ -22,6 +22,10 @@ def evaluate_gaia_commands(tree: GaiaConfigTree) -> list[GaiaEvaluation]:
     for node in tree.commands:
         family, args = match_gaia_family(node.arguments)
         if family is None:
+            evaluations.append(GaiaEvaluation("unsupported", values={"command": " ".join((node.operation, *node.arguments))}, source_line=node.line_number))
+            continue
+        if node.operation == "show":
+            evaluations.append(GaiaEvaluation("unsupported", values={"command": " ".join((node.operation, *node.arguments))}, source_line=node.line_number))
             continue
         evaluation = _evaluate(family.name, node, args)
         if evaluation is None:
@@ -42,6 +46,8 @@ def _evaluate(kind: str, node: GaiaCommandNode, args: tuple[str, ...]) -> GaiaEv
     if kind == "interface":
         identity = args[0] if args else None
         values = _pairs(args[1:])
+        if isinstance(values.get("state"), bool):
+            values["state"] = "on" if values["state"] else "off"
         return GaiaEvaluation(kind, identity, values, set(values), node.line_number)
     if kind.startswith("static-route"):
         identity = args[0] if args else None
@@ -56,13 +62,29 @@ def _evaluate(kind: str, node: GaiaCommandNode, args: tuple[str, ...]) -> GaiaEv
                     continue
                 key = {"address": "next_hop", "interface": "outgoing_interface", "device": "outgoing_interface"}.get(lower, lower)
                 values.setdefault(key, args[index + 1])
+        if "address" in values:
+            values["next_hop"] = values.pop("address")
+        values.pop("gateway", None)
+        values.pop("nexthop", None)
         if identity and identity.lower() == "default":
             values["default"] = True
+        elif identity:
+            values["ipv6_destination" if kind.endswith("ipv6") else "ipv4_destination"] = identity
         return GaiaEvaluation(kind, identity, values, set(values), node.line_number)
     if kind == "dhcp-server":
-        identity = next((value for value in args if "/" in value), args[0] if args else None)
-        values = _pairs(args)
-        values.setdefault("process_state", next((x for x in args if x.lower() in {"on", "off", "enabled", "disabled"}), None))
+        subnet_index = next((i for i, value in enumerate(args) if value.lower() == "subnet"), None)
+        identity = "server"
+        state = next((x for x in args if x.lower() in {"on", "off", "enabled", "disabled"}), None)
+        if subnet_index is not None and subnet_index + 1 < len(args):
+            subnet = args[subnet_index + 1]
+            subnet_values = _pairs(args[subnet_index + 2:])
+            subnet_values["subnet"] = subnet
+            if "netmask" in subnet_values:
+                subnet_values["prefix"] = subnet_values.pop("netmask")
+            values = {"subnets": [subnet_values]}
+        else:
+            values = {"process_state": state} if state else _pairs(args)
+        values = {key: value for key, value in values.items() if value is not None}
         return GaiaEvaluation(kind, identity, values, set(values), node.line_number)
     if kind == "gaia-user":
         identity = args[0] if args else None
@@ -80,6 +102,8 @@ def _evaluate(kind: str, node: GaiaCommandNode, args: tuple[str, ...]) -> GaiaEv
     if kind == "vpn-tunnel-vti":
         identity = args[0] if args else None
         values = _pairs(args[1:])
+        if isinstance(values.get("state"), bool):
+            values["state"] = "on" if values["state"] else "off"
         return GaiaEvaluation(kind, identity, values, set(values), node.line_number)
     return None
 
@@ -102,5 +126,9 @@ def _pairs(args: tuple[str, ...]) -> dict[str, Any]:
 
 
 def _merge(target: GaiaEvaluation, source: GaiaEvaluation) -> None:
-    target.values.update(source.values)
+    for key, value in source.values.items():
+        if isinstance(value, list) and isinstance(target.values.get(key), list):
+            target.values[key].extend(item for item in value if item not in target.values[key])
+        else:
+            target.values[key] = value
     target.explicit_fields.update(source.explicit_fields)

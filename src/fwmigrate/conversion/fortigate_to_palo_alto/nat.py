@@ -16,23 +16,28 @@ def plan_nat(source: Any, derived: Any, options: Any):
             warnings.append("NAT translation is not deterministic")
         if item.egress_interfaces and len(item.egress_interfaces) != 1:
             warnings.append("NAT has multiple possible egress interfaces")
-        source_translation = None
+        source_translation_type = None
+        translated_addresses = ()
+        source_interface_address = False
         if translated and item.translation_type == "ip_pool":
-            source_translation = f"dynamic-ip-and-port:{translated}"
+            source_translation_type, translated_addresses = "dynamic-ip-and-port", (translated,)
         elif not warnings and item.translation_type == "interface":
-            source_translation = "dynamic-ip-and-port:interface-address"
-        if not source_translation:
+            source_translation_type, source_interface_address = "dynamic-ip-and-port", True
+        if not source_translation_type:
             warnings.append("unsafe source NAT was not rendered")
         result.append(PlannedNATRule(
             source_vdom=item.vdom, source_kind="source_nat", source_object_type="nat_rule",
             source_name=item.policy_name or str(item.policy_id), source_policy_id=item.policy_id,
+            target_vsys=getattr(getattr(options, "vdoms", {}).get(item.vdom), "vsys", None), target_name=item.policy_name or str(item.policy_id),
             status=PANMigrationStatus.SUPPORTED if not warnings else PANMigrationStatus.MANUAL_REVIEW,
-            warnings=tuple(warnings), source_translation=source_translation,
+            warnings=tuple(warnings), source_translation_type=source_translation_type,
+            translated_addresses=translated_addresses, source_interface_address=source_interface_address,
             from_zones=_policy_zones(policy, policy.srcintf if policy else (), options),
             to_zones=_policy_zones(policy, item.egress_interfaces, options),
             source_addresses=tuple(policy.srcaddr if policy else ()),
             destination_addresses=tuple(policy.dstaddr if policy else ()),
-            services=tuple(policy.service if policy else ()),
+            service=(policy.service[0] if policy and policy.service else None),
+            to_interface=(item.egress_interfaces[0] if item.egress_interfaces else None),
         ))
     for vip in getattr(source, "vips", ()):
         ext = vip.extip or (vip.extaddr[0] if len(vip.extaddr) == 1 else None)
@@ -44,10 +49,11 @@ def plan_nat(source: Any, derived: Any, options: Any):
             warnings.append("VIP type or load-balancing/service semantics are unsupported")
         result.append(PlannedNATRule(
             source_vdom=vip.vdom, source_kind="vip", source_object_type="nat_rule", source_name=vip.name,
+            target_vsys=getattr(getattr(options, "vdoms", {}).get(vip.vdom), "vsys", None), target_name=vip.name,
             status=PANMigrationStatus.SUPPORTED if not warnings else PANMigrationStatus.MANUAL_REVIEW,
-            warnings=tuple(warnings), destination_translation=(f"static-ip:{mapped}" if mapped and not warnings else None),
+            warnings=tuple(warnings), destination_translated_address=(mapped if mapped and not warnings else None),
             destination_addresses=((ext,) if ext else ()),
-            services=tuple(vip.service),
+            service=(vip.service[0] if vip.service else None),
         ))
     return tuple(result)
 

@@ -42,6 +42,11 @@ def _scope(source: Any, options: Any) -> tuple[PANMigrationStatus, tuple[str, ..
     )
 
 
+def _target_vsys(source: Any, options: Any) -> str | None:
+    mapping = getattr(options, "vdoms", {}).get(getattr(source, "vdom", "root"))
+    return getattr(mapping, "vsys", None)
+
+
 def _plan_address(source: Any, options: Any):
     status, warnings, issue = _scope(source, options)
     value = None
@@ -66,6 +71,7 @@ def _plan_address(source: Any, options: Any):
             source_kind="address",
             source_object_type="address",
             source_name=getattr(source, "name", None),
+            target_vsys=_target_vsys(source, options), target_name=getattr(source, "name", None),
             status=status,
             warnings=warnings,
             address_type=address_type,
@@ -87,6 +93,7 @@ def _plan_group(source: Any, options: Any):
             source_kind="address_group",
             source_object_type="address_group",
             source_name=getattr(source, "name", None),
+            target_vsys=_target_vsys(source, options), target_name=getattr(source, "name", None),
             status=status,
             warnings=warnings,
             members=tuple(getattr(source, "members", ())),

@@ -16,7 +16,7 @@ GAIA_COMMAND_FAMILIES = (
     GaiaCommandFamily("gaia-user", (("user",), ("users",))),
     GaiaCommandFamily("gaia-rba-role", (("rba", "role"), ("rba", "roles"))),
     GaiaCommandFamily("gaia-rba-user-assignment", (("rba", "user"), ("rba", "users"))),
-    GaiaCommandFamily("vpn-tunnel-vti", (("vpn", "tunnel"), ("vpn", "tunnels"))),
+    GaiaCommandFamily("vpn-tunnel-vti", (("vpn", "tunnel"), ("vpn", "tunnels"), ("vti",))),
 )
 
 

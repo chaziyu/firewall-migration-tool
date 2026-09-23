@@ -25,6 +25,9 @@ dev = [
 reports = [
     "openpyxl>=3.1.0",
 ]
+deployment = [
+    "netmiko>=4.0",
+]
 
 [project.scripts]
 fwmigrate = "fwmigrate.main:cli"
