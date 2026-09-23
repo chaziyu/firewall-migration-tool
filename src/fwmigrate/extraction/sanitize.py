@@ -55,7 +55,7 @@ SENSITIVE_EXACT_KEYS = {
 REDACTED_PLACEHOLDER = "[REDACTED]"
 
 
-def _is_sensitive_key(key: str) -> bool:
+def is_sensitive_key(key: str) -> bool:
     """Check if a dictionary key name matches sensitive prefixes/names."""
     k = key.strip().lower().replace("_", "-")
     if k in {item.replace("_", "-") for item in SENSITIVE_EXACT_KEYS}:
@@ -71,7 +71,7 @@ def _is_sensitive_key(key: str) -> bool:
 
 def sanitize_source_value(key: str, value: Any) -> Any:
     """Sanitize a value if its key is sensitive, or recursively sanitize dicts and lists."""
-    if _is_sensitive_key(key):
+    if is_sensitive_key(key):
         return REDACTED_PLACEHOLDER
 
     if isinstance(value, dict):
@@ -88,14 +88,14 @@ def sanitize_source_attributes(attrs: Dict[str, Any]) -> Dict[str, Any]:
 
     sanitized: Dict[str, Any] = {}
     for k, v in attrs.items():
-        if _is_sensitive_key(str(k)):
+        if is_sensitive_key(str(k)):
             sanitized[k] = REDACTED_PLACEHOLDER
         elif isinstance(v, dict):
             sanitized[k] = sanitize_source_attributes(v)
         elif isinstance(v, list):
             sanitized[k] = [
                 sanitize_source_attributes(item) if isinstance(item, dict)
-                else (REDACTED_PLACEHOLDER if _is_sensitive_key(str(k)) else item)
+                else (REDACTED_PLACEHOLDER if is_sensitive_key(str(k)) else item)
                 for item in v
             ]
         elif isinstance(v, str) and str(k).strip().lower().replace("_", "-") in {

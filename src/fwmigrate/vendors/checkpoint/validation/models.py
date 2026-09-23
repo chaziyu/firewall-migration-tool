@@ -7,9 +7,21 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CheckPointValidationIssue:
+    code: str
     severity: str
     category: str
     message: str
+    domain: str | None = None
+    domain_uid: str | None = None
+    package: str | None = None
+    package_uid: str | None = None
+    layer: str | None = None
+    layer_uid: str | None = None
+    gateway: str | None = None
+    object_type: str | None = None
+    object_uid: str | None = None
+    object_name: str | None = None
+    field: str | None = None
     command: str | None = None
     reference: str | None = None
 

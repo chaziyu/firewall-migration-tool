@@ -23,8 +23,8 @@ let currentRenderedArtifactId = null;
       "Review the extracted source configuration before downloading Excel.",
     ],
     download: [
-      "Convert configuration",
-      "Bring your firewall configuration to its next home.",
+      "Plan migration",
+      "Review supported mappings, manual-review items, and generated PAN-OS commands.",
     ],
     extract: [
       "Extract an inventory",
@@ -627,7 +627,6 @@ let currentRenderedArtifactId = null;
       selectedTargetVendor = offlineTargetVendor;
     }
     if (targetVendorSelect) targetVendorSelect.value = selectedTargetVendor;
-    updateTargetBundleDescriptions(selectedTargetVendor);
     activeMode = mode;
     [
       [tabDownload, "download"],
@@ -667,7 +666,7 @@ let currentRenderedArtifactId = null;
       logToTerminal("[MODE] Switched to FortiGate source report view.", "term-system");
     } else if (mode === "download") {
       logToTerminal(
-        "[MODE] Switched to Package Export Mode (native configuration bundle).",
+        "[MODE] Switched to migration planning.",
         "term-system",
       );
     } else if (mode === "live") {
@@ -757,36 +756,8 @@ let currentRenderedArtifactId = null;
         `[VENDOR] Target platform selected: ${targetName}`,
         "term-system",
       );
-      updateTargetBundleDescriptions(selectedTargetVendor);
       syncWorkspace();
     });
-  }
-
-  function updateTargetBundleDescriptions(target) {
-    const panDesc = document.getElementById("feature-card-pan-desc");
-    const auditDesc = document.getElementById("feature-card-audit-desc");
-
-    if (target === "fortigate") {
-      if (panDesc)
-        panDesc.innerHTML =
-          "Native <code>fortigate_config.conf</code> script for FortiOS CLI execution";
-    } else if (target === "cisco_asa") {
-      if (panDesc)
-        panDesc.innerHTML =
-          "Native <code>cisco_asa_config.cfg</code> CLI commands for ASA / Firepower import";
-    } else if (target === "checkpoint") {
-      if (panDesc)
-        panDesc.innerHTML =
-          "Native <code>checkpoint_mgmt_cli.sh</code> automation script for Check Point MDS";
-    } else if (target === "juniper_srx") {
-      if (panDesc)
-        panDesc.innerHTML =
-          "Native <code>junos_srx_config.set</code> batch configuration syntax";
-    } else {
-      if (panDesc)
-        panDesc.innerHTML =
-          "Native <code>palo_alto_config.xml</code> ready for Panorama / Firewall WebGUI import";
-    }
   }
 
   // =========================================================================
@@ -1590,7 +1561,6 @@ let currentRenderedArtifactId = null;
   else themePreference?.addListener?.(followSystemTheme);
   applyTheme(explicitTheme || (themePreference?.matches ? "dark" : "light"));
 
-  updateTargetBundleDescriptions(selectedTargetVendor);
   switchMode(activeMode);
   syncWorkspace();
 });
