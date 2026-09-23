@@ -9,3 +9,7 @@ interfaces:
   wan:
     target_interface: ethernet1/2
     target_zone: untrust
+  trust:
+    target_zone: trust
+  untrust:
+    target_zone: untrust

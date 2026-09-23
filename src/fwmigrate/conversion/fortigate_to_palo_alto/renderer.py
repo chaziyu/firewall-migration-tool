@@ -70,7 +70,7 @@ class PANSetRenderer:
         output = Path(output)
         output.mkdir(parents=True, exist_ok=True)
         (output / "palo_alto_config.set").write_text("\n".join(rendered.commands) + "\n", encoding="utf-8")
-        (output / "conversion_report.json").write_text(json.dumps(rendered.report, indent=2), encoding="utf-8")
+        (output / "migration_report.json").write_text(json.dumps(rendered.report, indent=2), encoding="utf-8")
 
 def _serialize(path):
     return "set " + " ".join(value if value in {"[", "]"} else _v(value) for value in path)
@@ -83,12 +83,21 @@ def _key(item):
 def _report(plan, commands, validation):
     items = list(_items(plan))
     command_text = "\n".join(commands)
-    return {"counts": {status.value: sum(item.status is status for item in items) for status in PANMigrationStatus},
-            "command_sha256": hashlib.sha256(command_text.encode("utf-8")).hexdigest(),
-            "commands": len(commands), "issues": [issue.message for issue in (validation.issues if validation else plan.issues)],
+    issue_counts = {}
+    for issue in (validation.issues if validation else plan.issues):
+        entry = issue_counts.setdefault(issue.code, {"code": issue.code, "message": issue.message, "count": 0})
+        entry["count"] += 1
+    counts = {status.value: sum(item.status is status for item in items) for status in PANMigrationStatus}
+    digest = hashlib.sha256(command_text.encode("utf-8")).hexdigest()
+    renderable = sum(_key(item) in validation.renderable_item_keys for item in items) if validation else 0
+    return {"summary": {"counts": counts, "renderable": renderable, "commands": len(commands), "command_sha256": digest},
+            "counts": counts, "command_sha256": digest,
+            "commands": len(commands), "issue_summary": list(issue_counts.values()),
             "items": [{"source_vdom": item.source_vdom, "source_kind": item.source_kind, "source_name": item.source_name,
                         "source_policy_id": item.source_policy_id, "target_vsys": item.target_vsys, "target_name": item.target_name,
                         "status": item.status.value, "warnings": list(item.warnings),
+                        "renderable": item.status is PANMigrationStatus.SUPPORTED and (validation is None or _key(item) in validation.renderable_item_keys),
+                        "render_blockers": [*item.warnings, *(issue.code for issue in (validation.issues if validation else ()) if issue.source.source_name == item.source_name and issue.source.source_vdom == item.source_vdom)],
                         "rendered": item.status is PANMigrationStatus.SUPPORTED and (validation is None or _key(item) in validation.renderable_item_keys)} for item in items]}
 
 

@@ -14,7 +14,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ..config import ExtractionConfig
-from ..benchmark import BenchmarkResult
+from ..benchmark import BenchmarkResult, ExcelSheetBenchmark
 from ..derived import DerivedViews, build_derived_views
 from ..extraction.result import ExtractionResult
 from ..extraction.source_inventory import SourceObjectRecord
@@ -41,6 +41,7 @@ _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
 _HEADER_FONT = Font(color="FFFFFF", bold=True, size=10)
 _MUTED_FONT = Font(color="667085", italic=True, size=9)
 _LINK_FONT = Font(color="0563C1", underline="single")
+_CELL_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
 _THIN = Side(style="thin", color="D9E2DF")
 _BORDER = Border(bottom=_THIN)
 
@@ -164,15 +165,21 @@ def _write_performance_benchmark_sheet(
     )
     row = _write_benchmark_section(sheet, "Performance", performance, row + 1)
     sheet_performance = tuple(
-        (name, elapsed_ms)
-        for name, elapsed_ms in timings.sheet_timings.items()
+        (
+            item.sheet,
+            item.row_count,
+            item.row_generation_ms,
+            item.worksheet_write_ms,
+            item.total_ms,
+        )
+        for item in timings.sheet_timings.values()
     )
     row = _write_benchmark_section(
         sheet,
         "Excel Sheet Performance",
         sheet_performance,
         row + 1,
-        headers=("Sheet", "Build Time (ms)"),
+        headers=("Sheet", "Rows", "Row Generation (ms)", "Worksheet Writing (ms)", "Total (ms)"),
     )
     workload = (
         ("Top-Level Sections", benchmark.top_level_sections, ""),
@@ -182,9 +189,8 @@ def _write_performance_benchmark_sheet(
     )
     _write_benchmark_section(sheet, "Workload", workload, row + 1)
 
-    sheet.column_dimensions["A"].width = 32
-    sheet.column_dimensions["B"].width = 45
-    sheet.column_dimensions["C"].width = 28
+    for column, width in enumerate((32, 14, 24, 26, 18), start=1):
+        sheet.column_dimensions[get_column_letter(column)].width = width
 
 
 def _write_benchmark_section(
@@ -224,7 +230,7 @@ def _benchmark_excel_export(
     validation: ValidationResult,
     derived: DerivedViews,
     source_name: str | None,
-) -> tuple[float, float, float, dict[str, float]]:
+) -> tuple[float, float, float, dict[str, ExcelSheetBenchmark]]:
     """Measure normal workbook build and save without adding benchmark data."""
     context = _ExcelContext(
         extracted=extracted,
@@ -232,7 +238,7 @@ def _benchmark_excel_export(
         validation=validation,
         source_name=source_name,
     )
-    sheet_timings: dict[str, float] = {}
+    sheet_timings: dict[str, ExcelSheetBenchmark] = {}
     started = perf_counter()
     workbook = _build_workbook(context, sheet_timings=sheet_timings)
     build_ms = (perf_counter() - started) * 1000
@@ -317,7 +323,7 @@ class _ExcelContext:
 def _build_workbook(
     context: _ExcelContext,
     *,
-    sheet_timings: dict[str, float] | None = None,
+    sheet_timings: dict[str, ExcelSheetBenchmark] | None = None,
 ) -> Workbook:
     workbook = Workbook()
     workbook.remove(workbook.active)
@@ -326,6 +332,8 @@ def _build_workbook(
 
     for sheet_name in order:
         started = perf_counter() if sheet_timings is not None else None
+        row_generation_ms = 0.0
+        row_metrics = {"elapsed_ms": 0.0, "rows": 0}
         if sheet_name == "Summary":
             _build_summary(
                 workbook,
@@ -333,10 +341,21 @@ def _build_workbook(
                 order,
             )
         elif sheet_name == "FortiGate Source Inventory":
-            _write_source_inventory_sheet(workbook, context)
+            _write_source_inventory_sheet(
+                workbook,
+                context,
+                row_metrics=row_metrics if sheet_timings is not None else None,
+            )
         else:
             headers = list(SHEET_HEADERS[sheet_name])
+            row_started = perf_counter() if sheet_timings is not None else None
             rows = _rows_for_sheet(sheet_name, context, headers)
+            row_generation_ms = (
+                (perf_counter() - row_started) * 1000
+                if row_started is not None else 0.0
+            )
+            if sheet_timings is not None:
+                rows = _timed_rows(rows, row_metrics)
             _write_table_sheet(
                 workbook,
                 sheet_name,
@@ -345,9 +364,31 @@ def _build_workbook(
                 context=context,
             )
         if sheet_timings is not None and started is not None:
-            sheet_timings[sheet_name] = (perf_counter() - started) * 1000
+            total_ms = (perf_counter() - started) * 1000
+            row_generation_ms += row_metrics["elapsed_ms"]
+            sheet_timings[sheet_name] = ExcelSheetBenchmark(
+                sheet=sheet_name,
+                row_count=int(row_metrics["rows"]),
+                row_generation_ms=row_generation_ms,
+                worksheet_write_ms=total_ms - row_generation_ms,
+                total_ms=total_ms,
+            )
 
     return workbook
+
+
+def _timed_rows(rows, metrics: dict[str, float | int]):
+    iterator = iter(rows)
+    while True:
+        started = perf_counter()
+        try:
+            row = next(iterator)
+        except StopIteration:
+            metrics["elapsed_ms"] += (perf_counter() - started) * 1000
+            return
+        metrics["elapsed_ms"] += (perf_counter() - started) * 1000
+        metrics["rows"] += 1
+        yield row
 
 
 def _rows_for_sheet(
@@ -567,7 +608,7 @@ def _write_table_sheet(
         for column, header in enumerate(headers, start=1):
             value = _excel_safe(row.get(header))
             cell = sheet.cell(index, column, value)
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            cell.alignment = _CELL_ALIGNMENT
             fill = (
                 review_fill
                 or (_DERIVED_FILL if header in derived_headers else None)
@@ -595,6 +636,8 @@ def _write_table_sheet(
 def _write_source_inventory_sheet(
     workbook: Workbook,
     context: _ExcelContext,
+    *,
+    row_metrics: dict[str, float | int] | None = None,
 ) -> None:
     sheet_name = "FortiGate Source Inventory"
     headers = SHEET_HEADERS[sheet_name]
@@ -624,7 +667,10 @@ def _write_source_inventory_sheet(
         cell.alignment = Alignment(wrap_text=True, vertical="center")
         cell.border = _BORDER
 
-    for values in _iter_fortigate_source_inventory_rows(context):
+    rows = _iter_fortigate_source_inventory_rows(context)
+    if row_metrics is not None:
+        rows = _timed_rows(rows, row_metrics)
+    for values in rows:
         sheet.append(values)
 
     sheet.auto_filter.ref = f"A3:J{row_count + 3}"

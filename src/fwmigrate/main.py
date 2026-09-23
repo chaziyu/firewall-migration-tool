@@ -48,10 +48,8 @@ def vendors():
 @click.option('--target-vendor', type=str, default='palo_alto', help='Registered target vendor identifier')
 @click.option('--zone-map', type=click.Path(exists=True), help='YAML file with interface to zone mappings')
 @click.option('--format', type=click.Choice(['xml', 'set', 'cli']), default='xml', help='Output format')
-@click.option('--optimize', is_flag=True, default=False, help='Prune unused objects and optimize rules')
-def migrate(input, output, source_vendor, target_vendor, zone_map, format, optimize):
+def migrate(input, output, source_vendor, target_vendor, zone_map, format):
     """Plan the supported portion of a source configuration."""
-    del optimize
     if (source_vendor.casefold(), target_vendor.casefold()) != ("fortigate", "palo_alto"):
         raise click.ClickException("Only fortigate -> palo_alto is supported")
     if format != "set":
@@ -79,7 +77,7 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, format, optim
 @click.option('--password', prompt=True, hide_input=True)
 def deploy(commands_file, host, port, username, password):
     """Push a .set file as a candidate and validate it. Does not commit."""
-    artifact_path = os.path.join(os.path.dirname(commands_file), 'conversion_report.json')
+    artifact_path = os.path.join(os.path.dirname(commands_file), 'migration_report.json')
     with open(commands_file, encoding='utf-8') as stream:
         commands = tuple(line.strip() for line in stream if line.strip())
     with open(artifact_path, encoding='utf-8') as stream:

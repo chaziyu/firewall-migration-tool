@@ -4,6 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
 let currentFile = null;
 let currentRenderedArtifactId = null;
+  let currentMigrationMapping = { vdoms: {}, interfaces: {} };
   let currentPreviewId = null;
   let selectedSourceVendor = "fortigate";
   let selectedTargetVendor = "palo_alto";
@@ -349,7 +350,6 @@ let currentRenderedArtifactId = null;
 
   // Optimizer Panel Stats
   const optimizerPanel = document.getElementById("optimizer-panel");
-  const optPruneObjects = document.getElementById("opt-prune-objects");
   const statTotalRules = document.getElementById("stat-total-rules");
   const statTotalObjects = document.getElementById("stat-total-objects");
   const statErrors = document.getElementById("stat-errors");
@@ -357,6 +357,7 @@ let currentRenderedArtifactId = null;
 
   // Mode A Components
   const btnGenerateBundle = document.getElementById("btn-generate-bundle");
+  const btnDownloadBundle = document.getElementById("btn-download-bundle");
   const btnExtractExcel = document.getElementById("btn-extract-excel");
 
   // Mode B Target Form & Diagnostics
@@ -514,10 +515,11 @@ let currentRenderedArtifactId = null;
   function syncWorkspace() {
     const hasFile = Boolean(currentFile);
     const hasInput = hasFile;
+    const migrationPairSupported = selectedSourceVendor === "fortigate" && selectedTargetVendor === "palo_alto";
     tabReport?.classList.toggle("hidden", !["fortigate", "palo_alto"].includes(selectedSourceVendor));
     if (btnGenerateBundle)
       btnGenerateBundle.disabled =
-        !hasFile || !sourceReady || busyButtons.has(btnGenerateBundle);
+        !hasFile || !sourceReady || !migrationPairSupported || busyButtons.has(btnGenerateBundle);
     if (btnExtractExcel)
       btnExtractExcel.disabled =
         !hasInput || !sourceReady || busyButtons.has(btnExtractExcel);
@@ -527,8 +529,10 @@ let currentRenderedArtifactId = null;
       "#mode-download-form .export-hint",
     );
     if (exportHint) {
-      const hintCopy = sourceReady
-        ? "Ready to generate your migration bundle."
+      const hintCopy = sourceReady && migrationPairSupported
+        ? "Ready to build the migration plan."
+        : sourceReady
+          ? "This source and target pair is not supported for migration planning."
         : sourceFailed
           ? "Review the source error before generating a bundle."
           : hasInput
@@ -580,6 +584,12 @@ let currentRenderedArtifactId = null;
     sourceReady = false;
     sourceFailed = false;
     currentPreviewId = null;
+    currentRenderedArtifactId = null;
+    currentMigrationMapping = { vdoms: {}, interfaces: {} };
+    document.getElementById("migration-mapping")?.classList.add("hidden");
+    document.getElementById("migration-plan")?.classList.add("hidden");
+    btnDownloadBundle?.classList.add("hidden");
+    if (btnDownloadBundle) btnDownloadBundle.disabled = true;
     candidatePushed = false;
     candidateValidated = false;
     if (btnPushCandidate) btnPushCandidate.disabled = true;
@@ -654,9 +664,6 @@ let currentRenderedArtifactId = null;
         "extract-mode",
         ["extract", "report"].includes(mode),
       );
-    document
-      .getElementById("optimizer-controls")
-      ?.classList.toggle("hidden", mode === "extract");
     setText("page-title", MODE_COPY[mode][0]);
     setText("page-description", MODE_COPY[mode][1]);
     syncWorkspace();
@@ -748,7 +755,7 @@ let currentRenderedArtifactId = null;
     selectedTargetVendor = targetVendorSelect.value || "palo_alto";
     targetVendorSelect.addEventListener("change", (e) => {
       selectedTargetVendor = e.target.value;
-      currentRenderedArtifactId = null;
+      invalidateMigrationPlan();
       const targetName =
         targetVendorSelect.options[targetVendorSelect.selectedIndex]?.text ||
         selectedTargetVendor;
@@ -915,6 +922,45 @@ let currentRenderedArtifactId = null;
       const data = await readJson(resp, "Could not read this configuration");
       if (requestRevision !== sourceRevision) return;
       currentPreviewId = data.preview_id || null;
+      if (selectedSourceVendor === "fortigate" && currentPreviewId) {
+        const response = await fetch("/api/migration/requirements", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ preview_id: currentPreviewId }),
+        });
+        const result = await readJson(response, "Could not load target mapping requirements");
+        if (requestRevision !== sourceRevision) return;
+        currentMigrationMapping = { vdoms: {}, interfaces: {} };
+        const container = document.getElementById("migration-mapping-fields");
+        const panel = document.getElementById("migration-mapping");
+        if (container && panel) {
+          const fragment = document.createDocumentFragment();
+          result.requirements.vdoms.forEach(({ source_vdom }) => {
+            currentMigrationMapping.vdoms[source_vdom] = { vsys: "", virtual_router: "" };
+            const group = document.createElement("fieldset");
+            const legend = document.createElement("legend"); legend.textContent = `FortiGate VDOM: ${source_vdom}`; group.appendChild(legend);
+            [["vsys", "Target VSYS"], ["virtual_router", "Virtual Router"]].forEach(([key, label]) => {
+              const input = document.createElement("input"); input.type = "text"; input.required = true; input.placeholder = label; input.setAttribute("aria-label", `${label} for ${source_vdom}`);
+              input.addEventListener("input", () => { currentMigrationMapping.vdoms[source_vdom][key] = input.value.trim(); invalidateMigrationPlan(); });
+              group.append(label, input);
+            });
+            fragment.appendChild(group);
+          });
+          result.requirements.interfaces.forEach(({ source_interface, is_interface }) => {
+            currentMigrationMapping.interfaces[source_interface] = { target_interface: "", target_zone: "" };
+            const group = document.createElement("fieldset");
+            const legend = document.createElement("legend"); legend.textContent = `FortiGate ${is_interface ? "interface" : "policy reference"}: ${source_interface}`; group.appendChild(legend);
+            [["target_interface", "PAN Interface", is_interface], ["target_zone", "PAN Zone", true]].forEach(([key, label, required]) => {
+              if (!required) return;
+              const input = document.createElement("input"); input.type = "text"; input.required = true; input.placeholder = label; input.setAttribute("aria-label", `${label} for ${source_interface}`);
+              input.addEventListener("input", () => { currentMigrationMapping.interfaces[source_interface][key] = input.value.trim(); invalidateMigrationPlan(); });
+              group.append(label, input);
+            });
+            fragment.appendChild(group);
+          });
+          container.replaceChildren(fragment);
+          panel.classList.remove("hidden");
+        }
+      }
       const stats = data.stats || data.summary || {};
       const objects = stats.objects || stats;
       const severityCounts = stats.validation?.severity_counts || {};
@@ -958,104 +1004,60 @@ let currentRenderedArtifactId = null;
   // =========================================================================
   // 8. Mode A: Export Target Migration Bundle (.zip)
   // =========================================================================
+  function invalidateMigrationPlan() {
+    currentRenderedArtifactId = null;
+    candidatePushed = false;
+    candidateValidated = false;
+    btnDownloadBundle?.classList.add("hidden");
+    if (btnDownloadBundle) btnDownloadBundle.disabled = true;
+    document.getElementById("migration-plan")?.classList.add("hidden");
+    if (btnValidateCandidate) btnValidateCandidate.disabled = true;
+    if (btnCommitCandidate) btnCommitCandidate.disabled = true;
+  }
+
   if (btnGenerateBundle) {
     btnGenerateBundle.addEventListener("click", async () => {
-      if (!currentFile) {
-        showToast(
-          "info",
-          "No Input",
-          "Please upload a configuration file first. Live collections are available for Excel extraction only.",
-        );
-        return;
-      }
-
+      if (!currentFile || !currentPreviewId) return;
       setBusy(btnGenerateBundle, true);
-      const exportSource = selectedSourceVendor;
-      const exportTarget = selectedTargetVendor;
-      const btnText = btnGenerateBundle.querySelector("span:last-child");
-      const originalText = btnText
-        ? btnText.textContent
-        : "Generate Migration Bundle (.zip)";
-      if (btnText) btnText.textContent = "Compiling Migration Package...";
       hideError();
-
-      const formData = new FormData();
-      if (currentFile) {
-        formData.append("file", currentFile);
-      }
-      formData.append("source_vendor", selectedSourceVendor);
-      formData.append("target_vendor", selectedTargetVendor);
-      formData.append(
-        "optimize",
-        optPruneObjects
-          ? optPruneObjects.checked
-            ? "true"
-            : "false"
-          : "false",
-      );
-
-      logToTerminal(
-        `[EXPORT] Compiling ${selectedSourceVendor} -> ${selectedTargetVendor} migration bundle...`,
-        "term-system",
-      );
-
       try {
         const resp = await fetch("/api/migrate", {
-          method: "POST",
-          body: formData,
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ preview_id: currentPreviewId, source_vendor: selectedSourceVendor, target_vendor: selectedTargetVendor, mapping: currentMigrationMapping }),
         });
-
-        if (!resp.ok) {
-          const errData = await resp.json().catch(() => ({}));
-          const blockingReasons = Array.isArray(errData.blocking_reasons)
-            ? errData.blocking_reasons.filter(Boolean)
-            : [];
-          blockingReasons.forEach((reason) =>
-            logToTerminal(`[SAFETY] ${reason}`, "term-error"),
-          );
-          const detail = blockingReasons.length
-            ? ` ${blockingReasons[0]}${
-                blockingReasons.length > 1
-                  ? ` (+${blockingReasons.length - 1} more)`
-                  : ""
-              }`
-            : "";
-          throw new Error(
-            `${errData.error || "Failed to generate package"}${detail}`,
-          );
-        }
-
-        const artifact = await resp.json();
+        const artifact = await readJson(resp, "Migration planning failed");
         currentRenderedArtifactId = artifact.artifact_id;
-        const blob = new Blob([JSON.stringify({ commands: artifact.commands, report: artifact.report }, null, 2)], { type: "application/json" });
-        const saved = await downloadBlob(
-          blob,
-          `migration_${exportSource}_to_${exportTarget}.json`,
-        );
-        if (saved) {
-          showToast(
-            "success",
-            "Bundle Generated",
-            `Your migration bundle for ${VENDOR_CONFIGS[exportTarget]?.name || exportTarget} is ready.`,
-          );
-          logToTerminal(
-            `[EXPORT] Generated migration_${exportSource}_to_${exportTarget}.json`,
-            "term-success",
-          );
+        document.getElementById("migration-plan")?.classList.remove("hidden");
+        const counts = artifact.counts || {};
+        const summary = document.getElementById("migration-plan-summary");
+        if (summary) summary.textContent = `${artifact.plan_status === "READY" ? "Migration artifact ready." : artifact.plan_status === "PARTIAL" ? "Plan created. Partial commands are ready." : "Plan created. Target mappings required."} ${counts.SUPPORTED || 0} supported, ${counts.renderable || 0} renderable, ${counts.MANUAL_REVIEW || 0} manual review, ${counts.UNSUPPORTED || 0} unsupported, ${artifact.commands} commands. ${artifact.blocking_reasons.join("; ")}`;
+        btnDownloadBundle?.classList.toggle("hidden", artifact.commands === 0);
+        if (btnDownloadBundle) {
+          btnDownloadBundle.disabled = artifact.commands === 0;
+          const label = btnDownloadBundle.querySelector("span:last-child");
+          if (label) label.textContent = artifact.plan_status === "PARTIAL" ? "Generate partial bundle" : "Download bundle";
         }
+        logToTerminal(`[PLAN] ${artifact.plan_status}: ${artifact.commands} commands ready.`, artifact.commands ? "term-success" : "term-error");
       } catch (err) {
         showError(err.message);
-        showToast("error", "Export Failed", err.message);
-        logToTerminal(
-          `[ERROR] Bundle generation failed: ${err.message}`,
-          "term-error",
-        );
+        logToTerminal(`[ERROR] Migration planning failed: ${err.message}`, "term-error");
       } finally {
         setBusy(btnGenerateBundle, false);
-        if (btnText) btnText.textContent = originalText;
       }
     });
   }
+
+  btnDownloadBundle?.addEventListener("click", async () => {
+    if (!currentRenderedArtifactId) return;
+    setBusy(btnDownloadBundle, true);
+    try {
+      const response = await fetch("/api/migration/bundle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ artifact_id: currentRenderedArtifactId }) });
+      if (!response.ok) throw new Error((await response.json()).error || "Bundle generation failed");
+      const saved = await downloadBlob(await response.blob(), "migration_fortigate_to_palo_alto.zip");
+      if (saved) showToast("success", "Migration artifact ready", "Download the migration bundle.");
+    } catch (err) { showError(err.message); }
+    finally { setBusy(btnDownloadBundle, false); }
+  });
 
   // =========================================================================
   // 8b. Vendor-native Excel source report
@@ -1172,15 +1174,7 @@ let currentRenderedArtifactId = null;
     if (!currentFile || !sourceReady) return;
     btnPushCandidate.disabled = true;
     try {
-      if (!currentRenderedArtifactId) {
-        const form = new FormData();
-        form.append("file", currentFile);
-        form.append("source_vendor", selectedSourceVendor);
-        form.append("target_vendor", selectedTargetVendor);
-        const renderedResponse = await fetch("/api/migrate", { method: "POST", body: form });
-        const artifact = await readJson(renderedResponse, "Migration rendering failed");
-        currentRenderedArtifactId = artifact.artifact_id;
-      }
+      if (!currentRenderedArtifactId) throw new Error("Generate a migration plan first.");
       const response = await fetch("/api/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

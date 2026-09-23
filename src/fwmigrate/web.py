@@ -8,6 +8,8 @@ import logging
 import threading
 import time
 import json
+import zipfile
+import yaml
 from dataclasses import asdict
 from copy import deepcopy
 from dataclasses import dataclass
@@ -19,6 +21,7 @@ from fwmigrate.conversion.builtin import register_builtin_migration_planners
 from fwmigrate.conversion import migration_planners
 from fwmigrate.conversion.fortigate_to_palo_alto import PANMigrationOptions
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
 
@@ -185,6 +188,7 @@ def create_app(test_config=None):
         app.config.update(test_config)
 
     rendered_artifacts = {}
+    artifact_sources = {}
 
     @app.route('/')
     def index():
@@ -249,19 +253,51 @@ def create_app(test_config=None):
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 
+    @app.route('/api/migration/requirements', methods=['POST'])
+    def migration_requirements():
+        payload = request.get_json(silent=True) or request.form
+        try:
+            preview_id = payload.get('preview_id')
+            entry = _lookup_preview(preview_id, 'fortigate') if preview_id else None
+            if entry is None:
+                uploaded = request.files.get('file')
+                if uploaded is None or not uploaded.filename:
+                    return jsonify({'success': False, 'error': 'A valid preview_id or configuration file is required'}), 400
+                raw = uploaded.read()
+                analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
+                entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
+            analysis = _clone_preview(entry)
+            requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
+            return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': requirements})
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        except Exception as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 500
+
     @app.route('/api/migrate', methods=['POST'])
     def migrate():
         """Plan the supported FortiGate to Palo Alto configuration."""
-        source_vendor = request.form.get('source_vendor', 'fortigate')
-        target_vendor = request.form.get('target_vendor', 'palo_alto')
+        payload = request.get_json(silent=True) or request.form
+        source_vendor = payload.get('source_vendor', 'fortigate')
+        target_vendor = payload.get('target_vendor', 'palo_alto')
+        if not isinstance(source_vendor, str) or not isinstance(target_vendor, str):
+            return jsonify({'success': False, 'error': 'source_vendor and target_vendor must be strings'}), 400
         if (source_vendor.casefold(), target_vendor.casefold()) != ('fortigate', 'palo_alto'):
-            return jsonify({'error': 'Only fortigate -> palo_alto is supported'}), 400
+            return jsonify({'success': False, 'error': 'Only fortigate -> palo_alto is supported'}), 400
         uploaded = request.files.get('file')
-        if uploaded is None or not uploaded.filename:
-            return jsonify({'error': 'A configuration file is required'}), 400
         try:
-            mapping = json.loads(request.form.get('mapping', '{}'))
-            analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(uploaded.read()))
+            mapping_value = payload.get('mapping', '{}')
+            mapping = json.loads(mapping_value) if isinstance(mapping_value, str) else mapping_value
+            preview_id = payload.get('preview_id')
+            entry = _lookup_preview(preview_id, 'fortigate') if preview_id else None
+            if uploaded is not None and uploaded.filename:
+                raw = uploaded.read()
+                analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
+                entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
+            elif entry is not None:
+                analysis = _clone_preview(entry)
+            else:
+                return jsonify({'success': False, 'error': 'A valid preview_id or configuration file is required'}), 400
             plan = migration_planners.get(source_vendor, target_vendor).plan(
                 analysis.extracted.config, analysis.derived, options=PANMigrationOptions(**mapping)
             )
@@ -269,15 +305,51 @@ def create_app(test_config=None):
             rendered = PANSetRenderer().render(plan, validation)
             artifact_id = uuid.uuid4().hex
             rendered_artifacts[artifact_id] = rendered
+            artifact_sources[artifact_id] = (analysis, mapping, entry.source_name)
+            counts = rendered.report['counts']
+            mapping_codes = {'missing_vsys_mapping', 'missing_target_vsys', 'missing_virtual_router', 'missing_route_interface'}
+            missing = [issue for issue in rendered.report['issue_summary'] if issue['code'] in mapping_codes or 'missing target' in issue['message'].lower() or 'missing palo alto vsys mapping' in issue['message'].lower()]
+            plan_status = 'NEEDS_MAPPING' if not rendered.commands else ('READY' if not missing and not counts.get('PARTIAL', 0) and not counts.get('MANUAL_REVIEW', 0) and not counts.get('UNSUPPORTED', 0) else 'PARTIAL')
             return jsonify({
                 'success': True,
                 'artifact_id': artifact_id,
-                'commands': list(rendered.commands),
+                'plan_status': plan_status,
+                'commands': len(rendered.commands),
+                'counts': {**counts, 'renderable': sum(item['renderable'] for item in rendered.report['items'])},
+                'missing_mappings': missing,
+                'blocking_reasons': [issue['message'] for issue in missing],
                 'report': rendered.report,
-                'validation': {'issues': [issue.message for issue in validation.issues]},
+                'validation': {'issue_summary': rendered.report['issue_summary']},
             })
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
+
+    @app.route('/api/migration/bundle', methods=['POST'])
+    def migration_bundle():
+        payload = request.get_json(silent=True) or {}
+        artifact_id = payload.get('artifact_id')
+        rendered = rendered_artifacts.get(artifact_id)
+        if rendered is None:
+            return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
+        if not rendered.commands:
+            return jsonify({'success': False, 'error': 'No PAN-OS commands are currently renderable. Complete the required target mappings first.'}), 422
+        source = artifact_sources.get(artifact_id)
+        if source is None:
+            return jsonify({'success': False, 'error': 'The migration source has expired'}), 400
+        analysis, mapping, source_name = source
+        bundle = io.BytesIO()
+        workbook = io.BytesIO()
+        try:
+            source_reporters.get('fortigate').export_excel(analysis, workbook, source_name=source_name)
+            with zipfile.ZipFile(bundle, 'w', zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr('palo_alto_config.set', '\n'.join(rendered.commands) + '\n')
+                archive.writestr('migration_report.json', json.dumps(rendered.report, indent=2))
+                archive.writestr('target_mapping.yaml', yaml.safe_dump(mapping, sort_keys=False))
+                archive.writestr('source_inventory.xlsx', workbook.getvalue())
+            bundle.seek(0)
+            return send_file(bundle, mimetype='application/zip', as_attachment=True, download_name='migration_fortigate_to_palo_alto.zip')
+        except Exception as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 500
 
     def _deployment_options(payload):
         try:
@@ -299,11 +371,13 @@ def create_app(test_config=None):
     def deploy_candidate():
         try:
             payload = request.get_json(silent=True) or {}
-            options = _deployment_options(payload)
             artifact_id = payload.get('artifact_id')
             rendered = rendered_artifacts.get(artifact_id)
             if rendered is None:
                 raise ValueError('A current validated rendered migration is required')
+            if not rendered.commands:
+                raise ValueError('The migration artifact contains no renderable commands')
+            options = _deployment_options(payload)
             result = PANSSHDeployer(options).deploy(rendered)
             return jsonify({'success': result.failure_message is None and result.failed_command_index is None,
                             'result': asdict(result)}), (200 if result.failure_message is None and result.failed_command_index is None else 502)
