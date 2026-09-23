@@ -70,6 +70,16 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
         "address": config.addresses, "address-group": config.address_groups,
         "service": config.services, "service-group": config.service_groups,
         "schedule": config.schedules, "zone": config.zones,
+        "vulnerability-profile": config.vulnerability_profiles, "security-profile-group": config.security_profile_groups,
+        "dhcp-server": config.dhcp_servers, "sdwan-interface-profile": config.sdwan_interface_profiles,
+        "sdwan-path-quality-profile": config.sdwan_path_quality_profiles,
+        "sdwan-traffic-distribution-profile": config.sdwan_traffic_distribution_profiles,
+        "sdwan-saas-quality-profile": config.sdwan_saas_quality_profiles,
+        "sdwan-error-correction-profile": config.sdwan_error_correction_profiles,
+        "sdwan-rule": config.sdwan_rules, "administrator": config.administrators, "admin-role": config.admin_roles,
+        "ike-gateway": config.ike_gateways, "ike-crypto-profile": config.ike_crypto_profiles,
+        "ipsec-crypto-profile": config.ipsec_crypto_profiles, "ipsec-tunnel": config.ipsec_tunnels,
+        "globalprotect-portal": config.globalprotect_portals, "globalprotect-gateway": config.globalprotect_gateways,
     }
     for family, items in families.items():
         seen: dict[tuple[str, str | None], Any] = {}

@@ -369,6 +369,36 @@ register_section(
 )
 
 # ----------------------------------------------------------------------
+# Schedules
+# ----------------------------------------------------------------------
+
+register_section(
+    SectionSpec(
+        source_path="firewall schedule group",
+        list_fields=_fields("member"),
+        integer_fields=_fields("color"),
+        scalar_fields=_fields("fabric-object"),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="firewall schedule onetime",
+        integer_fields=_fields("color", "expiration-days"),
+        scalar_fields=_fields("start", "end", "start-utc", "end-utc", "fabric-object"),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="firewall schedule recurring",
+        list_fields=_fields("day"),
+        integer_fields=_fields("color"),
+        scalar_fields=_fields("start", "end", "fabric-object"),
+    )
+)
+
+# ----------------------------------------------------------------------
 # Firewall policy
 # ----------------------------------------------------------------------
 

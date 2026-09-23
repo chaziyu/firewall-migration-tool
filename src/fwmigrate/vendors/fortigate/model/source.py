@@ -15,6 +15,7 @@ from .route_static import FGStaticRoute
 from .sdwan import FGSDWAN
 from .security_profile import FGProfileGroup
 from .service import FGService, FGServiceGroup, FGServiceCategory
+from .schedule import FGScheduleGroup, FGOneTimeSchedule, FGRecurringSchedule
 from .vip import FGVIP, FGVIPGroup
 from .vpn import FGIPsecPhase1, FGIPsecPhase2
 from .admin import (
@@ -48,6 +49,10 @@ class FGConfig(BaseModel):
 
     services: list[FGService] = Field(default_factory=list)
     service_groups: list[FGServiceGroup] = Field(default_factory=list)
+
+    schedule_groups: list[FGScheduleGroup] = Field(default_factory=list)
+    one_time_schedules: list[FGOneTimeSchedule] = Field(default_factory=list)
+    recurring_schedules: list[FGRecurringSchedule] = Field(default_factory=list)
 
     ip_pools: list[FGIPPool] = Field(default_factory=list)
 

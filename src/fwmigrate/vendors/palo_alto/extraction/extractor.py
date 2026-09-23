@@ -17,6 +17,7 @@ from .service import extract_service
 from .zone import extract_zone
 from ..model import PANSecurityProfileGroup, PANTag
 from .common import source_fields, value, values
+from .extended import EXTRACTORS as EXTENDED_EXTRACTORS
 
 
 def extract_security_profile_group(element, path, context, source_order, spec):
@@ -49,7 +50,14 @@ _EXTRACTORS = {
     "logical_router": ("logical_routers", extract_routing),
     "ipsec_tunnel": ("ipsec_tunnels", extract_ipsec_tunnel),
 }
+_EXTRACTORS.update(EXTENDED_EXTRACTORS)
+_EXTRACTORS.update({"dhcp_interface": ("dhcp_servers", EXTENDED_EXTRACTORS["dhcp_server"][1]),
+                    "local_user_database": ("local_users", EXTENDED_EXTRACTORS["local_user"][1])})
 _EXTRACTORS.update({f"interface_{family}": ("interfaces", extract_interface) for family in ("ethernet", "aggregate-ethernet", "loopback", "tunnel", "vlan")})
+
+
+def registered_typed_collections() -> tuple[str, ...]:
+    return tuple(sorted({collection for collection, _ in _EXTRACTORS.values()}))
 
 
 def extract_typed(

@@ -1106,6 +1106,7 @@ SHEET_IMPLEMENTATION_STATUS.update({
     "Summary": "IMPLEMENTED",
     "Review Required": "IMPLEMENTED",
     "Validation": "IMPLEMENTED",
+    "Tags": "IMPLEMENTED",
     "Addresses": "IMPLEMENTED",
     "Address Groups": "IMPLEMENTED",
     "Services": "IMPLEMENTED",
@@ -1122,6 +1123,17 @@ SHEET_IMPLEMENTATION_STATUS.update({
     "Unsupported": "IMPLEMENTED",
     "PAN-OS Source Inventory": "IMPLEMENTED",
     "Extraction Coverage": "IMPLEMENTED",
+    "Vulnerability Profiles": "IMPLEMENTED",
+    "Vulnerability Rules": "IMPLEMENTED",
+    "Vulnerability Exceptions": "IMPLEMENTED",
+    "Administrators": "IMPLEMENTED",
+    "Admin Roles": "IMPLEMENTED",
+    "Admin Role Permissions": "IMPLEMENTED",
+    "IKE Gateways": "IMPLEMENTED",
+    "IKE Crypto Profiles": "IMPLEMENTED",
+    "IPsec Crypto Profiles": "IMPLEMENTED",
+    "IPsec Tunnels": "IMPLEMENTED",
+    "IPsec Proxy IDs": "IMPLEMENTED",
 })
 
 ACTIVE_SHEET_ORDER: tuple[str, ...] = tuple(

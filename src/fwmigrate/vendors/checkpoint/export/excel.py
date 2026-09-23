@@ -15,16 +15,22 @@ def _value(value: Any) -> Any:
 def _row(item: Any, sheet: str) -> tuple[Any, ...]:
     if sheet == "Access Layers":
         return item.uid, item.name, item.package, item.parent_layer_uid, item.command
-    if sheet in {"Access Rules", "NAT Rules"}:
+    if sheet == "Access Rules":
         return item.uid, item.name, item.order, item.package, item.layer, item.domain, item.command
+    if sheet == "NAT Rules":
+        return item.uid, item.name, item.order, item.package, item.domain, item.command
     if sheet == "Gaia":
         return item.name, item.object_type, item.gateway, item.command
     if sheet == "Groups":
         return item.uid, item.name, ", ".join(map(str, item.members)), item.domain, item.command
     if sheet == "Gateways":
         return item.uid, item.name, item.domain, item.gateway, item.command
-    if sheet in {"Domains", "Packages", "Network Objects", "Services", "Applications", "Schedules", "VPN Communities"}:
+    if sheet == "Domains":
+        return item.uid, item.name, item.source_plane, item.command
+    if sheet in {"Network Objects", "Services", "Applications", "Schedules"}:
         return item.uid, item.name, item.object_type or "", item.domain, item.command
+    if sheet in {"Packages", "VPN Communities"}:
+        return item.uid, item.name, item.domain, item.command
     raise KeyError(sheet)
 
 

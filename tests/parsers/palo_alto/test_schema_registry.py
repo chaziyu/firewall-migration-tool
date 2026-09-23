@@ -39,6 +39,11 @@ EXPECTED_PATHS = {
     "tag",
     "virtual_router",
     "zone",
+    "vulnerability_profile", "administrator", "admin_role", "ike_gateway", "ike_crypto_profile",
+    "ipsec_crypto_profile", "dhcp_server", "dhcp_interface", "sdwan_interface_profile",
+    "sdwan_path_quality_profile", "sdwan_traffic_distribution_profile", "sdwan_saas_quality_profile",
+    "sdwan_error_correction_profile", "sdwan_rule", "local_user", "local_user_database",
+    "local_user_group", "group_mapping", "globalprotect_portal", "globalprotect_gateway",
 }
 
 

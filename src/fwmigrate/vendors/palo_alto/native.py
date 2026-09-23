@@ -33,6 +33,19 @@ def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
         "route": len(config.static_routes),
         "virtual-router": len(config.virtual_routers),
         "logical-router": len(config.logical_routers),
+        "vulnerability-profile": len(config.vulnerability_profiles),
+        "security-profile-group": len(config.security_profile_groups),
+        "dhcp-server": len(config.dhcp_servers),
+        "sdwan-interface-profile": len(config.sdwan_interface_profiles),
+        "sdwan-path-quality-profile": len(config.sdwan_path_quality_profiles),
+        "sdwan-traffic-distribution-profile": len(config.sdwan_traffic_distribution_profiles),
+        "sdwan-saas-quality-profile": len(config.sdwan_saas_quality_profiles),
+        "sdwan-error-correction-profile": len(config.sdwan_error_correction_profiles),
+        "sdwan-rule": len(config.sdwan_rules),
+        "administrator": len(config.administrators), "admin-role": len(config.admin_roles),
+        "ike-gateway": len(config.ike_gateways), "ike-crypto-profile": len(config.ike_crypto_profiles),
+        "ipsec-crypto-profile": len(config.ipsec_crypto_profiles), "ipsec-tunnel": len(config.ipsec_tunnels),
+        "globalprotect-portal": len(config.globalprotect_portals), "globalprotect-gateway": len(config.globalprotect_gateways),
     }
     hierarchy = build_scope_hierarchy(config.scopes)
     index = build_reference_index(config)
