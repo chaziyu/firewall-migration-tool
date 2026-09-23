@@ -979,7 +979,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (statTotalRules) statTotalRules.textContent = count(objects.policies);
       if (statTotalObjects)
         statTotalObjects.textContent =
-          Object.values(objects).reduce((total, value) => total + count(value), 0);
+          ["addresses", "address_groups", "services", "service_groups"]
+            .reduce((total, key) => total + count(objects[key]), 0);
       if (statErrors) statErrors.textContent = count(severityCounts.error);
       if (statWarnings) statWarnings.textContent = count(severityCounts.warning);
       currentPolicies = Array.isArray(data.policies) ? data.policies : [];

@@ -6,7 +6,6 @@ from __future__ import annotations
 SHEET_ORDER: tuple[str, ...] = (
     "Summary",
     "Review Required",
-    "Validation",
 
     # Objects
     "Tags",
@@ -91,17 +90,6 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     "Review Required": (
         "Severity",
         "Category",
-        "Object",
-        "Scope Type",
-        "Scope Name",
-        "Field",
-        "Issue / Review Reason",
-        "Source Sheet",
-    ),
-
-    "Validation": (
-        "Severity",
-        "Domain",
         "Object",
         "Scope Type",
         "Scope Name",
@@ -1105,7 +1093,6 @@ SHEET_IMPLEMENTATION_STATUS: dict[str, str] = {
 SHEET_IMPLEMENTATION_STATUS.update({
     "Summary": "IMPLEMENTED",
     "Review Required": "IMPLEMENTED",
-    "Validation": "IMPLEMENTED",
     "Tags": "IMPLEMENTED",
     "Addresses": "IMPLEMENTED",
     "Address Groups": "IMPLEMENTED",
@@ -1134,6 +1121,28 @@ SHEET_IMPLEMENTATION_STATUS.update({
     "IPsec Crypto Profiles": "IMPLEMENTED",
     "IPsec Tunnels": "IMPLEMENTED",
     "IPsec Proxy IDs": "IMPLEMENTED",
+    "DHCP Servers": "IMPLEMENTED",
+    "DHCP IP Pools": "IMPLEMENTED",
+    "DHCP Reservations": "IMPLEMENTED",
+    "DHCP Options": "IMPLEMENTED",
+    "SD-WAN Interface Profiles": "IMPLEMENTED",
+    "SD-WAN Interface Bindings": "IMPLEMENTED",
+    "SD-WAN Path Quality": "IMPLEMENTED",
+    "SD-WAN Traffic Distribution": "IMPLEMENTED",
+    "SD-WAN Traffic Distribution Links": "IMPLEMENTED",
+    "SD-WAN SaaS Quality": "IMPLEMENTED",
+    "SD-WAN Error Correction": "IMPLEMENTED",
+    "SD-WAN Rules": "IMPLEMENTED",
+    "Local Users": "IMPLEMENTED",
+    "Local User Groups": "IMPLEMENTED",
+    "Group Mappings": "IMPLEMENTED",
+    "GlobalProtect Portals": "IMPLEMENTED",
+    "GP Portal Client Configs": "IMPLEMENTED",
+    "GP Portal Gateway Entries": "IMPLEMENTED",
+    "GP Clientless VPN": "IMPLEMENTED",
+    "GlobalProtect Gateways": "IMPLEMENTED",
+    "GP Gateway Client Auth": "IMPLEMENTED",
+    "GP Remote User Tunnels": "IMPLEMENTED",
 })
 
 ACTIVE_SHEET_ORDER: tuple[str, ...] = tuple(
