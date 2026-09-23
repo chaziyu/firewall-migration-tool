@@ -22,7 +22,10 @@ def _row(item: Any, sheet: str) -> tuple[Any, ...]:
     if sheet == "Gaia":
         return item.name, item.object_type, item.gateway, item.command
     if sheet == "Groups":
-        return item.uid, item.name, ", ".join(map(str, item.members)), item.domain, item.command
+        members = getattr(item, "members", ())
+        if hasattr(item, "include"):
+            members = (item.include, item.except_)
+        return item.uid, item.name, ", ".join(map(str, members)), item.domain, item.command
     if sheet == "Gateways":
         return item.uid, item.name, item.domain, item.gateway, item.command
     if sheet == "Domains":
@@ -42,18 +45,18 @@ def export_checkpoint_excel(result: Any, output: Any) -> Any:
     config = result.config
     rows = {
         "Domains": config.domains,
-        "Packages": config.packages,
+        "Packages": config.policy_packages,
         "Access Layers": config.access_layers,
-        "Network Objects": config.network_objects,
-        "Groups": config.groups,
+        "Network Objects": config.hosts + config.networks + config.address_ranges + config.dns_domains + config.wildcard_addresses + config.dynamic_addresses + config.updatable_objects + config.security_zones,
+        "Groups": config.groups + config.groups_with_exclusion + config.service_groups + config.time_groups,
         "Services": config.services,
         "Applications": config.applications,
-        "Schedules": config.schedules,
+        "Schedules": config.times,
         "Access Rules": config.access_rules,
         "NAT Rules": config.nat_rules,
         "VPN Communities": config.vpn_communities,
         "Gateways": config.gateways,
-        "Gaia": config.gaia_interfaces + config.gaia_routes + config.pbr + config.dns_ntp + config.cluster_state + config.management_access,
+        "Gaia": config.gaia_interfaces + config.gaia_static_routes + config.gaia_dhcp_servers + config.gaia_users + config.gaia_rba_roles + config.gaia_rba_user_assignments + config.vtis,
     }
     for name in SHEET_ORDER:
         sheet = workbook.create_sheet(name)
@@ -65,7 +68,7 @@ def export_checkpoint_excel(result: Any, output: Any) -> Any:
                 sheet.append((key, len(value)))
         elif name == "Collection":
             sheet.append(("Command", "Plane", "Status", "Complete", "Error"))
-            for item in config.collection:
+            for item in result.collection:
                 sheet.append((item.command, item.source_plane, item.status.value, item.complete, item.error))
         elif name == "Validation":
             sheet.append(SHEET_HEADERS[name])

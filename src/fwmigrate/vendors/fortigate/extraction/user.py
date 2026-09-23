@@ -12,7 +12,6 @@ from ..model.user import (
 from ..nodes import (
     CommandNode,
     ConfigNode,
-    FortiGateConfigTree,
     UnknownCommandNode,
 )
 
@@ -22,6 +21,7 @@ from .common import (
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class UserConfig(Protocol):
@@ -32,7 +32,7 @@ class UserConfig(Protocol):
 
 
 def extract_users(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: UserConfig,
 ) -> None:
     _extract_local_users(tree, config)
@@ -40,7 +40,7 @@ def extract_users(
 
 
 def _extract_local_users(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: UserConfig,
 ) -> None:
     section_path = "user local"
@@ -93,7 +93,7 @@ def _extract_local_users(
 
 
 def _extract_user_groups(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: UserConfig,
 ) -> None:
     section_path = "user group"

@@ -11,7 +11,6 @@ from ..model.vpn_ssl import (
 )
 from ..nodes import (
     ConfigNode,
-    FortiGateConfigTree,
 )
 
 from .common import (
@@ -22,6 +21,7 @@ from .common import (
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class SSLVPNConfig(Protocol):
@@ -33,7 +33,7 @@ class SSLVPNConfig(Protocol):
 
 
 def extract_ssl_vpn(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: SSLVPNConfig,
 ) -> None:
     _extract_settings(tree, config)
@@ -42,7 +42,7 @@ def extract_ssl_vpn(
 
 
 def _extract_settings(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: SSLVPNConfig,
 ) -> None:
     section_path = "vpn ssl settings"
@@ -114,7 +114,7 @@ def _extract_authentication_rules(
 
 
 def _extract_portals(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: SSLVPNConfig,
 ) -> None:
     section_path = "vpn ssl web portal"
@@ -141,7 +141,7 @@ def _extract_portals(
 
 
 def _extract_host_check_software(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: SSLVPNConfig,
 ) -> None:
     section_path = (

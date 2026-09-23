@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from ..model.schedule import FGScheduleGroup, FGOneTimeSchedule, FGRecurringSchedule
-from ..nodes import FortiGateConfigTree
 
 from .common import evaluate_edit, iter_section_edits, source_model_kwargs
+from .section_index import SectionIndex
 
 
 class ScheduleConfig(Protocol):
@@ -14,13 +14,13 @@ class ScheduleConfig(Protocol):
     recurring_schedules: list[FGRecurringSchedule]
 
 
-def extract_schedules(tree: FortiGateConfigTree, config: ScheduleConfig) -> None:
+def extract_schedules(tree: SectionIndex, config: ScheduleConfig) -> None:
     _extract(tree, "firewall schedule group", FGScheduleGroup, config.schedule_groups, {"member": "members"})
     _extract(tree, "firewall schedule onetime", FGOneTimeSchedule, config.one_time_schedules)
     _extract(tree, "firewall schedule recurring", FGRecurringSchedule, config.recurring_schedules, {"day": "days"})
 
 
-def _extract(tree: FortiGateConfigTree, section_path: str, model_type: type[Any], destination: list[Any], field_map: dict[str, str] | None = None) -> None:
+def _extract(tree: SectionIndex, section_path: str, model_type: type[Any], destination: list[Any], field_map: dict[str, str] | None = None) -> None:
     for source in iter_section_edits(tree, section_path):
         evaluation = evaluate_edit(section_path, source.edit)
         destination.append(model_type(**source_model_kwargs(

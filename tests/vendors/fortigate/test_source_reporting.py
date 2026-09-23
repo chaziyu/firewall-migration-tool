@@ -32,6 +32,25 @@ UNSUPPORTED_SOURCE = """config firewall unsupported-section
 end
 """
 
+SOURCE_INVENTORY = """config vdom
+    edit tenant-a
+        config firewall unsupported-section
+            edit source-only
+                set known value
+                append member one
+                unset comment
+                mystery raw
+                config tagging
+                    edit tag-a
+                        set color blue
+                    next
+                end
+            next
+        end
+    next
+end
+"""
+
 SECRET_SOURCE = """config vpn ipsec phase1-interface
     edit VPN-HQ
         set psksecret do-not-export-this-secret
@@ -134,6 +153,43 @@ def test_fortigate_unsupported_source_is_preserved_without_failing_preview():
 
     assert response.status_code == 200
     assert response.get_json()["summary"]["top_level_sections"] == 1
+
+
+def test_source_inventory_preserves_indexed_source_evidence():
+    analysis = source_reporters.get("fortigate").analyze_source(SOURCE_INVENTORY)
+
+    records = analysis.extracted.source_objects
+    assert [
+        (record.vdom, record.source_path, record.object_name, record.parent_objects)
+        for record in records
+    ] == [
+        ("tenant-a", "firewall unsupported-section", "source-only", ()),
+        (
+            "tenant-a",
+            "firewall unsupported-section tagging",
+            "tag-a",
+            ("source-only",),
+        ),
+    ]
+
+    parent, nested = records
+    assert parent.values == {
+        "known": "value",
+        "member": ["one"],
+        "unknown_command:mystery": ["raw"],
+    }
+    assert parent.explicit_fields == ()
+    assert parent.unset_fields == ("comment",)
+    assert [command.operation for command in parent.commands] == [
+        "set",
+        "append",
+        "unset",
+        "unknown",
+    ]
+    assert all(command.line_number is not None for command in parent.commands)
+    assert parent.start_line_number is not None
+    assert parent.end_line_number is not None
+    assert nested.values == {"color": "blue"}
 
 
 def test_fortigate_web_preview_and_excel_redact_secrets():

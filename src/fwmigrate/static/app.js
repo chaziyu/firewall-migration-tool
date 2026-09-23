@@ -4,7 +4,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
   let currentFile = null;
   let currentPreviewId = null;
-  let currentSessionId = null;
   let selectedSourceVendor = "fortigate";
   let selectedTargetVendor = "palo_alto";
   let offlineTargetVendor = "palo_alto";
@@ -15,8 +14,6 @@ document.addEventListener("DOMContentLoaded", () => {
   let sourceFailed = false;
   let sourceRevision = 0;
   let previewController = null;
-  let liveOperationRunning = false;
-  let sessionApproved = false;
   const busyButtons = new Set();
 
   const MODE_COPY = {
@@ -34,7 +31,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ],
     live: [
       "Live migration",
-      "Verify your target, review a plan, then apply with confidence.",
+      "Validate your target, deploy CLI commands, then commit with confidence.",
     ],
   };
 
@@ -322,6 +319,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const reportSeverityFilter = document.getElementById("report-severity-filter");
   const reportTableHead = document.getElementById("report-table-head");
   const reportTableBody = document.getElementById("report-table-body");
+  const reportTable = document.querySelector(".report-table");
+  const reportTableWrap = document.querySelector(".report-table-wrap");
+  const reportTableCaption = document.getElementById("report-table-caption");
+  const reportRowCount = document.getElementById("report-row-count");
+  const reportScrollHint = document.getElementById("report-scroll-hint");
   const reportEmpty = document.getElementById("report-empty");
   let activeReportSection = "overview";
   let activeObjectSection = "addresses";
@@ -369,28 +371,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const panInsecure = document.getElementById("pan-insecure");
   const btnRunDiagnostics = document.getElementById("btn-run-diagnostics");
 
-  // Mode B Stepper & Action Buttons
-  const btnPlanDryrun = document.getElementById("btn-plan-dryrun");
-  const planSummaryBadges = document.getElementById("plan-summary-badges");
-  const badgeAdd = document.getElementById("badge-add");
-  const badgeChange = document.getElementById("badge-change");
-  const badgeDestroy = document.getElementById("badge-destroy");
-  const planStatusMsg = document.getElementById("plan-status-msg");
-  const btnApplyLive = document.getElementById("btn-apply-live");
-  const applyStatusMsg = document.getElementById("apply-status-msg");
-  const btnRollback = document.getElementById("btn-rollback");
-  const rollbackStatusMsg = document.getElementById("rollback-status-msg");
-
   // Terminal
   const terminalStreamBody = document.getElementById("terminal-stream-body");
   const termAutoscroll = document.getElementById("term-autoscroll");
   const btnClearTerm = document.getElementById("btn-clear-term");
   const btnCopyTerm = document.getElementById("btn-copy-term");
-
-  // Post Actions Bar
-  const postActionsBar = document.getElementById("post-actions-bar");
-  const btnDownloadState = document.getElementById("btn-download-state");
-  const btnDownloadAudit = document.getElementById("btn-download-audit");
 
   // Toast Container & Error Banner
   const toastContainer = document.getElementById("toast-container");
@@ -406,16 +391,16 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const reportColumns = {
-    interfaces: [["display_name", "Topology"], ["kind", "Kind"], ["ip", "IP / Remote Gateway"], ["zone", "Zone"], ["parent", "Parent"], ["aggregate", "Aggregate"], ["physical_interfaces", "Physical Interfaces"], ["attached_tunnels", "Attached Tunnels"], ["status", "Status"], ["review", "Review"]],
-    addresses: [["name", "Name"], ["value", "Value"], ["type", "Type"], ["address_family", "Family"], ["associated_interface", "Interface"], ["review", "Review"]],
-    address_groups: [["name", "Name"], ["members", "Members"], ["address_family", "Family"], ["exclude_members", "Excluded"], ["review", "Review"]],
-    services: [["name", "Name"], ["protocol", "Protocol"], ["port", "Port"], ["source_port", "Source Port"], ["generated", "Generated"], ["review", "Review"]],
-    service_groups: [["name", "Name"], ["members", "Members"], ["generated", "Generated"], ["review", "Review"]],
-    policies: [["policy_id", "ID"], ["name", "Name"], ["source_interfaces", "Source"], ["destination_interfaces", "Destination"], ["services", "Service"], ["action", "Action"], ["nat", "NAT"], ["review", "Review"]],
-    nat: [["policy_id", "Policy ID"], ["policy_name", "Policy"], ["translation_type", "Type"], ["translated_addresses", "Address"], ["egress_interfaces", "Egress"], ["review", "Review"]],
-    routes: [["route_id", "ID"], ["destination", "Destination"], ["gateway", "Gateway"], ["device", "Device"], ["distance", "Distance"], ["status", "Status"], ["review", "Review"]],
-    vpn: [["kind", "Type"], ["name", "Name"], ["attachment", "Interface / Phase 1"], ["peer", "Gateway / Selectors"], ["crypto", "IKE / Proposal"], ["topology", "Topology"], ["review", "Review"]],
-    validation: [["severity", "Severity"], ["domain", "Domain"], ["object_name", "Object"], ["field", "Field"], ["message", "Issue"]],
+    interfaces: [["display_name", "Topology", "topology"], ["kind", "Kind", "compact"], ["ip", "IP / Remote Gateway", "address"], ["zone", "Zone", "compact"], ["parent", "Parent"], ["aggregate", "Aggregate"], ["physical_interfaces", "Physical Interfaces"], ["attached_tunnels", "Attached Tunnels"], ["status", "Status", "compact"], ["review", "Review", "notes"]],
+    addresses: [["name", "Name"], ["value", "Value", "address"], ["type", "Type", "compact"], ["address_family", "Family", "compact"], ["associated_interface", "Interface"], ["review", "Review", "notes"]],
+    address_groups: [["name", "Name"], ["members", "Members"], ["address_family", "Family", "compact"], ["exclude_members", "Excluded"], ["review", "Review", "notes"]],
+    services: [["name", "Name"], ["protocol", "Protocol", "compact"], ["port", "Port", "compact"], ["source_port", "Source Port", "compact"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
+    service_groups: [["name", "Name"], ["members", "Members"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
+    policies: [["policy_id", "ID", "compact"], ["name", "Name"], ["source_interfaces", "Source"], ["destination_interfaces", "Destination"], ["services", "Service"], ["action", "Action", "compact"], ["nat", "NAT", "compact"], ["review", "Review", "notes"]],
+    nat: [["policy_id", "Policy ID", "compact"], ["policy_name", "Policy"], ["translation_type", "Type", "compact"], ["translated_addresses", "Address", "address"], ["egress_interfaces", "Egress"], ["review", "Review", "notes"]],
+    routes: [["route_id", "ID", "compact"], ["destination", "Destination", "address"], ["gateway", "Gateway", "address"], ["device", "Device"], ["distance", "Distance", "compact"], ["status", "Status", "compact"], ["review", "Review", "notes"]],
+    vpn: [["kind", "Type", "compact"], ["name", "Name"], ["attachment", "Interface / Phase 1"], ["peer", "Gateway / Selectors", "address"], ["crypto", "IKE / Proposal"], ["topology", "Topology"], ["review", "Review", "notes"]],
+    validation: [["severity", "Severity", "compact"], ["domain", "Domain"], ["object_name", "Object"], ["field", "Field"], ["message", "Issue", "notes"]],
   };
 
   function reportCell(value) {
@@ -443,22 +428,66 @@ document.addEventListener("DOMContentLoaded", () => {
     const search = reportSearch?.value.trim().toLowerCase() || "";
     const vdom = reportVdomFilter?.value || "";
     const severity = reportSeverityFilter?.value || "";
-    const rows = reportRows(activeReportSection).filter((row) => {
+    const sectionRows = reportRows(activeReportSection);
+    const rows = sectionRows.filter((row) => {
       if (vdom && row.vdom !== vdom) return false;
       if (severity && row.severity !== severity) return false;
       return !search || Object.values(row).some((value) => reportCell(value).toLowerCase().includes(search));
     });
     const head = document.createElement("tr");
-    columns.forEach(([, label]) => { const th = document.createElement("th"); th.scope = "col"; th.textContent = label; head.appendChild(th); });
+    columns.forEach(([key, label, layout = "text"]) => {
+      const th = document.createElement("th");
+      th.scope = "col";
+      th.textContent = label;
+      th.dataset.column = key;
+      th.className = `report-cell-${layout}`;
+      head.appendChild(th);
+    });
     reportTableHead?.replaceChildren(head);
     const body = document.createDocumentFragment();
     rows.forEach((row) => {
       const tr = document.createElement("tr");
-      columns.forEach(([key]) => { const td = document.createElement("td"); td.textContent = reportCell(row[key]); if (columnKey === "interfaces" && key === "display_name") td.className = "report-topology-name"; tr.appendChild(td); });
+      columns.forEach(([key, , layout = "text"]) => {
+        const td = document.createElement("td");
+        td.dataset.column = key;
+        td.className = `report-cell-${layout}`;
+        td.textContent = reportCell(row[key]);
+        if (columnKey === "interfaces" && key === "ip") {
+          td.textContent = reportCell(row[key]).replace(/\s+/g, "\n");
+        }
+        tr.appendChild(td);
+      });
       body.appendChild(tr);
     });
     reportTableBody?.replaceChildren(body);
+    if (reportTable) reportTable.dataset.section = columnKey;
+    const sectionLabel = document.querySelector(
+      activeReportSection === "objects"
+        ? `[data-object-section="${activeObjectSection}"]`
+        : `[data-report-section="${activeReportSection}"]`,
+    )?.textContent.trim() || "Configuration";
+    if (reportTableCaption) reportTableCaption.textContent = `${sectionLabel} report`;
+    if (reportRowCount) {
+      reportRowCount.textContent = `${rows.length} of ${sectionRows.length} ${sectionRows.length === 1 ? "row" : "rows"}`;
+    }
+    reportTableWrap?.classList.toggle("hidden", rows.length === 0);
     reportEmpty?.classList.toggle("hidden", rows.length > 0);
+    requestAnimationFrame(syncTableOverflow);
+  }
+
+  function syncTableOverflow() {
+    if (!reportTableWrap) return;
+    const overflowing = reportTableWrap.clientWidth > 0 &&
+      reportTableWrap.scrollWidth > reportTableWrap.clientWidth + 1;
+    reportScrollHint?.classList.toggle("hidden", !overflowing);
+  }
+
+  if (window.ResizeObserver && reportTableWrap && reportTable) {
+    const tableResizeObserver = new ResizeObserver(syncTableOverflow);
+    tableResizeObserver.observe(reportTableWrap);
+    tableResizeObserver.observe(reportTable);
+  } else {
+    window.addEventListener("resize", syncTableOverflow);
   }
 
   function renderReport() {
@@ -488,13 +517,10 @@ document.addEventListener("DOMContentLoaded", () => {
     tabReport?.classList.toggle("hidden", !["fortigate", "palo_alto"].includes(selectedSourceVendor));
     if (btnGenerateBundle)
       btnGenerateBundle.disabled =
-        !hasFile || !sourceReady || busyButtons.has(btnGenerateBundle) || liveOperationRunning;
+        !hasFile || !sourceReady || busyButtons.has(btnGenerateBundle);
     if (btnExtractExcel)
       btnExtractExcel.disabled =
-        !hasInput || !sourceReady || busyButtons.has(btnExtractExcel) || liveOperationRunning;
-    if (btnPlanDryrun)
-      btnPlanDryrun.disabled =
-        !hasFile || !sourceReady || busyButtons.has(btnPlanDryrun) || liveOperationRunning;
+        !hasInput || !sourceReady || busyButtons.has(btnExtractExcel);
     const exportHint = document.querySelector(
       "#mode-download-form .export-hint",
     );
@@ -523,7 +549,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ?.classList.toggle("current", sourceReady);
     if (targetVendorSelect)
       targetVendorSelect.disabled =
-        liveOperationRunning || activeMode === "live";
+      activeMode === "live";
     reportContainer?.classList.toggle("hidden", activeMode !== "report" || !currentReport);
   }
 
@@ -545,24 +571,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function resetDeployment() {
-    currentSessionId = null;
-    sessionApproved = false;
-    if (btnApplyLive) btnApplyLive.disabled = true;
-    if (btnRollback) btnRollback.disabled = true;
-    planSummaryBadges?.classList.add("hidden");
-    postActionsBar?.classList.add("hidden");
-    if (planStatusMsg)
-      planStatusMsg.textContent =
-        "Review a dry-run plan before applying changes.";
-    if (applyStatusMsg)
-      applyStatusMsg.textContent =
-        "A reviewed plan is required before live deployment.";
-    if (rollbackStatusMsg)
-      rollbackStatusMsg.textContent =
-        "Remove resources managed by this deployment.";
-  }
-
   function resetPreview() {
     sourceRevision += 1;
     previewController?.abort();
@@ -578,30 +586,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (element) element.textContent = "0";
     });
     setPreviewStatus("");
-    resetDeployment();
-    syncWorkspace();
-  }
-
-  function setLiveOperationRunning(running) {
-    liveOperationRunning = running;
-    [
-      sourceVendorSelect,
-      targetVendorSelect,
-      btnRemoveFile,
-      btnIngestFile,
-      fileInput,
-      panHost,
-      panPort,
-      panApikey,
-      panUser,
-      panPass,
-      panInsecure,
-      optPruneObjects,
-      document.getElementById("btn-new-workspace"),
-      ...radioAuthTypes,
-    ].forEach((element) => {
-      if (element) element.disabled = running;
-    });
     syncWorkspace();
   }
 
@@ -629,16 +613,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function switchMode(mode) {
     if (!MODE_COPY[mode]) return;
-    if (liveOperationRunning && mode !== activeMode) return;
-    // The existing deployment endpoint provisions PAN-OS. Other targets remain
-    // available for downloadable bundles; the live form must reflect its target.
     if (mode === "live" && activeMode !== "live") {
       offlineTargetVendor = selectedTargetVendor;
       selectedTargetVendor = "palo_alto";
-      resetDeployment();
     } else if (mode !== "live" && activeMode === "live") {
       selectedTargetVendor = offlineTargetVendor;
-      resetDeployment();
     }
     if (targetVendorSelect) targetVendorSelect.value = selectedTargetVendor;
     updateTargetBundleDescriptions(selectedTargetVendor);
@@ -681,7 +660,7 @@ document.addEventListener("DOMContentLoaded", () => {
       logToTerminal("[MODE] Switched to FortiGate source report view.", "term-system");
     } else if (mode === "download") {
       logToTerminal(
-        "[MODE] Switched to Package Export Mode (XML/CLI & Terraform Bundle).",
+        "[MODE] Switched to Package Export Mode (native configuration bundle).",
         "term-system",
       );
     } else if (mode === "live") {
@@ -762,7 +741,6 @@ document.addEventListener("DOMContentLoaded", () => {
     selectedTargetVendor = targetVendorSelect.value || "palo_alto";
     targetVendorSelect.addEventListener("change", (e) => {
       selectedTargetVendor = e.target.value;
-      resetDeployment();
       const targetName =
         targetVendorSelect.options[targetVendorSelect.selectedIndex]?.text ||
         selectedTargetVendor;
@@ -777,44 +755,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateTargetBundleDescriptions(target) {
     const panDesc = document.getElementById("feature-card-pan-desc");
-    const tfDesc = document.getElementById("feature-card-tf-desc");
     const auditDesc = document.getElementById("feature-card-audit-desc");
 
     if (target === "fortigate") {
       if (panDesc)
         panDesc.innerHTML =
           "Native <code>fortigate_config.conf</code> script for FortiOS CLI execution";
-      if (tfDesc)
-        tfDesc.innerHTML =
-          "Production HCL targeting <code>fortinetdev/fortios</code> (<code>main.tf</code>, <code>variables.tf</code>)";
     } else if (target === "cisco_asa") {
       if (panDesc)
         panDesc.innerHTML =
           "Native <code>cisco_asa_config.cfg</code> CLI commands for ASA / Firepower import";
-      if (tfDesc)
-        tfDesc.innerHTML =
-          "Production HCL targeting <code>CiscoDevNet/ciscoasa</code> (<code>main.tf</code>, <code>variables.tf</code>)";
     } else if (target === "checkpoint") {
       if (panDesc)
         panDesc.innerHTML =
           "Native <code>checkpoint_mgmt_cli.sh</code> automation script for Check Point MDS";
-      if (tfDesc)
-        tfDesc.innerHTML =
-          "Production HCL targeting <code>CheckPointSW/checkpoint</code> (<code>main.tf</code>, <code>variables.tf</code>)";
     } else if (target === "juniper_srx") {
       if (panDesc)
         panDesc.innerHTML =
           "Native <code>junos_srx_config.set</code> batch configuration syntax";
-      if (tfDesc)
-        tfDesc.innerHTML =
-          "Production HCL targeting <code>juniper/junos</code> (<code>main.tf</code>, <code>variables.tf</code>)";
     } else {
       if (panDesc)
         panDesc.innerHTML =
           "Native <code>palo_alto_config.xml</code> ready for Panorama / Firewall WebGUI import";
-      if (tfDesc)
-        tfDesc.innerHTML =
-          "Production HCL targeting <code>PaloAltoNetworks/panos</code> (<code>main.tf</code>, <code>terraform.tfvars</code>)";
     }
   }
 
@@ -881,7 +843,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function handleFileSelect(file) {
-    if (!file || liveOperationRunning) return;
+    if (!file) return;
     if (!file.size) {
       showToast(
         "error",
@@ -1180,7 +1142,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
   radioAuthTypes.forEach((radio) => {
     radio.addEventListener("change", (e) => {
-      resetDeployment();
       if (e.target.value === "apikey") {
         if (authApikeyGroup) authApikeyGroup.classList.remove("hidden");
         if (authUserGroup) authUserGroup.classList.add("hidden");
@@ -1210,7 +1171,6 @@ document.addEventListener("DOMContentLoaded", () => {
   [panHost, panPort, panApikey, panUser, panPass, panInsecure].forEach(
     (element) => {
       element?.addEventListener("input", () => {
-        resetDeployment();
         element.classList.remove("input-invalid");
         element.removeAttribute("aria-invalid");
         element
@@ -1245,7 +1205,6 @@ document.addEventListener("DOMContentLoaded", () => {
           host,
           port,
           verify_ssl: verifySsl,
-          auto_download_tf: true,
         };
 
         if (authType === "apikey") {
@@ -1303,7 +1262,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function setDiagLoadingAll() {
-    ["diag-tf-local", "diag-tf-reg", "diag-tcp", "diag-panos"].forEach((id) => {
+    ["diag-cli", "diag-ssh", "diag-tcp", "diag-panos"].forEach((id) => {
       const card = document.getElementById(id);
       if (card) {
         card.className = "diag-card running";
@@ -1314,9 +1273,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateDiagCard(name, status, msg) {
-    let cardId = "diag-tf-local";
-    if (name === "terraform_cli") cardId = "diag-tf-local";
-    else if (name === "registry_access") cardId = "diag-tf-reg";
+    let cardId = "diag-cli";
+    if (name === "cli") cardId = "diag-cli";
+    else if (name === "ssh") cardId = "diag-ssh";
     else if (name === "palo_alto_line_of_sight") cardId = "diag-tcp";
     else if (name === "palo_alto_auth") cardId = "diag-panos";
 
@@ -1334,338 +1293,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // =========================================================================
-  // 10. Mode B: Step 1 - Execute Dry-Run Plan (`terraform plan`)
-  // =========================================================================
-  if (btnPlanDryrun) {
-    btnPlanDryrun.addEventListener("click", async () => {
-      if (!currentFile) {
-        showToast(
-          "error",
-          "No Configuration",
-          "Please upload a configuration file first. Live collections are not supported for deployment planning.",
-        );
-        return;
-      }
-
-      const host = panHost ? panHost.value.trim() : "";
-      if (!host) {
-        showInputError(
-          "pan-host",
-          "Target Hostname or IP is required for Live Apply.",
-        );
-        showToast(
-          "error",
-          "Missing Target Host",
-          "Please specify target firewall management IP.",
-        );
-        return;
-      }
-
-      resetDeployment();
-      setBusy(btnPlanDryrun, true);
-      setLiveOperationRunning(true);
-      if (planStatusMsg)
-        planStatusMsg.textContent =
-          "Preparing the workspace and calculating a dry-run plan…";
-      logToTerminal(
-        `[PREPARE] Initializing deployment sandbox for ${selectedSourceVendor} -> ${selectedTargetVendor}...`,
-        "term-system",
-      );
-
-      const formData = new FormData();
-      if (currentFile) {
-        formData.append("file", currentFile);
-      }
-
-      formData.append("source_vendor", selectedSourceVendor);
-      formData.append("target_vendor", selectedTargetVendor);
-      formData.append("host", host);
-      formData.append("port", panPort ? panPort.value.trim() : "443");
-      formData.append("vsys", "vsys1");
-      formData.append("device_group", "shared");
-
-      const authType =
-        document.querySelector('input[name="auth-type"]:checked')?.value ||
-        "apikey";
-      if (authType === "apikey") {
-        formData.append("api_key", panApikey ? panApikey.value.trim() : "");
-      } else {
-        formData.append("username", panUser ? panUser.value.trim() : "");
-        formData.append("password", panPass ? panPass.value.trim() : "");
-      }
-
-      try {
-        // 1. Prepare Sandbox
-        const prepResp = await fetch("/api/terraform/prepare", {
-          method: "POST",
-          body: formData,
-        });
-        const prepData = await readJson(prepResp, "Preparation failed");
-        if (!prepData.session_id)
-          throw new Error("The server did not return a deployment session.");
-
-        currentSessionId = prepData.session_id;
-        logToTerminal(
-          `[PREPARE] Sandbox ${currentSessionId} ready. Running Terraform Init & Plan...`,
-          "term-system",
-        );
-
-        // 2. Run Terraform Plan
-        const planResp = await fetch("/api/terraform/plan", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: currentSessionId }),
-        });
-
-        const planData = await planResp.json();
-        if (!planData.success) {
-          if (planData.init_log) logToTerminal(planData.init_log, "term-log");
-          if (planData.plan_log) logToTerminal(planData.plan_log, "term-log");
-          throw new Error(planData.error || "Terraform plan failed");
-        }
-
-        if (planData.init_log) logToTerminal(planData.init_log, "term-log");
-        if (planData.plan_log) logToTerminal(planData.plan_log, "term-log");
-
-        const summary = planData.summary || { add: 0, change: 0, destroy: 0 };
-        if (badgeAdd) badgeAdd.textContent = `+${summary.add} add`;
-        if (badgeChange) badgeChange.textContent = `~${summary.change} change`;
-        if (badgeDestroy)
-          badgeDestroy.textContent = `-${summary.destroy} destroy`;
-        if (planSummaryBadges) planSummaryBadges.classList.remove("hidden");
-
-        if (planStatusMsg)
-          planStatusMsg.textContent = `Plan verified (+${summary.add}, ~${summary.change}, -${summary.destroy}). Ready for Live Push.`;
-        if (btnApplyLive) btnApplyLive.disabled = false;
-
-        showToast(
-          "success",
-          "Plan Ready",
-          `Dry-run plan computed (+${summary.add}, ~${summary.change}, -${summary.destroy}).`,
-        );
-        logToTerminal(
-          `[PLAN] Plan complete: +${summary.add} to add, ~${summary.change} to change, -${summary.destroy} to destroy. Ready for Live Apply.`,
-          "term-success",
-        );
-      } catch (err) {
-        resetDeployment();
-        if (planStatusMsg)
-          planStatusMsg.textContent =
-            "Plan failed. Check the execution log and try again.";
-        showError(`Plan error: ${err.message}`);
-        logToTerminal(`[ERROR] Plan failed: ${err.message}`, "term-error");
-        showToast("error", "Plan Error", err.message);
-      } finally {
-        setLiveOperationRunning(false);
-        setBusy(btnPlanDryrun, false);
-      }
-    });
-  }
-
-  // =========================================================================
-  // 11. Mode B: Step 2 - Live Apply (`terraform apply` via SSE)
-  // =========================================================================
-  if (btnApplyLive) {
-    btnApplyLive.addEventListener("click", async () => {
-      if (!currentSessionId) {
-        showToast(
-          "error",
-          "No Active Plan",
-          "Please execute dry-run plan before applying changes.",
-        );
-        return;
-      }
-
-      const confirmApply = confirm(
-        "Are you sure you want to commit this configuration to the live firewall?",
-      );
-      if (!confirmApply) return;
-
-      btnApplyLive.disabled = true;
-      if (btnRollback) btnRollback.disabled = true;
-      setLiveOperationRunning(true);
-      try {
-        if (!sessionApproved) {
-          const approval = await fetch("/api/terraform/approve", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ session_id: currentSessionId }),
-          });
-          await readJson(approval, "The deployment plan could not be approved");
-          sessionApproved = true;
-        }
-      } catch (err) {
-        showError(err.message);
-        showToast("error", "Approval Failed", err.message);
-        btnApplyLive.disabled = false;
-        setLiveOperationRunning(false);
-        return;
-      }
-      if (applyStatusMsg)
-        applyStatusMsg.textContent =
-          "Deployment in progress. Follow the execution log below.";
-      logToTerminal(
-        "[APPLY] Commencing live Server-Sent Events (SSE) streaming...",
-        "term-system",
-      );
-
-      const evtSource = new EventSource(
-        `/api/terraform/apply/stream?session_id=${encodeURIComponent(currentSessionId)}`,
-      );
-
-      const finishApply = () => {
-        evtSource.close();
-        btnApplyLive.disabled = false;
-        if (btnRollback) btnRollback.disabled = false;
-        setLiveOperationRunning(false);
-      };
-
-      evtSource.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.event === "log") {
-            logToTerminal(data.line, "term-log");
-          } else if (data.event === "status") {
-            logToTerminal(`[STATUS] ${data.message}`, "term-system");
-          } else if (data.event === "complete") {
-            finishApply();
-            if (data.success) {
-              logToTerminal(`[SUCCESS] ${data.message}`, "term-success");
-              if (postActionsBar) postActionsBar.classList.remove("hidden");
-              if (applyStatusMsg)
-                applyStatusMsg.textContent =
-                  "Deployment committed successfully.";
-              showToast(
-                "success",
-                "Apply Complete",
-                "Terraform completed. Review the log and audit before validating the target.",
-              );
-            } else {
-              logToTerminal(`[FAILED] ${data.message}`, "term-error");
-              showError(data.message);
-            }
-          } else if (data.event === "error") {
-            finishApply();
-            logToTerminal(`[ERROR] ${data.message}`, "term-error");
-            showError(data.message);
-            if (applyStatusMsg)
-              applyStatusMsg.textContent =
-                "Deployment reported an error. Review the execution log.";
-          }
-        } catch (err) {
-          finishApply();
-          showError(
-            "The deployment stream returned an unreadable response. Check the target state before retrying.",
-          );
-        }
-      };
-
-      evtSource.onerror = () => {
-        finishApply();
-        logToTerminal(
-          "[ERROR] Live deployment event stream disconnected.",
-          "term-error",
-        );
-        if (applyStatusMsg)
-          applyStatusMsg.textContent =
-            "Connection interrupted. Target state is unknown; inspect it before retrying.";
-        showError(
-          "The live stream disconnected. The operation may still be running; check the target and server before retrying.",
-        );
-      };
-    });
-  }
-
-  // =========================================================================
-  // 12. Mode B: Step 3 - Emergency Rollback / Destroy
-  // =========================================================================
-  if (btnRollback) {
-    btnRollback.addEventListener("click", () => {
-      if (!currentSessionId) return;
-
-      const confirmDestroy = confirm(
-        "WARNING: This will DESTROY and remove all provisioned resources from the firewall. Proceed with rollback?",
-      );
-      if (!confirmDestroy) return;
-
-      btnRollback.disabled = true;
-      btnApplyLive.disabled = true;
-      setLiveOperationRunning(true);
-      if (rollbackStatusMsg)
-        rollbackStatusMsg.textContent =
-          "Removing managed resources. Follow the execution log below.";
-      logToTerminal(
-        "[ROLLBACK] Starting live terraform destroy streaming...",
-        "term-warning",
-      );
-
-      const evtSource = new EventSource(
-        `/api/terraform/destroy/stream?session_id=${encodeURIComponent(currentSessionId)}`,
-      );
-      const finishRollback = () => {
-        evtSource.close();
-        btnRollback.disabled = false;
-        btnApplyLive.disabled = false;
-        setLiveOperationRunning(false);
-      };
-
-      evtSource.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.event === "log") {
-            logToTerminal(data.line, "term-log");
-          } else if (data.event === "status") {
-            logToTerminal(`[STATUS] ${data.message}`, "term-system");
-          } else if (data.event === "complete") {
-            finishRollback();
-            if (data.success) {
-              logToTerminal(
-                `[ROLLBACK COMPLETE] ${data.message}`,
-                "term-warning",
-              );
-              if (rollbackStatusMsg)
-                rollbackStatusMsg.textContent =
-                  "Rollback finished. Managed resources removed.";
-              postActionsBar?.classList.add("hidden");
-              showToast(
-                "info",
-                "Rollback Finished",
-                "Terraform completed resource removal. Review the log to verify the result.",
-              );
-            } else {
-              if (rollbackStatusMsg)
-                rollbackStatusMsg.textContent =
-                  "Rollback failed. Review the execution log.";
-              showError(data.message || "Rollback failed.");
-            }
-          } else if (data.event === "error") {
-            finishRollback();
-            logToTerminal(`[ERROR] ${data.message}`, "term-error");
-            showError(data.message);
-          }
-        } catch (err) {
-          finishRollback();
-          showError(
-            "The rollback stream returned an unreadable response. Check the target state before retrying.",
-          );
-        }
-      };
-
-      evtSource.onerror = () => {
-        finishRollback();
-        logToTerminal("[ERROR] Rollback stream disconnected.", "term-error");
-        if (rollbackStatusMsg)
-          rollbackStatusMsg.textContent =
-            "Connection interrupted. Check the target state before retrying.";
-        showError(
-          "The rollback stream disconnected. The operation may still be running; check the target and server before retrying.",
-        );
-      };
-    });
-  }
-
-  // =========================================================================
-  // 13. Terminal Helpers (Clear, Copy, Log)
+  // 10. Terminal Helpers (Clear, Copy, Log)
   // =========================================================================
   if (btnClearTerm) {
     btnClearTerm.addEventListener("click", () => {
@@ -1715,43 +1343,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // =========================================================================
-  // 14. Post Actions & Downloads
-  // =========================================================================
-  if (btnDownloadState) {
-    btnDownloadState.addEventListener("click", async () => {
-      if (!currentSessionId) return;
-      try {
-        const resp = await fetch(
-          `/api/download/state?session_id=${currentSessionId}`,
-        );
-        if (!resp.ok) throw new Error("Failed to download state file");
-        const blob = await resp.blob();
-        await downloadBlob(blob, `terraform_${currentSessionId}.tfstate`);
-      } catch (err) {
-        showToast("error", "Download Failed", err.message);
-      }
-    });
-  }
-
-  if (btnDownloadAudit) {
-    btnDownloadAudit.addEventListener("click", async () => {
-      if (!currentSessionId) return;
-      try {
-        const resp = await fetch(
-          `/api/download/package?session_id=${currentSessionId}`,
-        );
-        if (!resp.ok) throw new Error("Failed to download package");
-        const blob = await resp.blob();
-        await downloadBlob(blob, `terraform_package_${currentSessionId}.zip`);
-      } catch (err) {
-        showToast("error", "Download Failed", err.message);
-      }
-    });
-  }
-
-  // =========================================================================
-  // 15. Feedback, Errors & Toast System
+  // 11. Feedback, Errors & Toast System
   // =========================================================================
   function clearInputErrors() {
     document.querySelectorAll(".input-invalid").forEach((el) => {
@@ -1925,11 +1517,10 @@ document.addEventListener("DOMContentLoaded", () => {
   document
     .getElementById("btn-new-workspace")
     ?.addEventListener("click", () => {
-      if (liveOperationRunning) return;
       if (
-        (currentFile || currentSessionId) &&
+        currentFile &&
         !confirm(
-          "Start a new workspace? This clears the current source and plan from this window. Downloaded files are kept.",
+          "Start a new workspace? This clears the current source from this window.",
         )
       )
         return;

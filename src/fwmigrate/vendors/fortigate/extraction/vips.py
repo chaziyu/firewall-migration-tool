@@ -9,7 +9,6 @@ from ..model.vip import (
 )
 from ..nodes import (
     ConfigNode,
-    FortiGateConfigTree,
 )
 
 from .common import (
@@ -18,6 +17,7 @@ from .common import (
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class VIPConfig(Protocol):
@@ -28,7 +28,7 @@ class VIPConfig(Protocol):
 
 
 def extract_vips(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: VIPConfig,
 ) -> None:
     """Extract FortiGate VIP and VIP-group source objects."""
@@ -38,7 +38,7 @@ def extract_vips(
 
 
 def _extract_vip_objects(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: VIPConfig,
 ) -> None:
     section_path = "firewall vip"
@@ -109,7 +109,7 @@ def _extract_realservers(
 
 
 def _extract_vip_groups(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: VIPConfig,
 ) -> None:
     section_path = "firewall vipgrp"

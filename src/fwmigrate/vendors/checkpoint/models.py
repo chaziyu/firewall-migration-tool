@@ -58,6 +58,26 @@ class CollectionCompletenessRecord(BaseModel):
     error_message: Optional[str] = None
 
 
+class CheckPointCollectionDiagnostic(BaseModel):
+    """Collection execution evidence kept outside CheckPointConfig."""
+
+    model_config = ConfigDict(extra="allow")
+
+    command: str
+    source_plane: str
+    domain: str | None = None
+    package: str | None = None
+    layer: str | None = None
+    gateway: str | None = None
+    status: CollectionStatus
+    complete: bool = False
+    error: str | None = None
+    error_code: str | None = None
+    from_index: int | None = None
+    to_index: int | None = None
+    total: int | None = None
+
+
 class CheckPointResponse(BaseModel):
     """A single Check Point Management API command response or exported section."""
     model_config = ConfigDict(populate_by_name=True)
@@ -97,27 +117,6 @@ class CheckPointResponse(BaseModel):
 
     def domain_scope_key(self) -> str:
         return self.domain_identity() or "global"
-
-
-class GaiaPBRTableRoute(BaseModel):
-    """One ordered static route inside a Gaia PBR action table."""
-
-    destination: Optional[str] = None
-    next_hop: Optional[str] = None
-    outgoing_interface: Optional[str] = None
-    priority: Optional[int] = None
-    enabled: Optional[bool] = None
-    order: int
-    source_attributes: Dict[str, Any] = Field(default_factory=dict)
-
-
-class GaiaPBRTable(BaseModel):
-    """Complete Gaia PBR action table, including every source route."""
-
-    name: str
-    order: int
-    routes: List[GaiaPBRTableRoute] = Field(default_factory=list)
-    source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ScopeSelectionResult(BaseModel):

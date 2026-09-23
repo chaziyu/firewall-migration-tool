@@ -8,7 +8,6 @@ from ..model.interface import (
 )
 from ..nodes import (
     ConfigNode,
-    FortiGateConfigTree,
 )
 
 from .common import (
@@ -17,6 +16,7 @@ from .common import (
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class InterfaceConfig(Protocol):
@@ -26,7 +26,7 @@ class InterfaceConfig(Protocol):
 
 
 def extract_interfaces(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: InterfaceConfig,
 ) -> None:
     """Extract FortiGate system-interface source objects."""

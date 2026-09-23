@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..model.policy import FGPolicy
-from ..nodes import FortiGateConfigTree
 
 from .common import (
     evaluate_edit,
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class PolicyConfig(Protocol):
@@ -19,7 +19,7 @@ class PolicyConfig(Protocol):
 
 
 def extract_policies(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: PolicyConfig,
 ) -> None:
     """

@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..model.ippool import FGIPPool
-from ..nodes import FortiGateConfigTree
 
 from .common import (
     evaluate_edit,
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class IPPoolConfig(Protocol):
@@ -19,7 +19,7 @@ class IPPoolConfig(Protocol):
 
 
 def extract_ip_pools(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: IPPoolConfig,
 ) -> None:
     """Extract FortiGate firewall IP-pool source objects."""

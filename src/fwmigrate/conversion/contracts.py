@@ -1,7 +1,7 @@
-"""Structural contracts for future directional converters.
+"""Structural contracts for future directional migration planners.
 
 These protocols deliberately do not define a shared firewall model or any
-vendor mapping. Concrete pairs own those decisions when conversion resumes.
+vendor mapping. Concrete pairs own those decisions when planning resumes.
 """
 
 from typing import Any, Protocol
@@ -12,37 +12,34 @@ class VendorSourceConfig(Protocol):
 
 
 class VendorDerivedViews(Protocol):
-    """Opaque source-native derived views used by a converter."""
+    """Opaque source-native derived views used by a migration planner."""
 
 
-class TargetVendorConfig(Protocol):
-    """Opaque target-native vendor configuration."""
-
-
-class TargetValidator(Protocol):
-    """Validates a target-native configuration."""
-
-    def validate(self, config: Any) -> Any:
-        ...
-
-
-class TargetRenderer(Protocol):
-    """Renders a validated target-native configuration."""
-
-    def render(self, config: Any, **options: Any) -> Any:
-        ...
-
-
-class PairConverter(Protocol):
-    """Future source/target-specific conversion boundary."""
+class PairMigrationPlanner(Protocol):
+    """Plans supported migration work for one directional vendor pair."""
 
     source_vendor: str
     target_vendor: str
 
-    def convert(
+    def plan(
         self,
         source: VendorSourceConfig,
         derived: VendorDerivedViews,
-    ) -> TargetVendorConfig:
-        """Return a target-native configuration for this vendor pair."""
+        **options: Any,
+    ) -> Any:
+        """Return a pair-specific migration plan."""
+        ...
+
+
+class MigrationPlanValidator(Protocol):
+    """Validates a pair-specific migration plan."""
+
+    def validate(self, plan: Any) -> Any:
+        ...
+
+
+class MigrationPlanRenderer(Protocol):
+    """Renders a validated pair-specific migration plan."""
+
+    def render(self, plan: Any, **options: Any) -> Any:
         ...

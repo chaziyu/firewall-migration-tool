@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..model.security_profile import FGProfileGroup
-from ..nodes import FortiGateConfigTree
 
 from .common import (
     evaluate_edit,
     iter_section_edits,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class ProfileGroupConfig(Protocol):
@@ -19,7 +19,7 @@ class ProfileGroupConfig(Protocol):
 
 
 def extract_profile_groups(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: ProfileGroupConfig,
 ) -> None:
     """Extract FortiGate security profile-group source objects."""

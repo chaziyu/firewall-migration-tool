@@ -2,6 +2,7 @@ import os
 import sys
 import io
 import click
+import yaml
 
 # Safe stdout/stderr fallback in windowed (GUI) mode
 if sys.stdout is None:
@@ -11,8 +12,14 @@ if sys.stderr is None:
 
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.source_reporting import source_reporters
+from fwmigrate.conversion.builtin import register_builtin_migration_planners
+from fwmigrate.conversion import migration_planners
+from fwmigrate.conversion.fortigate_to_palo_alto import PANMigrationOptions
+from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 
 register_builtin_source_reporters()
+register_builtin_migration_planners()
 
 @click.group()
 def cli():
@@ -29,7 +36,7 @@ def vendors():
             f"(Ext: {', '.join(s.supported_extensions)})"
         )
 
-    click.echo("\nConfiguration conversion is temporarily unavailable.")
+    click.echo("\nMigration planning is temporarily unavailable.")
 
 @cli.command()
 @click.option('--input', '-i', required=True, type=click.Path(exists=True), help='Input configuration file (.conf, .cfg, .json, .set)')
@@ -37,17 +44,28 @@ def vendors():
 @click.option('--source-vendor', type=str, default='fortigate', help='Registered source vendor identifier')
 @click.option('--target-vendor', type=str, default='palo_alto', help='Registered target vendor identifier')
 @click.option('--zone-map', type=click.Path(exists=True), help='YAML file with interface to zone mappings')
-@click.option('--format', type=click.Choice(['xml', 'set', 'terraform', 'cli']), default='xml', help='Output format')
+@click.option('--format', type=click.Choice(['xml', 'set', 'cli']), default='xml', help='Output format')
 @click.option('--optimize', is_flag=True, default=False, help='Prune unused objects and optimize rules')
 def migrate(input, output, source_vendor, target_vendor, zone_map, format, optimize):
-    """Reserved compatibility command; pair-specific conversion is unavailable."""
-    del input, output, source_vendor, target_vendor, zone_map, format, optimize
-    click.echo(
-        'Configuration conversion is temporarily unavailable while the '
-        'pair-specific conversion architecture is being implemented.',
-        err=True,
+    """Plan the supported portion of a source configuration."""
+    del optimize
+    if (source_vendor.casefold(), target_vendor.casefold()) != ("fortigate", "palo_alto"):
+        raise click.ClickException("Only fortigate -> palo_alto is supported")
+    if format != "set":
+        raise click.ClickException("The MVP supports only --format set")
+    mapping = {}
+    if zone_map:
+        with open(zone_map, encoding="utf-8") as stream:
+            mapping = yaml.safe_load(stream) or {}
+    with open(input, encoding="utf-8") as stream:
+        analysis = source_reporters.get("fortigate").analyze_source(stream.read())
+    plan = migration_planners.get(source_vendor, target_vendor).plan(
+        analysis.extracted.config, analysis.derived, options=PANMigrationOptions(**mapping)
     )
-    raise click.exceptions.Exit(1)
+    validation = validate_plan(plan)
+    rendered = PANSetRenderer().render_files(plan, output)
+    click.echo(f"Generated {len(rendered.commands)} commands in {output}")
+    click.echo(f"Validation findings: {len(validation.issues)}")
 
 @cli.command()
 @click.option('--port', default=5000, help='Port to run the web server on')

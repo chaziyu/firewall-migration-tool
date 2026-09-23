@@ -17,6 +17,7 @@ from ..extraction.result import ExtractionResult
 from ..extraction.source_inventory import SourceObjectRecord
 from ..security.extraction import sanitize_source_attributes, sanitize_source_value
 from ..section_registry import registered_sections
+from ..validation.index import ValidationIssueIndex
 from ..validation.models import ValidationIssue, ValidationResult
 from .excel_schema import (
     DERIVED_COLUMNS_BY_SHEET,
@@ -124,15 +125,37 @@ class _ExcelContext:
         self.validation = validation
         self.source_name = source_name or ""
         self.source_by_path: dict[str, list[SourceObjectRecord]] = defaultdict(list)
+        self.source_by_vdom: dict[str, list[SourceObjectRecord]] = defaultdict(list)
+        self.source_by_identity: dict[tuple[str, str, str | None], list[SourceObjectRecord]] = defaultdict(list)
+        self.nested_source_by_parent: dict[tuple[str, str, str | None], list[SourceObjectRecord]] = defaultdict(list)
 
         for record in extracted.source_objects:
             self.source_by_path[record.source_path].append(record)
+            self.source_by_vdom[record.vdom].append(record)
+            self.source_by_identity[(record.vdom, record.source_path, record.object_name)].append(record)
+            if record.source_path.startswith("system interface "):
+                parent = record.parent_objects[0] if record.parent_objects else None
+                self.nested_source_by_parent[(record.vdom, "system interface", parent)].append(record)
 
-        self.issues_by_object: dict[tuple[str, str, str], list[ValidationIssue]] = defaultdict(list)
+        self.source_paths = frozenset(self.source_by_path)
+        self.vdoms = frozenset(self.source_by_vdom)
+        self.registered_sections = frozenset(registered_sections())
+        self.unsupported_counts = {
+            path: len(records)
+            for path, records in self.source_by_path.items()
+            if path not in self.registered_sections
+        }
+        self.ipv6_explicit = any(
+            "ipv6" in _normalize_key(key) or "ip6" in _normalize_key(key)
+            for record in extracted.source_objects
+            for key in record.values
+        )
+        self.source_inventory_row_count = sum(
+            max(1, len(record.commands))
+            for record in extracted.source_objects
+        )
 
-        for issue in validation.issues:
-            if issue.object_name:
-                self.issues_by_object[(issue.domain, issue.vdom, str(issue.object_name))].append(issue)
+        self.validation_index = ValidationIssueIndex(validation)
 
     def issues_for(
         self,
@@ -143,28 +166,17 @@ class _ExcelContext:
     ) -> list[ValidationIssue]:
         found: list[ValidationIssue] = []
         seen: set[tuple[str, str, str]] = set()
-        allowed_domains = set(domains) if domains is not None else None
 
-        for name in names:
-            if name in (None, ""):
+        for issue in self.validation_index.issues_for(
+            vdom,
+            names,
+            domains,
+        ):
+            key = (issue.domain, issue.field or "", issue.message)
+            if key in seen:
                 continue
-
-            issue_domains = (
-                allowed_domains
-                if allowed_domains is not None
-                else {
-                    domain
-                    for domain, issue_vdom, issue_name in self.issues_by_object
-                    if issue_vdom == vdom and issue_name == str(name)
-                }
-            )
-            for domain in issue_domains:
-                for issue in self.issues_by_object.get((domain, vdom, str(name)), ()):
-                    key = (issue.domain, issue.field or "", issue.message)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    found.append(issue)
+            seen.add(key)
+            found.append(issue)
 
         return found
 
@@ -213,7 +225,7 @@ def _rows_for_sheet(
     sheet_name: str,
     context: _ExcelContext,
     headers: Sequence[str],
-) -> list[dict[str, Any]]:
+) -> Iterable[Mapping[str, Any]]:
     builders = {
         "Review Required": _review_rows,
         "Interfaces": _interface_rows,
@@ -370,7 +382,7 @@ def _write_table_sheet(
     workbook: Workbook,
     sheet_name: str,
     headers: Sequence[str],
-    rows: Sequence[Mapping[str, Any]],
+    rows: Iterable[Mapping[str, Any]],
     *,
     context: _ExcelContext,
 ) -> None:
@@ -379,6 +391,8 @@ def _write_table_sheet(
     sheet.sheet_view.zoomScale = 90
 
     max_col = max(len(headers), 1)
+    derived_headers = set(DERIVED_COLUMNS_BY_SHEET.get(sheet_name, ()))
+    hidden_headers = set(HIDDEN_COLUMNS_BY_DEFAULT.get(sheet_name, ()))
     sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
     sheet.cell(1, 1, sheet_name)
     sheet.cell(1, 1).fill = _TITLE_FILL
@@ -394,7 +408,7 @@ def _write_table_sheet(
             end_column=max_col - 1,
         )
     note = sheet.cell(2, 1)
-    note.value = _sheet_note(sheet_name, len(rows))
+    note.value = ""
     note.font = _MUTED_FONT
     note.alignment = Alignment(wrap_text=True, vertical="top")
 
@@ -406,41 +420,47 @@ def _write_table_sheet(
         cell.border = _BORDER
 
 
+    row_count = 0
     for index, row in enumerate(rows, start=4):
-        for column, header in enumerate(headers, start=1):
-            value = _excel_safe(row.get(header))
-            cell = sheet.cell(index, column, value)
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
-
-        if index % 2 == 1:
-            for column in range(1, max_col + 1):
-                sheet.cell(index, column).fill = _ALT_FILL
-
-        for column, header in enumerate(headers, start=1):
-            if header in DERIVED_COLUMNS_BY_SHEET.get(sheet_name, ()):
-                sheet.cell(index, column).fill = _DERIVED_FILL
-
+        row_count += 1
+        review_fill = (
+            _ERROR_FILL
+            if row.get("__error__")
+            else _REVIEW_FILL
+            if row.get("__review__")
+            else None
+        )
+        alternate_fill = _ALT_FILL if index % 2 == 1 else None
         outline = row.get("__outline_level__")
         if isinstance(outline, int) and outline > 0:
             sheet.row_dimensions[index].outlineLevel = min(outline, 7)
 
-        if row.get("__review__"):
-            fill = _ERROR_FILL if row.get("__error__") else _REVIEW_FILL
-            for column in range(1, max_col + 1):
-                sheet.cell(index, column).fill = fill
+        for column, header in enumerate(headers, start=1):
+            value = _excel_safe(row.get(header))
+            cell = sheet.cell(index, column, value)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            fill = (
+                review_fill
+                or (_DERIVED_FILL if header in derived_headers else None)
+                or alternate_fill
+            )
+            if fill is not None:
+                cell.fill = fill
 
-    if rows:
-        sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{len(rows) + 3}"
+    note.value = _sheet_note(sheet_name, row_count)
+
+    if row_count:
+        sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
 
     sheet.freeze_panes = _freeze_pane(sheet_name, headers)
     _apply_widths(sheet, headers)
     for column, header in enumerate(headers, start=1):
-        if header in HIDDEN_COLUMNS_BY_DEFAULT.get(sheet_name, ()):
+        if header in hidden_headers:
             sheet.column_dimensions[get_column_letter(column)].hidden = True
     _add_back_link(sheet)
 
     if sheet_name == "Review Required":
-        _apply_review_colors(sheet, headers, len(rows))
+        _apply_review_colors(sheet, headers, row_count)
 
 
 def _write_source_inventory_sheet(
@@ -563,11 +583,7 @@ def _sheet_note(
 
 def _inventory_counts(context: _ExcelContext) -> list[tuple[str, int, str]]:
     config = context.config
-    unsupported = {
-        record.source_path
-        for record in context.extracted.source_objects
-        if record.source_path not in set(registered_sections())
-    }
+    unsupported = context.unsupported_counts
     return [
         ("Source Interfaces", len(config.interfaces), "Interfaces"),
         ("Zones", len(config.zones), "Zones"),
@@ -615,17 +631,12 @@ def _migration_indicators(context: _ExcelContext) -> list[tuple[str, Any]]:
         issue.domain == "nat"
         for issue in context.validation.issues
     )
-    ipv6_explicit = any(
-        "ipv6" in _normalize_key(key) or "ip6" in _normalize_key(key)
-        for record in context.extracted.source_objects
-        for key in record.values
-    )
     dynamic_wan = any(
         (interface.mode or "").lower() in {"dhcp", "pppoe"}
         for interface in config.interfaces
     )
     return [
-        ("IPv6 Explicit Configuration Present", "Yes" if ipv6_explicit else "No"),
+        ("IPv6 Explicit Configuration Present", "Yes" if context.ipv6_explicit else "No"),
         ("Dynamic WAN Addressing Present", "Yes" if dynamic_wan else "No"),
         ("SD-WAN Present", "Yes" if config.sdwans else "No"),
         ("NAT Review Items", nat_review_items),
@@ -637,10 +648,7 @@ def _migration_indicators(context: _ExcelContext) -> list[tuple[str, Any]]:
 
 
 def _vdoms(context: _ExcelContext) -> list[str]:
-    values = {
-        record.vdom
-        for record in context.extracted.source_objects
-    }
+    values = set(context.vdoms)
     values.update(
         getattr(item, "vdom", "root")
         for collection_name in (
@@ -873,8 +881,7 @@ def _zone_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str,
     return rows
 
 
-def _address_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _address_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for item in context.config.addresses:
         value = item.subnet or (
             f"{item.start_ip}-{item.end_ip}" if item.start_ip and item.end_ip else None
@@ -903,8 +910,7 @@ def _address_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[s
             domains=("address6",) if item.address_family == "ipv6" else ("address",),
         )
         _overlay_raw(row, item.raw_extra, headers)
-        rows.append(row)
-    return rows
+        yield row
 
 
 def _wildcard_fqdn_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -985,9 +991,8 @@ def _service_category_rows(context: _ExcelContext, headers: Sequence[str]) -> li
     return rows
 
 
-def _service_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+def _service_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     source = {(item.vdom, item.name): item for item in context.config.services}
-    rows = []
     for item in context.derived.services.services:
         source_item = source.get((item.vdom, item.source_name or item.name))
         row = {
@@ -1011,8 +1016,7 @@ def _service_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[s
         )
         if source_item is not None:
             _overlay_raw(row, source_item.raw_extra, headers)
-        rows.append(row)
-    return rows
+        yield row
 
 
 def _service_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -1034,7 +1038,7 @@ def _service_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[
     return rows
 
 
-def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     normalized = {
         (item.vdom, item.policy_id): item
         for item in context.derived.policy_names
@@ -1043,7 +1047,6 @@ def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[st
         (item.vdom, item.policy_id): item
         for item in context.derived.nat
     }
-    rows = []
     for item in context.config.policies:
         name_info = normalized.get((item.vdom, item.policy_id))
         nat_item = nat.get((item.vdom, item.policy_id))
@@ -1100,8 +1103,7 @@ def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[st
         )
         _overlay_raw(row, item.raw_extra, headers)
         _add_analysis_status(row, context, vdom=item.vdom, names=(item.name,))
-        rows.append(row)
-    return rows
+        yield row
 
 
 def _ip_pool_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -1227,13 +1229,11 @@ def _vip_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict
 def _nat_rows(
     context: _ExcelContext,
     headers: Sequence[str],
-) -> list[dict[str, Any]]:
+) -> Iterator[dict[str, Any]]:
     policies = {
         (policy.vdom, policy.policy_id): policy
         for policy in context.config.policies
     }
-
-    rows: list[dict[str, Any]] = []
 
     for item in context.derived.nat:
         policy = policies.get(
@@ -1289,15 +1289,13 @@ def _nat_rows(
             extra_reasons=item.issues,
         )
 
-        rows.append(row)
-
-    return rows
+        yield row
 
 
 def _route_rows(
     context: _ExcelContext,
     headers: Sequence[str],
-) -> list[dict[str, Any]]:
+) -> Iterator[dict[str, Any]]:
     return _model_rows(
         context,
         context.config.static_routes,
@@ -2116,24 +2114,23 @@ def _interface_source_rows(context: _ExcelContext, headers: Sequence[str]) -> li
 
 def _interface_nested_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
     rows = []
-    for record in context.extracted.source_objects:
-        if not record.source_path.startswith("system interface "):
-            continue
-        interface = record.parent_objects[0] if record.parent_objects else None
-        for command in record.commands:
-            rows.append(
-                {
-                    "Interface": interface,
-                    "Config Path": record.source_path,
-                    "Node Type": "edit" if record.object_name is not None else "config",
-                    "Object / Edit": record.object_name,
-                    "Operation": command.operation,
-                    "Setting": command.key,
-                    "Value": _safe_command_value(command.key, command.values),
-                    "Extraction Status": "EXTRACTED",
-                    "Manual Review": "No",
-                }
-            )
+    for records in context.nested_source_by_parent.values():
+        for record in records:
+            interface = record.parent_objects[0] if record.parent_objects else None
+            for command in record.commands:
+                rows.append(
+                    {
+                        "Interface": interface,
+                        "Config Path": record.source_path,
+                        "Node Type": "edit" if record.object_name is not None else "config",
+                        "Object / Edit": record.object_name,
+                        "Operation": command.operation,
+                        "Setting": command.key,
+                        "Value": _safe_command_value(command.key, command.values),
+                        "Extraction Status": "EXTRACTED",
+                        "Manual Review": "No",
+                    }
+                )
     return rows
 
 
@@ -2174,13 +2171,6 @@ def _warning_rows(
 
 
 def _unsupported_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    registered = set(registered_sections())
-    counts: dict[str, int] = defaultdict(int)
-
-    for record in context.extracted.source_objects:
-        if record.source_path not in registered:
-            counts[record.source_path] += 1
-
     return [
         {
             "Section": path,
@@ -2189,17 +2179,15 @@ def _unsupported_rows(context: _ExcelContext, headers: Sequence[str]) -> list[di
             "Reason": "No dedicated typed FortiGate model is currently defined for this source section.",
             "Raw Capture Location": "FortiGate Source Inventory",
         }
-        for path, count in sorted(counts.items())
+        for path, count in sorted(context.unsupported_counts.items())
     ]
 
 
 def _iter_fortigate_source_inventory_rows(
     context: _ExcelContext,
 ) -> Iterator[tuple[Any, ...]]:
-    registered = set(registered_sections())
-
     for record in context.extracted.source_objects:
-        status = "TYPED" if record.source_path in registered else "SOURCE_ONLY"
+        status = "TYPED" if record.source_path in context.registered_sections else "SOURCE_ONLY"
         base = (
             _excel_safe(_source_category(record.source_path)),
             _excel_safe(record.vdom),
@@ -2224,10 +2212,7 @@ def _iter_fortigate_source_inventory_rows(
 
 
 def _source_inventory_row_count(context: _ExcelContext) -> int:
-    return sum(
-        max(1, len(record.commands))
-        for record in context.extracted.source_objects
-    )
+    return context.source_inventory_row_count
 
 
 def _coverage_rows(
@@ -2236,17 +2221,11 @@ def _coverage_rows(
 ) -> list[dict[str, Any]]:
     del headers
 
-    registered = set(
-        registered_sections()
-    )
-
     rows: list[dict[str, Any]] = []
 
-    for path in sorted(
-        context.source_by_path
-    ):
+    for path in sorted(context.source_paths):
         records = context.source_by_path[path]
-        typed = path in registered
+        typed = path in context.registered_sections
 
         rows.append(
             {
@@ -2304,15 +2283,13 @@ def _generic_source_rows(
     sheet_name: str,
     context: _ExcelContext,
     headers: Sequence[str],
-) -> list[dict[str, Any]]:
+) -> Iterator[dict[str, Any]]:
     del headers
 
     paths = _SOURCE_PATHS_BY_SHEET.get(
         sheet_name,
         (),
     )
-
-    rows: list[dict[str, Any]] = []
 
     for path in paths:
         for record in context.source_by_path.get(
@@ -2342,7 +2319,7 @@ def _generic_source_rows(
                     names=(record.object_name,),
                 )
 
-                rows.append(row)
+                yield row
                 continue
 
             for setting, value in values.items():
@@ -2364,9 +2341,7 @@ def _generic_source_rows(
                     names=(record.object_name,),
                 )
 
-                rows.append(row)
-
-    return rows
+                yield row
 
 
 def _schedule_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -2413,7 +2388,7 @@ def _schedule_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list
 def _ntp_setting_rows(
     context: _ExcelContext,
     headers: Sequence[str],
-) -> list[dict[str, Any]]:
+) -> Iterable[Mapping[str, Any]]:
     del headers
     rows: list[dict[str, Any]] = []
 
@@ -2468,9 +2443,7 @@ def _model_rows(
     objects: Iterable[Any],
     headers: Sequence[str],
     mapping: Mapping[str, str | None | Any],
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-
+) -> Iterator[dict[str, Any]]:
     for item in objects:
         data = item.model_dump(
             mode="python"
@@ -2489,7 +2462,10 @@ def _model_rows(
                     attribute
                 )
 
-        raw_extra = _additional_settings(item, row.values())
+        raw_extra = _additional_settings_from_data(
+            data,
+            row.values(),
+        )
 
         _overlay_raw(
             row,
@@ -2524,16 +2500,23 @@ def _model_rows(
             names=(name,),
         )
 
-        rows.append(row)
-
-    return rows
+        yield row
 
 
 def _additional_settings(
     item: Any,
     visible_values: Iterable[Any] = (),
 ) -> dict[str, Any]:
-    data = item.model_dump(mode="python")
+    return _additional_settings_from_data(
+        item.model_dump(mode="python"),
+        visible_values,
+    )
+
+
+def _additional_settings_from_data(
+    data: Mapping[str, Any],
+    visible_values: Iterable[Any] = (),
+) -> dict[str, Any]:
     visible = list(visible_values)
     settings = dict(data.get("raw_extra", {}))
 
@@ -2668,25 +2651,13 @@ def _interface_source_values(
     """
 
     values: dict[str, Any] = {}
+    records = [
+        *context.source_by_identity.get((vdom, "system interface", name), ()),
+        *context.nested_source_by_parent.get((vdom, "system interface", name), ()),
+    ]
 
-    for record in context.extracted.source_objects:
-        if record.vdom != vdom:
-            continue
-
-        direct = (
-            record.source_path == "system interface"
-            and record.object_name == name
-        )
-
-        nested = (
-            record.source_path.startswith("system interface ")
-            and bool(record.parent_objects)
-            and record.parent_objects[0] == name
-        )
-
-        if not direct and not nested:
-            continue
-
+    for record in records:
+        nested = record.source_path != "system interface"
         suffix = (
             record.source_path.removeprefix("system interface ").strip()
             if nested
@@ -2715,15 +2686,11 @@ def _source_secret_configured(
         for key in keys
     }
 
-    for record in context.extracted.source_objects:
-        if record.vdom != vdom:
-            continue
-        if (
-            record.source_path != "system interface"
-            or record.object_name != name
-        ):
-            continue
-
+    records = [
+        *context.source_by_identity.get((vdom, "system interface", name), ()),
+        *context.nested_source_by_parent.get((vdom, "system interface", name), ()),
+    ]
+    for record in records:
         present = {
             _normalize_key(key)
             for key in record.values

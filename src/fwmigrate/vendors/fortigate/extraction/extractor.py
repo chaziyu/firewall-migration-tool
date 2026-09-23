@@ -17,6 +17,7 @@ from .result import ExtractionResult
 from .schedules import extract_schedules
 from .source_inventory import capture_source_objects
 from .source_metadata import capture_source_metadata
+from .section_index import SectionIndex
 from .routing import extract_routes
 from .sdwan import extract_sdwan
 from .services import extract_services
@@ -41,46 +42,47 @@ def extract_fortigate_config(
     """
 
     source = FGConfig()
+    index = SectionIndex.build(tree)
 
     # Network/source topology.
-    extract_interfaces(tree, source)
-    extract_zones(tree, source)
+    extract_interfaces(index, source)
+    extract_zones(index, source)
 
     # Reusable firewall objects.
-    extract_addresses(tree, source)
-    extract_services(tree, source)
-    extract_schedules(tree, source)
+    extract_addresses(index, source)
+    extract_services(index, source)
+    extract_schedules(index, source)
 
     # NAT source objects.
-    extract_ip_pools(tree, source)
-    extract_vips(tree, source)
+    extract_ip_pools(index, source)
+    extract_vips(index, source)
 
     # Policies.
-    extract_policies(tree, source)
+    extract_policies(index, source)
 
     # Routing / VPN / SD-WAN.
-    extract_routes(tree, source)
-    extract_vpn(tree, source)
-    extract_sdwan(tree, source)
+    extract_routes(index, source)
+    extract_vpn(index, source)
+    extract_sdwan(index, source)
 
     # DHCP.
-    extract_dhcp(tree, source)
+    extract_dhcp(index, source)
 
     # SSL VPN.
-    extract_ssl_vpn(tree, source)
+    extract_ssl_vpn(index, source)
 
     # Identity / administration.
-    extract_users(tree, source)
-    extract_admin(tree, source)
+    extract_users(index, source)
+    extract_admin(index, source)
 
     # Security profiles.
-    extract_ips(tree, source)
-    extract_profile_groups(tree, source)
+    extract_ips(index, source)
+    extract_profile_groups(index, source)
 
-    extract_external_resources(tree, source)
+    extract_external_resources(index, source)
 
     return ExtractionResult(
         config=source,
-        source_objects=capture_source_objects(tree),
+        source_objects=capture_source_objects(index),
         source_metadata=capture_source_metadata(tree),
     )

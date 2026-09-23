@@ -943,17 +943,31 @@ select {
 .report-status { margin-top: 5px; color: var(--text-muted); font-size: 12px; }
 .report-status { margin-top: 14px; }
 .report-toolbar { display: flex; gap: 10px; margin-bottom: 14px; }
-.report-toolbar label { flex: 1; }
+.report-toolbar label { flex: 1; min-width: 0; }
 .report-toolbar input,
 .report-toolbar select { width: 100%; min-height: 40px; padding: 8px 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--text-main); background: var(--bg-input); }
 .report-toolbar select { width: auto; min-width: 145px; }
-.report-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); }
-.report-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.report-table-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; margin-bottom: 10px; color: var(--text-muted); font-size: 12px; }
+.report-table-wrap { max-height: min(70vh, 44rem); overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.report-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; line-height: 1.6; font-variant-numeric: tabular-nums; }
 .report-table th,
-.report-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-.report-table th { color: var(--text-heading); background: var(--canvas); white-space: nowrap; }
+.report-table td { min-width: 7rem; padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal; }
+.report-table th { position: sticky; top: 0; z-index: 2; color: var(--text-heading); background: var(--canvas); white-space: nowrap; font-size: 12px; font-weight: 600; }
+.report-table tbody tr { --report-row-background: var(--surface); }
+.report-table tbody tr:nth-child(even) { --report-row-background: color-mix(in srgb, var(--canvas) 45%, var(--surface)); }
+.report-table tbody tr:hover { --report-row-background: var(--color-primary-subtle); }
+.report-table td { background: var(--report-row-background); }
 .report-table tbody tr:last-child td { border-bottom: 0; }
-.report-topology-name { min-width: 210px; white-space: pre; font-family: var(--font-mono); color: var(--text-heading); }
+.report-table .report-cell-compact { width: 1%; min-width: 0; white-space: nowrap; }
+.report-table .report-cell-address { min-width: 12rem; white-space: pre-line; }
+.report-table .report-cell-notes { width: 24rem; min-width: 16rem; max-width: 32rem; overflow-wrap: break-word; }
+.report-table .report-cell-text { max-width: 24rem; overflow-wrap: break-word; }
+.report-table .report-cell-topology { min-width: 13rem; max-width: 24rem; white-space: pre-wrap; overflow-wrap: break-word; }
+.report-table td.report-cell-topology { font-family: var(--font-mono); font-weight: 500; color: var(--text-heading); }
+@media (min-width: 761px) {
+  .report-table .report-cell-topology { position: sticky; left: 0; z-index: 1; border-right: 1px solid var(--line); }
+  .report-table th.report-cell-topology { z-index: 3; }
+}
 .report-empty { padding: 24px; text-align: center; color: var(--text-muted); }
 
 /* Output and actions */
@@ -1475,12 +1489,6 @@ input[type="radio"] {
 .step-box > .btn {
   flex-shrink: 0;
 }
-.plan-summary-badges {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin-top: 8px;
-}
 .badge {
   display: inline-block;
   font: 500 9px var(--font-mono);
@@ -1496,10 +1504,6 @@ input[type="radio"] {
 .badge-info {
   background: #f8edd6;
   color: #997335;
-}
-.badge-destroy {
-  background: #fbe4da;
-  color: #a95135;
 }
 .terminal-container {
   overflow: hidden;
@@ -1595,29 +1599,6 @@ input[type="radio"] {
 .term-plan {
   color: #a0c3b4;
 }
-.post-actions-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 13px;
-  padding: 14px;
-  margin-top: 15px;
-  border: 1px solid #c9ddbc;
-  border-radius: 6px;
-  background: #edf6e7;
-}
-.post-info {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-size: 11px;
-  color: #568240;
-}
-.post-actions-btns {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 /* Feedback, guide, and motion */
 .toast-container {
   position: fixed;

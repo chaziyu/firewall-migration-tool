@@ -1,5 +1,6 @@
 import dataclasses
 import enum
+import io
 import shlex
 from typing import Iterator
 
@@ -20,6 +21,10 @@ class TokenType(enum.Enum):
     UNKNOWN = "unknown"
 
 
+class TokenizerError(Exception):
+    """Raised when FortiGate CLI syntax cannot be tokenized."""
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class Token:
     type: TokenType
@@ -38,10 +43,13 @@ class FortiGateTokenizer:
         logical_lines: list[str] = []
         start_line_number: int | None = None
 
-        for line_number, physical_line in enumerate(
-            self.text.splitlines(),
+        for line_number, raw_line in enumerate(
+            io.StringIO(self.text),
             start=1,
         ):
+            physical_line = raw_line[:-1] if raw_line.endswith("\n") else raw_line
+            if physical_line.endswith("\r"):
+                physical_line = physical_line[:-1]
             stripped = physical_line.strip()
 
             # Ignore empty lines outside a multiline command.

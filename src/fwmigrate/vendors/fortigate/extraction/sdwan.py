@@ -11,7 +11,6 @@ from ..model.sdwan import (
 )
 from ..nodes import (
     ConfigNode,
-    FortiGateConfigTree,
 )
 
 from .common import (
@@ -20,6 +19,7 @@ from .common import (
     iter_section_configs,
     source_model_kwargs,
 )
+from .section_index import SectionIndex
 
 
 class SDWANConfig(Protocol):
@@ -29,7 +29,7 @@ class SDWANConfig(Protocol):
 
 
 def extract_sdwan(
-    tree: FortiGateConfigTree,
+    tree: SectionIndex,
     config: SDWANConfig,
 ) -> None:
     """
