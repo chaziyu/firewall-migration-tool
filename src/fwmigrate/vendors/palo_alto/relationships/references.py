@@ -60,6 +60,7 @@ def _objects(config: PANOSConfig) -> Iterable[PANIndexedObject]:
         "sdwan-saas-quality-profile": config.sdwan_saas_quality_profiles,
         "sdwan-error-correction-profile": config.sdwan_error_correction_profiles,
         "sdwan-rule": config.sdwan_rules,
+        "local-user": config.local_users,
         "tag": config.tags, "zone": config.zones,
     }
     for family, values in fields.items():
@@ -138,10 +139,38 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
             if name:
                 result.append(_resolve(index, gateway, field, name, ("ike-crypto-profile",), owner_family="ike-gateway"))
     for rule in config.sdwan_rules:
+        for field, names, families, source_only in (
+            ("from_zones", rule.from_zones, ("zone",), False),
+            ("to_zones", rule.to_zones, ("zone",), False),
+            ("source", rule.source, ("address", "address-group"), False),
+            ("destination", rule.destination, ("address", "address-group"), False),
+            ("service", rule.service, ("service", "service-group"), False),
+            ("tags", rule.tags, ("tag",), False),
+            ("source_user", rule.source_user, ("user",), True),
+            ("application", rule.application, ("application",), True),
+        ):
+            for name in names or ():
+                result.append(_resolve(index, rule, field, name, families, owner_family="sdwan-rule", source_only=source_only))
         for field, family in (("path_quality_profile", "sdwan-path-quality-profile"), ("saas_quality_profile", "sdwan-saas-quality-profile"), ("error_correction_profile", "sdwan-error-correction-profile"), ("traffic_distribution_profile", "sdwan-traffic-distribution-profile")):
             name = getattr(rule, field)
             if name:
                 result.append(_resolve(index, rule, field, name, (family,), owner_family="sdwan-rule"))
+    for group in config.local_user_groups:
+        for name in group.members or ():
+            if index.candidates("local-user", name, group.scope):
+                result.append(_resolve(index, group, "members", name, ("local-user",), owner_family="local-user-group"))
+            else:
+                result.append(_resolve(index, group, "members", name, ("local-user",), owner_family="local-user-group", source_only=True))
+    for owner_family, objects in (("globalprotect-portal", config.globalprotect_portals), ("globalprotect-gateway", config.globalprotect_gateways)):
+        for owner in objects:
+            for field in ("authentication_profile", "certificate_profile", "ssl_tls_service_profile"):
+                name = getattr(owner, field, None)
+                if name:
+                    result.append(_resolve(index, owner, field, name, (field.replace("_", "-"),), owner_family=owner_family, source_only=True))
+            if owner_family == "globalprotect-gateway":
+                for client_auth in owner.client_authentication or ():
+                    if client_auth.authentication_profile:
+                        result.append(_resolve(index, owner, "client_authentication.authentication_profile", client_auth.authentication_profile, ("authentication-profile",), owner_family=owner_family, source_only=True))
     shadowing: list[PANShadowedObject] = []
     for obj in index.objects:
         candidates = index.candidates(obj.family, obj.name, obj.scope)

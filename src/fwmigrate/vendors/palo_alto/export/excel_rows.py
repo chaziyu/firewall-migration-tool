@@ -85,15 +85,56 @@ def _object_rows(context: _PANExcelContext, items: Iterable[Any], object_type: s
     return rows
 
 
-def _child_rows(context: _PANExcelContext, parents: Iterable[Any], child_attr: str, object_type: str, fields: dict[str, str], parent_header: str = "Profile") -> list[dict[str, Any]]:
+def _child_rows(context: _PANExcelContext, parents: Iterable[Any], child_attr: str, object_type: str, fields: dict[str, str], parent_header: str = "Profile", parent_attribute: str = "name") -> list[dict[str, Any]]:
     rows = []
     for parent in parents:
         for child in getattr(parent, child_attr, None) or ():
             row = _base(context, parent, object_type)
-            row[parent_header] = parent.name
+            row[parent_header] = getattr(parent, parent_attribute)
             for header, attribute in fields.items():
                 row[header] = _text(getattr(child, attribute, None))
+            if hasattr(child, "raw_extra"):
+                row["Additional Settings"] = _text(child.raw_extra)
             rows.append(row)
+    return rows
+
+
+def _portal_gateway_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
+    rows = []
+    for portal in context.config.globalprotect_portals:
+        for client_config in portal.client_configs or ():
+            for gateway in client_config.gateways or ():
+                row = _base(context, portal, "globalprotect-portal-gateway")
+                row.update({"Portal": portal.name, "Client Config": client_config.name, "Gateway Type": gateway.gateway_type,
+                            "Gateway": gateway.gateway, "Priority": gateway.priority, "Additional Settings": _text(gateway.raw_extra)})
+                rows.append(row)
+    return rows
+
+
+def _clientless_vpn_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
+    rows = []
+    for portal in context.config.globalprotect_portals:
+        vpn = portal.clientless_vpn
+        if vpn is None:
+            continue
+        row = _base(context, portal, "globalprotect-clientless-vpn")
+        row.update({"Portal": portal.name, "Hostname": vpn.hostname, "Security Zone": vpn.security_zone, "Login Lifetime": vpn.login_lifetime,
+                    "Inactivity Logout": vpn.inactivity_logout, "Maximum Users": vpn.maximum_users, "DNS Proxy": vpn.dns_proxy,
+                    "Additional Settings": _text(vpn.raw_extra)})
+        rows.append(row)
+    return rows
+
+
+def _sdwan_interface_binding_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
+    rows = []
+    fields = ("sdwan_enabled", "ipv6_sdwan_enabled", "sdwan_interface_profile", "upstream_nat")
+    for item in (*context.config.interfaces, *context.config.interface_units):
+        if not any(getattr(item, field) is not None for field in fields):
+            continue
+        row = _base(context, item, "sdwan-interface-binding")
+        row.update({"Interface": item.name, "Parent Interface": getattr(item, "parent", None), "SD-WAN Enabled": item.sdwan_enabled,
+                    "IPv6 Enabled": item.ipv6_sdwan_enabled, "Interface Profile": item.sdwan_interface_profile, "Upstream NAT": item.upstream_nat})
+        rows.append(row)
     return rows
 
 
@@ -319,7 +360,7 @@ def _coverage_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
 
 
 ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], list[dict[str, Any]]]] = {
-    "Review Required": _validation_rows, "Validation": _validation_rows,
+    "Review Required": _validation_rows,
     "Tags": lambda c: _simple_rows(c, c.config.tags, "tag", {"Color": "color", "Comments": "comments"}),
     "Addresses": _address_rows, "Address Groups": _address_group_rows, "Services": _service_rows,
     "Service Groups": lambda c: _simple_rows(c, c.config.service_groups, "service-group", {"Members": "members", "Tags": "tags", "Description": "description"}),
@@ -358,8 +399,15 @@ ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], list[dict[str, Any]]]] = {
     "GlobalProtect Gateways": lambda c: _object_rows(c, c.config.globalprotect_gateways, "globalprotect-gateway", {"Tunnel Mode": "tunnel_mode", "Local Interface": "local_interface", "Local Address": "local_address", "IP Address Family": "ip_address_family", "SSL/TLS Service Profile": "ssl_tls_service_profile", "Certificate Profile": "certificate_profile"}),
     "Local Users": lambda c: _simple_rows(c, c.config.local_users, "local-user", {"Disabled": "disabled", "Password Configured": "password_configured"}),
     "Local User Groups": lambda c: _simple_rows(c, c.config.local_user_groups, "local-user-group", {"Members": "members"}),
-    "Group Mappings": lambda c: _simple_rows(c, c.config.group_mappings, "group-mapping", {"Server Profile": "server_profile", "Disabled": "disabled"}),
-    "Route Path Monitors": lambda c: [], "DHCP IP Pools": lambda c: [], "DHCP Reservations": lambda c: [], "DHCP Options": lambda c: [],
-    "SD-WAN Interface Bindings": lambda c: [], "GP Portal Client Configs": lambda c: [], "GP Portal Gateway Entries": lambda c: [],
-    "GP Clientless VPN": lambda c: [], "GP Gateway Client Auth": lambda c: [], "GP Remote User Tunnels": lambda c: [],
+    "Group Mappings": lambda c: _simple_rows(c, c.config.group_mappings, "group-mapping", {"Server Profile": "server_profile", "Disabled": "disabled", "LDAP Serial Number Check": "ldap_serial_number_check", "Use Modify Timestamp": "use_modify_timestamp", "Limited Group Search": "limited_group_search", "Nested Group Level": "nested_group_level", "Group Object Attributes": "group_object_attributes", "Group Member Attributes": "group_member_attributes", "Group Name Attributes": "group_name_attributes", "User Object Attributes": "user_object_attributes", "User Name Attributes": "user_name_attributes", "User Email Attributes": "user_email_attributes", "Group Email Attributes": "group_email_attributes", "Alternate Username 1": "alternate_username_1", "Alternate Username 2": "alternate_username_2", "Alternate Username 3": "alternate_username_3", "Container Object Attributes": "container_object_attributes", "Last Modify Attribute": "last_modify_attribute", "Group Include List": "group_include_list"}),
+    "Route Path Monitors": lambda c: [],
+    "DHCP IP Pools": lambda c: _child_rows(c, c.config.dhcp_servers, "ip_pools", "dhcp-ip-pool", {"Pool Entry": "name", "Start IP": "start_ip", "End IP": "end_ip"}, "Interface", "interface"),
+    "DHCP Reservations": lambda c: _child_rows(c, c.config.dhcp_servers, "reservations", "dhcp-reservation", {"Reservation Name": "name", "IP Address": "ip_address", "MAC Address": "mac_address", "Description": "description"}, "Interface", "interface"),
+    "DHCP Options": lambda c: _child_rows(c, c.config.dhcp_servers, "options", "dhcp-option", {"Option Name": "name", "Code": "code", "Vendor Class Identifier": "vendor_class_identifier", "Inherited": "inherited", "Value Type": "value_type", "IP Values": "ip_values", "ASCII Values": "ascii_values", "Hex Values": "hex_values"}, "Interface", "interface"),
+    "SD-WAN Interface Bindings": _sdwan_interface_binding_rows,
+    "GP Portal Client Configs": lambda c: _child_rows(c, c.config.globalprotect_portals, "client_configs", "globalprotect-portal-client-config", {"Config Name": "name", "Internal Host Detection IP": "internal_host_detection_ip", "Internal Host Detection Hostname": "internal_host_detection_hostname", "Authentication Override": "authentication_override", "Agent UI Settings": "agent_ui_settings", "HIP Collection Settings": "hip_collection_settings", "Agent Configuration": "agent_configuration", "GP App Configuration": "app_configuration"}, "Portal"),
+    "GP Portal Gateway Entries": _portal_gateway_rows,
+    "GP Clientless VPN": _clientless_vpn_rows,
+    "GP Gateway Client Auth": lambda c: _child_rows(c, c.config.globalprotect_gateways, "client_authentication", "globalprotect-gateway-client-auth", {"Auth Name": "name", "OS": "operating_system", "Authentication Profile": "authentication_profile", "Auto Retrieve Passcode": "auto_retrieve_passcode"}, "Gateway"),
+    "GP Remote User Tunnels": lambda c: _child_rows(c, c.config.globalprotect_gateways, "remote_user_tunnels", "globalprotect-remote-user-tunnel", {"Config Name": "name", "IP Pools": "ip_pools", "Authentication Server IP Pools": "authentication_server_ip_pools", "Split Tunneling": "split_tunneling", "No Direct Access To Local Network": "no_direct_access_to_local_network", "Retrieve Framed IP": "retrieve_framed_ip"}, "Gateway"),
 }

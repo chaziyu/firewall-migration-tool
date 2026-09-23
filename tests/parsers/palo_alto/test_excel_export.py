@@ -31,16 +31,21 @@ def _workbook(name: str):
 def test_supported_fixtures_export_real_workbooks(name):
     workbook = _workbook(name)
     assert workbook.sheetnames[0] == "Summary"
+    assert "Review Required" in workbook.sheetnames
+    assert "Validation" not in workbook.sheetnames
     assert "PAN-OS Source Inventory" in workbook.sheetnames
-    assert "DHCP Servers" not in workbook.sheetnames
+    assert {sheet for sheet, status in SHEET_IMPLEMENTATION_STATUS.items() if status != "NOT_IMPLEMENTED"} <= set(workbook.sheetnames)
+    assert not ({sheet for sheet, status in SHEET_IMPLEMENTATION_STATUS.items() if status == "NOT_IMPLEMENTED"} & set(workbook.sheetnames))
     assert workbook["Summary"]["B3"].value == name
 
 
 def test_complete_schema_is_retained_while_unimplemented_sheets_are_omitted():
     workbook = _workbook("objects.xml")
     assert "DHCP Servers" in SHEET_HEADERS
-    assert SHEET_IMPLEMENTATION_STATUS["DHCP Servers"] == "NOT_IMPLEMENTED"
-    assert "DHCP Servers" not in workbook.sheetnames
+    assert SHEET_IMPLEMENTATION_STATUS["DHCP Servers"] == "IMPLEMENTED"
+    assert "DHCP Servers" in workbook.sheetnames
+    assert SHEET_IMPLEMENTATION_STATUS["Route Path Monitors"] == "NOT_IMPLEMENTED"
+    assert "Route Path Monitors" not in workbook.sheetnames
 
 
 def test_workbook_uses_fortigate_presentation_structure():

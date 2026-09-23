@@ -4,19 +4,21 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 from ..model import (
-    PANAdministrator, PANAdminRole, PANDHCPServer, PANGlobalProtectGateway,
+    PANAdministrator, PANAdminRole, PANGlobalProtectGateway,
     PANGlobalProtectPortal, PANIKECryptoProfile, PANIKEGateway,
     PANIPsecCryptoProfile, PANLocalUser, PANLocalUserGroup, PANGroupMapping,
     PANSDWANErrorCorrectionProfile, PANSDWANInterfaceProfile,
     PANSDWANPathQualityProfile, PANSDWANRule, PANSDWANSaaSQualityProfile,
-    PANSDWANTrafficDistributionProfile, PANVulnerabilityProfile,
+    PANSDWANTrafficDistributionLink, PANSDWANTrafficDistributionProfile, PANVulnerabilityProfile,
 )
-from ..model.security_profile import PANVulnerabilityException, PANVulnerabilityRule
+from ..model.security_profile import PANBlockIPAction, PANVulnerabilityException, PANVulnerabilityRule
 from ..model.administration import PANAdminRolePermission
 from ..schema_registry import PANPathSpec
 from ..source_context import PANWalkContext
-from .common import secret_leaf_exists, source_fields
+from .common import raw_extra, secret_leaf_exists, source_fields
 from .vpn import extract_ipsec_tunnel
+from .dhcp import extract_dhcp
+from .globalprotect import extract_gateway, extract_portal
 from ..model.vpn import PANIPsecProxyID
 
 
@@ -68,10 +70,50 @@ def extract_vulnerability(element, path, context, source_order, spec):
             continue
         target = item.rules if child.tag == "rules" else item.exceptions
         for entry in child.findall("entry"):
-            data = {field: _value(entry, field.replace("_", "-")) for field in ("name", "threat_name", "host", "vendor_ids", "severities", "category", "action", "packet_capture", "time_interval", "time_threshold", "time_track_by", "exempt_ips")}
+            exception = child.tag == "exceptions"
+            known = {"threat-name", "host", "vendor-ids", "severities", "category", "action", "block-ip", "packet-capture"}
+            if exception:
+                known.update({"time-interval", "time-threshold", "time-track-by", "exempt-ips", "exempt-ip"})
+            extra = raw_extra(entry, known)
+            fields = ("name", "threat_name", "host", "vendor_ids", "severities", "category", "action", "packet_capture")
+            if exception:
+                fields += ("time_interval", "time_threshold", "time_track_by")
+            data = {field: _value(entry, field.replace("_", "-")) for field in fields}
+            block_ip = entry.find("block-ip")
+            if block_ip is not None:
+                data["block_ip"] = _extract_block_ip(block_ip)
+            if exception:
+                data["exempt_ips"] = _exempt_ips(entry)
             data = {key: value for key, value in data.items() if value is not None}
+            data["name"] = entry.get("name")
+            data["raw_extra"] = extra
+            data["explicit_fields"] = {child.tag.replace("-", "_") for child in entry if child.tag in known}
+            if block_ip is not None:
+                data["explicit_fields"].add("block_ip")
             target.append((PANVulnerabilityRule if child.tag == "rules" else PANVulnerabilityException)(**data))
     return item
+
+
+def _extract_block_ip(element):
+    known = {"track-by", "duration"}
+    return PANBlockIPAction(
+        track_by=_value(element, "track-by"), duration=_value(element, "duration"),
+        raw_extra=raw_extra(element, known),
+        explicit_fields={child.tag.replace("-", "_") for child in element if child.tag in known},
+    )
+
+
+def _exempt_ips(element):
+    for tag in ("exempt-ips", "exempt-ip"):
+        value = _value(element, tag)
+        if value is None:
+            continue
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            return list(value.values())
+        return [value]
+    return None
 
 
 def extract_admin_role(element, path, context, source_order, spec):
@@ -84,19 +126,51 @@ def extract_admin_role(element, path, context, source_order, spec):
 
 
 def extract_ipsec_proxy(element):
-    return PANIPsecProxyID(name=element.get("name"), address_family=_value(element, "address-family"), local=_value(element, "local"), remote=_value(element, "remote"), protocol=_value(element, "protocol"), protocol_number=_value(element, "protocol-number"), local_port=_value(element, "local-port"), remote_port=_value(element, "remote-port"))
+    return PANIPsecProxyID(
+        name=element.get("name"), address_family=_value(element, "address-family"),
+        local=_proxy_value(element, "local"), remote=_proxy_value(element, "remote"),
+        protocol=_proxy_value(element, "protocol"), protocol_number=_proxy_value(element, "protocol-number"),
+        local_port=_proxy_value(element, "local-port"), remote_port=_proxy_value(element, "remote-port"),
+        raw_extra=raw_extra(element, {"address-family", "local", "remote", "protocol", "protocol-number", "local-port", "remote-port"}),
+        explicit_fields={child.tag.replace("-", "_") for child in element if child.tag in {"address-family", "local", "remote", "protocol", "protocol-number", "local-port", "remote-port"}},
+    )
+
+
+def _proxy_value(element, tag):
+    value = _value(element, tag)
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
 
 
 def extract_ipsec(element, path, context, source_order, spec):
     item = extract_ipsec_tunnel(element, path, context, source_order, spec)
     manual = element.find("manual-key")
     item.manual_key_configured = manual is not None
-    item.proxy_ids = [extract_ipsec_proxy(entry) for entry in element.findall("proxy-id/entry")]
+    auto_key = element.find("auto-key")
+    proxy_ids = []
+    for family, tag in (("ipv4", "proxy-id"), ("ipv6", "proxy-id-v6")):
+        for entry in auto_key.findall(f"{tag}/entry") if auto_key is not None else ():
+            proxy = extract_ipsec_proxy(entry)
+            if proxy.address_family is None:
+                proxy.address_family = family
+                proxy.explicit_fields.add("address_family")
+            proxy_ids.append(proxy)
+    item.proxy_ids = proxy_ids or None
     return item
 
 
-def extract_dhcp(element, path, context, source_order, spec):
-    item = _named(PANDHCPServer, element, path, context, source_order, spec)
+def extract_traffic_distribution(element, path, context, source_order, spec):
+    item = _named(PANSDWANTrafficDistributionProfile, element, path, context, source_order, spec)
+    item.links = []
+    for entry in element.findall("link/entry"):
+        known = {"link-tag", "weight"}
+        item.links.append(PANSDWANTrafficDistributionLink(
+            link_tag=_value(entry, "link-tag"),
+            weight=_value(entry, "weight"),
+            raw_extra=raw_extra(entry, known),
+            explicit_fields={child.tag.replace("-", "_") for child in entry if child.tag in known},
+        ))
     return item
 
 
@@ -111,13 +185,13 @@ EXTRACTORS = {
     "dhcp_server": ("dhcp_servers", extract_dhcp),
     "sdwan_interface_profile": ("sdwan_interface_profiles", extract_named(PANSDWANInterfaceProfile)),
     "sdwan_path_quality_profile": ("sdwan_path_quality_profiles", extract_named(PANSDWANPathQualityProfile)),
-    "sdwan_traffic_distribution_profile": ("sdwan_traffic_distribution_profiles", extract_named(PANSDWANTrafficDistributionProfile)),
+    "sdwan_traffic_distribution_profile": ("sdwan_traffic_distribution_profiles", extract_traffic_distribution),
     "sdwan_saas_quality_profile": ("sdwan_saas_quality_profiles", extract_named(PANSDWANSaaSQualityProfile)),
     "sdwan_error_correction_profile": ("sdwan_error_correction_profiles", extract_named(PANSDWANErrorCorrectionProfile)),
     "sdwan_rule": ("sdwan_rules", extract_named(PANSDWANRule)),
     "local_user": ("local_users", extract_named(PANLocalUser, secret_fields=("password_configured",))),
     "local_user_group": ("local_user_groups", extract_named(PANLocalUserGroup)),
     "group_mapping": ("group_mappings", extract_named(PANGroupMapping)),
-    "globalprotect_portal": ("globalprotect_portals", extract_named(PANGlobalProtectPortal)),
-    "globalprotect_gateway": ("globalprotect_gateways", extract_named(PANGlobalProtectGateway)),
+    "globalprotect_portal": ("globalprotect_portals", extract_portal),
+    "globalprotect_gateway": ("globalprotect_gateways", extract_gateway),
 }
