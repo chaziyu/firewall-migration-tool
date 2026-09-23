@@ -24,7 +24,8 @@
         >
           <option value="fortigate" selected>Fortinet FortiGate</option>
           <option value="palo_alto">Palo Alto Networks</option>
-          <option value="cisco_asa">Cisco ASA / FTD</option>
+          <option value="cisco_asa">Cisco ASA</option>
+          <option value="cisco_ftd">Cisco FTD / FMC</option>
           <option value="checkpoint">Check Point</option>
           <option value="juniper_srx">Juniper SRX</option></select
         ><span class="select-arrow">⌄</span>
@@ -59,7 +60,13 @@
       aria-selected="true"
       aria-controls="ingest-file-container"
     >
-      {{ icon('upload') }}Upload file
+      {{ icon('upload') }}Upload Config
+    </button>
+    <button type="button" id="btn-ingest-snapshot" class="ingest-tab-btn" role="tab" aria-selected="false" aria-controls="ingest-file-container" tabindex="-1">
+      {{ icon('file') }}Upload Snapshot
+    </button>
+    <button type="button" id="btn-ingest-live" class="ingest-tab-btn" role="tab" aria-selected="false" aria-controls="ingest-live-container" tabindex="-1">
+      {{ icon('activity') }}Live Collection
     </button>
   </div>
   <div
@@ -142,10 +149,23 @@
         <div class="opt-stat-label">Warnings</div>
       </div>
     </div>
-    <div class="export-footer extract-export-footer">
-      <button type="button" id="btn-extract-excel" class="btn btn-primary" disabled>
-        {{ icon('table') }}<span>Download Excel Report</span>
-      </button>
+  </div>
+  <div id="ingest-live-container" class="hidden" role="tabpanel" aria-labelledby="btn-ingest-live">
+    <div class="form-grid">
+      <label class="form-group col-8"><span>Host</span><input id="collection-host" autocomplete="off" required></label>
+      <label class="form-group col-4"><span>SSH port</span><input id="collection-port" type="number" value="22" min="1" max="65535" required></label>
+      <label class="form-group col-6"><span>Username</span><input id="collection-username" autocomplete="username" required></label>
+      <label class="form-group col-6"><span>Password</span><input id="collection-password" type="password" autocomplete="new-password" required></label>
     </div>
+    <div class="button-row">
+      <button type="button" class="btn btn-secondary" id="btn-test-collection">Test Connection</button>
+      <button type="button" class="btn btn-primary" id="btn-collect-configuration">Collect Configuration</button>
+    </div>
+    <div id="collection-status" class="preview-status hidden" role="status" aria-live="polite"></div>
+  </div>
+  <div class="export-footer extract-export-footer hidden">
+    <button type="button" id="btn-extract-excel" class="btn btn-primary" disabled>
+      {{ icon('download') }}<span>Download Excel</span>
+    </button>
   </div>
 </section>

@@ -24,6 +24,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
+from fwmigrate.collection import cisco_asa
 
 register_builtin_source_reporters()
 register_builtin_migration_planners()
@@ -252,6 +253,53 @@ def create_app(test_config=None):
             return jsonify({'success': False, 'error': str(e)}), 400
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
+
+    def collection_options():
+        payload = request.get_json(silent=True) or {}
+        if payload.get('vendor') != 'cisco_asa':
+            raise ValueError('Live collection is not supported for this vendor.')
+        connection = payload.get('connection')
+        if not isinstance(connection, dict):
+            raise ValueError('Connection details are required.')
+        host = str(connection.get('host', '')).strip()
+        username = str(connection.get('username', '')).strip()
+        password = str(connection.get('password', ''))
+        try:
+            port = int(connection.get('port', 22))
+        except (TypeError, ValueError) as exc:
+            raise ValueError('Port must be between 1 and 65535.') from exc
+        if not host or not username or not password or not 1 <= port <= 65535:
+            raise ValueError('Host, username, password, and a valid port are required.')
+        return {'host': host, 'port': port, 'username': username, 'password': password}
+
+    @app.route('/api/collection/test', methods=['POST'])
+    def test_collection_connection():
+        try:
+            cisco_asa.test_connection(collection_options())
+            return jsonify({'success': True, 'status': 'CONNECTED'})
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        except Exception:
+            return jsonify({'success': False, 'error': 'Connection failed. Check the device and credentials.'}), 502
+
+    @app.route('/api/collection/collect', methods=['POST'])
+    def collect_configuration():
+        try:
+            source = cisco_asa.collect(collection_options())
+            raw = source.source_text.encode('utf-8')
+            reporter = source_reporters.get(source.vendor_id)
+            analysis = reporter.analyze_source(source.source_text)
+            entry = _cache_preview(source.vendor_id, raw, analysis, source.source_name)
+            return jsonify({
+                'success': True,
+                'preview_id': entry.preview_id,
+                'collection': {'vendor': source.vendor_id, 'method': 'ssh', 'status': 'SUCCESS'},
+                'preview': reporter.build_preview(analysis),
+            })
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        except Exception:
+            return jsonify({'success': False, 'error': 'Collection or extraction failed. Check the device configuration and connection.'}), 502
 
     @app.route('/api/migration/requirements', methods=['POST'])
     def migration_requirements():

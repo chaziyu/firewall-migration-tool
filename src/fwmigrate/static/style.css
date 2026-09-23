@@ -509,6 +509,24 @@ h1 {
   min-height: 39px;
   padding: 10px 14px;
 }
+.development-banner {
+  margin: -11px 0 18px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-main);
+  font-size: 12px;
+}
+.development-banner strong {
+  color: var(--text-heading);
+}
+.button-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
 .workflow-track {
   list-style: none;
   display: grid;
@@ -1057,6 +1075,9 @@ select {
   border-top: 1px solid var(--line);
   padding-top: 18px;
   margin-top: 13px;
+}
+.extract-export-footer {
+  justify-content: flex-end;
 }
 .export-hint {
   display: inline-flex;

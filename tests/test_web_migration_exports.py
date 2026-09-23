@@ -129,6 +129,9 @@ def test_migration_workflow_uses_planning_terminology():
     assert "Plan migration" in html
     assert "Planned PAN-OS configuration" in html
     assert "Live migration" in html
+    assert html.count('id="btn-extract-excel"') == 1
+    assert html.index('id="btn-extract-excel"') < html.index('id="mode-extract-form"')
+    assert "Your source inventory" not in html
     assert "Convert config" not in html
     assert "Convert configuration" not in html
     assert "Target configuration" not in html

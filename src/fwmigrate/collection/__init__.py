@@ -1,0 +1,2 @@
+"""Vendor-native source collection."""
+
