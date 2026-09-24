@@ -24,5 +24,5 @@ def test_unresolved_relationship_does_not_change_extracted_source_status():
 
     assert binding.extraction_status == "EXTRACTED"
     assert not result.config.diagnostics
-    assert any(issue.reference_name == "MISSING" and not issue.resolved for issue in result.derived.reference_issues)
+    assert any(issue.reference_name == "MISSING" and not issue.resolved for issue in result.derived.relationship_issues)
     assert any(issue.category == "acl" and "Unresolved" in issue.message for issue in result.validation.issues)

@@ -24,8 +24,19 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
         "validation": [issue.__dict__ for issue in result.validation.issues],
         "relationships": {
             "object_groups": derived.object_group_memberships,
-            "interface_nameifs": derived.interface_nameifs,
-            "acl_bindings": {key: [item.model_dump() for item in value] for key, value in derived.acl_bindings.items()},
+            "interface_topology": [
+                {"name": item.name, "nameif": item.nameif, "kind": item.kind,
+                 "parent": _name(item.parent), "aggregate": _name(item.aggregate),
+                 "physical_interfaces": [_name(value) for value in item.physical_interfaces],
+                 "issues": item.issues}
+                for item in derived.interface_topology.interfaces
+            ],
+            "acl_bindings": [
+                {"acl_name": item.acl_name, "scope": item.scope, "direction": item.direction,
+                 "interface": item.interface, "rules": [rule.source_order for rule in item.rules],
+                 "issues": [issue.reason for issue in item.issues]}
+                for item in derived.acl_relationships.bindings
+            ],
             "nat": [{"source_context": row.source_context, "source_rule": row.rule.name,
                      "owning_object": _name(row.owning_object), "source_interface": _name(row.source_interface),
                      "destination_interface": _name(row.destination_interface), "issues": row.issues}

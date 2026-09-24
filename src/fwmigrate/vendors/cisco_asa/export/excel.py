@@ -20,7 +20,7 @@ def _row(sheet: str, item: Any) -> tuple[Any, ...]:
     if sheet == "Network Groups":
         return item.name, ", ".join(item.members), item.source_context
     if sheet == "ACL Rules":
-        return (item.acl_name, item.effective_source_order or item.source_order, item.action,
+        return (item.acl_name, item.source_order, item.action,
                 item.protocol, getattr(item.source_endpoint, "value", None),
                 getattr(item.destination_endpoint, "value", None), item.service,
                 item.source_context, item.raw_line)

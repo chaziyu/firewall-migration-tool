@@ -6,6 +6,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from .model import CiscoASAConfig
+
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
 
 from .accounting import build_asa_source_accounting
@@ -31,7 +33,7 @@ def _sanitize(value: Any) -> Any:
 
 @dataclass(frozen=True)
 class ASASourceResult:
-    config: Any
+    config: CiscoASAConfig
     source_sections: list[Any]
     inventory_items: list[Any]
     unsupported_items: list[Any]
@@ -64,9 +66,9 @@ def extract_cisco_asa_source(
 ) -> ASASourceResult:
     sections = scan_cisco_asa_sections(text)
     classify_cisco_asa_coverage(sections)
-    from .stages import get_asa_parser_class
+    from .parser import CiscoASAParser
 
-    parser = get_asa_parser_class()(text, zone_mapping=zone_mapping)
+    parser = CiscoASAParser(text, zone_mapping=zone_mapping)
     config = parser.parse_raw()
     inventory, unsupported = build_asa_source_accounting(text, sections, config)
     config = _sanitize(deepcopy(config))

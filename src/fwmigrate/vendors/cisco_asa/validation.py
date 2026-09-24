@@ -37,7 +37,7 @@ def validate_asa_config(config: Any, derived: ASADerivedViews) -> ASAValidationR
         message=item.reason,
         source_context=item.source_context,
         source_object=item.source_object,
-    ) for item in derived.reference_issues if not item.resolved]
+    ) for item in derived.relationship_issues if not item.resolved]
     issues.extend(ASAValidationIssue(
         severity="error",
         category="parse",
@@ -50,11 +50,9 @@ def validate_asa_config(config: Any, derived: ASADerivedViews) -> ASAValidationR
         message=item["reason"],
         source_object=f"line {item.get('line_number', '')}".strip(),
     ) for item in config.unsupported_commands)
-    for category, rows in (("nat-transform", derived.nat.rules), ("vpn-transform", derived.vpn.topologies), ("route-transform", derived.routes.routes)):
-        for row in rows:
-            for message in row.issues:
-                source = getattr(row, "source_rule", None) or getattr(row, "source_route", None) or getattr(row, "source_identity", None)
-                issues.append(ASAValidationIssue("warning", category, message, row.source_context, getattr(source, "name", None)))
+    issues.extend(ASAValidationIssue("warning", item.category, item.message,
+                                     item.source_context, item.source_object)
+                  for item in derived.transform_issues)
     return ASAValidationResult(tuple(issues))
 
 

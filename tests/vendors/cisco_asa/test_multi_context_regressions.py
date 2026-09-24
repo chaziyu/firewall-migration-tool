@@ -24,4 +24,4 @@ def test_duplicate_names_and_nat_references_stay_inside_their_context():
     assert [(row.source_context, row.effective_order) for row in result.derived.nat.rules] == [
         ("customer-a", 1), ("customer-b", 1), ("customer-a", 2)]
     assert any(issue.source_context == "customer-a" and issue.reference_name == "ONLY_B"
-               for issue in result.derived.reference_issues)
+               for issue in result.derived.relationship_issues)

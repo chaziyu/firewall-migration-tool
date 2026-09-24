@@ -66,6 +66,14 @@ class ASAReferenceIssue:
     reason: str
     reference_context: str | None = None
 
+    @property
+    def resolved(self) -> bool:
+        return self.status is ASAReferenceStatus.RESOLVED
+
+    @property
+    def reference_type(self) -> str:
+        return self.reference_kind.value
+
 
 @dataclass(frozen=True, slots=True)
 class ASADuplicateReference:
