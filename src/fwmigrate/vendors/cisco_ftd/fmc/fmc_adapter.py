@@ -23,6 +23,7 @@ from ..model import (
     CiscoFTDS2SVPNTopology, CiscoFTDS2SVPNEndpoint, CiscoFTDIKEPolicy,
     CiscoFTDIPsecProposal, CiscoFTDRAVPNPolicy, CiscoFTDRAVPNConnectionProfile,
     CiscoFTDRoute, CiscoFTDApplication, CiscoFTDSLAMonitor, CiscoFTDVariableSet, CiscoFTDURLCategory, CiscoFTDVLANObject,
+    CiscoFTDIdentityPolicy,
     CiscoFTDCollectionMetadata, CiscoFTDCollectionPart,
     CiscoFTDVirtualRouter, CiscoFTDPolicyBasedRoute, CiscoFTDECMPZone,
     CiscoFTDCertificate, CiscoFTDCertificateMap, CiscoFTDCertificateEnrollment,
@@ -537,13 +538,16 @@ class CiscoFMCBundleParser:
                 network_analysis_policy=ref_field(policy, "networkAnalysisPolicy", "networkanalysispolicy"),
                 decryption_policy=ref_field(policy, "decryptionPolicy"), dns_policy=ref_field(policy, "dnsPolicy"),
                 identity_policy=ref_field(policy, "identityPolicy"),
+                logging_settings=sanitize_source_attributes(policy.get("logging_settings", policy.get("loggingSettings")))
+                    if "logging_settings" in policy or "loggingSettings" in policy else None,
                 explicit_fields=[field for field, keys in (
-                    ("description", ("description",)), ("inherit", ("metadata.inherit",)),
-                    ("base_policy", ("metadata.parentPolicy", "basePolicy")), ("default_action", ("defaultAction",)),
+                    ("description", ("description",)), ("inherit", ("inherit",)),
+                    ("base_policy", ("parentPolicy", "basePolicy")), ("default_action", ("defaultAction",)),
                     ("prefilter_policy", ("prefilterPolicy", "associatedPrefilterPolicy")),
                     ("network_analysis_policy", ("networkAnalysisPolicy", "networkanalysispolicy")),
                     ("decryption_policy", ("decryptionPolicy",)), ("dns_policy", ("dnsPolicy",)),
                     ("identity_policy", ("identityPolicy",)))
+                    + (("logging_settings", ("logging_settings", "loggingSettings")),)
                     if any((key in policy_metadata if key.startswith("metadata.") else key in policy) for key in keys)]))
             acp_default_actions.extend(record(item, index, CiscoFTDAccessControlDefaultAction,
                 policy_id=str(policy.get("id")) if policy.get("id") is not None else None,
@@ -1066,7 +1070,7 @@ class CiscoFMCBundleParser:
         typed_objects = {"networkaddresses", "network_address_overrides", "policy_assignments", "hosts", "networks", "ranges", "fqdnobjects", "networkgroups",
                          "protocolportobjects", "portobjectgroups", "securityzones", "interfacegroups", "applications",
                          "timeranges", "filepolicies", "decryptionpolicies", "dnspolicies", "intrusionpolicies",
-                         "realms", "realmusergroups", "realmusers", "localrealmusers", "s2svpns", "ravpns", "variablesets",
+                         "realms", "realmusergroups", "realmusers", "localrealmusers", "s2svpns", "ravpns", "identitypolicies", "variablesets",
                          "urlcategories", "vlanobjects", "slamonitors", "ikev1policies", "ikev2policies",
                          "ikev1ipsecproposals", "ikev2ipsecproposals", "ipv4addresspools", "ipv6addresspools",
                          "grouppolicies", "certificatemaps", "certenrollments", "internalcertificates",
@@ -1098,14 +1102,24 @@ class CiscoFMCBundleParser:
             route_families = [("IPv4", item) for item in _items(resources.get("static_routes"))]
             route_families += [("IPv6", item) for item in _items(resources.get("ipv6_static_routes"))]
             for index, (family, item) in enumerate(route_families, 1):
+                gateway = item.get("gateway")
+                gateway_value = (gateway.get("object") or gateway.get("literal")
+                                 if isinstance(gateway, dict) else gateway)
+                selected = item.get("selectedNetworks")
+                selected = selected if isinstance(selected, list) else []
+                destination_value = selected[0] if selected else item.get("network") or item.get("destination")
                 routes.append(record(item, index, CiscoFTDRoute, device_id=device_id,
                     interface=reference(item.get("interfaceName") or item.get("interface")) if item.get("interfaceName") or item.get("interface") else None,
-                    destination=reference(item.get("network") or item.get("destination")) if item.get("network") or item.get("destination") else None,
-                    gateway=reference(item["gateway"]) if item.get("gateway") else None, address_family=item.get("addressFamily", family),
+                    destination=reference(destination_value) if destination_value else None,
+                    selected_networks=refs(selected) if "selectedNetworks" in item else None,
+                    gateway=reference(gateway_value) if gateway_value else None, address_family=item.get("addressFamily", family),
                     metric=item.get("metricValue", item.get("metric")), virtual_router=(str(item["virtualRouter"].get("name") or item["virtualRouter"].get("id") or "")
                         if isinstance(item.get("virtualRouter"), dict) else str(item["virtualRouter"]) if item.get("virtualRouter") else None),
                     virtual_router_ref=reference(item["virtualRouter"]) if item.get("virtualRouter") else None,
-                    sla_monitor=reference(item["slaMonitor"]) if item.get("slaMonitor") else None,
+                    sla_monitor=reference(item.get("routeTracking", {}).get("slaMonitor") or item["slaMonitor"])
+                        if item.get("routeTracking", {}).get("slaMonitor") or item.get("slaMonitor") else None,
+                    route_tracking=sanitize_source_attributes(item.get("routeTracking")) if "routeTracking" in item else None,
+                    tunneled=item.get("isTunneled") if "isTunneled" in item else None,
                     source_attributes={"device_id": device_id, "device_name": device_name, "domain_id": self.domain_id}))
             for vr in _items(resources.get("virtual_routers")):
                 vr_id = str(vr.get("id") or "")
@@ -1115,16 +1129,26 @@ class CiscoFMCBundleParser:
                     interfaces=refs_field(vr, "interfaces", "interfaceNames"), device_id=device_id,
                     source_attributes={"device_id": device_id, "device_name": device_name,
                                        "virtual_router_id": vr_id, "virtual_router_name": vr_name}))
-                for key in ("static_routes", "pbr_policies", "ecmp_zones"):
+                for key in ("ipv4_static_routes", "ipv6_static_routes", "pbr_policies", "ecmp_zones"):
                     items = _items(vr_resources.get(key))
-                    if key == "static_routes":
+                    if key in {"ipv4_static_routes", "ipv6_static_routes"}:
+                        family = "IPv6" if key == "ipv6_static_routes" else "IPv4"
+                        gateway = item.get("gateway")
+                        gateway_value = (gateway.get("object") or gateway.get("literal")
+                                         if isinstance(gateway, dict) else gateway)
+                        selected = item.get("selectedNetworks")
+                        selected = selected if isinstance(selected, list) else []
+                        destination_value = selected[0] if selected else item.get("network") or item.get("destination")
                         routes.extend(record(item, index, CiscoFTDRoute, device_id=device_id,
                             interface=reference(item.get("interfaceName") or item.get("interface")) if item.get("interfaceName") or item.get("interface") else None,
-                            destination=reference(item.get("network") or item.get("destination")) if item.get("network") or item.get("destination") else None,
-                            gateway=reference(item["gateway"]) if item.get("gateway") else None,
-                            address_family="IPv6" if "ipv6" in str(item.get("type", "")).lower() else item.get("addressFamily", "IPv4"),
+                            destination=reference(destination_value) if destination_value else None,
+                            selected_networks=refs(selected) if "selectedNetworks" in item else None,
+                            gateway=reference(gateway_value) if gateway_value else None,
+                            address_family=item.get("addressFamily", family),
                             metric=item.get("metricValue", item.get("metric")), virtual_router=vr_name,
                             virtual_router_ref=reference({"id": vr_id, "name": vr_name}),
+                            route_tracking=sanitize_source_attributes(item.get("routeTracking")) if "routeTracking" in item else None,
+                            tunneled=item.get("isTunneled") if "isTunneled" in item else None,
                             source_attributes={"device_id": device_id, "virtual_router_id": vr_id, "virtual_router_name": vr_name})
                             for index, item in enumerate(items, 1))
                     elif key == "pbr_policies":
@@ -1177,9 +1201,6 @@ class CiscoFMCBundleParser:
                     elif cls is CiscoFTDECMPZone:
                         values["interfaces"] = refs_field(item, "interfaces", "members")
                     target.append(record(item, index, cls, **values))
-            native.extend(record(item, index, CiscoFTDNativeResource,
-                source_attributes={"device_id": device_id, "device_name": device_name, "resource_type": "dhcp_relay_settings"})
-                for index, item in enumerate(_items(resources.get("dhcp_relay_settings")), 1))
 
         file_rule_fields = {
             "enabled": ("enabled", "isEnabled"), "action": ("action",),
@@ -1264,6 +1285,7 @@ class CiscoFMCBundleParser:
             inspector_override_configs=network_analysis_children["inspectoroverrideconfigs"],
             url_categories=object_records("urlcategories", CiscoFTDURLCategory), vlan_objects=object_records("vlanobjects", CiscoFTDVLANObject),
             access_control_policies=acp_policies, nat_policies=nat_policies,
+            identity_policies=object_records("identitypolicies", CiscoFTDIdentityPolicy),
             time_ranges=[adapt_time_range(item, i) for i, item in enumerate(objects.get("timeranges", []), 1)],
             intrusion_policies=intrusion_policies,
             intrusion_rule_groups=intrusion_rule_groups,

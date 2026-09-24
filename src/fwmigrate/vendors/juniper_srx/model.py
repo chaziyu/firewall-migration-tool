@@ -401,31 +401,6 @@ class JuniperChassisItem(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperRPMTest(BaseModel):
-    owner: str
-    name: str
-    target: Optional[str] = None
-    test_type: Optional[str] = None
-    probe_count: Optional[int] = None
-    probe_interval: Optional[str] = None
-    thresholds: Dict[str, Any] = Field(default_factory=dict)
-    traps: List[str] = Field(default_factory=list)
-    source_attributes: Dict[str, Any] = Field(default_factory=dict)
-
-
-class JuniperRPMProbe(BaseModel):
-    owner: str
-    name: str
-    tests: Dict[str, JuniperRPMTest] = Field(default_factory=dict)
-    source_attributes: Dict[str, Any] = Field(default_factory=dict)
-
-
-class JuniperChassisItem(BaseModel):
-    hierarchy: str
-    values: List[str] = Field(default_factory=list)
-    source_attributes: Dict[str, Any] = Field(default_factory=dict)
-
-
 class JuniperScheduler(JuniperEffectiveModel):
     name: str
     description: Optional[str] = None

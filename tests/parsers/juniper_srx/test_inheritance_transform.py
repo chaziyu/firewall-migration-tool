@@ -246,3 +246,47 @@ def test_hierarchical_nested_and_leaf_inactive_paths_are_exact():
         ["interfaces", "ge-0/0/0", "unit", "0", "family", "inet"],
         ["interfaces", "ge-0/0/1", "unit", "0", "family", "inet", "address", "198.51.100.1/24"],
     ]
+
+
+def test_activation_lookup_distinguishes_inactive_hierarchy_from_inactive_leaf():
+    from fwmigrate.vendors.juniper_srx.transforms.effective_lookup import EffectiveJunosLookup
+
+    parent = JuniperSRXParser("""set security ike proposal P1 encryption-algorithm aes-128-cbc
+deactivate security ike proposal P1
+""")
+    parent.extract_source()
+    parent_view = build_inheritance_view(parent.commands)
+    parent_lookup = EffectiveJunosLookup((*parent_view["effective_statements"], *(
+        {"context": item["context"], "target_path": item["path"], "origin": "activation"}
+        for item in parent_view["inactive_hierarchies"])))
+    assert parent_lookup.hierarchy_is_inactive("root", ("security", "ike", "proposal", "P1"))
+    assert not parent_lookup.explicit_object_is_effective("root", ("security", "ike", "proposal", "P1"))
+
+    leaf = JuniperSRXParser("""set security ike proposal P1 encryption-algorithm aes-128-cbc
+deactivate security ike proposal P1 lifetime-seconds
+""")
+    config = leaf.extract_source()
+    leaf_view = build_inheritance_view(leaf.commands)
+    leaf_lookup = EffectiveJunosLookup((*leaf_view["effective_statements"], *(
+        {"context": item["context"], "target_path": item["path"], "origin": "activation"}
+        for item in leaf_view["inactive_hierarchies"])))
+    from fwmigrate.vendors.juniper_srx.resolver import JuniperReferenceResolver
+    assert JuniperReferenceResolver(config.get_context(), leaf_lookup).resolve_ike_proposal("P1") is not None
+    assert not leaf_lookup.hierarchy_is_inactive(
+        "root", ("security", "ike", "proposal", "P1"))
+
+
+def test_activation_order_and_scalar_vs_member_inheritance():
+    view = _view("""set groups G security ike proposal P1 encryption-algorithm aes-128-cbc
+set groups G security ike proposal P1 proposals P1
+set apply-groups G
+set security ike proposal P1 encryption-algorithm aes-256-cbc
+set security ike policy IP1 proposals P1
+deactivate security ike proposal P1
+activate security ike proposal P1
+""")
+    statements = [item for item in view["effective_statements"] if item["origin"] == "inherited-group"]
+    assert next(item for item in statements if item["target_path"][-2:] == ("encryption-algorithm", "aes-128-cbc"))["status"] == "SHADOWED"
+    assert next(item for item in statements if "proposals" in item["target_path"])["status"] == "EFFECTIVE"
+    assert any(item["target_path"] == ("security", "ike", "proposal", "P1", "encryption-algorithm", "aes-256-cbc")
+               and item["status"] == "EFFECTIVE" for item in view["effective_statements"])

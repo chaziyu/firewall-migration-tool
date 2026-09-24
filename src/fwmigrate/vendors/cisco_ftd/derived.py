@@ -48,6 +48,7 @@ class FTDReferenceKind(str, Enum):
     INTRUSION_RULE_GROUP = "INTRUSION_RULE_GROUP"
     INTRUSION_RULE_BEHAVIOR = "INTRUSION_RULE_BEHAVIOR"
     ACCESS_CONTROL_POLICY = "ACCESS_CONTROL_POLICY"
+    IDENTITY_POLICY = "IDENTITY_POLICY"
     ACCESS_CONTROL_DEFAULT_ACTION = "ACCESS_CONTROL_DEFAULT_ACTION"
 
 
@@ -103,6 +104,7 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
     for kind, records in (
         (FTDReferenceKind.NETWORK_ADDRESS, config.network_addresses),
         (FTDReferenceKind.ACCESS_CONTROL_POLICY, config.access_control_policies),
+        (FTDReferenceKind.IDENTITY_POLICY, config.identity_policies),
         (FTDReferenceKind.ACCESS_CONTROL_DEFAULT_ACTION, config.access_control_default_actions),
         (FTDReferenceKind.NETWORK_GROUP, config.network_groups),
         (FTDReferenceKind.SERVICE_OBJECT, config.protocol_port_objects),
@@ -352,6 +354,8 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             value = getattr(route, field_name, None)
             if value is not None:
                 resolve(route, field_name, value, kinds, scope=route.device_id if field_name == "interface" else None)
+        for value in route.selected_networks or []:
+            resolve(route, "selected_networks", value, network)
 
     for override in config.network_address_overrides:
         if override.parent is not None:
@@ -362,6 +366,8 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             value = getattr(policy, field_name, None)
             if value is not None:
                 resolve(policy, field_name, value, (kind,))
+        if policy.identity_policy is not None:
+            resolve(policy, "identity_policy", policy.identity_policy, (FTDReferenceKind.IDENTITY_POLICY,))
     for setting in config.access_policy_inheritance_settings:
         if setting.base_policy is not None:
             resolve(setting, "base_policy", setting.base_policy, (FTDReferenceKind.ACCESS_CONTROL_POLICY,))
