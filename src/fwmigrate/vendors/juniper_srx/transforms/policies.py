@@ -33,10 +33,14 @@ def build_policy_relationships(context, scope: str, effective_lookup=None) -> di
 
 def _policy_edges(edges, resolver, context, scope, policy):
     def add(field, target_type, reference, resolved, relationship=None):
+        source_effective = resolver.policy_reference_is_effective(policy, field, reference)
         edges.append({"context": scope, "policy_scope": policy.policy_scope, "source_type": "security-policy",
                       "source_name": policy.name, "source_field": field,
                       "relationship": relationship or field.upper().replace("-", "_"),
-                      "target_type": target_type, "target_name": reference, "resolved": bool(resolved)})
+                      "target_type": target_type, "target_name": reference, "resolved": bool(resolved),
+                      "source_effective": source_effective,
+                      "status": "INACTIVE_SOURCE" if not source_effective else
+                      "RESOLVED" if resolved else "UNRESOLVED"})
     for field, references, zone, source in (("source-address", policy.source_addresses, policy.from_zone, True),
                                             ("destination-address", policy.destination_addresses, policy.to_zone, False)):
         for reference in references:

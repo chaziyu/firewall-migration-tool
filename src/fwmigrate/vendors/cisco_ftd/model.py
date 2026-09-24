@@ -368,6 +368,16 @@ class CiscoFTDAccessControlPolicy(CiscoFTDSourceRecord):
     logging_settings: Optional[Any] = None
 
 
+class CiscoFTDAccessControlLoggingSetting(CiscoFTDSourceRecord):
+    policy_id: Optional[str] = None
+    policy_name: Optional[str] = None
+
+
+class CiscoFTDSecurityIntelligencePolicy(CiscoFTDSourceRecord):
+    policy_id: Optional[str] = None
+    policy_name: Optional[str] = None
+
+
 class CiscoFTDIdentityPolicy(CiscoFTDSourceRecord): pass
 
 
@@ -765,6 +775,8 @@ class CiscoFTDConfig(BaseModel):
     source_interfaces: List[CiscoFTDInterfaceSource] = Field(default_factory=list)
     routes: List[CiscoFTDRoute] = Field(default_factory=list)
     access_control_policies: List[CiscoFTDAccessControlPolicy] = Field(default_factory=list)
+    access_control_logging_settings: List[CiscoFTDAccessControlLoggingSetting] = Field(default_factory=list)
+    security_intelligence_policies: List[CiscoFTDSecurityIntelligencePolicy] = Field(default_factory=list)
     identity_policies: List[CiscoFTDIdentityPolicy] = Field(default_factory=list)
     access_control_default_actions: List[CiscoFTDAccessControlDefaultAction] = Field(default_factory=list)
     access_policy_inheritance_settings: List[CiscoFTDAccessPolicyInheritanceSettings] = Field(default_factory=list)

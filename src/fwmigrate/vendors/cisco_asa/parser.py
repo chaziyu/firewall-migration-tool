@@ -776,16 +776,12 @@ class CiscoASAParser:
                         record.raw_extra["unparsed_tokens"] = parts[5:]
                         self._record_diagnostic(index + 1, line, "Malformed VPN address pool options", "ip local pool", record.name)
                     try:
-                        start, end = ipaddress.ip_address(record.start), ipaddress.ip_address(record.end)
-                        valid_mask = not record.mask
-                        if record.mask:
-                            valid_mask = (
-                                (record.mask.isdigit() and 0 <= int(record.mask) <= 32)
-                                or parse_ipv4_netmask(record.mask) is not None
-                            ) if start.version == 4 else bool(re.fullmatch(r"(?:[0-9]|[1-9][0-9]|1[0-2][0-8])", record.mask))
-                        if start.version != end.version or int(start) > int(end) or not valid_mask:
+                        start, end = ipaddress.IPv4Address(record.start), ipaddress.IPv4Address(record.end)
+                        mask = ipaddress.IPv4Address(record.mask) if record.mask else None
+                        prefix = ipaddress.IPv4Network(f"0.0.0.0/{mask}").prefixlen if mask else None
+                        if int(start) > int(end) or (prefix is not None and prefix in {31, 32}):
                             raise ValueError
-                        record.address_family = f"ipv{start.version}"
+                        record.address_family = "ipv4"
                     except ValueError:
                         record.extraction_status = "PARSE_ERROR"
                         record.requires_manual_review = True
@@ -1001,12 +997,10 @@ class CiscoASAParser:
         except ValueError:
             return False
 
-    def _dhcp_server(self, interface: Optional[str], line_number: int) -> CiscoDHCPServer:
+    def _dhcp_server(self, interface: str, line_number: int) -> CiscoDHCPServer:
         source_context = self._line_contexts.get(line_number)
         scoped = [server for server in self.config.dhcp_servers if server.source_context == source_context]
-        if interface is None and len(scoped) == 1:
-            return scoped[0]
-        key = interface or "global"
+        key = interface
         item = next((server for server in scoped if server.name == f"dhcpd:{key}"), None)
         if item is None:
             item = CiscoDHCPServer(
@@ -2319,7 +2313,7 @@ class CiscoASAParser:
         index = 2 if ipv6 else 1
         interface = tokens[index] if len(tokens) > index else None
         null_route = not ipv6 and interface and interface.lower() == "null0"
-        required = 3 if ipv6 or null_route else 4
+        required = 3
         if len(tokens) - index < required:
             return CiscoStaticRoute(interface=interface, address_family="ipv6" if ipv6 else "ipv4", raw_line=line,
                                     extraction_status="PARSE_ERROR", requires_manual_review=True,
@@ -2341,15 +2335,23 @@ class CiscoASAParser:
             gateway = None
             index += 3
         else:
-            destination, mask, gateway = tokens[index + 1:index + 4]
-            index += 4
-            try:
-                ipaddress.IPv4Address(gateway)
-            except ValueError:
-                return CiscoStaticRoute(interface=interface, destination=destination, mask=mask, gateway=gateway,
-                                        address_family="ipv4", raw_line=line, extraction_status="PARSE_ERROR",
-                                        requires_manual_review=True,
-                                        explicit_fields={"interface", "destination", "mask", "gateway", "address_family"}), "Invalid IPv4 route next hop"
+            destination, mask = tokens[index + 1:index + 3]
+            index += 3
+            gateway = None
+            if index < len(tokens):
+                try:
+                    ipaddress.IPv4Address(tokens[index])
+                except ValueError:
+                    if not tokens[index].isdigit() and tokens[index].lower() not in {"track", "tunneled"}:
+                        return CiscoStaticRoute(
+                            interface=interface, destination=destination, mask=mask, gateway=tokens[index],
+                            address_family="ipv4", raw_line=line, extraction_status="PARSE_ERROR",
+                            requires_manual_review=True,
+                            explicit_fields={"interface", "destination", "mask", "gateway", "address_family"},
+                        ), "Invalid IPv4 route next hop"
+                else:
+                    gateway = tokens[index]
+                    index += 1
         route = CiscoStaticRoute(
             interface=interface, destination=destination, mask=mask, gateway=gateway,
             address_family="ipv6" if ipv6 else "ipv4", raw_line=line,
@@ -2359,11 +2361,22 @@ class CiscoASAParser:
             route.extraction_status = "PARSE_ERROR"
             route.requires_manual_review = True
             return route, "Invalid IPv4 route destination/netmask"
+        optional_tokens = tokens[index:]
+        if not ipv6 and not null_route and gateway is None:
+            route.extraction_status = "PARTIAL"
+            route.requires_manual_review = True
+            route.review_reasons.append("Gateway-absent route validity depends on transparent-mode context")
         while index < len(tokens):
             token = tokens[index].lower()
-            if token.isdigit() and route.administrative_distance is None and index == 5:
-                route.administrative_distance = int(token)
-                _mark_explicit(route, "administrative_distance")
+            if token.isdigit() and route.administrative_distance is None:
+                distance = int(token)
+                if not 1 <= distance <= 255:
+                    route.extraction_status = "PARSE_ERROR"
+                    route.requires_manual_review = True
+                    route.review_reasons.append("Route administrative distance must be between 1 and 255")
+                else:
+                    route.administrative_distance = distance
+                    _mark_explicit(route, "administrative_distance")
                 index += 1
             elif token == "track" and index + 1 < len(tokens) and tokens[index + 1].isdigit():
                 route.track_id = int(tokens[index + 1])
@@ -2377,7 +2390,7 @@ class CiscoASAParser:
                 route.raw_options.append(tokens[index])
                 route.raw_extra.setdefault("unparsed_options", []).append(sanitize_raw_text(tokens[index]))
                 index += 1
-        route.source_attributes.update({"source_line": line, "optional_tokens": tokens[index:]})
+        route.source_attributes.update({"source_line": line, "optional_tokens": optional_tokens})
         if route.track_id is not None:
             route.review_reasons.append("Route tracking dependency requires target review")
         if route.tunneled:
@@ -2487,6 +2500,9 @@ class CiscoASAParser:
                 rule.source_mode = tail[index + 1].lower()
                 rule.real_source = tail[index + 2]
                 _mark_explicit(rule, "source_mode", "real_source")
+                if rule.source_mode not in {"static", "dynamic"}:
+                    rule.extraction_status = "PARSE_ERROR"
+                    rule.review_reasons.append(f"Unsupported twice-NAT source mode: {rule.source_mode}")
                 index = parse_mapped_source(index + 3)
             else:
                 index = len(tail)
@@ -2499,6 +2515,9 @@ class CiscoASAParser:
                 rule.mapped_destination = tail[index + 2]
                 rule.real_destination = tail[index + 3]
                 _mark_explicit(rule, "destination_mode", "mapped_destination", "real_destination")
+                if rule.destination_mode != "static":
+                    rule.extraction_status = "PARSE_ERROR"
+                    rule.review_reasons.append(f"Unsupported twice-NAT destination mode: {rule.destination_mode}")
                 index += 4
             else:
                 rule.review_reasons.append("Incomplete NAT destination clause")
@@ -2511,7 +2530,7 @@ class CiscoASAParser:
                 rule.translated_service = tail[index + 3]
                 _mark_explicit(rule, "service_protocol", "original_service", "translated_service")
                 index += 4
-            elif not owning_object and index + 2 < len(tail) and index + 3 == len(tail):
+            elif not owning_object and index + 2 < len(tail):
                 rule.service_operand_1, rule.service_operand_2 = tail[index + 1:index + 3]
                 _mark_explicit(rule, "service_operand_1", "service_operand_2")
                 index += 3

@@ -8,14 +8,14 @@ SOURCE_SECTIONS = {
     "Service Objects": ("service_objects", "name source_context ports description raw_lines raw_extra requires_manual_review review_reasons"),
     "Service Groups": ("service_groups", "name source_context protocol members description raw_extra requires_manual_review review_reasons"),
     "Time Ranges": ("time_ranges", "name source_context clauses raw_lines requires_manual_review review_reasons"),
-    "ACL Rules": ("access_rules", "acl_name source_context source_order source_sequence acl_type action protocol protocol_object source_endpoint source_port destination_endpoint destination_port service icmp_type icmp_code user user_group security_group time_range log_enabled log_level log_interval inactive remark raw_line requires_manual_review review_reasons"),
+    "ACL Rules": ("access_rules", "acl_name source_context source_order source_sequence acl_type action protocol protocol_object protocol_reference_type source_endpoint source_port destination_endpoint destination_port service icmp_type icmp_code icmp_object_group user user_group security_group time_range log_enabled log_level log_interval inactive remark raw_line requires_manual_review review_reasons"),
     "ACL Remarks": ("acl_remarks", "acl_name source_context sequence source_order remark raw_line"),
     "NAT Rules": ("nat_rules", "name source_context syntax_family section source_order source_order_within_section sequence source_sequence type translation_semantics source_interface destination_interface real_source mapped_source source_mode mapped_source_mode real_destination mapped_destination destination_mode original_service translated_service service_protocol service_operand_1 service_operand_2 owning_object access_list pat_pool pat_pool_options identity_nat nat_exemption dns no_proxy_arp route_lookup unidirectional inactive options raw_options raw_line requires_manual_review review_reasons"),
     "Class Maps": ("class_maps", "name source_context class_map_type inspection_protocol typed match_type matches match_any match_all description match_lines requires_manual_review review_reasons"),
     "Policy Maps": ("policy_maps", "name source_context policy_map_type inspection_protocol typed inspection_sections parameter_lines classes description class_sections requires_manual_review review_reasons"),
     "Service Policies": ("service_policies", "name source_context policy_name scope interface global_attachment enabled negated fail_close attachment source_order requires_manual_review review_reasons"),
     "DHCP Servers": ("dhcp_servers", "name source_context interface pool pool_start pool_end dns_servers wins_servers domain_name lease_seconds ping_timeout auto_config dns_update enabled options source_order requires_manual_review review_reasons"),
-    "DHCP Global Settings": ("dhcp_global_settings", "name source_context dns_servers wins_servers domain_name lease_seconds ping_timeout options source_order raw_lines requires_manual_review review_reasons"),
+    "DHCP Global Settings": ("dhcp_global_settings", "name source_context dns_servers wins_servers domain_name lease_seconds ping_timeout auto_config dns_update options source_order raw_lines requires_manual_review review_reasons"),
     "DHCP Reservations": ("dhcp_servers", "reservations", "ip mac interface source_order"),
     "DHCP Relays": ("dhcp_relays", "name source_context server servers server_entries interface enabled_interfaces timeout options enabled source_order requires_manual_review review_reasons"),
     "Route Maps": ("route_maps", "name source_context rules raw_lines"),
@@ -53,6 +53,8 @@ SOURCE_SECTIONS = {
 }
 
 for _name, _spec in tuple(SOURCE_SECTIONS.items()):
+    if len(_spec) > 2:
+        continue
     _fields = _spec[-1].split()
     _fields.extend(field for field in ("extraction_status", "requires_manual_review", "review_reasons", "raw_extra")
                    if field not in _fields)
@@ -91,7 +93,7 @@ SHEET_HEADERS.update({
     "ACL Bindings": ("ACL", "Context", "Scope", "Interface", "Direction", "Resolved ACL", "Resolved Interface", "Issues"),
     "Zones": ("Name", "Context", "Explicit Members", "Resolved Members", "Unresolved Members", "Additional Settings", "Review Required"),
     "IPS Actions": ("Policy Map", "Class", "Mode", "Failure Mode", "Sensor Reference", "Context", "Service Policy Activation", "Issues"),
-    "IPsec VPN": ("Type", "Source Identity", "Crypto Map", "Sequence", "Crypto ACL", "Peers", "Tunnel Groups", "Interface", "Transform Sets", "IKEv2 Proposals", "VTI", "Tunnel Source", "Tunnel Destination", "IPsec Profile", "Resolution Status", "Issues"),
+    "IPsec VPN": ("Type", "Source Identity", "Crypto Map", "Sequence", "Crypto ACL", "VTI Policy ACL", "Peers", "Tunnel Groups", "Interface", "Transform Sets", "IKEv2 Proposals", "VTI", "Tunnel Source", "Tunnel Destination", "IPsec Profile", "Resolution Status", "Issues"),
     "Remote Access VPN": ("Connection Profile", "Connection Profile Type", "Group Policy", "Inherited Group Policy", "Authentication Source", "Address Pools", "DHCP Servers", "Address Assignment", "VPN Protocols", "Access Hours", "VPN Filter", "Split Tunnel Policy", "Split Tunnel ACL", "DNS", "WINS", "Default Domain", "Enabled Interfaces", "Trustpoints", "Context", "Resolution Status", "Issues"),
     "Source NAT Pools": ("Source Rule", "Pool Type", "Mapped Source", "Mapped Object", "Mapped Interface", "Address Family", "Translation Semantics", "Source Interface", "Destination Interface", "Context", "Issues"),
     "Published Services - VIPs": ("Source Rule", "Mapped Address", "Real Address", "Mapped Service", "Real Service", "Protocol", "Source NAT Interface", "Destination NAT Interface", "NAT Order", "Context", "Issues"),

@@ -9,6 +9,7 @@ from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
 from ..model import (
     CiscoFTDAccessControlRule, CiscoFTDAccessControlPolicy, CiscoFTDConfig,
+    CiscoFTDAccessControlLoggingSetting, CiscoFTDSecurityIntelligencePolicy,
     CiscoFTDInterfaceGroup, CiscoFTDNetworkAddress, CiscoFTDNetworkGroup, CiscoFTDPortObjectGroup,
     CiscoFTDProtocolPortObject, CiscoFTDReference, CiscoFTDSecurityZone, CiscoFTDNativeResource,
     CiscoFTDManualNATRule, CiscoFTDAutoNATRule, CiscoFTDNATPolicy,
@@ -155,6 +156,52 @@ class CiscoFMCBundleParser:
                 source_attributes=attributes,
                 **values,
             )
+
+        def adapt_static_route(item, index, *, device_id, device_name, collection_family,
+                               virtual_router_id=None, virtual_router_name=None):
+            gateway = item.get("gateway")
+            if isinstance(gateway, dict) and "object" in gateway:
+                gateway_ref = reference(gateway["object"])
+            elif isinstance(gateway, dict) and "literal" in gateway:
+                literal = gateway["literal"]
+                gateway_ref = CiscoFTDReference(
+                    value=literal.get("value") if isinstance(literal, dict) else literal,
+                    source_type="literal")
+            elif gateway is not None:
+                gateway_ref = CiscoFTDReference(value=gateway, source_type="literal")
+            else:
+                gateway_ref = None
+
+            tracking = item.get("routeTracking") if "routeTracking" in item else None
+            tracking_ref = (tracking.get("slaMonitor") if isinstance(tracking, dict) and "slaMonitor" in tracking
+                            else tracking if isinstance(tracking, dict) and any(k in tracking for k in ("id", "name"))
+                            else item.get("slaMonitor"))
+            destination = next((item[key] for key in ("network", "destination") if item.get(key) is not None), None)
+            explicit = [field for field, present in (
+                ("interface", "interfaceName" in item or "interface" in item),
+                ("destination", destination is not None), ("selected_networks", "selectedNetworks" in item),
+                ("gateway", "gateway" in item), ("address_family", "addressFamily" in item),
+                ("metric", "metricValue" in item or "metric" in item),
+                ("sla_monitor", tracking_ref is not None), ("route_tracking", "routeTracking" in item),
+                ("tunneled", "isTunneled" in item),
+            ) if present]
+            attributes = {"device_id": device_id, "device_name": device_name, "domain_id": self.domain_id,
+                          "collection_address_family": collection_family}
+            if virtual_router_id is not None:
+                attributes.update(virtual_router_id=virtual_router_id, virtual_router_name=virtual_router_name)
+            return record(item, index, CiscoFTDRoute, device_id=device_id,
+                interface=reference(item.get("interfaceName") or item.get("interface"))
+                    if item.get("interfaceName") or item.get("interface") else None,
+                destination=reference(destination) if destination is not None else None,
+                selected_networks=refs(item["selectedNetworks"]) if isinstance(item.get("selectedNetworks"), list) else None,
+                gateway=gateway_ref, address_family=item.get("addressFamily"),
+                metric=item.get("metricValue", item.get("metric")), virtual_router=virtual_router_name,
+                virtual_router_ref=reference({"id": virtual_router_id, "name": virtual_router_name})
+                    if virtual_router_id is not None else None,
+                sla_monitor=reference(tracking_ref) if tracking_ref is not None else None,
+                route_tracking=sanitize_source_attributes(tracking) if "routeTracking" in item else None,
+                tunneled=item.get("isTunneled") if "isTunneled" in item else None,
+                explicit_fields=explicit, source_attributes=attributes)
 
         def ra_record(item: dict, index: int, cls, fields: dict[str, tuple[str, tuple[str, ...]]], **extra):
             """Promote only keys present in the FMC payload; keep other safe evidence."""
@@ -446,6 +493,8 @@ class CiscoFMCBundleParser:
             zone=reference(item["securityZone"]) if item.get("securityZone") else None)
             for index, item in enumerate(objects.get("interfaces", []), 1)]
         acp_policies = []
+        acp_logging_settings = []
+        acp_security_intelligence = []
         acp_default_actions = []
         acp_inheritance_settings = []
         native = []
@@ -538,8 +587,8 @@ class CiscoFMCBundleParser:
                 network_analysis_policy=ref_field(policy, "networkAnalysisPolicy", "networkanalysispolicy"),
                 decryption_policy=ref_field(policy, "decryptionPolicy"), dns_policy=ref_field(policy, "dnsPolicy"),
                 identity_policy=ref_field(policy, "identityPolicy"),
-                logging_settings=sanitize_source_attributes(policy.get("logging_settings", policy.get("loggingSettings")))
-                    if "logging_settings" in policy or "loggingSettings" in policy else None,
+                logging_settings=sanitize_source_attributes(policy.get("loggingSettings", policy.get("logging_settings")))
+                    if isinstance(policy.get("loggingSettings", policy.get("logging_settings")), dict) else None,
                 explicit_fields=[field for field, present in (
                     ("description", "description" in policy), ("inherit", "inherit" in policy_metadata),
                     ("base_policy", "parentPolicy" in policy_metadata or "basePolicy" in policy),
@@ -548,8 +597,17 @@ class CiscoFMCBundleParser:
                     ("network_analysis_policy", ("networkAnalysisPolicy", "networkanalysispolicy")),
                     ("decryption_policy", ("decryptionPolicy",)), ("dns_policy", ("dnsPolicy",)),
                     ("identity_policy", ("identityPolicy",)),
-                    ("logging_settings", "logging_settings" in policy or "loggingSettings" in policy))
+                    ("logging_settings", isinstance(policy.get("loggingSettings", policy.get("logging_settings")), dict)))
                     if (present if isinstance(present, bool) else any(key in policy for key in present))]))
+            parent_policy_id = str(policy.get("id")) if policy.get("id") is not None else None
+            for target, cls, key in (
+                (acp_logging_settings, CiscoFTDAccessControlLoggingSetting, "logging_settings"),
+                (acp_security_intelligence, CiscoFTDSecurityIntelligencePolicy, "security_intelligence"),
+            ):
+                target.extend(record(item, index, cls, policy_id=parent_policy_id, policy_name=policy_name,
+                    source_attributes={"parent_policy_id": parent_policy_id, "parent_policy_name": policy_name},
+                    explicit_fields=["name"] if "name" in item else [])
+                    for index, item in enumerate(_items(policy.get(key)), 1))
             acp_default_actions.extend(record(item, index, CiscoFTDAccessControlDefaultAction,
                 policy_id=str(policy.get("id")) if policy.get("id") is not None else None,
                 action=item.get("action"), explicit_fields=["action"] if "action" in item else [],
@@ -1100,28 +1158,13 @@ class CiscoFMCBundleParser:
                 source_attributes={"device_id": device_id, "device_name": device_name, "domain_id": self.domain_id,
                                    "interface_family": "virtual_tunnel_interface"})
                 for index, item in enumerate(_items(resources.get("virtual_tunnel_interfaces")), 1))
-            route_families = [("IPv4", item) for item in _items(resources.get("static_routes"))]
-            route_families += [("IPv6", item) for item in _items(resources.get("ipv6_static_routes"))]
-            for index, (family, item) in enumerate(route_families, 1):
-                gateway = item.get("gateway")
-                gateway_value = (gateway.get("object") or gateway.get("literal")
-                                 if isinstance(gateway, dict) else gateway)
-                selected = item.get("selectedNetworks")
-                selected = selected if isinstance(selected, list) else []
-                destination_value = selected[0] if selected else item.get("network") or item.get("destination")
-                routes.append(record(item, index, CiscoFTDRoute, device_id=device_id,
-                    interface=reference(item.get("interfaceName") or item.get("interface")) if item.get("interfaceName") or item.get("interface") else None,
-                    destination=reference(destination_value) if destination_value else None,
-                    selected_networks=refs(selected) if "selectedNetworks" in item else None,
-                    gateway=reference(gateway_value) if gateway_value else None, address_family=item.get("addressFamily", family),
-                    metric=item.get("metricValue", item.get("metric")), virtual_router=(str(item["virtualRouter"].get("name") or item["virtualRouter"].get("id") or "")
-                        if isinstance(item.get("virtualRouter"), dict) else str(item["virtualRouter"]) if item.get("virtualRouter") else None),
-                    virtual_router_ref=reference(item["virtualRouter"]) if item.get("virtualRouter") else None,
-                    sla_monitor=reference(item.get("routeTracking", {}).get("slaMonitor") or item["slaMonitor"])
-                        if item.get("routeTracking", {}).get("slaMonitor") or item.get("slaMonitor") else None,
-                    route_tracking=sanitize_source_attributes(item.get("routeTracking")) if "routeTracking" in item else None,
-                    tunneled=item.get("isTunneled") if "isTunneled" in item else None,
-                    source_attributes={"device_id": device_id, "device_name": device_name, "domain_id": self.domain_id}))
+            route_families = (
+                ("IPv4", resources.get("ipv4_static_routes", resources.get("static_routes", []))),
+                ("IPv6", resources.get("ipv6_static_routes", [])),
+            )
+            for family, family_items in route_families:
+                routes.extend(adapt_static_route(item, index, device_id=device_id, device_name=device_name,
+                    collection_family=family) for index, item in enumerate(_items(family_items), 1))
             for vr in _items(resources.get("virtual_routers")):
                 vr_id = str(vr.get("id") or "")
                 vr_name = str(vr.get("name") or vr_id)
@@ -1134,23 +1177,8 @@ class CiscoFMCBundleParser:
                     items = _items(vr_resources.get(key))
                     if key in {"ipv4_static_routes", "ipv6_static_routes"}:
                         family = "IPv6" if key == "ipv6_static_routes" else "IPv4"
-                        gateway = item.get("gateway")
-                        gateway_value = (gateway.get("object") or gateway.get("literal")
-                                         if isinstance(gateway, dict) else gateway)
-                        selected = item.get("selectedNetworks")
-                        selected = selected if isinstance(selected, list) else []
-                        destination_value = selected[0] if selected else item.get("network") or item.get("destination")
-                        routes.extend(record(item, index, CiscoFTDRoute, device_id=device_id,
-                            interface=reference(item.get("interfaceName") or item.get("interface")) if item.get("interfaceName") or item.get("interface") else None,
-                            destination=reference(destination_value) if destination_value else None,
-                            selected_networks=refs(selected) if "selectedNetworks" in item else None,
-                            gateway=reference(gateway_value) if gateway_value else None,
-                            address_family=item.get("addressFamily", family),
-                            metric=item.get("metricValue", item.get("metric")), virtual_router=vr_name,
-                            virtual_router_ref=reference({"id": vr_id, "name": vr_name}),
-                            route_tracking=sanitize_source_attributes(item.get("routeTracking")) if "routeTracking" in item else None,
-                            tunneled=item.get("isTunneled") if "isTunneled" in item else None,
-                            source_attributes={"device_id": device_id, "virtual_router_id": vr_id, "virtual_router_name": vr_name})
+                        routes.extend(adapt_static_route(item, index, device_id=device_id, device_name=device_name,
+                            collection_family=family, virtual_router_id=vr_id, virtual_router_name=vr_name)
                             for index, item in enumerate(items, 1))
                     elif key == "pbr_policies":
                         policy_based_routes.extend(record(item, index, CiscoFTDPolicyBasedRoute,
@@ -1285,7 +1313,9 @@ class CiscoFMCBundleParser:
             inspector_configs=network_analysis_children["inspectorconfigs"],
             inspector_override_configs=network_analysis_children["inspectoroverrideconfigs"],
             url_categories=object_records("urlcategories", CiscoFTDURLCategory), vlan_objects=object_records("vlanobjects", CiscoFTDVLANObject),
-            access_control_policies=acp_policies, nat_policies=nat_policies,
+            access_control_policies=acp_policies,
+            access_control_logging_settings=acp_logging_settings,
+            security_intelligence_policies=acp_security_intelligence, nat_policies=nat_policies,
             identity_policies=object_records("identitypolicies", CiscoFTDIdentityPolicy),
             time_ranges=[adapt_time_range(item, i) for i, item in enumerate(objects.get("timeranges", []), 1)],
             intrusion_policies=intrusion_policies,

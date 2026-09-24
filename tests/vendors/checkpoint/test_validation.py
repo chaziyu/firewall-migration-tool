@@ -151,14 +151,18 @@ def test_collection_findings_deduplicate_only_when_full_source_scope_matches():
 
 def test_vti_validation_checks_tunnel_constraints_and_unknown_owner():
     config = CheckPointConfig(vtis=[
-        CPVTI(uid="good1", tunnel_id=1, tunnel_type="numbered", local_address="192.0.2.1",
+        CPVTI(uid="good1", gateway="g", tunnel_id=1, tunnel_type="numbered", local_address="192.0.2.1",
               remote_address="192.0.2.2", peer="gateway"),
-        CPVTI(uid="good99", tunnel_id=99, tunnel_type="unnumbered", peer="gateway", local_device="eth0"),
+        CPVTI(uid="good99", gateway="g", tunnel_id=99, tunnel_type="unnumbered", peer="gateway", local_device="eth0"),
         CPVTI(uid="bad0", tunnel_id=0, tunnel_type="numbered", remote_address="192.0.2.2"),
         CPVTI(uid="bad100", tunnel_id=100, tunnel_type="bogus"),
-    ])
+        CPVTI(uid="orphan", tunnel_id=2, tunnel_type="numbered", local_address="192.0.2.1",
+              remote_address="192.0.2.2", peer="gateway"),
+    ], gateways=[CPGateway(uid="g", name="gateway")])
+    before = config.model_dump()
     issues = validate_checkpoint_config(config, build_checkpoint_derived_views(config)).issues
     malformed = [issue for issue in issues if issue.code == "gaia_vti_malformed"]
 
     assert len(malformed) == 5
-    assert sum(issue.code == "vti_gateway_unresolved" for issue in issues) == 4
+    assert sum(issue.code == "vti_gateway_unresolved" for issue in issues) == 3
+    assert config.model_dump() == before

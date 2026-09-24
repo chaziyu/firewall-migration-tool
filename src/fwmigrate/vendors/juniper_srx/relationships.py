@@ -9,11 +9,12 @@ from fwmigrate.extraction.models import DependencyRecord
 from .resolver import JuniperReferenceResolver
 
 
-def _dependency(context, path, obj, field, reference, expected, resolved):
+def _dependency(context, path, obj, field, reference, expected, resolved, source_effective=True):
     return DependencyRecord(
         source_context=None if context.context_type == "root" else f"{context.context_type} {context.name}",
         source_path=path, source_object=obj, source_field=field, reference=str(reference),
-        expected_type=expected, result="RESOLVED" if resolved else "UNRESOLVED",
+        expected_type=expected, result=("INACTIVE_SOURCE" if not source_effective else
+                                        "RESOLVED" if resolved else "UNRESOLVED"),
         target_path=path if resolved else None)
 
 
@@ -59,11 +60,15 @@ def build_apbr_dependencies(context, effective_lookup=None) -> list[DependencyRe
         if group.probe_routing_instance:
             dependencies.append(_dependency(context, "security advance-policy-based-routing", group.name,
                                             "probe-routing-instance", group.probe_routing_instance,
-                                            "routing-instance", resolver.resolve_routing_instance(group.probe_routing_instance) is not None))
+                                            "routing-instance", resolver.resolve_routing_instance(group.probe_routing_instance) is not None,
+                                            resolver.apbr_reference_is_effective("destination-path-group", group.name,
+                                                                                "probe-routing-instance", group.probe_routing_instance)))
         for reference in group.overlay_paths:
             dependencies.append(_dependency(context, "security advance-policy-based-routing", group.name,
                                             "overlay-path", reference, "overlay-path",
-                                            resolver.resolve_apbr_overlay_path(reference) is not None))
+                                            resolver.resolve_apbr_overlay_path(reference) is not None,
+                                            resolver.apbr_reference_is_effective("destination-path-group", group.name,
+                                                                                "overlay-path", reference)))
     for rule in apbr.sla_rules.values():
         for field, reference, expected in (
             ("metrics-profile", rule.metrics_profile, "metrics-profile"),
@@ -74,16 +79,22 @@ def build_apbr_dependencies(context, effective_lookup=None) -> list[DependencyRe
             if reference:
                 dependencies.append(_dependency(context, "security advance-policy-based-routing", rule.name,
                                                 field, reference, expected,
-                                                resolver.resolve_apbr_named(reference, field) is not None))
+                                                resolver.resolve_apbr_named(reference, field) is not None,
+                                                resolver.apbr_reference_is_effective("sla-rule", rule.name,
+                                                                                    field, reference)))
     for rule in apbr.multipath_rules.values():
         for reference in rule.applications:
             dependencies.append(_dependency(context, "security advance-policy-based-routing", rule.name,
                                             "application", reference,
-                                            "application", resolver.resolve_application(reference)[2] is not None))
+                                            "application", resolver.resolve_application(reference)[2] is not None,
+                                            resolver.apbr_reference_is_effective("multipath-rule", rule.name,
+                                                                                "application", reference)))
         for reference in rule.application_groups:
             dependencies.append(_dependency(context, "security advance-policy-based-routing", rule.name,
                                             "application-group", reference, "application-set",
-                                            resolver.resolve_application(reference)[1]))
+                                            resolver.resolve_application(reference)[1],
+                                            resolver.apbr_reference_is_effective("multipath-rule", rule.name,
+                                                                                "application-group", reference)))
     return dependencies
 
 
@@ -98,7 +109,9 @@ def build_remote_access_dependencies(context, effective_lookup=None) -> list[Dep
         ):
             if reference:
                 dependencies.append(_dependency(context, "security remote-access", profile.name, field,
-                                                reference, expected, resolved is not None))
+                                                reference, expected, resolved is not None,
+                                                resolver.remote_access_reference_is_effective(profile.name,
+                                                                                              field, reference)))
     return dependencies
 
 
@@ -150,9 +163,13 @@ def build_policy_dependencies(context, effective_lookup=None) -> list[Dependency
     dependencies = []
     resolver = JuniperReferenceResolver(context, effective_lookup)
     for policy in [*context.policies, *context.global_policies]:
-        for zone in [*policy.from_zones, *policy.to_zones]:
-            dependencies.append(_dependency(context, "security policies", policy.name, "zone", zone,
-                                            "security-zone", resolver.resolve_zone(zone) is not None))
+        for field, zones in (("from-zone", policy.from_zones), ("to-zone", policy.to_zones)):
+            for zone in zones:
+                source_effective = (resolver.policy_reference_is_effective(policy, field, zone)
+                                    if policy.policy_scope == "global" else resolver.policy_is_effective(policy))
+                dependencies.append(_dependency(context, "security policies", policy.name, field, zone,
+                                                "security-zone", resolver.resolve_zone(zone) is not None,
+                                                source_effective))
         for field, references in (("source-address", policy.source_addresses),
                                   ("destination-address", policy.destination_addresses)):
             for reference in references:
@@ -162,20 +179,24 @@ def build_policy_dependencies(context, effective_lookup=None) -> list[Dependency
                           resolver.resolve_policy_source(policy.from_zone, reference) if field == "source-address" else
                           resolver.resolve_policy_destination(policy.to_zone, reference))
                 dependencies.append(_dependency(context, "security policies", policy.name, field, reference,
-                                                "address/address-set", not result.is_unresolved))
+                                                "address/address-set", not result.is_unresolved,
+                                                resolver.policy_reference_is_effective(policy, field, reference)))
         for reference in policy.applications:
             dependencies.append(_dependency(context, "security policies", policy.name, "application", reference,
                                             "application/application-set",
-                                            resolver.resolve_application(reference)[2] is not None))
+                                            resolver.resolve_application(reference)[2] is not None,
+                                            resolver.policy_reference_is_effective(policy, "application", reference)))
         for profile_type, references in policy.security_profile_references.items():
             for reference in references:
                 dependencies.append(_dependency(context, "security policies", policy.name, profile_type,
                                                 reference, "source-profile",
-                                                resolver.resolve_source_profile(profile_type, reference) is not None))
+                                                resolver.resolve_source_profile(profile_type, reference) is not None,
+                                                resolver.policy_reference_is_effective(policy, profile_type, reference)))
         if policy.scheduler_name:
             dependencies.append(_dependency(context, "security policies", policy.name, "scheduler",
                                             policy.scheduler_name, "scheduler",
-                                            resolver.resolve_scheduler(policy.scheduler_name) is not None))
+                                            resolver.resolve_scheduler(policy.scheduler_name) is not None,
+                                            resolver.policy_reference_is_effective(policy, "scheduler", policy.scheduler_name)))
     return dependencies
 
 
@@ -190,39 +211,46 @@ def build_nat_dependencies(context, effective_lookup=None) -> list[DependencyRec
             if pool.routing_instance:
                 dependencies.append(_dependency(context, f"security nat {nat_type}", pool.name,
                                                 "routing-instance", pool.routing_instance, "routing-instance",
-                                                resolver.resolve_routing_instance(pool.routing_instance) is not None))
+                                                resolver.resolve_routing_instance(pool.routing_instance) is not None,
+                                                resolver.nat_reference_is_effective(nat_type, pool.name, "",
+                                                                                    "pool-routing-instance", pool.routing_instance)))
         for rule_set in rule_sets.values():
-            for reference in [*rule_set.from_context.zones,
-                              *(rule_set.to_context.zones if rule_set.to_context else [])]:
-                dependencies.append(_dependency(context, f"security nat {nat_type}", rule_set.name,
-                                                "zone", reference, "security-zone", resolver.resolve_zone(reference) is not None))
-            for reference in [*rule_set.from_context.interfaces,
-                              *(rule_set.to_context.interfaces if rule_set.to_context else [])]:
-                dependencies.append(_dependency(context, f"security nat {nat_type}", rule_set.name,
-                                                "interface", reference, "interface",
-                                                resolver.resolve_interface(reference) is not None))
-            for reference in [*rule_set.from_context.routing_instances,
-                              *(rule_set.to_context.routing_instances if rule_set.to_context else [])]:
-                dependencies.append(_dependency(context, f"security nat {nat_type}", rule_set.name,
-                                                "routing-instance", reference, "routing-instance",
-                                                resolver.resolve_routing_instance(reference) is not None))
+            for direction, source_context in (("from", rule_set.from_context), ("to", rule_set.to_context)):
+                if source_context is None:
+                    continue
+                for kind, references, expected, resolve in (
+                    ("zone", source_context.zones, "security-zone", resolver.resolve_zone),
+                    ("interface", source_context.interfaces, "interface", resolver.resolve_interface),
+                    ("routing-instance", source_context.routing_instances, "routing-instance", resolver.resolve_routing_instance),
+                ):
+                    for reference in references:
+                        dependencies.append(_dependency(context, f"security nat {nat_type}", rule_set.name,
+                                                        kind, reference, expected, resolve(reference) is not None,
+                                                        resolver.nat_reference_is_effective(nat_type, rule_set.name, "",
+                                                                                            f"{direction}-{kind}", reference)))
             for rule in rule_set.rules:
                 pool_name = (rule.action or {}).get("pool_name")
                 if pool_name:
                     dependencies.append(_dependency(context, f"security nat {nat_type}", rule.name, "pool",
                                                 pool_name, f"{nat_type}-nat-pool",
-                                                resolver.resolve_nat_pool(pool_name, nat_type) is not None))
+                                                resolver.resolve_nat_pool(pool_name, nat_type) is not None,
+                                                resolver.nat_reference_is_effective(nat_type, rule_set.name,
+                                                                                    rule.name, "pool", pool_name)))
                 prefix_name = (rule.action or {}).get("prefix_name")
                 if prefix_name:
                     dependencies.append(_dependency(context, f"security nat {nat_type}", rule.name,
                                                     "static-prefix-name", prefix_name, "address/address-set",
-                                                    not resolver.resolve_nat(prefix_name).is_unresolved))
+                                                    not resolver.resolve_nat(prefix_name).is_unresolved,
+                                                    resolver.nat_reference_is_effective(nat_type, rule_set.name,
+                                                                                        rule.name, "prefix-name", prefix_name)))
                 for field, references in (("source-address-name", rule.match.source_address_names),
                                           ("destination-address-name", rule.match.destination_address_names)):
                     for reference in references:
                         dependencies.append(_dependency(context, f"security nat {nat_type}", rule.name,
                                                         field, reference, "address/address-set",
-                                                        not resolver.resolve_nat(reference).is_unresolved))
+                                                        not resolver.resolve_nat(reference).is_unresolved,
+                                                        resolver.nat_reference_is_effective(nat_type, rule_set.name,
+                                                                                            rule.name, field, reference)))
     return dependencies
 
 
@@ -294,11 +322,12 @@ def build_vpn_dependencies(config, effective_lookup=None) -> list[DependencyReco
     """Collect explicit VPN, Secure Connect, and policy-to-VPN references."""
     dependencies = []
 
-    def add(context, path, source, field, reference, expected, resolved):
+    def add(context, path, source, field, reference, expected, resolved, source_effective=True):
         dependencies.append(DependencyRecord(
             source_context=None if context.context_type == "root" else f"{context.context_type} {context.name}",
             source_path=path, source_object=source, source_field=field, reference=str(reference),
-            expected_type=expected, result="RESOLVED" if resolved else "UNRESOLVED",
+            expected_type=expected, result=("INACTIVE_SOURCE" if not source_effective else
+                                            "RESOLVED" if resolved else "UNRESOLVED"),
             target_path=path if resolved else None))
 
     for context in config.iter_contexts():
@@ -307,14 +336,16 @@ def build_vpn_dependencies(config, effective_lookup=None) -> list[DependencyReco
         for gateway in vpn.ike_gateways.values():
             if gateway.ike_policy:
                 add(context, "security ike gateway", gateway.name, "ike-policy", gateway.ike_policy,
-                    "ike-policy", resolver.resolve_ike_policy(gateway.ike_policy) is not None)
+                    "ike-policy", resolver.resolve_ike_policy(gateway.ike_policy) is not None,
+                    resolver.vpn_reference_is_effective("ike-gateway", gateway.name, "ike-policy", gateway.ike_policy))
             if gateway.certificate_reference:
                 add(context, "security ike gateway", gateway.name, "certificate", gateway.certificate_reference,
                     "certificate", gateway.certificate_reference in config.pki.certificates)
         for policy in vpn.ike_policies.values():
             for reference in policy.proposals:
                 add(context, "security ike policy", policy.name, "proposal", reference,
-                    "ike-proposal", resolver.resolve_ike_proposal(reference) is not None)
+                    "ike-proposal", resolver.resolve_ike_proposal(reference) is not None,
+                    resolver.vpn_reference_is_effective("ike-policy", policy.name, "proposal", reference))
             for field, reference in (("certificate", policy.certificate_reference), ("local-certificate", policy.local_certificate)):
                 if reference:
                     add(context, "security ike policy", policy.name, field, reference,
@@ -322,21 +353,26 @@ def build_vpn_dependencies(config, effective_lookup=None) -> list[DependencyReco
         for policy in vpn.ipsec_policies.values():
             for reference in policy.proposals:
                 add(context, "security ipsec policy", policy.name, "proposal", reference,
-                    "ipsec-proposal", resolver.resolve_ipsec_proposal(reference) is not None)
+                    "ipsec-proposal", resolver.resolve_ipsec_proposal(reference) is not None,
+                    resolver.vpn_reference_is_effective("ipsec-policy", policy.name, "proposal", reference))
         for tunnel in vpn.ipsec_vpns.values():
             if tunnel.ike_gateway:
                 add(context, "security ipsec vpn", tunnel.name, "ike-gateway", tunnel.ike_gateway,
-                    "ike-gateway", resolver.resolve_ike_gateway(tunnel.ike_gateway) is not None)
+                    "ike-gateway", resolver.resolve_ike_gateway(tunnel.ike_gateway) is not None,
+                    resolver.vpn_reference_is_effective("ipsec-vpn", tunnel.name, "ike-gateway", tunnel.ike_gateway))
             if tunnel.ipsec_policy:
                 add(context, "security ipsec vpn", tunnel.name, "ipsec-policy", tunnel.ipsec_policy,
-                    "ipsec-policy", resolver.resolve_ipsec_policy(tunnel.ipsec_policy) is not None)
+                    "ipsec-policy", resolver.resolve_ipsec_policy(tunnel.ipsec_policy) is not None,
+                    resolver.vpn_reference_is_effective("ipsec-vpn", tunnel.name, "ipsec-policy", tunnel.ipsec_policy))
             if tunnel.bind_interface:
                 add(context, "security ipsec vpn", tunnel.name, "bind-interface", tunnel.bind_interface,
-                    "interface", resolver.resolve_interface(tunnel.bind_interface) is not None)
+                    "interface", resolver.resolve_interface(tunnel.bind_interface) is not None,
+                    resolver.vpn_reference_is_effective("ipsec-vpn", tunnel.name, "bind-interface", tunnel.bind_interface))
             if tunnel.vpn_monitor and tunnel.vpn_monitor.source_interface:
                 reference = tunnel.vpn_monitor.source_interface
                 add(context, "security ipsec vpn monitor", tunnel.name, "source-interface", reference,
-                    "interface", resolver.resolve_interface(reference) is not None)
+                    "interface", resolver.resolve_interface(reference) is not None,
+                    resolver.vpn_reference_is_effective("ipsec-vpn", tunnel.name, "source-interface", reference))
         for policy in [*context.policies, *context.global_policies]:
             if policy.vpn_reference:
                 add(context, "security policies", policy.name, "vpn-reference", policy.vpn_reference,

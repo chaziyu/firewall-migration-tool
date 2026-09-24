@@ -50,8 +50,8 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
                                      "http_server": safe_value(config.http_server) if has_source_evidence(config.http_server) else None,
                                      "connection_controls": safe_value(config.connection_controls),
                                      "management_settings": safe_value(config.management_settings)}
-    source["failover_config"] = safe_value(config.failover_config)
-    source["multi_context_system"] = safe_value(config.multi_context_system)
+    source["failover_config"] = safe_value(config.failover_config) if has_source_evidence(config.failover_config) else None
+    source["multi_context_system"] = safe_value(config.multi_context_system) if has_source_evidence(config.multi_context_system) else None
     source = {
         "interfaces": source.pop("interfaces"), "zones": source.pop("zones"),
         "addresses": source.pop("network_objects"), "address_groups": source.pop("network_groups"),
@@ -87,23 +87,22 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
         "relationships": {
             "object_groups": derived.object_group_memberships,
             "acl": safe_value(derived.acl_relationships),
-            "acl_bindings": safe_value(derived.acl_relationships.bindings),
+            "acl_bindings": [
+                {"acl_name": item.acl_name, "scope": item.scope, "direction": item.direction,
+                 "interface": item.interface, "rules": [rule.source_order for rule in item.rules],
+                 "issues": [issue.reason for issue in item.issues]}
+                for item in derived.acl_relationships.bindings
+            ],
             "mpf": safe_value(derived.mpf_relationships),
             "routing": safe_value(derived.routing_relationships),
             "identity": safe_value(derived.identity_relationships),
-            "vpn": safe_value(derived.vpn_relationships),
+            "vpn_relationships": safe_value(derived.vpn_relationships),
             "interface_topology": [
                 {"name": item.name, "nameif": item.nameif, "kind": item.kind,
                  "parent": _name(item.parent), "aggregate": _name(item.aggregate),
                  "physical_interfaces": [_name(value) for value in item.physical_interfaces],
                  "issues": item.issues}
                 for item in derived.interface_topology.interfaces
-            ],
-            "acl_bindings": [
-                {"acl_name": item.acl_name, "scope": item.scope, "direction": item.direction,
-                 "interface": item.interface, "rules": [rule.source_order for rule in item.rules],
-                 "issues": [issue.reason for issue in item.issues]}
-                for item in derived.acl_relationships.bindings
             ],
             "nat": [{"source_context": row.source_context, "source_rule": row.rule.name,
                      "owning_object": _name(row.owning_object), "source_interface": _name(row.source_interface),
@@ -146,6 +145,7 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
                 "ipsec": [{"source_context": row.source_context, "type": row.topology_type,
                      "source": row.source_identity.name, "crypto_map": row.crypto_map,
                      "sequence": row.crypto_map_sequence, "crypto_acl": _name(row.crypto_acl),
+                     "selector_acl": _name(row.selector_acl),
                      "peers": row.peers, "tunnel_groups": [_name(v) for v in row.tunnel_groups],
                      "interface": _name(row.interface), "transform_sets": [_name(v) for v in row.transform_sets],
                      "ikev2_proposals": [_name(v) for v in row.ikev2_proposals],

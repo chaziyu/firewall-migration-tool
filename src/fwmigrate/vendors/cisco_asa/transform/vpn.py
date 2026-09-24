@@ -45,6 +45,7 @@ class ASAVPNTopologyEntry:
     address_pools: tuple[Any, ...] = ()
     trustpoint: Any = None
     issues: tuple[str, ...] = ()
+    selector_acl: Any = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,11 +108,27 @@ def build_vpn_topology(config: Any, relationships: Any, interface_topology: Any)
         if source.interface_type != "tunnel" and not (source.tunnel_source or source.ipsec_profile): continue
         relationship = by_source.get(id(source))
         resolved_profile = next((value for key, value in (relationship.targets if relationship else ()) if key == "ipsec-profile"), None)
-        local_issues = tuple(issue.reason for issue in (relationship.issues if relationship else ()))
+        profile_relationship = by_source.get(id(resolved_profile)) if resolved_profile is not None else None
+        profile_targets = {}
+        if profile_relationship:
+            for key, value in profile_relationship.targets:
+                profile_targets.setdefault(key, []).append(value)
+        selector_acl = next((value for key, value in (relationship.targets if relationship else ())
+                             if key == "ipsec-policy-acl"), None)
+        dependency_issues = (*(relationship.issues if relationship else ()),
+                             *(profile_relationship.issues if profile_relationship else ()))
+        local_issues = tuple(dict.fromkeys(issue.reason for issue in dependency_issues))
+        has_explicit_dependency = bool(source.ipsec_profile or source.ipsec_policy_acl)
+        resolution_status = ("PARTIAL" if local_issues else
+                             "RESOLVED" if has_explicit_dependency and (resolved_profile or selector_acl) else
+                             "SOURCE_ONLY")
         entries.append(ASAVPNTopologyEntry(source.source_context, "vti", source, interface=source,
             tunnel_interface=source.name, tunnel_source=source.tunnel_source, tunnel_destination=source.tunnel_destination,
-            ipsec_profile=source.ipsec_profile, resolution_status="RESOLVED" if resolved_profile else "PARTIAL" if local_issues else "SOURCE_ONLY",
-            issues=local_issues))
+            transform_sets=tuple(profile_targets.get("ikev1-transform-set", ())),
+            ikev2_proposals=tuple(profile_targets.get("ikev2-ipsec-proposal", ())),
+            ipsec_profile=source.ipsec_profile, resolution_status=resolution_status,
+            trustpoint=(profile_targets.get("trustpoint") or [None])[0],
+            issues=local_issues, selector_acl=selector_acl))
         issues.extend(local_issues)
     remote_access = []
     webvpn_configs = tuple(getattr(config, "webvpn_configs", ()))

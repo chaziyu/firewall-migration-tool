@@ -50,6 +50,18 @@ def test_local_pool_rejects_separate_addresses_instead_of_reinterpreting_them():
     assert config.vpn_address_pools[0].extraction_status == "PARSE_ERROR"
 
 
+def test_local_pool_accepts_only_ipv4_ranges_and_valid_masks():
+    config = CiscoASAParser(
+        "ip local pool IPV6 2001:db8::1-2001:db8::5\n"
+        "ip local pool HOSTS 10.0.0.1-10.0.0.5 mask 255.255.255.255\n"
+        "ip local pool CIDR 10.0.0.1-10.0.0.5 mask /24\n"
+        "ip local pool VALID 10.0.0.1-10.0.0.5 mask 255.255.255.0\n"
+    ).parse_raw()
+    assert [pool.extraction_status for pool in config.vpn_address_pools] == [
+        "PARSE_ERROR", "PARSE_ERROR", "PARSE_ERROR", "SOURCE_ONLY",
+    ]
+
+
 def test_acl_remarks_keep_order_even_when_trailing_or_remark_only():
     config = CiscoASAParser(
         "access-list ACL line 10 remark before rule\n"

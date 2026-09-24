@@ -179,6 +179,18 @@ class ASAReferenceIndex:
                   ASAReferenceStatus.RESOLVED if len(candidates) == 1 else ASAReferenceStatus.AMBIGUOUS)
         return ASAResolvedReference(context, kind, name, status, candidates[0] if len(candidates) == 1 else None, candidates)
 
+    def resolve_one_of(self, context: str | None, name: str,
+                       allowed_kinds: Iterable[ASAReferenceKind]) -> ASAResolvedReference:
+        kinds = tuple(allowed_kinds)
+        matches = tuple(target for kind in kinds for target in self.items(context, kind)
+                        if getattr(target, "name", None) == name)
+        status = (ASAReferenceStatus.UNRESOLVED if not matches else
+                  ASAReferenceStatus.RESOLVED if len(matches) == 1 else ASAReferenceStatus.AMBIGUOUS)
+        selected_kind = next((kind for kind in kinds if self.resolve(context, kind, name).candidates),
+                             kinds[0] if kinds else ASAReferenceKind.ACL)
+        return ASAResolvedReference(context, selected_kind, name, status,
+                                    matches[0] if len(matches) == 1 else None, matches)
+
     @property
     def duplicates(self) -> tuple[ASADuplicateReference, ...]:
         duplicates = [ASADuplicateReference(context, kind, name, tuple(items))

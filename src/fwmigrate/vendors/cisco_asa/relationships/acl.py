@@ -66,8 +66,23 @@ def build_acl_relationships(config: Any, references: ASAReferenceIndex) -> ASAAC
                 local.append(ASAReferenceIssue(context, kind, getattr(rule, "id", rule.acl_name), str(name),
                                                result.status, f"Unresolved ACL {field} reference", field))
 
-        if getattr(rule, "protocol_object", None):
-            resolve(ASAReferenceKind.PROTOCOL_GROUP, rule.protocol_object, "protocol")
+        protocol_object = getattr(rule, "protocol_object", None)
+        selector_type = getattr(rule, "protocol_reference_type", None)
+        if protocol_object and selector_type == "object":
+            resolve(ASAReferenceKind.SERVICE_OBJECT, protocol_object, "protocol")
+        elif protocol_object and selector_type == "object-group":
+            result = references.resolve_one_of(context, protocol_object,
+                                               (ASAReferenceKind.SERVICE_GROUP, ASAReferenceKind.PROTOCOL_GROUP))
+            if result.status is ASAReferenceStatus.RESOLVED:
+                targets.append(("protocol", result.target))
+            else:
+                local.append(ASAReferenceIssue(context, result.reference_kind, getattr(rule, "id", rule.acl_name),
+                                               protocol_object, result.status,
+                                               "Unresolved or ambiguous ACL protocol object-group reference", "protocol"))
+        elif protocol_object:
+            resolve(ASAReferenceKind.PROTOCOL_GROUP, protocol_object, "protocol")
+        if getattr(rule, "icmp_object_group", None):
+            resolve(ASAReferenceKind.ICMP_GROUP, rule.icmp_object_group, "icmp-object-group")
         for field, endpoint in (("source", getattr(rule, "source_endpoint", None)), ("destination", getattr(rule, "destination_endpoint", None))):
             if endpoint:
                 kind = {"object": ASAReferenceKind.NETWORK_OBJECT, "object-group": ASAReferenceKind.NETWORK_GROUP}.get(endpoint.type)

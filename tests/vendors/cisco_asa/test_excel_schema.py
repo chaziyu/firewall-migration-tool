@@ -69,6 +69,43 @@ def test_every_workbook_row_matches_its_header_and_acl_binding_cells_keep_their_
     assert columns["Issues"] == "()"
 
 
+def test_derived_workbook_rows_match_semantic_columns():
+    result = extract_cisco_asa_source(
+        "interface Ethernet0/0\n nameif inside\n security-level 100\n"
+        "object network REAL\n host 10.0.0.1\n"
+        "object network MAPPED\n host 192.0.2.1\n"
+        "nat (inside,outside) source static REAL MAPPED\n"
+        "access-list SELECTOR extended permit ip any any\n access-group SELECTOR in interface inside\n"
+        "crypto ipsec ikev1 transform-set TS esp-aes esp-sha-hmac\n"
+        "crypto ipsec profile VTI\n set ikev1 transform-set TS\n"
+        "interface Tunnel1\n tunnel source outside\n tunnel destination 203.0.113.5\n"
+        " tunnel protection ipsec profile VTI\n tunnel protection ipsec policy SELECTOR\n"
+        "ip local pool CLIENTS 10.10.0.1-10.10.0.10\n"
+        "group-policy GP attributes\n vpn-tunnel-protocol ssl-client\n"
+        "tunnel-group RA type remote-access\n tunnel-group RA general-attributes\n default-group-policy GP\n address-pool CLIENTS\n"
+        "dhcpd reserve-address 192.0.2.15 0011.2233.4455 inside\n"
+    )
+    output = BytesIO()
+    export_asa_excel(result, output)
+    workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
+    for name, headers in SHEET_HEADERS.items():
+        for row in workbook[name].iter_rows(min_row=2, values_only=True):
+            assert len(row) == len(headers), (name, row)
+
+    pool = dict(zip(SHEET_HEADERS["Source NAT Pools"], next(workbook["Source NAT Pools"].iter_rows(min_row=2, values_only=True))))
+    assert pool["Mapped Object"] == "MAPPED" and pool["Mapped Interface"] is None
+    ipsec = dict(zip(SHEET_HEADERS["IPsec VPN"], next(workbook["IPsec VPN"].iter_rows(min_row=2, values_only=True))))
+    assert ipsec["Tunnel Source"] == "outside"
+    assert ipsec["VTI Policy ACL"] == "SELECTOR"
+    access = dict(zip(SHEET_HEADERS["Remote Access VPN"], next(workbook["Remote Access VPN"].iter_rows(min_row=2, values_only=True))))
+    assert access["Connection Profile Type"] == "remote-access"
+    assert access["Group Policy"] == "GP" and access["Address Pools"] == "('CLIENTS',)"
+    reservation = next(workbook["DHCP Reservations"].iter_rows(min_row=2, values_only=True))
+    assert reservation == ("192.0.2.15", "0011.2233.4455", "inside", None, 26)
+    binding = dict(zip(SHEET_HEADERS["ACL Bindings"], next(workbook["ACL Bindings"].iter_rows(min_row=2, values_only=True))))
+    assert binding["ACL"] == "SELECTOR" and binding["Resolved Interface"] == "Ethernet0/0"
+
+
 def test_presentation_modules_do_not_import_parsers_or_calculate_semantics():
     from pathlib import Path
 
@@ -87,11 +124,15 @@ def test_empty_management_singletons_are_not_reported_as_configured_source():
     output = BytesIO()
     export_asa_excel(empty, output)
     workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
-    assert all(workbook[name].max_row == 1 for name in ("DNS Settings", "System Settings", "HTTP Server"))
+    assert all(workbook[name].max_row == 1 for name in ("DNS Settings", "System Settings", "HTTP Server", "Failover"))
     management = build_asa_preview(empty)["source"]["management"]
     assert management["dns"] == []
     assert management["system"] is None
     assert management["http_server"] is None
+    assert build_asa_preview(empty)["source"]["failover"]["config"] is None
+    assert build_asa_preview(empty)["source"]["other_source"]["multi_context_system"] is None
+    relationship_keys = build_asa_preview(empty)["relationships"]
+    assert {"acl_bindings", "vpn", "vpn_relationships"} <= set(relationship_keys)
 
 
 def test_explicit_management_singletons_remain_visible():

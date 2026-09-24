@@ -70,6 +70,12 @@ def candidate_field_value(path: tuple[str, ...]) -> tuple[str, object]:
 
 def scalar_identity(path: tuple[str, ...]):
     low = tuple(part.lower() for part in path)
+    if (len(low) == 7 and low[:3] == ("security", "ipsec", "vpn")
+            and low[4] == "ike" and low[5] in {"gateway", "ipsec-policy"}):
+        return path[:5], low[5]
+    if (len(low) == 6 and low[:3] == ("security", "ipsec", "vpn")
+            and low[4] in {"bind-interface", "establish-tunnels"}):
+        return path[:4], low[4]
     if "then" in low:
         index = low.index("then")
         if index + 2 == len(low) and low[index + 1] in {"permit", "deny", "reject", "discard", "next-term"}:

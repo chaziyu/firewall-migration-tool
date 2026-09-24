@@ -298,6 +298,9 @@ def test_all_core_resolvers_reject_deactivated_source_hierarchies():
 set applications application APP protocol tcp
 set schedulers scheduler SCH daily 12:00-13:00
 set routing-instances RI instance-type virtual-router
+set security nat source pool SP address 192.0.2.10/32
+set security nat destination pool DP address 192.0.2.20/32
+set firewall family inet filter FF term T then accept
 set interfaces ge-0/0/0 unit 0 family inet address 192.0.2.1/24
 set security zones security-zone Z interfaces ge-0/0/0.0
 set security ike proposal IP encryption-algorithm aes-128-cbc
@@ -311,6 +314,9 @@ deactivate security address-book global address A
 deactivate applications application APP
 deactivate schedulers scheduler SCH
 deactivate routing-instances RI
+deactivate security nat source pool SP
+deactivate security nat destination pool DP
+deactivate firewall family inet filter FF
 deactivate interfaces ge-0/0/0
 deactivate security zones security-zone Z
 deactivate security ike proposal IP
@@ -332,6 +338,9 @@ deactivate security ipsec vpn VPN
     assert resolver.resolve_application("APP")[2] is None
     assert resolver.resolve_scheduler("SCH") is None
     assert resolver.resolve_routing_instance("RI") is None
+    assert resolver.resolve_nat_pool("SP", "source") is None
+    assert resolver.resolve_nat_pool("DP", "destination") is None
+    assert resolver.resolve_firewall_filter("FF", "inet") is None
     assert resolver.resolve_interface("ge-0/0/0") is None
     assert resolver.resolve_interface("ge-0/0/0.0") is None
     assert resolver.resolve_zone("Z") is None
@@ -342,6 +351,9 @@ deactivate security ipsec vpn VPN
     assert resolver.resolve_ipsec_vpn("VPN") is None
     assert "A" in config.get_context().address_books["global"].addresses
     assert "APP" in config.get_context().applications
+    assert "SP" in config.get_context().nat.source_pools
+    assert "DP" in config.get_context().nat.destination_pools
+    assert "FF" in config.get_context().firewall_filters
 
 
 def test_deactivated_explicit_scheduler_stays_in_source_and_is_unresolved_everywhere():
@@ -356,3 +368,116 @@ set security policies global policy P scheduler-name SCH
                 if item["source_field"] == "scheduler")
     assert dependency.result == "UNRESOLVED"
     assert edge["resolved"] is False
+
+
+def test_alternative_effective_paths_are_checked_independently():
+    from fwmigrate.vendors.juniper_srx.transforms.effective_lookup import EffectiveJunosLookup
+
+    active = ("routing-instances", "RI")
+    inactive = ("routing-options", "instance-import", "RI")
+    lookup = EffectiveJunosLookup((
+        {"context": "root", "target_path": active, "origin": "local", "status": "EFFECTIVE"},
+        {"context": "root", "target_path": inactive, "origin": "activation"},
+    ))
+    assert lookup.contains_effective_path("root", active, inactive)
+    assert lookup.path_is_effective("root", active)
+    assert not lookup.path_is_effective("root", inactive)
+
+
+def test_vpn_compound_scalars_shadow_inherited_values():
+    view = _view("""set groups G security ipsec vpn V bind-interface st0.0
+set groups G security ipsec vpn V establish-tunnels immediately
+set groups G security ipsec vpn V ike gateway GW-A
+set groups G security ipsec vpn V ike ipsec-policy IP-A
+set apply-groups G
+set security ipsec vpn V bind-interface st0.1
+set security ipsec vpn V establish-tunnels on-traffic
+set security ipsec vpn V ike gateway GW-B
+set security ipsec vpn V ike ipsec-policy IP-B
+""")
+    inherited = [item for item in view["effective_statements"] if item["origin"] == "inherited-group"]
+    for field, inherited_value in (("bind-interface", "st0.0"), ("establish-tunnels", "immediately"),
+                                   ("gateway", "GW-A"), ("ipsec-policy", "IP-A")):
+        item = next(item for item in inherited if item["target_path"][-2:] == (field, inherited_value))
+        assert item["status"] == "SHADOWED"
+    for value in ("st0.1", "on-traffic", "GW-B", "IP-B"):
+        assert any(item["value"] == value and item["origin"] == "local"
+                   and item["status"] == "EFFECTIVE" for item in view["effective_statements"])
+
+
+def test_deactivated_address_set_member_is_kept_in_source_but_not_expanded():
+    result = extract_juniper_source("""set security address-book global address A 192.0.2.1/32
+set security address-book global address-set S address A
+deactivate security address-book global address-set S address A
+set security policies global policy P match source-address S
+""")
+    address_set = result.config.get_context().address_books["global"].address_sets["S"]
+    assert [member.name for member in address_set.members] == ["A"]
+    from fwmigrate.vendors.juniper_srx.transforms.effective_lookup import EffectiveJunosLookup
+    view = result.derived.inheritance_view
+    activation = ({"context": item["context"], "target_path": item["path"], "origin": "activation"}
+                  for item in view["inactive_hierarchies"])
+    lookup = EffectiveJunosLookup((*view["effective_statements"], *activation))
+    from fwmigrate.vendors.juniper_srx.resolver import JuniperReferenceResolver
+    resolved = JuniperReferenceResolver(result.config.get_context(), lookup)._resolve_in_book("global", "S")
+    assert resolved.resolved_members == []
+
+
+def test_nested_address_set_deactivation_reactivation_and_logical_system_scope():
+    from fwmigrate.vendors.juniper_srx.transforms.effective_lookup import EffectiveJunosLookup
+    from fwmigrate.vendors.juniper_srx.resolver import JuniperReferenceResolver
+
+    cases = (
+        ("""set security address-book global address A 192.0.2.1/32
+set security address-book global address-set CHILD address A
+set security address-book global address-set PARENT address-set CHILD
+deactivate security address-book global address-set PARENT address-set CHILD
+""", "root", []),
+        ("""set security address-book global address A 192.0.2.1/32
+set security address-book global address-set S address A
+deactivate security address-book global address-set S address A
+activate security address-book global address-set S address A
+""", "root", ["A"]),
+        ("""set logical-systems LS1 security address-book global address A 192.0.2.1/32
+set logical-systems LS1 security address-book global address-set S address A
+deactivate logical-systems LS1 security address-book global address-set S address A
+""", "logical-system LS1", []),
+    )
+    for source, scope, expected in cases:
+        result = extract_juniper_source(source)
+        view = result.derived.inheritance_view
+        activation = ({"context": item["context"], "target_path": item["path"], "origin": "activation"}
+                      for item in view["inactive_hierarchies"])
+        lookup = EffectiveJunosLookup((*view["effective_statements"], *activation))
+        if scope == "root":
+            context = result.config.get_context()
+            set_name = "PARENT" if "PARENT" in context.address_books["global"].address_sets else "S"
+        else:
+            _, name = scope.split(" ", 1)
+            context = result.config.get_context(name, context_type="logical-system")
+            set_name = "S"
+        resolved = JuniperReferenceResolver(context, lookup)._resolve_in_book("global", set_name)
+        assert resolved.resolved_members == expected
+
+
+def test_deactivated_policy_reference_is_not_an_effective_unresolved_dependency():
+    result = extract_juniper_source("""set schedulers scheduler SCH daily 12:00-13:00
+set security policies global policy P scheduler-name SCH
+deactivate security policies global policy P scheduler-name
+""")
+    dependency = next(item for item in result.derived.dependencies if item.reference == "SCH")
+    edge = next(item for item in result.derived.policy_relationships[0]["edges"]
+                if item["source_field"] == "scheduler")
+    assert dependency.result == "INACTIVE_SOURCE"
+    assert edge["source_effective"] is False and edge["resolved"] is True
+    from fwmigrate.vendors.juniper_srx.validation import validate_juniper_config
+    assert not any(issue.code == "UNRESOLVED_REFERENCE"
+                   for issue in validate_juniper_config(result.config, result.derived).issues)
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from fwmigrate.vendors.juniper_srx.export.excel import export_juniper_excel
+    output = BytesIO()
+    export_juniper_excel(result, output)
+    sheet = load_workbook(BytesIO(output.getvalue()), read_only=True)["Policy Reference Relationships"]
+    rows = list(sheet.values)
+    assert next(row for row in rows[1:] if row[3] == "scheduler")[9] == "INACTIVE_SOURCE"

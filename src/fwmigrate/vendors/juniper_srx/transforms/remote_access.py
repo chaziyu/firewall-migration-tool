@@ -16,12 +16,17 @@ def build_secure_connect_graph(context, scope: str, certificates=(), effective_l
             ("ipsec-vpn", "IPSEC_VPN", profile.ipsec_vpn),
         ):
             if reference:
+                source_effective = resolver.remote_access_reference_is_effective(profile.name,
+                                                                                 relationship.lower().replace("_", "-"),
+                                                                                 reference)
+                resolved = (resolver.resolve_access_profile(reference) is not None if relationship == "ACCESS_PROFILE" else
+                            resolver.resolve_remote_access_client_config(reference) is not None if relationship == "CLIENT_CONFIG" else
+                            resolver.resolve_ipsec_vpn(reference) is not None)
                 edges.append({"context": scope, "source_type": "remote-access-profile", "source_name": profile.name,
                               "relationship": relationship, "target_type": target_type, "target_name": reference,
-                              "resolved": (
-                                  resolver.resolve_access_profile(reference) is not None if relationship == "ACCESS_PROFILE" else
-                                  resolver.resolve_remote_access_client_config(reference) is not None if relationship == "CLIENT_CONFIG" else
-                                  resolver.resolve_ipsec_vpn(reference) is not None)})
+                              "resolved": resolved, "source_effective": source_effective,
+                              "status": "INACTIVE_SOURCE" if not source_effective else
+                              "RESOLVED" if resolved else "UNRESOLVED"})
         tunnel = context.vpn.ipsec_vpns.get(profile.ipsec_vpn) if profile.ipsec_vpn else None
         if tunnel and resolver.resolve_ipsec_vpn(profile.ipsec_vpn) is not None:
             interface = tunnel.bind_interface

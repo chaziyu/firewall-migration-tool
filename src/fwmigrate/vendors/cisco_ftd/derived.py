@@ -352,8 +352,10 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
         for field_name, kinds in (("interface", (FTDReferenceKind.INTERFACE,)), ("destination", network),
             ("gateway", network), ("sla_monitor", (FTDReferenceKind.SLA_MONITOR,))):
             value = getattr(route, field_name, None)
-            if value is not None:
-                resolve(route, field_name, value, kinds, scope=route.device_id if field_name == "interface" else None)
+            if value is not None and not (field_name == "gateway" and getattr(value, "source_type", None) == "literal"):
+                resolve(route, field_name, value, kinds,
+                        special=frozenset({"null0"}) if field_name == "interface" else frozenset(),
+                        scope=route.device_id if field_name == "interface" else None)
         for value in route.selected_networks or []:
             resolve(route, "selected_networks", value, network)
 
@@ -362,12 +364,15 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             resolve(override, "parent", override.parent, (FTDReferenceKind.NETWORK_ADDRESS,))
     for policy in config.access_control_policies:
         for field_name, kind in (("base_policy", FTDReferenceKind.ACCESS_CONTROL_POLICY),
-                                 ("default_action", FTDReferenceKind.ACCESS_CONTROL_DEFAULT_ACTION)):
+                                 ("default_action", FTDReferenceKind.ACCESS_CONTROL_DEFAULT_ACTION),
+                                 ("prefilter_policy", FTDReferenceKind.PREFILTER_POLICY),
+                                 ("network_analysis_policy", FTDReferenceKind.NETWORK_ANALYSIS_POLICY),
+                                 ("decryption_policy", FTDReferenceKind.DECRYPTION_POLICY),
+                                 ("dns_policy", FTDReferenceKind.DNS_POLICY),
+                                 ("identity_policy", FTDReferenceKind.IDENTITY_POLICY)):
             value = getattr(policy, field_name, None)
             if value is not None:
                 resolve(policy, field_name, value, (kind,))
-        if policy.identity_policy is not None:
-            resolve(policy, "identity_policy", policy.identity_policy, (FTDReferenceKind.IDENTITY_POLICY,))
     for setting in config.access_policy_inheritance_settings:
         if setting.base_policy is not None:
             resolve(setting, "base_policy", setting.base_policy, (FTDReferenceKind.ACCESS_CONTROL_POLICY,))
@@ -556,6 +561,9 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
         "network_address_overrides": "present" if config.network_address_overrides else "not_available_from_source_plane",
         "policy_assignments": "present" if config.policy_assignments else "not_available_from_source_plane",
         "acp_default_actions": "present" if config.access_control_default_actions else "not_available_from_source_plane",
+        "acp_inheritance_settings": "present" if config.access_policy_inheritance_settings else "not_available_from_source_plane",
+        "acp_logging_settings": "present" if config.access_control_logging_settings else "not_available_from_source_plane",
+        "acp_security_intelligence": "present" if config.security_intelligence_policies else "not_available_from_source_plane",
         "interfaces": "present" if config.source_interfaces or config.device_interfaces or config.interfaces else "not_available",
         "acp": ("partial" if acp_rules and any(policy.rules is None for policy in config.access_control_policies)
                 else "present" if acp_rules else "not_available_from_source_plane"),
@@ -592,7 +600,8 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             "time_ranges": ("timeranges",), "intrusion": ("intrusionpolicies",),
             "file_policy": ("filepolicies",), "decryption": ("decryptionpolicies",), "dns": ("dnspolicies",),
             "administration": ("fmc_users", "fmc_roles"), "identity": ("realms", "realmusergroups", "realmusers", "localrealmusers"),
-            "routing": ("/static_routes",), "dhcp": ("/dhcp_servers", "/dhcp_relay_settings"), "s2s_vpn": ("s2svpns",), "ra_vpn": ("ravpns",),
+            "routing": ("/ipv4_static_routes", "/ipv6_static_routes", "/static_routes"),
+            "dhcp": ("/dhcp_servers", "/dhcp_relay_settings"), "s2s_vpn": ("s2svpns",), "ra_vpn": ("ravpns",),
             "sdwan_related_native_resources": ("/pbr_policies", "/ecmp_zones", "/sla_monitors"),
         }
         parts = config.collection_metadata.parts
@@ -634,6 +643,12 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             [part for part in parts if part.name.startswith("intrusionpolicies/") and part.name.endswith("/rules")])
         expected["intrusion_rule_overrides"] = child_collection_state(
             [part for part in parts if part.name.startswith("intrusionpolicies/") and part.name.endswith("/overrides")])
+        for key, suffix in (("acp_inheritance_settings", "/inheritance_settings"),
+                            ("acp_logging_settings", "/logging_settings"),
+                            ("acp_security_intelligence", "/security_intelligence"),
+                            ("acp_default_actions", "/default_actions")):
+            expected[key] = child_collection_state([part for part in parts if part.name.startswith("accesspolicies/")
+                                                    and part.name.endswith(suffix)])
         for family, prefixes in (("file", ("filepolicies/", "filepolicyrules/")),
                                  ("decryption", ("decryptionpolicies/", "decryptionpolicyrules/")),
                                  ("dns", ("dnspolicies/", "block_rules/"))):
