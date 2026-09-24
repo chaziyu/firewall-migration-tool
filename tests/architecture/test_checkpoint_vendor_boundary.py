@@ -11,8 +11,8 @@ def test_checkpoint_reporting_modules_are_ir_free():
         VENDOR / "source_model.py",
         VENDOR / "source_report.py",
         VENDOR / "derived.py",
-        VENDOR / "validation.py",
         VENDOR / "web_report.py",
+        *sorted((VENDOR / "validation").glob("*.py")),
         *sorted((VENDOR / "export").glob("*.py")),
     ]
     for path in paths:
@@ -23,7 +23,7 @@ def test_checkpoint_reporting_modules_are_ir_free():
             if isinstance(node, (ast.Import, ast.ImportFrom))
         ]
         assert all(
-            "fwmigrate.ir" not in (node.module or "")
+            "fwmigrate.ir" not in (getattr(node, "module", "") or "")
             and all(name.name != "IRConfig" for name in getattr(node, "names", ()))
             for node in imports
         ), path
