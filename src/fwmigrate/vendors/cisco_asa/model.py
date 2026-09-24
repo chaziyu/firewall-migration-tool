@@ -226,7 +226,6 @@ class CiscoAccessRule(BaseModel):
     source_line_number: Optional[int] = None
     source_order: Optional[int] = None
     source_sequence: Optional[int] = None
-    effective_source_order: Optional[int] = None
     action: Optional[str] = None
     protocol: Optional[str] = None
     protocol_object: Optional[str] = None
@@ -600,7 +599,83 @@ class CiscoAAAAccountingRule(CiscoSourceRecord):
     review_reasons: List[str] = Field(default_factory=list)
 
 
+
+
+class CiscoInspectionPolicySection(BaseModel):
+    kind: str
+    header: str
+    source_order: int
+    class_name: Optional[str] = None
+    match_expression: Optional[str] = None
+    negated: bool = False
+    actions: List[str] = Field(default_factory=list)
+    parameters: List[str] = Field(default_factory=list)
+    raw_lines: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CiscoTCPMapSetting(BaseModel):
+    key: str
+    values: List[str] = Field(default_factory=list)
+    negated: bool = False
+    raw: str = ""
+    source_order: int = 0
+    supported: bool = True
+
+
+class CiscoHTTPServerConfig(BaseModel):
+    enabled: Optional[bool] = None
+    port: Optional[int] = None
+    idle_timeout: Optional[int] = None
+    session_timeout: Optional[int] = None
+    raw_lines: List[str] = Field(default_factory=list)
+    source_order: Optional[int] = None
+    extraction_status: str = "PARTIAL"
+    requires_manual_review: bool = False
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoTrustpointRecord(BaseModel):
+    name: str
+    source_context: Optional[str] = None
+    enrollment: Optional[str] = None
+    subject_name: Optional[str] = None
+    keypair_reference: Optional[str] = None
+    revocation_check: List[str] = Field(default_factory=list)
+    validation_settings: List[str] = Field(default_factory=list)
+    crl_settings: List[str] = Field(default_factory=list)
+    ocsp_settings: List[str] = Field(default_factory=list)
+    certificate_present: bool = False
+    certificate_references: List[str] = Field(default_factory=list)
+    raw_lines: List[str] = Field(default_factory=list)
+    source_order: int = 0
+    extraction_status: str = "SOURCE_ONLY"
+    requires_manual_review: bool = True
+    review_reasons: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CiscoAllocatedInterface(BaseModel):
+    physical_interface: str
+    mapped_name: Optional[str] = None
+    range_expression: Optional[str] = None
+    source_order: int = 0
+    raw: str = ""
+    resolved: Optional[bool] = None
+    review_reasons: List[str] = Field(default_factory=list)
+
+
+class CiscoMultiContextSystem(BaseModel):
+    admin_context_name: Optional[str] = None
+    raw_lines: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    review_reasons: List[str] = Field(default_factory=list)
+
+
 class CiscoClassMapMatch(BaseModel):
+    negated: bool = False
+    expression: List[str] = Field(default_factory=list)
+    inspection_expression: Optional[str] = None
     match_type: str
     value: Optional[str] = None
     acl_name: Optional[str] = None
@@ -615,6 +690,9 @@ class CiscoClassMapMatch(BaseModel):
 
 
 class CiscoClassMap(CiscoSourceRecord):
+    class_map_type: Optional[str] = None
+    inspection_protocol: Optional[str] = None
+    typed: bool = False
     match_type: Optional[str] = None
     matches: List[CiscoClassMapMatch] = Field(default_factory=list)
     match_any: Optional[bool] = None
@@ -636,6 +714,11 @@ class CiscoInspectAction(BaseModel):
 
 
 class CiscoMPFConnectionAction(BaseModel):
+    syn_cookie_mss: Optional[int] = None
+    advanced_options: Optional[str] = None
+    timeouts: Dict[str, str] = Field(default_factory=dict)
+    negated: bool = False
+    raw_options: List[str] = Field(default_factory=list)
     max_connections: Optional[int] = None
     max_embryonic: Optional[int] = None
     per_client_max: Optional[int] = None
@@ -649,6 +732,9 @@ class CiscoMPFConnectionAction(BaseModel):
 
 
 class CiscoMPFPoliceAction(BaseModel):
+    direction: Optional[str] = None
+    negated: bool = False
+    raw_options: List[str] = Field(default_factory=list)
     rate: Optional[int] = None
     burst: Optional[int] = None
     conform_action: Optional[str] = None
@@ -673,6 +759,11 @@ class CiscoPolicyMapClass(BaseModel):
 
 
 class CiscoPolicyMap(CiscoSourceRecord):
+    policy_map_type: Optional[str] = None
+    inspection_protocol: Optional[str] = None
+    typed: bool = False
+    inspection_sections: List[CiscoInspectionPolicySection] = Field(default_factory=list)
+    parameter_lines: List[str] = Field(default_factory=list)
     classes: List[CiscoPolicyMapClass] = Field(default_factory=list)
     description: Optional[str] = None
     review_reasons: List[str] = Field(default_factory=list)
@@ -680,11 +771,16 @@ class CiscoPolicyMap(CiscoSourceRecord):
 
 
 class CiscoTCPMap(CiscoSourceRecord):
+    setting_entries: List[CiscoTCPMapSetting] = Field(default_factory=list)
+    setting_history: Dict[str, List[str]] = Field(default_factory=dict)
     settings: Dict[str, Any] = Field(default_factory=dict)
     review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoServicePolicy(CiscoSourceRecord):
+    enabled: Optional[bool] = None
+    negated: bool = False
+    fail_close: bool = False
     attachment: Optional[str] = None
     policy_name: Optional[str] = None
     scope: Optional[str] = None
@@ -739,6 +835,12 @@ class CiscoDHCPRelay(CiscoSourceRecord):
 
 
 class CiscoDNSServerGroup(CiscoSourceRecord):
+    retries: Optional[int] = None
+    timeout: Optional[int] = None
+    expire_entry_timer: Optional[int] = None
+    poll_timer: Optional[int] = None
+    child_order: List[str] = Field(default_factory=list)
+    raw_settings: List[Dict[str, Any]] = Field(default_factory=list)
     name_servers: List[str] = Field(default_factory=list)
     domain_name: Optional[str] = None
     interface_lookup: List[str] = Field(default_factory=list)
@@ -747,6 +849,8 @@ class CiscoDNSServerGroup(CiscoSourceRecord):
 
 
 class CiscoDNSSettings(CiscoSourceRecord):
+    name_servers: List[str] = Field(default_factory=list)
+    command_history: List[str] = Field(default_factory=list)
     domain_name: Optional[str] = None
     lookup_interfaces: List[str] = Field(default_factory=list)
     default_server_group: Optional[str] = None
@@ -755,6 +859,13 @@ class CiscoDNSSettings(CiscoSourceRecord):
 
 
 class CiscoConnectionControl(CiscoSourceRecord):
+    negated: bool = False
+    statistics_target: Optional[str] = None
+    number_of_rate: Optional[int] = None
+    rate_interval: Optional[int] = None
+    average_rate: Optional[int] = None
+    burst_rate: Optional[int] = None
+    raw_parameters: List[str] = Field(default_factory=list)
     setting: Optional[str] = None
     values: List[str] = Field(default_factory=list)
     control_type: Optional[str] = None
@@ -802,6 +913,7 @@ class CiscoSystemSettings(CiscoSourceRecord):
 
 
 class CiscoNTPServer(CiscoSourceRecord):
+    negated: bool = False
     extraction_status: str = "PARTIAL"
     server: Optional[str] = None
     interface: Optional[str] = None
@@ -813,6 +925,8 @@ class CiscoNTPServer(CiscoSourceRecord):
 
 
 class CiscoManagementAccessRule(CiscoSourceRecord):
+    address_family: Optional[str] = None
+    negated: bool = False
     extraction_status: str = "PARTIAL"
     protocol: str
     source: Optional[str] = None
@@ -880,6 +994,11 @@ class CiscoFailoverSetting(CiscoSourceRecord):
 
 
 class CiscoFailoverGroup(CiscoSourceRecord):
+    preempt: Optional[bool] = None
+    replication_http: Optional[bool] = None
+    interface_policy: Optional[str] = None
+    polltime: Optional[str] = None
+    raw_children: List[str] = Field(default_factory=list)
     extraction_status: str = "PARTIAL"
     group_id: Optional[int] = None
     unit_role: Optional[str] = None
@@ -934,6 +1053,7 @@ class CiscoFailoverConfig(CiscoSourceRecord):
 
 
 class CiscoASAContext(CiscoSourceRecord):
+    allocated_interface_entries: List[CiscoAllocatedInterface] = Field(default_factory=list)
     config_url: Optional[str] = None
     admin_context: Optional[bool] = None
     allocated_interfaces: List[str] = Field(default_factory=list)
@@ -1012,9 +1132,11 @@ class CiscoASAConfig(BaseModel):
     failover_settings: List[CiscoFailoverSetting] = Field(default_factory=list)
     failover_config: CiscoFailoverConfig = Field(default_factory=lambda: CiscoFailoverConfig(name="failover"))
     contexts: List[CiscoASAContext] = Field(default_factory=list)
+    trustpoint_records: List[CiscoTrustpointRecord] = Field(default_factory=list)
+    http_server: CiscoHTTPServerConfig = Field(default_factory=CiscoHTTPServerConfig)
+    multi_context_system: CiscoMultiContextSystem = Field(default_factory=CiscoMultiContextSystem)
     acl_consumers: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
     unsupported_commands: List[Dict[str, Any]] = Field(default_factory=list)
     parse_errors: List[Dict[str, Any]] = Field(default_factory=list)
     diagnostics: List[CiscoDiagnostic] = Field(default_factory=list)
-    reference_issues: List[Dict[str, Any]] = Field(default_factory=list)
 

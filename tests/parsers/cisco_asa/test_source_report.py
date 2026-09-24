@@ -52,7 +52,7 @@ object network WEB
 
     assert [item.source_context for item in result.config.network_objects] == ["customer-a", None]
     assert result.config.network_groups[0].review_reasons == []
-    assert all(issue.resolved for issue in result.derived.reference_issues)
+    assert all(issue.resolved for issue in result.derived.relationship_issues)
 
 
 def test_derived_and_validation_are_read_only():

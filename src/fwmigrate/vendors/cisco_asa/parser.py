@@ -47,28 +47,12 @@ from fwmigrate.vendors.cisco_asa.model import (
     CiscoStaticRoute,
     CiscoTrack, CiscoSLAMonitor, CiscoSourceRecord,
     CiscoTrafficZone,
-    CiscoServicePolicy,
+    CiscoServicePolicy, CiscoInspectionPolicySection, CiscoTCPMapSetting,
+    CiscoTrustpointRecord, CiscoHTTPServerConfig, CiscoMultiContextSystem, CiscoAllocatedInterface,
     CiscoPolicyMap,
     CiscoTunnelGroup,
     CiscoTimeRange,
     CiscoTimeRangeClause,
-)
-from fwmigrate.vendors.cisco_asa.model_phase10_17 import (
-    CiscoASAConfigPhase10_17 as CiscoASAConfig,
-    CiscoASAContextPhase16 as CiscoASAContext,
-    CiscoClassMapPhase10 as CiscoClassMap,
-    CiscoClassMapMatchPhase10 as CiscoClassMapMatch,
-    CiscoPolicyMapPhase10 as CiscoPolicyMap,
-    CiscoPolicyMapClassPhase10 as CiscoPolicyMapClass,
-    CiscoMPFConnectionActionPhase11 as CiscoMPFConnectionAction,
-    CiscoMPFPoliceActionPhase11 as CiscoMPFPoliceAction,
-    CiscoTCPMapPhase11 as CiscoTCPMap,
-    CiscoServicePolicyPhase10 as CiscoServicePolicy,
-    CiscoConnectionControlPhase11 as CiscoConnectionControl,
-    CiscoDNSServerGroupPhase12 as CiscoDNSServerGroup,
-    CiscoManagementAccessRulePhase14 as CiscoManagementAccessRule,
-    CiscoNTPServerPhase14 as CiscoNTPServer,
-    CiscoFailoverGroupPhase15 as CiscoFailoverGroup,
 )
 from fwmigrate.vendors.cisco_asa.net_utils import normalize_ipv4_network, parse_ipv4_netmask
 from fwmigrate.vendors.cisco_asa.service_parser import parse_service_clause
@@ -240,7 +224,7 @@ class CiscoASAParser:
             name=line.split()[0], setting=line.split()[0], raw_lines=[sanitize_raw_text(line)],
             source_attributes={"raw_command": sanitize_raw_text(line)}))
 
-    def _parse_management_command(self, line: str, line_number: int) -> None:
+    def _parse_management_command_base(self, line: str, line_number: int) -> None:
         parts = line.split(); lower = line.lower(); command = parts[0].lower()
         self._legacy_management(line)
         system = self.config.system_settings
@@ -378,6 +362,13 @@ class CiscoASAParser:
                 elif len(child_parts) > 1 and child_parts[0].lower() == "priority":
                     try: group.priority = int(child_parts[1])
                     except ValueError: group.review_reasons.append("Malformed failover group priority")
+                elif child_parts and child_parts[0].lower() == "preempt": group.preempt = True
+                elif child_parts[:2] == ["no", "preempt"]: group.preempt = False
+                elif child_parts[:2] == ["replication", "http"]: group.replication_http = True
+                elif child_parts[:3] == ["no", "replication", "http"]: group.replication_http = False
+                elif len(child_parts) > 1 and child_parts[0].lower() == "interface-policy": group.interface_policy = " ".join(child_parts[1:])
+                elif len(child_parts) > 1 and child_parts[0].lower() == "polltime": group.polltime = " ".join(child_parts[1:])
+                group.raw_children.append(sanitize_raw_text(child))
                 group.raw_lines.append(sanitize_raw_text(child))
             cfg.failover_groups.append(group)
         else: cfg.extraction_status="PARTIAL"; cfg.requires_manual_review=True; cfg.review_reasons.append("Unsupported failover syntax")
@@ -1063,29 +1054,16 @@ class CiscoASAParser:
         return bool(re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", value)) and int(value.split(":", 1)[0]) >= 0 and int(value.split(":")[1]) < 60 and int(value.rsplit(":", 1)[1]) < 60
 
     def _parse_global_conn(self, line: str, line_number: int) -> CiscoConnectionControl:
-        parts = line.split()
-        item = CiscoConnectionControl(
-            name="conn", setting="conn", values=parts[1:], control_type="connection_limit",
-            raw_lines=[line], source_order=line_number, source_attributes={"raw_command": line},
-            extraction_status="PARTIAL", requires_manual_review=False,
+        safe = sanitize_raw_text(line)
+        return CiscoConnectionControl(
+            name=f"unverified-global-connection:{line_number}",
+            setting=line.split()[0].lower() if line.split() else "connection",
+            control_type="unverified_global_connection",
+            raw_lines=[safe], source_order=line_number,
+            source_attributes={"raw_command": safe, "unmodeled_tokens": line.split()[1:]},
+            extraction_status="UNSUPPORTED", requires_manual_review=True,
+            review_reasons=["Standalone conn-prefixed syntax is not modeled as a global equivalent of MPF set connection"],
         )
-        fields = {
-            "conn-max": "max_connections", "embryonic-conn-max": "max_embryonic",
-            "per-client-max": "per_client_max", "per-client-embryonic-max": "per_client_embryonic",
-        }
-        if len(parts) != 2 or parts[0].lower() not in fields:
-            item.control_type = "generic_connection_control"
-            item.requires_manual_review = True
-            item.review_reasons.append("Unsupported global connection-control syntax")
-            return item
-        if not parts[1].isdigit():
-            item.extraction_status = "PARSE_ERROR"
-            item.requires_manual_review = True
-            item.review_reasons.append("Connection limit must be numeric")
-            self._record_diagnostic(line_number, line, "Malformed global connection limit", "conn")
-            return item
-        setattr(item, fields[parts[0].lower()], int(parts[1]))
-        return item
 
     def _parse_timeout_command(self, line: str, line_number: int) -> CiscoConnectionControl:
         parts = line.split()
@@ -1503,6 +1481,18 @@ class CiscoASAParser:
             raw = lines[i]
             line = raw.strip()
             line_number = i + 1
+            admin_match = re.fullmatch(r"admin-context\s+(\S+)", line, re.I)
+            if admin_match:
+                system = self.config.multi_context_system
+                system.admin_context_name = admin_match.group(1)
+                system.raw_lines.append(sanitize_raw_text(line))
+                i += 1
+                continue
+            if re.fullmatch(r"no\s+admin-context(?:\s+\S+)?", line, re.I):
+                self.config.multi_context_system.admin_context_name = None
+                self.config.multi_context_system.raw_lines.append(sanitize_raw_text(line))
+                i += 1
+                continue
             if not line or line.startswith((":", "!")):
                 i += 1
                 continue
@@ -1525,6 +1515,11 @@ class CiscoASAParser:
                     continue
                 if line.lower().startswith("no threat-detection "):
                     self.config.connection_controls.append(self._parse_threat_detection(line, line_number))
+                    i += 1
+                    continue
+                if line.lower().startswith("no service-policy "):
+                    record = self._with_source_context(self._parse_service_policy_line(line, line_number), line_number)
+                    self.config.service_policies.append(record)
                     i += 1
                     continue
                 if line.lower().startswith("no http server "):
@@ -1559,16 +1554,35 @@ class CiscoASAParser:
             dns_group = re.match(r"^dns\s+server-group\s+(\S+)", line, re.IGNORECASE)
             if dns_group:
                 group = CiscoDNSServerGroup(
-                    name=dns_group.group(1), raw_lines=[line],
-                    source_order=line_number,
+                    name=dns_group.group(1), source_context=self._line_contexts.get(line_number),
+                    raw_lines=[line], source_order=line_number,
                     source_attributes={"raw_command": line, "raw_commands": [line]},
                     extraction_status="PARTIAL", requires_manual_review=False,
                 )
                 i += 1
                 while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
                     child = lines[i].strip()
-                    group.raw_lines.append(child)
-                    group.source_attributes["raw_commands"].append(child)
+                    safe_child = sanitize_raw_text(child)
+                    group.raw_lines.append(safe_child)
+                    group.child_order.append(safe_child)
+                    group.source_attributes["raw_commands"].append(safe_child)
+                    tokens = child.split()
+                    key, values = tokens[0].lower(), tokens[1:] if tokens else ("", [])
+                    group.raw_settings.append({"key": key, "values": values, "line_number": i + 1, "raw": safe_child})
+                    if key == "retries" and len(values) == 1 and values[0].isdigit():
+                        group.retries = int(values[0])
+                    elif key == "timeout" and len(values) == 1 and values[0].isdigit():
+                        group.timeout = int(values[0])
+                    elif key in {"expire-entry-timer", "poll-timer"} and values and values[-1].isdigit():
+                        setattr(group, "expire_entry_timer" if key == "expire-entry-timer" else "poll_timer", int(values[-1]))
+                    elif key in {"retries", "timeout", "expire-entry-timer", "poll-timer"}:
+                        group.extraction_status = "PARSE_ERROR"
+                        group.requires_manual_review = True
+                        group.review_reasons.append(f"Malformed DNS {key}")
+                        self._record_diagnostic(i + 1, child, f"Malformed DNS {key}", "dns", group.name)
+                    elif key not in {"name-server", "domain-name"}:
+                        group.requires_manual_review = True
+                        group.review_reasons.append("Unsupported DNS server-group child retained")
                     match = re.match(r"^name-server\s+(\S+)", child, re.IGNORECASE)
                     if match:
                         address = match.group(1)
@@ -1605,6 +1619,33 @@ class CiscoASAParser:
             if re.match(r"^icmp\s+(?:permit|deny)\s+", line, re.IGNORECASE):
                 self._parse_icmp_management_command(line, line_number)
                 i += 1
+                continue
+            if re.match(r"^dns-group\s+\S+$", line, re.I):
+                self.config.dns_settings.default_server_group = line.split()[1]
+                self.config.dns_settings.command_history.append(sanitize_raw_text(line))
+                i += 1
+                continue
+            if re.match(r"^crypto\s+ca\s+trustpoint\s+\S+", line, re.I):
+                from .parser_mpf import _parse_trustpoint_block
+                i = _parse_trustpoint_block(self, lines, i)
+                continue
+            certificate = re.fullmatch(r"crypto\s+ca\s+certificate\s+chain\s+(\S+)", line, re.I)
+            if certificate:
+                name = certificate.group(1)
+                record = next((item for item in self.config.trustpoint_records
+                               if item.name == name and item.source_context == self._line_contexts.get(line_number)), None)
+                if record is None:
+                    record = CiscoTrustpointRecord(name=name, source_context=self._line_contexts.get(line_number),
+                                                   extraction_status="SOURCE_ONLY", requires_manual_review=True)
+                    record.review_reasons.append("Certificate chain has no preceding trustpoint definition")
+                    self.config.trustpoint_records.append(record)
+                record.certificate_present = True
+                record.certificate_references.append(sanitize_raw_text(line))
+                record.raw_lines.append(sanitize_raw_text(line))
+                i += 1
+                while i < len(lines) and lines[i][:1].isspace() and lines[i].strip() and not lines[i].strip().startswith("!"):
+                    # Certificate bodies are intentionally not retained.
+                    i += 1
                 continue
             zone_match = re.match(r"^zone(?:\s+name)?\s+(\S+)$", line, re.IGNORECASE)
             if zone_match:
@@ -1701,6 +1742,11 @@ class CiscoASAParser:
                         parts = line.split()
                         if len(parts) > 1:
                             context.allocated_interfaces.append(parts[1])
+                            context.allocated_interface_entries.append(CiscoAllocatedInterface(
+                                physical_interface=parts[1], mapped_name=parts[2] if len(parts) > 2 else None,
+                                range_expression=parts[1] if "-" in parts[1] else None,
+                                source_order=line_number, raw=sanitize_raw_text(line),
+                            ))
                         else:
                             context.extraction_status = "PARSE_ERROR"
                             context.requires_manual_review = True
@@ -1891,6 +1937,34 @@ class CiscoASAParser:
                         interface.source_attributes["route_based_vpn"] = True
                         interface.extraction_status = "PARTIAL"
                         interface.requires_manual_review = True
+                    elif lower.startswith("dhcprelay server "):
+                        address = parts[2] if len(parts) == 3 else ""
+                        relay = next((item for item in self.config.dhcp_relays if item.name == "dhcprelay"), None)
+                        if relay is None:
+                            relay = CiscoDHCPRelay(name="dhcprelay", extraction_status="PARTIAL", requires_manual_review=False)
+                            self.config.dhcp_relays.append(relay)
+                        if address:
+                            entry = CiscoDHCPRelayServer(server=address, interface=interface.name,
+                                                         raw=sanitize_raw_text(sub), source_order=i + 1)
+                            relay.server_entries.append(entry)
+                            relay.servers.append(address)
+                            relay.server = relay.server or address
+                            relay.interface = relay.interface or interface.name
+                            try:
+                                ipaddress.ip_address(address)
+                            except ValueError:
+                                relay.extraction_status = "PARSE_ERROR"
+                                relay.requires_manual_review = True
+                                relay.review_reasons.append("DHCP relay server must be an IP address")
+                                self._record_diagnostic(i + 1, sub, "Malformed DHCP relay server", "dhcprelay")
+                        else:
+                            self._record_diagnostic(i + 1, sub, "Malformed DHCP relay server", "dhcprelay")
+                    elif lower.startswith("dhcprelay information "):
+                        relay = next((item for item in self.config.dhcp_relays if item.name == "dhcprelay"), None)
+                        if relay is None:
+                            relay = CiscoDHCPRelay(name="dhcprelay", extraction_status="PARTIAL", requires_manual_review=False)
+                            self.config.dhcp_relays.append(relay)
+                        relay.options.append(f"{interface.name}: information {' '.join(parts[2:])}")
                     elif lower == "management-only":
                         interface.management_only = True
                         _mark_explicit(interface, "management_only")
@@ -2399,6 +2473,51 @@ class CiscoASAParser:
             else:
                 self._record_unsupported(command["line_number"], command["raw_command"], "Global MTU target is unresolved or ambiguous")
         return self.config
+
+    @staticmethod
+    def _build_context_ownership(lines: List[str]) -> Dict[int, Optional[str]]:
+        from .parser_mpf import _build_context_ownership
+        return _build_context_ownership(lines)
+
+    def _parse_class_map_block(self, lines: List[str], index: int) -> CiscoClassMap:
+        from .parser_mpf import _parse_class_map_block
+        return _parse_class_map_block(self, lines, index)
+
+    def _parse_policy_map_block(self, lines: List[str], index: int) -> CiscoPolicyMap:
+        from .parser_mpf import _parse_policy_map_block
+        return _parse_policy_map_block(self, lines, index)
+
+    def _parse_mpf_action(self, section: CiscoPolicyMapClass, line: str, line_number: int) -> None:
+        from .parser_mpf import _parse_mpf_action
+        return _parse_mpf_action(self, section, line, line_number)
+
+    def _parse_connection_action(self, section: Any, line: str, line_number: int) -> CiscoMPFConnectionAction:
+        from .parser_mpf import _parse_connection_action
+        return _parse_connection_action(self, section, line, line_number)
+
+    def _parse_police_action(self, section: Any, line: str, line_number: int) -> CiscoMPFPoliceAction:
+        from .parser_mpf import _parse_police_action
+        return _parse_police_action(self, section, line, line_number)
+
+    def _parse_tcp_map_block(self, lines: List[str], index: int) -> CiscoTCPMap:
+        from .parser_mpf import _parse_tcp_map_block
+        return _parse_tcp_map_block(self, lines, index)
+
+    def _parse_service_policy_line(self, line: str, line_number: int) -> CiscoServicePolicy:
+        from .parser_mpf import _parse_service_policy_line
+        return _parse_service_policy_line(self, line, line_number)
+
+    def _parse_threat_detection(self, line: str, line_number: int) -> CiscoConnectionControl:
+        from .parser_mpf import _parse_threat_detection
+        return _parse_threat_detection(self, line, line_number)
+
+    def _parse_dhcpd_command(self, line: str, line_number: int) -> None:
+        from .parser_mpf import _parse_dhcpd_command
+        return _parse_dhcpd_command(self, line, line_number)
+
+    def _parse_management_command(self, line: str, line_number: int) -> None:
+        from .parser_mpf import _parse_management_command
+        return _parse_management_command(self, line, line_number)
 
     def _parse_route_line(self, line: str) -> Tuple[Optional[CiscoStaticRoute], Optional[str]]:
         tokens = line.split()
