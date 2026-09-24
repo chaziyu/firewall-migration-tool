@@ -84,25 +84,34 @@ set security policies global policy G1 match to-zone untrust
     workbook_rows = list(load_workbook(output, read_only=True)["Policy Relationships"].values)
     global_row = next(row for row in workbook_rows[1:] if row[4] == "G1")
     assert global_row[2:4] == ("('trust', 'dmz')", "('untrust',)")
+    policy_row = next(row for row in load_workbook(output, read_only=True)["Policies"].values
+                      if row[4] == "G1")
+    assert policy_row[2:4] == ("('trust', 'dmz')", "('untrust',)")
 
 
 def test_inherited_policy_profiles_resolve_only_when_effective():
-    for modifier, expected in ((None, "RESOLVED"),
-                               ("set apply-groups-except G", "UNRESOLVED"),
-                               ("deactivate groups G security idp idp-policy IPS", "UNRESOLVED")):
-        lines = ["set groups G security idp idp-policy IPS rulebase-ips rule R match signature 1",
-                 "set apply-groups G",
-                 "set security policies global policy P then permit application-services idp-policy IPS"]
-        if modifier:
-            lines.append(modifier)
-        parser = JuniperSRXParser("\n".join(lines))
-        config = parser.extract_source()
-        before = config.model_copy(deep=True)
-        derived = build_juniper_derived_views(config, parser.commands)
-        dependency = next(item for item in derived.dependencies if item.source_field == "idp-policy")
-        edge = next(item for item in derived.policy_relationships[0]["edges"]
-                    if item["source_field"] == "idp-policy")
-        assert dependency.result == expected
-        assert edge["resolved"] == (expected == "RESOLVED")
-        assert config.get_context().idp_policies == {}
-        assert config == before
+    profiles = (
+        ("idp-policy", "security idp idp-policy IPS rulebase-ips rule R match signature 1", "IPS", "idp_policies"),
+        ("utm-policy", "security utm utm-policy UTM description inherited", "UTM", "utm_policies"),
+        ("ssl-proxy-profile", "services ssl proxy profile SSL trusted-ca CA", "SSL", "ssl_proxy_profiles"),
+        ("security-intelligence", "security intelligence profile SI feed FEED", "SI", "security_intelligence_profiles"),
+    )
+    for profile_type, definition, name, collection_name in profiles:
+        for modifier, expected in ((None, "RESOLVED"),
+                                   ("set apply-groups-except G", "UNRESOLVED"),
+                                   (f"deactivate groups G {definition}", "UNRESOLVED")):
+            lines = [f"set groups G {definition}", "set apply-groups G",
+                     f"set security policies global policy P then permit application-services {profile_type} {name}"]
+            if modifier:
+                lines.append(modifier)
+            parser = JuniperSRXParser("\n".join(lines))
+            config = parser.extract_source()
+            before = config.model_copy(deep=True)
+            derived = build_juniper_derived_views(config, parser.commands)
+            dependency = next(item for item in derived.dependencies if item.source_field == profile_type)
+            edge = next(item for item in derived.policy_relationships[0]["edges"]
+                        if item["source_field"] == profile_type)
+            assert dependency.result == expected, (profile_type, modifier, dependency)
+            assert edge["resolved"] == (expected == "RESOLVED")
+            assert getattr(config.get_context(), collection_name) == {}
+            assert config == before

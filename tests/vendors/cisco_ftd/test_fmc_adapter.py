@@ -220,9 +220,11 @@ def test_fmc_override_acp_assignment_ips_and_dhcp_source_state_remain_separate()
                 "inherit": False, "parentPolicy": {"id": "base-acp", "name": "Base", "type": "AccessPolicy"}},
              "defaultAction": {"id": "default-1", "name": "Default", "type": "AccessPolicyDefaultAction"},
              "identityPolicy": {"id": "identity-1", "name": "Identity", "type": "IdentityPolicy"},
+             "logging_settings": {"logAtBeginning": True},
              "default_actions": [{"id": "default-1", "name": "Default", "action": "BLOCK"}], "rules": []},
         ],
         "objects": {"networkaddresses": [{"id": "net-1", "name": "Shared", "type": "Host", "value": "10.0.0.1"}],
+            "identitypolicies": [{"id": "identity-1", "name": "Identity"}],
             "network_address_overrides": [
                 {"id": "ov-1", "name": "Shared", "type": "Host", "value": "10.0.0.2",
                  "overridable": True, "overrides": {"parent": {"id": "net-1", "name": "Shared", "type": "Host"},
@@ -252,12 +254,17 @@ def test_fmc_override_acp_assignment_ips_and_dhcp_source_state_remain_separate()
     assert config.network_address_overrides[0].parent.source_id == "net-1"
     assert config.network_address_overrides[0].target.name == "FTD-A"
     assert config.access_control_policies[1].inherit is False
+    assert {"inherit", "base_policy"} <= set(config.access_control_policies[1].explicit_fields)
+    assert config.access_control_policies[1].logging_settings == {"logAtBeginning": True}
     assert config.access_control_policies[1].base_policy.source_id == "base-acp"
     assert len(config.access_control_default_actions) == 1
     assert len(config.policy_assignments[0].targets) == 2
+    assert any(item["field"] == "identity_policy" and item["target_id"] == "identity-1"
+               for item in result.derived.resolved_references)
     assert [(item.rule_id, item.state) for item in config.intrusion_rule_overrides] == [("sig-1", "disabled")]
     assert config.dhcp_relay_settings[0].ipv4_timeout_seconds == "20"
     assert "dhcpRelayAgent" not in config.dhcp_servers[0].raw_extra
+    assert not any(item.source_attributes.get("resource_type") == "dhcp_relay_settings" for item in config.native_resources)
 
     before = config.model_dump()
     assert any(item["field"] == "parent" and item["target_id"] == "net-1"
@@ -496,7 +503,7 @@ def test_expanded_fmc_source_families_are_typed_scoped_and_secret_safe():
                 "slaMonitor": {"id": "sla-1", "name": "probe"}}],
             "pbr_policies": [{"id": "global-pbr", "name": "global-pbr"}], "ecmp_zones": [{"id": "global-ecmp", "name": "global-ecmp"}],
             "virtual_routers": [{"id": "vr-a", "name": "VR-A", "interfaces": [{"id": "if-1", "name": "outside"}], "resources": {
-                "static_routes": [{"id": "vr-route", "name": "vr-route"}],
+                "ipv4_static_routes": [{"id": "vr-route", "name": "vr-route"}],
                 "pbr_policies": [{"id": "vr-pbr", "name": "vr-pbr"}], "ecmp_zones": [{"id": "vr-ecmp", "name": "vr-ecmp"}]}}],
         }}],
     }

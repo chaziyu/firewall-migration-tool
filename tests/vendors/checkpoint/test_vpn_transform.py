@@ -74,6 +74,7 @@ def test_multiple_vti_community_candidates_remain_ambiguous():
     )
 
 
-def test_unresolved_vti_does_not_claim_route_based_vpn():
+def test_explicit_vti_claims_route_based_vpn_even_when_owner_is_unresolved():
     derived = build_checkpoint_derived_views(CheckPointConfig(vtis=[CPVTI(uid="v", name="vti0")]))
-    assert derived.vpn_views.views[0].route_based is None
+    assert derived.vpn_views.views[0].route_based is True
+    assert derived.vpn_views.views[0].vti_topology[0].owning_gateway is None

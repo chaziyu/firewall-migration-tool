@@ -36,24 +36,33 @@ def normalize_ftd_routes(routes: list[CiscoFTDStaticRoute | CiscoFTDRoute], netw
             gateway_ref = route.gateway
             gateway_value = gateway_ref.value if gateway_ref and gateway_ref.value is not None else (
                 gateway_ref.name or gateway_ref.source_id if gateway_ref else None)
+            if destination is None and route.selected_networks:
+                destination = route.selected_networks[0]
+                configured = destination.value if destination.value is not None else by_id.get(destination.source_id) or by_name.get(destination.name)
             if configured is not None:
                 try:
                     parsed = ipaddress.ip_network(str(configured), strict=False)
                     if parsed.version == (6 if family == "ipv6" else 4):
                         normalized = str(parsed)
+                    else:
+                        issue = "Route destination address family does not match configured family"
                 except ValueError:
-                    pass
-            if normalized and gateway_value:
+                    issue = "Route destination cannot be parsed"
+            else:
+                issue = "Route destination is missing or could not be resolved"
+            if gateway_value and str(gateway_value).casefold() != "null0":
                 try:
-                    ipaddress.ip_address(str(gateway_value))
+                    gateway = ipaddress.ip_address(str(gateway_value))
+                    if family and gateway.version != (6 if family == "ipv6" else 4):
+                        issue = "Route gateway address family does not match configured family"
                 except ValueError:
-                    pass
+                    issue = "Route gateway cannot be parsed"
             configured_reference = (destination.name or destination.source_id or str(destination.value)
                                     if destination else None)
             result.append(NormalizedFTDRoute(route.name, route.address_family,
                 configured_reference,
                 None, normalized, str(gateway_value) if gateway_value is not None else None,
-                None, route.device_id, route.virtual_router))
+                issue, route.device_id, route.virtual_router))
             continue
         try:
             if family == "ipv4":

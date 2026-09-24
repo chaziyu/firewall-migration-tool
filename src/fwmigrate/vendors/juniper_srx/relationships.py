@@ -119,15 +119,15 @@ def build_interface_dependencies(context, effective_lookup=None) -> list[Depende
         if interface.aggregate_parent:
             dependencies.append(_dependency(context, "interfaces", interface.name, "aggregate-parent",
                                             interface.aggregate_parent, "aggregate-interface",
-                                            interface.aggregate_parent in context.interfaces))
+                                            resolver.resolve_interface(interface.aggregate_parent) is not None))
         if interface.redundant_parent:
             dependencies.append(_dependency(context, "interfaces", interface.name, "redundant-parent",
                                             interface.redundant_parent, "redundant-interface",
-                                            interface.redundant_parent in context.interfaces))
+                                            resolver.resolve_interface(interface.redundant_parent) is not None))
         for unit in interface.units.values():
             dependencies.append(_dependency(context, "interfaces", f"{interface.name}.{unit.unit}",
                                             "parent", interface.name, "physical-interface",
-                                            interface.name in context.interfaces))
+                                            resolver.resolve_interface(interface.name) is not None))
     for zone in context.zones.values():
         for reference in zone.interfaces:
             dependencies.append(_dependency(context, "security zones", zone.name, "interfaces", reference,
@@ -259,7 +259,7 @@ def build_firewall_filter_dependencies(context, effective_lookup=None) -> list[D
                     filt = context.firewall_filters.get(name)
                     dependencies.append(_dependency(context, "firewall filters", f"{interface.name}.{unit.unit}",
                                                     "filter", name, "firewall-filter",
-                                                    bool(filt and filt.family.lower() == str(family).lower())))
+                                                    resolver.resolve_firewall_filter(name, str(family)) is not None))
                 filt = context.firewall_filters.get(name)
                 if not filt:
                     continue

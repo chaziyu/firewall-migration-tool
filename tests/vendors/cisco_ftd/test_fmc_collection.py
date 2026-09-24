@@ -29,12 +29,12 @@ def test_fmc_collector_collects_device_owned_routes_and_dhcp_read_only(monkeypat
                 return Response({"items": [{"id": "device-1", "name": "FTD"}], "paging": {"total": 1}})
             if path.endswith("/devices/devicerecords/device-1"):
                 return Response({"id": "device-1", "name": "FTD"})
-            if path.endswith("/routing/staticroutes"):
-                return Response({"items": [{"id": "route-1", "name": "default"}], "paging": {"total": 1}})
-            if path.endswith("/routing/staticroutes/route-1"):
-                return Response({"id": "route-1", "name": "default"})
+            if path.endswith("/routing/ipv4staticroutes"):
+                return Response({"items": [{"id": "route-1", "name": "default", "selectedNetworks": []}], "paging": {"total": 1}})
             if path.endswith("/dhcp/dhcpserver"):
                 return Response({"id": "dhcp-1", "name": "DHCP"})
+            if path.endswith("/policy/intrusionpolicies"):
+                return Response({"items": [{"id": "ips-1", "name": "IPS"}], "paging": {"total": 1}})
             return Response({"items": [], "paging": {"total": 0}})
         def close(self): pass
 
@@ -44,10 +44,13 @@ def test_fmc_collector_collects_device_owned_routes_and_dhcp_read_only(monkeypat
     bundle = json.loads(source.source_text)
     assert bundle["devices"][0]["resources"]["static_routes"][0]["id"] == "route-1"
     assert bundle["devices"][0]["resources"]["dhcp_servers"][0]["id"] == "dhcp-1"
-    assert any("device-1/routing/staticroutes" in url for url in calls)
+    assert any("device-1/routing/ipv4staticroutes" in url for url in calls)
     assert any("device-1/dhcp/dhcpserver" in url for url in calls)
-    assert any("routing/staticroutes?expanded=true" in url for url in calls)
+    assert any("routing/ipv4staticroutes?expanded=true" in url for url in calls)
     assert any("object/networkaddresses?expanded=true" in url for url in calls)
+    from urllib.parse import parse_qs, urlparse
+    filters = [parse_qs(urlparse(url).query).get("filter", []) for url in calls if "intrusionrules" in url]
+    assert ["overrides:true;ipspolicy:ips-1"] in filters
 
 
 def test_fmc_detail_fetch_uses_endpoint_fields_and_keeps_query_parameters():

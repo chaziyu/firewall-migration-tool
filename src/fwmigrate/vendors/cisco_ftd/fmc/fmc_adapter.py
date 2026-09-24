@@ -540,15 +540,16 @@ class CiscoFMCBundleParser:
                 identity_policy=ref_field(policy, "identityPolicy"),
                 logging_settings=sanitize_source_attributes(policy.get("logging_settings", policy.get("loggingSettings")))
                     if "logging_settings" in policy or "loggingSettings" in policy else None,
-                explicit_fields=[field for field, keys in (
-                    ("description", ("description",)), ("inherit", ("inherit",)),
-                    ("base_policy", ("parentPolicy", "basePolicy")), ("default_action", ("defaultAction",)),
+                explicit_fields=[field for field, present in (
+                    ("description", "description" in policy), ("inherit", "inherit" in policy_metadata),
+                    ("base_policy", "parentPolicy" in policy_metadata or "basePolicy" in policy),
+                    ("default_action", "defaultAction" in policy),
                     ("prefilter_policy", ("prefilterPolicy", "associatedPrefilterPolicy")),
                     ("network_analysis_policy", ("networkAnalysisPolicy", "networkanalysispolicy")),
                     ("decryption_policy", ("decryptionPolicy",)), ("dns_policy", ("dnsPolicy",)),
-                    ("identity_policy", ("identityPolicy",)))
-                    + (("logging_settings", ("logging_settings", "loggingSettings")),)
-                    if any((key in policy_metadata if key.startswith("metadata.") else key in policy) for key in keys)]))
+                    ("identity_policy", ("identityPolicy",)),
+                    ("logging_settings", "logging_settings" in policy or "loggingSettings" in policy))
+                    if (present if isinstance(present, bool) else any(key in policy for key in present))]))
             acp_default_actions.extend(record(item, index, CiscoFTDAccessControlDefaultAction,
                 policy_id=str(policy.get("id")) if policy.get("id") is not None else None,
                 action=item.get("action"), explicit_fields=["action"] if "action" in item else [],

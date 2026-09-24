@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fwmigrate.vendors.checkpoint.derived import CheckPointDerivedViews, build_checkpoint_derived_views
 from fwmigrate.vendors.checkpoint.model.address import CPHost
-from fwmigrate.vendors.checkpoint.model.gaia import CPGaiaDHCPServer, CPGaiaStaticRoute
+from fwmigrate.vendors.checkpoint.model.gaia import CPVTI, CPGaiaDHCPServer, CPGaiaStaticRoute
 from fwmigrate.vendors.checkpoint.model.gateway import CPGateway, CPGatewayInterface
 from fwmigrate.vendors.checkpoint.model.policy import CPAccessLayer, CPAccessRule, CPNATRule, CPPolicyPackage
 from fwmigrate.vendors.checkpoint.model.source import CheckPointConfig
@@ -125,3 +125,40 @@ def test_collection_and_dhcp_findings_preserve_operation_context():
     collection_issue = next(issue for issue in result.issues if issue.code == "collection_incomplete")
     assert collection_issue.package == "Package A" and collection_issue.layer == "Layer A"
     assert any(issue.code == "gaia_dhcp_malformed" for issue in result.issues)
+
+
+def test_collection_findings_deduplicate_only_when_full_source_scope_matches():
+    def finding(command, package=None, layer=None):
+        return CheckPointCollectionDiagnostic(
+            command=command, source_plane="management", domain="Domain A", package=package,
+            layer=layer, status=CollectionStatus.PERMISSION_DENIED, complete=False,
+        )
+
+    diagnostics = (finding("show-hosts"), finding("show-networks"),
+                   finding("show-access-rulebase", "Package A", "Layer X"),
+                   finding("show-access-rulebase", "Package B", "Layer Y"),
+                   finding("show-hosts"),)
+    issues = validate_checkpoint_config(CheckPointConfig(), CheckPointDerivedViews(), collection=diagnostics).issues
+    collection = [issue for issue in issues if issue.code == "collection_incomplete"]
+
+    assert len(collection) == 4
+    assert {(issue.command, issue.package, issue.layer) for issue in collection} == {
+        ("show-hosts", None, None), ("show-networks", None, None),
+        ("show-access-rulebase", "Package A", "Layer X"),
+        ("show-access-rulebase", "Package B", "Layer Y"),
+    }
+
+
+def test_vti_validation_checks_tunnel_constraints_and_unknown_owner():
+    config = CheckPointConfig(vtis=[
+        CPVTI(uid="good1", tunnel_id=1, tunnel_type="numbered", local_address="192.0.2.1",
+              remote_address="192.0.2.2", peer="gateway"),
+        CPVTI(uid="good99", tunnel_id=99, tunnel_type="unnumbered", peer="gateway", local_device="eth0"),
+        CPVTI(uid="bad0", tunnel_id=0, tunnel_type="numbered", remote_address="192.0.2.2"),
+        CPVTI(uid="bad100", tunnel_id=100, tunnel_type="bogus"),
+    ])
+    issues = validate_checkpoint_config(config, build_checkpoint_derived_views(config)).issues
+    malformed = [issue for issue in issues if issue.code == "gaia_vti_malformed"]
+
+    assert len(malformed) == 5
+    assert sum(issue.code == "vti_gateway_unresolved" for issue in issues) == 4

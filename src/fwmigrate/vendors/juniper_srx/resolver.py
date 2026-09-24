@@ -311,20 +311,14 @@ class JuniperReferenceResolver:
         return reference in self.unverified_applications
 
     def resolve_scheduler(self, reference: str):
-        scheduler = self.context.schedulers.get(reference)
-        return scheduler if scheduler and self._object_is_effective(scheduler) else (
-            True if self._effective(("schedulers", "scheduler", reference)) else None)
+        return self._lookup(self.context.schedulers, reference, ("schedulers", "scheduler", reference))
 
     def resolve_nat_pool(self, reference: str, nat_type: str):
         pools = self.context.nat.source_pools if nat_type == "source" else self.context.nat.destination_pools
-        pool = pools.get(reference)
-        return pool if pool and self._object_is_effective(pool) else (
-            True if self._effective(("security", "nat", nat_type, "pool", reference)) else None)
+        return self._lookup(pools, reference, ("security", "nat", nat_type, "pool", reference))
 
     def resolve_routing_instance(self, reference: str):
-        instance = self.context.routing_instances.get(reference)
-        return instance if instance and self._object_is_effective(instance) else (
-            True if self._effective(("routing-instances", reference), ("routing-instances", reference, "instance-type")) else None)
+        return self._lookup(self.context.routing_instances, reference, ("routing-instances", reference))
 
     def resolve_interface(self, reference: str):
         interface_path = ("interfaces", reference)
@@ -393,6 +387,8 @@ class JuniperReferenceResolver:
         return self.effective_lookup.explicit_object_is_effective(self.scope, path)
 
     def _lookup(self, collection, reference, path):
+        if not reference:
+            return None
         item = collection.get(reference)
         if item and self._object_is_effective(item) and self._explicit_effective(path):
             return item
@@ -401,8 +397,13 @@ class JuniperReferenceResolver:
     def resolve_firewall_filter(self, reference: str, family: Optional[str] = None):
         filt = self.context.firewall_filters.get(reference)
         if filt is None or (family and filt.family.lower() != family.lower()):
-            return None
-        return filt if not filt.source_attributes.get("disabled") else None
+            if filt is not None:
+                return None
+        families = (family,) if family else (filt.family,) if filt else ("inet", "inet6", "ethernet-switching")
+        paths = tuple(("firewall", "family", kind, "filter", reference) for kind in families)
+        if filt and self._object_is_effective(filt) and any(self._explicit_effective(path) for path in paths):
+            return filt
+        return True if any(self._effective(path) for path in paths) else None
 
     @staticmethod
     def _object_is_effective(obj) -> bool:

@@ -16,7 +16,6 @@ from fwmigrate.vendors.juniper_srx.path_semantics import candidate_field_value a
 
 MAX_GROUP_RECURSION_DEPTH = 64
 _APPLY = {"apply-groups", "apply-groups-except"}
-_DAYS_OF_WEEK = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
 
 
 def _inactive_paths(commands: List[JunosCommand]) -> list[tuple[str, ...]]:

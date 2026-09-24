@@ -114,7 +114,7 @@ def transform_vpn(topology: CPVPNTopology, references: CPReferenceIndex) -> CPVP
             vpn_domains=domains,
             vtis=tuple(item.vti for item in vti_topology),
             vti_topology=vti_topology,
-            route_based=True if any(item.matching_communities or item.owning_gateway or item.peer for item in vti_topology) else None,
+            route_based=True if vti_topology else None,
             ike_properties=community.ike_properties if community else None,
             ipsec_properties=community.ipsec_properties if community else None,
             community_source=community,
