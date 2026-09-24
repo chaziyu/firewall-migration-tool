@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, BinaryIO, Mapping, Sequence
+from typing import Any, BinaryIO, Iterable, Mapping, Sequence
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -19,11 +19,17 @@ _REVIEW_FILL = PatternFill("solid", fgColor="FEF3C7")
 _ERROR_FILL = PatternFill("solid", fgColor="FEE2E2")
 _ALT_FILL = PatternFill("solid", fgColor="F8FAFC")
 _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
+_SUMMARY_TITLE_FONT = Font(color="FFFFFF", bold=True, size=18)
 _HEADER_FONT = Font(color="FFFFFF", bold=True)
 _WHITE_FONT = Font(color="FFFFFF", bold=True)
+_LABEL_FONT = Font(bold=True)
 _MUTED_FONT = Font(color="64748B", italic=True)
 _LINK_FONT = Font(color="0563C1", underline="single")
 _BORDER = Border(bottom=Side(style="thin", color="CBD5E1"))
+_TITLE_ALIGNMENT = Alignment(vertical="center")
+_HEADER_ALIGNMENT = Alignment(wrap_text=True, vertical="center")
+_BODY_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
+_LINK_ALIGNMENT = Alignment(horizontal="right")
 
 
 def _excel_safe(value: Any) -> Any:
@@ -37,7 +43,7 @@ def _add_back_link(sheet) -> None:
         cell = sheet.cell(2, sheet.max_column, "Back to Summary")
         cell.hyperlink = "#'Summary'!A1"
         cell.font = _LINK_FONT
-        cell.alignment = Alignment(horizontal="right")
+        cell.alignment = _LINK_ALIGNMENT
 
 
 def _widths(sheet, headers: Sequence[str]) -> None:
@@ -47,7 +53,7 @@ def _widths(sheet, headers: Sequence[str]) -> None:
         sheet.column_dimensions[get_column_letter(index)].width = width
 
 
-def _write_table(workbook: Workbook, name: str, rows: Sequence[Mapping[str, Any]]) -> None:
+def _write_table(workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]]) -> int:
     headers = SHEET_HEADERS[name]
     sheet = workbook.create_sheet(name)
     sheet.sheet_view.showGridLines = False
@@ -56,32 +62,38 @@ def _write_table(workbook: Workbook, name: str, rows: Sequence[Mapping[str, Any]
     sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_column)
     title = sheet.cell(1, 1, name)
     title.fill, title.font = _TITLE_FILL, _TITLE_FONT
-    title.alignment = Alignment(vertical="center")
+    title.alignment = _TITLE_ALIGNMENT
     sheet.row_dimensions[1].height = 24
     if max_column > 2:
         sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max_column - 1)
-    sheet.cell(2, 1, f"{len(rows)} row(s). PAN-OS source values remain separate from derived and validation data.").font = _MUTED_FONT
+    note = sheet.cell(2, 1)
+    note.font = _MUTED_FONT
+    hidden_headers = set(HIDDEN_COLUMNS_BY_DEFAULT.get(name, ()))
     for column, header in enumerate(headers, 1):
         cell = sheet.cell(3, column, header)
         cell.fill, cell.font, cell.border = _HEADER_FILL, _HEADER_FONT, _BORDER
-        cell.alignment = Alignment(wrap_text=True, vertical="center")
-    for row_number, row in enumerate(rows, 4):
-        fill = _ERROR_FILL if row.get("__error__") else _REVIEW_FILL if row.get("__review__") else _ALT_FILL if row_number % 2 else None
+        cell.alignment = _HEADER_ALIGNMENT
+    derived_headers = set(DERIVED_COLUMNS_BY_SHEET.get(name, ()))
+    row_count = 0
+    for row_count, row in enumerate(rows, 1):
+        row_number = row_count + 3
+        review_fill = _ERROR_FILL if row.get("__error__") else _REVIEW_FILL if row.get("__review__") else None
         for column, header in enumerate(headers, 1):
             cell = sheet.cell(row_number, column, _excel_safe(row.get(header)))
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
-            if header in DERIVED_COLUMNS_BY_SHEET.get(name, ()):
-                cell.fill = _DERIVED_FILL
+            cell.alignment = _BODY_ALIGNMENT
+            fill = review_fill or (_DERIVED_FILL if header in derived_headers else _ALT_FILL if row_number % 2 else None)
             if fill is not None:
                 cell.fill = fill
-    if rows:
-        sheet.auto_filter.ref = f"A3:{get_column_letter(max_column)}{len(rows) + 3}"
+    note.value = f"{row_count} row(s). PAN-OS source values remain separate from derived and validation data."
+    if row_count:
+        sheet.auto_filter.ref = f"A3:{get_column_letter(max_column)}{row_count + 3}"
     sheet.freeze_panes = "D4" if name in {"Interfaces", "Security Policies", "NAT Rules"} else "C4" if len(headers) > 12 else "A4"
     _widths(sheet, headers)
     for column, header in enumerate(headers, 1):
-        if header in HIDDEN_COLUMNS_BY_DEFAULT.get(name, ()):
+        if header in hidden_headers:
             sheet.column_dimensions[get_column_letter(column)].hidden = True
     _add_back_link(sheet)
+    return row_count
 
 
 def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Mapping[str, int]) -> None:
@@ -89,16 +101,16 @@ def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Ma
     sheet.sheet_view.showGridLines = False
     sheet.freeze_panes = "A5"
     sheet.merge_cells("A1:F1")
-    sheet["A1"], sheet["A1"].fill, sheet["A1"].font = "PAN-OS Configuration Report", _TITLE_FILL, Font(color="FFFFFF", bold=True, size=18)
-    sheet["A1"].alignment = Alignment(vertical="center")
+    sheet["A1"], sheet["A1"].fill, sheet["A1"].font = "PAN-OS Configuration Report", _TITLE_FILL, _SUMMARY_TITLE_FONT
+    sheet["A1"].alignment = _TITLE_ALIGNMENT
     sheet.row_dimensions[1].height = 30
     details = (("Source File", context.source_name), ("Hostname", context.config.hostname), ("PAN-OS Version", context.config.source_version),
                ("Scopes", "\n".join(_scope for _scope in context.derived.scope_identities)), ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
                ("Validation Errors", len(context.validation.errors)), ("Validation Warnings", len(context.validation.warnings)))
     for row, (label, value) in enumerate(details, 3):
-        sheet.cell(row, 1, label).font = Font(bold=True)
+        sheet.cell(row, 1, label).font = _LABEL_FONT
         sheet.cell(row, 2, _excel_safe(value))
-        sheet.cell(row, 2).alignment = Alignment(wrap_text=True, vertical="top")
+        sheet.cell(row, 2).alignment = _BODY_ALIGNMENT
     section_row = 11
     sheet.cell(section_row, 1, "Inventory")
     sheet.cell(section_row, 1).fill, sheet.cell(section_row, 1).font = _HEADER_FILL, _WHITE_FONT
@@ -123,12 +135,14 @@ def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Ma
 
 def export_panos_excel(analysis: PaloAltoSourceResult, output: BinaryIO | str | Path, *, source_name: str | None = None) -> None:
     context = _PANExcelContext(analysis, source_name)
-    rows_by_sheet = {name: ROW_BUILDERS[name](context) for name in ACTIVE_SHEET_ORDER if name != "Summary"}
     workbook = Workbook()
     workbook.remove(workbook.active)
-    _write_summary(workbook, context, {name: len(rows) for name, rows in rows_by_sheet.items()})
-    for name, rows in rows_by_sheet.items():
-        _write_table(workbook, name, rows)
+    row_counts = {}
+    for name in ACTIVE_SHEET_ORDER:
+        if name != "Summary":
+            row_counts[name] = _write_table(workbook, name, ROW_BUILDERS[name](context))
+    _write_summary(workbook, context, row_counts)
+    workbook.move_sheet(workbook["Summary"], offset=-len(workbook.sheetnames) + 1)
     if isinstance(output, (str, Path)):
         Path(output).parent.mkdir(parents=True, exist_ok=True)
     workbook.save(output)
