@@ -340,7 +340,10 @@ def build_vpn_dependencies(config, effective_lookup=None) -> list[DependencyReco
                     resolver.vpn_reference_is_effective("ike-gateway", gateway.name, "ike-policy", gateway.ike_policy))
             if gateway.certificate_reference:
                 add(context, "security ike gateway", gateway.name, "certificate", gateway.certificate_reference,
-                    "certificate", gateway.certificate_reference in config.pki.certificates)
+                    "certificate", resolver.resolve_certificate(gateway.certificate_reference,
+                                                                  config.pki.certificates) is not None,
+                    resolver.vpn_reference_is_effective("ike-gateway", gateway.name, "certificate",
+                                                        gateway.certificate_reference))
         for policy in vpn.ike_policies.values():
             for reference in policy.proposals:
                 add(context, "security ike policy", policy.name, "proposal", reference,
@@ -349,7 +352,8 @@ def build_vpn_dependencies(config, effective_lookup=None) -> list[DependencyReco
             for field, reference in (("certificate", policy.certificate_reference), ("local-certificate", policy.local_certificate)):
                 if reference:
                     add(context, "security ike policy", policy.name, field, reference,
-                        "certificate", reference in config.pki.certificates)
+                        "certificate", resolver.resolve_certificate(reference, config.pki.certificates) is not None,
+                        resolver.vpn_reference_is_effective("ike-policy", policy.name, "certificate", reference))
         for policy in vpn.ipsec_policies.values():
             for reference in policy.proposals:
                 add(context, "security ipsec policy", policy.name, "proposal", reference,

@@ -2397,7 +2397,7 @@ class CiscoASAParser:
             route.review_reasons.append("ASA tunneled route semantics require target review")
         if route.raw_options:
             route.review_reasons.append(f"Unparsed route options: {' '.join(route.raw_options)}")
-        if route.review_reasons:
+        if route.review_reasons and route.extraction_status != "PARSE_ERROR":
             route.extraction_status = "PARTIAL"
             route.requires_manual_review = True
         return route, None

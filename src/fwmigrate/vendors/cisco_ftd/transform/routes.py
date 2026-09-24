@@ -23,7 +23,15 @@ class NormalizedFTDRoute:
 
 def normalize_ftd_routes(routes: list[CiscoFTDStaticRoute | CiscoFTDRoute], network_addresses=()) -> tuple[NormalizedFTDRoute, ...]:
     by_id = {item.source_id: item.value for item in network_addresses if item.source_id}
-    by_name = {item.name: item.value for item in network_addresses}
+    by_name = {}
+    duplicate_names = set()
+    for item in network_addresses:
+        if item.name in by_name:
+            duplicate_names.add(item.name)
+        else:
+            by_name[item.name] = item.value
+    for name in duplicate_names:
+        by_name.pop(name, None)
 
     def route_family(route):
         value = route.address_family or route.source_attributes.get("collection_address_family")

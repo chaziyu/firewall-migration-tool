@@ -177,6 +177,9 @@ class CiscoFMCBundleParser:
                             else tracking if isinstance(tracking, dict) and any(k in tracking for k in ("id", "name"))
                             else item.get("slaMonitor"))
             destination = next((item[key] for key in ("network", "destination") if item.get(key) is not None), None)
+            destination_ref = (reference(destination) if isinstance(destination, dict) else
+                               CiscoFTDReference(value=destination, source_type="literal")
+                               if destination is not None else None)
             explicit = [field for field, present in (
                 ("interface", "interfaceName" in item or "interface" in item),
                 ("destination", destination is not None), ("selected_networks", "selectedNetworks" in item),
@@ -192,7 +195,7 @@ class CiscoFMCBundleParser:
             return record(item, index, CiscoFTDRoute, device_id=device_id,
                 interface=reference(item.get("interfaceName") or item.get("interface"))
                     if item.get("interfaceName") or item.get("interface") else None,
-                destination=reference(destination) if destination is not None else None,
+                destination=destination_ref,
                 selected_networks=refs(item["selectedNetworks"]) if isinstance(item.get("selectedNetworks"), list) else None,
                 gateway=gateway_ref, address_family=item.get("addressFamily"),
                 metric=item.get("metricValue", item.get("metric")), virtual_router=virtual_router_name,

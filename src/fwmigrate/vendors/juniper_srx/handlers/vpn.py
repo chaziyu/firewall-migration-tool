@@ -146,9 +146,10 @@ def _handle_ike(cmd: JunosCommand, toks: list[str], context: JuniperContextConfi
             pol.source_attributes["pre_shared_key"] = "[REDACTED]"
             cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
-        elif sub in {"certificate", "local-certificate"} and len(toks) >= 4:
-            setattr(pol, "certificate_reference" if sub == "certificate" else "local_certificate", toks[3])
-            record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "certificate_reference" if sub == "certificate" else "local_certificate", toks[3], cmd)
+        elif sub == "certificate" and len(toks) >= 5 and toks[3].lower() == "local-certificate":
+            pol.certificate_reference = toks[4]
+            record_scalar_candidate(pol.field_provenance, pol.field_candidate_history,
+                                    "certificate_reference", pol.certificate_reference, cmd)
             cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
 

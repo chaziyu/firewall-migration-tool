@@ -603,6 +603,7 @@ def build_web_report(
     )
 
     return {
+        "vendor": "fortigate",
         "summary": {
             "top_level_sections": top_level_sections,
             "objects": _object_counts(config),
@@ -611,6 +612,7 @@ def build_web_report(
                 "severity_counts": dict(severity_counts),
             },
             "vdoms": vdoms,
+            "scopes": vdoms,
         },
         "sections": {
             "interfaces": interfaces,

@@ -73,6 +73,9 @@ def scalar_identity(path: tuple[str, ...]):
     if (len(low) == 7 and low[:3] == ("security", "ipsec", "vpn")
             and low[4] == "ike" and low[5] in {"gateway", "ipsec-policy"}):
         return path[:5], low[5]
+    if (len(low) == 7 and low[:3] == ("security", "ike", "policy")
+            and low[4:6] == ("certificate", "local-certificate")):
+        return path[:6], "local-certificate"
     if (len(low) == 6 and low[:3] == ("security", "ipsec", "vpn")
             and low[4] in {"bind-interface", "establish-tunnels"}):
         return path[:4], low[4]

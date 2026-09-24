@@ -1,4 +1,6 @@
 import io
+import json
+from pathlib import Path
 
 from openpyxl import load_workbook
 
@@ -179,3 +181,33 @@ def test_all_registered_sources_advertise_view_report():
         "fortigate", "palo_alto", "cisco_asa", "cisco_ftd", "checkpoint", "juniper_srx",
     }
     assert all(item["web_report"] is True for item in sources)
+
+
+def test_api_preview_contract_covers_every_registered_vendor():
+    fixtures = Path(__file__).parent / "fixtures"
+    cases = (
+        ("fortigate", fixtures / "example_fortigate.conf"),
+        ("palo_alto", fixtures / "example_palo_alto.xml"),
+        ("cisco_asa", fixtures / "example_cisco_asa.cfg"),
+        ("cisco_ftd", fixtures / "cisco_ftd" / "fmc_selected_domains.json"),
+        ("checkpoint", fixtures / "checkpoint" / "multidomain_full.json"),
+        ("juniper_srx", fixtures / "example_juniper_srx.set"),
+    )
+    required_sections = {"interfaces", "addresses", "address_groups", "services", "service_groups",
+                         "schedules", "policies", "nat", "routes", "vpn_tunnels", "vpn_phase2",
+                         "validation", "unresolved_references"}
+    client = create_app({"TESTING": True}).test_client()
+    for vendor, path in cases:
+        response = client.post(
+            "/api/preview",
+            data={"source_vendor": vendor, "file": (io.BytesIO(path.read_bytes()), path.name)},
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 200, (vendor, response.get_json())
+        report = response.get_json()
+        assert report["vendor"] == vendor
+        assert isinstance(report["summary"]["objects"], dict)
+        assert isinstance(report["summary"]["validation"], dict)
+        assert required_sections <= set(report["sections"])
+        assert all(isinstance(report["sections"][name], list) for name in required_sections)
+        json.dumps(report)

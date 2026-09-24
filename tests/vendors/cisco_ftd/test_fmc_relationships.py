@@ -67,7 +67,7 @@ def test_route_sla_monitor_is_a_typed_resolvable_source_reference():
     export_ftd_excel(SimpleNamespace(config=config, validation=SimpleNamespace(issues=issues)), output)
     sheet = load_workbook(output, read_only=True)["Routes"]
     assert [cell.value for cell in sheet[1]] == ["Name", "Device", "Virtual Router", "Interface", "Destination", "Gateway", "SLA Monitor",
-        "Source Plane", "Address Family", "Mask", "Normalized Destination"]
+        "Route Tracking", "Tunneled", "Source Plane", "Address Family", "Mask", "Normalized Destination(s)"]
     assert sheet[2][6].value == "WAN-Monitor"
 
 

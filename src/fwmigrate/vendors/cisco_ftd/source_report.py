@@ -80,6 +80,8 @@ def _inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
         ("device_interfaces", "device-interfaces"),
         ("source_interfaces", "interfaces"), ("routes", "routes"),
         ("access_control_policies", "access-control-policies"),
+        ("access_control_logging_settings", "access-control-logging-settings"),
+        ("security_intelligence_policies", "security-intelligence-policies"),
         ("identity_policies", "identity-policies"),
         ("access_control_default_actions", "access-control-default-actions"),
         ("access_policy_inheritance_settings", "access-policy-inheritance-settings"),
@@ -188,7 +190,8 @@ def extract_cisco_ftd_source(text: str, zone_mapping: dict[str, str] | None = No
             "intrusion_policies", "intrusion_rule_groups", "intrusion_rule_behaviors", "intrusion_rule_overrides",
             "dhcp_servers", "dhcp_relay_settings", "access_control_default_actions",
             "access_policy_inheritance_settings", "policy_assignments", "decryption_policies", "dns_policies",
-            "source_interfaces", "routes", "access_control_policies", "identity_policies", "nat_policies")) + count_acp_rules(config) + count_nat_rules(config) + sum(
+            "source_interfaces", "routes", "access_control_policies", "access_control_logging_settings",
+            "security_intelligence_policies", "identity_policies", "nat_policies")) + count_acp_rules(config) + count_nat_rules(config) + sum(
                 len(policy.rules or []) for policy in (*config.file_policies, *config.decryption_policies, *config.dns_policies))
 
     if is_fmc_bundle(text):

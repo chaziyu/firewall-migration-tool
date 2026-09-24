@@ -28,7 +28,8 @@ def build_secure_connect_graph(context, scope: str, certificates=(), effective_l
                               "status": "INACTIVE_SOURCE" if not source_effective else
                               "RESOLVED" if resolved else "UNRESOLVED"})
         tunnel = context.vpn.ipsec_vpns.get(profile.ipsec_vpn) if profile.ipsec_vpn else None
-        if tunnel and resolver.resolve_ipsec_vpn(profile.ipsec_vpn) is not None:
+        if (tunnel and resolver.resolve_ipsec_vpn(profile.ipsec_vpn) is not None
+                and resolver.remote_access_reference_is_effective(profile.name, "ipsec-vpn", profile.ipsec_vpn)):
             interface = tunnel.bind_interface
             if interface:
                 zones = topology.get(interface, {}).get("zone_memberships", ())
@@ -38,10 +39,14 @@ def build_secure_connect_graph(context, scope: str, certificates=(), effective_l
                               "interface": interface})
                 for zone in dict.fromkeys(zones):
                     for policy in context.policies:
-                        if zone in policy.from_zones or zone in policy.to_zones:
-                            edges.append({"context": scope, "source_type": "security-zone", "source_name": zone,
-                                          "relationship": "ZONE_ASSOCIATED_POLICY", "target_type": "security-policy",
-                                          "target_name": policy.name, "resolved": True})
+                        for field, policy_zones in (("from-zone", policy.from_zones), ("to-zone", policy.to_zones)):
+                            if zone in policy_zones and resolver.policy_is_effective(policy):
+                                source_effective = resolver.policy_reference_is_effective(policy, field, zone)
+                                edges.append({"context": scope, "source_type": "security-zone", "source_name": zone,
+                                              "relationship": "ZONE_ASSOCIATED_POLICY", "target_type": "security-policy",
+                                              "target_name": policy.name, "resolved": True,
+                                              "source_effective": source_effective,
+                                              "status": "RESOLVED" if source_effective else "INACTIVE_SOURCE"})
     edges.extend(edge for edge in build_vpn_graph(context, scope, certificates, effective_lookup)
                  if edge["source_type"] in {"ipsec-vpn", "ike-gateway", "ike-policy", "ipsec-policy"})
     return tuple(edges)

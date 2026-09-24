@@ -1,5 +1,6 @@
 from copy import deepcopy
 from io import BytesIO
+from pathlib import Path
 
 from openpyxl import load_workbook
 
@@ -41,6 +42,11 @@ set security ipsec vpn VPN ike gateway GW
     assert "extraction_coverage" in preview
     assert "review_required" in preview
     assert preview["validation_summary"]["errors"] >= 1
+    assert preview["summary"]["scopes"] == ["root"]
+    assert {"interfaces", "addresses", "address_groups", "services", "service_groups", "schedules",
+            "policies", "nat", "routes", "vpn_tunnels", "vpn_phase2", "validation",
+            "unresolved_references"} <= set(preview["sections"])
+    assert preview["sections"]["unresolved_references"][0]["reference"] == "MISSING"
 
     output = BytesIO()
     export_juniper_excel(result, output)
@@ -51,3 +57,13 @@ set security ipsec vpn VPN ike gateway GW
     assert any(row[5].value == "MISSING" for row in references.iter_rows(min_row=2))
     assert result.config.model_dump(mode="python") == source_before
     assert result.derived == derived_before
+
+
+def test_report_projection_keeps_logical_system_and_address_book_scope():
+    source = (Path(__file__).parents[2] / "fixtures" / "juniper" / "logical_systems.set").read_text()
+    preview = build_juniper_preview(extract_juniper_source(source))
+    scope = "logical-system LS_TENANT_A"
+    assert scope in preview["summary"]["scopes"]
+    assert any(row["scope"] == scope and row["address_book"] == "global" for row in preview["sections"]["addresses"])
+    assert any(row["scope"] == scope and row["name"] == "LS_P1" for row in preview["sections"]["policies"])
+    assert all("provenance" in row for row in preview["sections"]["policies"])

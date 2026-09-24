@@ -377,19 +377,21 @@ class JuniperReferenceResolver:
         return self._lookup(self.context.apbr.overlay_paths, reference,
                             ("security", "advance-policy-based-routing", "overlay-path", reference))
 
-    def _effective(self, *paths):
+    def _effective(self, *paths, context=None):
         if not self.effective_lookup:
             return False
+        context = self.scope if context is None else context
         if hasattr(self.effective_lookup, "contains_effective_path"):
-            return self.effective_lookup.contains_effective_path(self.scope, *paths)
-        return bool(self.effective_lookup.contains(self.scope, *paths))
+            return self.effective_lookup.contains_effective_path(context, *paths)
+        return bool(self.effective_lookup.contains(context, *paths))
 
-    def source_path_is_effective(self, path):
+    def source_path_is_effective(self, path, context=None):
         if not self.effective_lookup or not getattr(self.effective_lookup, "has_source", False):
             return True
+        context = self.scope if context is None else context
         if hasattr(self.effective_lookup, "path_is_effective"):
-            return self.effective_lookup.path_is_effective(self.scope, path)
-        return not self.effective_lookup.hierarchy_is_inactive(self.scope, path)
+            return self.effective_lookup.path_is_effective(context, path)
+        return not self.effective_lookup.hierarchy_is_inactive(context, path)
 
     def source_reference_is_effective(self, *paths):
         return any(self.source_path_is_effective(path) for path in paths)
@@ -437,6 +439,8 @@ class JuniperReferenceResolver:
         }[source_type]
         tails = {
             ("ike-gateway", "ike-policy"): ("ike-policy", reference),
+            ("ike-gateway", "certificate"): ("certificate", reference),
+            ("ike-policy", "certificate"): ("certificate", "local-certificate", reference),
             ("ike-policy", "proposal"): ("proposals", reference),
             ("ipsec-policy", "proposal"): ("proposals", reference),
             ("ipsec-vpn", "ike-gateway"): ("ike", "gateway", reference),
@@ -445,6 +449,13 @@ class JuniperReferenceResolver:
             ("ipsec-vpn", "source-interface"): ("vpn-monitor", "source-interface", reference),
         }
         return self.source_path_is_effective(base + tails[(source_type, field)])
+
+    def resolve_certificate(self, reference, certificates):
+        certificate = certificates.get(reference) if reference else None
+        path = ("security", "pki", "local-certificate", reference)
+        if certificate is not None and self.source_path_is_effective(path, "root"):
+            return certificate
+        return True if self._effective(path, context="root") else None
 
     def nat_reference_is_effective(self, nat_type, rule_set, rule, field, reference):
         if field == "pool-routing-instance":

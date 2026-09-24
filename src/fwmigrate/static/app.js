@@ -591,6 +591,13 @@ let currentRenderedArtifactId = null;
       const scopes = summary.scopes || summary.vdoms || [];
       reportScopeSummary.textContent = scopes.length ? `Scopes: ${scopes.map((scope) => typeof scope === "string" ? scope : scope.name || scope.vsys || JSON.stringify(scope)).join(", ")}` : "No scope data found.";
     }
+    if (reportScopeFilter) {
+      const scopes = summary.scopes || summary.vdoms || [];
+      const selected = reportScopeFilter.value;
+      const options = [...new Set(scopes.map((scope) => typeof scope === "string" ? scope : scope.name || scope.vsys).filter(Boolean))];
+      reportScopeFilter.replaceChildren(new Option("All scopes", ""), ...options.map((scope) => new Option(scope, scope)));
+      reportScopeFilter.value = options.includes(selected) ? selected : "";
+    }
     const overview = activeReportSection === "overview";
     reportOverview?.classList.toggle("hidden", !overview);
     reportData?.classList.toggle("hidden", overview);

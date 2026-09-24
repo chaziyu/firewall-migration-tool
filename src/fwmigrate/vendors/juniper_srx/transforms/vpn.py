@@ -23,7 +23,10 @@ def build_vpn_graph(context, scope: str, certificates=(), effective_lookup=None)
                                resolver.vpn_reference_is_effective("ike-gateway", gateway.name, "ike-policy", gateway.ike_policy)))
         if gateway.certificate_reference:
             edges.append(_edge(scope, "ike-gateway", gateway.name, "CERTIFICATE_REFERENCE", "certificate",
-                               gateway.certificate_reference, gateway.certificate_reference in certificates))
+                               gateway.certificate_reference,
+                               resolver.resolve_certificate(gateway.certificate_reference, certificates) is not None,
+                               resolver.vpn_reference_is_effective("ike-gateway", gateway.name, "certificate",
+                                                                   gateway.certificate_reference)))
     for policy in vpn.ike_policies.values():
         for proposal in policy.proposals:
             edges.append(_edge(scope, "ike-policy", policy.name, "IKE_PROPOSAL", "ike-proposal", proposal,
@@ -32,7 +35,8 @@ def build_vpn_graph(context, scope: str, certificates=(), effective_lookup=None)
         for reference in (policy.certificate_reference, policy.local_certificate):
             if reference:
                 edges.append(_edge(scope, "ike-policy", policy.name, "CERTIFICATE_REFERENCE", "certificate", reference,
-                                   reference in certificates))
+                                   resolver.resolve_certificate(reference, certificates) is not None,
+                                   resolver.vpn_reference_is_effective("ike-policy", policy.name, "certificate", reference)))
         if policy.proposal_set:
             edges.append(_edge(scope, "ike-policy", policy.name, "PROPOSAL_SET_UNEXPANDED", "proposal-set",
                                policy.proposal_set, None, status="SOURCE_ONLY"))

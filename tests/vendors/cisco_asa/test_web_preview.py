@@ -21,4 +21,11 @@ def test_preview_separates_source_relationship_and_derived_and_redacts_secrets()
     assert "acl" in preview["relationships"]
     assert "nat" in preview["derived"]
     assert "inventory" in preview and "unsupported" in preview and "coverage" in preview
+    assert preview["summary"]["objects"]["policies"] == len(result.config.access_rules)
+    assert preview["summary"]["scopes"] == ["root"]
+    assert {"interfaces", "addresses", "policies", "nat", "routes", "vpn_tunnels", "vpn_phase2",
+            "validation", "unresolved_references"} <= set(preview["sections"])
+    acl_row = preview["sections"]["policies"][0]
+    assert acl_row["acl_name"] == "OUT" and acl_row["interface"] == "outside"
+    assert acl_row["source_order"] is not None
     assert secret not in json.dumps(preview)
