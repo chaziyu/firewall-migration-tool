@@ -8,7 +8,7 @@ from datetime import date
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.vendors.cisco_asa.acl_parser import KNOWN_PROTOCOLS, parse_acl_binding, parse_acl_line, parse_endpoint
-from fwmigrate.vendors.cisco_asa.model.acl import CiscoAccessRule
+from fwmigrate.vendors.cisco_asa.model.acl import CiscoAccessRule, CiscoACLRemark
 from fwmigrate.vendors.cisco_asa.model.address import CiscoNetworkGroup, CiscoNetworkGroupMember, CiscoNetworkObject
 from fwmigrate.vendors.cisco_asa.model.base import CiscoSourceRecord
 from fwmigrate.vendors.cisco_asa.model.context import CiscoASAContext, CiscoAllocatedInterface, CiscoMultiContextSystem
@@ -2496,6 +2496,18 @@ class CiscoASAParser:
                 continue
 
             if line.lower().startswith("access-list "):
+                parts = line.split()
+                remark_index = 2 + (2 if len(parts) > 4 and parts[2].lower() == "line" and parts[3].isdigit() else 0)
+                if len(parts) > remark_index and parts[remark_index].lower() == "remark":
+                    acl_name = parts[1]
+                    sequence = int(parts[3]) if remark_index == 4 else None
+                    remark = CiscoACLRemark(name=f"{acl_name}:{line_number}", acl_name=acl_name,
+                                             sequence=sequence, source_order=line_number,
+                                             remark=" ".join(parts[remark_index + 1:]), raw_line=sanitize_raw_text(line),
+                                             explicit_fields={"acl_name", "remark", "source_order"} | ({"sequence"} if sequence is not None else set()))
+                    self.config.acl_remarks.append(self._with_source_context(remark, line_number))
+                    i += 1
+                    continue
                 rule, error = parse_acl_line(line, line_number, remarks)
                 if rule:
                     self.config.access_rules.append(self._with_source_context(rule, line_number))

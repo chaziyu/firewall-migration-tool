@@ -1,11 +1,11 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pydantic import Field
-from .acl import CiscoACLBinding, CiscoAccessRule
+from .acl import CiscoACLBinding, CiscoAccessRule, CiscoACLRemark
 from .address import CiscoNetworkGroup, CiscoNetworkObject
 from .base import CiscoSourceModel, CiscoSourceRecord
 from .context import CiscoASAContext, CiscoMultiContextSystem
-from .dhcp import CiscoDHCPRelay, CiscoDHCPServer
+from .dhcp import CiscoDHCPGlobalSettings, CiscoDHCPRelay, CiscoDHCPServer
 from .diagnostics import CiscoDiagnostic
 from .failover import CiscoFailoverConfig, CiscoFailoverSetting
 from .groups import CiscoNamedGroup
@@ -36,6 +36,7 @@ class CiscoASAConfig(CiscoSourceModel):
     service_objects: List[CiscoServiceObject] = Field(default_factory=list)
     service_groups: List[CiscoServiceGroup] = Field(default_factory=list)
     access_rules: List[CiscoAccessRule] = Field(default_factory=list)
+    acl_remarks: List[CiscoACLRemark] = Field(default_factory=list)
     acl_bindings: List[CiscoACLBinding] = Field(default_factory=list)
     nat_rules: List[CiscoNATRule] = Field(default_factory=list)
     static_routes: List[CiscoStaticRoute] = Field(default_factory=list)
@@ -71,6 +72,7 @@ class CiscoASAConfig(CiscoSourceModel):
     service_policies: List[CiscoServicePolicy] = Field(default_factory=list)
     tcp_maps: List[CiscoTCPMap] = Field(default_factory=list)
     dhcp_servers: List[CiscoDHCPServer] = Field(default_factory=list)
+    dhcp_global_settings: List[CiscoDHCPGlobalSettings] = Field(default_factory=list)
     dhcp_relays: List[CiscoDHCPRelay] = Field(default_factory=list)
     dns_server_groups: List[CiscoDNSServerGroup] = Field(default_factory=list)
     dns_settings: CiscoDNSSettings = Field(default_factory=lambda: CiscoDNSSettings(name="system-dns"))

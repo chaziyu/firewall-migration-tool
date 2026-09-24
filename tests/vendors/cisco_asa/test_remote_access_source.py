@@ -48,3 +48,17 @@ def test_local_pool_uses_single_hyphenated_range_and_only_explicit_mask():
 def test_local_pool_rejects_separate_addresses_instead_of_reinterpreting_them():
     config = CiscoASAParser("ip local pool POOL 10.0.0.1 10.0.0.20 mask 255.255.255.0\n").parse_raw()
     assert config.vpn_address_pools[0].extraction_status == "PARSE_ERROR"
+
+
+def test_acl_remarks_keep_order_even_when_trailing_or_remark_only():
+    config = CiscoASAParser(
+        "access-list ACL line 10 remark before rule\n"
+        "access-list ACL line 20 extended permit ip any any\n"
+        "access-list ACL line 30 remark trailing\n"
+        "access-list EMPTY remark only\n"
+    ).parse_raw()
+    assert [(row.acl_name, row.sequence, row.remark) for row in config.acl_remarks] == [
+        ("ACL", 10, "before rule"), ("ACL", 30, "trailing"), ("EMPTY", None, "only")
+    ]
+    assert [row.source_order for row in config.acl_remarks] == sorted(row.source_order for row in config.acl_remarks)
+    assert len(config.access_rules) == 1 and config.access_rules[0].remark is None

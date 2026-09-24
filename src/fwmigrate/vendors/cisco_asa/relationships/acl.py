@@ -21,9 +21,17 @@ class ASAACLBindingRelationship:
 
 
 @dataclass(frozen=True, slots=True)
+class ASAACLRuleRelationship:
+    rule: Any
+    references: tuple[tuple[str, Any], ...] = ()
+    issues: tuple[Any, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class ASAACLRelationships:
     bindings: tuple[ASAACLBindingRelationship, ...] = ()
     issues: tuple[Any, ...] = ()
+    rules: tuple[ASAACLRuleRelationship, ...] = ()
 
 
 def build_acl_relationships(config: Any, references: ASAReferenceIndex) -> ASAACLRelationships:
@@ -42,4 +50,41 @@ def build_acl_relationships(config: Any, references: ASAReferenceIndex) -> ASAAC
         rules = tuple(rule for rule in config.access_rules if rule.acl_name == binding.acl_name and getattr(rule, "source_context", None) == context)
         rows.append(ASAACLBindingRelationship(context, binding.acl_name, binding, rules, "interface" if binding.interface else "global", binding.direction, binding.interface, acl.target, interface.target if interface else None, tuple(local)))
         issues.extend(local)
-    return ASAACLRelationships(tuple(rows), tuple(issues))
+    rule_rows = []
+    for rule in config.access_rules:
+        context = getattr(rule, "source_context", None)
+        local = []
+        targets = []
+
+        def resolve(kind, name, field):
+            if not name:
+                return
+            result = references.resolve(context, kind, str(name))
+            if result.status is ASAReferenceStatus.RESOLVED:
+                targets.append((field, result.target))
+            else:
+                local.append(ASAReferenceIssue(context, kind, getattr(rule, "id", rule.acl_name), str(name),
+                                               result.status, f"Unresolved ACL {field} reference", field))
+
+        if getattr(rule, "protocol_object", None):
+            resolve(ASAReferenceKind.PROTOCOL_GROUP, rule.protocol_object, "protocol")
+        for field, endpoint in (("source", getattr(rule, "source_endpoint", None)), ("destination", getattr(rule, "destination_endpoint", None))):
+            if endpoint:
+                kind = {"object": ASAReferenceKind.NETWORK_OBJECT, "object-group": ASAReferenceKind.NETWORK_GROUP}.get(endpoint.type)
+                if kind:
+                    resolve(kind, endpoint.value, field)
+        for field, spec in (("source-service", getattr(rule, "source_port", None)), ("destination-service", getattr(rule, "destination_port", None))):
+            if spec and spec.object_name:
+                kind = ASAReferenceKind.SERVICE_GROUP if spec.operator == "object-group" else ASAReferenceKind.SERVICE_OBJECT
+                resolve(kind, spec.object_name, field)
+        resolve(ASAReferenceKind.TIME_RANGE, getattr(rule, "time_range", None), "time-range")
+        resolve(ASAReferenceKind.LOCAL_USER, getattr(rule, "user", None), "user")
+        resolve(ASAReferenceKind.USER_GROUP, getattr(rule, "user_group", None), "user-group")
+        if getattr(rule, "source_security_group_type", None) == "object-group":
+            resolve(ASAReferenceKind.SECURITY_GROUP, getattr(rule, "source_security_group_value", None), "source-security-group")
+        if getattr(rule, "destination_security_group_type", None) == "object-group":
+            resolve(ASAReferenceKind.SECURITY_GROUP, getattr(rule, "destination_security_group_value", None), "destination-security-group")
+        item = ASAACLRuleRelationship(rule, tuple(targets), tuple(local))
+        rule_rows.append(item)
+        issues.extend(local)
+    return ASAACLRelationships(tuple(rows), tuple(issues), tuple(rule_rows))

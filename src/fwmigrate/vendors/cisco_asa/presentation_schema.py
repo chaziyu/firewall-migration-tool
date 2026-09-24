@@ -9,6 +9,7 @@ SOURCE_SECTIONS = {
     "Service Groups": ("service_groups", "name source_context protocol members description raw_extra requires_manual_review review_reasons"),
     "Time Ranges": ("time_ranges", "name source_context clauses raw_lines requires_manual_review review_reasons"),
     "ACL Rules": ("access_rules", "acl_name source_context source_order source_sequence acl_type action protocol protocol_object source_endpoint source_port destination_endpoint destination_port service icmp_type icmp_code user user_group security_group time_range log_enabled log_level log_interval inactive remark raw_line requires_manual_review review_reasons"),
+    "ACL Remarks": ("acl_remarks", "acl_name source_context sequence source_order remark raw_line"),
     "NAT Rules": ("nat_rules", "name source_context syntax_family section source_order source_order_within_section sequence source_sequence type translation_semantics source_interface destination_interface real_source mapped_source source_mode mapped_source_mode real_destination mapped_destination destination_mode original_service translated_service service_protocol service_operand_1 service_operand_2 owning_object access_list pat_pool pat_pool_options identity_nat nat_exemption dns no_proxy_arp route_lookup unidirectional inactive options raw_options raw_line requires_manual_review review_reasons"),
     "Class Maps": ("class_maps", "name source_context class_map_type inspection_protocol typed match_type matches match_any match_all description match_lines requires_manual_review review_reasons"),
     "Policy Maps": ("policy_maps", "name source_context policy_map_type inspection_protocol typed inspection_sections parameter_lines classes description class_sections requires_manual_review review_reasons"),
@@ -69,7 +70,7 @@ DERIVED_SECTIONS = {
 SHEET_ORDER = (
     "Summary", "Review Required", "Source Inventory", "Interfaces", "Zones",
     "Network Objects", "Network Groups", "Service Objects", "Service Groups", "Time Ranges",
-    "ACL Rules", "ACL Bindings", "NAT Rules", "Source NAT Pools", "Published Services - VIPs",
+    "ACL Rules", "ACL Remarks", "ACL Bindings", "NAT Rules", "Source NAT Pools", "Published Services - VIPs",
     "Class Maps", "Policy Maps", "Service Policies", "IPS Actions", "DHCP Servers", "DHCP Reservations", "DHCP Relays",
     "Routes", "Route Maps", "Policy Routing", "SLA Monitors", "Tracks",
     "Local Users", "User Groups", "AAA Server Groups", "AAA Server Hosts", "AAA Authentication",
