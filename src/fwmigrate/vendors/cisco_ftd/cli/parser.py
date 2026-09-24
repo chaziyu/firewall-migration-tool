@@ -30,9 +30,6 @@ class CiscoFTDParser:
             return index + 1
         record = CiscoFTDInterface(
             name=match.group(1),
-            interface_type=self._interface_type(match.group(1)),
-            parent_interface=match.group(1).rsplit(".", 1)[0] if "." in match.group(1) else None,
-            vlan_id=int(match.group(1).rsplit(".", 1)[1]) if "." in match.group(1) and match.group(1).rsplit(".", 1)[1].isdigit() else None,
             raw_lines=[line],
             source_attributes={"raw_header": line, "source_line_number": index + 1},
         )
@@ -45,17 +42,23 @@ class CiscoFTDParser:
             lower = child.lower()
             if lower == "management-only":
                 record.management_only = True
+                record.explicit_fields.append("management_only")
             elif lower == "no management-only":
                 record.management_only = False
+                record.explicit_fields.append("management_only")
             elif len(parts) == 2 and lower_parts[0] == "nameif":
                 record.nameif = parts[1]
+                record.explicit_fields.append("nameif")
             elif len(parts) == 2 and lower_parts[0] == "security-level" and parts[1].isdigit():
                 record.security_level = int(parts[1])
+                record.explicit_fields.append("security_level")
             elif len(parts) >= 4 and lower_parts[:2] == ["ip", "address"]:
                 record.ip, record.mask = parts[2], parts[3]
+                record.explicit_fields.extend(("ip", "mask"))
                 if "standby" in lower_parts:
                     pos = lower_parts.index("standby")
                     record.standby_ip = parts[pos + 1] if pos + 1 < len(parts) else None
+                    record.explicit_fields.append("standby_ip")
             elif len(parts) >= 3 and lower_parts[:2] == ["ipv6", "address"]:
                 value = parts[2]
                 try:
@@ -67,9 +70,10 @@ class CiscoFTDParser:
                         standby = parts[position + 1] if position + 1 < len(parts) else None
                     record.ipv6_addresses.append(CiscoFTDIPv6Address(
                         address=str(address.ip), prefix_length=address.network.prefixlen,
-                        standby=standby, eui64="eui-64" in options,
-                        link_local="link-local" in options, raw=child,
+                        standby=standby, eui64=True if "eui-64" in options else None,
+                        link_local=True if "link-local" in options else None, raw=child,
                     ))
+                    record.explicit_fields.append("ipv6_addresses")
                 except ValueError:
                     record.source_attributes.setdefault("invalid_ipv6_addresses", []).append(child)
                     self.config.unsupported_evidence.append({
@@ -79,20 +83,28 @@ class CiscoFTDParser:
                     })
             elif len(parts) >= 2 and lower_parts[0] == "vlan" and parts[1].isdigit():
                 record.vlan_id = int(parts[1])
+                record.explicit_fields.append("vlan_id")
             elif lower_parts[:1] == ["channel-group"] and len(parts) >= 2 and parts[1].isdigit():
                 record.etherchannel_id = int(parts[1])
-                record.etherchannel_mode = parts[3] if len(parts) >= 4 and lower_parts[2] == "mode" else None
-                record.interface_type = "etherchannel-member"
+                if len(parts) >= 4 and lower_parts[2] == "mode":
+                    record.etherchannel_mode = parts[3]
+                    record.explicit_fields.append("etherchannel_mode")
+                record.explicit_fields.append("etherchannel_id")
             elif len(parts) == 2 and lower_parts[0] == "bridge-group" and parts[1].isdigit():
                 record.bridge_group = int(parts[1])
+                record.explicit_fields.append("bridge_group")
             elif len(parts) == 2 and lower_parts[0] == "mtu" and parts[1].isdigit():
                 record.mtu = int(parts[1])
+                record.explicit_fields.append("mtu")
             elif lower.startswith("description "):
                 record.description = child.split(maxsplit=1)[1]
+                record.explicit_fields.append("description")
             elif lower == "shutdown":
                 record.shutdown = True
+                record.explicit_fields.append("shutdown")
             elif lower == "no shutdown":
                 record.shutdown = False
+                record.explicit_fields.append("shutdown")
             else:
                 record.source_attributes.setdefault("unmodeled_lines", []).append(child)
                 self.config.unsupported_evidence.append({
@@ -103,21 +115,9 @@ class CiscoFTDParser:
             index += 1
         if record.nameif and record.nameif.lower() == "diagnostic":
             self.config.diagnostic_interface = record.name
+        record.explicit_fields = list(dict.fromkeys(record.explicit_fields))
         self.config.interfaces.append(record)
         return index
-
-    @staticmethod
-    def _interface_type(name: str) -> str:
-        lowered = name.lower()
-        if lowered.startswith("bvi"):
-            return "bvi"
-        if lowered.startswith("port-channel") or lowered.startswith("etherchannel"):
-            return "etherchannel"
-        if "." in name:
-            return "subinterface"
-        if lowered.startswith("management"):
-            return "management"
-        return "physical"
 
     def _parse_static_route(self, line: str, line_number: int) -> None:
         parts = line.split()
@@ -125,7 +125,8 @@ class CiscoFTDParser:
         offset = 1 if ipv6 else 0
         if len(parts) < offset + 4:
             self.config.static_routes.append(CiscoFTDStaticRoute(
-                name=f"route_{line_number}", raw_line=line,
+                name=f"route_{line_number}", address_family="ipv6" if ipv6 else "ipv4", raw_line=line,
+                source_attributes={"source_line_number": line_number},
             ))
             self.config.unsupported_evidence.append({
                 "source_path": "ftd-cli/routes",
@@ -141,29 +142,12 @@ class CiscoFTDParser:
         gateway = parts[gateway_index] if gateway_index < len(parts) else None
         distance_index = gateway_index + 1
         distance = int(parts[distance_index]) if distance_index < len(parts) and parts[distance_index].isdigit() else None
-        errors: list[str] = []
-        try:
-            if ipv6:
-                destination = str(ipaddress.IPv6Network(destination, strict=False))
-            else:
-                destination = str(ipaddress.IPv4Network(f"{destination}/{mask}", strict=False))
-        except ValueError:
-            errors.append("Invalid FTD static route destination")
-        if gateway:
-            try:
-                ipaddress.ip_address(gateway)
-            except ValueError:
-                errors.append("Invalid FTD static route next hop")
         self.config.static_routes.append(CiscoFTDStaticRoute(
             name=f"route_{line_number}", interface=interface, destination=destination,
             mask=mask, gateway=gateway, address_family="ipv6" if ipv6 else "ipv4",
             administrative_distance=distance, raw_line=line,
+            source_attributes={"source_line_number": line_number},
         ))
-        self.config.unsupported_evidence.extend({
-            "source_path": "ftd-cli/routes",
-            "source_name": f"route_{line_number}",
-            "reason": reason,
-        } for reason in errors)
 
     def parse_raw(self) -> CiscoFTDConfig:
         self.config = CiscoFTDConfig()
@@ -182,8 +166,8 @@ class CiscoFTDParser:
                 index = self._parse_interface_block(lines, index)
                 continue
 
-            if re.match(r"^(?:ipv6\s+)?route\s+", line, re.I):
-                self._parse_static_route(line, index + 1)
+            if re.match(r"^(?:ipv6\s+)?route(?:\s+|$)", line, re.I):
+                self._parse_static_route(raw, index + 1)
                 index += 1
                 continue
 
@@ -193,14 +177,14 @@ class CiscoFTDParser:
                 self.config.cmi_enabled = False
                 self.config.management_settings.append(CiscoFTDManagementSetting(
                     name="no", setting="management-interface convergence", values=[], raw_lines=[line],
-                    source_attributes={"raw_command": line, "negated": True},
+                    source_attributes={"source_line_number": index + 1, "raw_command": line, "negated": True},
                 ))
                 index += 1
                 continue
             if parts[0].lower() == "no":
                 self.config.management_settings.append(CiscoFTDManagementSetting(
                     name="no", setting="no", values=parts[1:], raw_lines=[line],
-                    source_attributes={"raw_command": line, "negated": True},
+                    source_attributes={"source_line_number": index + 1, "raw_command": line, "negated": True},
                 ))
                 index += 1
                 continue
@@ -221,7 +205,7 @@ class CiscoFTDParser:
             if lower_parts[0] in {"configure", "management", "show-network-style", "show"}:
                 self.config.management_settings.append(CiscoFTDManagementSetting(
                     name=parts[0], setting=" ".join(parts[:2]), values=parts[2:],
-                    raw_lines=[line], source_attributes={"raw_command": line},
+                    raw_lines=[line], source_attributes={"source_line_number": index + 1, "raw_command": line},
                 ))
             index += 1
         return self.config

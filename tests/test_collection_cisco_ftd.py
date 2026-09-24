@@ -406,11 +406,12 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkey
 
     analysis = CiscoFTDSourceReporter().analyze_source(source.source_text)
     assert analysis.config.routes[0].virtual_router == "blue"
-    assert any(item.source_attributes.get("parent_policy_id") == "ra-1" for item in analysis.config.native_resources)
+    assert any(item.source_attributes.get("parent_policy_id") == "ra-1"
+               for item in analysis.config.ra_vpn_address_assignment_settings)
     assert any(item.source_attributes.get("resource_type") == "default_actions"
                and item.source_attributes.get("parent_policy_id") == "acp-1" for item in analysis.config.native_resources)
-    assert any(item.source_attributes.get("resource_type") == "default_actions"
-               and item.source_attributes.get("parent_policy_id") == "prefilter-1" for item in analysis.config.native_resources)
+    assert any(item.source_attributes.get("parent_policy_id") == "prefilter-1"
+               for item in analysis.config.prefilter_default_actions)
     assert analysis.derived is not None and analysis.validation is not None
     assert isinstance(CiscoFTDSourceReporter().build_preview(analysis), dict)
     workbook = BytesIO()

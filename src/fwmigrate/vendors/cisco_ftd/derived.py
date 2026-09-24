@@ -7,6 +7,8 @@ from enum import Enum
 from typing import Any
 
 from .model import CiscoFTDConfig
+from .relationships.interface_topology import FTDInterfaceTopology, build_ftd_interface_topology
+from .transform.routes import NormalizedFTDRoute, normalize_ftd_routes
 
 
 class FTDReferenceKind(str, Enum):
@@ -30,6 +32,14 @@ class FTDReferenceKind(str, Enum):
     APPLICATION = "APPLICATION"
     URL_CATEGORY = "URL_CATEGORY"
     VLAN_OBJECT = "VLAN_OBJECT"
+    VIRTUAL_ROUTER = "VIRTUAL_ROUTER"
+    ADDRESS_POOL = "ADDRESS_POOL"
+    CERTIFICATE = "CERTIFICATE"
+    CERTIFICATE_MAP = "CERTIFICATE_MAP"
+    GROUP_POLICY = "GROUP_POLICY"
+    PREFILTER_POLICY = "PREFILTER_POLICY"
+    NETWORK_ANALYSIS_POLICY = "NETWORK_ANALYSIS_POLICY"
+    RAVPN_CONNECTION_PROFILE = "RAVPN_CONNECTION_PROFILE"
 
 
 @dataclass(frozen=True)
@@ -59,6 +69,8 @@ class FTDDerivedViews:
     source_plane_completeness: dict[str, str] = field(default_factory=dict)
     identity_relationships: tuple[dict[str, Any], ...] = ()
     vpn_relationships: tuple[dict[str, Any], ...] = ()
+    interface_topology: FTDInterfaceTopology = field(default_factory=FTDInterfaceTopology)
+    normalized_routes: tuple[NormalizedFTDRoute, ...] = ()
 
 
 def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
@@ -88,12 +100,21 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
         (FTDReferenceKind.INTRUSION_POLICY, config.intrusion_policies),
         (FTDReferenceKind.FILE_POLICY, config.file_policies),
         (FTDReferenceKind.VARIABLE_SET, config.variable_sets),
+        (FTDReferenceKind.SLA_MONITOR, config.sla_monitors),
         (FTDReferenceKind.VPN_ENDPOINT, config.s2s_vpn_endpoints),
         (FTDReferenceKind.IKE_POLICY, config.ike_policies),
         (FTDReferenceKind.IPSEC_PROPOSAL, config.ipsec_proposals),
         (FTDReferenceKind.APPLICATION, config.applications),
         (FTDReferenceKind.URL_CATEGORY, config.url_categories),
         (FTDReferenceKind.VLAN_OBJECT, config.vlan_objects),
+        (FTDReferenceKind.VIRTUAL_ROUTER, config.virtual_routers),
+        (FTDReferenceKind.ADDRESS_POOL, config.address_pools),
+        (FTDReferenceKind.CERTIFICATE, config.certificates),
+        (FTDReferenceKind.CERTIFICATE_MAP, config.certificate_maps),
+        (FTDReferenceKind.GROUP_POLICY, config.group_policies),
+        (FTDReferenceKind.PREFILTER_POLICY, config.prefilter_policies),
+        (FTDReferenceKind.NETWORK_ANALYSIS_POLICY, config.network_analysis_policies),
+        (FTDReferenceKind.RAVPN_CONNECTION_PROFILE, config.ra_vpn_connection_profiles),
     ):
         register(kind, records)
 
@@ -151,10 +172,10 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
     interface_or_zone = (FTDReferenceKind.INTERFACE, FTDReferenceKind.SECURITY_ZONE)
     any_network = frozenset({"any", "any-ip", "any4", "any6"})
     for group in config.network_groups:
-        for member in group.members:
+        for member in group.members or []:
             resolve(group, "members", member, network)
     for group in config.port_object_groups:
-        for member in group.members:
+        for member in group.members or []:
             resolve(group, "members", member, service)
 
     acp_rules = [rule for policy in config.access_control_policies for rule in (policy.rules or [])]
@@ -215,11 +236,60 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
                     resolve(rule, field_name, value, service)
 
     for route in config.routes:
+        virtual_router = route.virtual_router_ref or route.virtual_router
+        if virtual_router:
+            resolve(route, "virtual_router", virtual_router, (FTDReferenceKind.VIRTUAL_ROUTER,),
+                    special=frozenset({"global"}), scope=route.device_id)
         for field_name, kinds in (("interface", (FTDReferenceKind.INTERFACE,)), ("destination", network),
             ("gateway", network), ("sla_monitor", (FTDReferenceKind.SLA_MONITOR,))):
             value = getattr(route, field_name, None)
             if value is not None:
                 resolve(route, field_name, value, kinds, scope=route.device_id if field_name == "interface" else None)
+
+    for owner, field_name, values in (
+        *((vr, "interfaces", vr.interfaces or []) for vr in config.virtual_routers),
+        *((zone, "interfaces", zone.interfaces or []) for zone in config.ecmp_zones),
+        *((route, field, [getattr(route, field)]) for route in config.policy_based_routes
+          for field in ("virtual_router", "ingress_interface", "egress_interface", "path_interface", "sla_monitor") if getattr(route, field)),
+        *((route, "networks", route.networks or []) for route in config.policy_based_routes),
+    ):
+        kinds = ((FTDReferenceKind.SLA_MONITOR,) if field_name == "sla_monitor" else
+                 (FTDReferenceKind.VIRTUAL_ROUTER,) if field_name == "virtual_router" else
+                 network if field_name == "networks" else (FTDReferenceKind.INTERFACE,))
+        for value in values:
+            resolve(owner, field_name, value, kinds, scope=owner.device_id if field_name != "networks" else None)
+
+    for owner, fields in (
+        *((item, (("ike_policies", FTDReferenceKind.IKE_POLICY), ("certificates", FTDReferenceKind.CERTIFICATE)))
+          for item in config.s2s_ike_settings),
+        *((item, (("ipsec_proposals", FTDReferenceKind.IPSEC_PROPOSAL),)) for item in config.s2s_ipsec_settings),
+        *((item, (("address_pools", FTDReferenceKind.ADDRESS_POOL),)) for item in config.ra_vpn_address_assignment_settings),
+        *((item, (("realm", FTDReferenceKind.REALM),
+                  ("address_pools", FTDReferenceKind.ADDRESS_POOL), ("split_tunnel", network)))
+          for item in config.group_policies),
+        *((item, (("realm", FTDReferenceKind.REALM),
+                  ("address_pools", FTDReferenceKind.ADDRESS_POOL), ("default_group_policy", FTDReferenceKind.GROUP_POLICY),
+                  ("certificates", FTDReferenceKind.CERTIFICATE), ("certificate_maps", FTDReferenceKind.CERTIFICATE_MAP)))
+          for item in config.ra_vpn_connection_profiles),
+        *((item, (("access_interfaces", FTDReferenceKind.INTERFACE),
+                  ("certificates", FTDReferenceKind.CERTIFICATE), ("connection_profiles", FTDReferenceKind.RAVPN_CONNECTION_PROFILE),
+                  ("group_policies", FTDReferenceKind.GROUP_POLICY), ("address_pools", FTDReferenceKind.ADDRESS_POOL),
+                  ("realms", FTDReferenceKind.REALM))) for item in config.ra_vpn_policies),
+        *((item, (("prefilter_policy", FTDReferenceKind.PREFILTER_POLICY),
+                  ("network_analysis_policy", FTDReferenceKind.NETWORK_ANALYSIS_POLICY)))
+          for item in config.access_control_policies),
+        *((item, (("interface", FTDReferenceKind.INTERFACE),
+                  ("vti", FTDReferenceKind.INTERFACE), ("protected_networks", network)))
+          for item in config.s2s_vpn_endpoints),
+    ):
+        for field_name, kind in fields:
+            values = getattr(owner, field_name, None)
+            if values is None:
+                continue
+            for value in values if isinstance(values, list) else [values]:
+                kinds = kind if isinstance(kind, tuple) else (kind,)
+                resolve(owner, field_name, value, kinds,
+                        scope=owner.device_id if FTDReferenceKind.INTERFACE in kinds else None)
 
     zone_interfaces = {zone.name: tuple(ref.name or ref.source_id for ref in (zone.interfaces or []) if ref.name or ref.source_id)
                        for zone in config.security_zones}
@@ -245,7 +315,8 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
         "network_objects": "present" if config.network_addresses or config.network_groups else "not_available",
         "security_zones": "present" if config.security_zones else "not_available",
         "interfaces": "present" if config.source_interfaces or config.device_interfaces or config.interfaces else "not_available",
-        "acp": "present" if acp_rules else "not_available_from_source_plane",
+        "acp": ("partial" if acp_rules and any(policy.rules is None for policy in config.access_control_policies)
+                else "present" if acp_rules else "not_available_from_source_plane"),
         "nat": "present" if nat_rules else "not_available_from_source_plane",
         **{key: "present" if getattr(config, field_name) else "not_available_from_source_plane" for field_name, key in (
             ("time_ranges", "time_ranges"), ("intrusion_policies", "intrusion"), ("file_policies", "file_policy"),
@@ -256,6 +327,9 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
     }
     if config.source_plane == "fmc-rest-bundle" and not config.collection_metadata.provided:
         expected["network_objects"] = "unknown"
+        expected["acp"] = "partial" if acp_rules and any(
+            policy.rules is None for policy in config.access_control_policies) else "unknown"
+        expected["nat"] = "unknown"
     if config.source_plane == "fmc-rest-bundle" and not config.collection_metadata.provided:
         expected.update({family: "unknown" for family in ("hosts", "networks", "ranges", "network_objects")})
     if config.collection_metadata.provided:
@@ -292,6 +366,8 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
                 expected[family] = "present"
 
     return FTDDerivedViews(
+        interface_topology=build_ftd_interface_topology(config.interfaces),
+        normalized_routes=normalize_ftd_routes(config.static_routes),
         resolved_references=tuple(resolved), zone_interfaces=zone_interfaces,
         acp_relationships=tuple({"policy_id": rule.policy_id, "policy_name": rule.policy_name,
             "rule_id": rule.source_id, "rule_name": rule.name,

@@ -53,6 +53,10 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
     workbook = Workbook()
     workbook.remove(workbook.active)
     config = result.config
+    derived = getattr(result, "derived", None)
+    topologies = {item.name: item for item in getattr(getattr(derived, "interface_topology", None), "interfaces", ())}
+    normalized_routes = {item.source_name: item.normalized_destination
+                         for item in getattr(derived, "normalized_routes", ())}
     rows = {
         "Managed Objects": [(x.name, x.source_id, x.address_type, x.value, x.description, x.address_family,
             x.fqdn_lookup_type, x.override_metadata, x.source_plane) for x in config.network_addresses],
@@ -63,9 +67,15 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
                      + [(x.name, None, None, None, None, None, x.description, x.override_metadata,
                          _refs(x.members), x.source_plane) for x in config.port_object_groups]),
         "Zones": [(x.name, x.interfaces, x.source_plane) for x in config.security_zones],
-        "Interfaces": [(x.name, x.interface_type, x.address, x.zone.name if x.zone else None, x.source_plane) for x in config.device_interfaces]
-                      + [(x.name, x.interface_type, x.address, x.zone, x.source_plane) for x in config.source_interfaces],
-        "Routes": [(x.name, *(ref.name or ref.source_id if ref else None for ref in (x.interface, x.destination, x.gateway)), x.source_plane) for x in config.routes],
+        "Interfaces": [(x.name, x.interface_type, x.address, x.zone.name if x.zone else None, x.source_plane, None, None, None) for x in config.device_interfaces]
+                      + [(x.name, x.interface_type, x.address, x.zone, x.source_plane, None, None, None) for x in config.source_interfaces]
+                      + [(item.name, None, item.ip, None, config.source_plane, topology.kind, topology.parent, item.vlan_id)
+                         for item in config.interfaces
+                         for topology in (topologies[item.name],) if item.name in topologies],
+        "Routes": [(x.name, *(ref.name or ref.source_id if ref else None for ref in
+            (x.interface, x.destination, x.gateway, x.sla_monitor)), x.source_plane, x.address_family, None, None) for x in config.routes]
+            + [(route.name, route.interface, route.destination, route.gateway, None, config.source_plane,
+                route.address_family, route.mask, normalized_routes.get(route.name)) for route in config.static_routes],
         "ACP Rules": [(rule.policy_name, rule.name, rule.source_id, rule.enabled, rule.position,
             rule.section, rule.category, rule.action, _refs(rule.source_zones), _refs(rule.destination_zones),
             _refs(rule.source_networks), _refs(rule.destination_networks), _refs(rule.source_ports),
@@ -87,7 +97,14 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
         "intrusion_policies", "intrusion_rule_overrides", "file_policies",
         "decryption_policies", "dns_policies", "fmc_user_roles", "fmc_users", "dhcp_servers", "realms",
         "realm_user_groups", "realm_users", "local_realm_users", "s2s_vpn_topologies", "s2s_vpn_endpoints",
-        "ike_policies", "ipsec_proposals", "ra_vpn_policies", "ra_vpn_connection_profiles", "native_resources")
+        "ike_policies", "ipsec_proposals", "ra_vpn_policies", "ra_vpn_connection_profiles",
+        "virtual_routers", "sla_monitors", "ecmp_zones", "policy_based_routes", "certificates",
+        "certificate_maps", "certificate_enrollments", "address_pools", "group_policies",
+        "s2s_ike_settings", "s2s_ipsec_settings", "s2s_advanced_settings", "ra_vpn_ipsec_settings",
+        "ldap_attribute_maps", "ra_vpn_load_balance_settings", "ra_vpn_address_assignment_settings",
+        "secure_client_settings", "ra_vpn_ipsec_crypto_maps", "prefilter_policies", "prefilter_rules",
+        "prefilter_default_actions", "network_analysis_policies", "inspector_configs",
+        "inspector_override_configs", "native_resources")
     for name in SHEET_ORDER:
         sheet = workbook.create_sheet(name)
         if name == "Summary":

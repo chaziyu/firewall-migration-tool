@@ -21,7 +21,7 @@ class CiscoFTDInterface(BaseModel):
     etherchannel_mode: Optional[str] = None
     bridge_group: Optional[int] = None
     nameif: Optional[str] = None
-    management_only: bool = False
+    management_only: Optional[bool] = None
     security_level: Optional[int] = None
     ip: Optional[str] = None
     mask: Optional[str] = None
@@ -29,7 +29,8 @@ class CiscoFTDInterface(BaseModel):
     ipv6_addresses: List["CiscoFTDIPv6Address"] = Field(default_factory=list)
     description: Optional[str] = None
     mtu: Optional[int] = None
-    shutdown: bool = False
+    shutdown: Optional[bool] = None
+    explicit_fields: List[str] = Field(default_factory=list)
     raw_lines: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
@@ -38,8 +39,8 @@ class CiscoFTDIPv6Address(BaseModel):
     address: str
     prefix_length: Optional[int] = None
     standby: Optional[str] = None
-    eui64: bool = False
-    link_local: bool = False
+    eui64: Optional[bool] = None
+    link_local: Optional[bool] = None
     raw: str
 
 
@@ -49,7 +50,7 @@ class CiscoFTDStaticRoute(BaseModel):
     destination: Optional[str] = None
     mask: Optional[str] = None
     gateway: Optional[str] = None
-    address_family: str = "ipv4"
+    address_family: Optional[str] = None
     administrative_distance: Optional[int] = None
     raw_line: str
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -128,6 +129,9 @@ class CiscoFTDInterfaceSource(CiscoFTDSourceRecord):
     interface_type: Optional[str] = None
     address: Optional[str] = None
     zone: Optional[str] = None
+    management_only: Optional[bool] = None
+    shutdown: Optional[bool] = None
+    ipv6_addresses: Optional[List[CiscoFTDIPv6Address]] = None
 
 
 class CiscoFTDRoute(CiscoFTDSourceRecord):
@@ -137,11 +141,92 @@ class CiscoFTDRoute(CiscoFTDSourceRecord):
     address_family: Optional[str] = None
     metric: Optional[int] = None
     virtual_router: Optional[str] = None
-    sla_monitor: Optional[str] = None
+    virtual_router_ref: Optional[CiscoFTDReference] = None
+    sla_monitor: Optional[CiscoFTDReference] = None
     device_id: Optional[str] = None
 
 
 class CiscoFTDApplication(CiscoFTDSourceRecord): pass
+class CiscoFTDSLAMonitor(CiscoFTDSourceRecord): pass
+class CiscoFTDVirtualRouter(CiscoFTDSourceRecord):
+    interfaces: Optional[List[CiscoFTDReference]] = None
+
+
+class CiscoFTDPolicyBasedRoute(CiscoFTDSourceRecord):
+    virtual_router: Optional[CiscoFTDReference] = None
+    ingress_interface: Optional[CiscoFTDReference] = None
+    egress_interface: Optional[CiscoFTDReference] = None
+    path_interface: Optional[CiscoFTDReference] = None
+    networks: Optional[List[CiscoFTDReference]] = None
+    sla_monitor: Optional[CiscoFTDReference] = None
+    position: Optional[int] = None
+
+
+class CiscoFTDECMPZone(CiscoFTDSourceRecord):
+    interfaces: Optional[List[CiscoFTDReference]] = None
+
+
+class CiscoFTDCertificate(CiscoFTDSourceRecord):
+    certificate_type: Optional[str] = None
+    source_collection: Optional[str] = None
+    issuer: Optional[Any] = None
+    subject: Optional[Any] = None
+    validity: Optional[Dict[str, Any]] = None
+    certificate_metadata: Optional[Dict[str, Any]] = None
+    private_key_present: Optional[bool] = None
+
+
+class CiscoFTDCertificateMap(CiscoFTDSourceRecord): pass
+class CiscoFTDCertificateEnrollment(CiscoFTDSourceRecord): pass
+
+
+class CiscoFTDAddressPool(CiscoFTDSourceRecord):
+    address_family: Optional[str] = None
+    source_representation: Optional[Any] = None
+    start_address: Optional[str] = None
+    end_address: Optional[str] = None
+    override_metadata: Optional[Dict[str, Any]] = None
+
+
+class CiscoFTDGroupPolicy(CiscoFTDSourceRecord):
+    vpn_access: Optional[Any] = None
+    realm: Optional[CiscoFTDReference] = None
+    aaa_server_group: Optional[CiscoFTDReference] = None
+    address_pools: Optional[List[CiscoFTDReference]] = None
+    split_tunnel: Optional[List[CiscoFTDReference]] = None
+    secure_client: Optional[List[CiscoFTDReference]] = None
+
+
+class CiscoFTDS2SIKESettings(CiscoFTDSourceRecord):
+    ike_policies: Optional[List[CiscoFTDReference]] = None
+    certificates: Optional[List[CiscoFTDReference]] = None
+    psk_present: Optional[bool] = None
+
+
+class CiscoFTDS2SIPsecSettings(CiscoFTDSourceRecord):
+    ipsec_proposals: Optional[List[CiscoFTDReference]] = None
+
+
+class CiscoFTDS2SAdvancedSettings(CiscoFTDSourceRecord): pass
+class CiscoFTDRAVPNIPsecSettings(CiscoFTDSourceRecord): pass
+class CiscoFTDLDAPAttributeMap(CiscoFTDSourceRecord): pass
+class CiscoFTDRAVPNLoadBalanceSettings(CiscoFTDSourceRecord): pass
+class CiscoFTDRAVPNAddressAssignmentSettings(CiscoFTDSourceRecord):
+    address_pools: Optional[List[CiscoFTDReference]] = None
+
+
+class CiscoFTDSecureClientSettings(CiscoFTDSourceRecord): pass
+class CiscoFTDRAVPNIPsecCryptoMap(CiscoFTDSourceRecord): pass
+class CiscoFTDPrefilterPolicy(CiscoFTDSourceRecord): pass
+class CiscoFTDPrefilterRule(CiscoFTDSourceRecord):
+    position: Optional[int] = None
+    action: Optional[str] = None
+    conditions: Optional[Dict[str, Any]] = None
+    references: Optional[List[CiscoFTDReference]] = None
+class CiscoFTDPrefilterDefaultAction(CiscoFTDSourceRecord): pass
+class CiscoFTDNetworkAnalysisPolicy(CiscoFTDSourceRecord): pass
+class CiscoFTDInspectorConfig(CiscoFTDSourceRecord): pass
+class CiscoFTDInspectorOverrideConfig(CiscoFTDSourceRecord): pass
 class CiscoFTDFilePolicy(CiscoFTDSourceRecord): pass
 class CiscoFTDVariableSet(CiscoFTDSourceRecord): pass
 class CiscoFTDURLCategory(CiscoFTDSourceRecord): pass
@@ -189,6 +274,8 @@ class CiscoFTDAccessControlRule(CiscoFTDSourceRecord):
 
 class CiscoFTDAccessControlPolicy(CiscoFTDSourceRecord):
     rules: Optional[List[CiscoFTDAccessControlRule]] = None
+    prefilter_policy: Optional[CiscoFTDReference] = None
+    network_analysis_policy: Optional[CiscoFTDReference] = None
 
 
 class CiscoFTDFDMNATRule(CiscoFTDSourceRecord):
@@ -274,11 +361,35 @@ class CiscoFTDRealmUserGroup(CiscoFTDSourceRecord): pass
 class CiscoFTDRealmUser(CiscoFTDSourceRecord): pass
 class CiscoFTDLocalRealmUser(CiscoFTDSourceRecord): pass
 class CiscoFTDS2SVPNTopology(CiscoFTDSourceRecord): pass
-class CiscoFTDS2SVPNEndpoint(CiscoFTDSourceRecord): pass
-class CiscoFTDIKEPolicy(CiscoFTDSourceRecord): pass
-class CiscoFTDIPsecProposal(CiscoFTDSourceRecord): pass
-class CiscoFTDRAVPNPolicy(CiscoFTDSourceRecord): pass
-class CiscoFTDRAVPNConnectionProfile(CiscoFTDSourceRecord): pass
+class CiscoFTDS2SVPNEndpoint(CiscoFTDSourceRecord):
+    device: Optional[CiscoFTDReference] = None
+    interface: Optional[CiscoFTDReference] = None
+    vti: Optional[CiscoFTDReference] = None
+    protected_networks: Optional[List[CiscoFTDReference]] = None
+class CiscoFTDIKEPolicy(CiscoFTDSourceRecord):
+    ike_version: Optional[str] = None
+
+
+class CiscoFTDIPsecProposal(CiscoFTDSourceRecord):
+    ike_version: Optional[str] = None
+class CiscoFTDRAVPNPolicy(CiscoFTDSourceRecord):
+    target_devices: Optional[List[CiscoFTDReference]] = None
+    access_interfaces: Optional[List[CiscoFTDReference]] = None
+    certificates: Optional[List[CiscoFTDReference]] = None
+    connection_profiles: Optional[List[CiscoFTDReference]] = None
+    group_policies: Optional[List[CiscoFTDReference]] = None
+    address_pools: Optional[List[CiscoFTDReference]] = None
+    realms: Optional[List[CiscoFTDReference]] = None
+
+
+class CiscoFTDRAVPNConnectionProfile(CiscoFTDSourceRecord):
+    parent_policy_id: Optional[str] = None
+    realm: Optional[CiscoFTDReference] = None
+    authorization: Optional[CiscoFTDReference] = None
+    address_pools: Optional[List[CiscoFTDReference]] = None
+    default_group_policy: Optional[CiscoFTDReference] = None
+    certificates: Optional[List[CiscoFTDReference]] = None
+    certificate_maps: Optional[List[CiscoFTDReference]] = None
 class CiscoFTDNativeResource(CiscoFTDSourceRecord): pass
 
 
@@ -318,6 +429,30 @@ class CiscoFTDConfig(BaseModel):
     protocol_port_objects: List[CiscoFTDProtocolPortObject] = Field(default_factory=list)
     port_object_groups: List[CiscoFTDPortObjectGroup] = Field(default_factory=list)
     applications: List[CiscoFTDApplication] = Field(default_factory=list)
+    sla_monitors: List[CiscoFTDSLAMonitor] = Field(default_factory=list)
+    virtual_routers: List[CiscoFTDVirtualRouter] = Field(default_factory=list)
+    policy_based_routes: List[CiscoFTDPolicyBasedRoute] = Field(default_factory=list)
+    ecmp_zones: List[CiscoFTDECMPZone] = Field(default_factory=list)
+    certificates: List[CiscoFTDCertificate] = Field(default_factory=list)
+    certificate_maps: List[CiscoFTDCertificateMap] = Field(default_factory=list)
+    certificate_enrollments: List[CiscoFTDCertificateEnrollment] = Field(default_factory=list)
+    address_pools: List[CiscoFTDAddressPool] = Field(default_factory=list)
+    group_policies: List[CiscoFTDGroupPolicy] = Field(default_factory=list)
+    s2s_ike_settings: List[CiscoFTDS2SIKESettings] = Field(default_factory=list)
+    s2s_ipsec_settings: List[CiscoFTDS2SIPsecSettings] = Field(default_factory=list)
+    s2s_advanced_settings: List[CiscoFTDS2SAdvancedSettings] = Field(default_factory=list)
+    ra_vpn_ipsec_settings: List[CiscoFTDRAVPNIPsecSettings] = Field(default_factory=list)
+    ldap_attribute_maps: List[CiscoFTDLDAPAttributeMap] = Field(default_factory=list)
+    ra_vpn_load_balance_settings: List[CiscoFTDRAVPNLoadBalanceSettings] = Field(default_factory=list)
+    ra_vpn_address_assignment_settings: List[CiscoFTDRAVPNAddressAssignmentSettings] = Field(default_factory=list)
+    secure_client_settings: List[CiscoFTDSecureClientSettings] = Field(default_factory=list)
+    ra_vpn_ipsec_crypto_maps: List[CiscoFTDRAVPNIPsecCryptoMap] = Field(default_factory=list)
+    prefilter_policies: List[CiscoFTDPrefilterPolicy] = Field(default_factory=list)
+    prefilter_rules: List[CiscoFTDPrefilterRule] = Field(default_factory=list)
+    prefilter_default_actions: List[CiscoFTDPrefilterDefaultAction] = Field(default_factory=list)
+    network_analysis_policies: List[CiscoFTDNetworkAnalysisPolicy] = Field(default_factory=list)
+    inspector_configs: List[CiscoFTDInspectorConfig] = Field(default_factory=list)
+    inspector_override_configs: List[CiscoFTDInspectorOverrideConfig] = Field(default_factory=list)
     variable_sets: List[CiscoFTDVariableSet] = Field(default_factory=list)
     url_categories: List[CiscoFTDURLCategory] = Field(default_factory=list)
     vlan_objects: List[CiscoFTDVLANObject] = Field(default_factory=list)

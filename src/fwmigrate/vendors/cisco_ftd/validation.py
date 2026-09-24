@@ -31,6 +31,11 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
     issues.extend(FTDValidationIssue("warning", "unsupported", str(item.get("reason", "Unsupported source evidence")),
                                      config.source_plane, str(item.get("source_path", "")))
                   for item in config.unsupported_evidence)
+    issues.extend(FTDValidationIssue("warning", item.category, item.message, config.source_plane, item.interface)
+                  for item in derived.interface_topology.issues)
+    issues.extend(FTDValidationIssue("warning", "invalid-route", item.issue or "Invalid FTD static route",
+                                     config.source_plane, item.source_name)
+                  for item in derived.normalized_routes if item.issue)
     return FTDValidationResult(tuple(issues))
 
 
