@@ -80,19 +80,34 @@ class CiscoFTDReference(BaseModel):
 class CiscoFTDNetworkAddress(CiscoFTDSourceRecord):
     address_type: Optional[str] = None
     value: Optional[Any] = None
+    description: Optional[str] = None
+    fqdn_lookup_type: Optional[str] = None
+    address_family: Optional[str] = None
+    override_metadata: Optional[Dict[str, Any]] = None
 
 
 class CiscoFTDNetworkGroup(CiscoFTDSourceRecord):
     members: Optional[List[CiscoFTDReference]] = None
+    literal_members: Optional[List[CiscoFTDReference]] = None
+    description: Optional[str] = None
+    override_metadata: Optional[Dict[str, Any]] = None
 
 
 class CiscoFTDProtocolPortObject(CiscoFTDSourceRecord):
     protocol: Optional[str] = None
     ports: Optional[List[Any]] = None
+    port: Optional[Any] = None
+    end_port: Optional[Any] = None
+    icmp_type: Optional[Any] = None
+    icmp_code: Optional[Any] = None
+    description: Optional[str] = None
+    override_metadata: Optional[Dict[str, Any]] = None
 
 
 class CiscoFTDPortObjectGroup(CiscoFTDSourceRecord):
     members: Optional[List[CiscoFTDReference]] = None
+    description: Optional[str] = None
+    override_metadata: Optional[Dict[str, Any]] = None
 
 
 class CiscoFTDSecurityZone(CiscoFTDSourceRecord):

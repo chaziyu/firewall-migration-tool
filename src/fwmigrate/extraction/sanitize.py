@@ -99,7 +99,9 @@ def sanitize_source_attributes(attrs: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(attrs, dict):
         return attrs
 
-    return {key: sanitize_source_value(str(key), value) for key, value in attrs.items()}
+    has_generator_id = "gid" in attrs  # Snort GID/SID pairs identify configured signatures.
+    return {key: value if has_generator_id and str(key).lower() == "sid" and type(value) is int
+            else sanitize_source_value(str(key), value) for key, value in attrs.items()}
 
 
 def sanitize_raw_text(text: str) -> str:

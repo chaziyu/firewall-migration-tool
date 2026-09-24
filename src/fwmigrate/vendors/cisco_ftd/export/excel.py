@@ -34,10 +34,14 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
     workbook.remove(workbook.active)
     config = result.config
     rows = {
-        "Managed Objects": [(x.name, x.source_id, x.address_type, x.source_plane) for x in config.network_addresses],
-        "Object Groups": [(x.name, [(member.source_id, member.name, member.source_type) for member in (x.members or [])], x.source_plane) for x in config.network_groups],
-        "Services": ([(x.name, x.protocol, x.ports, x.source_plane) for x in config.protocol_port_objects]
-                     + [(x.name, [(member.source_id, member.name, member.source_type) for member in (x.members or [])], None, x.source_plane) for x in config.port_object_groups]),
+        "Managed Objects": [(x.name, x.source_id, x.address_type, x.value, x.description, x.address_family,
+            x.fqdn_lookup_type, x.override_metadata, x.source_plane) for x in config.network_addresses],
+        "Object Groups": [(x.name, _refs(x.members), _refs(x.literal_members), x.description,
+            x.override_metadata, x.source_plane) for x in config.network_groups],
+        "Services": ([(x.name, x.protocol, x.port if x.port is not None else x.ports, x.end_port, x.icmp_type, x.icmp_code,
+            x.description, x.override_metadata, None, x.source_plane) for x in config.protocol_port_objects]
+                     + [(x.name, None, None, None, None, None, x.description, x.override_metadata,
+                         _refs(x.members), x.source_plane) for x in config.port_object_groups]),
         "Zones": [(x.name, x.interfaces, x.source_plane) for x in config.security_zones],
         "Interfaces": [(x.name, x.interface_type, x.address, x.zone.name if x.zone else None, x.source_plane) for x in config.device_interfaces]
                       + [(x.name, x.interface_type, x.address, x.zone, x.source_plane) for x in config.source_interfaces],

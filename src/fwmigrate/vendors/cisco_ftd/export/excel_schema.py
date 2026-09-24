@@ -4,9 +4,9 @@ SHEET_ORDER = (
 )
 
 SHEET_HEADERS = {
-    "Managed Objects": ("Name", "ID", "Type", "Source Plane"),
-    "Object Groups": ("Name", "Members", "Source Plane"),
-    "Services": ("Name", "Protocol", "Ports", "Source Plane"),
+    "Managed Objects": ("Name", "ID", "Type", "Value", "Description", "Address Family", "FQDN Lookup Type", "Overrides", "Source Plane"),
+    "Object Groups": ("Name", "Members", "Literal Members", "Description", "Overrides", "Source Plane"),
+    "Services": ("Name", "Protocol", "Port", "End Port", "ICMP Type", "ICMP Code", "Description", "Overrides", "Members", "Source Plane"),
     "Zones": ("Name", "Interfaces", "Source Plane"),
     "Interfaces": ("Name", "Type", "Address", "Zone", "Source Plane"),
     "Routes": ("Name", "Interface", "Destination", "Gateway", "Source Plane"),

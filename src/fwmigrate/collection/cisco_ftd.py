@@ -24,7 +24,7 @@ class CiscoFTDCollector:
     )
     # FMC roots are grouped by ownership so collection completeness stays diagnosable.
     _domain_objects = {
-        "networkaddresses": "object/networkaddresses", "hosts": "object/hosts", "networks": "object/networks", "ranges": "object/ranges",
+        "networkaddresses": "object/networkaddresses",
         "networkgroups": "object/networkgroups", "protocolportobjects": "object/protocolportobjects",
         "portobjectgroups": "object/portobjectgroups", "securityzones": "object/securityzones",
         "interfacegroups": "object/interfacegroups",
@@ -32,23 +32,35 @@ class CiscoFTDCollector:
         "realms": "object/realms", "realmusergroups": "object/realmusergroups",
         "realmusers": "object/realmusers", "localrealmusers": "object/localrealmusers",
         "slamonitors": "object/slamonitors",
+        "dhcpipv6pools": "object/dhcpipv6pools",
+        "ipv4addresspools": "object/ipv4addresspools", "ipv6addresspools": "object/ipv6addresspools",
+        "grouppolicies": "object/grouppolicies", "certificatemaps": "object/certificatemaps",
+        "certenrollments": "object/certenrollments", "internalcertificates": "object/internalcertificates",
+        "ikev1policies": "object/ikev1policies", "ikev2policies": "object/ikev2policies",
+        "ikev1ipsecproposals": "object/ikev1ipsecproposals", "ikev2ipsecproposals": "object/ikev2ipsecproposals",
+        "customsiurllists": "object/customsiurllists", "customsiiplists": "object/customsiiplists",
+        "siurllists": "object/siurllists", "siurlfeeds": "object/siurlfeeds",
         "variablesets": "object/variablesets", "urlcategories": "object/urlcategories",
     }
     _domain_policies = {
         "filepolicies": "policy/filepolicies", "decryptionpolicies": "policy/decryptionpolicies",
         "dnspolicies": "policy/dnspolicies", "intrusionpolicies": "policy/intrusionpolicies",
         "s2svpns": "policy/ftds2svpns", "ravpns": "policy/ravpns",
+        "prefilterpolicies": "policy/prefilterpolicies", "identitypolicies": "policy/identitypolicies",
+        "networkanalysispolicies": "policy/networkanalysispolicies",
     }
     _domain_administration = {
         "fmc_users": "users/users", "fmc_roles": "users/authroles",
     }
     _policy_children = {
-        "filepolicies": ("rules", "filepolicyrules"),
-        "decryptionpolicies": ("rules", "decryptionrules"),
-        "dnspolicies": ("rules", "dnsrules"),
-        "intrusionpolicies": ("rule_groups", "intrusionrulegroups"),
+        "filepolicies": ("rules", "filerules?expanded=true"),
+        "decryptionpolicies": ("rules", "decryptionpolicyrules?expanded=true"),
+        "dnspolicies": ("rules", "allowdnsrules?expanded=true"),
+        "intrusionpolicies": ("rule_groups", "intrusionrulegroups?expanded=true"),
         "s2svpns": ("endpoints", "endpoints"),
-        "ravpns": ("connection_profiles", "ra-vpn-connection-profiles"),
+        "ravpns": ("connection_profiles", "connectionprofiles?expanded=true"),
+        "prefilterpolicies": ("rules", "prefilterrules?expanded=true"),
+        "networkanalysispolicies": ("inspectorconfigs", "inspectorconfigs?expanded=true"),
     }
 
     def validate_options(self, connection):
@@ -136,7 +148,7 @@ class CiscoFTDCollector:
             session, base, domain = self._session(options)
             prefix = f'/api/fmc_config/v1/domain/{domain["id"]}'
             bundle = {"format": FMC_BUNDLE_FORMAT, "source": "fmc-rest-api", "domain": domain,
-                      "objects": {}, "access_policies": [], "nat_policies": [], "devices": []}
+                      "objects": {}, "access_policies": [], "nat_policies": [], "devices": [], "coverage": {}}
             parts = []
             # Device ownership is collected first; device child resources stay attached to each UUID.
             self._collect_family(session, base, prefix + "/devices/devicerecords", bundle, "devices", parts)
@@ -147,19 +159,41 @@ class CiscoFTDCollector:
                     continue
                 device["resources"] = {}
                 for key, suffix in (("static_routes", f"devices/devicerecords/{device_id}/routing/staticroutes"),
+                                    ("ipv6_static_routes", f"devices/devicerecords/{device_id}/routing/ipv6staticroutes"),
                                     ("ftd_interfaces", f"devices/devicerecords/{device_id}/ftdallinterfaces"),
+                                    ("virtual_tunnel_interfaces", f"devices/devicerecords/{device_id}/virtualtunnelinterfaces"),
                                     ("dhcp_servers", f"devices/devicerecords/{device_id}/dhcp/dhcpserver"),
+                                    ("dhcp_relay_settings", f"devices/devicerecords/{device_id}/dhcp/dhcprelaysettings"),
                                     ("ecmp_zones", f"devices/devicerecords/{device_id}/routing/ecmpzones"),
-                                    ("pbr_policies", f"devices/devicerecords/{device_id}/routing/policybasedroutes")):
+                                    ("pbr_policies", f"devices/devicerecords/{device_id}/routing/policybasedroutes"),
+                                    ("virtual_routers", f"devices/devicerecords/{device_id}/routing/virtualrouters")):
                     self._collect_family(session, base, prefix + "/" + suffix, device["resources"], key, parts,
                                          f"device/{device_id}/{key}")
+                for vr in device["resources"]["virtual_routers"]:
+                    vr_id = str(vr.get("id", ""))
+                    if not re.fullmatch(r"[A-Za-z0-9_-]+", vr_id):
+                        parts.append(CollectionPart(f"device/{device_id}/virtual_router/unknown", "FAILED", False))
+                        continue
+                    vr["resources"] = {}
+                    for key, endpoint in (("static_routes", "staticroutes"), ("pbr_policies", "policybasedroutes"),
+                                          ("ecmp_zones", "ecmpzones")):
+                        path = prefix + f"/devices/devicerecords/{device_id}/routing/virtualrouters/{vr_id}/{endpoint}"
+                        self._collect_family(session, base, path, vr["resources"], key, parts,
+                                             f"device/{device_id}/virtual_router/{vr_id}/{key}")
             for roots, target in ((self._domain_objects, bundle["objects"]),
                                   (self._domain_policies, bundle["objects"]),
                                   (self._domain_administration, bundle)):
                 for name, path in roots.items():
                     self._collect_family(session, base, prefix + "/" + path, target, name, parts)
+            self._collect_family(session, base, prefix + "/devices/certificates?expanded=true", bundle["objects"],
+                                 "device_certificates", parts)
             self._collect_family(session, base, prefix + "/policy/accesspolicies", bundle, "access_policies", parts)
             self._collect_family(session, base, prefix + "/policy/ftdnatpolicies", bundle, "nat_policies", parts)
+            for policy in bundle["access_policies"]:
+                policy_id = str(policy.get("id", ""))
+                if re.fullmatch(r"[A-Za-z0-9_-]+", policy_id):
+                    self._collect_family(session, base, prefix + f"/policy/accesspolicies/{policy_id}/defaultactions?expanded=true",
+                                         policy, "default_actions", parts, f"accesspolicies/{policy_id}/default_actions")
             for policy in bundle["access_policies"]:
                 if not re.fullmatch(r"[A-Za-z0-9_-]+", str(policy.get("id", ""))):
                     parts.append(CollectionPart("access_rules", "FAILED", False))
@@ -175,6 +209,33 @@ class CiscoFTDCollector:
                     path = f'/policy/{family}/{policy_id}/{endpoint}'
                     self._collect_family(session, base, prefix + path, policy, key, parts,
                                          f"{family}/{policy_id}/{key}")
+                    if family == "intrusionpolicies":
+                        self._collect_family(session, base, prefix + f"/policy/intrusionpolicies/{policy_id}/intrusionrules?expanded=true",
+                                             policy, "rules", parts, f"intrusionpolicies/{policy_id}/rules")
+                    elif family == "dnspolicies":
+                        self._collect_family(session, base, prefix + f"/policy/dnspolicies/{policy_id}/blockdnsrules?expanded=true",
+                                             policy, "block_rules", parts, f"dnspolicies/{policy_id}/block_rules")
+                    elif family == "s2svpns":
+                        for key, endpoint in (("ike_settings", "ikesettings"), ("ipsec_settings", "ipsecsettings")):
+                            self._collect_family(session, base, prefix + f"/policy/ftds2svpns/{policy_id}/{endpoint}?expanded=true",
+                                                 policy, key, parts, f"s2svpns/{policy_id}/{key}")
+                        self._collect_family(session, base, prefix + f"/policy/ftds2svpns/{policy_id}/advancedsettings?expanded=true",
+                                             policy, "advanced_settings", parts, f"s2svpns/{policy_id}/advanced_settings")
+                    elif family == "ravpns":
+                        for key, endpoint in (("ipsec_advanced_settings", "ipsecadvancedsettings"),
+                                              ("ldap_attribute_maps", "ldapattributemaps"),
+                                              ("load_balance_settings", "loadbalancesettings"), ("address_assignment_settings", "addressassignmentsettings"),
+                                              ("secure_client_customization_settings", "secureclientcustomizationsettings"),
+                                              ("ipsec_crypto_maps", "ipseccryptomaps")):
+                            self._collect_family(session, base, prefix + f"/policy/ravpns/{policy_id}/{endpoint}?expanded=true",
+                                                 policy, key, parts, f"ravpns/{policy_id}/{key}")
+                    elif family == "networkanalysispolicies":
+                        self._collect_family(session, base, prefix + f"/policy/networkanalysispolicies/{policy_id}/inspectoroverrideconfigs?expanded=true",
+                                             policy, "inspectoroverrideconfigs", parts,
+                                             f"networkanalysispolicies/{policy_id}/inspectoroverrideconfigs")
+                    elif family == "prefilterpolicies":
+                        self._collect_family(session, base, prefix + f"/policy/prefilterpolicies/{policy_id}/defaultactions?expanded=true",
+                                             policy, "default_actions", parts, f"prefilterpolicies/{policy_id}/default_actions")
             for policy in bundle["nat_policies"]:
                 if not re.fullmatch(r"[A-Za-z0-9_-]+", str(policy.get("id", ""))):
                     parts.append(CollectionPart("nat_rules", "FAILED", False))
@@ -188,6 +249,30 @@ class CiscoFTDCollector:
                 policy["manual_rules"] = [rule for rule in manual if rule.get("section") != "BEFORE_AUTO" and rule.get("section") != "AFTER_AUTO"]
                 self._collect_family(session, base, prefix + f'/policy/ftdnatpolicies/{policy["id"]}/autonatrules', policy, "auto_rules", parts,
                                      f'auto_rules/{policy["id"]}')
+            bundle["coverage"] = {
+                "address_objects": {"status": "AVAILABLE", "source": "objects/networkaddresses"},
+                "address_groups": {"status": "AVAILABLE", "source": "objects/networkgroups"},
+                "source_nat_ip_pools": {"status": "AVAILABLE", "source": "nat_policies and ipv4/ipv6 address pools"},
+                "access_control_policy": {"status": "AVAILABLE", "source": "access_policies"},
+                "inspection_profiles": {"status": "AVAILABLE", "source": "filepolicies, decryptionpolicies, dnspolicies"},
+                "time_ranges": {"status": "AVAILABLE", "source": "objects/timeranges"},
+                "services_groups": {"status": "AVAILABLE", "source": "protocolportobjects and portobjectgroups"},
+                "destination_nat_vip": {"status": "AVAILABLE", "source": "nat_policies"},
+                "vip_group_equivalent": {"status": "SOURCE_ONLY", "reason": "No synthetic VIP group is created; source objects and policy references are preserved."},
+                "ips": {"status": "AVAILABLE", "source": "intrusionpolicies with configured intrusion rules"},
+                "static_routes": {"status": "AVAILABLE", "source": "device global and virtual-router resources"},
+                "access_profiles": {"status": "AVAILABLE", "source": "FMC auth roles"},
+                "administrators": {"status": "AVAILABLE", "source": "FMC users and roles; device CLI users are a separate source plane"},
+                "dhcp": {"status": "AVAILABLE", "source": "device DHCP server and relay settings"},
+                "sd_wan_routing": {"status": "AVAILABLE", "source": "interfaces, virtual routers, PBR, ECMP, SLA monitors and VPN resources"},
+                "security_zones": {"status": "AVAILABLE", "source": "objects/securityzones"},
+                "user_groups": {"status": "AVAILABLE", "source": "realms and realmusergroups"},
+                "local_users": {"status": "AVAILABLE", "source": "objects/localrealmusers"},
+                "site_to_site_vpn": {"status": "AVAILABLE", "source": "s2svpns and nested resources"},
+                "remote_access_vpn": {"status": "AVAILABLE", "source": "ravpns, address pools, group policies and nested resources"},
+                "fmc_cli_users": {"status": "UNAVAILABLE", "reason": "No verified FMC REST endpoint exposes per-device FTD CLI users."},
+            }
+            # Every request remains independently represented by its CollectionPart.
             usable = any(part.count for part in parts)
             failed = any(not part.complete for part in parts)
             status = CollectionStatus.PARTIAL if failed and usable else CollectionStatus.FAILED if failed else CollectionStatus.SUCCESS
