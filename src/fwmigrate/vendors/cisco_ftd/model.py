@@ -176,7 +176,10 @@ class CiscoFTDCertificate(CiscoFTDSourceRecord):
     private_key_present: Optional[bool] = None
 
 
-class CiscoFTDCertificateMap(CiscoFTDSourceRecord): pass
+class CiscoFTDCertificateMap(CiscoFTDSourceRecord):
+    conditions: Optional[Any] = None
+    connection_profile: Optional[CiscoFTDReference] = None
+    group_policy: Optional[CiscoFTDReference] = None
 class CiscoFTDCertificateEnrollment(CiscoFTDSourceRecord): pass
 
 
@@ -186,48 +189,116 @@ class CiscoFTDAddressPool(CiscoFTDSourceRecord):
     start_address: Optional[str] = None
     end_address: Optional[str] = None
     override_metadata: Optional[Dict[str, Any]] = None
+    address_reuse_delay: Optional[int] = None
 
 
 class CiscoFTDGroupPolicy(CiscoFTDSourceRecord):
     vpn_access: Optional[Any] = None
+    protocols: Optional[Any] = None
+    connection_settings: Optional[Dict[str, Any]] = None
+    dns_servers: Optional[List[Any]] = None
+    wins_servers: Optional[List[Any]] = None
+    domain_name: Optional[str] = None
     realm: Optional[CiscoFTDReference] = None
     aaa_server_group: Optional[CiscoFTDReference] = None
     address_pools: Optional[List[CiscoFTDReference]] = None
     split_tunnel: Optional[List[CiscoFTDReference]] = None
+    split_tunnel_policy: Optional[Any] = None
+    split_tunnel_networks: Optional[List[CiscoFTDReference]] = None
+    split_dns: Optional[Any] = None
+    split_tunnel_acl: Optional[CiscoFTDReference] = None
     secure_client: Optional[List[CiscoFTDReference]] = None
+    session_settings: Optional[Dict[str, Any]] = None
+    simultaneous_logins: Optional[int] = None
 
 
 class CiscoFTDS2SIKESettings(CiscoFTDSourceRecord):
     ike_policies: Optional[List[CiscoFTDReference]] = None
+    ikev1_policies: Optional[List[CiscoFTDReference]] = None
+    ikev2_policies: Optional[List[CiscoFTDReference]] = None
+    ikev1_authentication_type: Optional[str] = None
+    ikev2_authentication_type: Optional[str] = None
+    ikev1_certificate: Optional[CiscoFTDReference] = None
+    ikev2_certificate: Optional[CiscoFTDReference] = None
+    ikev1_automatic_psk_length: Optional[int] = None
+    ikev2_automatic_psk_length: Optional[int] = None
+    ikev2_hex_psk_only: Optional[bool] = None
     certificates: Optional[List[CiscoFTDReference]] = None
     psk_present: Optional[bool] = None
 
 
 class CiscoFTDS2SIPsecSettings(CiscoFTDSourceRecord):
     ipsec_proposals: Optional[List[CiscoFTDReference]] = None
+    ikev1_ipsec_proposals: Optional[List[CiscoFTDReference]] = None
+    ikev2_ipsec_proposals: Optional[List[CiscoFTDReference]] = None
+    pfs_enabled: Optional[bool] = None
+    pfs_group: Optional[int] = None
+    lifetime_seconds: Optional[int] = None
+    lifetime_kilobytes: Optional[int] = None
+    ikev2_mode: Optional[str] = None
+    crypto_map_type: Optional[str] = None
+    do_not_fragment_policy: Optional[str] = None
+    enable_rri: Optional[bool] = None
+    enable_sa_strength_enforcement: Optional[bool] = None
+    tfc_packets: Optional[Dict[str, Any]] = None
+    validate_incoming_icmp_error_message: Optional[bool] = None
 
 
-class CiscoFTDS2SAdvancedSettings(CiscoFTDSourceRecord): pass
-class CiscoFTDRAVPNIPsecSettings(CiscoFTDSourceRecord): pass
+class CiscoFTDS2SAdvancedSettings(CiscoFTDSourceRecord):
+    ike_keepalive_settings: Optional[Dict[str, Any]] = None
+    advanced_ike_settings: Optional[Dict[str, Any]] = None
+    advanced_ipsec_settings: Optional[Dict[str, Any]] = None
+    advanced_tunnel_settings: Optional[Dict[str, Any]] = None
+class CiscoFTDRAVPNIPsecSettings(CiscoFTDSourceRecord):
+    ikev2_settings: Optional[Dict[str, Any]] = None
+    ipsec_settings: Optional[Dict[str, Any]] = None
+    nat_keepalive: Optional[Dict[str, Any]] = None
 class CiscoFTDLDAPAttributeMap(CiscoFTDSourceRecord): pass
 class CiscoFTDRAVPNLoadBalanceSettings(CiscoFTDSourceRecord): pass
 class CiscoFTDRAVPNAddressAssignmentSettings(CiscoFTDSourceRecord):
     address_pools: Optional[List[CiscoFTDReference]] = None
+    assignment_method: Optional[Any] = None
+    allow_reuse: Optional[bool] = None
+    reuse_delay: Optional[int] = None
+    external_assignment: Optional[CiscoFTDReference] = None
+    use_authorization_server_for_ipv4: Optional[bool] = None
+    use_authorization_server_for_ipv6: Optional[bool] = None
+    use_dhcp: Optional[bool] = None
+    use_internal_address_pool_for_ipv4: Optional[bool] = None
+    use_internal_address_pool_for_ipv6: Optional[bool] = None
 
 
-class CiscoFTDSecureClientSettings(CiscoFTDSourceRecord): pass
+class CiscoFTDSecureClientSettings(CiscoFTDSourceRecord):
+    packages: Optional[List[CiscoFTDReference]] = None
+    profiles: Optional[List[CiscoFTDReference]] = None
 class CiscoFTDRAVPNIPsecCryptoMap(CiscoFTDSourceRecord): pass
 class CiscoFTDPrefilterPolicy(CiscoFTDSourceRecord): pass
 class CiscoFTDPrefilterRule(CiscoFTDSourceRecord):
     position: Optional[int] = None
-    action: Optional[str] = None
+    action: Optional[Any] = None
     conditions: Optional[Dict[str, Any]] = None
     references: Optional[List[CiscoFTDReference]] = None
 class CiscoFTDPrefilterDefaultAction(CiscoFTDSourceRecord): pass
 class CiscoFTDNetworkAnalysisPolicy(CiscoFTDSourceRecord): pass
 class CiscoFTDInspectorConfig(CiscoFTDSourceRecord): pass
 class CiscoFTDInspectorOverrideConfig(CiscoFTDSourceRecord): pass
-class CiscoFTDFilePolicy(CiscoFTDSourceRecord): pass
+class CiscoFTDFileRule(CiscoFTDSourceRecord):
+    parent_policy_id: Optional[str] = None
+    parent_policy_name: Optional[str] = None
+    position: Optional[int] = None
+    collection_order: Optional[int] = None
+    enabled: Optional[bool] = None
+    action: Optional[Any] = None
+    application_protocols: Optional[Any] = None
+    transfer_direction: Optional[Any] = None
+    file_types: Optional[List[Any]] = None
+    malware_inspection: Optional[Any] = None
+    file_store: Optional[Any] = None
+
+
+class CiscoFTDFilePolicy(CiscoFTDSourceRecord):
+    description: Optional[str] = None
+    rules: Optional[List[CiscoFTDFileRule]] = None
 class CiscoFTDVariableSet(CiscoFTDSourceRecord): pass
 class CiscoFTDURLCategory(CiscoFTDSourceRecord): pass
 class CiscoFTDVLANObject(CiscoFTDSourceRecord): pass
@@ -276,6 +347,8 @@ class CiscoFTDAccessControlPolicy(CiscoFTDSourceRecord):
     rules: Optional[List[CiscoFTDAccessControlRule]] = None
     prefilter_policy: Optional[CiscoFTDReference] = None
     network_analysis_policy: Optional[CiscoFTDReference] = None
+    decryption_policy: Optional[CiscoFTDReference] = None
+    dns_policy: Optional[CiscoFTDReference] = None
 
 
 class CiscoFTDFDMNATRule(CiscoFTDSourceRecord):
@@ -348,48 +421,233 @@ class CiscoFTDNATPolicy(CiscoFTDSourceRecord):
     rules: Optional[List[CiscoFTDFDMNATRule]] = None
 
 
-class CiscoFTDTimeRange(CiscoFTDSourceRecord): pass
-class CiscoFTDIntrusionPolicy(CiscoFTDSourceRecord): pass
-class CiscoFTDIntrusionRuleOverride(CiscoFTDSourceRecord): pass
-class CiscoFTDDecryptionPolicy(CiscoFTDSourceRecord): pass
-class CiscoFTDDNSPolicy(CiscoFTDSourceRecord): pass
-class CiscoFTDFMCUserRole(CiscoFTDSourceRecord): pass
-class CiscoFTDFMCUser(CiscoFTDSourceRecord): pass
-class CiscoFTDDHCPServer(CiscoFTDSourceRecord): pass
-class CiscoFTDRealm(CiscoFTDSourceRecord): pass
-class CiscoFTDRealmUserGroup(CiscoFTDSourceRecord): pass
-class CiscoFTDRealmUser(CiscoFTDSourceRecord): pass
-class CiscoFTDLocalRealmUser(CiscoFTDSourceRecord): pass
+class CiscoFTDRecurringTimeRangeEntry(BaseModel):
+    recurrence_type: Optional[str] = None
+    days: Optional[List[str]] = None
+    daily_start_time: Optional[str] = None
+    daily_end_time: Optional[str] = None
+    range_start_day: Optional[str] = None
+    range_start_time: Optional[str] = None
+    range_end_day: Optional[str] = None
+    range_end_time: Optional[str] = None
+    explicit_fields: List[str] = Field(default_factory=list)
+    raw_extra: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CiscoFTDTimeRange(CiscoFTDSourceRecord):
+    description: Optional[str] = None
+    absolute_start_date_time: Optional[str] = None
+    absolute_end_date_time: Optional[str] = None
+    recurrence_entries: Optional[List[CiscoFTDRecurringTimeRangeEntry]] = None
+
+
+class CiscoFTDIntrusionPolicy(CiscoFTDSourceRecord):
+    description: Optional[str] = None
+    variable_set: Optional[CiscoFTDReference] = None
+    base_policy: Optional[CiscoFTDReference] = None
+    snort_version: Optional[str] = None
+
+
+class CiscoFTDIntrusionRuleGroup(CiscoFTDSourceRecord):
+    parent_policy_id: Optional[str] = None
+    parent_policy_name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class CiscoFTDIntrusionRuleBehavior(CiscoFTDSourceRecord):
+    parent_policy_id: Optional[str] = None
+    parent_policy_name: Optional[str] = None
+    rule_id: Optional[str] = None
+    rule_reference: Optional[CiscoFTDReference] = None
+    rule_group: Optional[CiscoFTDReference] = None
+    state: Optional[Any] = None
+    action: Optional[Any] = None
+    enabled: Optional[bool] = None
+
+
+class CiscoFTDIntrusionRuleOverride(CiscoFTDSourceRecord):
+    parent_policy_id: Optional[str] = None
+    parent_policy_name: Optional[str] = None
+    rule_id: Optional[str] = None
+    rule_reference: Optional[CiscoFTDReference] = None
+    state: Optional[Any] = None
+    action: Optional[Any] = None
+class CiscoFTDDecryptionRule(CiscoFTDSourceRecord):
+    parent_policy_id: Optional[str] = None
+    parent_policy_name: Optional[str] = None
+    position: Optional[int] = None
+    collection_order: Optional[int] = None
+    enabled: Optional[bool] = None
+    action: Optional[Any] = None
+    source_networks: Optional[List[CiscoFTDReference]] = None
+    destination_networks: Optional[List[CiscoFTDReference]] = None
+    source_ports: Optional[List[CiscoFTDReference]] = None
+    destination_ports: Optional[List[CiscoFTDReference]] = None
+    certificates: Optional[List[CiscoFTDReference]] = None
+    tls_conditions: Optional[Dict[str, Any]] = None
+    certificate_status_conditions: Optional[Dict[str, Any]] = None
+
+
+class CiscoFTDDecryptionPolicy(CiscoFTDSourceRecord):
+    description: Optional[str] = None
+    rules: Optional[List[CiscoFTDDecryptionRule]] = None
+    default_action: Optional[Any] = None
+    undecryptable_action: Optional[Any] = None
+    advanced_settings: Optional[Dict[str, Any]] = None
+
+
+class CiscoFTDDNSRule(CiscoFTDSourceRecord):
+    parent_policy_id: Optional[str] = None
+    parent_policy_name: Optional[str] = None
+    position: Optional[int] = None
+    collection_order: Optional[int] = None
+    enabled: Optional[bool] = None
+    action: Optional[Any] = None
+    source_zones: Optional[List[CiscoFTDReference]] = None
+    destination_zones: Optional[List[CiscoFTDReference]] = None
+    source_networks: Optional[List[CiscoFTDReference]] = None
+    destination_networks: Optional[List[CiscoFTDReference]] = None
+    networks: Optional[List[CiscoFTDReference]] = None
+    vlan_tags: Optional[List[CiscoFTDReference]] = None
+    lists_feeds: Optional[List[CiscoFTDReference]] = None
+
+
+class CiscoFTDDNSPolicy(CiscoFTDSourceRecord):
+    description: Optional[str] = None
+    rules: Optional[List[CiscoFTDDNSRule]] = None
+    default_action: Optional[Any] = None
+    umbrella_settings: Optional[Dict[str, Any]] = None
+class CiscoFTDFMCUserRole(CiscoFTDSourceRecord):
+    description: Optional[str] = None
+    predefined: Optional[bool] = None
+    custom: Optional[bool] = None
+    menu_permissions: Optional[Any] = None
+    system_permissions: Optional[Any] = None
+    role_escalation: Optional[Any] = None
+    other_permissions: Optional[Any] = None
+
+
+class CiscoFTDFMCUser(CiscoFTDSourceRecord):
+    username: Optional[str] = None
+    enabled: Optional[bool] = None
+    authentication_type: Optional[str] = None
+    authentication_source: Optional[CiscoFTDReference] = None
+    roles: Optional[List[CiscoFTDReference]] = None
+    external_identity: Optional[Any] = None
+class CiscoFTDDHCPServer(CiscoFTDSourceRecord):
+    interface: Optional[CiscoFTDReference] = None
+class CiscoFTDRealm(CiscoFTDSourceRecord):
+    realm_type: Optional[str] = None
+    enabled: Optional[bool] = None
+    description: Optional[str] = None
+    directory_configurations: Optional[List[Any]] = None
+    base_dn: Optional[str] = None
+    group_dn: Optional[str] = None
+    group_attribute: Optional[str] = None
+    ad_primary_domain: Optional[str] = None
+    included_users: Optional[List[str]] = None
+    excluded_users: Optional[List[str]] = None
+    included_groups: Optional[List[str]] = None
+    excluded_groups: Optional[List[str]] = None
+    identity_provider: Optional[str] = None
+    idp_settings: Optional[Dict[str, Any]] = None
+    synchronization_settings: Optional[Dict[str, Any]] = None
+
+
+class CiscoFTDRealmUserGroup(CiscoFTDSourceRecord):
+    realm: Optional[CiscoFTDReference] = None
+    external_id: Optional[str] = None
+    distinguished_name: Optional[str] = None
+    synchronized: Optional[bool] = None
+    resolved: Optional[bool] = None
+    for_policy: Optional[bool] = None
+    last_synced: Optional[Any] = None
+
+
+class CiscoFTDRealmUser(CiscoFTDSourceRecord):
+    realm: Optional[CiscoFTDReference] = None
+    username: Optional[str] = None
+    external_id: Optional[str] = None
+    distinguished_name: Optional[str] = None
+    synchronized: Optional[bool] = None
+    resolved: Optional[bool] = None
+    for_policy: Optional[bool] = None
+    last_synced: Optional[Any] = None
+    groups: Optional[List[CiscoFTDReference]] = None
+
+
+class CiscoFTDLocalRealmUser(CiscoFTDSourceRecord):
+    username: Optional[str] = None
+    realm: Optional[CiscoFTDReference] = None
+    enabled: Optional[bool] = None
+    groups: Optional[List[CiscoFTDReference]] = None
+    password_configured: Optional[bool] = None
 class CiscoFTDS2SVPNTopology(CiscoFTDSourceRecord): pass
 class CiscoFTDS2SVPNEndpoint(CiscoFTDSourceRecord):
     device: Optional[CiscoFTDReference] = None
     interface: Optional[CiscoFTDReference] = None
     vti: Optional[CiscoFTDReference] = None
     protected_networks: Optional[List[CiscoFTDReference]] = None
+    peer_type: Optional[str] = None
+    connection_type: Optional[str] = None
+    extranet: Optional[bool] = None
+    extranet_info: Optional[Dict[str, Any]] = None
+    peer_ip_address: Optional[str] = None
+    local_identity_type: Optional[str] = None
+    local_identity: Optional[str] = None
+    local_identity_enabled: Optional[bool] = None
 class CiscoFTDIKEPolicy(CiscoFTDSourceRecord):
     ike_version: Optional[str] = None
+    priority: Optional[int] = None
+    lifetime_in_seconds: Optional[int] = None
+    authentication_method: Optional[str] = None
+    encryption: Optional[str] = None
+    hash: Optional[str] = None
+    diffie_hellman_group: Optional[int] = None
+    encryption_algorithms: Optional[List[str]] = None
+    integrity_algorithms: Optional[List[str]] = None
+    prf_integrity_algorithms: Optional[List[str]] = None
+    diffie_hellman_groups: Optional[List[int]] = None
 
 
 class CiscoFTDIPsecProposal(CiscoFTDSourceRecord):
     ike_version: Optional[str] = None
+    esp_encryption: Optional[str] = None
+    esp_hash: Optional[str] = None
+    encryption_algorithms: Optional[List[str]] = None
+    integrity_algorithms: Optional[List[str]] = None
 class CiscoFTDRAVPNPolicy(CiscoFTDSourceRecord):
     target_devices: Optional[List[CiscoFTDReference]] = None
     access_interfaces: Optional[List[CiscoFTDReference]] = None
     certificates: Optional[List[CiscoFTDReference]] = None
+    certificate_maps: Optional[List[CiscoFTDReference]] = None
+    certificate_map_settings: Optional[List[Dict[str, Any]]] = None
     connection_profiles: Optional[List[CiscoFTDReference]] = None
     group_policies: Optional[List[CiscoFTDReference]] = None
     address_pools: Optional[List[CiscoFTDReference]] = None
     realms: Optional[List[CiscoFTDReference]] = None
+    ssl_tls_settings: Optional[Dict[str, Any]] = None
+    dtls_settings: Optional[Dict[str, Any]] = None
+    session_settings: Optional[Dict[str, Any]] = None
 
 
 class CiscoFTDRAVPNConnectionProfile(CiscoFTDSourceRecord):
     parent_policy_id: Optional[str] = None
+    parent_policy_name: Optional[str] = None
+    alias: Optional[Any] = None
+    group_url: Optional[Any] = None
+    enabled: Optional[bool] = None
+    authentication_method: Optional[str] = None
     realm: Optional[CiscoFTDReference] = None
+    authentication_server: Optional[CiscoFTDReference] = None
     authorization: Optional[CiscoFTDReference] = None
+    accounting_server: Optional[CiscoFTDReference] = None
+    address_assignment: Optional[Any] = None
     address_pools: Optional[List[CiscoFTDReference]] = None
     default_group_policy: Optional[CiscoFTDReference] = None
     certificates: Optional[List[CiscoFTDReference]] = None
     certificate_maps: Optional[List[CiscoFTDReference]] = None
+    connection_settings: Optional[Dict[str, Any]] = None
 class CiscoFTDNativeResource(CiscoFTDSourceRecord): pass
 
 
@@ -465,6 +723,8 @@ class CiscoFTDConfig(BaseModel):
     nat_policies: List[CiscoFTDNATPolicy] = Field(default_factory=list)
     time_ranges: List[CiscoFTDTimeRange] = Field(default_factory=list)
     intrusion_policies: List[CiscoFTDIntrusionPolicy] = Field(default_factory=list)
+    intrusion_rule_groups: List[CiscoFTDIntrusionRuleGroup] = Field(default_factory=list)
+    intrusion_rule_behaviors: List[CiscoFTDIntrusionRuleBehavior] = Field(default_factory=list)
     intrusion_rule_overrides: List[CiscoFTDIntrusionRuleOverride] = Field(default_factory=list)
     file_policies: List[CiscoFTDFilePolicy] = Field(default_factory=list)
     decryption_policies: List[CiscoFTDDecryptionPolicy] = Field(default_factory=list)

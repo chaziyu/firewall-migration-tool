@@ -213,7 +213,7 @@ class JuniperReferenceResolver:
             branch_members: List[str] = []
             branch_has_cycle = False
             for m in aset.members:
-                if m.disabled or not self._member_is_effective(aset, m):
+                if not self._member_is_effective(aset, m):
                     continue
                 if m.member_type == "address":
                     # Canonical member name
@@ -299,6 +299,25 @@ class JuniperReferenceResolver:
         instance = self.context.routing_instances.get(reference)
         return instance if instance and self._object_is_effective(instance) else None
 
+    def resolve_interface(self, reference: str):
+        interface = self.context.interfaces.get(reference)
+        if interface:
+            return interface
+        if "." in reference:
+            parent, unit = reference.rsplit(".", 1)
+            interface = self.context.interfaces.get(parent)
+            if interface and unit in interface.units:
+                return interface.units[unit]
+        return None
+
+    def resolve_ike_policy(self, reference: str): return self.context.vpn.ike_policies.get(reference)
+    def resolve_ike_proposal(self, reference: str): return self.context.vpn.ike_proposals.get(reference)
+    def resolve_ipsec_policy(self, reference: str): return self.context.vpn.ipsec_policies.get(reference)
+    def resolve_ipsec_vpn(self, reference: str): return self.context.vpn.ipsec_vpns.get(reference)
+    def resolve_access_profile(self, reference: str): return self.context.access_profiles.get(reference)
+    def resolve_remote_access_client_config(self, reference: str): return self.context.remote_access.client_configs.get(reference)
+    def resolve_apbr_overlay_path(self, reference: str): return self.context.apbr.overlay_paths.get(reference)
+
     def resolve_firewall_filter(self, reference: str, family: Optional[str] = None):
         filt = self.context.firewall_filters.get(reference)
         if filt is None or (family and filt.family.lower() != family.lower()):
@@ -308,7 +327,7 @@ class JuniperReferenceResolver:
     @staticmethod
     def _object_is_effective(obj) -> bool:
         """Reject an object only when its recorded candidates are all non-effective."""
-        if getattr(obj, "disabled", False) or getattr(obj, "source_attributes", {}).get("disabled"):
+        if getattr(obj, "disabled", None) is True or getattr(obj, "source_attributes", {}).get("disabled"):
             return False
         candidates = [c for history in (
             getattr(obj, "field_candidate_history", {}),

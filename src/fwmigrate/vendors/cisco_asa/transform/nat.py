@@ -37,8 +37,42 @@ class ASATransformedNATRule:
 
 
 @dataclass(frozen=True, slots=True)
+class ASADerivedSourceNATPool:
+    source_context: str | None
+    source_rule: Any
+    pool_type: str
+    mapped_source: str | None
+    mapped_object: Any = None
+    mapped_interface: Any = None
+    address_family: str | None = None
+    source_interface: Any = None
+    destination_interface: Any = None
+    translation_semantics: str | None = None
+    issues: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ASADerivedVIP:
+    source_context: str | None
+    source_rule: Any
+    source_nat_order: int | None
+    external_interface: Any = None
+    internal_interface: Any = None
+    mapped_address: str | None = None
+    real_address: str | None = None
+    mapped_service: str | None = None
+    real_service: str | None = None
+    protocol: str | None = None
+    translation_type: str | None = None
+    inactive: bool = False
+    issues: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class ASANATTransformResult:
     rules: tuple[ASATransformedNATRule, ...] = ()
+    source_nat_pools: tuple[ASADerivedSourceNATPool, ...] = ()
+    vips: tuple[ASADerivedVIP, ...] = ()
     issues: tuple[str, ...] = ()
 
 
@@ -72,6 +106,22 @@ def _translation(rule: Any) -> str:
     if rule.source_mode == "static" and rule.original_service: return "static_port_translation"
     if rule.source_mode == "static" and rule.destination_mode: return "destination_static"
     return "static" if rule.source_mode == "static" else "unknown"
+
+
+def _address_family(value: str | None, resolved: Any, owner: Any) -> str | None:
+    family = getattr(resolved, "address_family", None) or getattr(owner, "address_family", None)
+    if family:
+        return str(family)
+    address = getattr(resolved, "value", None) or value
+    if not address or str(address).lower() == "interface":
+        return None
+    try:
+        return f"ipv{ip_address(address).version}"
+    except ValueError:
+        try:
+            return f"ipv{ip_network(address, strict=False).version}"
+        except ValueError:
+            return None
 
 
 def transform_nat(config: Any, relationships: Any) -> ASANATTransformResult:
@@ -120,4 +170,56 @@ def transform_nat(config: Any, relationships: Any) -> ASANATTransformResult:
                 issues.extend(row_issues); position += 1
     order = {id(rule): index for index, rule in enumerate(config.nat_rules)}
     output.sort(key=lambda row: order[id(row.source_rule)])
-    return ASANATTransformResult(tuple(output), tuple(issues))
+    by_rule = {id(row.rule): row for row in relationships.rules}
+    source_pools: list[ASADerivedSourceNATPool] = []
+    vips: list[ASADerivedVIP] = []
+    for transformed in output:
+        rule = transformed.source_rule
+        rel = by_rule.get(id(rule))
+        if rule.identity_nat or rule.nat_exemption:
+            continue
+        has_source_translation = (
+            rule.source_mode == "dynamic" and bool(rule.pat_pool or rule.mapped_source_mode == "interface" or rule.mapped_source)
+        ) or (rule.source_mode == "static" and bool(rule.mapped_source))
+        if has_source_translation:
+            pool_issues = [issue.reason for issue in (rel.issues if rel else ())]
+            family = rule.mapped_source_address_family or _address_family(
+                rule.mapped_source, rel.mapped_source if rel else None, rel.owning_object if rel else None)
+            if family is None:
+                pool_issues.append("Mapped-source address family is unknown")
+            pool_type = (
+                "interface_pat" if rule.mapped_source_mode == "interface"
+                else "dynamic_pat_pool" if rule.pat_pool
+                else "dynamic_nat" if rule.source_mode == "dynamic"
+                else "static_source_nat"
+            )
+            source_pools.append(ASADerivedSourceNATPool(
+                rule.source_context, rule, pool_type, rule.mapped_source,
+                rel.mapped_source if rel else None,
+                (rel.destination_interface if rel else None) or (rule.destination_interface if rule.mapped_source_mode == "interface" else None),
+                family,
+                (rel.source_interface if rel else None) or rule.source_interface,
+                (rel.destination_interface if rel else None) or rule.destination_interface,
+                transformed.translation_semantics,
+                tuple(dict.fromkeys(pool_issues)),
+            ))
+            issues.extend(pool_issues)
+
+        object_static = rule.syntax_family == "object" and rule.source_mode == "static" and bool(rule.mapped_source)
+        destination_static = rule.destination_mode == "static" and bool(rule.mapped_destination)
+        if object_static and destination_static:
+            issues.append(f"VIP classification is ambiguous for NAT rule {rule.name}")
+            continue
+        if object_static or destination_static:
+            mapped = rule.mapped_source if object_static else rule.mapped_destination
+            real = (getattr(rel.owning_object, "value", None) if rel else None) or rule.real_source if object_static else rule.real_destination
+            vips.append(ASADerivedVIP(
+                rule.source_context, rule, transformed.effective_order,
+                rel.destination_interface if rel else rule.destination_interface,
+                rel.source_interface if rel else rule.source_interface,
+                mapped, real, rule.translated_service, rule.original_service,
+                rule.service_protocol, transformed.translation_semantics, rule.inactive,
+                tuple(issue.reason for issue in (rel.issues if rel else ())),
+            ))
+            issues.extend(vips[-1].issues)
+    return ASANATTransformResult(tuple(output), tuple(source_pools), tuple(vips), tuple(dict.fromkeys(issues)))

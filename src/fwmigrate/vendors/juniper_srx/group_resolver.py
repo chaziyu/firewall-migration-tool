@@ -8,7 +8,7 @@ from typing import List
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.vendors.juniper_srx.extraction import sanitize_tokens
 from fwmigrate.vendors.juniper_srx.tokenizer import (
-    JunosCommand, JunosOperation, extract_value_list,
+    JunosActivationState, JunosCommand, JunosOperation, extract_value_list,
 )
 from fwmigrate.vendors.juniper_srx.model import JuniperResolutionStatus
 from fwmigrate.vendors.juniper_srx.provenance import build_candidate
@@ -19,8 +19,9 @@ _DAYS_OF_WEEK = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturd
 
 
 def _inactive_paths(commands: List[JunosCommand]) -> list[tuple[str, ...]]:
-    return [tuple(t.lower() for t in c.tokens[1:]) for c in commands
-            if c.operation == JunosOperation.DEACTIVATE]
+    state = JunosActivationState()
+    state.apply(commands)
+    return [tuple(path) for path in state.inactive_paths]
 
 
 def _inactive(path: tuple[str, ...], paths: list[tuple[str, ...]]) -> bool:
@@ -237,19 +238,16 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
                            application, nested_priority)
 
         for path, source in sorted(definitions, key=lambda item: item[1].line_number):
-            source_scope = _context_prefix(path)
-            if source_scope:
-                if source_scope != target_scope:
-                    application.group_resolution = "GROUP_HIERARCHY_INCOMPATIBLE"
-                    application.candidate_records.append(build_candidate(
-                        path, "group", source,
-                        status=JuniperResolutionStatus.INCOMPATIBLE, effective=False,
-                        reason="hierarchy incompatible").model_dump()
-                    )
-                    continue
-                path = path[2:]
-            elif target_scope:
+            source_tokens = source.tokens[1:]
+            source_group_index = next((i for i, token in enumerate(source_tokens) if token.lower() == "groups"), None)
+            source_scope = tuple(source_tokens[:source_group_index]) if source_group_index is not None else ()
+            if source_scope != target_scope:
                 application.group_resolution = "GROUP_HIERARCHY_INCOMPATIBLE"
+                application.candidate_records.append(build_candidate(
+                    path, "group", source,
+                    status=JuniperResolutionStatus.INCOMPATIBLE, effective=False,
+                    reason="hierarchy incompatible").model_dump()
+                )
                 continue
             relative_path = path
             if apply_at and tuple(path[:len(apply_at)]) == apply_at:
@@ -275,12 +273,16 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
                     synthetic=True,
                 ))
 
+    excluded_by_target: dict[tuple[str, ...], set[str]] = defaultdict(set)
+    for target, _, excluded_names, _ in applications:
+        excluded_by_target[target].update(name.lower() for name in excluded_names)
+
     for target, names, excluded_names, application in sorted(
             applications, key=lambda item: (len(item[0]), item[3].line_number)):
         application.target_path = target
         application.group_application_depth = len(target)
         application.hierarchy_depth = len(target)
-        blocked = {name.lower() for name in excluded_names}
+        blocked = excluded_by_target[target]
         for list_priority, name in enumerate(names):
             if _inactive(tuple(t.lower() for t in target + ("apply-groups", name)), inactive_paths):
                 application.group_resolution = "GROUP_INACTIVE"

@@ -186,15 +186,7 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
                         return True
                     i += 2
                 elif sub in {"install", "no-install"}:
-                    route.no_install = sub == "no-install"
                     route.installation = sub
-                    record_scalar_candidate(
-                        route.field_provenance,
-                        route.field_candidate_history,
-                        "no_install",
-                        route.no_install,
-                        cmd,
-                    )
                     record_scalar_candidate(
                         route.field_provenance,
                         route.field_candidate_history,
@@ -247,15 +239,7 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
                         return True
                     i += 2
                 elif sub in {"install", "no-install"}:
-                    route.no_install = sub == "no-install"
                     route.installation = sub
-                    record_scalar_candidate(
-                        route.field_provenance,
-                        route.field_candidate_history,
-                        "no_install",
-                        route.no_install,
-                        cmd,
-                    )
                     record_scalar_candidate(
                         route.field_provenance,
                         route.field_candidate_history,
@@ -328,16 +312,12 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
         cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "no-install":
-        route.no_install = True
         route.installation = "no-install"
-        record_scalar_candidate(route.field_provenance, route.field_candidate_history, "no_install", True, cmd)
         record_scalar_candidate(route.field_provenance, route.field_candidate_history, "installation", route.installation, cmd)
         cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "install":
-        route.no_install = False
         route.installation = "install"
-        record_scalar_candidate(route.field_provenance, route.field_candidate_history, "no_install", False, cmd)
         record_scalar_candidate(route.field_provenance, route.field_candidate_history, "installation", route.installation, cmd)
         cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
@@ -353,9 +333,6 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
 def _record_action(route: JuniperRoute, action: str, cmd: JunosCommand) -> None:
     record_scalar_candidate(route.field_provenance, route.field_candidate_history, "action", action, cmd)
     route.action = action
-    route.discard = action == "discard"
-    route.reject = action == "reject"
-    route.receive = action == "receive"
 
 
 def _append_next_hop(route: JuniperRoute, nh: JuniperRouteNextHop) -> None:

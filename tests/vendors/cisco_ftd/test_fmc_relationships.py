@@ -21,7 +21,8 @@ def test_identity_and_vpn_relationships_are_derived_without_source_mutation():
     result = extract_cisco_ftd_source(FIXTURE.read_text(encoding="utf-8"))
     before = deepcopy(result.config)
     derived = build_ftd_derived_views(result.config)
-    assert derived.identity_relationships[0]["user"] == "operator"
+    assert any(item["relationship_type"] == "fmc-user-to-role" and item["owner_name"] == "operator"
+               for item in derived.identity_relationships)
     assert derived.vpn_relationships[0]["endpoints"] == ["HQ"]
     assert result.config == before
 

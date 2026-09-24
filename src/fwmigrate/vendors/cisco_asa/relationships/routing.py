@@ -33,12 +33,37 @@ class ASARouteMapRelationship:
 
 
 @dataclass(frozen=True, slots=True)
+class ASADHCPRelayInterfaceRelationship:
+    relay_server: Any
+    interface: Any = None
+
+
+@dataclass(frozen=True, slots=True)
+class ASAAllocatedInterfaceRelationship:
+    context: Any
+    allocation: Any
+    interface: Any = None
+
+
+@dataclass(frozen=True, slots=True)
+class ASAPathMonitorRelationship:
+    interface: Any
+    monitor: Any
+    status: str = "SOURCE_ONLY"
+
+
+@dataclass(frozen=True, slots=True)
 class ASARoutingRelationships:
     static_routes: tuple[ASAStaticRouteRelationship, ...] = ()
     tracks: tuple[ASATrackRelationship, ...] = ()
     sla_monitors: tuple[ASASLARelationship, ...] = ()
     route_maps: tuple[ASARouteMapRelationship, ...] = ()
     interface_policy_routes: tuple[tuple[Any, Any], ...] = ()
+    dhcp_relay_interfaces: tuple[ASADHCPRelayInterfaceRelationship, ...] = ()
+    allocated_interfaces: tuple[ASAAllocatedInterfaceRelationship, ...] = ()
+    dhcp_server_interfaces: tuple[ASADHCPRelayInterfaceRelationship, ...] = ()
+    dhcp_reservation_interfaces: tuple[ASADHCPRelayInterfaceRelationship, ...] = ()
+    path_monitors: tuple[ASAPathMonitorRelationship, ...] = ()
     issues: tuple[Any, ...] = ()
 
 
@@ -71,4 +96,40 @@ def build_routing_relationships(config: Any, references: ASAReferenceIndex) -> A
             target = get(interface.source_context, ASAReferenceKind.ROUTE_MAP, interface.name, name, "policy-route-map")
             if target is not None:
                 interface_routes.append((interface, target))
-    return ASARoutingRelationships(routes, tracks, slas, tuple(maps), tuple(interface_routes), tuple(issues))
+    dhcp_interfaces = tuple(
+        ASADHCPRelayInterfaceRelationship(
+            entry,
+            get(relay.source_context, ASAReferenceKind.INTERFACE, relay.name, entry.interface, "dhcp-relay-interface"),
+        )
+        for relay in getattr(config, "dhcp_relays", ())
+        for entry in relay.server_entries
+        if entry.interface
+    )
+    allocated_interfaces = tuple(
+        ASAAllocatedInterfaceRelationship(
+            context,
+            entry,
+            get(context.source_context, ASAReferenceKind.INTERFACE, context.name, entry.physical_interface, "allocated-interface"),
+        )
+        for context in getattr(config, "contexts", ())
+        for entry in context.allocated_interface_entries
+    )
+    dhcp_server_interfaces = tuple(
+        ASADHCPRelayInterfaceRelationship(server, get(server.source_context, ASAReferenceKind.INTERFACE, server.name, server.interface, "dhcp-server-interface"))
+        for server in getattr(config, "dhcp_servers", ()) if server.interface
+    )
+    reservation_interfaces = tuple(
+        ASADHCPRelayInterfaceRelationship(reservation, get(server.source_context, ASAReferenceKind.INTERFACE, server.name, reservation.interface, "dhcp-reservation-interface"))
+        for server in getattr(config, "dhcp_servers", ())
+        for reservation in server.reservations
+    )
+    path_monitors = tuple(
+        ASAPathMonitorRelationship(interface, monitor)
+        for interface in config.interfaces for monitor in interface.policy_route_path_monitors
+    )
+    return ASARoutingRelationships(
+        static_routes=routes, tracks=tracks, sla_monitors=slas, route_maps=tuple(maps),
+        interface_policy_routes=tuple(interface_routes), dhcp_relay_interfaces=dhcp_interfaces,
+        allocated_interfaces=allocated_interfaces, dhcp_server_interfaces=dhcp_server_interfaces,
+        dhcp_reservation_interfaces=reservation_interfaces, path_monitors=path_monitors, issues=tuple(issues),
+    )

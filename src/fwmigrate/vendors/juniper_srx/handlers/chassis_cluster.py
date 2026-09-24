@@ -117,7 +117,6 @@ def _parse_preempt(group: JuniperRedundancyGroup, cmd: JunosCommand, path: list[
 
     preempt = group.preempt or JuniperClusterPreempt()
     group.preempt = preempt
-    preempt.enabled = True
     preempt.source_attributes.setdefault("raw", cmd.raw_sanitized)
     if not path:
         return

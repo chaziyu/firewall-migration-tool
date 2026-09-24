@@ -14,7 +14,7 @@ from fwmigrate.extraction.sanitize import sanitize_raw_text
 from .derived import JuniperDerivedViews, build_juniper_derived_views
 from .parser import JuniperSRXParser
 from .tokenizer import JunosCommand, JunosOperation
-from .validation import JuniperValidationResult, validate_juniper_config
+from .validation import JuniperReviewItem, JuniperValidationResult, build_review_items, validate_juniper_config
 
 
 def get_command_section_path(command: JunosCommand) -> str:
@@ -40,6 +40,12 @@ def get_command_section_path(command: JunosCommand) -> str:
     return first
 
 
+def _context_label(command: JunosCommand) -> str | None:
+    if not command.context_type or command.context_type == "root":
+        return None
+    return f"{command.context_type} {command.context_name}"
+
+
 def _sanitize(value: Any) -> Any:
     if isinstance(value, str):
         return sanitize_raw_text(value)
@@ -63,6 +69,7 @@ class JuniperSourceResult:
     unsupported_items: tuple[UnsupportedItem, ...]
     derived: JuniperDerivedViews
     validation: JuniperValidationResult
+    review_required: tuple[JuniperReviewItem, ...] = ()
 
 
 def _account(commands: list[JunosCommand]) -> tuple[list[SourceSectionResult], list[SourceInventoryItem], list[UnsupportedItem]]:
@@ -73,9 +80,11 @@ def _account(commands: list[JunosCommand]) -> tuple[list[SourceSectionResult], l
     for path, items in grouped.items():
         statuses = [item.extraction_status or (ExtractionStatus.EXTRACTED if item.consumed else ExtractionStatus.UNSUPPORTED)
                     for item in items]
-        status = (ExtractionStatus.PARSE_ERROR if ExtractionStatus.PARSE_ERROR in statuses else
-                  ExtractionStatus.PARTIAL if ExtractionStatus.UNSUPPORTED in statuses or ExtractionStatus.PARTIAL in statuses else
-                  ExtractionStatus.EXTRACTED)
+        distinct = set(statuses)
+        status = next((candidate for candidate in (ExtractionStatus.PARSE_ERROR, ExtractionStatus.UNSUPPORTED,
+                                                     ExtractionStatus.PARTIAL, ExtractionStatus.SOURCE_ONLY,
+                                                     ExtractionStatus.UNKNOWN, ExtractionStatus.IGNORED)
+                       if candidate in distinct), ExtractionStatus.EXTRACTED)
         commands_out = []
         for item in items:
             safe = item.to_sanitized_copy()
@@ -84,19 +93,27 @@ def _account(commands: list[JunosCommand]) -> tuple[list[SourceSectionResult], l
                                               key=" ".join(safe.tokens[1:3]), values=safe.tokens[3:], line_number=item.line_number,
                                               status=command_status, parser_handler=item.handler,
                                               requires_manual_review=item.requires_manual_review or command_status != ExtractionStatus.EXTRACTED,
-                                              source_context=item.context_name))
+                                              source_context=_context_label(item)))
             if command_status in (ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR):
                 unsupported.append(UnsupportedItem(source_path=path, source_name=" ".join(safe.tokens),
-                                                   reason=item.parse_error or f"Unsupported Junos command in {path}",
-                                                   raw_capture=safe.raw_sanitized, source_context=item.context_name))
-        sections.append(SourceSectionResult(path=path, line_start=min(i.line_number for i in items), line_end=max(i.line_number for i in items),
-                                            object_count_source=len(items), object_count_parsed=sum(i.consumed for i in items),
-                                            object_count_extracted=sum(s == ExtractionStatus.EXTRACTED for s in statuses),
-                                            status=status, parser_handler=items[0].handler))
+                                                   reason=sanitize_raw_text(item.parse_error or f"Unsupported Junos command in {path}"),
+                                                   raw_capture=safe.raw_sanitized, source_context=_context_label(item)))
+        sections.append(SourceSectionResult(
+            path=path, source_context=next((_context_label(i) for i in items if _context_label(i)), None),
+            line_start=min(i.line_number for i in items), line_end=max(i.line_number for i in items),
+            status=status, parser_handler=items[0].handler,
+            source_commands=[item.to_sanitized_copy().raw_sanitized for item in items],
+            review_reasons=sorted({item.extraction_status.value for item in items
+                                   if item.extraction_status in (ExtractionStatus.SOURCE_ONLY, ExtractionStatus.PARTIAL,
+                                                                 ExtractionStatus.UNSUPPORTED, ExtractionStatus.PARSE_ERROR,
+                                                                 ExtractionStatus.UNKNOWN, ExtractionStatus.IGNORED)}),
+        ))
         inventory.append(SourceInventoryItem(domain="juniper_srx", source_path=path, name=path,
-                                             source_context=next((i.context_name for i in items if i.context_name), None),
+                                             source_type="junos-hierarchy",
+                                             source_context=next((_context_label(i) for i in items if _context_label(i)), None),
                                              commands=commands_out, status=status,
-                                             requires_manual_review=any(c.requires_manual_review for c in commands_out)))
+                                             requires_manual_review=any(c.requires_manual_review for c in commands_out),
+                                             notes=sorted({s.value for s in statuses if s != ExtractionStatus.EXTRACTED})))
     return sections, inventory, unsupported
 
 
@@ -104,9 +121,16 @@ def extract_juniper_source(content: str, zone_mapping: dict[str, str] | None = N
     parser = JuniperSRXParser(content, zone_mapping=zone_mapping)
     config = _sanitize(deepcopy(parser.extract_source()))
     sections, inventory, unsupported = _account(parser.commands)
-    derived = build_juniper_derived_views(config)
+    derived = build_juniper_derived_views(config, source_commands=parser.commands)
+    for section in sections:
+        section.unresolved_dependencies = sum(
+            dependency.result == "UNRESOLVED" and dependency.source_path == section.path
+            for dependency in derived.dependencies
+        )
+    validation = validate_juniper_config(config, derived)
+    review = build_review_items(validation, sections, unsupported)
     return JuniperSourceResult(config, parser.source_format, tuple(sections), tuple(inventory), tuple(unsupported),
-                               derived, validate_juniper_config(config, derived))
+                               derived, validation, review)
 
 
 class JuniperSRXSourceReporter:

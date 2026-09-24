@@ -56,5 +56,5 @@ def test_relationship_building_does_not_mutate_mpf_source_fields():
 
     assert config == before
     match = config.class_maps[0].matches[0]
-    assert match.resolved is None
+    assert "resolved" not in type(match).model_fields
     assert match.review_reasons == []

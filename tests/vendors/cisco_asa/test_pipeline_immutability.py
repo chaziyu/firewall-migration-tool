@@ -53,8 +53,8 @@ def test_public_reporter_preview_and_export_leave_source_and_derived_state_uncha
     assert preview["vendor"] == "cisco_asa"
     assert not hasattr(analysis, "canonical_ir")
     assert_secret_absent(preview, "LOCAL_PASSWORD_SENTINEL", "ENABLE_SECRET_SENTINEL")
-    assert preview["derived"]["nat"][0]["section"] == "object"
-    assert preview["derived"]["nat"][0]["effective_order"] == 2
+    assert preview["derived"]["nat"]["rules"][0]["section"] == "object"
+    assert preview["derived"]["nat"]["rules"][0]["effective_order"] == 2
     assert preview["derived"]["routes"][0]["effective_administrative_distance"] == 1
     assert_source_unchanged(analysis.config, source)
     assert snapshot_value(analysis.derived) == derived

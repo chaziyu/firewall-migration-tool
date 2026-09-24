@@ -6,6 +6,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .relationships import build_juniper_dependencies
+from .transforms import (
+    build_apbr_graph,
+    build_compatibility_views,
+    build_inheritance_view,
+    build_nat_usage,
+    build_policy_relationships,
+    build_secure_connect_graph,
+    build_vpn_graph,
+)
 
 
 @dataclass(frozen=True)
@@ -19,40 +28,48 @@ class JuniperDerivedViews:
     nat_rule_sets: tuple[dict[str, Any], ...] = ()
     vpn_relationships: tuple[dict[str, Any], ...] = ()
     dependencies: tuple[Any, ...] = ()
+    inheritance: dict[str, tuple[dict[str, Any], ...]] = field(default_factory=dict)
+    activation_directives: tuple[dict[str, Any], ...] = ()
+    dhcp: tuple[dict[str, Any], ...] = ()
+    access_profiles: tuple[dict[str, Any], ...] = ()
+    firewall_users: tuple[dict[str, Any], ...] = ()
+    apbr: tuple[dict[str, Any], ...] = ()
+    remote_access: tuple[dict[str, Any], ...] = ()
+    inheritance_view: dict[str, Any] = field(default_factory=dict)
+    nat_usage: tuple[dict[str, Any], ...] = ()
+    nat_pool_usage: tuple[dict[str, Any], ...] = ()
+    policy_relationships: tuple[dict[str, Any], ...] = ()
+    vpn_graph: tuple[dict[str, Any], ...] = ()
+    secure_connect_graph: tuple[dict[str, Any], ...] = ()
+    apbr_graph: tuple[dict[str, Any], ...] = ()
 
 
-def build_juniper_derived_views(config: Any) -> JuniperDerivedViews:
+def build_juniper_derived_views(config: Any, source_commands=()) -> JuniperDerivedViews:
     """Resolve relationships from source state without changing ``config``."""
-    interfaces, zones, routes, books, apps, policies, nat, vpn = [], [], [], [], [], [], [], []
-    for context in config.contexts.values():
-        scope = context.name
-        for interface in context.interfaces.values():
-            for unit in interface.units.values():
-                interfaces.append({"context": scope, "interface": interface.name, "unit": unit.unit,
-                                   "parent": interface.name, "name": f"{interface.name}.{unit.unit}"})
-        for zone in context.zones.values():
-            zones.extend({"context": scope, "zone": zone.name, "interface": interface} for interface in zone.interfaces)
-        routes.extend({"context": scope, "name": name, "interfaces": list(item.interfaces)}
-                      for name, item in context.routing_instances.items())
-        books.extend({"context": scope, "name": name, "zones": list(book.attached_zones),
-                      "addresses": list(book.addresses), "address_sets": list(book.address_sets)}
-                     for name, book in context.address_books.items())
-        apps.extend({"context": scope, "name": name, "terms": list(getattr(item, "terms", []))}
-                    for name, item in context.applications.items())
-        policies.extend({"context": scope, "name": item.name, "order": index,
-                         "from_zones": list(item.from_zones), "to_zones": list(item.to_zones)}
-                        for index, item in enumerate([*context.policies, *context.global_policies]))
-        for kind, sets in (("source", context.nat.source_rule_sets), ("destination", context.nat.destination_rule_sets),
-                           ("static", context.nat.static_rule_sets)):
-            nat.extend({"context": scope, "type": kind, "name": name,
-                        "rules": [rule.name for rule in rules.rules]}
-                       for name, rules in sets.items())
-        vpn.extend({"context": scope, "name": name, "type": kind}
-                   for kind, items in (("ike-proposal", context.vpn.ike_proposals), ("ike-policy", context.vpn.ike_policies),
-                                       ("ike-gateway", context.vpn.ike_gateways), ("ipsec-vpn", context.vpn.ipsec_vpns))
-                   for name in items)
-    return JuniperDerivedViews(tuple(interfaces), tuple(zones), tuple(routes), tuple(books), tuple(apps),
-                               tuple(policies), tuple(nat), tuple(vpn), tuple(build_juniper_dependencies(config)))
+    compatibility = build_compatibility_views(config)
+    nat_usage, nat_pool_usage, policy_views, vpn_graph, secure_connect, apbr_graph = [], [], [], [], [], []
+    for context in config.iter_contexts():
+        scope = context.name if context.context_type == "root" else f"{context.context_type} {context.name}"
+        nat_view = build_nat_usage(context, scope)
+        nat_usage.extend(nat_view["rules"])
+        nat_pool_usage.extend(nat_view["pool_usage"])
+        policy_views.append({"context": scope, **build_policy_relationships(context, scope)})
+        vpn_graph.extend(build_vpn_graph(context, scope, config.pki.certificates))
+        secure_connect.extend(build_secure_connect_graph(context, scope, config.pki.certificates))
+        apbr_graph.extend(build_apbr_graph(context, scope))
+    inheritance_view = build_inheritance_view(source_commands)
+    inheritance = {"effective_commands": tuple(item for item in inheritance_view["effective_statements"]
+                                                if item["origin"] == "inherited-group"),
+                   "candidates": inheritance_view["candidates"]}
+    inheritance["effective_commands"] = tuple({**item, "path": item["target_path"]}
+                                               for item in inheritance["effective_commands"])
+    activation = tuple(item.model_dump(mode="python") for item in config.activation_directives)
+    return JuniperDerivedViews(
+        **compatibility, dependencies=tuple(build_juniper_dependencies(config)), inheritance=inheritance,
+        activation_directives=activation, inheritance_view=inheritance_view, nat_usage=tuple(nat_usage),
+        nat_pool_usage=tuple(nat_pool_usage),
+        policy_relationships=tuple(policy_views), vpn_graph=tuple(vpn_graph),
+        secure_connect_graph=tuple(secure_connect), apbr_graph=tuple(apbr_graph))
 
 
 __all__ = ["JuniperDerivedViews", "build_juniper_derived_views"]

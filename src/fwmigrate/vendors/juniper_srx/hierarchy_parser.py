@@ -94,12 +94,9 @@ def normalize_hierarchy(content: str) -> str:
     def emit(path: list[str], line: int) -> None:
         if not path:
             return
-        inactive = []
-        while path and path[0].lower() == "inactive:":
-            inactive.append(path.pop(0))
-        if path and path[0].lower().startswith("inactive:"):
-            path[0] = path[0][len("inactive:"):]
-            inactive.append("inactive:")
+        inactive = any(token.lower() == "inactive:" or token.lower().startswith("inactive:") for token in path)
+        path = [token[len("inactive:"):] if token.lower().startswith("inactive:") else token
+                for token in path if token.lower() != "inactive:"]
         if not path:
             return
         path = [p for p in path if p not in ("[", "]")]

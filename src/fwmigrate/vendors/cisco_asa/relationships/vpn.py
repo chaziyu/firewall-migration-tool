@@ -45,9 +45,35 @@ def build_vpn_relationships(config: Any, references: ASAReferenceIndex) -> ASAVP
                         and candidate.interface_attachment), None)
         make(item, [(ASAReferenceKind.ACL, item.acl_name, "crypto-acl"), (ASAReferenceKind.IPSEC_TRANSFORM_SET, item.transform_sets, "transform-set"), (ASAReferenceKind.IKEV2_PROPOSAL, item.ikev2_proposals, "ikev2-proposal"), (ASAReferenceKind.INTERFACE, interface, "interface"), (ASAReferenceKind.CRYPTO_MAP, item.dynamic_map, "dynamic-map"), (ASAReferenceKind.TUNNEL_GROUP, item.peers or ([item.peer] if item.peer else []), "peer")], True)
     for item in config.tunnel_groups:
-        make(item, [(ASAReferenceKind.GROUP_POLICY, getattr(item, "default_group_policy", None), "group-policy"), (ASAReferenceKind.VPN_ADDRESS_POOL, getattr(item, "address_pools", ()), "address-pool"), (ASAReferenceKind.TRUSTPOINT, getattr(item, "trustpoint", None), "trustpoint")])
+        make(item, [(ASAReferenceKind.GROUP_POLICY, getattr(item, "default_group_policy", None), "group-policy"),
+                    (ASAReferenceKind.VPN_ADDRESS_POOL, getattr(item, "address_pools", ()), "address-pool"),
+                    (ASAReferenceKind.AAA_SERVER_GROUP, getattr(item, "general_attributes", {}).get("authentication_server_group"), "aaa-server-group"),
+                    (ASAReferenceKind.TRUSTPOINT, getattr(item, "trustpoint", None), "trustpoint")])
     for item in config.group_policies:
-        make(item, [(ASAReferenceKind.GROUP_POLICY, getattr(item, "parent", None), "parent"), (ASAReferenceKind.VPN_ADDRESS_POOL, getattr(item, "address_pools", ()), "address-pool"), (ASAReferenceKind.ACL, getattr(item, "split_tunnel_acl", None), "split-tunnel-acl")])
+        make(item, [(ASAReferenceKind.GROUP_POLICY, getattr(item, "parent", None), "parent"),
+                    (ASAReferenceKind.VPN_ADDRESS_POOL, getattr(item, "address_pools", ()), "address-pool"),
+                    (ASAReferenceKind.ACL, getattr(item, "split_tunnel_acl", None), "split-tunnel-acl"),
+                    (ASAReferenceKind.ACL, getattr(item, "vpn_filter_acl", None), "vpn-filter-acl"),
+                    (ASAReferenceKind.TIME_RANGE, getattr(item, "vpn_access_hours", None), "vpn-access-hours")])
+    webvpn_records = getattr(config, "webvpn_configs", ()) or tuple(filter(None, (getattr(config, "webvpn", None),)))
+    for webvpn in webvpn_records:
+        make(webvpn, [(ASAReferenceKind.INTERFACE, webvpn.enabled_interfaces, "enabled-interface"),
+                      (ASAReferenceKind.TRUSTPOINT, webvpn.trustpoint_references, "trustpoint")])
+    assignments = getattr(config, "vpn_address_assignments", ()) or tuple(filter(None, (getattr(config, "vpn_address_assignment", None),)))
+    for assignment in assignments:
+        ctx = getattr(assignment, "source_context", None)
+        targets = []; issues = []; source_only = []
+        if assignment.dhcp_enabled:
+            for server in getattr(config, "dhcp_servers", ()):
+                if getattr(server, "source_context", None) == ctx:
+                    targets.append(("dhcp", server))
+            if not any(key == "dhcp" for key, _ in targets):
+                source_only.append("dhcp-address-assignment")
+        if assignment.local_enabled:
+            for pool in getattr(config, "vpn_address_pools", ()):
+                if getattr(pool, "source_context", None) == ctx:
+                    targets.append(("local-pool", pool))
+        rows.append(ASAVPNRelationship(assignment, tuple(targets), tuple(issues), tuple(source_only)))
     for item in config.interfaces:
         if getattr(item, "ipsec_profile", None):
             rows.append(ASAVPNRelationship(item, (), (), ("ipsec-profile",)))

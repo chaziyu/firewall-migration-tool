@@ -18,6 +18,7 @@ class ASAPolicyMapRelationship:
     classes: tuple[tuple[Any, Any], ...] = ()
     tcp_maps: tuple[tuple[Any, Any], ...] = ()
     inspection_policies: tuple[tuple[Any, Any], ...] = ()
+    ips_actions: tuple[tuple[Any, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,7 @@ class ASAMPFRelationships:
     policy_maps: tuple[ASAPolicyMapRelationship, ...] = ()
     service_policies: tuple[ASAServicePolicyRelationship, ...] = ()
     issues: tuple[Any, ...] = ()
+    external_ips_actions: tuple[tuple[Any, Any, Any], ...] = ()
 
 
 def build_mpf_relationships(config: Any, references: ASAReferenceIndex) -> ASAMPFRelationships:
@@ -56,8 +58,9 @@ def build_mpf_relationships(config: Any, references: ASAReferenceIndex) -> ASAMP
                 if target is not None: targets.append(target)
         class_maps.append(ASAClassMapRelationship(item, tuple(targets)))
     policy_maps = []
+    external_ips_actions = []
     for item in config.policy_maps:
-        classes = []; tcp_maps = []; inspections = []
+        classes = []; tcp_maps = []; inspections = []; ips_actions = []
         for section in getattr(item, "classes", ()):
             if section.class_name != "class-default":
                 target = resolve(item.source_context, ASAReferenceKind.CLASS_MAP, item.name, section.class_name, "policy-class")
@@ -69,14 +72,18 @@ def build_mpf_relationships(config: Any, references: ASAReferenceIndex) -> ASAMP
                 if action.policy_name:
                     target = resolve(item.source_context, ASAReferenceKind.INSPECTION_POLICY_MAP, item.name, action.policy_name, "inspect-policy")
                     if target is not None: inspections.append((action, target))
+            for action in getattr(section, "ips_actions", ()):
+                # AIP SSM sensor configuration lives outside the ASA running-config.
+                external_ips_actions.append((item, section, action))
+                ips_actions.append((section, action))
         for section in getattr(item, "inspection_sections", ()):
             if section.kind == "class" and section.class_name:
                 target = resolve(item.source_context, ASAReferenceKind.CLASS_MAP, item.name, section.class_name, "inspection-class")
                 if target is not None: classes.append((section, target))
-        policy_maps.append(ASAPolicyMapRelationship(item, tuple(classes), tuple(tcp_maps), tuple(inspections)))
+        policy_maps.append(ASAPolicyMapRelationship(item, tuple(classes), tuple(tcp_maps), tuple(inspections), tuple(ips_actions)))
     services = []
     for item in config.service_policies:
         policy = resolve(item.source_context, ASAReferenceKind.POLICY_MAP, item.name, item.policy_name, "service-policy")
         interface = resolve(item.source_context, ASAReferenceKind.INTERFACE, item.name, item.interface, "service-policy") if item.scope == "interface" else None
         services.append(ASAServicePolicyRelationship(item, policy, interface))
-    return ASAMPFRelationships(tuple(class_maps), tuple(policy_maps), tuple(services), tuple(issues))
+    return ASAMPFRelationships(tuple(class_maps), tuple(policy_maps), tuple(services), tuple(issues), tuple(external_ips_actions))

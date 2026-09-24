@@ -34,15 +34,6 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
     if intf_name not in context.interfaces:
         context.interfaces[intf_name] = JuniperInterface(name=intf_name)
     intf = context.interfaces[intf_name]
-    if intf_name.startswith("irb"):
-        intf.interface_type = "irb"
-    elif intf_name.startswith("ae"):
-        intf.interface_type = "aggregate-ethernet"
-    elif intf_name.startswith("reth"):
-        intf.interface_type = "redundant-ethernet"
-    elif intf_name.startswith("lo0"):
-        intf.interface_type = "loopback"
-
     if len(toks) == 3:
         cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
@@ -88,9 +79,6 @@ def handle_interfaces_command(cmd: JunosCommand, context: JuniperContextConfig) 
             if option in {"802.3ad", "aggregated-device"}:
                 intf.aggregate_parent = value
                 intf.aggregate_options.append({"option": option, "value": value})
-                parent = context.interfaces.setdefault(value, JuniperInterface(name=value, interface_type="aggregate-ethernet"))
-                if intf.name not in parent.aggregate_members:
-                    parent.aggregate_members.append(intf.name)
             else:
                 intf.redundant_parent = value
                 intf.physical_link["redundant_parent"] = value
@@ -214,8 +202,8 @@ def _handle_family(tokens: list[str], unit: JuniperInterfaceUnit, cmd: JunosComm
         address = JuniperInterfaceAddress(
             family=family,
             address=tokens[2],
-            primary="primary" in extras,
-            preferred="preferred" in extras,
+            primary=True if "primary" in extras else None,
+            preferred=True if "preferred" in extras else None,
             provenance=build_provenance(cmd),
         )
         record_list_candidate({"address": address.candidate_history}, "address", address.address, cmd)

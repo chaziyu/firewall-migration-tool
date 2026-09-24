@@ -173,9 +173,9 @@ class JunosActivationState:
             elif cmd.operation == JunosOperation.ACTIVATE:
                 if len(cmd.tokens) > 1:
                     path = [t.lower() for t in cmd.tokens[1:]]
-                    # Remove exact match or prefix
+                    # Activating a hierarchy reactivates its descendants too.
                     self.inactive_paths = [
-                        p for p in self.inactive_paths if p != path
+                        p for p in self.inactive_paths if p[:len(path)] != path
                     ]
                 cmd.consumed = True
                 cmd.extraction_status = ExtractionStatus.EXTRACTED

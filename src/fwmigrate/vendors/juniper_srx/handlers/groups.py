@@ -18,8 +18,16 @@ def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
     if group_index is not None and len(tokens) > group_index + 2:
         name = tokens[group_index + 1]
         path = tokens[group_index + 2:]
+        context_prefix = tokens[:group_index]
+        scope = context_prefix
+        context_type, context_name = "root", None
+        if len(scope) >= 2 and scope[0].lower() in {"logical-systems", "tenants"}:
+            context_type = "logical-system" if scope[0].lower() == "logical-systems" else "tenant"
+            context_name, scope = scope[1], scope[2:]
+        group_key = config.group_storage_key(name, context_type, context_name)
         group = config.configuration_groups.setdefault(
-            name, JuniperConfigurationGroup(name=name, root_node=JuniperGroupNode(path_component=""))
+            group_key, JuniperConfigurationGroup(name=name, root_node=JuniperGroupNode(path_component=""),
+                                                 context_type=context_type, context_name=context_name)
         )
         marker = next((i for i, token in enumerate(path)
                        if token.lower() in {"apply-groups", "apply-groups-except"}), None)
@@ -36,7 +44,7 @@ def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
             node.apply_groups_except.extend(values if operation == "apply-groups-except" else [])
             for index, value in enumerate(values):
                 node.applications.append(JuniperGroupApplication(
-                    target_path=tuple(node_path),
+                    target_path=tuple(context_prefix + node_path),
                     ordered_groups=[value] if operation == "apply-groups" else [],
                     excluded_groups=[value] if operation == "apply-groups-except" else [],
                     source_order=cmd.line_number,
@@ -58,6 +66,7 @@ def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
                 source_group_name=name, source_path=tuple(path),
                 source_metadata={"line_number": cmd.line_number},
             ))
+        cmd.context_type, cmd.context_name = context_type, context_name
     elif apply_index is not None and len(tokens) > apply_index + 1:
         key = " ".join(tokens[:apply_index]) or "root"
         values = tokens[apply_index + 1:]
@@ -65,4 +74,9 @@ def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
             config.applied_group_exceptions.setdefault(key, []).extend(values)
         else:
             config.applied_groups.setdefault(key, []).extend(values)
+        if len(tokens) >= 3 and tokens[0].lower() in {"logical-systems", "tenants"}:
+            cmd.context_type = "logical-system" if tokens[0].lower() == "logical-systems" else "tenant"
+            cmd.context_name = tokens[1]
+        else:
+            cmd.context_type, cmd.context_name = "root", None
     return True

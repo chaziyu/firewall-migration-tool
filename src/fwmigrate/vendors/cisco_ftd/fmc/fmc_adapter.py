@@ -12,8 +12,10 @@ from ..model import (
     CiscoFTDInterfaceGroup, CiscoFTDNetworkAddress, CiscoFTDNetworkGroup, CiscoFTDPortObjectGroup,
     CiscoFTDProtocolPortObject, CiscoFTDReference, CiscoFTDSecurityZone, CiscoFTDNativeResource,
     CiscoFTDManualNATRule, CiscoFTDAutoNATRule, CiscoFTDNATPolicy,
-    CiscoFTDTimeRange, CiscoFTDIntrusionPolicy, CiscoFTDIntrusionRuleOverride,
-    CiscoFTDFilePolicy, CiscoFTDDecryptionPolicy, CiscoFTDDNSPolicy, CiscoFTDInterfaceSource,
+    CiscoFTDTimeRange, CiscoFTDRecurringTimeRangeEntry, CiscoFTDIntrusionPolicy, CiscoFTDIntrusionRuleGroup,
+    CiscoFTDIntrusionRuleBehavior, CiscoFTDIntrusionRuleOverride,
+    CiscoFTDFilePolicy, CiscoFTDFileRule, CiscoFTDDecryptionPolicy, CiscoFTDDecryptionRule,
+    CiscoFTDDNSPolicy, CiscoFTDDNSRule, CiscoFTDInterfaceSource,
     CiscoFTDFMCUserRole, CiscoFTDFMCUser, CiscoFTDDHCPServer, CiscoFTDRealm,
     CiscoFTDRealmUserGroup, CiscoFTDRealmUser, CiscoFTDLocalRealmUser,
     CiscoFTDS2SVPNTopology, CiscoFTDS2SVPNEndpoint, CiscoFTDIKEPolicy,
@@ -114,6 +116,8 @@ class CiscoFMCBundleParser:
             return CiscoFTDReference(name=str(value))
 
         def refs(value: Any) -> list[CiscoFTDReference]:
+            if isinstance(value, dict) and ("objects" in value or "literals" in value):
+                value = [*_items(value.get("objects")), *_items(value.get("literals"))]
             if isinstance(value, dict):
                 value = [value]
             return [reference(item) for item in (value or [])]
@@ -140,13 +144,80 @@ class CiscoFMCBundleParser:
         def record(item: dict, index: int, cls, **values):
             attributes = {"provenance": "FMC REST", "domain_id": self.domain_id}
             attributes.update(values.pop("source_attributes", {}))
+            raw_extra = values.pop("raw_extra", sanitize_source_attributes(item))
             return cls(
                 name=name(item, index), source_id=str(item.get("id") or "") or None,
                 source_plane=plane, source_context=self.context, domain_id=self.domain_id,
-                raw_extra=sanitize_source_attributes(item),
+                raw_extra=raw_extra,
                 source_attributes=attributes,
                 **values,
             )
+
+        def ra_record(item: dict, index: int, cls, fields: dict[str, tuple[str, tuple[str, ...]]], **extra):
+            """Promote only keys present in the FMC payload; keep other safe evidence."""
+            values, explicit = {}, []
+            for target, (kind, keys) in fields.items():
+                key = next((key for key in keys if key in item), None)
+                if key is None:
+                    continue
+                value = item[key]
+                values[target] = (refs(value) if value is not None else None) if kind == "refs" else (
+                                  reference(value) if kind == "ref" and value is not None else
+                                  sanitize_source_attributes(value))
+                explicit.append(target)
+            return record(item, index, cls, **values, **extra, explicit_fields=explicit)
+
+        def adapt_inspection_rule(item: dict, index: int, policy: dict, cls, fields: dict[str, tuple[str, ...]]):
+            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            position = item.get("position", item.get("order", metadata.get("ruleIndex")))
+            values = {"parent_policy_id": str(policy["id"]) if policy.get("id") is not None else None,
+                      "parent_policy_name": policy.get("name"),
+                      "position": position, "collection_order": index}
+            explicit = ["position"] if "position" in item or "order" in item or "ruleIndex" in metadata else []
+            explicit.append("collection_order")
+            for target, keys in fields.items():
+                matched = [key for key in keys if key in item]
+                if not matched:
+                    continue
+                raw_values = [item[key] for key in matched]
+                values[target] = [ref for value in raw_values for ref in refs(value)] if target in {
+                    "source_networks", "destination_networks", "source_ports", "destination_ports",
+                    "certificates", "source_zones", "destination_zones", "vlan_tags", "lists_feeds", "networks",
+                } else raw_values[0] if len(raw_values) == 1 else raw_values
+                explicit.append(target)
+            used = {key for keys in fields.values() for key in keys}
+            used.update(("id", "name", "position", "order"))
+            raw_extra = {key: value for key, value in item.items() if key not in used}
+            if "ruleIndex" in metadata:
+                raw_extra["metadata"] = {key: value for key, value in metadata.items() if key != "ruleIndex"}
+                if not raw_extra["metadata"]:
+                    raw_extra.pop("metadata")
+            return record(item, index, cls, **values, explicit_fields=explicit,
+                source_attributes={"parent_policy_id": values["parent_policy_id"],
+                                   "parent_policy_name": values["parent_policy_name"]},
+                raw_extra=sanitize_source_attributes(raw_extra))
+
+        def adapt_inspection_policy(item: dict, index: int, cls, child_cls, child_keys: tuple[str, ...],
+                                    fields: dict[str, tuple[str, ...]], policy_fields: dict[str, tuple[str, ...]]):
+            values: dict[str, Any] = {}
+            explicit: list[str] = []
+            for target, keys in policy_fields.items():
+                key = next((key for key in keys if key in item), None)
+                if key is not None:
+                    values[target] = ref_field(item, key) if target == "decryption_policy" else item[key]
+                    explicit.append(target)
+            rules_key = next((key for key in child_keys if key in item), None)
+            if rules_key is not None and isinstance(item[rules_key], list):
+                values["rules"] = [adapt_inspection_rule(child, child_index, item, child_cls, fields)
+                                    for child_index, child in enumerate(item[rules_key], 1)
+                                    if isinstance(child, dict)]
+                explicit.append("rules")
+            used = {key for keys in policy_fields.values() for key in keys}
+            if rules_key is not None:
+                used.add(rules_key)
+            values["explicit_fields"] = explicit
+            return record(item, index, cls, **values,
+                raw_extra=sanitize_source_attributes({key: value for key, value in item.items() if key not in used}))
 
         def typed_child_records(family: str, keys: tuple[tuple[str, type], ...]):
             result = {key: [] for key, _ in keys}
@@ -160,14 +231,107 @@ class CiscoFMCBundleParser:
                     for index, item in enumerate(_items(parent.get(key)), 1):
                         values = {}
                         if cls is CiscoFTDS2SIKESettings:
-                            values.update(ike_policies=refs_field(item, "ikePolicies", "ikePolicy"),
-                                certificates=refs_field(item, "certificates", "certificate"),
-                                psk_present=(any(bool(item.get(field)) for field in ("preSharedKey", "preSharedKeyEncrypted", "psk"))
-                                    if any(field in item for field in ("preSharedKey", "preSharedKeyEncrypted", "psk")) else None))
+                            v1, v2 = item.get("ikeV1Settings"), item.get("ikeV2Settings")
+                            v1 = v1 if isinstance(v1, dict) else {}
+                            v2 = v2 if isinstance(v2, dict) else {}
+                            v1_policies = refs_field(v1, "policies")
+                            v2_policies = refs_field(v2, "policies")
+                            v1_cert = ref_field(v1, "certificateAuth")
+                            v2_cert = ref_field(v2, "certificateAuth")
+                            legacy_policies = refs_field(item, "ikePolicies", "ikePolicy")
+                            legacy_certificates = refs_field(item, "certificates", "certificate")
+                            key_fields = ("manualPreSharedKey", "preSharedKey", "preSharedKeyEncrypted", "psk")
+                            psk_values = [block[field] for block in (v1, v2, item) for field in key_fields if field in block]
+                            values.update(
+                                ikev1_policies=v1_policies, ikev2_policies=v2_policies,
+                                ike_policies=[*(v1_policies or []), *(v2_policies or [])]
+                                    if v1_policies is not None or v2_policies is not None else legacy_policies,
+                                ikev1_authentication_type=v1.get("authenticationType"),
+                                ikev2_authentication_type=v2.get("authenticationType"),
+                                ikev1_certificate=v1_cert, ikev2_certificate=v2_cert,
+                                certificates=[ref for ref in (v1_cert, v2_cert) if ref] or legacy_certificates,
+                                ikev1_automatic_psk_length=v1.get("automaticPreSharedKeyLength"),
+                                ikev2_automatic_psk_length=v2.get("automaticPreSharedKeyLength"),
+                                ikev2_hex_psk_only=v2.get("enforceHexBasedPreSharedKeyOnly"),
+                                psk_present=True if any(bool(value) for value in psk_values) else None,
+                                explicit_fields=[field for field in (
+                                    "ikev1_authentication_type", "ikev2_authentication_type",
+                                    "ikev1_automatic_psk_length", "ikev2_automatic_psk_length",
+                                    "ikev2_hex_psk_only") if field in {
+                                        "ikev1_authentication_type" if "authenticationType" in v1 else "",
+                                        "ikev2_authentication_type" if "authenticationType" in v2 else "",
+                                        "ikev1_automatic_psk_length" if "automaticPreSharedKeyLength" in v1 else "",
+                                        "ikev2_automatic_psk_length" if "automaticPreSharedKeyLength" in v2 else "",
+                                        "ikev2_hex_psk_only" if "enforceHexBasedPreSharedKeyOnly" in v2 else ""}],
+                            )
+                            values["explicit_fields"] = [field for field, value in values.items()
+                                                          if field != "explicit_fields" and value is not None]
                         elif cls is CiscoFTDS2SIPsecSettings:
-                            values["ipsec_proposals"] = refs_field(item, "ipsecProposals", "ipsecProposal", "proposals")
+                            v1_refs = refs_field(item, "ikeV1IpsecProposal")
+                            v2_refs = refs_field(item, "ikeV2IpsecProposal")
+                            pfs = item.get("perfectForwardSecrecy")
+                            pfs = pfs if isinstance(pfs, dict) else {}
+                            values.update(
+                                ikev1_ipsec_proposals=v1_refs, ikev2_ipsec_proposals=v2_refs,
+                                ipsec_proposals=[*(v1_refs or []), *(v2_refs or [])]
+                                    if v1_refs is not None or v2_refs is not None
+                                    else refs_field(item, "ipsecProposals", "ipsecProposal", "proposals"),
+                                pfs_enabled=pfs.get("enabled"), pfs_group=pfs.get("modulusGroup"),
+                                lifetime_seconds=item.get("lifetimeSeconds"),
+                                lifetime_kilobytes=item.get("lifetimeKilobytes"),
+                                ikev2_mode=item.get("ikeV2Mode"), crypto_map_type=item.get("cryptoMapType"),
+                                do_not_fragment_policy=item.get("doNotFragmentPolicy"),
+                                enable_rri=item.get("enableRRI"),
+                                enable_sa_strength_enforcement=item.get("enableSaStrengthEnforcement"),
+                                tfc_packets=item.get("tfcPackets") if isinstance(item.get("tfcPackets"), dict) else None,
+                                validate_incoming_icmp_error_message=item.get("validateIncomingIcmpErrorMessage"),
+                            )
+                            values["explicit_fields"] = [field for field, value in values.items()
+                                                          if field != "explicit_fields" and value is not None]
+                        elif cls is CiscoFTDS2SAdvancedSettings:
+                            ike = item.get("advancedIkeSetting") if isinstance(item.get("advancedIkeSetting"), dict) else {}
+                            tunnel = item.get("advancedTunnelSetting") if isinstance(item.get("advancedTunnelSetting"), dict) else {}
+                            values.update(
+                                ike_keepalive_settings=ike.get("ikeKeepaliveSettings"),
+                                advanced_ike_settings=ike or None,
+                                advanced_ipsec_settings=item.get("advancedIpsecSetting")
+                                    if isinstance(item.get("advancedIpsecSetting"), dict) else None,
+                                advanced_tunnel_settings=tunnel or None,
+                            )
+                            values["explicit_fields"] = [field for field, value in values.items()
+                                                          if field != "explicit_fields" and value is not None]
                         elif cls is CiscoFTDRAVPNAddressAssignmentSettings:
-                            values["address_pools"] = refs_field(item, "addressPools", "ipv4AddressPools", "ipv6AddressPools")
+                            for target, (kind, keys) in {
+                                "address_pools": ("refs", ("addressPools", "ipv4AddressPools", "ipv6AddressPools")),
+                                "assignment_method": ("raw", ("assignmentMethod",)),
+                                "allow_reuse": ("raw", ("allowReuse",)),
+                                "reuse_delay": ("raw", ("ipAddressReuseInterval", "reuseDelay", "addressReuseDelay")),
+                                "external_assignment": ("ref", ("externalAssignment",)),
+                                "use_authorization_server_for_ipv4": ("raw", ("useAuthorizationServerForIPv4",)),
+                                "use_authorization_server_for_ipv6": ("raw", ("useAuthorizationServerForIPv6",)),
+                                "use_dhcp": ("raw", ("useDHCP",)),
+                                "use_internal_address_pool_for_ipv4": ("raw", ("useInternalAddressPoolForIPv4",)),
+                                "use_internal_address_pool_for_ipv6": ("raw", ("useInternalAddressPoolForIPv6",)),
+                            }.items():
+                                source_key = next((candidate for candidate in keys if candidate in item), None)
+                                if source_key is not None:
+                                    values[target] = (refs(item[source_key]) if kind == "refs" else
+                                        ref_field(item, source_key) if kind == "ref" else sanitize_source_attributes(item[source_key]))
+                            values["explicit_fields"] = list(values)
+                        elif cls is CiscoFTDRAVPNIPsecSettings:
+                            for target, source_key in (("ikev2_settings", "ikev2settings"),
+                                                       ("ipsec_settings", "ipsecsettings"),
+                                                       ("nat_keepalive", "natKeepaliveMessageTraversal")):
+                                if source_key in item:
+                                    values[target] = sanitize_source_attributes(item[source_key])
+                            values["explicit_fields"] = list(values)
+                        elif cls is CiscoFTDSecureClientSettings:
+                            for target, keys in (("packages", ("clientPackages", "secureClientPackages")),
+                                                 ("profiles", ("clientProfiles", "secureClientProfiles"))):
+                                source_key = next((candidate for candidate in keys if candidate in item), None)
+                                if source_key is not None:
+                                    values[target] = refs(item[source_key])
+                            values["explicit_fields"] = list(values)
                         elif cls is CiscoFTDPrefilterRule:
                             values.update(position=item.get("position", item.get("order")), action=item.get("action"),
                                 conditions=sanitize_source_attributes(item.get("conditions")) if "conditions" in item else None,
@@ -347,7 +511,13 @@ class CiscoFMCBundleParser:
             acp_policies.append(record(policy, policy_index, CiscoFTDAccessControlPolicy,
                 rules=acp_rules if "rules" in policy else None,
                 prefilter_policy=ref_field(policy, "prefilterPolicy", "associatedPrefilterPolicy"),
-                network_analysis_policy=ref_field(policy, "networkAnalysisPolicy", "networkanalysispolicy")))
+                network_analysis_policy=ref_field(policy, "networkAnalysisPolicy", "networkanalysispolicy"),
+                decryption_policy=ref_field(policy, "decryptionPolicy"), dns_policy=ref_field(policy, "dnsPolicy"),
+                explicit_fields=[field for field, keys in (
+                    ("prefilter_policy", ("prefilterPolicy", "associatedPrefilterPolicy")),
+                    ("network_analysis_policy", ("networkAnalysisPolicy", "networkanalysispolicy")),
+                    ("decryption_policy", ("decryptionPolicy",)), ("dns_policy", ("dnsPolicy",)))
+                    if any(key in policy for key in keys)]))
             native.extend(record(item, index, CiscoFTDNativeResource,
                 source_attributes={"resource_type": "default_actions", "parent_policy_id": policy.get("id"),
                                    "parent_policy_name": policy_name, "parent_policy_type": "accesspolicies"})
@@ -424,12 +594,257 @@ class CiscoFMCBundleParser:
         def object_records(key, cls):
             return [record(item, i, cls) for i, item in enumerate(objects.get(key, []), 1)]
 
+        def adapt_realm(item: dict, index: int):
+            fields = {
+                "realm_type": ("realmType",), "enabled": ("enabled",), "description": ("description",),
+                "base_dn": ("baseDn",), "group_dn": ("groupDn",), "group_attribute": ("groupAttribute",),
+                "ad_primary_domain": ("adPrimaryDomain",), "included_users": ("includedUsers",),
+                "excluded_users": ("excludedUsers",), "included_groups": ("includedGroups",),
+                "excluded_groups": ("excludedGroups",), "identity_provider": ("identityProvider",),
+            }
+            values = {field: item[key] for field, aliases in fields.items()
+                      if (key := next((key for key in aliases if key in item), None)) is not None}
+            explicit = list(values)
+            if "directoryConfigurations" in item:
+                values["directory_configurations"] = sanitize_source_attributes({"items": item["directoryConfigurations"]})["items"]
+                explicit.append("directory_configurations")
+            if "idpSettings" in item:
+                values["idp_settings"] = sanitize_source_attributes({"settings": item["idpSettings"]})["settings"]
+                explicit.append("idp_settings")
+            sync_keys = ("updateHour", "updateInterval")
+            sync = {key: item[key] for key in sync_keys if key in item}
+            if "synchronizationSettings" in item and isinstance(item["synchronizationSettings"], dict):
+                sync.update(item["synchronizationSettings"])
+            if sync:
+                values["synchronization_settings"] = sanitize_source_attributes(sync)
+                explicit.append("synchronization_settings")
+            values["explicit_fields"] = explicit
+            return record(item, index, CiscoFTDRealm, **values)
+
+        def adapt_realm_identity(item: dict, index: int, cls, *, user: bool = False):
+            fields = {"username": ("username", "name"), "external_id": ("externalId",),
+                      "distinguished_name": ("distinguishedName", "dn"),
+                      "resolved": ("resolved",), "synchronized": ("synchronized",)}
+            if not user:
+                fields.pop("username")
+            values = {field: item[key] for field, aliases in fields.items()
+                      if (key := next((key for key in aliases if key in item), None)) is not None}
+            explicit = list(values)
+            if "metadata" in item and isinstance(item["metadata"], dict) and "resolved" in item["metadata"] and "resolved" not in values:
+                values["resolved"] = item["metadata"]["resolved"]
+                explicit.append("resolved")
+            if "forPolicy" in item:
+                values["for_policy"] = item["forPolicy"]
+                explicit.append("for_policy")
+            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            if "lastSynced" in metadata:
+                values["last_synced"] = metadata["lastSynced"]
+                explicit.append("last_synced")
+            if "realm" in item:
+                values["realm"] = ref_field(item, "realm")
+                explicit.append("realm")
+            if user:
+                for field, keys in (("groups", ("groups", "realmUserGroups")),):
+                    key = next((key for key in keys if key in item), None)
+                    if key is not None:
+                        values[field] = refs_field(item, key)
+                        explicit.append(field)
+            values["explicit_fields"] = explicit
+            return record(item, index, cls, **values)
+
+        def adapt_local_realm_user(item: dict, index: int):
+            keys = {"username": ("username", "name"), "enabled": ("enabled",),
+                    "password_configured": ("passwordConfigured", "hasPassword")}
+            values = {field: item[key] for field, aliases in keys.items()
+                      if (key := next((key for key in aliases if key in item), None)) is not None}
+            explicit = list(values)
+            if ("password" in item or "passwordHash" in item or "password_hash" in item) and not any(
+                    key in item for key in ("passwordConfigured", "hasPassword")):
+                secret_value = item.get("password", item.get("passwordHash", item.get("password_hash")))
+                values["password_configured"] = True if secret_value not in (None, "") else None
+                if "password_configured" not in explicit:
+                    explicit.append("password_configured")
+            if "realm" in item:
+                values["realm"] = ref_field(item, "realm")
+                explicit.append("realm")
+            for field, aliases in (("groups", ("groups", "realmUserGroups")),):
+                key = next((key for key in aliases if key in item), None)
+                if key is not None:
+                    values[field] = refs_field(item, key)
+                    explicit.append(field)
+            values["explicit_fields"] = explicit
+            return record(item, index, CiscoFTDLocalRealmUser, **values)
+
+        def adapt_fmc_role(item: dict, index: int):
+            fields = {
+                "description": ("description",), "predefined": ("predefined", "isPredefined"),
+                "custom": ("custom", "isCustom"), "menu_permissions": ("menuPermissions", "menuAccessPermissions"),
+                "system_permissions": ("systemPermissions", "systemAccessPermissions"),
+                "role_escalation": ("roleEscalation",), "other_permissions": ("permissions",),
+            }
+            values = {field: sanitize_source_attributes({key: item[key]})[key]
+                      for field, aliases in fields.items()
+                      if (key := next((key for key in aliases if key in item), None)) is not None}
+            values["explicit_fields"] = list(values)
+            return record(item, index, CiscoFTDFMCUserRole, **values)
+
+        def adapt_fmc_user(item: dict, index: int):
+            fields = {"username": ("username", "name"), "enabled": ("isUserEnabled", "enabled"),
+                      "authentication_type": ("authenticationMethod", "authenticationType"),
+                      "external_identity": ("externalIdentity",)}
+            values = {field: sanitize_source_attributes({key: item[key]})[key]
+                      for field, aliases in fields.items()
+                      if (key := next((key for key in aliases if key in item), None)) is not None}
+            explicit = list(values)
+            for field, aliases in (("authentication_source", ("authenticationSource", "authSource")),):
+                key = next((key for key in aliases if key in item), None)
+                if key is not None:
+                    values[field] = ref_field(item, key)
+                    explicit.append(field)
+            key = next((key for key in ("roles", "role") if key in item), None)
+            if key is not None:
+                values["roles"] = refs_field(item, key)
+                explicit.append("roles")
+            values["explicit_fields"] = explicit
+            return record(item, index, CiscoFTDFMCUser, **values)
+
+        def adapt_time_range(item: dict, index: int):
+            recurrence_fields = {
+                "recurrence_type": "recurrenceType", "days": "days",
+                "daily_start_time": "dailyStartTime", "daily_end_time": "dailyEndTime",
+                "range_start_day": "rangeStartDay", "range_start_time": "rangeStartTime",
+                "range_end_day": "rangeEndDay", "range_end_time": "rangeEndTime",
+            }
+
+            def recurrence_entry(source: dict):
+                def source_value(field: str, key: str):
+                    value = source[key]
+                    if field == "days":
+                        return value if isinstance(value, list) and all(isinstance(day, str) for day in value) else None
+                    return value if value is None or isinstance(value, str) else None
+
+                return CiscoFTDRecurringTimeRangeEntry(
+                    **{field: source_value(field, key) for field, key in recurrence_fields.items() if key in source},
+                    explicit_fields=[field for field, key in recurrence_fields.items() if key in source],
+                    raw_extra=sanitize_source_attributes(source),
+                )
+
+            fields = {
+                "description": "description",
+                "absolute_start_date_time": "effectiveStartDateTime",
+                "absolute_end_date_time": "effectiveEndDateTime",
+            }
+            values = {field: item[key] if item[key] is None or isinstance(item[key], str) else None
+                      for field, key in fields.items() if key in item}
+            if "recurrenceList" in item:
+                values["recurrence_entries"] = (
+                    [recurrence_entry(entry) for entry in item["recurrenceList"] if isinstance(entry, dict)]
+                    if isinstance(item["recurrenceList"], list) else None
+                )
+            values["explicit_fields"] = [field for field, key in fields.items() if key in item]
+            if "recurrenceList" in item:
+                values["explicit_fields"].append("recurrence_entries")
+            return record(item, index, CiscoFTDTimeRange, **values)
+
+        def adapt_intrusion_policy(item: dict, index: int):
+            fields = {
+                "description": ("description",), "variable_set": ("variableSet",),
+                "base_policy": ("basePolicy", "baseIntrusionPolicy"),
+                "snort_version": ("snortVersion",),
+            }
+            values = {target: reference(item[key]) if target in {"variable_set", "base_policy"} else item[key]
+                      for target, keys in fields.items()
+                      if (key := next((key for key in keys if key in item), None)) is not None}
+            values["explicit_fields"] = [target for target, keys in fields.items()
+                                         if any(key in item for key in keys)]
+            return record(item, index, CiscoFTDIntrusionPolicy, **values)
+
+        intrusion_policies = [adapt_intrusion_policy(item, index)
+                              for index, item in enumerate(objects.get("intrusionpolicies", []), 1)]
+        intrusion_rule_groups = []
+        intrusion_rule_behaviors = []
+        for policy in objects.get("intrusionpolicies", []):
+            policy_id = str(policy.get("id")) if policy.get("id") is not None else None
+            policy_name = policy.get("name")
+            groups = _items(policy.get("rule_groups"))
+            memberships: dict[str, list[dict[str, Any]]] = {}
+            membership_keys: set[tuple[str, str]] = set()
+            for group_index, group in enumerate(groups, 1):
+                group_id = str(group.get("id")) if group.get("id") is not None else None
+                group_name = str(group.get("name") or group_id or group_index)
+                intrusion_rule_groups.append(record(group, group_index, CiscoFTDIntrusionRuleGroup,
+                    parent_policy_id=policy_id, parent_policy_name=policy_name,
+                    description=group.get("description"),
+                    explicit_fields=[field for field in ("description",) if field in group],
+                    source_attributes={"parent_policy_id": policy_id, "parent_policy_name": policy_name}))
+                for child in _items(group.get("rules")):
+                    rule_key = str(child.get("ruleId") or child.get("id") or "")
+                    if not rule_key:
+                        continue
+                    membership_key = (group_id or group_name, rule_key)
+                    if membership_key in membership_keys:
+                        continue
+                    membership_keys.add(membership_key)
+                    evidence = {"rule_group_id": group_id, "rule_group_name": group_name,
+                                "rule_id": rule_key, "payload": sanitize_source_attributes(child)}
+                    memberships.setdefault(rule_key, []).append(evidence)
+
+            for rule_index, item in enumerate(_items(policy.get("rules")), 1):
+                rule_key = str(item.get("ruleId") or item.get("id") or "")
+                evidence = memberships.get(rule_key, [])
+                conflicts = []
+                for membership in evidence:
+                    group_payload = membership["payload"]
+                    differing = {key: {"behavior": item[key], "group": group_payload[key]}
+                                 for key in ("state", "action", "enabled")
+                                 if key in item and key in group_payload and item[key] != group_payload[key]}
+                    if differing:
+                        conflicts.append({**membership, "conflicting_fields": differing})
+                attributes = {"parent_policy_id": policy_id, "parent_policy_name": policy_name}
+                if evidence:
+                    attributes["group_membership_evidence"] = evidence
+                if conflicts:
+                    attributes["conflicting_group_payload"] = conflicts
+                values = {field: item[field] for field in ("state", "action", "enabled") if field in item}
+                values.update(parent_policy_id=policy_id, parent_policy_name=policy_name,
+                    rule_id=str(item["ruleId"]) if item.get("ruleId") is not None else None,
+                    explicit_fields=[*values.keys(), *( ["rule_id"] if "ruleId" in item else [])],
+                    source_attributes=attributes)
+                intrusion_rule_behaviors.append(record(item, rule_index, CiscoFTDIntrusionRuleBehavior, **values))
+
         source_objects = self.payload.get("objects") if isinstance(self.payload.get("objects"), dict) else {}
 
         def vpn_records(families, legacy_key, cls):
+            def adapt(item, index, version, resource_type):
+                values = {"ike_version": version}
+                if cls is CiscoFTDIKEPolicy:
+                    fields = {
+                        "priority": "priority", "lifetime_in_seconds": "lifetimeInSeconds",
+                        "authentication_method": "authenticationMethod", "encryption": "encryption",
+                        "hash": "hash", "diffie_hellman_group": "diffieHellmanGroup",
+                        "encryption_algorithms": "encryptionAlgorithms",
+                        "integrity_algorithms": "integrityAlgorithms",
+                        "prf_integrity_algorithms": "prfIntegrityAlgorithms",
+                        "diffie_hellman_groups": "diffieHellmanGroups",
+                    }
+                    values.update({field: item[key] for field, key in fields.items() if key in item})
+                    explicit = [field for field, key in fields.items() if key in item]
+                elif cls is CiscoFTDIPsecProposal:
+                    fields = {
+                        "esp_encryption": "espEncryption", "esp_hash": "espHash",
+                        "encryption_algorithms": "encryptionAlgorithms",
+                        "integrity_algorithms": "integrityAlgorithms",
+                    }
+                    values.update({field: item[key] for field, key in fields.items() if key in item})
+                    explicit = [field for field, key in fields.items() if key in item]
+                else:
+                    explicit = []
+                # Collection membership supplies the version; it is provenance, not an explicit payload field.
+                return record(item, index, cls, **values, explicit_fields=explicit,
+                    source_attributes={"resource_type": resource_type})
+
             if any(key in source_objects for key, _ in families):
-                return [record(item, index, cls, ike_version=version,
-                    source_attributes={"resource_type": key})
+                return [adapt(item, index, version, key)
                     for key, version in families for index, item in enumerate(objects.get(key, []), 1)]
             return [record(item, index, cls, ike_version=item.get("ike_version"),
                 explicit_fields=["ike_version"] if "ike_version" in item else [],
@@ -438,43 +853,158 @@ class CiscoFMCBundleParser:
 
         routes, dhcp, interfaces = [], [], []
         policy_based_routes, ecmp_zones, virtual_routers, sla_monitors = [], [], [], []
-        certificates = [record(item, i, CiscoFTDCertificate,
-            certificate_type="internal", source_collection="internalcertificates",
-            device_id=str(item.get("deviceId") or item.get("device_id")) if item.get("deviceId") or item.get("device_id") else None,
-            issuer=item.get("issuer"), subject=item.get("subject"),
-            validity={key: item[key] for key in ("validityStartDate", "validityEndDate", "notBefore", "notAfter") if key in item} or None,
-            certificate_metadata={key: item[key] for key in ("fingerprint", "serialNumber", "algorithm", "keyLength", "isCA") if key in item} or None,
-            private_key_present=(item.get("privateKeyPresent", item.get("private_key_present"))
-                if "privateKeyPresent" in item or "private_key_present" in item else
-                any(bool(item.get(key)) for key in ("privateKey", "private_key", "pkcs12"))
-                if any(key in item for key in ("privateKey", "private_key", "pkcs12")) else None))
-            for i, item in enumerate(objects.get("internalcertificates", []), 1)]
-        certificates.extend(record(item, i, CiscoFTDCertificate,
-            certificate_type="device", source_collection="device_certificates",
-            device_id=str(item.get("deviceId") or item.get("device_id")) if item.get("deviceId") or item.get("device_id") else None,
-            issuer=item.get("issuer"), subject=item.get("subject"),
-            validity={key: item[key] for key in ("validityStartDate", "validityEndDate", "notBefore", "notAfter") if key in item} or None,
-            certificate_metadata={key: item[key] for key in ("fingerprint", "serialNumber", "algorithm", "keyLength", "isCA") if key in item} or None,
-            private_key_present=(item.get("privateKeyPresent", item.get("private_key_present"))
-                if "privateKeyPresent" in item or "private_key_present" in item else
-                any(bool(item.get(key)) for key in ("privateKey", "private_key", "pkcs12"))
-                if any(key in item for key in ("privateKey", "private_key", "pkcs12")) else None))
-            for i, item in enumerate(objects.get("device_certificates", []), 1))
-        address_pools = [record(item, i, CiscoFTDAddressPool, address_family="IPv4",
-            source_representation=item.get("addressPool", item.get("addresses", item.get("value"))),
-            start_address=item.get("startAddress", item.get("start")), end_address=item.get("endAddress", item.get("end")),
-            override_metadata=override_metadata(item)) for i, item in enumerate(objects.get("ipv4addresspools", []), 1)]
-        address_pools.extend(record(item, i, CiscoFTDAddressPool, address_family="IPv6",
-            source_representation=item.get("addressPool", item.get("addresses", item.get("value"))),
-            start_address=item.get("startAddress", item.get("start")), end_address=item.get("endAddress", item.get("end")),
-            override_metadata=override_metadata(item)) for i, item in enumerate(objects.get("ipv6addresspools", []), 1))
-        group_policies = [record(item, i, CiscoFTDGroupPolicy, vpn_access=item.get("vpnAccess"),
-            realm=ref_field(item, "realm", "realmId"), aaa_server_group=ref_field(item, "aaaServerGroup", "authenticationServerGroup"),
-            address_pools=refs_field(item, "addressPools", "ipv4AddressPools", "ipv6AddressPools"),
-            split_tunnel=refs_field(item, "splitTunnel", "splitTunnelNetworks"),
-            secure_client=refs_field(item, "secureClient", "secureClientPackages", "secureClientProfiles"))
-            for i, item in enumerate(objects.get("grouppolicies", []), 1)]
-        certificate_maps = object_records("certificatemaps", CiscoFTDCertificateMap)
+        def adapt_certificate(item: dict, index: int, family: str):
+            validity = {key: item[key] for key in ("validityStartDate", "validityEndDate", "notBefore", "notAfter")
+                        if key in item}
+            metadata = {key: item[key] for key in ("fingerprint", "serialNumber", "algorithm", "keyLength", "isCA")
+                        if key in item}
+            presence_key = next((key for key in ("privateKeyPresent", "private_key_present") if key in item), None)
+            secret_keys = ("privateKey", "private_key", "pkcs12")
+            private_key_present = (item[presence_key] if presence_key else
+                any(bool(item[key]) for key in secret_keys if key in item)
+                if any(key in item for key in secret_keys) else None)
+            explicit = [field for field in ("issuer", "subject") if field in item]
+            if validity:
+                explicit.append("validity")
+            if metadata:
+                explicit.append("certificate_metadata")
+            if presence_key or any(key in item for key in secret_keys):
+                explicit.append("private_key_present")
+            if "type" in item and family not in {"internalcertificates", "device_certificates"}:
+                explicit.append("certificate_type")
+            return record(item, index, CiscoFTDCertificate,
+                certificate_type=("internal" if family == "internalcertificates" else
+                    "device" if family == "device_certificates" else item.get("type") or family), source_collection=family,
+                device_id=str(item.get("deviceId") or item.get("device_id")) if item.get("deviceId") or item.get("device_id") else None,
+                issuer=item.get("issuer"), subject=item.get("subject"), validity=validity or None,
+                certificate_metadata=metadata or None, private_key_present=private_key_present,
+                explicit_fields=explicit)
+
+        certificates = [adapt_certificate(item, i, family)
+            for family in ("internalcertificates", "device_certificates", "externalcertificates", "externalcacertificates")
+            for i, item in enumerate(objects.get(family, []), 1)]
+        address_pools = [ra_record(item, i, CiscoFTDAddressPool, {
+            "source_representation": ("raw", ("addressPool", "addresses", "value")),
+            "start_address": ("raw", ("startAddress", "start")),
+            "end_address": ("raw", ("endAddress", "end")),
+            "address_reuse_delay": ("raw", ("addressReuseDelay", "reuseDelay")),
+        }, address_family=family, override_metadata=override_metadata(item))
+            for collection, family in (("ipv4addresspools", "IPv4"), ("ipv6addresspools", "IPv6"))
+            for i, item in enumerate(objects.get(collection, []), 1)]
+
+        def adapt_group_policy(item: dict, index: int):
+            fields = {
+                "vpn_access": ("raw", ("vpnAccess",)), "protocols": ("raw", ("protocols", "vpnProtocols")),
+                "connection_settings": ("raw", ("connectionSettings",)),
+                "dns_servers": ("raw", ("dnsServers",)), "wins_servers": ("raw", ("winsServers",)),
+                "domain_name": ("raw", ("domainName", "defaultDomain")),
+                "realm": ("ref", ("realm", "realmId")),
+                "aaa_server_group": ("ref", ("aaaServerGroup", "authenticationServerGroup")),
+                "address_pools": ("refs", ("addressPools", "ipv4AddressPools", "ipv6AddressPools")),
+                "split_tunnel_policy": ("raw", ("splitTunnelPolicy",)),
+                "split_tunnel_networks": ("refs", ("splitTunnelNetworks",)),
+                "split_dns": ("raw", ("splitDns", "splitDNS")),
+                "secure_client": ("refs", ("secureClient", "secureClientPackages", "secureClientProfiles")),
+                "session_settings": ("raw", ("sessionSettings",)),
+                "simultaneous_logins": ("raw", ("simultaneousLogins",)),
+            }
+            result = ra_record(item, index, CiscoFTDGroupPolicy, fields)
+            general = item.get("generalSettings") if isinstance(item.get("generalSettings"), dict) else {}
+            assignment = general.get("addressAssignment") if isinstance(general.get("addressAssignment"), dict) else {}
+            split_settings = general.get("splitTunnelSettings") if isinstance(general.get("splitTunnelSettings"), dict) else {}
+            client = item.get("anyConnectSettings") if isinstance(item.get("anyConnectSettings"), dict) else {}
+            advanced = item.get("advancedSettings") if isinstance(item.get("advancedSettings"), dict) else {}
+            session = advanced.get("sessionSettings") if isinstance(advanced.get("sessionSettings"), dict) else {}
+
+            def nested(field: str, value: Any):
+                if field not in result.explicit_fields:
+                    setattr(result, field, sanitize_source_attributes(value))
+                    result.explicit_fields.append(field)
+
+            if "protocol" in item:
+                nested("protocols", item["protocol"])
+            dns = [general[key] for key in ("primaryDNSServer", "secondaryDNSServer") if key in general]
+            if dns:
+                nested("dns_servers", dns)
+            wins = [general[key] for key in ("primaryWINSServer", "secondaryWINSServer") if key in general]
+            if wins:
+                nested("wins_servers", wins)
+            if "defaultDomainName" in assignment:
+                nested("domain_name", assignment["defaultDomainName"])
+            pools = [ref for key in ("ipv4LocalAddressPool", "ipv6LocalAddressPool")
+                     if key in assignment for ref in refs(assignment[key])]
+            if pools or any(key in assignment for key in ("ipv4LocalAddressPool", "ipv6LocalAddressPool")):
+                if "address_pools" not in result.explicit_fields:
+                    result.address_pools = pools
+                    result.explicit_fields.append("address_pools")
+            policies = {key: split_settings[key] for key in ("ipv4SplitTunnelPolicy", "ipv6SplitTunnelPolicy")
+                        if key in split_settings}
+            if policies:
+                nested("split_tunnel_policy", policies)
+            if "splitTunnelACL" in split_settings:
+                result.split_tunnel_acl = ref_field(split_settings, "splitTunnelACL")
+                result.explicit_fields.append("split_tunnel_acl")
+            split_dns = {key: split_settings[key] for key in ("splitDNSDomainList", "splitDNSRequestPolicy")
+                         if key in split_settings}
+            if split_dns:
+                nested("split_dns", split_dns)
+            if "connectionSettings" in client:
+                nested("connection_settings", client["connectionSettings"])
+            if "vpnClientProfile" in client and "secure_client" not in result.explicit_fields:
+                result.secure_client = refs(client["vpnClientProfile"])
+                result.explicit_fields.append("secure_client")
+            if "sessionSettings" in advanced:
+                nested("session_settings", advanced["sessionSettings"])
+            if "simultaneousLoginPerUser" in session:
+                nested("simultaneous_logins", session["simultaneousLoginPerUser"])
+            split = item.get("splitTunnel")
+            if isinstance(split, dict):
+                if "policy" in split and "split_tunnel_policy" not in result.explicit_fields:
+                    result.split_tunnel_policy = sanitize_source_attributes(split["policy"])
+                    result.explicit_fields.append("split_tunnel_policy")
+                if "networks" in split and "split_tunnel_networks" not in result.explicit_fields:
+                    result.split_tunnel_networks = refs(split["networks"])
+                    result.explicit_fields.append("split_tunnel_networks")
+            elif isinstance(split, list) and "split_tunnel_networks" not in result.explicit_fields:
+                result.split_tunnel_networks = refs(split)
+                result.explicit_fields.append("split_tunnel_networks")
+            result.split_tunnel = result.split_tunnel_networks
+            return result
+
+        def adapt_ra_profile(item: dict, index: int, vpn: dict):
+            profile = ra_record(item, index, CiscoFTDRAVPNConnectionProfile, {
+                "alias": ("raw", ("groupAlias", "alias")),
+                "group_url": ("raw", ("groupUrl", "groupURL")),
+                "enabled": ("raw", ("enabled",)),
+                "authentication_method": ("raw", ("authenticationMethod",)),
+                "realm": ("ref", ("realm", "authenticationRealm")),
+                "authentication_server": ("ref", ("primaryAuthenticationServer", "authenticationServerGroup", "authenticationServer")),
+                "authorization": ("ref", ("authorizationServer", "authorization")),
+                "accounting_server": ("ref", ("accountingServer",)),
+                "address_assignment": ("raw", ("addressAssignment", "dhcpServersForAddressAssignment")),
+                "address_pools": ("refs", ("addressPools", "ipv4AddressPools", "ipv6AddressPools", "ipv4AddressPool", "ipv6AddressPool")),
+                "default_group_policy": ("ref", ("defaultGroupPolicy", "groupPolicy")),
+                "certificates": ("refs", ("certificates", "certificate")),
+                "certificate_maps": ("refs", ("certificateMaps", "certificateMap")),
+                "connection_settings": ("raw", ("connectionSettings",)),
+            }, parent_policy_id=str(vpn.get("id")) if vpn.get("id") is not None else None,
+                parent_policy_name=vpn.get("name"),
+                source_attributes={"parent_policy_id": vpn.get("id"), "parent_policy_name": vpn.get("name")})
+            pools = [key for key in ("ipv4AddressPool", "ipv6AddressPool", "ipv4AddressPools", "ipv6AddressPools")
+                     if key in item]
+            if pools:
+                profile.address_pools = ([ref for key in pools for ref in refs(item[key])]
+                    if any(item[key] is not None for key in pools) else None)
+                if "address_pools" not in profile.explicit_fields:
+                    profile.explicit_fields.append("address_pools")
+            return profile
+
+        group_policies = [adapt_group_policy(item, i) for i, item in enumerate(objects.get("grouppolicies", []), 1)]
+        certificate_maps = [ra_record(item, i, CiscoFTDCertificateMap, {
+            "conditions": ("raw", ("conditions", "rules")),
+            "connection_profile": ("ref", ("connectionProfile",)),
+            "group_policy": ("ref", ("groupPolicy",)),
+        }) for i, item in enumerate(objects.get("certificatemaps", []), 1)]
         certificate_enrollments = object_records("certenrollments", CiscoFTDCertificateEnrollment)
         prefilter_children = typed_child_records("prefilterpolicies", (("rules", CiscoFTDPrefilterRule),
             ("default_actions", CiscoFTDPrefilterDefaultAction)))
@@ -494,12 +1024,17 @@ class CiscoFMCBundleParser:
                          "urlcategories", "vlanobjects", "slamonitors", "ikev1policies", "ikev2policies",
                          "ikev1ipsecproposals", "ikev2ipsecproposals", "ipv4addresspools", "ipv6addresspools",
                          "grouppolicies", "certificatemaps", "certenrollments", "internalcertificates",
-                         "device_certificates", "prefilterpolicies", "networkanalysispolicies"}
+                         "device_certificates", "externalcertificates", "externalcacertificates",
+                         "prefilterpolicies", "networkanalysispolicies"}
         for collection_name, items in objects.items():
             if collection_name in typed_objects:
                 continue
             native.extend(record(item, index, CiscoFTDNativeResource,
-                source_attributes={"resource_type": collection_name, "ownership": "domain"})
+                source_attributes={"resource_type": collection_name, "ownership": "domain"},
+                raw_extra=sanitize_source_attributes({key: value for key, value in item.items()
+                    if not (collection_name in {"siurlfeeds", "siipfeeds"} and
+                            key.casefold().replace("_", "") in {"entries", "members", "feeddata",
+                                "downloadedentries", "content", "contents", "ipaddresses", "domains"})}))
                 for index, item in enumerate(_items(items), 1))
         for device in _items(self.payload.get("devices")):
             device_id = str(device.get("id") or "")
@@ -563,6 +1098,8 @@ class CiscoFMCBundleParser:
                             source_attributes={"device_id": device_id, "device_name": device_name,
                                 "virtual_router_id": vr_id, "virtual_router_name": vr_name}) for index, item in enumerate(items, 1))
             dhcp.extend(record(item, index, CiscoFTDDHCPServer,
+                interface=reference(item["interfaceName"]) if item.get("interfaceName") is not None else None,
+                explicit_fields=["interface"] if "interfaceName" in item else [],
                 source_attributes={"device_id": device_id, "device_name": device_name, "domain_id": self.domain_id})
                 for index, item in enumerate(_items(resources.get("dhcp_servers")), 1))
             for key, cls, target in (("pbr_policies", CiscoFTDPolicyBasedRoute, policy_based_routes),
@@ -585,20 +1122,48 @@ class CiscoFMCBundleParser:
                 source_attributes={"device_id": device_id, "device_name": device_name, "resource_type": "dhcp_relay_settings"})
                 for index, item in enumerate(_items(resources.get("dhcp_relay_settings")), 1))
 
-        policy_children = {
-            "filepolicies": ("rules", "filepolicyrules"), "decryptionpolicies": ("rules", "decryptionpolicyrules"),
-            "dnspolicies": ("rules", "block_rules"), "intrusionpolicies": ("rules", "rule_groups", "intrusionrules"),
+        file_rule_fields = {
+            "enabled": ("enabled", "isEnabled"), "action": ("action",),
+            "application_protocols": ("protocol", "applicationProtocols", "applicationProtocol"),
+            "transfer_direction": ("direction", "transferDirection"),
+            "file_types": ("fileTypes", "types"),
+            "malware_inspection": ("analysis", "malwareInspection", "inspectMalware", "malware"),
+            "file_store": ("storeFiles", "fileStore"),
         }
-        for family, child_keys in policy_children.items():
-            for policy in _items(objects.get(family)):
-                for key in child_keys:
-                    values = _items(policy.get(key))
-                    if key == "rules" and family == "intrusionpolicies" and not values:
-                        values = [rule for group in _items(policy.get("rule_groups")) for rule in _items(group.get("rules"))]
-                    native.extend(record(item, index, CiscoFTDNativeResource,
-                        source_attributes={"resource_type": key, "parent_policy_id": policy.get("id"),
-                                           "parent_policy_name": policy.get("name"), "parent_policy_type": family})
-                        for index, item in enumerate(values, 1))
+        decryption_rule_fields = {
+            "enabled": ("enabled", "isEnabled"), "action": ("ruleAction", "action"),
+            "source_networks": ("sourceNetworks", "sourceNetwork"),
+            "destination_networks": ("destinationNetworks", "destinationNetwork"),
+            "source_ports": ("sourcePorts", "sourcePort"),
+            "destination_ports": ("destinationPorts", "destinationPort"),
+            "certificates": ("decryptionCerts", "externalCertificates", "certificates", "certificate", "certificateAuthority"),
+            "tls_conditions": ("tlsVersions", "tlsConditions", "tlsCondition"),
+            "certificate_status_conditions": ("certStatuses", "certificateStatusConditions", "certificateStatus"),
+        }
+        dns_rule_fields = {
+            "enabled": ("enabled", "isEnabled"), "action": ("ruleAction", "action"),
+            "source_zones": ("sourceZones", "sourceZone"),
+            "destination_zones": ("destinationZones", "destinationZone"),
+            "source_networks": ("sourceNetworks", "sourceNetwork"),
+            "destination_networks": ("destinationNetworks", "destinationNetwork"),
+            "networks": ("networks",),
+            "vlan_tags": ("vlanTags", "vlans"),
+            "lists_feeds": ("dnsLists", "dnsFeeds", "securityIntelligenceLists", "lists", "feeds", "urlLists", "ipLists", "urlFeeds"),
+        }
+        file_policies = [adapt_inspection_policy(item, index, CiscoFTDFilePolicy, CiscoFTDFileRule,
+            ("rules", "filerules", "filepolicyrules"), file_rule_fields,
+            {"description": ("description",)}) for index, item in enumerate(objects.get("filepolicies", []), 1)]
+        decryption_policies = [adapt_inspection_policy(item, index, CiscoFTDDecryptionPolicy, CiscoFTDDecryptionRule,
+            ("rules", "decryptionpolicyrules"), decryption_rule_fields,
+            {"description": ("description",), "default_action": ("defaultAction",),
+             "undecryptable_action": ("undecryptableActions", "undecryptableAction", "undecryptableTrafficAction"),
+             "advanced_settings": ("advancedOptions", "advancedSettings")})
+            for index, item in enumerate(objects.get("decryptionpolicies", []), 1)]
+        dns_policies = [adapt_inspection_policy(item, index, CiscoFTDDNSPolicy, CiscoFTDDNSRule,
+            ("rules", "block_rules"), dns_rule_fields,
+            {"description": ("description",), "default_action": ("defaultAction",),
+             "umbrella_settings": ("umbrellaSettings", "umbrella")})
+            for index, item in enumerate(objects.get("dnspolicies", []), 1)]
 
         return CiscoFTDConfig(
             input_source_type=plane, source_plane=plane,
@@ -640,49 +1205,59 @@ class CiscoFMCBundleParser:
             inspector_override_configs=network_analysis_children["inspectoroverrideconfigs"],
             url_categories=object_records("urlcategories", CiscoFTDURLCategory), vlan_objects=object_records("vlanobjects", CiscoFTDVLANObject),
             access_control_policies=acp_policies, nat_policies=nat_policies,
-            time_ranges=object_records("timeranges", CiscoFTDTimeRange),
-            intrusion_policies=object_records("intrusionpolicies", CiscoFTDIntrusionPolicy),
-            intrusion_rule_overrides=[record(child, i, CiscoFTDIntrusionRuleOverride,
-                source_attributes={"parent_policy_id": policy.get("id"), "parent_policy_name": policy.get("name"), "rule_group": group.get("name")})
-                for policy in objects.get("intrusionpolicies", [])
-                for group in (_items(policy.get("rule_groups")) or [{"rules": _items(policy.get("rules"))}])
-                for i, child in enumerate(_items(group.get("rules")), 1)],
-            file_policies=object_records("filepolicies", CiscoFTDFilePolicy),
-            decryption_policies=object_records("decryptionpolicies", CiscoFTDDecryptionPolicy),
-            dns_policies=object_records("dnspolicies", CiscoFTDDNSPolicy),
-            fmc_user_roles=records("fmc_roles", CiscoFTDFMCUserRole), fmc_users=records("fmc_users", CiscoFTDFMCUser),
-            dhcp_servers=dhcp, routes=routes, realms=object_records("realms", CiscoFTDRealm),
-            realm_user_groups=object_records("realmusergroups", CiscoFTDRealmUserGroup),
-            realm_users=object_records("realmusers", CiscoFTDRealmUser),
-            local_realm_users=object_records("localrealmusers", CiscoFTDLocalRealmUser),
+            time_ranges=[adapt_time_range(item, i) for i, item in enumerate(objects.get("timeranges", []), 1)],
+            intrusion_policies=intrusion_policies,
+            intrusion_rule_groups=intrusion_rule_groups,
+            intrusion_rule_behaviors=intrusion_rule_behaviors,
+            intrusion_rule_overrides=[],
+            file_policies=file_policies,
+            decryption_policies=decryption_policies,
+            dns_policies=dns_policies,
+            fmc_user_roles=[adapt_fmc_role(item, i) for i, item in enumerate(_items(self.payload.get("fmc_roles")), 1)],
+            fmc_users=[adapt_fmc_user(item, i) for i, item in enumerate(_items(self.payload.get("fmc_users")), 1)],
+            dhcp_servers=dhcp, routes=routes, realms=[adapt_realm(item, i) for i, item in enumerate(objects.get("realms", []), 1)],
+            realm_user_groups=[adapt_realm_identity(item, i, CiscoFTDRealmUserGroup)
+                               for i, item in enumerate(objects.get("realmusergroups", []), 1)],
+            realm_users=[adapt_realm_identity(item, i, CiscoFTDRealmUser, user=True)
+                         for i, item in enumerate(objects.get("realmusers", []), 1)],
+            local_realm_users=[adapt_local_realm_user(item, i)
+                               for i, item in enumerate(objects.get("localrealmusers", []), 1)],
             s2s_vpn_topologies=object_records("s2svpns", CiscoFTDS2SVPNTopology),
             s2s_vpn_endpoints=[record(item, i, CiscoFTDS2SVPNEndpoint,
                 device=ref_field(item, "device", "managedDevice"), interface=ref_field(item, "interface"),
                 vti=ref_field(item, "vti", "virtualTunnelInterface"),
-                protected_networks=refs_field(item, "protectedNetworks", "networks"),
+                protected_networks=refs(item["protectedNetworks"].get("networks"))
+                    if isinstance(item.get("protectedNetworks"), dict) and "networks" in item["protectedNetworks"]
+                    else refs_field(item, "protectedNetworks", "networks"),
+                peer_type=item.get("peerType"), connection_type=item.get("connectionType"),
+                extranet=item.get("extranet"),
+                extranet_info=item.get("extranetInfo") if isinstance(item.get("extranetInfo"), dict) else None,
+                peer_ip_address=(item.get("extranetInfo", {}).get("ipAddress")
+                                 if isinstance(item.get("extranetInfo"), dict) else None),
+                local_identity_type=item.get("localIdentityType"), local_identity=item.get("localIdentityString"),
+                local_identity_enabled=item.get("isLocalTunnelIdEnabled"),
                 source_attributes={"parent_topology_id": vpn.get("id"), "parent_topology_name": vpn.get("name")})
                 for vpn in objects.get("s2svpns", []) for i, item in enumerate(_items(vpn.get("endpoints")), 1)],
             ike_policies=vpn_records((
                 ("ikev1policies", "IKEv1"), ("ikev2policies", "IKEv2")), "ike_policies", CiscoFTDIKEPolicy),
             ipsec_proposals=vpn_records((
                 ("ikev1ipsecproposals", "IKEv1"), ("ikev2ipsecproposals", "IKEv2")), "ipsec_proposals", CiscoFTDIPsecProposal),
-            ra_vpn_policies=[record(item, i, CiscoFTDRAVPNPolicy,
-                target_devices=refs_field(item, "targetDevices", "devices"),
-                access_interfaces=refs_field(item, "accessInterfaces", "interfaces"),
-                certificates=refs_field(item, "certificates", "certificate"),
-                connection_profiles=refs_field(item, "connectionProfiles"),
-                group_policies=refs_field(item, "groupPolicies"), address_pools=refs_field(item, "addressPools"),
-                realms=refs_field(item, "realms", "realm"))
+            ra_vpn_policies=[ra_record(item, i, CiscoFTDRAVPNPolicy, {
+                "target_devices": ("refs", ("targetDevices", "devices")),
+                "access_interfaces": ("refs", ("accessInterfaces", "interfaces")),
+                "certificates": ("refs", ("certificates", "certificate")),
+                "certificate_maps": ("refs", ("certificateMaps", "certificateMap")),
+                "certificate_map_settings": ("raw", ("certificate_map_settings", "certificateMapSettings")),
+                "connection_profiles": ("refs", ("connectionProfiles",)),
+                "group_policies": ("refs", ("groupPolicies",)),
+                "address_pools": ("refs", ("addressPools",)),
+                "realms": ("refs", ("realms", "realm")),
+                "ssl_tls_settings": ("raw", ("sslTlsSettings", "sslSettings")),
+                "dtls_settings": ("raw", ("dtlsSettings",)),
+                "session_settings": ("raw", ("sessionSettings",)),
+            })
                 for i, item in enumerate(objects.get("ravpns", []), 1)],
-            ra_vpn_connection_profiles=[record(item, i, CiscoFTDRAVPNConnectionProfile,
-                parent_policy_id=str(vpn.get("id")) if vpn.get("id") is not None else None,
-                realm=ref_field(item, "realm", "authenticationRealm"),
-                authorization=ref_field(item, "authorization", "authorizationServer"),
-                address_pools=refs_field(item, "addressPools", "ipv4AddressPools", "ipv6AddressPools"),
-                default_group_policy=ref_field(item, "defaultGroupPolicy", "groupPolicy"),
-                certificates=refs_field(item, "certificates", "certificate"),
-                certificate_maps=refs_field(item, "certificateMaps", "certificateMap"),
-                source_attributes={"parent_policy_id": vpn.get("id"), "parent_policy_name": vpn.get("name")})
+            ra_vpn_connection_profiles=[adapt_ra_profile(item, i, vpn)
                 for vpn in objects.get("ravpns", []) for i, item in enumerate(_items(vpn.get("connection_profiles")), 1)],
             native_resources=native,
         )

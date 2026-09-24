@@ -19,12 +19,195 @@ def test_selected_fmc_domains_preserve_native_ownership_and_order():
     assert config.network_addresses[0].raw_extra["type"] == "FQDN"
     assert config.access_control_policies[0].rules[0].source_zones[0].name == "inside"
     assert config.access_control_policies[0].rules[0].destination_zones[0].name == "outside"
-    assert config.intrusion_rule_overrides[0].source_attributes["parent_policy_id"] == "ips-1"
+    assert len(config.intrusion_rule_groups) == 1
+    assert not config.intrusion_rule_behaviors
+    assert not config.intrusion_rule_overrides
+    assert not [item for item in config.native_resources
+                if item.source_attributes.get("parent_policy_type") == "intrusionpolicies"]
     assert config.s2s_vpn_endpoints[0].source_attributes["parent_topology_id"] == "vpn-1"
     assert config.ra_vpn_connection_profiles[0].source_attributes["parent_policy_id"] == "ra-1"
     assert config.routes[0].source_attributes["device_name"] == "FTD-A"
     assert config.dhcp_servers[0].source_attributes["device_id"] == "device-1"
-    assert config.file_policies[0].raw_extra["rules"][0]["order"] == 1
+    assert config.file_policies[0].rules[0].position == 1
+    assert config.file_policies[0].rules[0].collection_order == 1
+    assert "rules" not in config.file_policies[0].raw_extra
+
+
+def test_inspection_policy_rules_are_typed_ordered_resolved_and_complete():
+    payload = {"format": "cisco-fmc-rest-export-v1", "domain": {"id": "d1"},
+        "objects": {
+            "networkaddresses": [{"id": "net1", "name": "Inside"}],
+            "protocolportobjects": [{"id": "svc1", "name": "HTTPS", "protocol": "TCP", "port": "443"}],
+            "securityzones": [{"id": "zone1", "name": "Inside Zone"}],
+            "vlanobjects": [{"id": "vlan1", "name": "VLAN 20"}],
+            "internalcertificates": [{"id": "cert1", "name": "CA"}],
+            "siurllists": [{"id": "si1", "name": "Threat URLs", "url": "https://feed.test/list"}],
+            "siurlfeeds": [{"id": "feed1", "name": "Live Feed", "url": "https://live.test/feed",
+                "entries": ["runtime.example"]}],
+            "filepolicies": [{"id": "f1", "name": "Files", "description": "Files", "rules": [
+                {"id": "fr2", "name": "second", "metadata": {"ruleIndex": 2}, "action": "BLOCK",
+                 "protocol": "HTTP", "direction": "DOWNLOAD",
+                 "fileTypes": [{"id": "pdf", "name": "PDF"}], "analysis": ["spero"], "storeFiles": ["MALWARE"]},
+                {"id": "fr1", "name": "first", "order": 1, "action": "MONITOR"}]} ,
+                {"id": "f2", "name": "Empty", "rules": []}, {"id": "f3", "name": "Unknown"}],
+            "decryptionpolicies": [{"id": "dec1", "name": "Decrypt", "defaultAction": "Do Not Decrypt",
+                "undecryptableActions": {"decryptionErrors": "BLOCK"}, "advancedOptions": {"strict": True}, "rules": [{
+                    "id": "dr1", "name": "Decrypt web", "metadata": {"ruleIndex": 4}, "ruleAction": "DECRYPT_RESIGN",
+                    "sourceNetworks": {"objects": [{"id": "net1", "name": "Inside"}]},
+                    "sourcePorts": {"objects": [{"id": "svc1", "name": "HTTPS"}]},
+                    "decryptionCerts": {"objects": [{"id": "cert1", "name": "CA"}]},
+                    "tlsVersions": {"tls13": True}, "certStatuses": {"revoked": False}, "privateKey": "must-not-leak"}]}],
+            "dnspolicies": [{"id": "dns1", "name": "DNS", "umbrellaSettings": {"enabled": True},
+                "block_rules": [{"id": "dnsr1", "name": "Block feed", "metadata": {"ruleIndex": 3}, "ruleAction": "BLOCK",
+                    "sourceZones": [{"id": "zone1", "name": "Inside Zone"}],
+                    "sourceNetworks": [{"id": "net1", "name": "Inside"}],
+                    "vlanTags": [{"id": "vlan1", "name": "VLAN 20"}],
+                    "dnsLists": {"objects": [{"id": "si1", "name": "Threat URLs"}]},
+                    "dnsFeeds": {"objects": [{"id": "feed1", "name": "Live Feed"}]}}]}],
+        },
+        "collection": {"status": "PARTIAL", "parts": [
+            {"name": "filepolicies/f3/rules", "status": "FAILED", "complete": False}]},
+        "access_policies": [{"id": "acp1", "name": "ACP", "decryptionPolicy": {"id": "dec1", "name": "Decrypt"},
+            "dnsPolicy": {"id": "dns1", "name": "DNS"}, "rules": [{"id": "acpr1", "name": "Rule",
+                "filePolicy": {"id": "f1", "name": "Files"}}]}]}
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    config = result.config
+    assert [(rule.position, rule.collection_order, rule.action) for rule in config.file_policies[0].rules] == [
+        (2, 1, "BLOCK"), (1, 2, "MONITOR")]
+    assert "ruleIndex" not in config.file_policies[0].rules[0].raw_extra.get("metadata", {})
+    assert config.file_policies[1].rules == [] and config.file_policies[2].rules is None
+    assert config.file_policies[0].rules[0].malware_inspection == ["spero"]
+    decrypt = config.decryption_policies[0]
+    assert decrypt.default_action == "Do Not Decrypt" and decrypt.undecryptable_action == {"decryptionErrors": "BLOCK"}
+    assert decrypt.rules[0].action == "DECRYPT_RESIGN"
+    dns = config.dns_policies[0]
+    assert dns.rules[0].action == "BLOCK" and dns.rules[0].position == 3 and dns.rules[0].collection_order == 1
+    assert "must-not-leak" not in json.dumps(config.model_dump())
+    assert "runtime.example" not in json.dumps(config.model_dump())
+    kinds = {item["kind"] for item in result.derived.resolved_references}
+    assert {"NETWORK_ADDRESS", "SERVICE_OBJECT", "CERTIFICATE", "SECURITY_ZONE", "VLAN_OBJECT",
+            "SECURITY_INTELLIGENCE_SOURCE", "DECRYPTION_POLICY", "DNS_POLICY", "FILE_POLICY"} <= kinds
+    assert result.derived.source_plane_completeness["file_rules"] == "failed"
+    assert not {"filepolicyrules", "decryptionpolicyrules", "block_rules"} & {
+        item.source_attributes.get("resource_type") for item in config.native_resources}
+    paths = {item.source_path for item in result.inventory_items}
+    assert {"fmc-rest-bundle/file-policy-rules", "fmc-rest-bundle/decryption-policy-rules",
+            "fmc-rest-bundle/dns-policy-rules"} <= paths
+    assert result.derived.inspection_relationships
+    preview = CiscoFTDSourceReporter().build_preview(result)
+    assert preview["summary"]["dns_rules"] == 1
+    assert "must-not-leak" not in json.dumps(preview)
+    workbook_bytes = BytesIO()
+    export_ftd_excel(result, workbook_bytes)
+    workbook_bytes.seek(0)
+    exported = load_workbook(workbook_bytes, read_only=True)
+    assert all("must-not-leak" not in str(cell.value)
+               for sheet in exported.worksheets for row in sheet.iter_rows() for cell in row)
+    inspection_rows = list(exported["Inspection Policies"].values)
+    assert ("File", "Empty", "f2", None, None, "KNOWN EMPTY") == inspection_rows[3][:6]
+    assert ("File", "Unknown", "f3", None, None, "UNKNOWN") == inspection_rows[4][:6]
+    assert any(row[0] == "Decryption" and row[9] == "DECRYPT_RESIGN" for row in inspection_rows[1:])
+
+
+def test_identity_admin_sources_are_typed_resolved_and_secret_safe():
+    payload = {
+        "format": "cisco-fmc-rest-export-v1",
+        "domain": {"id": "domain-1", "name": "Global"},
+        "objects": {
+            "realms": [{"id": "realm-1", "name": "Corp", "realmType": "AD", "enabled": False,
+                "description": "Corporate directory", "baseDn": "dc=example,dc=test", "groupDn": "ou=Groups",
+                "groupAttribute": "member", "adPrimaryDomain": "example.test", "updateInterval": 24,
+                "directoryConfigurations": [{"hostname": "dc.example.test", "dirPassword": "secret-bind",
+                    "ldapPassword": "secret-ldap", "radiusSecret": "secret-radius", "token": "secret-token"}]}],
+            "realmusergroups": [{"id": "group-1", "name": "Staff", "realm": {"id": "realm-1", "name": "Corp"}}],
+            "realmusers": [
+                {"id": "realm-user-1", "name": "alice", "realm": {"id": "realm-1", "name": "Corp"},
+                    "metadata": {"resolved": True}, "groups": [{"id": "group-1", "name": "Staff"}]},
+                {"id": "realm-user-2", "name": "no-state", "realm": {"id": "realm-1", "name": "Corp"}},
+                {"id": "realm-user-2", "name": "alice", "realm": {"id": "realm-1", "name": "Corp"}},
+            ],
+            "localrealmusers": [{"id": "local-1", "name": "alice", "realm": {"id": "realm-1", "name": "Corp"},
+                "enabled": False, "password": "secret-local", "passwordHash": "secret-hash"}],
+        },
+        "fmc_roles": [{"id": "role-1", "name": "Operators", "description": "Custom operator role",
+            "predefined": False, "custom": True, "menuPermissions": [{"menu": "Devices", "permission": "READ"}],
+            "systemPermissions": {"manageUsers": False}, "roleEscalation": {"enabled": False}}],
+        "fmc_users": [{"id": "fmc-user-1", "username": "alice", "isUserEnabled": False,
+            "authenticationMethod": "INTERNAL", "roles": [{"id": "role-1", "name": "Operators", "type": "AuthRole"}]},
+            {"id": "fmc-user-2", "username": "orphan", "roles": [{"id": "missing-role", "name": "Missing"}]},
+            {"id": "fmc-user-3", "username": "no-state"}],
+    }
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    config = result.config
+    realm_user, missing_state, duplicate_user = config.realm_users
+    local_user = config.local_realm_users[0]
+    fmc_user, _, fmc_missing_state = config.fmc_users
+
+    assert (config.realms[0].realm_type, config.realms[0].enabled, config.realms[0].base_dn) == ("AD", False, "dc=example,dc=test")
+    assert config.realms[0].directory_configurations[0]["dirPassword"] == "[REDACTED]"
+    assert realm_user.realm.source_id == config.realm_user_groups[0].realm.source_id == local_user.realm.source_id == "realm-1"
+    assert realm_user.resolved is True and missing_state.resolved is None
+    assert realm_user.groups[0].source_id == "group-1"
+    assert local_user.password_configured is True and local_user.enabled is False
+    assert fmc_user.username == "alice" and fmc_user.enabled is False
+    assert realm_user.name == local_user.name == fmc_user.username == "alice"
+    assert fmc_missing_state.enabled is None and "enabled" not in fmc_missing_state.explicit_fields
+    assert config.fmc_user_roles[0].menu_permissions == [{"menu": "Devices", "permission": "READ"}]
+    assert config.fmc_user_roles[0].system_permissions == {"manageUsers": False}
+
+    before = config.model_dump()
+    derived = build_ftd_derived_views(config)
+    issues = validate_ftd_config(config, derived).issues
+    resolved_types = {item["relationship_type"] for item in derived.identity_relationships}
+    assert {"realm-user-to-realm", "realm-group-to-realm", "local-realm-user-to-realm",
+        "realm-user-to-group", "fmc-user-to-role"} <= resolved_types
+    assert any("missing-role" in issue.message for issue in issues)
+    assert any(issue.category == "ambiguous-identity-name" for issue in issues)
+    assert any(issue.category == "duplicate-identity-id" for issue in issues)
+    assert config.model_dump() == before
+
+    preview_model = CiscoFTDSourceReporter().build_preview(result)
+    assert preview_model["summary"]["realm_user_groups"] == 1
+    assert preview_model["summary"]["local_realm_users"] == 1
+    assert preview_model["summary"]["fmc_user_roles"] == 1
+    preview = json.dumps(preview_model, default=str)
+    workbook = BytesIO()
+    export_ftd_excel(result, workbook)
+    workbook.seek(0)
+    workbook_data = load_workbook(workbook, read_only=True)
+    native_rows = list(workbook_data["Native Sources"].values)
+    role_row = next(row for row in native_rows if row[0] == "fmc_user_roles" and row[2] == "role-1")
+    assert '"menuPermissions"' in role_row[5] and '"systemPermissions"' in role_row[5]
+    exported = json.dumps([[cell.value for cell in row] for sheet in workbook_data for row in sheet.iter_rows()], default=str)
+    evidence = json.dumps((result.inventory_items, issues), default=str)
+    for output in (json.dumps(config.model_dump()), preview, exported, evidence):
+        for secret in ("secret-bind", "secret-ldap", "secret-radius", "secret-token", "secret-local", "secret-hash"):
+            assert secret not in output
+
+
+def test_fmc_dhcp_interface_reference_is_typed_scoped_and_keeps_missing_state():
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    payload["devices"][0]["resources"]["dhcp_servers"][0]["vendorField"] = "preserved"
+    config = CiscoFMCBundleParser(json.dumps(payload)).parse_source()
+    server = config.dhcp_servers[0]
+
+    assert server.interface.name == "inside"
+    assert server.explicit_fields == ["interface"]
+    assert server.raw_extra["interfaceName"] == "inside"
+    assert server.raw_extra["vendorField"] == "preserved"
+    assert server.source_attributes["device_id"] == "device-1"
+    before = server.model_dump()
+    derived = build_ftd_derived_views(config)
+    assert any(issue.owner == server.name and issue.field == "interface"
+               for issue in derived.unresolved_references)
+    assert any(issue.source_object == server.name and issue.category == "unresolved-reference"
+               and "in interface" in issue.message for issue in validate_ftd_config(config, derived).issues)
+    assert server.model_dump() == before
+
+    del payload["devices"][0]["resources"]["dhcp_servers"][0]["interfaceName"]
+    missing = CiscoFMCBundleParser(json.dumps(payload)).parse_source().dhcp_servers[0]
+    assert missing.interface is None
+    assert "interface" not in missing.explicit_fields
 
 
 def test_canonical_networkaddresses_suppresses_historical_duplicates():
@@ -51,6 +234,95 @@ def test_typed_source_fields_keep_reference_identity_and_missing_state():
     assert [group.members for group in config.network_groups[:2]] == [None, []]
     reference = config.network_groups[2].members[0]
     assert (reference.source_id, reference.name, reference.source_type) == ("host-1", "server", "Host")
+
+
+def test_intrusion_behavior_group_membership_conflicts_and_acp_references():
+    payload = {
+        "format": "cisco-fmc-rest-export-v1", "domain": {"id": "domain-1", "name": "Global"},
+        "objects": {
+            "variablesets": [{"id": "vars-1", "name": "Variables"}],
+            "intrusionpolicies": [{"id": "ips-1", "name": "IPS", "variableSet": {"id": "vars-1", "name": "Variables"},
+                "rules": [{"id": "behavior-1", "ruleId": "sig-1", "state": "enabled", "action": "alert"}],
+                "rule_groups": [{"id": "group-1", "name": "Group", "rules": [
+                    {"id": "behavior-1", "ruleId": "sig-1", "state": "disabled", "action": "drop"},
+                    {"id": "behavior-2", "ruleId": "sig-2"}]}]}],
+        },
+        "access_policies": [{"id": "acp-1", "name": "ACP", "rules": [{"id": "acp-rule-1", "name": "Allow",
+            "ipsPolicy": {"id": "ips-1", "name": "IPS"}, "variableSet": {"id": "vars-1", "name": "Variables"}}]}],
+        "collection": {"status": "SUCCESS", "parts": [
+            {"name": "intrusionpolicies", "status": "SUCCESS", "complete": True},
+            {"name": "intrusionpolicies/ips-1/rule_groups", "status": "SUCCESS", "complete": True},
+            {"name": "intrusionpolicies/ips-1/rules", "status": "SUCCESS", "complete": True}]},
+    }
+    config = CiscoFMCBundleParser(json.dumps(payload)).parse_source()
+    assert len(config.intrusion_policies) == len(config.intrusion_rule_groups) == 1
+    assert [(item.source_id, item.rule_id, item.state, item.action) for item in config.intrusion_rule_behaviors] == [
+        ("behavior-1", "sig-1", "enabled", "alert")]
+    assert not config.intrusion_rule_overrides
+    behavior = config.intrusion_rule_behaviors[0]
+    assert behavior.source_attributes["group_membership_evidence"][0]["rule_group_id"] == "group-1"
+    assert behavior.source_attributes["conflicting_group_payload"][0]["conflicting_fields"]["action"] == {
+        "behavior": "alert", "group": "drop"}
+    assert not [item for item in config.native_resources
+                if item.source_attributes.get("parent_policy_type") == "intrusionpolicies"]
+
+    derived = build_ftd_derived_views(config)
+    assert {("intrusion_rule_groups", "present"), ("intrusion_rule_behaviors", "present")} <= set(
+        derived.source_plane_completeness.items())
+    assert any(item["rule_group_id"] == "group-1" and item["rule_behavior_id"] == "behavior-1"
+               for item in derived.intrusion_relationships)
+    resolved = {(item["owner"], item["field"], item["kind"]) for item in derived.resolved_references}
+    assert ("IPS", "variable_set", "VARIABLE_SET") in resolved
+    assert ("Allow", "intrusion_policy", "INTRUSION_POLICY") in resolved
+    assert ("Allow", "variable_set", "VARIABLE_SET") in resolved
+    assert any(item.category == "intrusion-rule-group-conflict" for item in validate_ftd_config(config, derived).issues)
+    before = config.model_dump()
+    build_ftd_derived_views(config)
+    validate_ftd_config(config, derived)
+    assert config.model_dump() == before
+
+    analysis = extract_cisco_ftd_source(json.dumps(payload))
+    preview = CiscoFTDSourceReporter().build_preview(analysis)["summary"]
+    assert preview["intrusion_policies"] == 1
+    assert preview["intrusion_rule_groups"] == 1
+    assert preview["intrusion_rule_behaviors"] == 1
+    assert preview["intrusion_rule_overrides"] == 0
+    assert {item.source_type for item in analysis.inventory_items} >= {
+        "intrusion_rule_group", "intrusion_rule_behavior"}
+    workbook_bytes = BytesIO()
+    export_ftd_excel(analysis, workbook_bytes)
+    workbook_bytes.seek(0)
+    native_rows = list(load_workbook(workbook_bytes, read_only=True)["Native Sources"].values)
+    assert {tuple(row[:2]) for row in native_rows[1:]} >= {
+        ("intrusion_rule_groups", "Group"), ("intrusion_rule_behaviors", "behavior-1")}
+
+
+def test_intrusion_group_only_and_missing_vs_empty_child_collections():
+    payload = {"format": "cisco-fmc-rest-export-v1", "domain": {"id": "d", "name": "Global"},
+        "objects": {"intrusionpolicies": [{"id": "p", "name": "IPS", "rule_groups": [
+            {"id": "g", "name": "Group", "rules": [{"id": "sig", "name": "Signature"}]}]}]},
+        "collection": {"status": "PARTIAL", "parts": [
+            {"name": "intrusionpolicies", "status": "SUCCESS", "complete": True},
+            {"name": "intrusionpolicies/p/rule_groups", "status": "SUCCESS", "complete": True},
+            {"name": "intrusionpolicies/p/rules", "status": "FAILED", "complete": False}]}}
+    config = CiscoFMCBundleParser(json.dumps(payload)).parse_source()
+    assert len(config.intrusion_rule_groups) == 1
+    assert not config.intrusion_rule_behaviors and not config.intrusion_rule_overrides
+    derived = build_ftd_derived_views(config)
+    assert derived.source_plane_completeness["intrusion_rule_groups"] == "present"
+    assert derived.source_plane_completeness["intrusion_rule_behaviors"] == "failed"
+    assert any(item["rule_group_id"] == "g" and item["rule_id"] == "sig" and
+               item["rule_behavior_id"] is None for item in derived.intrusion_relationships)
+
+    payload["objects"]["intrusionpolicies"][0]["rules"] = []
+    payload["collection"]["parts"] = [*payload["collection"]["parts"][:2],
+        {"name": "intrusionpolicies/p/rules", "status": "EMPTY", "complete": True}]
+    derived = build_ftd_derived_views(CiscoFMCBundleParser(json.dumps(payload)).parse_source())
+    assert derived.source_plane_completeness["intrusion_rule_behaviors"] == "known-empty"
+    payload["collection"]["parts"] = [payload["collection"]["parts"][0]]
+    derived = build_ftd_derived_views(CiscoFMCBundleParser(json.dumps(payload)).parse_source())
+    assert derived.source_plane_completeness["intrusion_rule_groups"] == "unknown"
+    assert derived.source_plane_completeness["intrusion_rule_behaviors"] == "unknown"
 
 
 def test_fmc_ike_ipsec_objects_are_typed_with_version_and_without_native_duplicates():
@@ -197,6 +469,88 @@ def test_expanded_fmc_source_families_are_typed_scoped_and_secret_safe():
         for item in config.native_resources)
     assert any(item.source_id == "prefilter-1" for item in result.inventory_items)
     assert CiscoFTDSourceReporter().build_preview(result)["summary"]["virtual_routers"] == 1
+
+
+def test_s2s_crypto_fields_keep_fmc_ownership_and_redact_manual_psk():
+    payload = {"format": "cisco-fmc-rest-export-v1", "domain": {"id": "domain-1"}, "objects": {
+        "networkaddresses": [{"id": "net-1", "name": "LAN", "value": "10.0.0.0/24"}],
+        "internalcertificates": [{"id": "cert-1", "name": "VPN Certificate"}],
+        "s2svpns": [{"id": "vpn-1", "name": "Branch", "endpoints": [{
+            "id": "endpoint-1", "name": "peer", "peerType": "PEER", "connectionType": "BIDIRECTIONAL",
+            "localIdentityType": "HOSTNAME", "localIdentityString": "branch.example",
+            "isLocalTunnelIdEnabled": True, "protectedNetworks": {"networks": [{"id": "net-1", "name": "LAN"}]},
+        }], "ike_settings": [{"id": "ike-settings", "name": "IKE",
+            "ikeV1Settings": {"authenticationType": "MANUAL_PRE_SHARED_KEY", "manualPreSharedKey": "manual-secret",
+                "policies": [{"id": "ike-v1", "name": "IKEv1 Policy"}]},
+            "ikeV2Settings": {"authenticationType": "CERTIFICATE", "automaticPreSharedKeyLength": 7,
+                "enforceHexBasedPreSharedKeyOnly": True,
+                "certificateAuth": {"id": "cert-1", "name": "VPN Certificate"},
+                "policies": [{"id": "ike-v2", "name": "IKEv2 Policy"}]}}],
+            "ipsec_settings": [{"id": "ipsec-settings", "name": "IPsec",
+                "ikeV1IpsecProposal": [{"id": "proposal-v1", "name": "V1 Proposal"}],
+                "ikeV2IpsecProposal": [{"id": "proposal-v2", "name": "V2 Proposal"}],
+                "lifetimeSeconds": 28800, "lifetimeKilobytes": 4608000, "ikeV2Mode": "TUNNEL",
+                "perfectForwardSecrecy": {"enabled": False}, "cryptoMapType": "STATIC"}],
+            "advanced_settings": [{"id": "advanced", "name": "Advanced",
+                "advancedIkeSetting": {"peerIdentityValidation": "REQUIRED", "ikeKeepaliveSettings": {
+                    "ikeKeepalive": "ENABLED", "retryInterval": 10, "threshold": 5}},
+                "advancedTunnelSetting": {"natKeepaliveMessageTraversal": {"enabled": True, "intervalSeconds": 20}}}]}],
+        "ikev1policies": [{"id": "ike-v1", "name": "IKEv1 Policy", "priority": 20,
+            "lifetimeInSeconds": 86400, "authenticationMethod": "Preshared Key", "encryption": "AES-128",
+            "hash": "SHA", "diffieHellmanGroup": 5}],
+        "ikev2policies": [{"id": "ike-v2", "name": "IKEv2 Policy", "priority": 12,
+            "lifetimeInSeconds": 86400, "encryptionAlgorithms": ["AES-GCM"], "integrityAlgorithms": ["NULL"],
+            "prfIntegrityAlgorithms": ["SHA-256"], "diffieHellmanGroups": [14, 19]}],
+        "ikev1ipsecproposals": [{"id": "proposal-v1", "name": "V1 Proposal", "espEncryption": "AES-256", "espHash": "SHA-256"}],
+        "ikev2ipsecproposals": [{"id": "proposal-v2", "name": "V2 Proposal", "encryptionAlgorithms": ["AES-GCM"],
+            "integrityAlgorithms": ["NULL"]}],
+    }}
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    config = result.config
+
+    ikev1, ikev2 = config.ike_policies
+    assert (ikev1.ike_version, ikev1.encryption, ikev1.hash, ikev1.diffie_hellman_group,
+            ikev1.lifetime_in_seconds, ikev1.priority) == ("IKEv1", "AES-128", "SHA", 5, 86400, 20)
+    assert "ike_version" not in ikev1.explicit_fields
+    assert (ikev2.encryption_algorithms, ikev2.integrity_algorithms, ikev2.prf_integrity_algorithms,
+            ikev2.diffie_hellman_groups) == (["AES-GCM"], ["NULL"], ["SHA-256"], [14, 19])
+    v1_proposal, v2_proposal = config.ipsec_proposals
+    assert (v1_proposal.esp_encryption, v1_proposal.esp_hash) == ("AES-256", "SHA-256")
+    assert (v2_proposal.encryption_algorithms, v2_proposal.integrity_algorithms) == (["AES-GCM"], ["NULL"])
+    ike_settings = config.s2s_ike_settings[0]
+    assert [ref.source_id for ref in ike_settings.ike_policies] == ["ike-v1", "ike-v2"]
+    assert ike_settings.ikev1_authentication_type == "MANUAL_PRE_SHARED_KEY"
+    assert ike_settings.ikev2_certificate.source_id == "cert-1"
+    assert ike_settings.psk_present is True
+    ipsec = config.s2s_ipsec_settings[0]
+    assert (ipsec.lifetime_seconds, ipsec.lifetime_kilobytes, ipsec.pfs_enabled, ipsec.ikev2_mode) == (
+        28800, 4608000, False, "TUNNEL")
+    assert config.s2s_advanced_settings[0].ike_keepalive_settings["retryInterval"] == 10
+    before = config.model_dump()
+    derived = build_ftd_derived_views(config)
+    validate_ftd_config(config, derived)
+    resolved_kinds = {item["kind"] for item in derived.resolved_references}
+    assert {"IKE_POLICY", "IPSEC_PROPOSAL", "CERTIFICATE", "NETWORK_ADDRESS"} <= resolved_kinds
+    assert config.model_dump() == before
+    assert derived.vpn_relationships[0]["ike_settings"] == ["IKE"]
+    assert derived.vpn_relationships[0]["ipsec_settings"] == ["IPsec"]
+    preview_summary = CiscoFTDSourceReporter().build_preview(result)["summary"]
+    assert (preview_summary["ikev1_policies"], preview_summary["ikev2_policies"],
+            preview_summary["ikev1_ipsec_proposals"], preview_summary["ikev2_ipsec_proposals"]) == (1, 1, 1, 1)
+    endpoint = config.s2s_vpn_endpoints[0]
+    assert endpoint.protected_networks[0].source_id == "net-1"
+    assert (endpoint.local_identity_type, endpoint.local_identity, endpoint.peer_type) == (
+        "HOSTNAME", "branch.example", "PEER")
+
+    preview = CiscoFTDSourceReporter().build_preview(result)
+    assert "manual-secret" not in json.dumps(preview)
+    workbook = BytesIO()
+    export_ftd_excel(result, workbook)
+    workbook.seek(0)
+    values = [value for sheet in load_workbook(workbook, read_only=True).worksheets
+              for row in sheet.values for value in row if isinstance(value, str)]
+    assert "manual-secret" not in json.dumps(config.model_dump())
+    assert "manual-secret" not in " ".join(values)
 
 
 def test_failed_pbr_collection_remains_failed_when_typed_collection_is_empty():
