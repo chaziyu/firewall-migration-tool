@@ -265,10 +265,10 @@ let currentRenderedArtifactId = null;
   const reportData = document.getElementById("report-data");
   const reportSummary = document.getElementById("report-summary");
   const reportFilename = document.getElementById("report-filename");
-  const reportVdomSummary = document.getElementById("report-vdom-summary");
+  const reportScopeSummary = document.getElementById("report-scope-summary");
   const reportObjectTabs = document.getElementById("report-object-tabs");
   const reportSearch = document.getElementById("report-search");
-  const reportVdomFilter = document.getElementById("report-vdom-filter");
+  const reportScopeFilter = document.getElementById("report-scope-filter");
   const reportSeverityFilter = document.getElementById("report-severity-filter");
   const reportTableHead = document.getElementById("report-table-head");
   const reportTableBody = document.getElementById("report-table-body");
@@ -291,6 +291,7 @@ let currentRenderedArtifactId = null;
   const liveContainer = document.getElementById("ingest-live-container");
   let ingestMode = "file";
   const collectionCapabilities = {};
+  const vendorCapabilities = {};
   const collectionGuides = {
     fortigate: "Live collection is unavailable for FortiGate. Export a FortiOS configuration backup and use Upload Config.",
     palo_alto: "Live collection is unavailable for PAN-OS. Export an XML configuration and use Upload Config.",
@@ -304,8 +305,12 @@ let currentRenderedArtifactId = null;
     try {
       const response = await fetch("/api/vendors");
       const data = await readJson(response, "Could not load vendors");
-      for (const source of data.sources || []) if (source.live_collection) collectionCapabilities[source.vendor_id] = source.collection;
+      for (const source of data.sources || []) {
+        vendorCapabilities[source.vendor_id] = source;
+        if (source.live_collection) collectionCapabilities[source.vendor_id] = source.collection;
+      }
       renderCollectionFields();
+      syncWorkspace();
     } catch (_) { /* File upload remains available. */ }
   }
 
@@ -463,7 +468,7 @@ let currentRenderedArtifactId = null;
     activeReportSection = target[0];
     if (target[1]) activeObjectSection = target[1];
     document.querySelectorAll("[data-object-section]").forEach((button) => button.classList.toggle("active", button.dataset.objectSection === activeObjectSection));
-    if (reportVdomFilter) reportVdomFilter.value = row.vdom || "";
+    if (reportScopeFilter) reportScopeFilter.value = row.scope || row.vdom || "";
     if (reportSearch) reportSearch.value = String(row.object_name);
     reportDetailPanel?.classList.add("hidden");
     renderReport();
@@ -488,11 +493,11 @@ let currentRenderedArtifactId = null;
     const columnKey = activeReportSection === "objects" ? activeObjectSection : activeReportSection;
     const columns = reportColumns[columnKey] || [];
     const search = reportSearch?.value.trim().toLowerCase() || "";
-    const vdom = reportVdomFilter?.value || "";
+    const scope = reportScopeFilter?.value || "";
     const severity = reportSeverityFilter?.value || "";
     const sectionRows = reportRows(activeReportSection);
     const rows = sectionRows.filter((row) => {
-      if (vdom && row.vdom !== vdom) return false;
+      if (scope && (row.scope || row.vdom) !== scope) return false;
       if (severity && row.severity !== severity) return false;
       return !search || Object.values(row).some((value) => reportCell(value).toLowerCase().includes(search));
     });
@@ -582,7 +587,10 @@ let currentRenderedArtifactId = null;
     stats.forEach(([label, value]) => { const stat = document.createElement("div"); stat.className = "report-stat"; const number = document.createElement("strong"); number.textContent = String(count(value)); const caption = document.createElement("span"); caption.textContent = label; stat.append(number, caption); fragment.appendChild(stat); });
     reportSummary.replaceChildren(fragment);
     if (reportFilename) reportFilename.textContent = currentFile?.name || "";
-    if (reportVdomSummary) reportVdomSummary.textContent = (summary.vdoms || []).length ? `VDOMs: ${summary.vdoms.join(", ")}` : "No VDOM data found.";
+    if (reportScopeSummary) {
+      const scopes = summary.scopes || summary.vdoms || [];
+      reportScopeSummary.textContent = scopes.length ? `Scopes: ${scopes.map((scope) => typeof scope === "string" ? scope : scope.name || scope.vsys || JSON.stringify(scope)).join(", ")}` : "No scope data found.";
+    }
     const overview = activeReportSection === "overview";
     reportOverview?.classList.toggle("hidden", !overview);
     reportData?.classList.toggle("hidden", overview);
@@ -596,7 +604,7 @@ let currentRenderedArtifactId = null;
     const hasFile = Boolean(currentFile);
     const hasInput = hasFile || Boolean(currentPreviewId);
     const migrationPairSupported = selectedSourceVendor === "fortigate" && selectedTargetVendor === "palo_alto";
-    tabReport?.classList.toggle("hidden", !["fortigate", "palo_alto"].includes(selectedSourceVendor));
+    tabReport?.classList.toggle("hidden", !vendorCapabilities[selectedSourceVendor]?.web_report);
     if (btnGenerateBundle)
       btnGenerateBundle.disabled =
         !hasFile || !sourceReady || !migrationPairSupported || busyButtons.has(btnGenerateBundle);
@@ -759,7 +767,7 @@ let currentRenderedArtifactId = null;
 
     if (mode === "report") {
       renderReport();
-      logToTerminal("[MODE] Switched to FortiGate source report view.", "term-system");
+      logToTerminal(`[MODE] Switched to ${VENDOR_CONFIGS[selectedSourceVendor]?.name || selectedSourceVendor} source report view.`, "term-system");
     } else if (mode === "download") {
       logToTerminal(
         "[MODE] Switched to migration planning.",
@@ -970,7 +978,7 @@ let currentRenderedArtifactId = null;
     renderReportTable();
   }));
   reportSearch?.addEventListener("input", renderReportTable);
-  reportVdomFilter?.addEventListener("change", renderReportTable);
+  reportScopeFilter?.addEventListener("change", renderReportTable);
   reportSeverityFilter?.addEventListener("change", renderReportTable);
   reportDetailClose?.addEventListener("click", () => reportDetailPanel?.classList.add("hidden"));
 

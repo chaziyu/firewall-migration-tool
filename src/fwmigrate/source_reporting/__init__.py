@@ -18,6 +18,12 @@ from fwmigrate.source_reporting.options import (
     ExcelExportUnavailableError,
     XLSX_MIMETYPE,
 )
+from fwmigrate.source_reporting.web_report import (
+    REPORT_SECTIONS,
+    empty_report_sections,
+    normalize_web_report,
+    validate_web_report_payload,
+)
 
 __all__ = [
     "SourceReportRegistrationError",
@@ -33,4 +39,8 @@ __all__ = [
     "safe_cell_value",
     "safe_source_cell",
     "set_column_widths",
+    "REPORT_SECTIONS",
+    "empty_report_sections",
+    "normalize_web_report",
+    "validate_web_report_payload",
 ]
