@@ -66,3 +66,13 @@ class CiscoAccessRule(CiscoSourceModel):
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CiscoACLRemark(CiscoSourceModel):
+    name: str
+    acl_name: str
+    source_context: Optional[str] = None
+    sequence: Optional[int] = None
+    source_order: Optional[int] = None
+    remark: str = ""
+    raw_line: str = ""

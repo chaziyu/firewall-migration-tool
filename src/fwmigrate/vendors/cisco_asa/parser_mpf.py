@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 from .model.context import CiscoASAContext, CiscoAllocatedInterface, CiscoMultiContextSystem
-from .model.dhcp import CiscoDHCPOption, CiscoDHCPRelay, CiscoDHCPRelayServer, CiscoDHCPReservation
+from .model.dhcp import CiscoDHCPGlobalSettings, CiscoDHCPOption, CiscoDHCPRelay, CiscoDHCPRelayServer, CiscoDHCPReservation
 from .model.failover import CiscoFailoverGroup
 from .model.management import CiscoConnectionControl, CiscoDNSServerGroup, CiscoHTTPServerConfig, CiscoManagementAccessRule, CiscoManagementSetting, CiscoNTPServer
 from .model.mpf import CiscoClassMap, CiscoClassMapMatch, CiscoInspectAction, CiscoInspectionPolicySection, CiscoIPSAction, CiscoMPFConnectionAction, CiscoMPFPoliceAction, CiscoPolicyMap, CiscoPolicyMapClass, CiscoServicePolicy, CiscoTCPMap, CiscoTCPMapSetting
@@ -727,7 +727,16 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
         interface = values[0]
         values = values[1:]
 
-    item = self._dhcp_server(interface, line_number)
+    global_scope = interface is None and command in {"dns", "domain", "lease", "option", "ping_timeout", "wins"}
+    if global_scope:
+        context = self._line_contexts.get(line_number)
+        item = next((record for record in self.config.dhcp_global_settings if record.source_context == context), None)
+        if item is None:
+            item = CiscoDHCPGlobalSettings(name="dhcpd:global", source_order=line_number,
+                                           source_attributes={"scope": "global"})
+            self.config.dhcp_global_settings.append(self._with_source_context(item, line_number))
+    else:
+        item = self._dhcp_server(interface, line_number)
     item.raw_lines.append(safe)
     item.source_attributes.setdefault("raw_commands", []).append(safe)
     item.source_attributes.setdefault("command_history", []).append({"line": line_number, "negated": negated, "command": command})
@@ -826,6 +835,7 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
             encoding="hex" if option_type == "hex" else None, raw=safe, source_order=line_number,
             explicit_fields={"code", "value", *(('value_type',) if option_type else ()), *(('encoding',) if option_type == "hex" else ())},
         ))
+        item.explicit_fields.add("options")
         return
     if command == "wins":
         if negated:

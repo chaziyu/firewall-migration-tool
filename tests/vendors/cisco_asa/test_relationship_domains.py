@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
 from fwmigrate.vendors.cisco_asa.model import CiscoIPsecProfile, CiscoNATRule
+from fwmigrate.vendors.cisco_asa.model.acl import CiscoACLEndpoint, CiscoAccessRule
+from fwmigrate.vendors.cisco_asa.model.service import CiscoPortSpec
 from fwmigrate.vendors.cisco_asa.relationships.acl import build_acl_relationships
 from fwmigrate.vendors.cisco_asa.relationships.identity import build_identity_relationships
 from fwmigrate.vendors.cisco_asa.relationships.mpf import build_mpf_relationships
@@ -22,6 +24,48 @@ def test_acl_global_binding_keeps_scope_separate_and_preserves_rule_order():
     assert relation.scope == "global" and relation.interface is None
     assert relation.rules == (first, second)
     assert not relation.issues
+
+
+def test_acl_rule_relationships_resolve_endpoints_services_protocol_time_and_identity():
+    rule = CiscoAccessRule(
+        id="ACL:1", acl_name="ACL", source_context="ctx", protocol="object-group", protocol_object="PROTO",
+        source_endpoint=CiscoACLEndpoint(type="object", value="SRC", raw="object SRC"),
+        destination_endpoint=CiscoACLEndpoint(type="object-group", value="DST", raw="object-group DST"),
+        source_port=CiscoPortSpec(operator="object", object_name="SRC-SVC"),
+        destination_port=CiscoPortSpec(operator="object-group", object_name="DST-SVC"),
+        time_range="HOURS", user="alice", user_group="REMOTE", source_security_group_type="object-group",
+        source_security_group_value="SGT",
+    )
+    refs = ASAReferenceIndex()
+    targets = {
+        (ASAReferenceKind.PROTOCOL_GROUP, "PROTO"): object(),
+        (ASAReferenceKind.NETWORK_OBJECT, "SRC"): object(),
+        (ASAReferenceKind.NETWORK_GROUP, "DST"): object(),
+        (ASAReferenceKind.SERVICE_OBJECT, "SRC-SVC"): object(),
+        (ASAReferenceKind.SERVICE_GROUP, "DST-SVC"): object(),
+        (ASAReferenceKind.TIME_RANGE, "HOURS"): object(),
+        (ASAReferenceKind.LOCAL_USER, "alice"): object(),
+        (ASAReferenceKind.USER_GROUP, "REMOTE"): object(),
+        (ASAReferenceKind.SECURITY_GROUP, "SGT"): object(),
+    }
+    for (kind, name), target in targets.items():
+        refs.register("ctx", kind, name, target)
+    config = SimpleNamespace(access_rules=[rule], acl_bindings=[])
+
+    relationship = build_acl_relationships(config, refs).rules[0]
+
+    assert dict(relationship.references) == {
+        "protocol": targets[(ASAReferenceKind.PROTOCOL_GROUP, "PROTO")],
+        "source": targets[(ASAReferenceKind.NETWORK_OBJECT, "SRC")],
+        "destination": targets[(ASAReferenceKind.NETWORK_GROUP, "DST")],
+        "source-service": targets[(ASAReferenceKind.SERVICE_OBJECT, "SRC-SVC")],
+        "destination-service": targets[(ASAReferenceKind.SERVICE_GROUP, "DST-SVC")],
+        "time-range": targets[(ASAReferenceKind.TIME_RANGE, "HOURS")],
+        "user": targets[(ASAReferenceKind.LOCAL_USER, "alice")],
+        "user-group": targets[(ASAReferenceKind.USER_GROUP, "REMOTE")],
+        "source-security-group": targets[(ASAReferenceKind.SECURITY_GROUP, "SGT")],
+    }
+    assert not relationship.issues
 
 
 def test_nat_address_operand_can_resolve_to_network_group():

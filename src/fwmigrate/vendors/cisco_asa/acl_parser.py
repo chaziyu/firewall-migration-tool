@@ -134,7 +134,6 @@ def parse_acl_line(
         sequence = int(tokens[index + 1])
         index += 2
     if index < len(tokens) and tokens[index].lower() == "remark":
-        remarks.setdefault(acl_name, []).append(" ".join(tokens[index + 1:]))
         return None, None
     if index >= len(tokens) or tokens[index].lower() not in {"standard", "extended"}:
         return None, f"Unsupported ACL type for {acl_name}"
@@ -249,7 +248,7 @@ def parse_acl_line(
         source_security_group_value=source_sg_value,
         destination_security_group_type=destination_sg_type,
         destination_security_group_value=destination_sg_value,
-        remark="\n".join(remarks.pop(acl_name, [])) or None,
+        remark=None,
         raw_line=line,
         extraction_status="EXTRACTED",
         explicit_fields=explicit_fields,
