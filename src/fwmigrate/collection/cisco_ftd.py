@@ -27,7 +27,7 @@ class CiscoFTDCollector:
         "networkaddresses": "object/networkaddresses", "hosts": "object/hosts", "networks": "object/networks", "ranges": "object/ranges",
         "networkgroups": "object/networkgroups", "protocolportobjects": "object/protocolportobjects",
         "portobjectgroups": "object/portobjectgroups", "securityzones": "object/securityzones",
-        "interfacegroups": "object/interfacegroups", "interfaces": "object/interfaceobjects",
+        "interfacegroups": "object/interfacegroups",
         "applications": "object/applications", "timeranges": "object/timeranges",
         "realms": "object/realms", "realmusergroups": "object/realmusergroups",
         "realmusers": "object/realmusers", "localrealmusers": "object/localrealmusers",
@@ -147,6 +147,7 @@ class CiscoFTDCollector:
                     continue
                 device["resources"] = {}
                 for key, suffix in (("static_routes", f"devices/devicerecords/{device_id}/routing/staticroutes"),
+                                    ("ftd_interfaces", f"devices/devicerecords/{device_id}/ftdallinterfaces"),
                                     ("dhcp_servers", f"devices/devicerecords/{device_id}/dhcp/dhcpserver"),
                                     ("ecmp_zones", f"devices/devicerecords/{device_id}/routing/ecmpzones"),
                                     ("pbr_policies", f"devices/devicerecords/{device_id}/routing/policybasedroutes")):
@@ -163,7 +164,7 @@ class CiscoFTDCollector:
                 if not re.fullmatch(r"[A-Za-z0-9_-]+", str(policy.get("id", ""))):
                     parts.append(CollectionPart("access_rules", "FAILED", False))
                     continue
-                self._collect_family(session, base, prefix + f'/policy/accesspolicies/{policy["id"]}/accessrules', policy, "rules", parts,
+                self._collect_family(session, base, prefix + f'/policy/accesspolicies/{policy["id"]}/accessrules?expanded=true', policy, "rules", parts,
                                      f'access_rules/{policy["id"]}')
             for family, (key, endpoint) in self._policy_children.items():
                 for policy in bundle["objects"].get(family, []):
@@ -207,4 +208,5 @@ class CiscoFTDCollector:
     def _collect_family(self, session, base, path, target, name, parts, part_name=None):
         items, complete = self._pages(session, base, path)
         target[name] = items
-        parts.append(CollectionPart(part_name or name, "SUCCESS" if items and complete else "EMPTY" if complete else "FAILED", complete, len(items)))
+        status = "SUCCESS" if complete and items else "EMPTY" if complete else "PARTIAL" if items else "FAILED"
+        parts.append(CollectionPart(part_name or name, status, complete, len(items)))
