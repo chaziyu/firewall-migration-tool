@@ -104,7 +104,8 @@ def _inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
                         "policy_name": policy.name, "section": getattr(record, "section", None), **record.source_attributes},
                     status=ExtractionStatus.SOURCE_ONLY if config.source_plane == "ftd-text-evidence" else ExtractionStatus.EXTRACTED))
     for policy in config.nat_policies:
-        items.append(SourceInventoryItem(domain="cisco_ftd", source_path=f"{config.source_plane}/nat-policies",
+        if not policy.source_attributes.get("synthetic_container"):
+            items.append(SourceInventoryItem(domain="cisco_ftd", source_path=f"{config.source_plane}/nat-policies",
             source_id=policy.source_id or policy.name, name=policy.name, source_type="nat-policy",
             source_context=policy.source_context, source_attributes={"source_plane": policy.source_plane,
                 "domain_id": policy.domain_id},

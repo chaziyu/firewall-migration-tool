@@ -62,6 +62,119 @@ def test_fdm_source_plane_is_not_fmc():
     assert result.config.source_plane == "fdm-rest-bundle"
     assert result.config.nat_policies
     assert result.config.source_metadata["source"] == "fdm-rest-api"
+    rules = result.config.nat_policies[0].rules
+    source, twice = rules
+    assert (source.original_source.source_id, source.translated_source.source_id) == ("inside", "public")
+    assert (source.rule_type, source.sequence, source.source_translation_mode, source.service.source_id) == (
+        "SOURCE", 1, "static", "http")
+    assert source.observed_collection_order == 1
+    assert (twice.original_source.source_id, twice.translated_source.source_id) == ("inside", "public")
+    assert (twice.original_destination.source_id, twice.translated_destination.source_id) == ("public", "inside")
+    assert (twice.rule_type, twice.sequence, twice.source_translation_mode, twice.destination_translation_mode) == (
+        "TWICE", 2, "static", "static")
+    assert twice.observed_collection_order == 2
+    assert result.config.nat_policies[0].source_attributes == {
+        "provenance": "FDM REST", "domain_id": "fdm-device",
+        "synthetic_container": True, "source_collection": "nat_rules"}
+    assert not [item for item in result.inventory_items if item.source_type == "nat-policy"]
+    assert not result.derived.unresolved_references
+    assert [(item["rule_kind"], item["rule_type"], item["sequence"]) for item in result.derived.nat_relationships] == [
+        ("fdm", "SOURCE", 1), ("fdm", "TWICE", 2)]
+    for rule in rules:
+        assert {item["field"] for item in result.derived.resolved_references if item["owner"] == rule.name} >= (
+            {"original_source", "translated_source", "service"} if rule is source else
+            {"original_source", "translated_source", "original_destination", "translated_destination"})
+
+    output = BytesIO()
+    CiscoFTDSourceReporter().export_excel(result, output)
+    from openpyxl import load_workbook
+    sheet = load_workbook(output, read_only=True)["NAT Rules"]
+    headers = [cell.value for cell in sheet[1]]
+    rows = [dict(zip(headers, row)) for row in sheet.iter_rows(min_row=2, values_only=True)]
+    assert [(row["Rule Type"], row["Position"]) for row in rows] == [("SOURCE", 1), ("TWICE", 2)]
+    assert (rows[0]["Original Source"], rows[0]["Translated Source"], rows[0]["FDM Service"]) == (
+        "inside", "public", "http")
+    assert (rows[1]["Original Source"], rows[1]["Translated Source"],
+            rows[1]["Original Destination"], rows[1]["Translated Destination"]) == (
+        "inside", "public", "public", "inside")
+    assert (rows[0]["Source Translation Mode"], rows[1]["Destination Translation Mode"]) == ("static", "static")
+
+    before = deepcopy(result.config)
+    derived = build_ftd_derived_views(result.config)
+    validate_ftd_config(result.config, derived)
+    assert result.config == before
+
+    import json
+    bundle = json.loads(_fixture("fdm_nat_pipeline_conformance.json"))
+    bundle["nat_rules"][0]["originalSource"] = {"id": "missing-network"}
+    broken = extract_cisco_ftd_source(json.dumps(bundle))
+    issue = next(item for item in broken.derived.unresolved_references if item.field == "original_source")
+    assert issue.status == "UNRESOLVED"
+    assert any(item.category == "unresolved-reference" for item in broken.validation.issues)
+
+    bundle["objects"]["services"].append({"id": "missing-network", "name": "wrong-kind"})
+    wrong_kind = extract_cisco_ftd_source(json.dumps(bundle))
+    issue = next(item for item in wrong_kind.derived.unresolved_references if item.field == "original_source")
+    assert issue.status == "WRONG_KIND" and issue.found_kinds == ("SERVICE_OBJECT",)
+
+
+def test_fdm_address_service_and_group_objects_project_typed_source_fields():
+    result = extract_cisco_ftd_source(_fixture("fdm_object_pipeline_conformance.json"))
+    config = result.config
+    addresses = {item.name: item for item in config.network_addresses}
+    assert [(addresses[name].address_type, addresses[name].value) for name in ("Host", "Network", "Range")] == [
+        ("Host", "192.0.2.1"), ("Network", "192.0.2.0/24"), ("Range", "192.0.2.1-192.0.2.9")]
+    host = addresses["Host"]
+    assert host.description == "host desc"
+    assert host.override_metadata == {"overrides": [{"deviceId": "d1", "value": "192.0.2.2"}]}
+    assert set(host.explicit_fields) == {"value", "description", "override_metadata"}
+    assert host.raw_extra["overrides"] == host.override_metadata["overrides"]
+    assert (addresses["FQDN"].address_type, addresses["FQDN"].value,
+            addresses["FQDN"].fqdn_lookup_type, addresses["FQDN"].address_family) == (
+        "FQDN", "example.test", "IPV4_ONLY", "ipv4")
+    assert {"address_type", "value", "fqdn_lookup_type", "address_family"} <= set(addresses["FQDN"].explicit_fields)
+    assert (addresses["Missing"].address_type, addresses["Missing"].value, addresses["Missing"].description,
+            addresses["Missing"].fqdn_lookup_type, addresses["Missing"].address_family) == (None, None, None, None, None)
+
+    services = {item.name: item for item in config.protocol_port_objects}
+    assert (services["TCP Single"].protocol, services["TCP Single"].port, services["TCP Single"].end_port) == ("tcp", "80", None)
+    assert (services["TCP Range"].port, services["TCP Range"].end_port) == ("80", "90")
+    assert services["Structured Ports"].ports == [{"start": 100, "end": 110}]
+    assert services["Structured Ports"].port is None and services["Structured Ports"].end_port is None
+    assert (services["UDP"].protocol, services["UDP"].port) == ("udp", "53")
+    assert services["Protocol Only"].protocol == "gre" and services["Protocol Only"].port is None
+    assert (services["ICMP Type"].protocol, services["ICMP Type"].icmp_type, services["ICMP Type"].icmp_code) == (
+        "icmp", "8", None)
+    assert (services["ICMP Code"].icmp_type, services["ICMP Code"].icmp_code) == ("3", "1")
+    assert set(services["TCP Single"].explicit_fields) == {"protocol", "port"}
+    assert "icmp_type" not in services["TCP Single"].explicit_fields
+    assert services["ICMP Code"].override_metadata == {"overrides": [{"deviceId": "d1"}]}
+
+    network_group = config.network_groups[0]
+    assert network_group.members[0].source_id == "host" and network_group.literal_members[0].value == "198.51.100.1"
+    assert network_group.description == "group desc" and network_group.override_metadata == {"overrides": [{"deviceId": "d1"}]}
+    port_group = config.port_object_groups[0]
+    assert port_group.members[0].source_id == "tcp-single" and port_group.description == "service group desc"
+    assert port_group.override_metadata == {"overrides": [{"deviceId": "d1"}]}
+
+    before = deepcopy(config)
+    derived = build_ftd_derived_views(config)
+    validate_ftd_config(config, derived)
+    assert config == before and not derived.unresolved_references
+
+    output = BytesIO()
+    CiscoFTDSourceReporter().export_excel(result, output)
+    from openpyxl import load_workbook
+    workbook = load_workbook(output, read_only=True)
+    address_headers = [cell.value for cell in workbook["Managed Objects"][1]]
+    address_rows = [dict(zip(address_headers, row)) for row in workbook["Managed Objects"].iter_rows(min_row=2, values_only=True)]
+    assert next(row for row in address_rows if row["Name"] == "Host")["Description"] == "host desc"
+    service_headers = [cell.value for cell in workbook["Services"][1]]
+    service_rows = [dict(zip(service_headers, row)) for row in workbook["Services"].iter_rows(min_row=2, values_only=True)]
+    tcp = next(row for row in service_rows if row["Name"] == "TCP Single")
+    icmp = next(row for row in service_rows if row["Name"] == "ICMP Code")
+    assert (tcp["Port"], tcp["End Port"]) == ("80", None)
+    assert (icmp["ICMP Type"], icmp["ICMP Code"]) == ("3", "1")
 
 
 def test_cli_evidence_does_not_manufacture_managed_policy_or_nat():

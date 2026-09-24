@@ -191,16 +191,21 @@ class CiscoFTDAccessControlPolicy(CiscoFTDSourceRecord):
     rules: Optional[List[CiscoFTDAccessControlRule]] = None
 
 
-class CiscoFTDNATRule(CiscoFTDSourceRecord):
-    """Legacy FDM rule shape retained for FDM bundles."""
+class CiscoFTDFDMNATRule(CiscoFTDSourceRecord):
+    """FDM-native NAT source record."""
     source_interface: Optional[CiscoFTDReference] = None
     destination_interface: Optional[CiscoFTDReference] = None
-    original: Dict[str, Any] = Field(default_factory=dict)
-    translated: Dict[str, Any] = Field(default_factory=dict)
-    order: Optional[int] = None
-    nat_type: Optional[str] = None
+    original_source: Optional[CiscoFTDReference] = None
+    translated_source: Optional[CiscoFTDReference] = None
+    original_destination: Optional[CiscoFTDReference] = None
+    translated_destination: Optional[CiscoFTDReference] = None
+    service: Optional[CiscoFTDReference] = None
+    rule_type: Optional[str] = None
+    sequence: Optional[int] = None
+    observed_collection_order: Optional[int] = None
     enabled: Optional[bool] = None
-    section: Optional[str] = None
+    source_translation_mode: Optional[str] = None
+    destination_translation_mode: Optional[str] = None
 
 
 class CiscoFTDManualNATRule(CiscoFTDSourceRecord):
@@ -253,7 +258,7 @@ class CiscoFTDNATPolicy(CiscoFTDSourceRecord):
     manual_rules_after_auto: Optional[List[CiscoFTDManualNATRule]] = None
     unclassified_manual_rules: Optional[List[CiscoFTDManualNATRule]] = None
     # FDM exposes a different aggregate shape; keep it source-native and separate.
-    rules: Optional[List[CiscoFTDNATRule]] = None
+    rules: Optional[List[CiscoFTDFDMNATRule]] = None
 
 
 class CiscoFTDTimeRange(CiscoFTDSourceRecord): pass

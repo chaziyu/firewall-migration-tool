@@ -5,10 +5,16 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
+from openpyxl import Workbook
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
-from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter
-from fwmigrate.vendors.palo_alto.export.excel_schema import SHEET_HEADERS, SHEET_IMPLEMENTATION_STATUS
+from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter, PaloAltoSourceResult
+from fwmigrate.vendors.palo_alto.export.excel_schema import HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, SHEET_IMPLEMENTATION_STATUS
+from fwmigrate.vendors.palo_alto.export.excel import _write_table, _ERROR_FILL, _REVIEW_FILL, _DERIVED_FILL, _ALT_FILL
+from fwmigrate.vendors.palo_alto.model import PANAddress, PANOSConfig
+from fwmigrate.vendors.palo_alto.source_model import PANOSDerivedViews, PANScope
+from fwmigrate.vendors.palo_alto.validation.models import PANOSValidationIssue, PANOSValidationResult
 
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "palo_alto"
@@ -103,3 +109,52 @@ def test_row_builders_do_not_reimplement_relationships_or_transforms():
     path = Path(__file__).parents[3] / "src" / "fwmigrate" / "vendors" / "palo_alto" / "export" / "excel_rows.py"
     calls = {node.func.id for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
     assert calls.isdisjoint({"resolve_references", "build_policy_order", "build_scope_hierarchy", "transform_nat"})
+
+
+@pytest.mark.parametrize(("scopes", "target"), [
+    ((PANScope(kind="vsys", name="vsys1", device_serial="A"), PANScope(kind="vsys", name="vsys1", device_serial="B")), 1),
+    ((PANScope(kind="shared", name="shared"), PANScope(kind="vsys", name="vsys1")), 0),
+    ((PANScope(kind="device-group", name="dg-a", device_group="dg-a"), PANScope(kind="device-group", name="dg-b", device_group="dg-b")), 1),
+    ((PANScope(kind="template", name="base"), PANScope(kind="template-stack", name="base", template_stack="base")), 0),
+])
+def test_validation_issues_stay_on_the_matching_native_scope(scopes, target):
+    addresses = [PANAddress(name="duplicate", source_path=f"addresses/{index}", scope=scope) for index, scope in enumerate(scopes)]
+    issue = PANOSValidationIssue("warning", "address", "scoped warning", source_name="duplicate",
+                                 source_scope=scopes[target], scope_identity=f"{scopes[target].kind}:{scopes[target].name}", object_type="address")
+    analysis = PaloAltoSourceResult(PANOSConfig(addresses=addresses), PANOSDerivedViews(), PANOSValidationResult((issue,)))
+    output = BytesIO()
+    PaloAltoSourceReporter().export_excel(analysis, output)
+    sheet = load_workbook(BytesIO(output.getvalue()), data_only=True)["Addresses"]
+    reason_col = next(cell.column for cell in sheet[3] if cell.value == "Review Reasons")
+    assert [sheet.cell(row, reason_col).value == "scoped warning" for row in (4, 5)] == [target == 0, target == 1]
+
+
+def test_streamed_writer_preserves_fill_precedence_and_layout_after_reload():
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    rows = iter((
+        {"Effective Order": "derived", "__review__": True},
+        {"Effective Order": "derived", "__error__": True},
+        {"Effective Order": "derived"},
+        {"Effective Order": "derived"},
+        {},
+    ))
+    assert _write_table(workbook, "Security Policies", rows) == 5
+    output = BytesIO()
+    workbook.save(output)
+    sheet = load_workbook(BytesIO(output.getvalue()))["Security Policies"]
+    headers = {cell.value: cell.column for cell in sheet[3]}
+    derived = headers["Effective Order"]
+    assert sheet.cell(4, derived).fill.fgColor.rgb.endswith(_REVIEW_FILL.fgColor.rgb[-6:])
+    assert sheet.cell(5, derived).fill.fgColor.rgb.endswith(_ERROR_FILL.fgColor.rgb[-6:])
+    assert sheet.cell(5, 1).fill.fgColor.rgb.endswith(_ERROR_FILL.fgColor.rgb[-6:])
+    assert sheet.cell(6, derived).fill.fgColor.rgb.endswith(_DERIVED_FILL.fgColor.rgb[-6:])
+    assert sheet.cell(7, 1).fill.fgColor.rgb.endswith(_ALT_FILL.fgColor.rgb[-6:])
+    assert sheet.cell(8, 1).fill.fill_type is None
+    assert sheet["A2"].value.startswith("5 row(s)")
+    assert sheet.auto_filter.ref == f"A3:{get_column_letter(len(SHEET_HEADERS['Security Policies']))}8"
+    assert sheet.freeze_panes == "D4"
+    hidden = HIDDEN_COLUMNS_BY_DEFAULT.get("Security Policies", ())
+    assert hidden
+    assert all(sheet.column_dimensions[get_column_letter(column)].hidden
+               for column, header in enumerate(SHEET_HEADERS["Security Policies"], 1) if header in hidden)

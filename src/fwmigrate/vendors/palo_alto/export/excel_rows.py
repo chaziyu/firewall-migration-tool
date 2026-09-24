@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Iterator
 
 from ..schema_registry import match_path_spec, registered_paths
 from ..source_model import PANScope, pan_scope_identity
@@ -80,23 +80,39 @@ def _text(value: Any) -> Any:
 class _PANExcelContext:
     analysis: PaloAltoSourceResult
     source_name: str | None = None
-    validation_by_object: dict[tuple[str, str, str | None], tuple[Any, ...]] = field(init=False)
+    validation_by_object: dict[tuple[str, str, str, str | None], tuple[Any, ...]] = field(init=False)
     validation_by_scope: dict[str, tuple[Any, ...]] = field(init=False)
     typed_identities: set[tuple[str, str | None, str]] = field(init=False)
     typed_paths: set[str] = field(init=False)
+    source_domains: Counter = field(init=False)
+    extracted_domains: Counter = field(init=False)
 
     def __post_init__(self) -> None:
-        objects: dict[tuple[str, str, str | None], list[Any]] = defaultdict(list)
+        objects: dict[tuple[str, str, str, str | None], list[Any]] = defaultdict(list)
         scopes: dict[str, list[Any]] = defaultdict(list)
         for issue in self.analysis.validation.issues:
-            scope = getattr(issue, "scope_identity", None) or "<unscoped>"
-            objects[(scope, getattr(issue, "object_type", None) or issue.domain, issue.source_name)].append(issue)
+            issue_scope = getattr(issue, "source_scope", None)
+            scope = issue_scope.model_dump_json() if issue_scope else "<unscoped>"
+            object_type = getattr(issue, "object_type", None) or issue.domain
+            objects[(issue.domain, scope, object_type, issue.source_name)].append(issue)
+            # Keep the object's validation domain distinct while allowing the
+            # existing identity and relationship issues to annotate its row.
+            if issue.domain != object_type:
+                objects[(object_type, scope, object_type, issue.source_name)].append(issue)
             scopes[scope].append(issue)
         self.validation_by_object = {key: tuple(value) for key, value in objects.items()}
         self.validation_by_scope = {key: tuple(value) for key, value in scopes.items()}
         typed = (item for field in set(_TYPED_COUNT_FIELDS.values()) | {"static_routes"} for item in getattr(self.analysis.config, field))
-        self.typed_identities = {(item.source_path, getattr(item, "name", None), _scope_id(getattr(item, "scope", None))) for item in typed}
+        self.typed_identities = {(item.source_path, getattr(item, "name", None), _scope_key(getattr(item, "scope", None))) for item in typed}
         self.typed_paths = {path for path, _, _ in self.typed_identities}
+        source_domains: Counter = Counter()
+        extracted_domains: Counter = Counter()
+        for record in self.config.source_inventory:
+            domain = _source_domain(record)
+            source_domains[domain] += 1
+            if _inventory_status(self, record) == "EXTRACTED":
+                extracted_domains[domain] += 1
+        self.source_domains, self.extracted_domains = source_domains, extracted_domains
 
     @property
     def config(self): return self.analysis.config
@@ -108,7 +124,16 @@ class _PANExcelContext:
     def validation(self): return self.analysis.validation
 
     def issues_for(self, item: Any, object_type: str) -> tuple[Any, ...]:
-        return self.validation_by_object.get((_scope_id(getattr(item, "scope", None)), object_type, getattr(item, "name", None)), ())
+        return self.validation_by_object.get((object_type, _scope_key(getattr(item, "scope", None)), object_type, getattr(item, "name", None)), ())
+
+
+def _scope_key(scope: PANScope | None) -> str:
+    return scope.model_dump_json() if scope else "<unscoped>"
+
+
+def _source_domain(item: Any) -> str:
+    spec = match_path_spec(tuple(item.source_path.split("/")))
+    return spec.name if spec else item.kind.replace("-", "_")
 
 
 def _base(context: _PANExcelContext, item: Any, object_type: str) -> dict[str, Any]:
@@ -122,23 +147,19 @@ def _base(context: _PANExcelContext, item: Any, object_type: str) -> dict[str, A
             "__review__": bool(issues), "__error__": any(issue.severity == "error" for issue in issues)}
 
 
-def _simple_rows(context: _PANExcelContext, items: Iterable[Any], object_type: str, fields: dict[str, str]) -> list[dict[str, Any]]:
-    rows = []
+def _simple_rows(context: _PANExcelContext, items: Iterable[Any], object_type: str, fields: dict[str, str]) -> Iterator[dict[str, Any]]:
     for item in items:
         row = _base(context, item, object_type)
         row.update({header: _text(getattr(item, attribute, None)) for header, attribute in fields.items()})
-        rows.append(row)
-    return rows
+        yield row
 
 
-def _object_rows(context: _PANExcelContext, items: Iterable[Any], object_type: str, fields: dict[str, str]) -> list[dict[str, Any]]:
-    rows = []
+def _object_rows(context: _PANExcelContext, items: Iterable[Any], object_type: str, fields: dict[str, str]) -> Iterator[dict[str, Any]]:
     for item in items:
         row = _base(context, item, object_type)
         for header, attribute in fields.items():
             row[header] = _text(getattr(item, attribute, None))
-        rows.append(row)
-    return rows
+        yield row
 
 
 def _child_rows(context: _PANExcelContext, parents: Iterable[Any], child_attr: str, object_type: str, fields: dict[str, str], parent_header: str = "Profile", parent_attribute: str = "name") -> list[dict[str, Any]]:
@@ -203,28 +224,23 @@ def _vulnerability_profile_rows(context: _PANExcelContext) -> list[dict[str, Any
     return rows
 
 
-def _address_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _address_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in context.config.addresses:
         variants = [(name, getattr(item, name)) for name in ("ip_netmask", "ip_range", "ip_wildcard", "fqdn") if getattr(item, name) is not None]
         row = _base(context, item, "address")
         row.update({"Type": _text(name.replace("_", "-") for name, _ in variants), "Value": _text(value for _, value in variants), "Tags": _text(item.tags), "Description": item.description})
-        rows.append(row)
-    return rows
+        yield row
 
 
-def _address_group_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _address_group_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in context.config.address_groups:
         row = _base(context, item, "address-group")
         row.update({"Group Type": "static" if item.static_members is not None else "dynamic" if item.dynamic_filter is not None else None,
                     "Static Members": _text(item.static_members), "Dynamic Filter": item.dynamic_filter, "Tags": _text(item.tags), "Description": item.description})
-        rows.append(row)
-    return rows
+        yield row
 
 
-def _service_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _service_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in context.config.services:
         protocols = [(name, value) for name, value in (("tcp", item.tcp), ("udp", item.udp)) if value is not None] or [(None, None)]
         for protocol, value in protocols:
@@ -234,8 +250,7 @@ def _service_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
                         "Override Enabled": "yes" if override else None, "Timeout": override.timeout if override else None,
                         "Half-Close Timeout": override.halfclose_timeout if override else None, "Time-Wait Timeout": override.timewait_timeout if override else None,
                         "Tags": _text(item.tags), "Description": item.description})
-            rows.append(row)
-    return rows
+            yield row
 
 
 def _schedule_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
@@ -263,8 +278,7 @@ def _effective_order(context: _PANExcelContext, item: Any) -> str:
                  if entry.rule_name == item.name and _scope_id(entry.source_scope) == _scope_id(item.scope) and entry.source_order == item.source_order)
 
 
-def _security_policy_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _security_policy_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in (*context.config.security_rules, *context.config.default_security_rules):
         profile = item.profile_setting
         row = _base(context, item, "policy")
@@ -277,13 +291,11 @@ def _security_policy_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
                     "Profile Group": _text(profile.groups if profile else None), "Log Setting": item.log_setting, "Log Start": item.log_start, "Log End": item.log_end,
                     "Description": item.description, "Resolved Source References": _reference_text(context, item, {"source"}),
                     "Resolved Destination References": _reference_text(context, item, {"destination"})})
-        rows.append(row)
-    return rows
+        yield row
 
 
-def _nat_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
+def _nat_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     derived_by_identity = {(item.source_path, item.name, item.source_order): item for item in context.derived.nat}
-    rows = []
     for item in context.config.nat_rules:
         source, destination, dynamic = item.source_translation, item.destination_translation, item.dynamic_destination_translation
         derived = derived_by_identity.get((item.source_path, item.name, item.source_order))
@@ -298,8 +310,7 @@ def _nat_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
                     "Dynamic Destination Distribution": getattr(dynamic, "distribution", None), "Derived Source Translation Mode": derived.source_translation_mode if derived else None,
                     "Derived Destination Translation Mode": derived.destination_translation_mode if derived else None,
                     "Resolved Translation References": _text(derived.translated_references if derived else ()), "Disabled": item.disabled, "Tags": _text(item.tags), "Description": item.description})
-        rows.append(row)
-    return rows
+        yield row
 
 
 def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
@@ -342,8 +353,7 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
     return rows
 
 
-def _route_rows(context: _PANExcelContext, logical: bool) -> list[dict[str, Any]]:
-    rows = []
+def _route_rows(context: _PANExcelContext, logical: bool) -> Iterator[dict[str, Any]]:
     for router in context.config.logical_routers if logical else context.config.virtual_routers:
         groups = ((vrf.name, vrf.static_routes or ()) for vrf in router.vrfs or ()) if logical else ((None, router.static_routes or ()),)
         for vrf, routes in groups:
@@ -353,8 +363,7 @@ def _route_rows(context: _PANExcelContext, logical: bool) -> list[dict[str, Any]
                             "Source Order": item.source_order, "Address Family": item.address_family, "Destination": item.destination,
                             "Next Hop Type": item.nexthop_type, "Next Hop": item.nexthop_ip_address or item.nexthop, "Interface": item.interface,
                             "Admin Distance": item.admin_distance, "Metric": item.metric, "Route Table": item.route_table, "BFD Profile": item.bfd_profile})
-                rows.append(row)
-    return rows
+                yield row
 
 
 def _unresolved_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
@@ -384,34 +393,32 @@ def _validation_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
     return rows
 
 
-def _inventory_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _inventory_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in context.config.source_inventory:
         scope = item.scope
-        rows.append({"Scope Type": scope.kind if scope else None, "Scope Name": scope.name if scope else None, "Device": scope.device_name if scope else None,
+        yield {"Scope Type": scope.kind if scope else None, "Scope Name": scope.name if scope else None, "Device": scope.device_name if scope else None,
                      "Serial": scope.device_serial if scope else None, "Device Group": scope.device_group if scope else None, "Source Path": item.source_path,
                      "Kind": item.kind, "Object": item.name, "Rulebase Position": item.rulebase_position, "Source Order": item.source_order,
-                     "Values": _text(item.values), "Extraction Status": _inventory_status(context, item)})
-    return rows
+                     "Values": _text(item.values), "Extraction Status": _inventory_status(context, item)}
 
 
 def _inventory_status(context: _PANExcelContext, record: Any) -> str:
     if record.unsupported or record.source_path in context.config.unknown_paths:
         return "UNSUPPORTED"
-    identity = (record.source_path, record.name, _scope_id(record.scope))
+    identity = (record.source_path, record.name, _scope_key(record.scope))
     if identity in context.typed_identities:
         return "EXTRACTED"
     return "SOURCE_ONLY"
 
 
-def _unsupported_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _unsupported_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in context.config.source_inventory:
         status = _inventory_status(context, item)
-        if status == "EXTRACTED" or (status == "SOURCE_ONLY" and (item.source_path.endswith(("devices/entry", "device-group/entry", "vsys/entry")) or any(item.source_path.startswith(path + "/") for path in context.typed_paths))):
+        path_parts = item.source_path.split("/")
+        under_typed_path = any("/".join(path_parts[:index]) in context.typed_paths for index in range(1, len(path_parts)))
+        if status == "EXTRACTED" or (status == "SOURCE_ONLY" and (item.source_path.endswith(("devices/entry", "device-group/entry", "vsys/entry")) or under_typed_path)):
             continue
-        rows.append({"Source Path": item.source_path, "Status": status, "Reason": "typed extraction failed" if status == "UNSUPPORTED" else "no standalone typed source object"})
-    return rows
+        yield {"Source Path": item.source_path, "Status": status, "Reason": "typed extraction failed" if status == "UNSUPPORTED" else "no standalone typed source object"}
 
 
 def _typed_counts(context: _PANExcelContext) -> dict[str, int]:
@@ -422,8 +429,7 @@ def _typed_counts(context: _PANExcelContext) -> dict[str, int]:
 
 
 def _coverage_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    source = Counter((spec.name if (spec := match_path_spec(tuple(item.source_path.split("/")))) else item.kind.replace("-", "_")) for item in context.config.source_inventory)
-    extracted = Counter((spec.name if (spec := match_path_spec(tuple(item.source_path.split("/")))) else item.kind.replace("-", "_")) for item in context.config.source_inventory if _inventory_status(context, item) == "EXTRACTED")
+    source, extracted = context.source_domains, context.extracted_domains
     typed = _typed_counts(context)
     domains = sorted(set(registered_paths()) | set(source) | set(typed))
     return [{"Source Domain": domain, "Found": "yes" if source[domain] else "no", "Source Records": source[domain], "Typed Objects": typed.get(domain, 0),
@@ -431,7 +437,7 @@ def _coverage_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
              "Unknown Paths": _text(path for path in context.config.unknown_paths if domain.replace("_", "-") in path), "Notes": None} for domain in domains]
 
 
-ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], list[dict[str, Any]]]] = {
+ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], Iterable[dict[str, Any]]]] = {
     "Review Required": _validation_rows,
     "Validation": _validation_rows,
     "Tags": lambda c: _simple_rows(c, c.config.tags, "tag", {"Color": "color", "Comments": "comments"}),

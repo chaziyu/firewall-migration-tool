@@ -195,7 +195,12 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             if value is not None:
                 resolve(rule, field_name, value, interface_or_zone)
         if kind == "fdm":
-            pass
+            for field_name in ("original_source", "translated_source", "original_destination", "translated_destination"):
+                value = getattr(rule, field_name, None)
+                if value is not None:
+                    resolve(rule, field_name, value, network)
+            if rule.service is not None:
+                resolve(rule, "service", rule.service, service)
         else:
             for field_name in ("original_source", "translated_source", "original_destination", "translated_destination",
                                "original_network", "translated_network", "owning_network"):
@@ -296,9 +301,20 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             "source_port_refs": rule.source_ports, "destination_port_refs": rule.destination_ports,
             **{key: getattr(rule, key) for key in ("realm", "time_range", "intrusion_policy", "variable_set", "file_policy")}}
             for rule in acp_rules),
-        nat_relationships=tuple({"policy_id": policy.source_id, "policy": policy.name,
+        nat_relationships=tuple({"policy_id": None if policy.source_attributes.get("synthetic_container") else policy.source_id,
+            "policy": None if policy.source_attributes.get("synthetic_container") else policy.name,
             "rule_id": rule.source_id, "rule": rule.name, "rule_kind": kind,
-            "section": getattr(rule, "section", None), "position": getattr(rule, "position", getattr(rule, "order", None)),
+            "rule_type": getattr(rule, "rule_type", None),
+            "section": None if kind == "fdm" else getattr(rule, "section", None),
+            "position": getattr(rule, "sequence", None) if kind == "fdm" else getattr(rule, "position", getattr(rule, "order", None)),
+            "sequence": getattr(rule, "sequence", None) if kind == "fdm" else None,
+            "original_source": getattr(rule, "original_source", None),
+            "translated_source": getattr(rule, "translated_source", None),
+            "original_destination": getattr(rule, "original_destination", None),
+            "translated_destination": getattr(rule, "translated_destination", None),
+            "service": getattr(rule, "service", None),
+            "source_translation_mode": getattr(rule, "source_translation_mode", None),
+            "destination_translation_mode": getattr(rule, "destination_translation_mode", None),
             "original": getattr(rule, "original", None), "translated": getattr(rule, "translated", None)}
             for policy, rule, kind in nat_rules),
         unresolved_references=tuple(issues), source_plane_completeness=expected,

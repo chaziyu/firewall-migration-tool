@@ -27,6 +27,26 @@ def _nat_ref(value: Any) -> Any:
     return value
 
 
+def _nat_row(policy: Any, rule: Any, section: str | None, kind: str) -> tuple[Any, ...]:
+    fdm = kind == "fdm" or hasattr(rule, "rule_type")
+    synthetic = policy.source_attributes.get("synthetic_container")
+    return (None if synthetic else policy.name, rule.name, rule.source_id,
+        getattr(rule, "rule_type", None) if fdm else kind, rule.enabled,
+        None if fdm else getattr(rule, "section", None) or section,
+        getattr(rule, "sequence", None) if fdm else getattr(rule, "position", getattr(rule, "order", None)),
+        _nat_ref(getattr(rule, "source_interface", None)), _nat_ref(getattr(rule, "destination_interface", None)),
+        _nat_ref(getattr(rule, "original_source", None)), _nat_ref(getattr(rule, "translated_source", None)),
+        _nat_ref(getattr(rule, "original_destination", None)), _nat_ref(getattr(rule, "translated_destination", None)),
+        _nat_ref(getattr(rule, "original_source_service", None) or getattr(rule, "original_source_port", None)),
+        _nat_ref(getattr(rule, "translated_source_service", None) or getattr(rule, "translated_source_port", None)),
+        _nat_ref(getattr(rule, "original_destination_service", None) or getattr(rule, "original_destination_port", None)),
+        _nat_ref(getattr(rule, "translated_destination_service", None) or getattr(rule, "translated_destination_port", None)),
+        getattr(rule, "nat_type", None), getattr(rule, "interface_pat", None), getattr(rule, "dns", None),
+        getattr(rule, "route_lookup", None), getattr(rule, "proxy_arp", None), rule.source_plane, rule.source_context,
+        rule.raw_extra, _nat_ref(getattr(rule, "service", None)),
+        getattr(rule, "source_translation_mode", None), getattr(rule, "destination_translation_mode", None))
+
+
 def export_ftd_excel(result: Any, output: Any) -> Any:
     from openpyxl import Workbook
 
@@ -56,18 +76,7 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
             _refs([rule.variable_set] if rule.variable_set else None), _refs([rule.file_policy] if rule.file_policy else None),
             rule.log_begin, rule.log_end, rule.comments, rule.source_plane, rule.source_context)
             for policy in config.access_control_policies for rule in (policy.rules or [])],
-        "NAT Rules": [(policy.name, rule.name, rule.source_id, kind, rule.enabled,
-            getattr(rule, "section", None) or section, getattr(rule, "position", getattr(rule, "order", None)),
-            _nat_ref(getattr(rule, "source_interface", None)), _nat_ref(getattr(rule, "destination_interface", None)),
-            _nat_ref(getattr(rule, "original_source", None)), _nat_ref(getattr(rule, "translated_source", None)),
-            _nat_ref(getattr(rule, "original_destination", None)), _nat_ref(getattr(rule, "translated_destination", None)),
-            _nat_ref(getattr(rule, "original_source_service", None) or getattr(rule, "original_source_port", None)),
-            _nat_ref(getattr(rule, "translated_source_service", None) or getattr(rule, "translated_source_port", None)),
-            _nat_ref(getattr(rule, "original_destination_service", None) or getattr(rule, "original_destination_port", None)),
-            _nat_ref(getattr(rule, "translated_destination_service", None) or getattr(rule, "translated_destination_port", None)),
-            getattr(rule, "nat_type", None), getattr(rule, "interface_pat", None), getattr(rule, "dns", None),
-            getattr(rule, "route_lookup", None), getattr(rule, "proxy_arp", None), rule.source_plane, rule.source_context,
-            rule.raw_extra)
+        "NAT Rules": [_nat_row(policy, rule, section, kind)
             for policy in config.nat_policies
             for section, kind, rules in (("BEFORE_AUTO", "manual", policy.manual_rules_before_auto),
                 ("AUTO", "auto", policy.auto_rules), ("AFTER_AUTO", "manual", policy.manual_rules_after_auto),
