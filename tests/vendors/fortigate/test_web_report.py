@@ -77,10 +77,14 @@ class WebReportTest(unittest.TestCase):
         )
 
     def test_summary_and_explicit_source_fields(self):
+        self.assertEqual("fortigate", self.report["vendor"])
         summary = self.report["summary"]
         self.assertEqual(8, summary["top_level_sections"])
         self.assertEqual(2, summary["objects"]["interfaces"])
         self.assertEqual(["root"], summary["vdoms"])
+        self.assertEqual(summary["vdoms"], summary["scopes"])
+        self.assertIsInstance(summary["objects"], dict)
+        self.assertIn("severity_counts", summary["validation"])
 
         interface = next(
             row

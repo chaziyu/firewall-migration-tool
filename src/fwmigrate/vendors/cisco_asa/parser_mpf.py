@@ -720,7 +720,7 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
     # Command families have different ASA grammars. Address and enable use a
     # trailing interface name; DNS/domain can use an explicit `interface NAME`
     # clause and must not guess an interface from an arbitrary final token.
-    if command == "address" and interface is None and values:
+    if command == "address" and interface is None and len(values) >= 2:
         interface = values[-1]
         values = values[:-1]
     elif command == "enable" and interface is None and values:

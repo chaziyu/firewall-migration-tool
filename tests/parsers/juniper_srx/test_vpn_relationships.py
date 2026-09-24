@@ -46,3 +46,39 @@ def test_missing_vpn_references_remain_unresolved_without_placeholder_objects():
     assert set(context.vpn.ike_gateways) == set()
     assert set(context.vpn.ipsec_policies) == set()
     assert "st0" not in context.interfaces
+
+
+def test_ike_policy_local_certificate_path_and_activation_are_resolved_separately():
+    from fwmigrate.vendors.juniper_srx.source_report import extract_juniper_source
+
+    active = extract_juniper_source("""set security pki local-certificate CERT certificate-id 7
+set security ike policy IKE-POL certificate local-certificate CERT
+""")
+    policy = active.config.get_context().vpn.ike_policies["IKE-POL"]
+    assert policy.certificate_reference == "CERT"
+    edge = next(edge for edge in active.derived.vpn_graph if edge["relationship"] == "CERTIFICATE_REFERENCE")
+    assert edge["resolved"] is True and edge["source_effective"] is True
+
+    inherited_target = extract_juniper_source("""set groups G security pki local-certificate CERT certificate-id 7
+set apply-groups G
+set security ike policy IKE-POL certificate local-certificate CERT
+""")
+    assert inherited_target.config.pki.certificates == {}
+    edge = next(edge for edge in inherited_target.derived.vpn_graph if edge["relationship"] == "CERTIFICATE_REFERENCE")
+    assert edge["resolved"] is True
+
+    inactive_reference = extract_juniper_source("""set security pki local-certificate CERT certificate-id 7
+set security ike policy IKE-POL certificate local-certificate CERT
+deactivate security ike policy IKE-POL certificate local-certificate
+""")
+    dependency = next(item for item in inactive_reference.derived.dependencies if item.source_field == "certificate")
+    edge = next(edge for edge in inactive_reference.derived.vpn_graph if edge["relationship"] == "CERTIFICATE_REFERENCE")
+    assert dependency.result == "INACTIVE_SOURCE"
+    assert edge["resolved"] is True and edge["source_effective"] is False
+
+    inactive_target = extract_juniper_source("""set security pki local-certificate CERT certificate-id 7
+set security ike policy IKE-POL certificate local-certificate CERT
+deactivate security pki local-certificate CERT
+""")
+    dependency = next(item for item in inactive_target.derived.dependencies if item.source_field == "certificate")
+    assert dependency.result == "UNRESOLVED"

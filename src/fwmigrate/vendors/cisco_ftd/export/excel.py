@@ -84,8 +84,10 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
     config = result.config
     derived = getattr(result, "derived", None)
     topologies = {(item.device_id or "", item.name): item for item in getattr(getattr(derived, "interface_topology", None), "interfaces", ())}
-    normalized_routes = {(item.device_id or "", item.source_name): item.normalized_destination
-                         for item in getattr(derived, "normalized_routes", ())}
+    normalized_routes = {}
+    for item in getattr(derived, "normalized_routes", ()):
+        key = (item.device_id or "", item.source_id or item.source_name, item.virtual_router or "")
+        normalized_routes.setdefault(key, []).append(item.normalized_destination)
     def ref_text(value):
         return (value.name or value.source_id or str(value.value)) if value is not None else None
     rows = {
@@ -109,13 +111,16 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
                       + [(item.name, None, None, item.ip, None, config.source_plane, topology.kind, topology.parent, item.vlan_id)
                          for item in config.interfaces
                          for topology in (topologies["", item.name],) if ("", item.name) in topologies],
-        "Routes": [(x.name, x.device_id, x.virtual_router or (x.virtual_router_ref.name if x.virtual_router_ref else None),
-            ref_text(x.interface),
-            ", ".join(filter(None, (ref_text(ref) for ref in x.selected_networks))) if x.selected_networks else ref_text(x.destination),
-            ref_text(x.gateway), ref_text(x.sla_monitor), x.source_plane, x.address_family, None,
-            normalized_routes.get((x.device_id or "", x.name))) for x in config.routes]
-            + [(route.name, None, None, route.interface, route.destination, route.gateway, None, config.source_plane,
-                route.address_family, route.mask, normalized_routes.get(("", route.name))) for route in config.static_routes],
+        "Routes": [(x.name, x.source_attributes.get("device_name") or x.device_id, x.virtual_router or (x.virtual_router_ref.name if x.virtual_router_ref else None),
+             ref_text(x.interface),
+             ", ".join(filter(None, (ref_text(ref) for ref in x.selected_networks))) if x.selected_networks else ref_text(x.destination),
+             ref_text(x.gateway), ref_text(x.sla_monitor), x.route_tracking, x.tunneled, x.source_plane,
+             x.address_family or x.source_attributes.get("collection_address_family"), None,
+             ", ".join(filter(None, normalized_routes.get((x.device_id or "", x.source_id or x.name,
+                 x.virtual_router or ""), [])))) for x in config.routes]
+            + [(route.name, None, None, route.interface, route.destination, route.gateway, None, None, None,
+                config.source_plane, route.address_family, route.mask,
+                ", ".join(filter(None, normalized_routes.get(("", route.name, ""), [])))) for route in config.static_routes],
         "ACP Policies": [(policy.name, policy.source_id, policy.description, policy.inherit,
             ref_text(policy.base_policy), ref_text(policy.default_action), ref_text(policy.prefilter_policy),
             ref_text(policy.network_analysis_policy), ref_text(policy.decryption_policy), ref_text(policy.dns_policy),
@@ -182,7 +187,8 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
             for x in config.ra_vpn_address_assignment_settings],
     }
     native_collections = ("applications", "network_address_overrides", "access_control_default_actions",
-        "access_policy_inheritance_settings", "policy_assignments", "variable_sets", "url_categories", "vlan_objects", "time_ranges",
+        "access_control_logging_settings", "security_intelligence_policies", "identity_policies", "access_policy_inheritance_settings",
+        "policy_assignments", "variable_sets", "url_categories", "vlan_objects", "time_ranges",
         "intrusion_policies", "intrusion_rule_groups", "intrusion_rule_behaviors", "intrusion_rule_overrides",
         "fmc_user_roles", "fmc_users", "dhcp_servers", "dhcp_relay_settings", "realms",
         "realm_user_groups", "realm_users", "local_realm_users", "s2s_vpn_topologies", "s2s_vpn_endpoints",

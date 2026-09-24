@@ -1,7 +1,5 @@
 import json
 from io import BytesIO
-import sys
-from types import SimpleNamespace
 
 from fwmigrate.collection.cisco_ftd import CiscoFTDCollector
 from fwmigrate.collection.contracts import CollectionPart, CollectionStatus
@@ -21,7 +19,7 @@ class Response:
         return self._data
 
 
-def test_fmc_pagination_bundle_and_read_only_requests(monkeypatch):
+def test_fmc_pagination_bundle_and_read_only_requests():
     calls = []
 
     class Session:
@@ -48,8 +46,7 @@ def test_fmc_pagination_bundle_and_read_only_requests(monkeypatch):
         def close(self):
             calls.append(("CLOSE", ""))
 
-    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
-    collector = CiscoFTDCollector()
+    collector = CiscoFTDCollector(session_factory=Session)
     source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
     bundle = json.loads(source.source_text)
     assert source.status == CollectionStatus.SUCCESS
@@ -63,7 +60,7 @@ def test_fmc_pagination_bundle_and_read_only_requests(monkeypatch):
     assert CiscoFTDSourceReporter().analyze_source(source.source_text)
 
 
-def test_fmc_partial_endpoint_failure_keeps_usable_source(monkeypatch):
+def test_fmc_partial_endpoint_failure_keeps_usable_source():
     class Session:
         headers = {}
         verify = None
@@ -80,15 +77,14 @@ def test_fmc_partial_endpoint_failure_keeps_usable_source(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
-    source = CiscoFTDCollector().collect(CiscoFTDCollector().validate_options({"host": "fmc", "username": "u", "password": "p"}))
+    source = CiscoFTDCollector(session_factory=Session).collect(CiscoFTDCollector(session_factory=Session).validate_options({"host": "fmc", "username": "u", "password": "p"}))
     assert source.status == CollectionStatus.PARTIAL
     part = next(part for part in source.parts if part.name == "networkaddresses")
     assert (part.status, part.complete, part.count) == ("FAILED", False, 0)
     assert "secret-password" not in str(source)
 
 
-def test_fmc_failed_later_page_keeps_first_page(monkeypatch):
+def test_fmc_failed_later_page_keeps_first_page():
     class Session:
         headers = {}
         verify = None
@@ -108,8 +104,7 @@ def test_fmc_failed_later_page_keeps_first_page(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
-    collector = CiscoFTDCollector()
+    collector = CiscoFTDCollector(session_factory=Session)
     source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
     assert source.status == CollectionStatus.PARTIAL
     assert json.loads(source.source_text)["objects"]["networkaddresses"][0]["name"] == "host"
@@ -123,11 +118,11 @@ def test_fmc_total_endpoint_failure_is_failed_with_zero_count():
             raise TimeoutError("private transport detail")
 
     parts = []
-    CiscoFTDCollector()._collect_family(Session(), "https://fmc", "/hosts", {}, "hosts", parts)
+    CiscoFTDCollector(session_factory=Session)._collect_family(Session(), "https://fmc", "/hosts", {}, "hosts", parts)
     assert parts == [CollectionPart("hosts", "FAILED", False, 0)]
 
 
-def test_fmc_nat_rule_sections_preserve_order(monkeypatch):
+def test_fmc_nat_rule_sections_preserve_order():
     class Session:
         headers = {}
         verify = None
@@ -148,14 +143,13 @@ def test_fmc_nat_rule_sections_preserve_order(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
-    collector = CiscoFTDCollector()
+    collector = CiscoFTDCollector(session_factory=Session)
     source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
     policy = json.loads(source.source_text)["nat_policies"][0]
     assert [policy["manual_rules_before_auto"][0]["id"], policy["auto_rules"][0]["id"], policy["manual_rules_after_auto"][0]["id"]] == ["m1", "a1", "m2"]
 
 
-def test_fmc_collects_device_interfaces_separately_from_zones_and_groups(monkeypatch):
+def test_fmc_collects_device_interfaces_separately_from_zones_and_groups():
     calls = []
 
     class Session:
@@ -188,8 +182,7 @@ def test_fmc_collects_device_interfaces_separately_from_zones_and_groups(monkeyp
         def close(self):
             pass
 
-    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
-    collector = CiscoFTDCollector()
+    collector = CiscoFTDCollector(session_factory=Session)
     source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
     bundle = json.loads(source.source_text)
 
@@ -202,7 +195,7 @@ def test_fmc_collects_device_interfaces_separately_from_zones_and_groups(monkeyp
     assert not any(url.endswith("/object/interfaceobjects") for url in calls)
 
 
-def test_fmc_device_interface_failure_is_device_scoped_and_partial(monkeypatch):
+def test_fmc_device_interface_failure_is_device_scoped_and_partial():
     class Session:
         headers = {}
         verify = None
@@ -230,8 +223,7 @@ def test_fmc_device_interface_failure_is_device_scoped_and_partial(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
-    collector = CiscoFTDCollector()
+    collector = CiscoFTDCollector(session_factory=Session)
     source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
     bundle = json.loads(source.source_text)
     assert source.status == CollectionStatus.PARTIAL
@@ -243,7 +235,7 @@ def test_fmc_device_interface_failure_is_device_scoped_and_partial(monkeypatch):
     assert next(item for item in analysis.derived.unresolved_references if item.field == "interfaces").status == "AMBIGUOUS"
 
 
-def test_fmc_access_rules_request_expanded_fields(monkeypatch):
+def test_fmc_access_rules_request_expanded_fields():
     calls = []
 
     class Session:
@@ -271,20 +263,21 @@ def test_fmc_access_rules_request_expanded_fields(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
-    collector = CiscoFTDCollector()
+    collector = CiscoFTDCollector(session_factory=Session)
     source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
     rule = json.loads(source.source_text)["access_policies"][0]["rules"][0]
 
     assert any("/accessrules?expanded=true" in url for _, url in calls)
     assert any("/inheritancesettings?expanded=true" in url for _, url in calls)
     assert any("/loggingsettings?expanded=true" in url for _, url in calls)
+    assert any("/securityintelligencepolicies?expanded=true" in url for _, url in calls)
+    assert any("/defaultactions?expanded=true" in url for _, url in calls)
     assert rule["sourcePorts"]["objects"][0]["id"] == "src-port"
     assert rule["destinationPorts"]["objects"][0]["id"] == "dst-port"
     assert all(method == "GET" for method, _ in calls)
 
 
-def test_fmc_access_rule_later_page_failure_keeps_rules_and_marks_partial(monkeypatch):
+def test_fmc_access_rule_later_page_failure_keeps_rules_and_marks_partial():
     class Session:
         headers = {}
         verify = None
@@ -310,8 +303,7 @@ def test_fmc_access_rule_later_page_failure_keeps_rules_and_marks_partial(monkey
         def close(self):
             pass
 
-    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
-    collector = CiscoFTDCollector()
+    collector = CiscoFTDCollector(session_factory=Session)
     source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
     bundle = json.loads(source.source_text)
 
@@ -321,7 +313,7 @@ def test_fmc_access_rule_later_page_failure_keeps_rules_and_marks_partial(monkey
     assert "transport-secret" not in source.source_text
 
 
-def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkeypatch):
+def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership():
     calls = []
 
     class Session:
@@ -389,8 +381,7 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkey
         def close(self):
             pass
 
-    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
-    collector = CiscoFTDCollector()
+    collector = CiscoFTDCollector(session_factory=Session)
     source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
     bundle = json.loads(source.source_text)
 
@@ -431,7 +422,7 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkey
     assert workbook.getvalue().startswith(b"PK")
 
 
-def test_fmc_device_intrusion_and_vpn_failures_keep_successful_source(monkeypatch):
+def test_fmc_device_intrusion_and_vpn_failures_keep_successful_source():
     class Session:
         headers = {}
         verify = None
@@ -461,8 +452,7 @@ def test_fmc_device_intrusion_and_vpn_failures_keep_successful_source(monkeypatc
         def close(self):
             pass
 
-    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
-    collector = CiscoFTDCollector()
+    collector = CiscoFTDCollector(session_factory=Session)
     source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
     bundle = json.loads(source.source_text)
     failed = {part.name for part in source.parts if not part.complete}

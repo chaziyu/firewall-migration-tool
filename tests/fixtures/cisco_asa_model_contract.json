@@ -274,6 +274,7 @@
         "action",
         "protocol",
         "protocol_object",
+        "protocol_reference_type",
         "source_endpoint",
         "source_port",
         "destination_endpoint",
@@ -302,7 +303,7 @@
         "review_reasons",
         "source_attributes"
       ],
-      "sha256": "5ec658767de9a183fcf22e417d07acb1e36d5fa885f161a982064ed8be14c9a3"
+      "sha256": "5a6b907eaefd1dae8b3805b5f5e6fbad139fc80e2cb96d0597bf2595e06a0619"
     },
     "CiscoACLRemark": {
       "fields": [
@@ -1260,9 +1261,11 @@
         "domain_name",
         "lease_seconds",
         "ping_timeout",
+        "auto_config",
+        "dns_update",
         "options"
       ],
-      "sha256": "3a62f53e8a2b901aa8717e5c58fb52e288afec71603733324538a41d67d83dbf"
+      "sha256": "bb681ff895530e89af5b51520a8822b7b324dc7c0d8c60ad777f352fac405a96"
     },
     "CiscoDHCPRelayServer": {
       "fields": [
