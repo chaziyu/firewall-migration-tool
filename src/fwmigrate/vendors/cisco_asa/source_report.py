@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from fwmigrate.extraction.sanitize import sanitize_raw_text
+from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
 
 from .accounting import build_asa_source_accounting
 from .coverage import classify_cisco_asa_coverage
@@ -21,7 +21,7 @@ def _sanitize(value: Any) -> Any:
     if isinstance(value, list):
         return [_sanitize(item) for item in value]
     if isinstance(value, dict):
-        return {key: _sanitize(item) for key, item in value.items()}
+        return {key: _sanitize(item) for key, item in sanitize_source_attributes(value).items()}
     fields = getattr(type(value), "model_fields", None)
     if fields is not None:
         for name in fields:

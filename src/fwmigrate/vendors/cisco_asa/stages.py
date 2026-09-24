@@ -2,13 +2,8 @@
 
 from functools import lru_cache
 
-from fwmigrate.vendors.cisco_asa.parser import (
-    CiscoASAParser,
-    apply_reference_issues,
-    validate_references,
-)
+from fwmigrate.vendors.cisco_asa.parser import CiscoASAParser
 
-from . import audit_fixes as audit
 from . import phase10_17 as phase
 from . import phase10_17_safety as safety
 
@@ -31,11 +26,6 @@ def _parse_threat_detection(self, line: str, line_number: int) -> None:
     )
 
 
-_VALIDATE_REFERENCES = audit._wrap_reference_validation(
-    phase._extend_reference_validation(validate_references)
-)
-
-
 def _parse_raw(self):
     config = CiscoASAParser.parse_raw(self)
     phase._postprocess_dns(self)
@@ -45,14 +35,6 @@ def _parse_raw(self):
     phase._postprocess_failover_groups(self)
     phase._postprocess_no_service_policies(self)
     phase._postprocess_http_server(self)
-    apply_reference_issues(config, _VALIDATE_REFERENCES(config))
-
-    audit._normalize_interface_headers(config)
-    audit._normalize_standard_acls(config)
-    audit._normalize_nat_source_model(config)
-    audit._apply_global_mtu(self)
-    apply_reference_issues(config, _VALIDATE_REFERENCES(config))
-    self._compute_object_nat_order()
     return config
 
 
@@ -81,10 +63,6 @@ def get_asa_parser_class():
         _parse_global_conn = safety._parse_unverified_global_conn
         parse_raw = _parse_raw
 
-        _parse_nat_line = audit._parse_nat_line_audit(CiscoASAParser._parse_nat_line)
-        _parse_time_range_absolute_clause = classmethod(
-            audit._parse_time_range_absolute_clause_audit
-        )
 
     return ASAExtractionParser
 

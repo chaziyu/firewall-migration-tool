@@ -31,8 +31,15 @@ def _is_address_literal(name: str) -> bool:
 class ReferenceIndex:
     objects: tuple[PANIndexedObject, ...]
     hierarchy: PANDeviceGroupHierarchy
+    source_objects: tuple[PANIndexedObject, ...] = ()
 
     def candidates(self, family: str, name: str, scope: PANScope | None) -> tuple[PANIndexedObject, ...]:
+        return self._visible(self.objects, family, name, scope)
+
+    def source_candidates(self, family: str, name: str, scope: PANScope | None) -> tuple[PANIndexedObject, ...]:
+        return self._visible(self.source_objects, family, name, scope)
+
+    def _visible(self, objects: tuple[PANIndexedObject, ...], family: str, name: str, scope: PANScope | None) -> tuple[PANIndexedObject, ...]:
         allowed = visible_scopes(scope, self.hierarchy)
         def visible(item):
             if item.scope is None:
@@ -42,7 +49,7 @@ class ReferenceIndex:
             if item.scope.kind == "device-group":
                 return f"device-group:{item.scope.name}" in allowed
             return pan_scope_identity(item.scope) in allowed
-        return tuple(item for item in self.objects if item.family == family and item.name == name and visible(item))
+        return tuple(item for item in objects if item.family == family and item.name == name and visible(item))
 
 
 def _objects(config: PANOSConfig) -> Iterable[PANIndexedObject]:
@@ -71,7 +78,11 @@ def _objects(config: PANOSConfig) -> Iterable[PANIndexedObject]:
 
 
 def build_reference_index(config: PANOSConfig) -> ReferenceIndex:
-    return ReferenceIndex(tuple(_objects(config)), build_scope_hierarchy(config.scopes))
+    source_families = {"profile-group": "security-profile-group", "vulnerability": "vulnerability-profile",
+                       "ike-crypto-profiles": "ike-crypto-profile", "ipsec-crypto-profiles": "ipsec-crypto-profile"}
+    source_objects = tuple(PANIndexedObject(source_families.get(record.kind, record.kind), record.name, record.scope, record.source_path)
+                           for record in config.source_inventory if record.name)
+    return ReferenceIndex(tuple(_objects(config)), build_scope_hierarchy(config.scopes), source_objects)
 
 
 def _resolve(index: ReferenceIndex, owner, field: str, name: str, families: tuple[str, ...], *, owner_family: str, source_only: bool = False) -> PANReferenceResolution:
@@ -92,6 +103,10 @@ def _resolve(index: ReferenceIndex, owner, field: str, name: str, families: tupl
         target = candidates[0]
         return PANReferenceResolution("RESOLVED", owner.name, field, name, target.family, owner.scope, target.scope, target.source_path, "one visible candidate", owner_family)
     if not candidates:
+        source_candidates = tuple(candidate for family in families for candidate in index.source_candidates(family, name, owner.scope))
+        if source_candidates:
+            return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope,
+                                          resolution_reason="EXTRACTION_INCOMPLETE: visible source object lacks typed extraction", owner_family=owner_family)
         return PANReferenceResolution("UNRESOLVED", owner.name, field, name, families[0], owner.scope, resolution_reason="no visible typed source object", owner_family=owner_family)
     return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, families[0], owner.scope, resolution_reason="multiple visible candidates; precedence is not explicitly extracted", owner_family=owner_family)
 

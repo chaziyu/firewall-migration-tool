@@ -25,13 +25,24 @@ def _row(sheet: str, item: Any) -> tuple[Any, ...]:
                 getattr(item.destination_endpoint, "value", None), item.service,
                 item.source_context, item.raw_line)
     if sheet == "NAT Rules":
-        return (item.name, item.effective_source_order or item.source_order, item.section,
-                item.source_interface, item.destination_interface, item.real_source,
-                item.mapped_source, item.source_context, item.raw_line)
+        rule = item.source_rule
+        return (rule.name, item.source_order, item.effective_order, item.ordering_status, item.section,
+                item.translation_semantics, rule.source_interface, rule.destination_interface,
+                rule.real_source, rule.mapped_source, item.source_context, rule.raw_line)
     if sheet == "Routes":
-        return item.interface, item.destination, item.mask, item.gateway, item.source_context, item.raw_line
+        route = item.source_route
+        return (item.interface, item.configured_destination, item.configured_mask, item.normalized_destination,
+                item.gateway, item.configured_administrative_distance, item.effective_administrative_distance,
+                item.track_id, item.source_context, route.raw_line)
     if sheet == "VPN":
-        return item["crypto_map"], item["sequence"], item["tunnel_group"], item["access_list"], item["source_context"]
+        source = item.source_identity
+        return (item.topology_type, source.name, item.crypto_map, item.crypto_map_sequence,
+                getattr(item.crypto_acl, "acl_name", item.crypto_acl), item.peers,
+                tuple(getattr(value, "name", value) for value in item.tunnel_groups),
+                getattr(item.interface, "name", None), tuple(getattr(value, "name", value) for value in item.transform_sets),
+                tuple(getattr(value, "name", value) for value in item.ikev2_proposals), item.tunnel_interface,
+                item.ipsec_profile, getattr(item.group_policy, "name", None),
+                tuple(getattr(value, "name", value) for value in item.address_pools), item.source_context, item.issues)
     raise KeyError(sheet)
 
 
@@ -46,9 +57,9 @@ def export_asa_excel(result: Any, output: Any) -> Any:
         "Network Objects": config.network_objects,
         "Network Groups": config.network_groups,
         "ACL Rules": config.access_rules,
-        "NAT Rules": config.nat_rules,
-        "Routes": config.static_routes,
-        "VPN": result.derived.vpn_relationships,
+        "NAT Rules": result.derived.nat.rules,
+        "Routes": result.derived.routes.routes,
+        "VPN": result.derived.vpn.topologies,
     }
     for name in SHEET_ORDER:
         sheet = workbook.create_sheet(name)

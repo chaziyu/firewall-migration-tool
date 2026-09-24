@@ -994,6 +994,17 @@ select {
   .report-table th.report-cell-topology { z-index: 3; }
 }
 .report-empty { padding: 24px; text-align: center; color: var(--text-muted); }
+.report-detail-panel { margin-top: 16px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--canvas); }
+.report-detail-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.report-detail-header h3 { margin: 0; color: var(--text-heading); }
+.report-detail-header button { padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-main); }
+.report-detail-body dl { display: grid; grid-template-columns: minmax(9rem, 1fr) 3fr; gap: 8px 16px; margin: 12px 0 0; }
+.report-detail-body dt { color: var(--text-muted); }
+.report-detail-body dd { margin: 0; overflow-wrap: anywhere; }
+.report-detail-body ul { margin: 0; padding-left: 18px; }
+.report-table tbody tr { cursor: pointer; }
+.report-table tbody tr.report-row-highlight td { background: color-mix(in srgb, var(--color-primary) 22%, var(--surface)); }
+@media (max-width: 600px) { .report-detail-body dl { grid-template-columns: 1fr; gap: 4px; } }
 
 /* Output and actions */
 .format-badge {

@@ -380,7 +380,7 @@ def _unresolved_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
 
 
 _SOURCE_SHEET = {"address": "Addresses", "address-group": "Address Groups", "service": "Services", "service-group": "Service Groups",
-                 "schedule": "Schedules", "policy": "Security Policies", "nat": "NAT Rules", "interface": "Interfaces", "route": "Virtual Router Routes", "reference": "Unresolved References"}
+                 "schedule": "Schedules", "policy": "Security Policies", "nat": "NAT Rules", "interface": "Interfaces", "route": "Virtual Router Routes", "reference": "Unresolved References", "security-profile-group": "Security Profile Groups", "ike-gateway": "IKE Gateways"}
 
 
 def _validation_rows(context: _PANExcelContext) -> list[dict[str, Any]]:

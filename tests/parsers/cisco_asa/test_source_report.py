@@ -32,7 +32,7 @@ nat (inside,outside) after-auto 99 source dynamic WEB interface
     assert [rule.source_order for rule in result.config.access_rules] == [9, 10]
     assert [rule.source_order for rule in result.config.nat_rules] == [12, 13]
     assert result.derived.object_group_memberships["__global__:SERVERS"] == ("WEB",)
-    assert result.derived.interface_nameifs == {"GigabitEthernet0/1": "outside"}
+    assert result.derived.interface_topology.interfaces[0].nameif == "outside"
     assert not hasattr(result, "canonical_ir")
 
 
