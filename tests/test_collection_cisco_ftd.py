@@ -1,4 +1,5 @@
 import json
+from io import BytesIO
 import sys
 from types import SimpleNamespace
 
@@ -33,13 +34,13 @@ def test_fmc_pagination_bundle_and_read_only_requests(monkeypatch):
 
         def get(self, url, **kwargs):
             calls.append(("GET", url))
-            if url.endswith("/hosts/h1"):
+            if url.endswith("/networkaddresses/h1"):
                 return Response({"id": "h1", "name": "first", "value": "192.0.2.1"})
-            if url.endswith("/hosts/h2"):
+            if url.endswith("/networkaddresses/h2"):
                 return Response({"id": "h2", "name": "second", "value": "192.0.2.2", "password": "do-not-save"})
-            if url.endswith("/hosts"):
+            if url.endswith("/networkaddresses"):
                 return Response({"items": [{"id": "h1", "name": "first"}], "paging": {"next": {"href": url + "?offset=1"}, "total": 2}})
-            if url.endswith("/hosts?offset=1"):
+            if url.endswith("/networkaddresses?offset=1"):
                 return Response({"items": [{"id": "h2", "name": "second", "password": "do-not-save"}], "paging": {"total": 2}})
             return Response({"items": [], "paging": {"total": 0}})
 
@@ -52,10 +53,10 @@ def test_fmc_pagination_bundle_and_read_only_requests(monkeypatch):
     bundle = json.loads(source.source_text)
     assert source.status == CollectionStatus.SUCCESS
     assert bundle["format"] == "cisco-fmc-rest-export-v1"
-    assert len(bundle["objects"]["hosts"]) == 2
+    assert len(bundle["objects"]["networkaddresses"]) == 2
     parts = {part.name: part for part in source.parts}
-    assert (parts["hosts"].status, parts["hosts"].complete, parts["hosts"].count) == ("SUCCESS", True, 2)
-    assert (parts["networks"].status, parts["networks"].complete, parts["networks"].count) == ("EMPTY", True, 0)
+    assert (parts["networkaddresses"].status, parts["networkaddresses"].complete, parts["networkaddresses"].count) == ("SUCCESS", True, 2)
+    assert (parts["networkgroups"].status, parts["networkgroups"].complete, parts["networkgroups"].count) == ("EMPTY", True, 0)
     assert "do-not-save" not in source.source_text
     assert all(method == "GET" for method, _ in calls[1:-1])
     assert CiscoFTDSourceReporter().analyze_source(source.source_text)
@@ -70,9 +71,10 @@ def test_fmc_partial_endpoint_failure_keeps_usable_source(monkeypatch):
             return Response(headers={"X-auth-access-token": "token", "DOMAINS": '[{"uuid":"d1","name":"Global"}]'})
 
         def get(self, url, **kwargs):
-            if url.endswith("/networks"):
+            if url.endswith("/networkaddresses"):
                 raise TimeoutError("secret-password")
-            return Response({"items": [{"id": "h1", "name": "host", "value": "192.0.2.1"}] if url.endswith("/hosts") else [], "paging": {"total": 1 if url.endswith("/hosts") else 0}})
+            items = [{"id": "z1", "name": "inside"}] if url.endswith("/object/securityzones") else []
+            return Response({"items": items, "paging": {"total": len(items)}})
 
         def close(self):
             pass
@@ -80,7 +82,7 @@ def test_fmc_partial_endpoint_failure_keeps_usable_source(monkeypatch):
     monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
     source = CiscoFTDCollector().collect(CiscoFTDCollector().validate_options({"host": "fmc", "username": "u", "password": "p"}))
     assert source.status == CollectionStatus.PARTIAL
-    part = next(part for part in source.parts if part.name == "networks")
+    part = next(part for part in source.parts if part.name == "networkaddresses")
     assert (part.status, part.complete, part.count) == ("FAILED", False, 0)
     assert "secret-password" not in str(source)
 
@@ -94,9 +96,9 @@ def test_fmc_failed_later_page_keeps_first_page(monkeypatch):
             return Response(headers={"X-auth-access-token": "token", "DOMAINS": '[{"uuid":"d1","name":"Global"}]'})
 
         def get(self, url, **kwargs):
-            if url.endswith("/hosts?offset=1"):
+            if url.endswith("/networkaddresses?offset=1"):
                 raise TimeoutError("connection-secret")
-            if url.endswith("/hosts"):
+            if url.endswith("/networkaddresses"):
                 return Response({"items": [{"id": "h1", "name": "host", "value": "192.0.2.1"}],
                                  "paging": {"next": {"href": url + "?offset=1"}, "total": 2}})
             return Response({"items": [], "paging": {"total": 0}})
@@ -108,8 +110,8 @@ def test_fmc_failed_later_page_keeps_first_page(monkeypatch):
     collector = CiscoFTDCollector()
     source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
     assert source.status == CollectionStatus.PARTIAL
-    assert json.loads(source.source_text)["objects"]["hosts"][0]["name"] == "host"
-    part = next(part for part in source.parts if part.name == "hosts")
+    assert json.loads(source.source_text)["objects"]["networkaddresses"][0]["name"] == "host"
+    part = next(part for part in source.parts if part.name == "networkaddresses")
     assert (part.status, part.complete, part.count) == ("PARTIAL", False, 1)
 
 
@@ -308,3 +310,159 @@ def test_fmc_access_rule_later_page_failure_keeps_rules_and_marks_partial(monkey
     assert bundle["access_policies"][0]["rules"][0]["id"] == "rule-1"
     assert any(part.name == "access_rules/policy-1" and not part.complete and part.count == 1 for part in source.parts)
     assert "transport-secret" not in source.source_text
+
+
+def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkeypatch):
+    calls = []
+
+    class Session:
+        headers = {}
+        verify = None
+
+        def post(self, url, **kwargs):
+            calls.append(("POST", url))
+            return Response(headers={"X-auth-access-token": "token", "DOMAINS": '[{"uuid":"d1","name":"Global"}]'})
+
+        def get(self, url, **kwargs):
+            calls.append(("GET", url))
+            data = []
+            if url.endswith("/devices/devicerecords"):
+                data = [{"id": "dev-1", "name": "edge", "type": "DeviceRecord", "model": "FTD"}]
+            elif url.endswith("/routing/virtualrouters"):
+                data = [{"id": "vr-1", "name": "blue", "interfaces": [{"name": "inside"}]}]
+            elif url.endswith("/routing/virtualrouters/vr-1/staticroutes"):
+                data = [{"id": "route-1", "name": "default-v6", "type": "IPv6StaticRoute", "destination": "::/0"}]
+            elif url.endswith("/object/networkaddresses"):
+                data = [{"id": "addr-1", "name": "vpn-client", "type": "Host", "value": "192.0.2.8"}]
+            elif url.endswith("/object/ipv4addresspools"):
+                data = [{"id": "pool-1", "name": "ra-pool", "range": "192.0.2.8-192.0.2.20"}]
+            elif url.endswith("/policy/intrusionpolicies"):
+                data = [{"id": "ips-1", "name": "IPS", "description": "configured policy"}]
+            elif "/intrusionrulegroups?" in url:
+                data = [{"id": "group-1", "name": "local-overrides", "rules": [{"id": "sig-1", "action": "DROP"}]}]
+            elif "/intrusionrules?" in url:
+                data = [{"id": "sig-1", "gid": 1, "sid": 50, "action": "DROP", "enabled": True}]
+            elif url.endswith("/policy/ftds2svpns"):
+                data = [{"id": "s2s-1", "name": "branch", "description": "configured topology"}]
+            elif url.endswith("/s2s-1/endpoints"):
+                data = [{"id": "endpoint-1", "ikeSettings": {"id": "ike-1"}}]
+            elif url.endswith("/s2s-1/ikesettings?expanded=true"):
+                data = [{"id": "ike-1", "ikeVersion": "IKEv2"}]
+            elif url.endswith("/s2s-1/ipsecsettings?expanded=true"):
+                data = [{"id": "ipsec-1", "proposal": "AES256"}]
+            elif url.endswith("/s2s-1/advancedsettings?expanded=true"):
+                data = [{"id": "adv-1", "rekey": 3600}]
+            elif url.endswith("/policy/ravpns"):
+                data = [{"id": "ra-1", "name": "remote", "description": "configured topology"}]
+            elif url.endswith("/ra-1/connectionprofiles?expanded=true"):
+                data = [{"id": "profile-1", "name": "staff", "realm": {"id": "realm-1"}}]
+            elif url.endswith("/ra-1/addressassignmentsettings?expanded=true"):
+                data = [{"id": "assign-1", "ipv4AddressPool": {"id": "pool-1"}}]
+            elif url.endswith("/policy/accesspolicies"):
+                data = [{"id": "acp-1", "name": "ACP", "description": "configured policy"}]
+            elif url.endswith("/acp-1/defaultactions?expanded=true"):
+                data = [{"id": "default-1", "action": "BLOCK"}]
+            elif "/policy/prefilterpolicies" in url and "defaultactions" not in url:
+                data = [{"id": "prefilter-1", "name": "Prefilter", "description": "test"}]
+            elif url.endswith("/prefilter-1/defaultactions?expanded=true"):
+                data = [{"id": "prefilter-default-1", "action": "BLOCK"}]
+            elif "/policy/networkanalysispolicies" in url and "inspector" not in url:
+                data = [{"id": "nap-1", "name": "Network Analysis", "description": "test"}]
+            elif url.endswith("/nap-1/inspectorconfigs?expanded=true"):
+                data = [{"id": "inspector-1", "name": "httpInspect", "description": "test"}]
+            elif url.endswith("/nap-1/inspectoroverrideconfigs?expanded=true"):
+                data = [{"id": "override-1", "name": "httpInspect", "enabled": False, "description": "test"}]
+            return Response({"items": data, "paging": {"total": len(data)}})
+
+        def close(self):
+            pass
+
+    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
+    collector = CiscoFTDCollector()
+    source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
+    bundle = json.loads(source.source_text)
+
+    assert bundle["devices"][0]["id"] == "dev-1"
+    assert any("prefilter-1/defaultactions" in url for method, url in calls if method == "GET"), [url for method, url in calls if method == "GET" and "prefilter" in url]
+    vr = bundle["devices"][0]["resources"]["virtual_routers"][0]
+    assert vr["id"] == "vr-1" and vr["resources"]["static_routes"][0]["id"] == "route-1"
+    assert bundle["objects"]["intrusionpolicies"][0]["rules"][0]["sid"] == 50
+    assert bundle["objects"]["s2svpns"][0]["ike_settings"][0]["id"] == "ike-1"
+    assert bundle["objects"]["ravpns"][0]["address_assignment_settings"][0]["id"] == "assign-1"
+    assert bundle["access_policies"][0]["default_actions"][0]["id"] == "default-1"
+    assert bundle["objects"]["prefilterpolicies"][0]["default_actions"][0]["id"] == "prefilter-default-1"
+    assert bundle["objects"]["networkanalysispolicies"][0]["inspectorconfigs"][0]["id"] == "inspector-1"
+    assert bundle["objects"]["networkanalysispolicies"][0]["inspectoroverrideconfigs"][0]["id"] == "override-1"
+    assert bundle["coverage"]["fmc_cli_users"]["status"] == "UNAVAILABLE"
+    parts = {part.name for part in source.parts}
+    assert "device/dev-1/virtual_router/vr-1/static_routes" in parts
+    assert "intrusionpolicies/ips-1/rules" in parts
+    assert "s2svpns/s2s-1/ike_settings" in parts
+    assert "ravpns/ra-1/address_assignment_settings" in parts
+    assert "accesspolicies/acp-1/default_actions" in parts
+    assert "networkanalysispolicies/nap-1/inspectorconfigs" in parts
+    assert all("/domain/d1/" in url for method, url in calls if method == "GET")
+    assert all(method == "GET" for method, _ in calls[1:])
+
+    analysis = CiscoFTDSourceReporter().analyze_source(source.source_text)
+    assert analysis.config.routes[0].virtual_router == "blue"
+    assert any(item.source_attributes.get("parent_policy_id") == "ra-1" for item in analysis.config.native_resources)
+    assert any(item.source_attributes.get("resource_type") == "default_actions"
+               and item.source_attributes.get("parent_policy_id") == "acp-1" for item in analysis.config.native_resources)
+    assert any(item.source_attributes.get("resource_type") == "default_actions"
+               and item.source_attributes.get("parent_policy_id") == "prefilter-1" for item in analysis.config.native_resources)
+    assert analysis.derived is not None and analysis.validation is not None
+    assert isinstance(CiscoFTDSourceReporter().build_preview(analysis), dict)
+    workbook = BytesIO()
+    CiscoFTDSourceReporter().export_excel(analysis, workbook)
+    assert workbook.getvalue().startswith(b"PK")
+
+
+def test_fmc_device_intrusion_and_vpn_failures_keep_successful_source(monkeypatch):
+    class Session:
+        headers = {}
+        verify = None
+
+        def post(self, *args, **kwargs):
+            return Response(headers={"X-auth-access-token": "token", "DOMAINS": '[{"uuid":"d1","name":"Global"}]'})
+
+        def get(self, url, **kwargs):
+            if url.endswith("/devices/devicerecords"):
+                return Response({"items": [{"id": "dev-1", "name": "edge", "model": "FTD"}], "paging": {"total": 1}})
+            if url.endswith("/dev-1/routing/ipv6staticroutes"):
+                raise TimeoutError("device-resource-secret")
+            if url.endswith("/dev-1/ftdallinterfaces"):
+                return Response({"items": [{"id": "if-1", "name": "inside", "type": "PhysicalInterface", "physicalName": "eth0"}], "paging": {"total": 1}})
+            if url.endswith("/policy/intrusionpolicies"):
+                return Response({"items": [{"id": "ips-1", "name": "IPS", "description": "policy"}], "paging": {"total": 1}})
+            if url.endswith("/intrusionrules?expanded=true"):
+                raise TimeoutError("intrusion-child-secret")
+            if url.endswith("/policy/ftds2svpns"):
+                return Response({"items": [{"id": "vpn-1", "name": "S2S", "description": "topology"}], "paging": {"total": 1}})
+            if url.endswith("/vpn-1/endpoints"):
+                raise TimeoutError("vpn-child-secret")
+            if url.endswith("/object/networkaddresses"):
+                return Response({"items": [{"id": "addr-1", "name": "server", "type": "Host", "value": "192.0.2.1"}], "paging": {"total": 1}})
+            return Response({"items": [], "paging": {"total": 0}})
+
+        def close(self):
+            pass
+
+    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
+    collector = CiscoFTDCollector()
+    source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
+    bundle = json.loads(source.source_text)
+    failed = {part.name for part in source.parts if not part.complete}
+
+    assert source.status == CollectionStatus.PARTIAL
+    assert "device/dev-1/ipv6_static_routes" in failed
+    assert "intrusionpolicies/ips-1/rules" in failed
+    assert "s2svpns/vpn-1/endpoints" in failed
+    assert bundle["objects"]["networkaddresses"][0]["id"] == "addr-1"
+    assert bundle["devices"][0]["resources"]["ftd_interfaces"][0]["id"] == "if-1"
+    assert "device-resource-secret" not in source.source_text
+    assert "intrusion-child-secret" not in source.source_text
+    assert "vpn-child-secret" not in source.source_text
+    analysis = CiscoFTDSourceReporter().analyze_source(source.source_text)
+    assert analysis.config.network_addresses[0].source_id == "addr-1"
+    assert any(item["source_path"] == "intrusionpolicies/ips-1/rules" for item in analysis.config.unsupported_evidence)

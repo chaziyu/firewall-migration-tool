@@ -292,3 +292,86 @@ def test_ftd_same_kind_duplicate_name_is_ambiguous():
     ]}, {"name": "shared"})
     issue = next(item for item in result.derived.unresolved_references if item.field == "destination_networks")
     assert issue.status == "AMBIGUOUS" and issue.reason == "ambiguous"
+
+
+def test_fmc_address_service_and_group_objects_project_typed_source_fields():
+    import json
+
+    bundle = {
+        "format": "cisco-fmc-rest-export-v1", "source": "fmc-rest-api",
+        "domain": {"id": "domain-1", "name": "Global"},
+        "objects": {
+            "networkaddresses": [
+                {"id": "host", "name": "Host", "type": "Host", "value": "192.0.2.1", "description": "host desc", "overrides": [{"device": {"id": "d1"}, "value": "192.0.2.2"}]},
+                {"id": "network", "name": "Network", "type": "Network", "value": "192.0.2.0/24"},
+                {"id": "range", "name": "Range", "type": "Range", "value": "192.0.2.1-192.0.2.9"},
+                {"id": "fqdn", "name": "FQDN", "type": "FQDN", "value": "example.test", "lookupType": "IPV4_ONLY", "addressFamily": "ipv4"},
+                {"id": "missing", "name": "Missing", "type": "Host"},
+            ],
+            "networkgroups": [{"id": "ng", "name": "Network Group", "description": "group desc",
+                "objects": [{"id": "host", "name": "Host", "type": "Host"}],
+                "literals": [{"value": "198.51.100.1", "type": "Host"}], "overrides": [{"deviceId": "d1"}]}],
+            "protocolportobjects": [
+                {"id": "http", "name": "HTTP", "protocol": "6", "port": "80", "description": "web"},
+                {"id": "range-port", "name": "Range", "protocol": "6", "port": "80", "endPort": "90"},
+                {"id": "udp", "name": "UDP", "protocol": "17"},
+                {"id": "protocol", "name": "Protocol", "protocol": "47"},
+                {"id": "icmp", "name": "ICMP", "protocol": "1", "icmpType": "8"},
+                {"id": "icmp-code", "name": "ICMP Code", "protocol": "1", "icmpType": "3", "icmpCode": "1", "overrides": [{"deviceId": "d1"}]},
+            ],
+            "portobjectgroups": [{"id": "pg", "name": "Port Group", "description": "ports",
+                "objects": [{"id": "http", "name": "HTTP", "type": "ProtocolPortObject"}], "overrides": [{"deviceId": "d1"}]}],
+        },
+        "access_policies": [{"id": "p", "name": "Policy", "rules": [{"id": "r", "name": "Rule",
+            "destinationNetworks": {"objects": [{"id": "host", "name": "Host", "type": "Host"}]},
+            "destinationPorts": {"objects": [{"id": "http", "name": "HTTP", "type": "ProtocolPortObject"}]}}]}],
+    }
+    result = extract_cisco_ftd_source(json.dumps(bundle))
+    config = result.config
+    addresses = {item.name: item for item in config.network_addresses}
+    assert [(addresses[key].address_type, addresses[key].value) for key in ("Host", "Network", "Range", "FQDN")] == [
+        ("Host", "192.0.2.1"), ("Network", "192.0.2.0/24"), ("Range", "192.0.2.1-192.0.2.9"), ("FQDN", "example.test")]
+    host = addresses["Host"]
+    assert (host.source_id, host.description, host.domain_id) == ("host", "host desc", "domain-1")
+    assert host.override_metadata == {"overrides": [{"device": {"id": "d1"}, "value": "192.0.2.2"}]}
+    assert {"address_type", "value", "description", "override_metadata"} <= set(host.explicit_fields)
+    assert host.raw_extra["overrides"] == host.override_metadata["overrides"]
+    assert addresses["FQDN"].fqdn_lookup_type == "IPV4_ONLY" and addresses["FQDN"].address_family == "ipv4"
+    assert addresses["Missing"].value is None and addresses["Missing"].description is None
+    assert "value" not in addresses["Missing"].explicit_fields
+
+    services = {item.name: item for item in config.protocol_port_objects}
+    assert (services["HTTP"].protocol, services["HTTP"].port) == ("6", "80")
+    assert (services["Range"].port, services["Range"].end_port) == ("80", "90")
+    assert services["UDP"].protocol == "17" and services["UDP"].port is None
+    assert services["Protocol"].protocol == "47" and services["Protocol"].port is None
+    assert (services["ICMP"].protocol, services["ICMP"].icmp_type, services["ICMP"].icmp_code) == ("1", "8", None)
+    assert (services["ICMP Code"].icmp_type, services["ICMP Code"].icmp_code) == ("3", "1")
+    assert services["HTTP"].description == "web"
+    assert "port" in services["HTTP"].explicit_fields and "icmp_type" not in services["HTTP"].explicit_fields
+    assert services["ICMP Code"].override_metadata == {"overrides": [{"deviceId": "d1"}]}
+
+    network_group = config.network_groups[0]
+    assert network_group.description == "group desc" and network_group.members[0].source_id == "host"
+    assert network_group.literal_members[0].value == "198.51.100.1"
+    assert network_group.override_metadata == {"overrides": [{"deviceId": "d1"}]}
+    port_group = config.port_object_groups[0]
+    assert port_group.description == "ports" and port_group.members[0].source_id == "http"
+    assert port_group.override_metadata == {"overrides": [{"deviceId": "d1"}]}
+
+    before = deepcopy(config)
+    derived = build_ftd_derived_views(config)
+    validate_ftd_config(config, derived)
+    assert config == before
+    assert not [item for item in derived.unresolved_references if item.field in {"destination_networks", "destination_ports"}]
+
+    output = BytesIO()
+    CiscoFTDSourceReporter().export_excel(result, output)
+    from openpyxl import load_workbook
+    sheet = load_workbook(output, read_only=True)["Services"]
+    headers = [cell.value for cell in sheet[1]]
+    rows = [dict(zip(headers, row)) for row in sheet.iter_rows(min_row=2, values_only=True)]
+    http = next(row for row in rows if row["Name"] == "HTTP")
+    icmp = next(row for row in rows if row["Name"] == "ICMP Code")
+    assert (http["Protocol"], http["Port"]) == ("6", "80")
+    assert (icmp["Protocol"], icmp["Port"], icmp["ICMP Type"], icmp["ICMP Code"]) == ("1", None, "3", "1")
