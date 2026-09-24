@@ -28,3 +28,20 @@ def test_juniper_empty_output_disconnects(monkeypatch):
     with pytest.raises(Exception):
         JuniperSRXCollector().collect({"host": "h", "port": 22, "username": "u", "password": "p"})
     assert calls == [1]
+
+
+def test_juniper_collection_preserves_ntp_key_id_and_redacts_secrets(monkeypatch):
+    content = "\n".join([
+        "set system ntp server 192.0.2.10 key 10",
+        "set system ntp authentication-key 10 type md5 value AUTH_SECRET",
+        "set security ike policy P1 pre-shared-key ascii-text REAL_SECRET",
+    ])
+    connection = SimpleNamespace(send_command=lambda *args, **kwargs: content, disconnect=lambda: None)
+    monkeypatch.setitem(sys.modules, "netmiko", SimpleNamespace(ConnectHandler=lambda **kwargs: connection))
+    source = JuniperSRXCollector().collect({"host": "h", "port": 22, "username": "u", "password": "p"})
+    assert "key 10" in source.source_text
+    assert "authentication-key 10" in source.source_text
+    assert "AUTH_SECRET" not in source.source_text
+    assert "pre-shared-key ascii-text [REDACTED]" in source.source_text
+    assert "REAL_SECRET" not in source.source_text
+    assert JuniperSRXSourceReporter().analyze_source(source.source_text)

@@ -1,7 +1,7 @@
 """Explicit source and derived presentation allowlists for Cisco ASA."""
 
 SOURCE_SECTIONS = {
-    "Interfaces": ("interfaces", "name source_context interface_type nameif description ip_mode ip mask ipv6_addresses security_level mtu routing_context vrf vlan_id parent_interface channel_group channel_group_mode redundant_interface_members bridge_group management_only shutdown tunnel_source tunnel_destination ipsec_profile extraction_status requires_manual_review review_reasons raw_extra"),
+    "Interfaces": ("interfaces", "name source_context interface_type nameif description ip_mode ip mask ipv6_addresses security_level mtu routing_context vrf vlan_id parent_interface channel_group channel_group_mode redundant_interface_members bridge_group management_only shutdown tunnel_source tunnel_destination ipsec_profile ipsec_policy_acl extraction_status requires_manual_review review_reasons raw_extra"),
     "Zones": ("traffic_zones", "name source_context members interfaces raw_extra requires_manual_review review_reasons"),
     "Network Objects": ("network_objects", "name source_context type value address_family description raw_extra requires_manual_review review_reasons"),
     "Network Groups": ("network_groups", "name source_context members description raw_extra requires_manual_review review_reasons"),
@@ -9,7 +9,7 @@ SOURCE_SECTIONS = {
     "Service Groups": ("service_groups", "name source_context protocol members description raw_extra requires_manual_review review_reasons"),
     "Time Ranges": ("time_ranges", "name source_context clauses raw_lines requires_manual_review review_reasons"),
     "ACL Rules": ("access_rules", "acl_name source_context source_order source_sequence acl_type action protocol protocol_object source_endpoint source_port destination_endpoint destination_port service icmp_type icmp_code user user_group security_group time_range log_enabled log_level log_interval inactive remark raw_line requires_manual_review review_reasons"),
-    "NAT Rules": ("nat_rules", "name source_context syntax_family section source_order source_order_within_section sequence source_sequence type translation_semantics source_interface destination_interface real_source mapped_source source_mode mapped_source_mode real_destination mapped_destination destination_mode original_service translated_service service_protocol owning_object access_list pat_pool pat_pool_options identity_nat nat_exemption dns no_proxy_arp route_lookup unidirectional inactive options raw_options raw_line requires_manual_review review_reasons"),
+    "NAT Rules": ("nat_rules", "name source_context syntax_family section source_order source_order_within_section sequence source_sequence type translation_semantics source_interface destination_interface real_source mapped_source source_mode mapped_source_mode real_destination mapped_destination destination_mode original_service translated_service service_protocol service_operand_1 service_operand_2 owning_object access_list pat_pool pat_pool_options identity_nat nat_exemption dns no_proxy_arp route_lookup unidirectional inactive options raw_options raw_line requires_manual_review review_reasons"),
     "Class Maps": ("class_maps", "name source_context class_map_type inspection_protocol typed match_type matches match_any match_all description match_lines requires_manual_review review_reasons"),
     "Policy Maps": ("policy_maps", "name source_context policy_map_type inspection_protocol typed inspection_sections parameter_lines classes description class_sections requires_manual_review review_reasons"),
     "Service Policies": ("service_policies", "name source_context policy_name scope interface global_attachment enabled negated fail_close attachment source_order requires_manual_review review_reasons"),
@@ -31,6 +31,7 @@ SOURCE_SECTIONS = {
     "IKE Policies": ("ike_policies", "name source_context version number authentication encryption integrity hash_algorithm dh_group lifetime_seconds prf encryption_algorithms hash_algorithms integrity_algorithms prf_algorithms dh_groups raw_options"),
     "IKEv2 Proposals": ("ikev2_proposals", "name source_context encryption_algorithms integrity_algorithms prf_algorithms dh_groups"),
     "IPsec Transform Sets": ("ipsec_transform_sets", "name source_context encryption authentication mode raw_line"),
+    "IPsec Profiles": ("ipsec_profiles", "name source_context ikev1_transform_sets ikev2_ipsec_proposals pfs sa_lifetime_seconds sa_lifetime_kilobytes trustpoint responder_only extraction_status requires_manual_review review_reasons raw_extra"),
     "Crypto Maps": ("crypto_maps", "name source_context map_name sequence acl_name peers transform_sets ikev2_proposals pfs_group security_association_lifetime_seconds security_association_lifetime_kilobytes interface_attachment dynamic_map is_dynamic source_order raw_options"),
     "Tunnel Groups": ("tunnel_groups", "name source_context group_type default_group_policy address_pools authentication_method peer_address trustpoint ikev1_psk_present ikev2_local_authentication ikev2_remote_authentication general_attributes ipsec_attributes webvpn_attributes"),
     "Group Policies": ("group_policies", "name source_context policy_type parent address_pools dns_servers split_tunnel_policy split_tunnel_acl vpn_access_hours vpn_filter_acl vpn_simultaneous_logins wins_servers vpn_protocols idle_timeout session_timeout default_domain webvpn_attributes raw_attributes"),
@@ -73,7 +74,7 @@ SHEET_ORDER = (
     "Routes", "Route Maps", "Policy Routing", "SLA Monitors", "Tracks",
     "Local Users", "User Groups", "AAA Server Groups", "AAA Server Hosts", "AAA Authentication",
     "AAA Authorization", "AAA Accounting", "Command Privileges", "IKE Policies", "IKEv2 Proposals",
-    "IPsec Transform Sets", "Crypto Maps", "Tunnel Groups", "Group Policies", "VPN Address Pools",
+    "IPsec Transform Sets", "IPsec Profiles", "Crypto Maps", "Tunnel Groups", "Group Policies", "VPN Address Pools",
     "VPN Address Assignment", "WebVPN", "IPsec VPN", "Remote Access VPN", "DNS", "DNS Settings", "NTP",
     "Management Access", "HTTP Server", "System Settings", "SNMP", "Logging", "Failover", "Contexts",
     "Validation", "Unsupported", "Extraction Coverage",
@@ -91,13 +92,13 @@ SHEET_HEADERS.update({
     "IPsec VPN": ("Type", "Source Identity", "Crypto Map", "Sequence", "Crypto ACL", "Peers", "Tunnel Groups", "Interface", "Transform Sets", "IKEv2 Proposals", "VTI", "Tunnel Source", "Tunnel Destination", "IPsec Profile", "Resolution Status", "Issues"),
     "Remote Access VPN": ("Connection Profile", "Connection Profile Type", "Group Policy", "Inherited Group Policy", "Authentication Source", "Address Pools", "DHCP Servers", "Address Assignment", "VPN Protocols", "Access Hours", "VPN Filter", "Split Tunnel Policy", "Split Tunnel ACL", "DNS", "WINS", "Default Domain", "Enabled Interfaces", "Trustpoints", "Context", "Resolution Status", "Issues"),
     "Source NAT Pools": ("Source Rule", "Pool Type", "Mapped Source", "Mapped Object", "Mapped Interface", "Address Family", "Translation Semantics", "Source Interface", "Destination Interface", "Context", "Issues"),
-    "Published Services - VIPs": ("Source Rule", "Mapped Address", "Real Address", "Mapped Service", "Real Service", "Protocol", "External Interface", "Internal Interface", "NAT Order", "Context", "Issues"),
+    "Published Services - VIPs": ("Source Rule", "Mapped Address", "Real Address", "Mapped Service", "Real Service", "Protocol", "Source NAT Interface", "Destination NAT Interface", "NAT Order", "Context", "Issues"),
     "Validation": ("Severity", "Category", "Message", "Context", "Object"),
     "Unsupported": ("Line", "Context", "Command Family", "Reason", "Sanitized Source"),
     "Extraction Coverage": ("Selected Area", "ASA Source Family", "Detected", "Structured", "Partial", "Unsupported", "Parse Errors", "Review Required"),
     "Failover": ("Record Type", "Context", "Source Values"),
     "DHCP Reservations": ("IP", "MAC", "Interface", "Context", "Source Order"),
-    "NAT Rules": ("Name", "Source Order", "Effective Order", "Order Status", "Section", "Context", "Syntax Family", "Source Order Within Section", "Source Sequence", "Translation Semantics", "Source Interface", "Destination Interface", "Real Source", "Mapped Source", "Source Mode", "Mapped Source Mode", "Real Destination", "Mapped Destination", "Destination Mode", "Original Service", "Translated Service", "Service Protocol", "Owning Object", "ACL", "PAT Pool", "PAT Pool Options", "Identity NAT", "NAT Exemption", "DNS", "No Proxy ARP", "Route Lookup", "Unidirectional", "Inactive", "Additional Settings", "Issues", "Raw"),
+    "NAT Rules": ("Name", "Source Order", "Effective Order", "Order Status", "Section", "Context", "Syntax Family", "Source Order Within Section", "Source Sequence", "Translation Semantics", "Source Interface", "Destination Interface", "Real Source", "Mapped Source", "Source Mode", "Mapped Source Mode", "Real Destination", "Mapped Destination", "Destination Mode", "Object NAT Real Port", "Object NAT Mapped Port", "Object NAT Protocol", "Twice NAT Service Operand 1", "Twice NAT Service Operand 2", "Owning Object", "ACL", "PAT Pool", "PAT Pool Options", "Identity NAT", "NAT Exemption", "DNS", "No Proxy ARP", "Route Lookup", "Unidirectional", "Inactive", "Additional Settings", "Issues", "Raw"),
     "Routes": ("Interface", "Destination", "Mask", "Destination Prefix (Normalized)", "Gateway", "Configured Administrative Distance", "Effective Administrative Distance", "Track", "Context", "Raw"),
 })
 SHEET_HEADERS["Interfaces"] += ("Topology Kind", "Resolved Parent", "Aggregate", "Physical Interfaces", "Topology Issues")

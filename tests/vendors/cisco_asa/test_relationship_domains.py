@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from fwmigrate.vendors.cisco_asa.model import CiscoNATRule
+from fwmigrate.vendors.cisco_asa.model import CiscoIPsecProfile, CiscoNATRule
 from fwmigrate.vendors.cisco_asa.relationships.acl import build_acl_relationships
 from fwmigrate.vendors.cisco_asa.relationships.identity import build_identity_relationships
 from fwmigrate.vendors.cisco_asa.relationships.mpf import build_mpf_relationships
@@ -92,13 +92,13 @@ def test_unmatched_identity_selector_is_source_selector_not_missing_local_user()
     assert not build_identity_relationships(config, ASAReferenceIndex()).issues
 
 
-def test_vpn_resolves_crypto_acl_peer_and_keeps_vti_profile_source_only():
+def test_vpn_resolves_crypto_acl_peer_and_reports_missing_vti_profile():
     crypto = SimpleNamespace(name="CMAP", sequence=10, source_context="ctx", acl_name="VPN-ACL",
                              transform_sets=[], ikev2_proposals=[], interface_attachment=None,
                              dynamic_map=None, peers=["203.0.113.5"], peer=None)
     tunnel = SimpleNamespace(name="203.0.113.5", source_context="ctx", peer_address="203.0.113.5")
     interface = SimpleNamespace(name="Tunnel1", source_context="ctx", ipsec_profile="PROFILE")
-    config = SimpleNamespace(crypto_maps=[crypto], tunnel_groups=[tunnel], group_policies=[], interfaces=[interface])
+    config = SimpleNamespace(crypto_maps=[crypto], tunnel_groups=[tunnel], group_policies=[], interfaces=[interface], ipsec_profiles=[])
     refs = ASAReferenceIndex(); refs.register("ctx", ASAReferenceKind.ACL, "VPN-ACL", "VPN-ACL")
     refs.register("ctx", ASAReferenceKind.TUNNEL_GROUP, tunnel.name, tunnel)
 
@@ -108,5 +108,55 @@ def test_vpn_resolves_crypto_acl_peer_and_keeps_vti_profile_source_only():
     vti_rel = next(item for item in graph.relationships if item.source is interface)
     assert dict(crypto_rel.targets)["crypto-acl"] == "VPN-ACL"
     assert dict(crypto_rel.targets)["peer"] is tunnel
-    assert vti_rel.source_only == ("ipsec-profile",)
+    assert vti_rel.source_only == ()
+    assert len(vti_rel.issues) == 1 and vti_rel.issues[0].reference_name == "PROFILE"
+    assert len(graph.issues) == 1
+
+
+def test_vti_ipsec_profile_and_selector_acl_resolve():
+    profile = CiscoIPsecProfile(name="VTI-PROFILE", source_context="ctx", ikev1_transform_sets=["TS"],
+                                ikev2_ipsec_proposals=["P2"], pfs="group14", sa_lifetime_seconds=3600,
+                                trustpoint="TP", responder_only=True)
+    interface = SimpleNamespace(name="Tunnel1", source_context="ctx", ipsec_profile="VTI-PROFILE",
+                                ipsec_policy_acl="VTI-ACL")
+    config = SimpleNamespace(crypto_maps=[], tunnel_groups=[], group_policies=[], interfaces=[interface],
+                             ipsec_profiles=[profile])
+    refs = ASAReferenceIndex()
+    transform = SimpleNamespace(name="TS"); proposal = SimpleNamespace(name="P2"); trustpoint = SimpleNamespace(name="TP")
+    refs.register("ctx", ASAReferenceKind.IPSEC_PROFILE, profile.name, profile)
+    refs.register("ctx", ASAReferenceKind.IPSEC_TRANSFORM_SET, "TS", transform)
+    refs.register("ctx", ASAReferenceKind.IKEV2_PROPOSAL, "P2", proposal)
+    refs.register("ctx", ASAReferenceKind.TRUSTPOINT, "TP", trustpoint)
+    refs.register("ctx", ASAReferenceKind.ACL, "VTI-ACL", "VTI-ACL")
+
+    graph = build_vpn_relationships(config, refs)
+
+    profile_rel = next(item for item in graph.relationships if item.source is profile)
+    vti_rel = next(item for item in graph.relationships if item.source is interface)
+    assert dict(profile_rel.targets) == {"ikev1-transform-set": transform, "ikev2-ipsec-proposal": proposal, "trustpoint": trustpoint}
+    assert dict(vti_rel.targets) == {"ipsec-profile": profile, "ipsec-policy-acl": "VTI-ACL"}
     assert not graph.issues
+
+
+def test_parser_extracts_ipsec_profile_and_vti_selector():
+    from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
+    result = extract_cisco_asa_source(
+        "crypto ipsec profile VTI-PROFILE\n"
+        " set ikev1 transform-set TS1 TS2\n"
+        " set ikev2 ipsec-proposal P2\n"
+        " set pfs group14\n"
+        " set security-association lifetime seconds 3600\n"
+        " set security-association lifetime kilobytes 100000\n"
+        " set trustpoint TP\n"
+        " responder-only\n"
+        "interface Tunnel1\n tunnel source outside\n tunnel destination 203.0.113.10\n"
+        " tunnel protection ipsec profile VTI-PROFILE\n"
+        " tunnel protection ipsec policy VTI-ACL\n"
+    )
+    profile = result.config.ipsec_profiles[0]
+    interface = result.config.interfaces[0]
+    assert profile.ikev1_transform_sets == ["TS1", "TS2"]
+    assert profile.ikev2_ipsec_proposals == ["P2"]
+    assert (profile.pfs, profile.sa_lifetime_seconds, profile.sa_lifetime_kilobytes) == ("group14", 3600, 100000)
+    assert (profile.trustpoint, profile.responder_only) == ("TP", True)
+    assert (interface.ipsec_profile, interface.ipsec_policy_acl) == ("VTI-PROFILE", "VTI-ACL")

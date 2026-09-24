@@ -3,8 +3,8 @@
 from ..resolver import JuniperReferenceResolver
 
 
-def build_policy_relationships(context, scope: str) -> dict:
-    resolver = JuniperReferenceResolver(context)
+def build_policy_relationships(context, scope: str, effective_lookup=None) -> dict:
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     zone_groups = {}
     zone_orders = {}
     edges = []

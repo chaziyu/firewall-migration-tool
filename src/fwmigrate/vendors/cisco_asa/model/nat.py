@@ -28,6 +28,8 @@ class CiscoNATRule(CiscoSourceModel):
     original_service: Optional[str] = None
     translated_service: Optional[str] = None
     service_protocol: Optional[str] = None
+    service_operand_1: Optional[str] = None
+    service_operand_2: Optional[str] = None
     owning_object: Optional[str] = None
     access_list: Optional[str] = None
     identity_nat: bool = False

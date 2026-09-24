@@ -292,10 +292,10 @@ end
         self.assertEqual(list(SHEET_ORDER), workbook.sheetnames)
         removed = {
             "Address Group Tags", "Local-In Policies",
-            "Multicast Policies", "Policy Routes", "DHCP Exclude Ranges", "Routing Protocol Settings",
+            "Multicast Policies", "Policy Routes", "Routing Protocol Settings",
             "Session TTL Settings", "Session TTL Overrides", "SD-WAN SLAs", "SD-WAN Duplication",
-            "SD-WAN Neighbors", "SD-WAN Rule SLAs", "SSL VPN Host Checks", "SSL VPN Host Check Items",
-            "SSL VPN Bookmark Groups", "SSL VPN Bookmarks", "LDAP Servers", "RADIUS Servers",
+            "SD-WAN Neighbors", "SD-WAN Rule SLAs",
+            "SSL VPN Bookmark Groups", "LDAP Servers", "RADIUS Servers",
             "TACACS+ Servers", "SAML Servers", "FSSO Servers", "FortiTokens", "Authentication Rules",
             "Identity Server Endpoints", "Extraction Evidence", "Firewall Policy Source Settings",
             "Interface Source Settings", "Interface Nested Configuration",
@@ -313,6 +313,109 @@ end
                 [sheet.cell(3, column).value for column in range(1, sheet.max_column + 1)],
                 sheet_name,
             )
+
+    def test_typed_sheets_and_phase2_lifetimes_are_exported(self):
+        source = _SAMPLE_CONFIG + r'''
+config firewall service category
+    edit "Applications"
+        set comment "application services"
+    next
+end
+config vpn ipsec phase2-interface
+    edit "P2-LIFETIME"
+        set phase1name "VPN-HQ"
+        set keylifeseconds 3600
+        set keylifekbs 10240
+        set protocol 17
+        set src-port 500
+        set dst-port 4500
+    next
+end
+config system dhcp server
+    edit 1
+        set interface "port1"
+        config exclude-range
+            edit 10
+                set start-ip 192.0.2.100
+                set end-ip 192.0.2.110
+                set lease-time 600
+            next
+        end
+    next
+end
+config vpn ssl web host-check-software
+    edit "endpoint-av"
+        set type av
+        set os-type windows
+        set version "1.2"
+        set guid "host-check-guid"
+        config check-item-list
+            edit 1
+                set action require
+                set type file
+                set target "C:\\Program Files\\agent.exe"
+                set md5s "abc123"
+                set version "1.0"
+            next
+            edit 2
+                set action deny
+                set type registry
+                set target "HKLM\\Software\\Agent"
+                set md5s "def456"
+                set version "2.0"
+            next
+        end
+    next
+end
+'''
+        workbook = self._workbook(source)
+
+        headers, rows = self._rows(workbook["VPN Phase 2"])
+        row = next(row for row in rows if row[headers.index("Name")] == "P2-LIFETIME")
+        self.assertEqual(3600, row[headers.index("Key Lifetime Seconds")])
+        self.assertEqual(10240, row[headers.index("Key Lifetime KB")])
+        self.assertNotIn("Keylife Seconds", headers)
+        self.assertNotIn("Keylife KB", headers)
+        self.assertEqual(17, row[headers.index("Protocol")])
+        self.assertEqual(500, row[headers.index("Source Port")])
+        self.assertEqual(4500, row[headers.index("Destination Port")])
+
+        headers, rows = self._rows(workbook["Service Categories"])
+        category = next(row for row in rows if row[headers.index("Name")] == "Applications")
+        self.assertEqual("application services", category[headers.index("Description")])
+        self.assertEqual("root", category[headers.index("VDOM")])
+
+        headers, rows = self._rows(workbook["DHCP Exclude Ranges"])
+        excluded = next(row for row in rows if row[headers.index("Range ID")] == 10)
+        self.assertEqual((1, "port1", "192.0.2.100", "192.0.2.110", 600, "root"), tuple(
+            excluded[headers.index(column)]
+            for column in ("Server ID", "Interface", "Start IP", "End IP", "Lease Time", "VDOM")
+        ))
+
+        headers, rows = self._rows(workbook["SSL VPN Host Checks"])
+        software = next(row for row in rows if row[headers.index("Name")] == "endpoint-av")
+        self.assertEqual(2, software[headers.index("Check Item Count")])
+        self.assertEqual("root", software[headers.index("VDOM")])
+
+        headers, rows = self._rows(workbook["SSL VPN Host Check Items"])
+        self.assertEqual(2, len(rows))
+        by_id = {row[headers.index("ID")]: row for row in rows}
+        self.assertEqual("endpoint-av", by_id[1][headers.index("Host Check")])
+        self.assertEqual("endpoint-av", by_id[2][headers.index("Host Check")])
+        for item_id, action, kind, target, md5, version in (
+            (1, "require", "file", r"C:\Program Files\agent.exe", "abc123", "1.0"),
+            (2, "deny", "registry", r"HKLM\Software\Agent", "def456", "2.0"),
+        ):
+            row = by_id[item_id]
+            self.assertEqual((action, kind, target, md5, version, "root"), tuple(
+                row[headers.index(column)]
+                for column in ("Action", "Type", "Target", "MD5s", "Version", "VDOM")
+            ))
+
+        for sheet in ("Service Categories", "DHCP Exclude Ranges", "SSL VPN Host Checks", "SSL VPN Host Check Items"):
+            self.assertIn(sheet, SHEET_ORDER)
+            self.assertIn(sheet, SHEET_HEADERS)
+            self.assertIn(sheet, workbook.sheetnames)
 
     def test_vpn_phase1_ike_fields_are_exported_without_defaults_or_secrets(self):
         source = r'''
@@ -752,7 +855,7 @@ end
             len(inventory_rows),
         )
         self.assertEqual("A4", inventory.freeze_panes)
-        self.assertEqual(f"A3:J{len(inventory_rows) + 3}", inventory.auto_filter.ref)
+        self.assertEqual(f"A3:{get_column_letter(inventory.max_column)}{len(inventory_rows) + 3}", inventory.auto_filter.ref)
         self.assertEqual(60, inventory.column_dimensions["I"].width)
         self.assertEqual("#'Summary'!A1", inventory[2][inventory.max_column - 1].hyperlink.target)
         self.assertTrue(
@@ -774,6 +877,67 @@ end
         )
         unknown_headers, unknown_rows = self._rows(unknown_workbook["FortiGate Source Inventory"])
         self.assertIn("unknown", {row[unknown_headers.index("Operation")] for row in unknown_rows})
+
+    def test_policy_reports_preserve_ipv4_and_ipv6_address_families(self):
+        source = _SAMPLE_CONFIG + r'''
+config firewall address6
+    edit "SRC-V6"
+        set ip6 2001:db8:1::/64
+    next
+    edit "DST-V6"
+        set ip6 2001:db8:2::/64
+    next
+end
+config firewall policy
+    edit 60
+        set srcintf "port1"
+        set dstintf "port1"
+        set srcaddr6 "SRC-V6"
+        set dstaddr6 "DST-V6"
+        set srcaddr6-negate enable
+        set dstaddr6-negate disable
+        set service "multi-port"
+        set schedule always
+        set action accept
+        set nat enable
+    next
+    edit 61
+        set srcintf "port1"
+        set dstintf "port1"
+        set srcaddr "inside"
+        set srcaddr6 "SRC-V6"
+        set dstaddr "all"
+        set dstaddr6 "DST-V6"
+        set service "multi-port"
+        set schedule always
+        set action accept
+        set nat enable
+    next
+end
+'''
+        workbook = self._workbook(source)
+        headers, rows = self._rows(workbook["Policies"])
+        by_rule = {row[headers.index("Rule #")]: row for row in rows}
+        for column in ("Source IPv6 Addresses", "Destination IPv6 Addresses"):
+            self.assertIn(column, headers)
+        ipv6_only = by_rule[60]
+        self.assertIn(ipv6_only[headers.index("Source Addresses")], (None, ""))
+        self.assertEqual("SRC-V6", ipv6_only[headers.index("Source IPv6 Addresses")])
+        self.assertIn(ipv6_only[headers.index("Destination Addresses")], (None, ""))
+        self.assertEqual("DST-V6", ipv6_only[headers.index("Destination IPv6 Addresses")])
+        self.assertEqual("enable", ipv6_only[headers.index("Source IPv6 Address Negate")])
+        self.assertEqual("disable", ipv6_only[headers.index("Destination IPv6 Address Negate")])
+
+        mixed = by_rule[61]
+        self.assertEqual("inside", mixed[headers.index("Source Addresses")])
+        self.assertEqual("SRC-V6", mixed[headers.index("Source IPv6 Addresses")])
+        self.assertEqual("all", mixed[headers.index("Destination Addresses")])
+        self.assertEqual("DST-V6", mixed[headers.index("Destination IPv6 Addresses")])
+
+        nat_headers, nat_rows = self._rows(workbook["NAT Rules"])
+        nat_by_rule = {row[nat_headers.index("Rule #")]: row for row in nat_rows}
+        self.assertEqual("SRC-V6", nat_by_rule[60][nat_headers.index("Source IPv6 Addresses")])
+        self.assertEqual("DST-V6", nat_by_rule[60][nat_headers.index("Destination IPv6 Addresses")])
 
     def test_source_value_sanitization_matches_attribute_sanitization(self):
         values = {
@@ -825,6 +989,77 @@ end
         phase2_row = next(row for row in phase2_rows if row[phase2.index("Name")] == "BCA_INF")
         self.assertEqual("REVIEW_REQUIRED", phase2_row[phase2.index("Analysis Status")])
         self.assertIn("Selector has only one range endpoint.", phase2_row[phase2.index("Review Reasons")])
+
+    def test_same_name_vip_warning_does_not_mark_service_for_review(self):
+        workbook = self._workbook(
+            r'''
+config firewall service custom
+    edit "shared-name"
+        set protocol TCP
+        set tcp-portrange 443
+    next
+end
+
+config firewall vip
+    edit "shared-name"
+        set type server-load-balance
+        set extintf "missing-interface"
+    next
+end
+''',
+        )
+
+        services, service_rows = self._rows(workbook["Services"])
+        service = next(row for row in service_rows if row[services.index("Name")] == "shared-name")
+        self.assertEqual("EXTRACTED", service[services.index("Analysis Status")])
+        self.assertFalse(service[services.index("Review Reasons")])
+
+        vips, vip_rows = self._rows(workbook["Virtual IPs"])
+        vip = next(row for row in vip_rows if row[vips.index("Name")] == "shared-name")
+        self.assertEqual("REVIEW_REQUIRED", vip[vips.index("Analysis Status")])
+        self.assertIn("missing-interface", vip[vips.index("Review Reasons")])
+
+    def test_new_reference_issues_reach_their_excel_rows(self):
+        workbook = self._workbook(
+            r'''
+config router static
+    edit 1
+        set dstaddr "missing-address"
+        set device "missing-route-interface"
+    next
+end
+
+config system dhcp server
+    edit 7
+        set interface "missing-dhcp-interface"
+    next
+end
+
+config system admin
+    edit "operator"
+        set accprofile "missing-profile"
+    next
+end
+
+config firewall vip
+    edit "broken-vip"
+        set extintf "missing-vip-interface"
+    next
+end
+''',
+        )
+        for sheet_name, identity_header, identity, expected in (
+            ("Routes", "Route ID", 1, ("missing-address", "missing-route-interface")),
+            ("DHCP Servers", "Server ID", 7, ("missing-dhcp-interface",)),
+            ("Administrators", "Name", "operator", ("missing-profile",)),
+            ("Virtual IPs", "Name", "broken-vip", ("missing-vip-interface",)),
+        ):
+            headers, rows = self._rows(workbook[sheet_name])
+            row = next(item for item in rows if item[headers.index(identity_header)] == identity)
+            self.assertEqual("REVIEW_REQUIRED", row[headers.index("Analysis Status")], sheet_name)
+            reasons = str(row[headers.index("Review Reasons")] or "")
+            for reference in expected:
+                self.assertIn(reference, reasons, sheet_name)
 
     def test_reference_namespace_regression(self):
         workbook = self._workbook(

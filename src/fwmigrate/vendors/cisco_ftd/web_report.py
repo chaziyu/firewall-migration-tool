@@ -14,6 +14,7 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
         "source_plane": config.source_plane,
         "summary": {
             "network_addresses": len(config.network_addresses),
+            "network_address_overrides": len(config.network_address_overrides),
             "network_groups": len(config.network_groups),
             "protocol_port_objects": len(config.protocol_port_objects),
             "port_object_groups": len(config.port_object_groups),
@@ -22,6 +23,9 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
             "interfaces": len(config.device_interfaces) + len(config.source_interfaces) + len(config.interfaces),
             "routes": len(config.routes) + len(config.static_routes),
             "access_control_policies": len(config.access_control_policies),
+            "access_control_default_actions": len(config.access_control_default_actions),
+            "access_policy_inheritance_settings": len(config.access_policy_inheritance_settings),
+            "policy_assignments": len(config.policy_assignments),
             "acp_rules": count_acp_rules(config),
             "nat_policies": len(config.nat_policies),
             "nat_rules": count_nat_rules(config),
@@ -59,8 +63,10 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
             "network_analysis_policies": len(config.network_analysis_policies),
             "inspector_configs": len(config.inspector_configs),
             "dhcp_servers": len(config.dhcp_servers), "native_resources": len(config.native_resources),
+            "dhcp_relay_settings": len(config.dhcp_relay_settings),
         },
         "source_metadata": config.source_metadata,
+        "capability_coverage": config.source_metadata.get("coverage", {}),
         "source_plane_completeness": result.derived.source_plane_completeness,
         "interface_topology": [{"name": item.name, "kind": item.kind, "parent": item.parent,
             "aggregate": item.aggregate, "physical_interfaces": item.physical_interfaces}
@@ -75,6 +81,7 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
                          "address_pools", "certificates", "certificate_maps", "secure_client_settings",
                          "ra_vpn_address_assignment_settings", "ra_vpn_ipsec_settings")},
         "inspection_relationships": result.derived.inspection_relationships,
+        "policy_relationships": result.derived.policy_relationships,
         "unsupported": config.unsupported_evidence,
         "validation": [issue.__dict__ for issue in result.validation.issues],
     }

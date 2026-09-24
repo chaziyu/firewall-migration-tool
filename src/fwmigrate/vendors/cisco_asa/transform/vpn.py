@@ -105,9 +105,14 @@ def build_vpn_topology(config: Any, relationships: Any, interface_topology: Any)
         issues.extend(local)
     for source in config.interfaces:
         if source.interface_type != "tunnel" and not (source.tunnel_source or source.ipsec_profile): continue
+        relationship = by_source.get(id(source))
+        resolved_profile = next((value for key, value in (relationship.targets if relationship else ()) if key == "ipsec-profile"), None)
+        local_issues = tuple(issue.reason for issue in (relationship.issues if relationship else ()))
         entries.append(ASAVPNTopologyEntry(source.source_context, "vti", source, interface=source,
             tunnel_interface=source.name, tunnel_source=source.tunnel_source, tunnel_destination=source.tunnel_destination,
-            ipsec_profile=source.ipsec_profile, resolution_status="SOURCE_ONLY" if source.ipsec_profile else None))
+            ipsec_profile=source.ipsec_profile, resolution_status="RESOLVED" if resolved_profile else "PARTIAL" if local_issues else "SOURCE_ONLY",
+            issues=local_issues))
+        issues.extend(local_issues)
     remote_access = []
     webvpn_configs = tuple(getattr(config, "webvpn_configs", ()))
     assignments = tuple(getattr(config, "vpn_address_assignments", ()))

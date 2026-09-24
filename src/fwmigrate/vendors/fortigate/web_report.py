@@ -44,12 +44,22 @@ def _object_counts(config: FGConfig) -> dict[str, int]:
         "schedules": len(config.one_time_schedules) + len(config.recurring_schedules),
         "schedule_groups": len(config.schedule_groups),
         "policies": len(config.policies),
-        "ip_pools": len(config.ip_pools),
-        "vips": len(config.vips),
-        "vip_groups": len(config.vip_groups),
+        "security_policies": len(config.security_policies),
+        "protocol_options": len(config.protocol_options),
+        "per_ip_shapers": len(config.per_ip_shapers),
+        "session_helpers": len(config.session_helpers),
+        "ssl_vpn_realms": len(config.ssl_vpn_realms),
+        "ssl_vpn_clients": len(config.ssl_vpn_clients),
+        "ssl_vpn_bookmarks": sum(len(owner.bookmarks) for owner in config.ssl_vpn_user_bookmarks + config.ssl_vpn_user_group_bookmarks),
+        "nac_policies": len(config.nac_policies),
+        "ip_pools": len(config.ip_pools) + len(config.ip_pools6),
+        "vips": len(config.vips) + len(config.vips6),
+        "vip_groups": len(config.vip_groups) + len(config.vip_groups6),
         "static_routes": len(config.static_routes),
         "ipsec_phase1": len(config.ipsec_phase1),
-        "ipsec_phase2": len(config.ipsec_phase2),
+        "ipsec_policy_phase1": len(config.ipsec_policy_phase1),
+        "ipsec_phase2": len(config.ipsec_phase2) + len(config.ipsec_policy_phase2),
+        "ipsec_policy_phase2": len(config.ipsec_policy_phase2),
     }
 
 
@@ -178,10 +188,10 @@ def build_web_report(
     topology = {(item.vdom, item.name): item for item in derived.topology.interfaces}
     vpn_topology = {(item.vdom, item.name): item for item in derived.topology.vpns}
     nat = {(item.vdom, item.policy_id): item for item in derived.nat}
-    vpn_phase2 = {(item.vdom, item.name): item for item in derived.vpn.phase2}
-    vpn_issues: dict[tuple[str, str], list[str]] = defaultdict(list)
+    vpn_phase2 = {(item.vpn_type, item.vdom, item.name): item for item in derived.vpn.phase2}
+    vpn_issues: dict[tuple[str, str, str], list[str]] = defaultdict(list)
     for issue in derived.vpn.issues:
-        vpn_issues[(issue.vdom, issue.phase2)].append(issue.message)
+        vpn_issues[(issue.vpn_type, issue.vdom, issue.phase2)].append(issue.message)
 
     severity_counts: dict[str, int] = defaultdict(int)
     validation_rows = []
@@ -363,8 +373,14 @@ def build_web_report(
                 "destination_interfaces": list(item.dstintf),
                 "source_addresses": list(item.srcaddr),
                 "destination_addresses": list(item.dstaddr),
+                "source_addresses_ipv6": list(item.srcaddr6),
+                "destination_addresses_ipv6": list(item.dstaddr6),
+                "source_address_negate_ipv6": item.srcaddr6_negate,
+                "destination_address_negate_ipv6": item.dstaddr6_negate,
                 "services": list(item.service),
                 "schedule": item.schedule,
+                "profile_protocol_options": item.profile_protocol_options,
+                "per_ip_shaper": item.per_ip_shaper,
                 "action": item.action,
                 "nat": item.nat,
                 "status": item.status,
@@ -379,6 +395,24 @@ def build_web_report(
                 ),
             }
         )
+
+    security_policies = [
+        {"policy_id": item.policy_id, "vdom": item.vdom, "action": item.action,
+         "app_category": list(item.app_category),
+         "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.policy_id,), domains=("security_policy",)))}
+        for item in config.security_policies
+    ]
+    protocol_options = [
+        {"name": item.name, "vdom": item.vdom, "comment": item.comment,
+         "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("protocol_options",)))}
+        for item in config.protocol_options
+    ]
+    per_ip_shapers = [
+        {"name": item.name, "vdom": item.vdom, "max_bandwidth": item.max_bandwidth,
+         "bandwidth_unit": item.bandwidth_unit,
+         "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("per_ip_shaper",)))}
+        for item in config.per_ip_shapers
+    ]
 
     nat_rows = [
         {
@@ -447,7 +481,7 @@ def build_web_report(
 
     vpn_phase2_rows = []
     for item in config.ipsec_phase2:
-        normalized = vpn_phase2.get((item.vdom, item.name))
+        normalized = vpn_phase2.get(("route-based", item.vdom, item.name))
         vpn_phase2_rows.append(
             {
                 "name": item.name,
@@ -463,7 +497,7 @@ def build_web_report(
                 "source_range6": normalized.source_range6 if normalized else None,
                 "destination_range6": normalized.destination_range6 if normalized else None,
                 "review": _review(
-                    vpn_issues[(item.vdom, item.name)],
+                    vpn_issues[("route-based", item.vdom, item.name)],
                     _messages(
                         issue_index,
                         vdom=item.vdom,
@@ -473,6 +507,60 @@ def build_web_report(
                 ),
             }
         )
+
+    policy_vpn_phase2_rows = []
+    for item in config.ipsec_policy_phase2:
+        normalized = vpn_phase2.get(("policy-based", item.vdom, item.name))
+        policy_vpn_phase2_rows.append({
+            "name": item.name, "vdom": item.vdom, "phase1": item.phase1name,
+            "proposal": list(item.proposal), "pfs": item.pfs, "dh_groups": list(item.dhgrp),
+            "source_range": normalized.source_range if normalized else None,
+            "destination_range": normalized.destination_range if normalized else None,
+            "source_range6": normalized.source_range6 if normalized else None,
+            "destination_range6": normalized.destination_range6 if normalized else None,
+            "review": _review(
+                vpn_issues[("policy-based", item.vdom, item.name)],
+                _messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("ipsec_policy_phase2",)),
+            ),
+        })
+
+    policy_vpn_phase1_rows = [
+        {
+            "name": item.name,
+            "vdom": item.vdom,
+            "remote_gateway": item.remote_gw or item.remotegw_ddns,
+            "ike_version": item.ike_version,
+            "authentication_method": item.authmethod,
+            "psk_configured": item.psk_configured,
+            "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("ipsec_policy_phase1",))),
+        }
+        for item in config.ipsec_policy_phase1
+    ]
+
+    ssl_vpn_realms = [
+        {"url_path": item.url_path, "vdom": item.vdom,
+         "login_page_configured": bool(item.login_page),
+         "login_page_length": len(item.login_page or ""),
+         "radius_server": item.radius_server, "radius_port": item.radius_port,
+         "virtual_host": item.virtual_host, "review": None}
+        for item in config.ssl_vpn_realms
+    ]
+    ssl_vpn_bookmarks = [
+        {"owner_type": owner_type, "owner_name": owner.owner_name, "name": bookmark.name,
+         "apptype": bookmark.apptype, "url": bookmark.url, "host": bookmark.host,
+         "logon_password_configured": bookmark.logon_password_configured,
+         "sso_password_configured": bookmark.sso_password_configured, "vdom": owner.vdom}
+        for owner_type, owners in (("user", config.ssl_vpn_user_bookmarks), ("group", config.ssl_vpn_user_group_bookmarks))
+        for owner in owners for bookmark in owner.bookmarks
+    ]
+    nac_policies = [
+        {"name": item.name, "vdom": item.vdom, "category": item.category,
+         "description": item.description, "mac": item.mac, "host": item.host,
+         "os": item.os, "family": item.family, "firewall_address": item.firewall_address,
+         "user_group": item.user_group, "status": item.status,
+         "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("nac_policy",)))}
+        for item in config.nac_policies
+    ]
 
     unresolved = [
         {
@@ -498,9 +586,14 @@ def build_web_report(
                 schedules,
                 schedule_groups,
                 policies,
+                security_policies,
+                protocol_options,
+                per_ip_shapers,
                 routes,
                 vpn_tunnels,
                 vpn_phase2_rows,
+                policy_vpn_phase1_rows,
+                policy_vpn_phase2_rows,
                 validation_rows,
                 unresolved,
             )
@@ -532,10 +625,18 @@ def build_web_report(
             "schedules": schedules,
             "schedule_groups": schedule_groups,
             "policies": policies,
+            "security_policies": security_policies,
+            "protocol_options": protocol_options,
+            "per_ip_shapers": per_ip_shapers,
             "nat": nat_rows,
             "routes": routes,
             "vpn_tunnels": vpn_tunnels,
             "vpn_phase2": vpn_phase2_rows,
+            "policy_vpn_phase1": policy_vpn_phase1_rows,
+            "policy_vpn_phase2": policy_vpn_phase2_rows,
+            "ssl_vpn_realms": ssl_vpn_realms,
+            "ssl_vpn_bookmarks": ssl_vpn_bookmarks,
+            "nac_policies": nac_policies,
             "validation": validation_rows,
             "unresolved_references": unresolved,
         },

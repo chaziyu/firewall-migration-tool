@@ -17,9 +17,9 @@ def _dependency(context, path, obj, field, reference, expected, resolved):
         target_path=path if resolved else None)
 
 
-def build_dhcp_dependencies(context) -> list[DependencyRecord]:
+def build_dhcp_dependencies(context, effective_lookup=None) -> list[DependencyRecord]:
     dependencies = []
-    resolver = JuniperReferenceResolver(context)
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     for group in context.dhcp.local_servers.values():
         if group.routing_instance:
             dependencies.append(_dependency(context, "system services dhcp-local-server", group.name,
@@ -51,9 +51,9 @@ def build_dhcp_dependencies(context) -> list[DependencyRecord]:
     return dependencies
 
 
-def build_apbr_dependencies(context) -> list[DependencyRecord]:
+def build_apbr_dependencies(context, effective_lookup=None) -> list[DependencyRecord]:
     dependencies = []
-    resolver = JuniperReferenceResolver(context)
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     apbr = context.apbr
     for group in apbr.destination_path_groups.values():
         if group.probe_routing_instance:
@@ -65,15 +65,16 @@ def build_apbr_dependencies(context) -> list[DependencyRecord]:
                                             "overlay-path", reference, "overlay-path",
                                             resolver.resolve_apbr_overlay_path(reference) is not None))
     for rule in apbr.sla_rules.values():
-        for field, reference, collection, expected in (
-            ("metrics-profile", rule.metrics_profile, apbr.metrics_profiles, "metrics-profile"),
-            ("active-probe-params", rule.active_probe_params, apbr.active_probe_params, "active-probe-params"),
-            ("passive-probe-params", rule.passive_probe_params, apbr.passive_probe_params, "passive-probe-params"),
-            ("multipath-rule", rule.multipath_rule, apbr.multipath_rules, "multipath-rule"),
+        for field, reference, expected in (
+            ("metrics-profile", rule.metrics_profile, "metrics-profile"),
+            ("active-probe-params", rule.active_probe_params, "active-probe-params"),
+            ("passive-probe-params", rule.passive_probe_params, "passive-probe-params"),
+            ("multipath-rule", rule.multipath_rule, "multipath-rule"),
         ):
             if reference:
                 dependencies.append(_dependency(context, "security advance-policy-based-routing", rule.name,
-                                                field, reference, expected, reference in collection))
+                                                field, reference, expected,
+                                                resolver.resolve_apbr_named(reference, field) is not None))
     for rule in apbr.multipath_rules.values():
         for reference in rule.applications:
             dependencies.append(_dependency(context, "security advance-policy-based-routing", rule.name,
@@ -82,13 +83,13 @@ def build_apbr_dependencies(context) -> list[DependencyRecord]:
         for reference in rule.application_groups:
             dependencies.append(_dependency(context, "security advance-policy-based-routing", rule.name,
                                             "application-group", reference, "application-set",
-                                            reference in context.application_sets))
+                                            resolver.resolve_application(reference)[1]))
     return dependencies
 
 
-def build_remote_access_dependencies(context) -> list[DependencyRecord]:
+def build_remote_access_dependencies(context, effective_lookup=None) -> list[DependencyRecord]:
     dependencies = []
-    resolver = JuniperReferenceResolver(context)
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     for profile in context.remote_access.profiles.values():
         for field, reference, expected, resolved in (
             ("access-profile", profile.access_profile, "access-profile", resolver.resolve_access_profile(profile.access_profile)),
@@ -111,9 +112,9 @@ def _scalar_is_literal(value) -> bool:
         return False
 
 
-def build_interface_dependencies(context) -> list[DependencyRecord]:
+def build_interface_dependencies(context, effective_lookup=None) -> list[DependencyRecord]:
     dependencies = []
-    resolver = JuniperReferenceResolver(context)
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     for interface in context.interfaces.values():
         if interface.aggregate_parent:
             dependencies.append(_dependency(context, "interfaces", interface.name, "aggregate-parent",
@@ -138,22 +139,23 @@ def build_interface_dependencies(context) -> list[DependencyRecord]:
     return dependencies
 
 
-def build_address_book_dependencies(context) -> list[DependencyRecord]:
+def build_address_book_dependencies(context, effective_lookup=None) -> list[DependencyRecord]:
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     return [_dependency(context, "security address-book", book.name, "attach zone", zone,
-                        "security-zone", zone in context.zones)
+                        "security-zone", resolver.resolve_zone(zone) is not None)
             for book in context.address_books.values() for zone in book.attached_zones]
 
 
-def build_policy_dependencies(context) -> list[DependencyRecord]:
+def build_policy_dependencies(context, effective_lookup=None) -> list[DependencyRecord]:
     dependencies = []
-    resolver = JuniperReferenceResolver(context)
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     profile_collections = {"idp-policy": context.idp_policies, "utm-policy": context.utm_policies,
                            "ssl-proxy-profile": context.ssl_proxy_profiles,
                            "security-intelligence": context.security_intelligence_profiles}
     for policy in [*context.policies, *context.global_policies]:
         for zone in [*policy.from_zones, *policy.to_zones]:
             dependencies.append(_dependency(context, "security policies", policy.name, "zone", zone,
-                                            "security-zone", zone in context.zones))
+                                            "security-zone", resolver.resolve_zone(zone) is not None))
         for field, references in (("source-address", policy.source_addresses),
                                   ("destination-address", policy.destination_addresses)):
             for reference in references:
@@ -183,9 +185,9 @@ def build_policy_dependencies(context) -> list[DependencyRecord]:
     return dependencies
 
 
-def build_nat_dependencies(context) -> list[DependencyRecord]:
+def build_nat_dependencies(context, effective_lookup=None) -> list[DependencyRecord]:
     dependencies = []
-    resolver = JuniperReferenceResolver(context)
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     for nat_type, rule_sets in (("source", context.nat.source_rule_sets),
                                 ("destination", context.nat.destination_rule_sets),
                                 ("static", context.nat.static_rule_sets)):
@@ -194,12 +196,12 @@ def build_nat_dependencies(context) -> list[DependencyRecord]:
             if pool.routing_instance:
                 dependencies.append(_dependency(context, f"security nat {nat_type}", pool.name,
                                                 "routing-instance", pool.routing_instance, "routing-instance",
-                                                pool.routing_instance in context.routing_instances))
+                                                resolver.resolve_routing_instance(pool.routing_instance) is not None))
         for rule_set in rule_sets.values():
             for reference in [*rule_set.from_context.zones,
                               *(rule_set.to_context.zones if rule_set.to_context else [])]:
                 dependencies.append(_dependency(context, f"security nat {nat_type}", rule_set.name,
-                                                "zone", reference, "security-zone", reference in context.zones))
+                                                "zone", reference, "security-zone", resolver.resolve_zone(reference) is not None))
             for reference in [*rule_set.from_context.interfaces,
                               *(rule_set.to_context.interfaces if rule_set.to_context else [])]:
                 dependencies.append(_dependency(context, f"security nat {nat_type}", rule_set.name,
@@ -209,12 +211,13 @@ def build_nat_dependencies(context) -> list[DependencyRecord]:
                               *(rule_set.to_context.routing_instances if rule_set.to_context else [])]:
                 dependencies.append(_dependency(context, f"security nat {nat_type}", rule_set.name,
                                                 "routing-instance", reference, "routing-instance",
-                                                reference in context.routing_instances))
+                                                resolver.resolve_routing_instance(reference) is not None))
             for rule in rule_set.rules:
                 pool_name = (rule.action or {}).get("pool_name")
                 if pool_name:
                     dependencies.append(_dependency(context, f"security nat {nat_type}", rule.name, "pool",
-                                                    pool_name, f"{nat_type}-nat-pool", pool_name in pools))
+                                                pool_name, f"{nat_type}-nat-pool",
+                                                resolver.resolve_nat_pool(pool_name, nat_type) is not None))
                 prefix_name = (rule.action or {}).get("prefix_name")
                 if prefix_name:
                     dependencies.append(_dependency(context, f"security nat {nat_type}", rule.name,
@@ -229,14 +232,14 @@ def build_nat_dependencies(context) -> list[DependencyRecord]:
     return dependencies
 
 
-def build_route_dependencies(context) -> list[DependencyRecord]:
+def build_route_dependencies(context, effective_lookup=None) -> list[DependencyRecord]:
     dependencies = []
-    resolver = JuniperReferenceResolver(context)
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     for route in context.routes:
         if route.routing_instance:
             dependencies.append(_dependency(context, "routing-instances", route.destination,
                                             "routing-instance", route.routing_instance, "routing-instance",
-                                            route.routing_instance in context.routing_instances))
+                                            resolver.resolve_routing_instance(route.routing_instance) is not None))
         for next_hop in route.next_hops:
             reference = next_hop.value
             if _scalar_is_literal(reference):
@@ -251,9 +254,9 @@ def build_route_dependencies(context) -> list[DependencyRecord]:
     return dependencies
 
 
-def build_firewall_filter_dependencies(context) -> list[DependencyRecord]:
+def build_firewall_filter_dependencies(context, effective_lookup=None) -> list[DependencyRecord]:
     dependencies = []
-    resolver = JuniperReferenceResolver(context)
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     for interface in context.interfaces.values():
         for unit in interface.units.values():
             for attachment in unit.filters:
@@ -272,7 +275,7 @@ def build_firewall_filter_dependencies(context) -> list[DependencyRecord]:
                             reference = action.get("value")
                             dependencies.append(_dependency(context, "firewall filters", f"{name}:{term.name}",
                                                             "routing-instance", reference, "routing-instance",
-                                                            isinstance(reference, str) and reference in context.routing_instances))
+                                                            isinstance(reference, str) and resolver.resolve_routing_instance(reference) is not None))
                         elif action.get("action") == "next-interface":
                             reference = action.get("value")
                             dependencies.append(_dependency(context, "firewall filters", f"{name}:{term.name}",
@@ -281,19 +284,19 @@ def build_firewall_filter_dependencies(context) -> list[DependencyRecord]:
     return dependencies
 
 
-def build_juniper_dependencies(config) -> list[DependencyRecord]:
+def build_juniper_dependencies(config, effective_lookup=None) -> list[DependencyRecord]:
     """Aggregate Juniper domain collectors for validation and reporting."""
     dependencies = []
     for context in config.iter_contexts():
         for collector in (build_dhcp_dependencies, build_interface_dependencies, build_address_book_dependencies,
                           build_policy_dependencies, build_nat_dependencies, build_remote_access_dependencies,
                           build_apbr_dependencies, build_route_dependencies, build_firewall_filter_dependencies):
-            dependencies.extend(collector(context))
-    dependencies.extend(build_vpn_dependencies(config))
+            dependencies.extend(collector(context, effective_lookup))
+    dependencies.extend(build_vpn_dependencies(config, effective_lookup))
     return dependencies
 
 
-def build_vpn_dependencies(config) -> list[DependencyRecord]:
+def build_vpn_dependencies(config, effective_lookup=None) -> list[DependencyRecord]:
     """Collect explicit VPN, Secure Connect, and policy-to-VPN references."""
     dependencies = []
 
@@ -305,7 +308,7 @@ def build_vpn_dependencies(config) -> list[DependencyRecord]:
             target_path=path if resolved else None))
 
     for context in config.iter_contexts():
-        resolver = JuniperReferenceResolver(context)
+        resolver = JuniperReferenceResolver(context, effective_lookup)
         vpn = context.vpn
         for gateway in vpn.ike_gateways.values():
             if gateway.ike_policy:
@@ -325,14 +328,14 @@ def build_vpn_dependencies(config) -> list[DependencyRecord]:
         for policy in vpn.ipsec_policies.values():
             for reference in policy.proposals:
                 add(context, "security ipsec policy", policy.name, "proposal", reference,
-                    "ipsec-proposal", reference in vpn.ipsec_proposals)
+                    "ipsec-proposal", resolver.resolve_ipsec_proposal(reference) is not None)
         for tunnel in vpn.ipsec_vpns.values():
             if tunnel.ike_gateway:
                 add(context, "security ipsec vpn", tunnel.name, "ike-gateway", tunnel.ike_gateway,
-                    "ike-gateway", tunnel.ike_gateway in vpn.ike_gateways)
+                    "ike-gateway", resolver.resolve_ike_gateway(tunnel.ike_gateway) is not None)
             if tunnel.ipsec_policy:
                 add(context, "security ipsec vpn", tunnel.name, "ipsec-policy", tunnel.ipsec_policy,
-                    "ipsec-policy", tunnel.ipsec_policy in vpn.ipsec_policies)
+                    "ipsec-policy", resolver.resolve_ipsec_policy(tunnel.ipsec_policy) is not None)
             if tunnel.bind_interface:
                 add(context, "security ipsec vpn", tunnel.name, "bind-interface", tunnel.bind_interface,
                     "interface", resolver.resolve_interface(tunnel.bind_interface) is not None)

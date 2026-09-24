@@ -42,6 +42,7 @@ class FGPolicy(BaseModel):
 
     # NAT
     nat: str | None = None
+    nat64: str | None = None
     ippool: str | None = None
     poolname: list[str] = Field(default_factory=list)
     poolname6: list[str] = Field(default_factory=list)
@@ -77,6 +78,8 @@ class FGPolicy(BaseModel):
 
     profile_type: str | None = None
     profile_group: str | None = None
+    profile_protocol_options: str | None = None
+    per_ip_shaper: str | None = None
 
     av_profile: str | None = None
     ips_sensor: str | None = None

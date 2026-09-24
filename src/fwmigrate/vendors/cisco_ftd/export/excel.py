@@ -83,9 +83,11 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
     workbook.remove(workbook.active)
     config = result.config
     derived = getattr(result, "derived", None)
-    topologies = {item.name: item for item in getattr(getattr(derived, "interface_topology", None), "interfaces", ())}
-    normalized_routes = {item.source_name: item.normalized_destination
+    topologies = {(item.device_id or "", item.name): item for item in getattr(getattr(derived, "interface_topology", None), "interfaces", ())}
+    normalized_routes = {(item.device_id or "", item.source_name): item.normalized_destination
                          for item in getattr(derived, "normalized_routes", ())}
+    def ref_text(value):
+        return value.name or value.source_id if value is not None else None
     rows = {
         "Managed Objects": [(x.name, x.source_id, x.address_type, x.value, x.description, x.address_family,
             x.fqdn_lookup_type, x.override_metadata, x.source_plane) for x in config.network_addresses],
@@ -96,15 +98,26 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
                      + [(x.name, None, None, None, None, None, x.description, x.override_metadata,
                          _refs(x.members), x.source_plane) for x in config.port_object_groups]),
         "Zones": [(x.name, x.interfaces, x.source_plane) for x in config.security_zones],
-        "Interfaces": [(x.name, x.interface_type, x.address, x.zone.name if x.zone else None, x.source_plane, None, None, None) for x in config.device_interfaces]
-                      + [(x.name, x.interface_type, x.address, x.zone, x.source_plane, None, None, None) for x in config.source_interfaces]
+        "Interfaces": [(x.name, x.interface_type, x.address, x.zone.name if x.zone else None, x.source_plane,
+                         (topologies.get((x.device_id or "", x.name)).kind if topologies.get((x.device_id or "", x.name)) else None),
+                         (topologies.get((x.device_id or "", x.name)).parent if topologies.get((x.device_id or "", x.name)) else None), None)
+                        for x in config.device_interfaces]
+                      + [(x.name, x.interface_type, x.address, x.zone, x.source_plane,
+                          (topologies.get((x.device_id or "", x.name)).kind if topologies.get((x.device_id or "", x.name)) else None),
+                          (topologies.get((x.device_id or "", x.name)).parent if topologies.get((x.device_id or "", x.name)) else None), None)
+                         for x in config.source_interfaces]
                       + [(item.name, None, item.ip, None, config.source_plane, topology.kind, topology.parent, item.vlan_id)
                          for item in config.interfaces
-                         for topology in (topologies[item.name],) if item.name in topologies],
+                         for topology in (topologies["", item.name],) if ("", item.name) in topologies],
         "Routes": [(x.name, *(ref.name or ref.source_id if ref else None for ref in
-            (x.interface, x.destination, x.gateway, x.sla_monitor)), x.source_plane, x.address_family, None, None) for x in config.routes]
+            (x.interface, x.destination, x.gateway, x.sla_monitor)), x.source_plane, x.address_family, None,
+            normalized_routes.get((x.device_id or "", x.name))) for x in config.routes]
             + [(route.name, route.interface, route.destination, route.gateway, None, config.source_plane,
-                route.address_family, route.mask, normalized_routes.get(route.name)) for route in config.static_routes],
+                route.address_family, route.mask, normalized_routes.get(("", route.name))) for route in config.static_routes],
+        "ACP Policies": [(policy.name, policy.source_id, policy.description, policy.inherit,
+            ref_text(policy.base_policy), ref_text(policy.default_action), ref_text(policy.prefilter_policy),
+            ref_text(policy.network_analysis_policy), ref_text(policy.decryption_policy), ref_text(policy.dns_policy),
+            ref_text(policy.identity_policy), policy.source_plane) for policy in config.access_control_policies],
         "ACP Rules": [(rule.policy_name, rule.name, rule.source_id, rule.enabled, rule.position,
             rule.section, rule.category, rule.action, _refs(rule.source_zones), _refs(rule.destination_zones),
             _refs(rule.source_networks), _refs(rule.destination_networks), _refs(rule.source_ports),
@@ -115,6 +128,16 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
             _refs([rule.variable_set] if rule.variable_set else None), _refs([rule.file_policy] if rule.file_policy else None),
             rule.log_begin, rule.log_end, rule.comments, rule.source_plane, rule.source_context)
             for policy in config.access_control_policies for rule in (policy.rules or [])],
+        "Object Overrides": [(item.name, item.source_id, ref_text(item.parent), ref_text(item.target),
+            item.address_type, item.value, item.domain_id, item.source_plane, item.raw_extra)
+            for item in config.network_address_overrides],
+        "DHCP": [("Server", item.name, item.source_id, item.device_id or item.source_attributes.get("device_name"),
+            ref_text(item.interface), json.dumps(item.raw_extra, default=str), None, item.source_plane)
+            for item in config.dhcp_servers]
+            + [("Relay", item.name, item.source_id, item.device_id or item.source_attributes.get("device_name"),
+                None, None, json.dumps(item.model_dump(exclude_none=True, exclude={"name", "source_id", "source_plane",
+                    "source_context", "domain_id", "device_id", "explicit_fields", "source_attributes", "raw_extra"}), default=str),
+                item.source_plane) for item in config.dhcp_relay_settings],
         "NAT Rules": [_nat_row(policy, rule, section, kind)
             for policy in config.nat_policies
             for section, kind, rules in (("BEFORE_AUTO", "manual", policy.manual_rules_before_auto),
@@ -155,9 +178,10 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
             x.use_internal_address_pool_for_ipv6, x.raw_extra)
             for x in config.ra_vpn_address_assignment_settings],
     }
-    native_collections = ("applications", "variable_sets", "url_categories", "vlan_objects", "time_ranges",
+    native_collections = ("applications", "network_address_overrides", "access_control_default_actions",
+        "access_policy_inheritance_settings", "policy_assignments", "variable_sets", "url_categories", "vlan_objects", "time_ranges",
         "intrusion_policies", "intrusion_rule_groups", "intrusion_rule_behaviors", "intrusion_rule_overrides",
-        "fmc_user_roles", "fmc_users", "dhcp_servers", "realms",
+        "fmc_user_roles", "fmc_users", "dhcp_servers", "dhcp_relay_settings", "realms",
         "realm_user_groups", "realm_users", "local_realm_users", "s2s_vpn_topologies", "s2s_vpn_endpoints",
         "ike_policies", "ipsec_proposals", "ra_vpn_policies", "ra_vpn_connection_profiles",
         "virtual_routers", "sla_monitors", "ecmp_zones", "policy_based_routes", "certificates",

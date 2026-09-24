@@ -42,6 +42,32 @@ config router static
 end
 """
 
+FORTIGATE_IPV6_POLICY_SOURCE = """config system interface
+    edit "port1"
+        set ip 192.0.2.1 255.255.255.0
+    next
+end
+config firewall address6
+    edit "SRC-V6"
+        set ip6 2001:db8:1::/64
+    next
+    edit "DST-V6"
+        set ip6 2001:db8:2::/64
+    next
+end
+config firewall policy
+    edit 60
+        set srcintf "port1"
+        set dstintf "port1"
+        set srcaddr6 "SRC-V6"
+        set dstaddr6 "DST-V6"
+        set service "ALL"
+        set schedule always
+        set action accept
+    next
+end
+"""
+
 
 def _post(client, path, **fields):
     data = {"source_vendor": "cisco_asa", **fields}
@@ -129,6 +155,21 @@ def test_fortigate_preview_exposes_policy_fields_and_overview_sections():
     assert report["sections"]["vpn_tunnels"] == []
     assert report["sections"]["vpn_phase2"] == []
     assert "unsupported_count" not in report["summary"]
+
+
+def test_fortigate_preview_preserves_ipv6_policy_addresses():
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post(
+        "/api/preview",
+        data={"source_vendor": "fortigate", "file": (io.BytesIO(FORTIGATE_IPV6_POLICY_SOURCE.encode()), "fortigate.conf")},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    policy = response.get_json()["sections"]["policies"][0]
+    assert policy["source_addresses"] == []
+    assert policy["source_addresses_ipv6"] == ["SRC-V6"]
+    assert policy["destination_addresses"] == []
+    assert policy["destination_addresses_ipv6"] == ["DST-V6"]
 
 
 def test_all_registered_sources_advertise_view_report():

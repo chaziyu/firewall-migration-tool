@@ -10,7 +10,7 @@ def test_vpn_migration_view_retains_checkpoint_sources_and_shared_relationships(
     gateway = CPGateway(uid="g", name="gateway", vpn={"ike": "source setting"})
     cluster = CPCluster(uid="c", name="cluster")
     interoperable = CPInteroperableDevice(uid="d", name="peer")
-    domain = CPVPNDomain(uid="domain", name="network-domain")
+    domain = CPVPNDomain(uid="domain", name="network-domain", members=["g", "c", "d"])
     community = CPVPNCommunity(
         uid="community", name="star", community_type="star",
         participating_gateways=["g", "c", "d"], center=["g"], satellites=["c", "d"],
@@ -72,3 +72,8 @@ def test_multiple_vti_community_candidates_remain_ambiguous():
         any(issue.relationship_status == "ambiguous" for issue in view.issues)
         for view in derived.vpn_views.views
     )
+
+
+def test_unresolved_vti_does_not_claim_route_based_vpn():
+    derived = build_checkpoint_derived_views(CheckPointConfig(vtis=[CPVTI(uid="v", name="vti0")]))
+    assert derived.vpn_views.views[0].route_based is None

@@ -97,7 +97,8 @@ def transform_services(
 
     for service in config.services:
         normalized = _expand_service(
-            service
+            service,
+            result.issues,
         )
 
         # One canonical entry: retain original name.
@@ -195,23 +196,74 @@ def transform_services(
 
 def _expand_service(
     service: FGService,
+    issues: list[ServiceTransformIssue],
 ) -> list[NormalizedService]:
     result: list[NormalizedService] = []
 
-    for protocol, raw_ports in (
-        (
-            "tcp",
-            service.tcp_portrange,
-        ),
-        (
-            "udp",
-            service.udp_portrange,
-        ),
-        (
-            "sctp",
-            service.sctp_portrange,
-        ),
-    ):
+    selector = (service.protocol or "").strip().upper()
+    if selector:
+        active_fields = {
+            "TCP": "tcp_portrange",
+            "UDP": "udp_portrange",
+            "SCTP": "sctp_portrange",
+        }
+        active_protocols = set(selector.split("/"))
+        if selector == "TCP/UDP/SCTP":
+            active_protocols = set(active_fields)
+        allowed = {
+            active_fields[name]
+            for name in active_protocols
+            if name in active_fields
+        }
+        if selector == "IP":
+            allowed.add("protocol_number")
+        elif selector in {"ICMP", "ICMP6"}:
+            allowed.update({"icmptype", "icmpcode"})
+        for field_name in (
+            "protocol_number",
+            "tcp_portrange",
+            "udp_portrange",
+            "sctp_portrange",
+            "icmptype",
+            "icmpcode",
+        ):
+            if getattr(service, field_name) is not None and field_name not in allowed:
+                issues.append(
+                    ServiceTransformIssue(
+                        vdom=service.vdom,
+                        service=service.name,
+                        message=(
+                            f"{field_name.replace('_', '-')} is configured but "
+                            f"inactive for protocol {selector}."
+                        ),
+                    )
+                )
+
+        if selector == "IP":
+            return [NormalizedService(
+                name="", vdom=service.vdom, protocol="ip",
+                protocol_number=service.protocol_number, source_name=service.name,
+            )]
+        if selector in {"ICMP", "ICMP6"}:
+            return [NormalizedService(
+                name="", vdom=service.vdom, protocol=selector.lower(),
+                icmp_type=service.icmptype, icmp_code=service.icmpcode,
+                source_name=service.name,
+            )]
+
+        selected_ports = [
+            (name.lower(), getattr(service, field_name))
+            for name, field_name in active_fields.items()
+            if name in active_protocols
+        ]
+    else:
+        selected_ports = [
+            ("tcp", service.tcp_portrange),
+            ("udp", service.udp_portrange),
+            ("sctp", service.sctp_portrange),
+        ]
+
+    for protocol, raw_ports in selected_ports:
         for token in _port_tokens(
             raw_ports
         ):
@@ -233,11 +285,9 @@ def _expand_service(
     if result:
         return result
 
-    protocol = (
-        service.protocol or ""
-    ).strip()
+    protocol = (service.protocol or "").strip()
 
-    if service.protocol_number is not None:
+    if not selector and service.protocol_number is not None:
         return [
             NormalizedService(
                 name="",
@@ -250,7 +300,7 @@ def _expand_service(
             )
         ]
 
-    if protocol.upper() in {
+    if not selector and protocol.upper() in {
         "ICMP",
         "ICMP6",
     }:

@@ -56,8 +56,8 @@ class ASADerivedVIP:
     source_context: str | None
     source_rule: Any
     source_nat_order: int | None
-    external_interface: Any = None
-    internal_interface: Any = None
+    source_nat_interface: Any = None
+    destination_nat_interface: Any = None
     mapped_address: str | None = None
     real_address: str | None = None
     mapped_service: str | None = None
@@ -211,12 +211,14 @@ def transform_nat(config: Any, relationships: Any) -> ASANATTransformResult:
             issues.append(f"VIP classification is ambiguous for NAT rule {rule.name}")
             continue
         if object_static or destination_static:
-            mapped = rule.mapped_source if object_static else rule.mapped_destination
-            real = (getattr(rel.owning_object, "value", None) if rel else None) or rule.real_source if object_static else rule.real_destination
+            mapped_ref = (rel.mapped_source if object_static else rel.mapped_destination) if rel else None
+            real_ref = rel.owning_object if object_static and rel else rel.real_destination if rel else None
+            mapped = getattr(mapped_ref, "value", None) or (rule.mapped_source if object_static else rule.mapped_destination)
+            real = (getattr(real_ref, "value", None) or rule.real_source) if object_static else (getattr(real_ref, "value", None) or rule.real_destination)
             vips.append(ASADerivedVIP(
                 rule.source_context, rule, transformed.effective_order,
-                rel.destination_interface if rel else rule.destination_interface,
-                rel.source_interface if rel else rule.source_interface,
+                (rel.source_interface if rel else None) or rule.source_interface,
+                (rel.destination_interface if rel else None) or rule.destination_interface,
                 mapped, real, rule.translated_service, rule.original_service,
                 rule.service_protocol, transformed.translation_semantics, rule.inactive,
                 tuple(issue.reason for issue in (rel.issues if rel else ())),

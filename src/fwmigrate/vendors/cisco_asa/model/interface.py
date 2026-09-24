@@ -50,6 +50,7 @@ class CiscoInterface(CiscoSourceModel):
     tunnel_source: Optional[str] = None
     tunnel_destination: Optional[str] = None
     ipsec_profile: Optional[str] = None
+    ipsec_policy_acl: Optional[str] = None
     traffic_zone_members: List[str] = Field(default_factory=list)
 
 

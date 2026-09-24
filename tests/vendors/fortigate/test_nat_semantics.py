@@ -90,6 +90,54 @@ class NatSemanticsTest(unittest.TestCase):
         self.assertEqual(result.translated_addresses, ("198.51.100.10",))
         self.assertFalse(any("non-specific" in issue for issue in result.issues))
 
+    def test_nat64_uses_its_pool_without_ordinary_nat(self):
+        result = self._policy_nat(
+            FGPolicy(policy_id=1, nat64="enable", poolname=["POOL64"]),
+            ip_pools=[FGIPPool(name="POOL64", startip="198.51.100.10", endip="198.51.100.20")],
+        )
+
+        self.assertEqual(result.translation_type, "nat64_ip_pool")
+        self.assertEqual(result.translated_addresses, ("198.51.100.10-198.51.100.20",))
+
+    def test_explicit_nat_and_nat64_are_derived_separately(self):
+        rows = transform_nat(FGConfig(
+            ip_pools=[FGIPPool(name="POOL1", startip="198.51.100.10", endip="198.51.100.10")],
+            policies=[FGPolicy(nat="enable", nat64="enable", ippool="enable", poolname=["POOL1"])],
+        ))
+
+        self.assertEqual(
+            [row.translation_type for row in rows],
+            ["ip_pool", "nat64_ip_pool"],
+        )
+
+    def test_nat64_without_pool_keeps_a_review_row(self):
+        result = self._policy_nat(FGPolicy(policy_id=1, nat64="enable"))
+
+        self.assertEqual(result.translation_type, "nat64_ip_pool")
+        self.assertEqual(result.translated_addresses, ())
+        self.assertTrue(any("No deterministic NAT64" in issue for issue in result.issues))
+
+    def test_incomplete_pool_endpoints_are_not_translations(self):
+        for pool in (
+            FGIPPool(name="POOL1", startip="198.51.100.10"),
+            FGIPPool(name="POOL1", endip="198.51.100.20"),
+        ):
+            with self.subTest(pool=pool):
+                result = self._policy_nat(
+                    FGPolicy(nat="enable", ippool="enable", poolname=["POOL1"]),
+                    ip_pools=[pool],
+                )
+                self.assertEqual(result.translated_addresses, ())
+                self.assertTrue(any("only one explicitly configured" in issue for issue in result.issues))
+
+    def test_nat64_pool_explicitly_disabling_nat64_is_reviewed(self):
+        result = self._policy_nat(
+            FGPolicy(nat64="enable", poolname=["POOL1"]),
+            ip_pools=[FGIPPool(name="POOL1", startip="198.51.100.10", endip="198.51.100.10", nat64="disable")],
+        )
+        self.assertEqual(result.translated_addresses, ("198.51.100.10",))
+        self.assertTrue(any("explicitly disables NAT64" in issue for issue in result.issues))
+
     def test_unknown_interface_keeps_existing_warning(self):
         result = self._policy_nat(
             FGPolicy(policy_id=1, nat="enable", dstintf=["missing"])

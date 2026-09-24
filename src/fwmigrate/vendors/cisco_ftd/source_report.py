@@ -56,7 +56,8 @@ def _inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
             yield from rules or []
 
     collections = (
-        ("network_addresses", "network-addresses"), ("network_groups", "network-groups"),
+        ("network_addresses", "network-addresses"), ("network_address_overrides", "network-address-overrides"),
+        ("network_groups", "network-groups"),
         ("protocol_port_objects", "protocol-port-objects"), ("port_object_groups", "port-object-groups"),
         ("applications", "applications"),
         ("virtual_routers", "virtual-routers"), ("policy_based_routes", "policy-based-routes"),
@@ -79,6 +80,9 @@ def _inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
         ("device_interfaces", "device-interfaces"),
         ("source_interfaces", "interfaces"), ("routes", "routes"),
         ("access_control_policies", "access-control-policies"),
+        ("access_control_default_actions", "access-control-default-actions"),
+        ("access_policy_inheritance_settings", "access-policy-inheritance-settings"),
+        ("policy_assignments", "policy-assignments"),
         ("time_ranges", "time-ranges"), ("intrusion_policies", "intrusion-policies"),
         ("intrusion_rule_groups", "intrusion-rule-groups"),
         ("intrusion_rule_behaviors", "intrusion-rule-behaviors"),
@@ -86,7 +90,7 @@ def _inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
         ("file_policies", "file-policies"),
         ("decryption_policies", "decryption-policies"), ("dns_policies", "dns-policies"),
         ("fmc_user_roles", "fmc-user-roles"), ("fmc_users", "fmc-users"),
-        ("dhcp_servers", "dhcp-servers"), ("realms", "realms"),
+        ("dhcp_servers", "dhcp-servers"), ("dhcp_relay_settings", "dhcp-relay-settings"), ("realms", "realms"),
         ("realm_user_groups", "realm-user-groups"), ("realm_users", "realm-users"),
         ("local_realm_users", "local-realm-users"), ("s2s_vpn_topologies", "s2s-vpn-topologies"),
         ("s2s_vpn_endpoints", "s2s-vpn-endpoints"), ("ike_policies", "ike-policies"),
@@ -178,10 +182,11 @@ def extract_cisco_ftd_source(text: str, zone_mapping: dict[str, str] | None = No
 
     def source_count(config):
         return sum(len(getattr(config, field)) for field in (
-            "network_addresses", "network_groups", "protocol_port_objects", "port_object_groups", "applications",
+            "network_addresses", "network_address_overrides", "network_groups", "protocol_port_objects", "port_object_groups", "applications",
             "file_policies", "variable_sets", "url_categories", "vlan_objects", "security_zones", "interface_groups",
             "intrusion_policies", "intrusion_rule_groups", "intrusion_rule_behaviors", "intrusion_rule_overrides",
-            "dhcp_servers", "file_policies", "decryption_policies", "dns_policies",
+            "dhcp_servers", "dhcp_relay_settings", "access_control_default_actions",
+            "access_policy_inheritance_settings", "policy_assignments", "file_policies", "decryption_policies", "dns_policies",
             "source_interfaces", "routes", "access_control_policies", "nat_policies")) + count_acp_rules(config) + count_nat_rules(config) + sum(
                 len(policy.rules or []) for policy in (*config.file_policies, *config.decryption_policies, *config.dns_policies))
 

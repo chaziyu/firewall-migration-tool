@@ -35,7 +35,7 @@ def _row(sheet: str, item: Any) -> tuple[Any, ...]:
                 _name(item.destination_interface), item.source_context, item.issues)
     if sheet == "Published Services - VIPs":
         return (item.source_rule.name, item.mapped_address, item.real_address, item.mapped_service,
-                item.real_service, item.protocol, _name(item.external_interface), _name(item.internal_interface),
+                item.real_service, item.protocol, _name(item.source_nat_interface), _name(item.destination_nat_interface),
                 item.source_nat_order, item.source_context, item.issues)
     if sheet == "Routes":
         route = item.source_route
@@ -152,12 +152,13 @@ def export_asa_excel(result: Any, output: Any) -> Any:
             for item in result.derived.nat.rules:
                 rule = item.source_rule
                 values = (rule.name, item.source_order, item.effective_order, item.ordering_status,
-                          item.section, rule.source_context, rule.syntax_family, rule.source_order_within_section,
+                item.section, rule.source_context, rule.syntax_family, rule.source_order_within_section,
                           rule.source_sequence, item.translation_semantics, rule.source_interface,
                           rule.destination_interface, rule.real_source, rule.mapped_source, rule.source_mode,
                           rule.mapped_source_mode, rule.real_destination, rule.mapped_destination,
                           rule.destination_mode, rule.original_service, rule.translated_service,
-                          rule.service_protocol, rule.owning_object, rule.access_list, rule.pat_pool,
+                          rule.service_protocol, rule.service_operand_1, rule.service_operand_2,
+                          rule.owning_object, rule.access_list, rule.pat_pool,
                           rule.pat_pool_options, rule.identity_nat, rule.nat_exemption, rule.dns,
                           rule.no_proxy_arp, rule.route_lookup, rule.unidirectional, rule.inactive,
                           rule.options, item.issues, rule.raw_line)

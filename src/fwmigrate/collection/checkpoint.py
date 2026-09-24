@@ -88,22 +88,30 @@ class CheckPointCollector:
         bundle = CheckPointExportBundle(selected_domain=options["domain"] or None,
                                        selected_package=options["package"] or None,
                                        selected_access_layer=options["layer"] or None,
-                                       selected_gateway=options["gateway"] or None)
+                                       selected_gateway=options["gateway"] or None,
+                                       management_server=options["host"],
+                                       requested_scope={key: options[key] or None for key in ("domain", "package", "layer", "gateway")})
         parts = []
         try:
             for command, spec in R81_COMMAND_REGISTRY.items():
                 selector = {"ACCESS_LAYER": ("name", options["layer"]), "PACKAGE": ("package", options["package"])}.get(spec.scope_type)
+                if command == "show-access-rulebase" and not options["layer"]:
+                    layers = [item for response in bundle.responses if response.command == "show-access-layers"
+                              for item in response.data.get("objects", []) if isinstance(item, dict) and item.get("name")]
+                    if layers:
+                        for item in layers:
+                            self._collect_command(session, base, command, spec, ("name", item["name"]), bundle, parts, options)
+                        continue
                 if selector and not selector[1]:
                     status = CPStatus.UNSUPPORTED_COMMAND if not spec.required else CPStatus.API_ERROR
+                    scope = self._response_scope(spec, options)
                     response = CheckPointResponse(command=command, data={}, collection_status=status, error="Scope selector required",
-                                                  domain=options["domain"] or None, package=options["package"] or None,
-                                                  layer=options["layer"] or None, gateway=options["gateway"] or None)
+                                                  scope_type=spec.scope_type.lower(), **scope)
                     bundle.responses.append(response)
                     parts.append(CollectionPart(command, status.value, False))
-                    bundle.collection_completeness[command] = CollectionCompletenessRecord(command=command, status=status, complete=False,
-                                                                                           domain=options["domain"] or None, package=options["package"] or None,
-                                                                                           layer=options["layer"] or None, gateway=options["gateway"] or None,
-                                                                                           error_message="Scope selector required")
+                    key = self._operation_key(command, scope)
+                    bundle.collection_completeness[key] = CollectionCompletenessRecord(command=command, status=status, complete=False,
+                                                                                       error_message="Scope selector required", **scope)
                     continue
                 self._collect_command(session, base, command, spec, selector, bundle, parts, options)
             if options["gaia_host"]:
@@ -122,12 +130,20 @@ class CheckPointCollector:
                                {"domain": options["domain"], "package": options["package"]}, tuple(parts),
                                tuple(f"{part.name}: collection incomplete" for part in parts if not part.complete)[:30])
 
-    def _collect_command(self, session, base, command, spec, selector, bundle, parts, options):
+    def _collect_command(self, session, base, command, spec, selector, bundle, parts, options,
+                         parent_layer_uid=None, parent_rule_uid=None, seen_inline=None):
         offset = 0
-        scope = {"domain": options["domain"] or None, "package": options["package"] or None,
-                 "layer": options["layer"] or None, "gateway": options["gateway"] or None}
+        scope = self._response_scope(spec, options, selector)
+        operation_key = self._operation_key(command, scope)
+        page_records = []
+        inline_entries = []
+        seen_inline = set() if seen_inline is None else seen_inline
+        if command == "show-access-rulebase" and selector:
+            seen_inline.add(str(selector[1]).casefold())
         for page in range(100):
             payload = {"limit": 500, "offset": offset} if spec.pagination_required else {}
+            if spec.details_level_full:
+                payload["details-level"] = "full"
             if selector:
                 payload[selector[0]] = selector[1]
             try:
@@ -143,23 +159,34 @@ class CheckPointCollector:
                     raise CollectionError("Check Point returned an unexpected item list.")
                 status = CPStatus.SUCCESS_WITH_DATA if items else CPStatus.SUCCESS_EMPTY
                 total = data.get("total", len(items))
-                record = CheckPointResponse(command=command, data=sanitize_source_attributes(data),
-                                            domain=options["domain"] or None, package=options["package"] or None,
-                                            layer=options["layer"] or None, gateway=options["gateway"] or None,
+                record = CheckPointResponse(command=command, data=sanitize_source_attributes(data), **scope,
+                                            scope_type=spec.scope_type.lower(),
+                                            parent_layer_uid=parent_layer_uid, parent_rule_uid=parent_rule_uid,
                                             collection_status=status, object_count=len(items),
                                             from_index=data.get("from", offset + 1), to_index=data.get("to", offset + len(items)), total=total)
                 bundle.responses.append(record)
+                page_records.append(record)
+                inline_entries.extend(items)
                 parts.append(CollectionPart(command, status.value, True, len(items)))
                 to_index = data.get("to", offset + len(items))
-                bundle.collection_completeness[command] = CollectionCompletenessRecord(command=command, status=status, complete=True, object_count=to_index, **scope)
+                bundle.collection_completeness[operation_key] = CollectionCompletenessRecord(command=command, status=status, complete=True, object_count=to_index, **scope)
                 if not spec.pagination_required or to_index >= total:
-                    pages = [item for item in bundle.responses if item.command == command]
-                    valid, _ = validate_pagination(pages)
+                    valid, _ = validate_pagination(page_records)
                     if not valid:
-                        bundle.collection_completeness[command].complete = False
-                        bundle.collection_completeness[command].status = CPStatus.API_ERROR
-                        bundle.collection_completeness[command].error_message = "Pagination metadata is inconsistent."
+                        bundle.collection_completeness[operation_key].complete = False
+                        bundle.collection_completeness[operation_key].status = CPStatus.API_ERROR
+                        bundle.collection_completeness[operation_key].error_message = "Pagination metadata is inconsistent."
                         parts.append(CollectionPart(command, CPStatus.API_ERROR.value, False))
+                    elif command == "show-access-rulebase":
+                        root_uid = next((item.data.get("uid") for item in page_records if item.data.get("uid")), None)
+                        for rule in self._inline_references(inline_entries):
+                            reference = rule.get("inline-layer")
+                            child_name = self._inline_layer_name(reference, bundle)
+                            if not child_name or child_name.casefold() in seen_inline:
+                                continue
+                            seen_inline.add(child_name.casefold())
+                            self._collect_command(session, base, command, spec, ("name", child_name), bundle, parts, options,
+                                                  parent_layer_uid=root_uid, parent_rule_uid=rule.get("uid"), seen_inline=seen_inline)
                     return
                 if not items:
                     raise CollectionError("Check Point pagination stopped early.")
@@ -172,10 +199,57 @@ class CheckPointCollector:
                 bundle.responses.append(CheckPointResponse(command=command, data={}, collection_status=status,
                                                             error="Collection request failed.", **scope))
                 parts.append(CollectionPart(command, status.value, False))
-                bundle.collection_completeness[command] = CollectionCompletenessRecord(command=command, status=status, complete=False, error_message="Collection request failed.", **scope)
+                bundle.collection_completeness[operation_key] = CollectionCompletenessRecord(command=command, status=status, complete=False, error_message="Collection request failed.", **scope)
                 return
         parts.append(CollectionPart(command, CPStatus.API_ERROR.value, False))
-        bundle.collection_completeness[command] = CollectionCompletenessRecord(command=command, status=CPStatus.API_ERROR, complete=False, error_message="Pagination page limit exceeded.", **scope)
+        bundle.collection_completeness[operation_key] = CollectionCompletenessRecord(command=command, status=CPStatus.API_ERROR, complete=False, error_message="Pagination page limit exceeded.", **scope)
+
+    @staticmethod
+    def _response_scope(spec, options, selector=None):
+        scope = {}
+        if spec.scope_type != "GLOBAL":
+            scope["domain"] = options["domain"] or None
+        if spec.scope_type == "PACKAGE":
+            scope["package"] = (selector[1] if selector else options["package"]) or None
+        elif spec.scope_type == "ACCESS_LAYER":
+            scope["package"] = options["package"] or None
+            scope["layer"] = (selector[1] if selector else options["layer"]) or None
+        return scope
+
+    @staticmethod
+    def _operation_key(command, scope):
+        identity = "|".join(f"{key}={scope[key]}" for key in ("domain", "package", "layer", "gateway") if scope.get(key))
+        return f"{command}|{identity}" if identity else command
+
+    @staticmethod
+    def _inline_references(rulebase):
+        result = []
+        def walk(value):
+            if isinstance(value, dict):
+                if str(value.get("type", "")).lower() == "access-rule" and value.get("inline-layer"):
+                    result.append(value)
+                for child in value.values():
+                    if isinstance(child, (dict, list)): walk(child)
+            elif isinstance(value, list):
+                for child in value: walk(child)
+        walk(rulebase)
+        return result
+
+    @staticmethod
+    def _inline_layer_name(reference, bundle):
+        if isinstance(reference, dict):
+            if reference.get("name"):
+                return str(reference["name"])
+            uid = reference.get("uid")
+        else:
+            uid = None
+        key = uid or reference
+        for response in bundle.responses:
+            if response.command == "show-access-layers":
+                for layer in response.data.get("objects", []):
+                    if isinstance(layer, dict) and (layer.get("uid") == key or layer.get("name") == key):
+                        return str(layer.get("name") or "") or None
+        return str(reference) if not isinstance(reference, dict) and reference else None
 
     def _collect_gaia(self, options, bundle, parts):
         connection = None

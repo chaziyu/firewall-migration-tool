@@ -32,3 +32,29 @@ def test_policy_view_resolves_named_addresses_applications_and_scheduler():
     ])).extract_source()
     view = build_juniper_derived_views(config).policy_relationships[0]
     assert all(edge["resolved"] for edge in view["edges"])
+
+
+def test_excel_policy_projection_keeps_zone_and_global_orders_separate():
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    from fwmigrate.vendors.juniper_srx.source_report import extract_juniper_source
+    from fwmigrate.vendors.juniper_srx.export.excel import export_juniper_excel
+
+    result = extract_juniper_source("\n".join([
+        "set security policies from-zone a to-zone b policy P1 then permit",
+        "set security policies from-zone a to-zone b policy P2 then deny",
+        "set security policies from-zone c to-zone d policy P3 then permit",
+        "set security policies global policy G1 then permit",
+        "set security policies global policy G2 then deny",
+    ]))
+    output = BytesIO()
+    export_juniper_excel(result, output)
+    output.seek(0)
+    rows = list(load_workbook(output, read_only=True)["Policies"].values)
+    assert rows[0] == ("Context", "Policy Scope", "From Zone", "To Zone", "Name", "Order")
+    assert [row[1:] for row in rows[1:]] == [
+        ("zone", "a", "b", "P1", 0), ("zone", "a", "b", "P2", 1),
+        ("zone", "c", "d", "P3", 0), ("global", None, None, "G1", 0), ("global", None, None, "G2", 1),
+    ]

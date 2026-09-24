@@ -11,7 +11,7 @@ class GaiaCommandFamily:
 GAIA_COMMAND_FAMILIES = (
     GaiaCommandFamily("interface", (("interface",),)),
     GaiaCommandFamily("static-route-ipv4", (("static-route",), ("route", "static"))),
-    GaiaCommandFamily("static-route-ipv6", (("ipv6", "route", "static"),)),
+    GaiaCommandFamily("static-route-ipv6", (("ipv6", "route", "static"), ("ipv6", "static-route"))),
     GaiaCommandFamily("dhcp-server", (("dhcp", "server"), ("dhcp-server",))),
     GaiaCommandFamily("gaia-user", (("user",), ("users",))),
     GaiaCommandFamily("gaia-rba-role", (("rba", "role"), ("rba", "roles"))),

@@ -8,6 +8,7 @@ from fwmigrate.vendors.cisco_ftd.source_report import CiscoFTDSourceReporter, ex
 from fwmigrate.vendors.cisco_ftd.derived import build_ftd_derived_views
 from fwmigrate.vendors.cisco_ftd.validation import validate_ftd_config
 from fwmigrate.vendors.cisco_ftd.export.excel import export_ftd_excel
+from fwmigrate.vendors.cisco_ftd.web_report import build_ftd_preview
 
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "cisco_ftd" / "fmc_selected_domains.json"
@@ -208,6 +209,87 @@ def test_fmc_dhcp_interface_reference_is_typed_scoped_and_keeps_missing_state():
     missing = CiscoFMCBundleParser(json.dumps(payload)).parse_source().dhcp_servers[0]
     assert missing.interface is None
     assert "interface" not in missing.explicit_fields
+
+
+def test_fmc_override_acp_assignment_ips_and_dhcp_source_state_remain_separate():
+    payload = {
+        "format": "cisco-fmc-rest-export-v1", "domain": {"id": "d1", "name": "Global"},
+        "access_policies": [
+            {"id": "base-acp", "name": "Base", "rules": []},
+            {"id": "child-acp", "name": "Child", "description": "Child policy", "metadata": {
+                "inherit": False, "parentPolicy": {"id": "base-acp", "name": "Base", "type": "AccessPolicy"}},
+             "defaultAction": {"id": "default-1", "name": "Default", "type": "AccessPolicyDefaultAction"},
+             "identityPolicy": {"id": "identity-1", "name": "Identity", "type": "IdentityPolicy"},
+             "default_actions": [{"id": "default-1", "name": "Default", "action": "BLOCK"}], "rules": []},
+        ],
+        "objects": {"networkaddresses": [{"id": "net-1", "name": "Shared", "type": "Host", "value": "10.0.0.1"}],
+            "network_address_overrides": [
+                {"id": "ov-1", "name": "Shared", "type": "Host", "value": "10.0.0.2",
+                 "overridable": True, "overrides": {"parent": {"id": "net-1", "name": "Shared", "type": "Host"},
+                    "target": {"id": "dev-1", "name": "FTD-A", "type": "Device"}}, "password": "must-not-leak"},
+                {"id": "ov-2", "name": "Shared", "type": "Host", "value": "10.0.0.3",
+                 "overrides": {"parent": {"id": "net-1", "name": "Shared", "type": "Host"},
+                    "target": {"id": "dev-2", "name": "FTD-B", "type": "Device"}}}],
+            "intrusionpolicies": [{"id": "ips-1", "name": "IPS", "rules": [
+                {"id": "beh-1", "ruleId": "sig-1", "state": "enabled", "action": "alert"}],
+                "overrides": [{"id": "ov-rule-1", "ruleId": "sig-1", "state": "disabled"}]}],
+            "policy_assignments": [{"id": "assignment-1", "name": "ACP assignment", "policy":
+                {"id": "child-acp", "name": "Child", "type": "AccessPolicy"}, "targets": [
+                {"id": "dev-1", "name": "FTD-A", "type": "Device"}, {"id": "dev-2", "name": "FTD-B", "type": "Device"}]}]},
+        "devices": [{"id": "dev-1", "name": "FTD-A", "resources": {
+            "dhcp_servers": [{"id": "dhcp-1", "name": "DHCP", "interfaceName": "inside", "addressPool": "10.0.0.10-10.0.0.20"}],
+            "dhcp_relay_settings": [{"id": "relay-1", "name": "Relay", "dhcpRelayAgent": [], "dhcpRelayServers": [],
+                "ipv4TimeoutInSec": "20", "trustAllInformation": True}],
+            "ftd_interfaces": [{"id": "if-1", "name": "GigabitEthernet0/0.10", "interfaceType": "SubInterface"}],
+            "static_routes": [{"id": "route-1", "name": "inside-route", "network": {"id": "net-1", "name": "Shared", "type": "Host"}, "addressFamily": "IPv4"}],
+        }}],
+    }
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    config = result.config
+
+    assert config.network_addresses[0].value == "10.0.0.1"
+    assert [item.value for item in config.network_address_overrides] == ["10.0.0.2", "10.0.0.3"]
+    assert config.network_address_overrides[0].parent.source_id == "net-1"
+    assert config.network_address_overrides[0].target.name == "FTD-A"
+    assert config.access_control_policies[1].inherit is False
+    assert config.access_control_policies[1].base_policy.source_id == "base-acp"
+    assert len(config.access_control_default_actions) == 1
+    assert len(config.policy_assignments[0].targets) == 2
+    assert [(item.rule_id, item.state) for item in config.intrusion_rule_overrides] == [("sig-1", "disabled")]
+    assert config.dhcp_relay_settings[0].ipv4_timeout_seconds == "20"
+    assert "dhcpRelayAgent" not in config.dhcp_servers[0].raw_extra
+
+    before = config.model_dump()
+    assert any(item["field"] == "parent" and item["target_id"] == "net-1"
+               for item in result.derived.resolved_references)
+    assert any(item.source_name == "inside-route" and item.normalized_destination == "10.0.0.1/32"
+               for item in result.derived.normalized_routes), result.derived.normalized_routes
+    assert any(item.category == "dhcp-server-relay-conflict" for item in result.validation.issues)
+    assert any(item.device_id == "dev-1" and item.name == "GigabitEthernet0/0.10"
+               for item in result.derived.interface_topology.interfaces)
+    assert config.model_dump() == before
+
+    preview = result
+    output = BytesIO()
+    export_ftd_excel(preview, output)
+    output.seek(0)
+    workbook = load_workbook(output, read_only=True)
+    assert workbook["Object Overrides"].max_row == 3
+    assert workbook["ACP Policies"].max_row == 3
+    assert workbook["DHCP"].max_row == 3
+    assert "must-not-leak" not in json.dumps(config.model_dump())
+
+
+def test_failed_override_collection_is_not_reported_as_known_empty_or_capability_missing():
+    payload = {"format": "cisco-fmc-rest-export-v1", "domain": {"id": "d1"}, "objects": {},
+        "coverage": {"network_address_overrides": {"status": "AVAILABLE"}},
+        "collection": {"status": "PARTIAL", "parts": [
+            {"name": "network_address_overrides", "status": "FAILED", "complete": False, "count": 0}]}}
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    preview = build_ftd_preview(result)
+    assert result.config.network_address_overrides == []
+    assert result.derived.source_plane_completeness["network_address_overrides"] == "failed"
+    assert preview["capability_coverage"]["network_address_overrides"]["status"] == "AVAILABLE"
 
 
 def test_canonical_networkaddresses_suppresses_historical_duplicates():

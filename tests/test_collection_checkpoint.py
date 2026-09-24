@@ -53,7 +53,16 @@ def test_checkpoint_bundle_keeps_command_status_and_gaia_separate(monkeypatch):
     bundle = json.loads(source.source_text)
     assert "do-not-save" not in source.source_text
     assert bundle["gaia_responses"] and bundle["responses"]
-    assert bundle["collection_completeness"]["show-hosts"]["status"] == CPStatus.SUCCESS_WITH_DATA.value
+    assert bundle["collection_completeness"]["show-hosts|domain=D"]["status"] == CPStatus.SUCCESS_WITH_DATA.value
+    host_response = next(item for item in bundle["responses"] if item["command"] == "show-hosts")
+    assert host_response["domain"] == "D"
+    assert not any(host_response.get(key) for key in ("package", "layer", "gateway"))
+    nat_response = next(item for item in bundle["responses"] if item["command"] == "show-nat-rulebase")
+    layer_response = next(item for item in bundle["responses"] if item["command"] == "show-access-rulebase")
+    assert nat_response["package"] == "P" and nat_response.get("layer") is None
+    assert layer_response["layer"] == "L" and layer_response["package"] == "P"
+    assert bundle["management_server"] == "mgmt"
+    assert bundle["requested_scope"] == {"domain": "D", "package": "P", "layer": "L", "gateway": "G"}
     assert set(commands[1:-1]).isdisjoint({"publish", "install-policy", "delete"})
     assert disconnected == ["gaia", "api"] or disconnected == ["api", "gaia"]
     assert CheckPointSourceReporter().analyze_source(source.source_text)
@@ -152,3 +161,59 @@ def test_checkpoint_inconsistent_pagination_is_partial(monkeypatch):
     source = collector.collect(collector.validate_options({"host": "mgmt", "username": "u", "password": "p"}))
     assert source.status.value == "PARTIAL"
     assert json.loads(source.source_text)["collection_completeness"]["show-hosts"]["complete"] is False
+
+
+def test_inline_rulebase_collection_is_recursive_and_scoped(monkeypatch):
+    from fwmigrate.collection import checkpoint as module
+    from fwmigrate.vendors.checkpoint.models import CheckPointExportBundle, CheckPointResponse
+    spec = R81CommandSpec("show-access-rulebase", expected_response_shape="rulebase", scope_type="ACCESS_LAYER", required=True)
+    monkeypatch.setattr(module, "R81_COMMAND_REGISTRY", {"show-access-rulebase": spec})
+    requests_seen = []
+
+    class Session:
+        headers = {}
+        def post(self, url, **kwargs):
+            payload = kwargs["json"]
+            requests_seen.append(payload)
+            if payload["name"] == "root":
+                return Response({"uid": "root-uid", "name": "root", "rulebase": [
+                    {"type": "access-rule", "uid": "parent-rule", "inline-layer": {"uid": "child-uid"}},
+                ], "from": 1, "to": 1, "total": 1})
+            return Response({"uid": "child-uid", "name": "child", "rulebase": [], "from": 1, "to": 0, "total": 0})
+
+    collector = CheckPointCollector()
+    bundle = CheckPointExportBundle()
+    bundle.responses.append(CheckPointResponse(command="show-access-layers", data={"objects": [
+        {"uid": "child-uid", "name": "child"},
+    ]}))
+    parts = []
+    collector._collect_command(Session(), "https://mgmt/web_api/", "show-access-rulebase", spec,
+                               ("name", "root"), bundle, parts, {"domain": "D", "package": "P", "layer": "root"})
+    assert [item["name"] for item in requests_seen] == ["root", "child"]
+    child = bundle.responses[-1]
+    assert child.parent_layer_uid == "root-uid" and child.parent_rule_uid == "parent-rule"
+    assert "show-access-rulebase|domain=D|package=P|layer=root" in bundle.collection_completeness
+    assert "show-access-rulebase|domain=D|package=P|layer=child" in bundle.collection_completeness
+
+
+def test_full_details_is_limited_to_marked_commands(monkeypatch):
+    from fwmigrate.collection import checkpoint as module
+    monkeypatch.setattr(module, "R81_COMMAND_REGISTRY", {
+        "show-hosts": R81CommandSpec("show-hosts", details_level_full=True),
+        "show-services-tcp": R81CommandSpec("show-services-tcp"),
+    })
+    payloads = []
+
+    class Session:
+        headers = {}
+        def post(self, url, **kwargs):
+            if url.endswith("login"): return Response({"sid": "sid"})
+            if url.endswith("logout"): return Response({})
+            payloads.append(kwargs["json"])
+            return Response({"objects": [], "from": 0, "to": 0, "total": 0})
+        def close(self): pass
+
+    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=Session))
+    CheckPointCollector().collect(CheckPointCollector().validate_options({"host": "mgmt", "username": "u", "password": "p"}))
+    assert payloads[0]["details-level"] == "full"
+    assert "details-level" not in payloads[1]

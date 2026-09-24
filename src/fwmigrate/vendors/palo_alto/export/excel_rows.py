@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Iterator
+import xml.etree.ElementTree as ET
+from pydantic import BaseModel
 
 from ..schema_registry import match_path_spec, registered_paths
 from ..source_model import PANScope, pan_scope_identity
@@ -34,6 +36,7 @@ _TYPED_COUNT_FIELDS = {
     "ipsec_tunnel": "ipsec_tunnels",
     "vulnerability_profile": "vulnerability_profiles",
     "administrator": "administrators",
+    "administrator_mgt_config": "administrators",
     "admin_role": "admin_roles",
     "ike_gateway": "ike_gateways",
     "ike_crypto_profile": "ike_crypto_profiles",
@@ -53,10 +56,14 @@ _TYPED_COUNT_FIELDS = {
     "sdwan_rule": "sdwan_rules",
     "local_user": "local_users",
     "local_user_database": "local_users",
+    "local_user_database_compat": "local_users",
     "local_user_group": "local_user_groups",
+    "local_user_group_compat": "local_user_groups",
     "group_mapping": "group_mappings",
     "globalprotect_portal": "globalprotect_portals",
     "globalprotect_gateway": "globalprotect_gateways",
+    "globalprotect_portal_selected": "globalprotect_portals",
+    "globalprotect_gateway_selected": "globalprotect_gateways",
 }
 
 
@@ -82,10 +89,11 @@ class _PANExcelContext:
     source_name: str | None = None
     validation_by_object: dict[tuple[str, str, str, str | None], tuple[Any, ...]] = field(init=False)
     validation_by_scope: dict[str, tuple[Any, ...]] = field(init=False)
-    typed_identities: set[tuple[str, str | None, str]] = field(init=False)
+    typed_identities: dict[tuple[str, str | None, str, int | None], list[Any]] = field(init=False)
     typed_paths: set[str] = field(init=False)
     source_domains: Counter = field(init=False)
     extracted_domains: Counter = field(init=False)
+    domain_statuses: dict[str, list[str]] = field(init=False)
 
     def __post_init__(self) -> None:
         objects: dict[tuple[str, str, str, str | None], list[Any]] = defaultdict(list)
@@ -103,16 +111,22 @@ class _PANExcelContext:
         self.validation_by_object = {key: tuple(value) for key, value in objects.items()}
         self.validation_by_scope = {key: tuple(value) for key, value in scopes.items()}
         typed = (item for field in set(_TYPED_COUNT_FIELDS.values()) | {"static_routes"} for item in getattr(self.analysis.config, field))
-        self.typed_identities = {(item.source_path, getattr(item, "name", None), _scope_key(getattr(item, "scope", None))) for item in typed}
-        self.typed_paths = {path for path, _, _ in self.typed_identities}
+        typed_by_identity: dict[tuple[str, str | None, str, int | None], list[Any]] = defaultdict(list)
+        for item in typed:
+            typed_by_identity[(item.source_path, getattr(item, "name", None), _scope_key(getattr(item, "scope", None)), getattr(item, "source_order", None))].append(item)
+        self.typed_identities = dict(typed_by_identity)
+        self.typed_paths = {path for path, _, _, _ in self.typed_identities}
         source_domains: Counter = Counter()
         extracted_domains: Counter = Counter()
+        domain_statuses: dict[str, list[str]] = defaultdict(list)
         for record in self.config.source_inventory:
             domain = _source_domain(record)
             source_domains[domain] += 1
-            if _inventory_status(self, record) == "EXTRACTED":
+            status = _inventory_status(self, record)
+            domain_statuses[domain].append(status)
+            if status == "EXTRACTED":
                 extracted_domains[domain] += 1
-        self.source_domains, self.extracted_domains = source_domains, extracted_domains
+        self.source_domains, self.extracted_domains, self.domain_statuses = source_domains, extracted_domains, domain_statuses
 
     @property
     def config(self): return self.analysis.config
@@ -224,6 +238,29 @@ def _vulnerability_profile_rows(context: _PANExcelContext) -> list[dict[str, Any
     return rows
 
 
+def _vulnerability_child_rows(context: _PANExcelContext, child_attr: str) -> list[dict[str, Any]]:
+    rows = []
+    is_exception = child_attr == "exceptions"
+    for profile in context.config.vulnerability_profiles:
+        for child in getattr(profile, child_attr, None) or ():
+            row = _base(context, profile, "vulnerability-exception" if is_exception else "vulnerability-rule")
+            block_ip = child.block_ip
+            row.update({"Profile": profile.name,
+                        "Rule Name" if not is_exception else "Exception Name": child.name,
+                        "Threat Name": getattr(child, "threat_name", None), "Host": getattr(child, "host", None),
+                        "Vendor IDs": _text(getattr(child, "vendor_ids", None)), "Severities": _text(getattr(child, "severities", None)),
+                        "Category": getattr(child, "category", None), "Action": child.action,
+                        "Block IP Track By": block_ip.track_by if block_ip else None,
+                        "Block IP Duration": block_ip.duration if block_ip else None,
+                        "Packet Capture": child.packet_capture,
+                        "Time Interval": getattr(child, "time_interval", None), "Time Threshold": getattr(child, "time_threshold", None),
+                        "Time Track By": getattr(child, "time_track_by", None),
+                        "Exempt IP Configuration": _text(getattr(child, "exempt_ips", None)),
+                        "Additional Settings": _text(child.raw_extra)})
+            rows.append(row)
+    return rows
+
+
 def _address_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in context.config.addresses:
         variants = [(name, getattr(item, name)) for name in ("ip_netmask", "ip_range", "ip_wildcard", "fqdn") if getattr(item, name) is not None]
@@ -247,7 +284,7 @@ def _service_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
             override = value.override if value else None
             row = _base(context, item, "service")
             row.update({"Protocol": protocol, "Destination Port": value.port if value else None, "Source Port": value.source_port if value else None,
-                        "Override Enabled": "yes" if override else None, "Timeout": override.timeout if override else None,
+                        "Override Enabled": override.enabled if override else None, "Timeout": override.timeout if override else None,
                         "Half-Close Timeout": override.halfclose_timeout if override else None, "Time-Wait Timeout": override.timewait_timeout if override else None,
                         "Tags": _text(item.tags), "Description": item.description})
             yield row
@@ -286,8 +323,18 @@ def _security_policy_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]
                     "Rule Type": getattr(item, "rule_type", None), "From Zones": _text(getattr(item, "from_zones", None)), "To Zones": _text(getattr(item, "to_zones", None)),
                     "Source Addresses": _text(getattr(item, "source", None)), "Source Negate": getattr(item, "negate_source", None), "Source Users": _text(getattr(item, "source_user", None)),
                     "Destination Addresses": _text(getattr(item, "destination", None)), "Destination Negate": getattr(item, "negate_destination", None),
+                    "Source HIP": _text(getattr(item, "source_hip", None)), "Destination HIP": _text(getattr(item, "destination_hip", None)),
                     "Applications": _text(getattr(item, "application", None)), "Services": _text(getattr(item, "service", None)), "Categories": _text(getattr(item, "category", None)),
                     "Schedule": getattr(item, "schedule", None), "Tags": _text(item.tags), "Action": item.action, "Disabled": item.disabled,
+                    "ICMP Unreachable": getattr(item, "icmp_unreachable", None), "Disable Inspect": getattr(item, "disable_inspect", None),
+                    "Group Tag": getattr(item, "group_tag", None),
+                    "URL Filtering": _text((profile.profiles or {}).get("url-filtering") if profile else None),
+                    "Data Filtering": _text((profile.profiles or {}).get("data-filtering") if profile else None),
+                    "File Blocking": _text((profile.profiles or {}).get("file-blocking") if profile else None),
+                    "WildFire Analysis": _text((profile.profiles or {}).get("wildfire-analysis") if profile else None),
+                    "Antivirus": _text((profile.profiles or {}).get("virus") if profile else None),
+                    "Anti-Spyware": _text((profile.profiles or {}).get("spyware") if profile else None),
+                    "Vulnerability Profile": _text((profile.profiles or {}).get("vulnerability") if profile else None),
                     "Profile Group": _text(profile.groups if profile else None), "Log Setting": item.log_setting, "Log Start": item.log_start, "Log End": item.log_end,
                     "Description": item.description, "Resolved Source References": _reference_text(context, item, {"source"}),
                     "Resolved Destination References": _reference_text(context, item, {"destination"})})
@@ -306,10 +353,13 @@ def _nat_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
                     "Source Translated Addresses": _text(getattr(source, "translated_addresses", None) or getattr(source, "translated_address", None)),
                     "Source Interface": getattr(source, "interface", None), "Source IP": getattr(source, "ip", None), "Source Bi-Directional": getattr(source, "bi_directional", None),
                     "Destination Translated Address": getattr(destination, "translated_address", None), "Destination Translated Port": getattr(destination, "translated_port", None),
+                    "Destination Translation Type": "destination-translation" if destination else "dynamic-destination-translation" if dynamic else None,
+                    "Destination DNS Rewrite": ("yes" if destination.dns_rewrite else None) if destination else getattr(getattr(dynamic, "dns_rewrite", None), "enabled", None),
+                    "DNS Rewrite Direction": getattr(getattr(destination, "dns_rewrite", None), "direction", None) or getattr(getattr(dynamic, "dns_rewrite", None), "direction", None),
                     "Dynamic Destination Address": _text(getattr(dynamic, "translated_addresses", None)), "Dynamic Destination Port": getattr(dynamic, "translated_port", None),
                     "Dynamic Destination Distribution": getattr(dynamic, "distribution", None), "Derived Source Translation Mode": derived.source_translation_mode if derived else None,
                     "Derived Destination Translation Mode": derived.destination_translation_mode if derived else None,
-                    "Resolved Translation References": _text(derived.translated_references if derived else ()), "Disabled": item.disabled, "Tags": _text(item.tags), "Description": item.description})
+                    "Resolved Translation References": _text(f"{resolution.reference_name} -> {resolution.status}" for resolution in context.derived.reference_resolutions if resolution.owner_name == item.name and _scope_id(resolution.source_scope) == _scope_id(item.scope) and resolution.owner_family == "nat" and resolution.owner_field.startswith(("source_translation.", "destination_translation.", "dynamic_destination_translation."))), "Disabled": item.disabled, "Tags": _text(item.tags), "Description": item.description})
         yield row
 
 
@@ -325,7 +375,9 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
                     "Layer": _text(item.mode), "IPv4 Addresses": _text(item.ipv4_addresses),
                     "IPv6 Addresses": _text(address.address for address in item.ipv6_addresses or ()), "Imported VSYS": _text(view.imported_vsys if view else ()),
                     "Zone": _text(view.zones if view else ()), "Virtual Router": _text(view.virtual_routers if view else ()),
-                    "Topology Issues": _text(view.issues if view else ()), "Description": item.comment})
+                    "Topology Issues": _text(view.issues if view else ()), "Description": item.comment,
+                    "SD-WAN Enabled": item.sdwan_enabled, "IPv6 SD-WAN Enabled": item.ipv6_sdwan_enabled,
+                    "SD-WAN Interface Profile": item.sdwan_interface_profile, "Upstream NAT": item.upstream_nat})
         rows.append(row)
         for unit in context.config.interface_units:
             if unit.parent == item.name:
@@ -337,6 +389,8 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
                                  "IPv4 Addresses": _text(unit.ipv4_addresses), "IPv6 Addresses": _text(address.address for address in unit.ipv6_addresses or ()),
                                  "Imported VSYS": _text(unit_view.imported_vsys if unit_view else ()), "Zone": _text(unit_view.zones if unit_view else ()),
                                  "Virtual Router": _text(unit_view.virtual_routers if unit_view else ()), "Topology Issues": _text(unit_view.issues if unit_view else ())})
+                unit_row.update({"SD-WAN Enabled": unit.sdwan_enabled, "IPv6 SD-WAN Enabled": unit.ipv6_sdwan_enabled,
+                                 "SD-WAN Interface Profile": unit.sdwan_interface_profile, "Upstream NAT": unit.upstream_nat})
                 rows.append(unit_row)
     for unit in context.config.interface_units:
         if unit.parent and any(item.name == unit.parent for item in context.config.interfaces):
@@ -349,6 +403,8 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
                     "IPv6 Addresses": _text(address.address for address in unit.ipv6_addresses or ()),
                     "Imported VSYS": _text(unit_view.imported_vsys if unit_view else ()), "Zone": _text(unit_view.zones if unit_view else ()),
                     "Virtual Router": _text(unit_view.virtual_routers if unit_view else ()), "Topology Issues": _text(unit_view.issues if unit_view else ())})
+        row.update({"SD-WAN Enabled": unit.sdwan_enabled, "IPv6 SD-WAN Enabled": unit.ipv6_sdwan_enabled,
+                    "SD-WAN Interface Profile": unit.sdwan_interface_profile, "Upstream NAT": unit.upstream_nat})
         rows.append(row)
     return rows
 
@@ -362,8 +418,28 @@ def _route_rows(context: _PANExcelContext, logical: bool) -> Iterator[dict[str, 
                 row.update({"Logical Router" if logical else "Virtual Router": router.name, "VRF": vrf, "Route Name": item.name,
                             "Source Order": item.source_order, "Address Family": item.address_family, "Destination": item.destination,
                             "Next Hop Type": item.nexthop_type, "Next Hop": item.nexthop_ip_address or item.nexthop, "Interface": item.interface,
-                            "Admin Distance": item.admin_distance, "Metric": item.metric, "Route Table": item.route_table, "BFD Profile": item.bfd_profile})
+                            "Admin Distance": item.admin_distance, "Metric": item.metric, "Route Table": item.route_table, "BFD Profile": item.bfd_profile,
+                            "Path Monitor Enabled": item.path_monitor.enabled if item.path_monitor else None,
+                            "Path Monitor Failure Condition": item.path_monitor.failure_condition if item.path_monitor else None,
+                            "Path Monitor Hold Time": item.path_monitor.hold_time if item.path_monitor else None})
                 yield row
+
+
+def _route_path_monitor_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
+    for logical, routers in ((False, context.config.virtual_routers), (True, context.config.logical_routers)):
+        for router in routers:
+            groups = ((vrf.name, vrf.static_routes or ()) for vrf in router.vrfs or ()) if logical else ((None, router.static_routes or ()),)
+            for vrf, routes in groups:
+                for route in routes:
+                    for target in route.path_monitor.targets or () if route.path_monitor else ():
+                        row = _base(context, route, "route")
+                        row.update({"Router Type": "logical-router" if logical else "virtual-router", "Router": router.name,
+                                    "VRF": vrf, "Route Name": route.name, "Monitor Name": target.name,
+                                    "Enabled": target.enabled, "Source": target.source, "Destination": target.destination,
+                                    "Destination FQDN": target.destination_fqdn, "Interval": target.interval, "Count": target.count,
+                                    "Scope Type": route.scope.kind if route.scope else None, "Scope Name": route.scope.name if route.scope else None,
+                                    "Additional Settings": _text(target.raw_extra)})
+                        yield row
 
 
 def _unresolved_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
@@ -403,12 +479,26 @@ def _inventory_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
 
 
 def _inventory_status(context: _PANExcelContext, record: Any) -> str:
-    if record.unsupported or record.source_path in context.config.unknown_paths:
+    identity = (record.source_path, record.name, _scope_key(record.scope), record.source_order)
+    if record.unsupported or any((issue.source_path, issue.source_name, _scope_key(issue.scope), issue.source_order) == identity for issue in context.config.extraction_issues):
         return "UNSUPPORTED"
-    identity = (record.source_path, record.name, _scope_key(record.scope))
-    if identity in context.typed_identities:
-        return "EXTRACTED"
+    typed = context.typed_identities.get(identity)
+    if typed:
+        return "PARTIAL" if any(_has_raw_extra(item) for item in typed) else "EXTRACTED"
     return "SOURCE_ONLY"
+
+
+def _has_raw_extra(value: Any) -> bool:
+    if isinstance(value, BaseModel):
+        for name in type(value).model_fields:
+            child = getattr(value, name)
+            if name == "raw_extra" and child:
+                return True
+            if name != "raw_extra" and _has_raw_extra(child):
+                return True
+    elif isinstance(value, (list, tuple)):
+        return any(_has_raw_extra(item) for item in value)
+    return False
 
 
 def _unsupported_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
@@ -418,7 +508,9 @@ def _unsupported_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
         under_typed_path = any("/".join(path_parts[:index]) in context.typed_paths for index in range(1, len(path_parts)))
         if status == "EXTRACTED" or (status == "SOURCE_ONLY" and (item.source_path.endswith(("devices/entry", "device-group/entry", "vsys/entry")) or under_typed_path)):
             continue
-        yield {"Source Path": item.source_path, "Status": status, "Reason": "typed extraction failed" if status == "UNSUPPORTED" else "no standalone typed source object"}
+        issue = next((issue for issue in context.config.extraction_issues if (issue.source_path, issue.source_name, _scope_key(issue.scope), issue.source_order) == (item.source_path, item.name, _scope_key(item.scope), item.source_order)), None)
+        reason = f"{issue.exception_type}: {issue.message}" if issue else "typed object retains unstructured source evidence" if status == "PARTIAL" else "no standalone typed source object"
+        yield {"Source Path": item.source_path, "Status": status, "Reason": reason}
 
 
 def _typed_counts(context: _PANExcelContext) -> dict[str, int]:
@@ -429,12 +521,49 @@ def _typed_counts(context: _PANExcelContext) -> dict[str, int]:
 
 
 def _coverage_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    source, extracted = context.source_domains, context.extracted_domains
+    source = context.source_domains
     typed = _typed_counts(context)
     domains = sorted(set(registered_paths()) | set(source) | set(typed))
-    return [{"Source Domain": domain, "Found": "yes" if source[domain] else "no", "Source Records": source[domain], "Typed Objects": typed.get(domain, 0),
-             "Status": "EXTRACTED" if extracted[domain] == source[domain] and source[domain] else "PARTIAL" if extracted[domain] else "SOURCE_ONLY" if source[domain] else "EXTRACTED" if typed.get(domain, 0) else "NOT_PRESENT",
-             "Unknown Paths": _text(path for path in context.config.unknown_paths if domain.replace("_", "-") in path), "Notes": None} for domain in domains]
+    rows = []
+    for domain in domains:
+        statuses = context.domain_statuses.get(domain, [])
+        status = (statuses[0] if statuses and len(set(statuses)) == 1 and statuses[0] != "PARTIAL" else "PARTIAL" if statuses else "EXTRACTED" if typed.get(domain, 0) else "NOT_PRESENT")
+        rows.append({"Source Domain": domain, "Found": "yes" if source[domain] else "no", "Source Records": source[domain], "Typed Objects": typed.get(domain, 0),
+            "Status": status, "Unknown Paths": _text(path for path in context.config.unknown_paths if domain.replace("_", "-") in path), "Notes": None})
+    return rows
+
+
+def _source_appendix_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
+    for record in context.config.source_inventory:
+        if not record.raw_xml:
+            continue
+        try:
+            root = ET.fromstring(record.raw_xml)
+        except ET.ParseError:
+            continue
+        scope = record.scope
+        evidence_order = 0
+
+        def emit(path: str, kind: str, value: str):
+            nonlocal evidence_order
+            evidence_order += 1
+            return {"Scope Type": scope.kind if scope else None, "Scope Name": scope.name if scope else None,
+                "Source Path": record.source_path, "Kind": record.kind, "Object": record.name,
+                "Source Order": record.source_order, "Evidence Order": evidence_order, "Evidence Path": path,
+                "Evidence Type": kind, "Evidence Value": value}
+
+        def visit(node: ET.Element, path: str):
+            for name, value in node.attrib.items():
+                yield emit(f"{path}/@{name}", "attribute", value)
+            text = (node.text or "").strip()
+            if text:
+                yield emit(path, "text", text)
+            if not len(node) and not text:
+                yield emit(path, "presence", "yes")
+            for child in node:
+                yield from visit(child, f"{path}/{child.tag}")
+
+        yield from visit(root, root.tag)
 
 
 ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], Iterable[dict[str, Any]]]] = {
@@ -450,14 +579,15 @@ ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], Iterable[dict[str, Any]]]] 
         "Data Filtering": "data_filtering", "GTP": "gtp", "SCTP": "sctp", "AI Security": "ai_security",
         "Disable Override": "disable_override",
     }),
-    "Zones": lambda c: _simple_rows(c, c.config.zones, "zone", {"Network Type": "network_type", "Members": "members", "Zone Protection Profile": "zone_protection_profile", "Log Setting": "log_setting", "User Identification": "user_identification", "Device Identification": "device_identification"}),
+    "Zones": lambda c: _simple_rows(c, c.config.zones, "zone", {"Network Type": "network_type", "Members": "members", "Zone Protection Profile": "zone_protection_profile", "Packet Buffer Protection": "packet_buffer_protection", "Network Inspection": "network_inspection", "Pre-NAT User Identification": "pre_nat_user_identification", "Pre-NAT Device Identification": "pre_nat_device_identification", "Pre-NAT Source Policy Lookup": "pre_nat_source_policy_lookup", "Pre-NAT Source IP Downstream": "pre_nat_source_ip_downstream", "Log Setting": "log_setting", "User Identification": "user_identification", "Device Identification": "device_identification", "User ACL Include": "user_acl_include", "User ACL Exclude": "user_acl_exclude", "Device ACL Include": "device_acl_include", "Device ACL Exclude": "device_acl_exclude"}),
     "Virtual Router Routes": lambda c: _route_rows(c, False), "Logical Router Routes": lambda c: _route_rows(c, True),
     "Unresolved References": _unresolved_rows,
     "Unsupported": _unsupported_rows,
-    "PAN-OS Source Inventory": _inventory_rows, "Extraction Coverage": _coverage_rows,
+    "PAN-OS Source Inventory": _inventory_rows, "PAN-OS Source Appendix": _source_appendix_rows, "Extraction Coverage": _coverage_rows,
     "Vulnerability Profiles": _vulnerability_profile_rows,
-    "Vulnerability Rules": lambda c: _child_rows(c, c.config.vulnerability_profiles, "rules", "vulnerability-rule", {"Rule Name": "name", "Threat Name": "threat_name", "Host": "host", "Vendor IDs": "vendor_ids", "Severities": "severities", "Category": "category", "Action": "action", "Packet Capture": "packet_capture"}),
-    "Vulnerability Exceptions": lambda c: _child_rows(c, c.config.vulnerability_profiles, "exceptions", "vulnerability-exception", {"Exception Name": "name", "Action": "action", "Packet Capture": "packet_capture", "Time Interval": "time_interval", "Time Threshold": "time_threshold", "Time Track By": "time_track_by", "Exempt IP Configuration": "exempt_ips"}),
+    "Vulnerability Rules": lambda c: _vulnerability_child_rows(c, "rules"),
+    "Vulnerability Exceptions": lambda c: _vulnerability_child_rows(c, "exceptions"),
+    "Route Path Monitors": _route_path_monitor_rows,
     "DHCP Servers": lambda c: _object_rows(c, c.config.dhcp_servers, "dhcp-server", {header: field for header, field in (("Interface", "interface"), ("Mode", "mode"), ("Probe IP", "probe_ip"), ("Lease Type", "lease_type"), ("Lease Timeout", "lease_timeout"), ("Inheritance Source", "inheritance_source"), ("Gateway", "gateway"), ("Subnet Mask", "subnet_mask"), ("DNS Primary", "dns_primary"), ("DNS Secondary", "dns_secondary"), ("WINS", "wins"), ("NTP", "ntp"), ("POP3 Server", "pop3_server"), ("SMTP Server", "smtp_server"), ("DNS Suffix", "dns_suffix"))}),
     "SD-WAN Interface Profiles": lambda c: _object_rows(c, c.config.sdwan_interface_profiles, "sdwan-interface-profile", {"Link Tag": "link_tag", "Link Type": "link_type", "VPN Data Tunnel Support": "vpn_data_tunnel_support", "Maximum Download": "maximum_download", "Maximum Upload": "maximum_upload", "Error Correction": "error_correction", "Path Monitoring": "path_monitoring", "VPN Failover Metric": "vpn_failover_metric", "Probe Frequency": "probe_frequency", "Probe Idle Time": "probe_idle_time", "Failback Hold Time": "failback_hold_time", "Comment": "comment"}),
     "SD-WAN Path Quality": lambda c: _object_rows(c, c.config.sdwan_path_quality_profiles, "sdwan-path-quality-profile", {"Latency Threshold": "latency_threshold", "Latency Sensitivity": "latency_sensitivity", "Packet Loss Threshold": "packet_loss_threshold", "Packet Loss Sensitivity": "packet_loss_sensitivity", "Jitter Threshold": "jitter_threshold", "Jitter Sensitivity": "jitter_sensitivity"}),

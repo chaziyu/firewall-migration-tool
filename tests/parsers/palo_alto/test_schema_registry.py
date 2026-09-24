@@ -46,7 +46,9 @@ EXPECTED_PATHS = {
     "sdwan_interface_profile_cli", "sdwan_path_quality_profile_cli",
     "sdwan_traffic_distribution_profile_cli", "sdwan_saas_quality_profile_cli",
     "sdwan_error_correction_profile_cli",
-    "local_user_group", "group_mapping", "globalprotect_portal", "globalprotect_gateway",
+    "local_user_group", "local_user_group_compat", "local_user_database_compat", "group_mapping",
+    "globalprotect_portal", "globalprotect_gateway", "globalprotect_portal_selected",
+    "globalprotect_gateway_selected", "administrator_mgt_config",
 }
 
 
