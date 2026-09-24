@@ -20,3 +20,11 @@ def test_source_reporting_is_vendor_native_and_keeps_source_planes_separate():
 def test_legacy_parser_path_is_removed():
     facade = Path(__file__).parents[3] / "src" / "fwmigrate" / "parsers" / "cisco_ftd"
     assert not list(facade.glob("*.py"))
+
+
+def test_generic_source_model_buckets_are_removed():
+    model = (ROOT / "model.py").read_text(encoding="utf-8")
+    assert "managed_objects:" not in model
+    assert "\n    object_groups:" not in model
+    assert "class CiscoFTDObject" not in model
+    assert "class CiscoFTDService" not in model
