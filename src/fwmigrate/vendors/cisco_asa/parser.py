@@ -2362,13 +2362,23 @@ class CiscoASAParser:
             match = re.match(r"^object\s+service\s+(\S+)", line, re.IGNORECASE)
             if match:
                 obj = CiscoServiceObject(name=match.group(1))
+                service_definitions = []
                 i += 1
                 while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
                     sub = lines[i].strip()
                     obj.raw_lines.append(sub)
                     if sub.lower().startswith("service "):
                         ports, error = parse_service_clause(sub.split()[1:])
-                        obj.ports.extend(ports)
+                        if service_definitions:
+                            obj.raw_extra.setdefault("superseded_service_commands", []).append(
+                                sanitize_raw_text(service_definitions[-1])
+                            )
+                            obj.extraction_status = "PARTIAL"
+                            obj.requires_manual_review = True
+                            obj.review_reasons.append("Multiple service specifications were configured; the last command is authoritative")
+                            self._record_diagnostic(i + 1, sub, "Multiple service specifications in one service object", "object service", obj.name, extraction_effect="PARTIAL")
+                        service_definitions.append(sub)
+                        obj.ports = ports
                         if error:
                             obj.extraction_status = "PARSE_ERROR"
                             obj.requires_manual_review = True

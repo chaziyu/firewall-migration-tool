@@ -39,3 +39,9 @@ def safe_value(value: Any) -> Any:
 def excel_value(value: Any) -> Any:
     value = safe_value(value)
     return str(value) if isinstance(value, (list, tuple, dict)) else value
+
+
+def has_source_evidence(value: Any) -> bool:
+    return bool(getattr(value, "explicit_fields", ()) or getattr(value, "raw_lines", ()) or
+                getattr(value, "command_history", ()) or
+                getattr(value, "source_attributes", {}).get("raw_commands"))

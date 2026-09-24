@@ -22,8 +22,8 @@ def build_secure_connect_graph(context, scope: str, certificates=(), effective_l
                                   resolver.resolve_access_profile(reference) is not None if relationship == "ACCESS_PROFILE" else
                                   resolver.resolve_remote_access_client_config(reference) is not None if relationship == "CLIENT_CONFIG" else
                                   resolver.resolve_ipsec_vpn(reference) is not None)})
-        if profile.ipsec_vpn and profile.ipsec_vpn in context.vpn.ipsec_vpns:
-            tunnel = context.vpn.ipsec_vpns[profile.ipsec_vpn]
+        tunnel = context.vpn.ipsec_vpns.get(profile.ipsec_vpn) if profile.ipsec_vpn else None
+        if tunnel and resolver.resolve_ipsec_vpn(profile.ipsec_vpn) is not None:
             interface = tunnel.bind_interface
             if interface:
                 zones = topology.get(interface, {}).get("zone_memberships", ())

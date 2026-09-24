@@ -181,16 +181,6 @@ def _validate_policy_structure(config, derived):
             result.append(_issue("policy_parent_layer_invalid", "policy_structure",
                 "Rule parent layer UID does not match its owning layer.", source=rule,
                 field="parent_layer_uid", reference=rule.parent_layer_uid))
-    owned_layers = {}
-    for relation in derived.policy_structure.package_layers:
-        if relation.layer:
-            owned_layers.setdefault(id(relation.layer), []).append(relation.package)
-    for layer_id, relations in owned_layers.items():
-        if len({id(item) for item in relations}) > 1:
-            relation_layer = next(item.layer for item in derived.policy_structure.package_layers if item.layer and id(item.layer) == layer_id)
-            result.append(_issue("policy_duplicate_ownership", "policy_structure",
-                "Access layer is structurally owned by multiple packages.", source=relation_layer,
-                field="package_uid"))
     for issue in derived.policy_traversal.issues:
         result.append(_issue("policy_traversal_cycle" if "cycle" in issue.message.lower() else "policy_traversal_invalid",
             "policy_structure", issue.message, object_type="CPAccessRule", object_uid=issue.rule_uid,

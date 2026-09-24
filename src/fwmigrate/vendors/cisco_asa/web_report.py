@@ -6,6 +6,7 @@ from typing import Any
 from .source_report import ASASourceResult
 from .presentation_schema import SOURCE_SECTIONS
 from .presentation import safe_value
+from .presentation import has_source_evidence
 
 
 def _source_record(item: Any, allowed: str) -> dict[str, Any]:
@@ -30,8 +31,11 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
     source = {}
     for section, spec in SOURCE_SECTIONS.items():
         records = getattr(config, spec[0], ()) or ()
-        if getattr(type(records), "model_fields", None):
+        singleton = bool(getattr(type(records), "model_fields", None))
+        if singleton:
             records = (records,)
+        if section in {"DNS Settings", "System Settings", "HTTP Server"} and not has_source_evidence(records[0] if singleton else records):
+            records = ()
         if len(spec) == 3:
             records = (child for parent in records for child in (getattr(parent, spec[1], ()) or ()))
             fields = spec[2]
@@ -41,9 +45,9 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
             records = (item for item in records if any(getattr(item, key, None)
                        for key in ("policy_route_maps", "policy_route_cost", "policy_route_path_monitors")))
         source[section.lower().replace(" ", "_")] = [_source_record(item, fields) for item in records]
-    source["management_settings"] = {"dns": safe_value(config.dns_settings),
-                                     "system": safe_value(config.system_settings),
-                                     "http_server": safe_value(config.http_server),
+    source["management_settings"] = {"dns": safe_value(config.dns_settings) if has_source_evidence(config.dns_settings) else None,
+                                     "system": safe_value(config.system_settings) if has_source_evidence(config.system_settings) else None,
+                                     "http_server": safe_value(config.http_server) if has_source_evidence(config.http_server) else None,
                                      "connection_controls": safe_value(config.connection_controls),
                                      "management_settings": safe_value(config.management_settings)}
     source["failover_config"] = safe_value(config.failover_config)
@@ -55,7 +59,7 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
         "schedules": source.pop("time_ranges"), "acl_rules": source.pop("acl_rules"),
         "nat_rules": source.pop("nat_rules"),
         "mpf": {key: source.pop(key) for key in ("class_maps", "policy_maps", "service_policies")},
-        "dhcp": {key: source.pop(key) for key in ("dhcp_servers", "dhcp_reservations", "dhcp_relays")},
+        "dhcp": {key: source.pop(key) for key in ("dhcp_global_settings", "dhcp_servers", "dhcp_reservations", "dhcp_relays")},
         "routing": {key: source.pop(key, []) for key in ("routes", "route_maps", "policy_routing", "sla_monitors", "tracks")},
         "identity": {key: source.pop(key) for key in ("local_users", "user_groups", "aaa_server_groups", "aaa_server_hosts", "aaa_authentication", "aaa_authorization", "aaa_accounting", "command_privileges")},
         "vpn": {key: source.pop(key) for key in ("ike_policies", "ikev2_proposals", "ipsec_transform_sets", "ipsec_profiles", "crypto_maps", "tunnel_groups", "group_policies", "vpn_address_pools", "vpn_address_assignment", "webvpn")},

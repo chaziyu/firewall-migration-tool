@@ -104,4 +104,14 @@ def build_inheritance_view(source_commands=()) -> dict:
                            "source_order": command.source_order or command.line_number,
                            "status": "EFFECTIVE" if active else "INACTIVE", "active": active})
     candidates = tuple(_safe_candidate(candidate) for command in resolved for candidate in command.candidate_records)
-    return {"effective_statements": tuple(statements), "candidates": candidates, "issues": tuple(issues)}
+    inactive_hierarchies = []
+    for inactive_path in activation.inactive_paths:
+        path = tuple(sanitize_tokens(inactive_path))
+        scope = "root"
+        if len(path) > 1 and path[0].lower() in {"logical-systems", "tenants"}:
+            kind = "logical-system" if path[0].lower() == "logical-systems" else "tenant"
+            scope = f"{kind} {path[1]}"
+            path = path[2:]
+        inactive_hierarchies.append({"context": scope, "path": path})
+    return {"effective_statements": tuple(statements), "candidates": candidates,
+            "issues": tuple(issues), "inactive_hierarchies": tuple(inactive_hierarchies)}

@@ -52,6 +52,7 @@ class CiscoServiceObject(CiscoSourceModel):
     extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    review_reasons: List[str] = Field(default_factory=list)
 
 
 class CiscoServiceGroup(CiscoSourceModel):

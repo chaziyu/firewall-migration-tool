@@ -26,9 +26,9 @@ def test_route_transform_separates_configured_and_effective_values():
     assert ipv6.source_route.destination == "2001:db8::1/64"
 
 
-def test_vti_profile_remains_source_only():
+def test_vti_profile_without_a_definition_is_partial():
     result = extract_cisco_asa_source("interface Tunnel1\n tunnel source outside\n tunnel destination 203.0.113.5\n"
                                      " tunnel protection ipsec profile PROFILE\n")
     row = next(item for item in result.derived.vpn.topologies if item.topology_type == "vti")
     assert (row.tunnel_interface, row.tunnel_source, row.tunnel_destination) == ("Tunnel1", "outside", "203.0.113.5")
-    assert (row.ipsec_profile, row.resolution_status) == ("PROFILE", "SOURCE_ONLY")
+    assert (row.ipsec_profile, row.resolution_status) == ("PROFILE", "PARTIAL")
