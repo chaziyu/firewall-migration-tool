@@ -58,7 +58,7 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
         "dhcp": {key: source.pop(key) for key in ("dhcp_servers", "dhcp_reservations", "dhcp_relays")},
         "routing": {key: source.pop(key, []) for key in ("routes", "route_maps", "policy_routing", "sla_monitors", "tracks")},
         "identity": {key: source.pop(key) for key in ("local_users", "user_groups", "aaa_server_groups", "aaa_server_hosts", "aaa_authentication", "aaa_authorization", "aaa_accounting", "command_privileges")},
-        "vpn": {key: source.pop(key) for key in ("ike_policies", "ikev2_proposals", "ipsec_transform_sets", "crypto_maps", "tunnel_groups", "group_policies", "vpn_address_pools", "vpn_address_assignment", "webvpn")},
+        "vpn": {key: source.pop(key) for key in ("ike_policies", "ikev2_proposals", "ipsec_transform_sets", "ipsec_profiles", "crypto_maps", "tunnel_groups", "group_policies", "vpn_address_pools", "vpn_address_assignment", "webvpn")},
         "management": {**source.pop("management_settings"),
                         **{key: source.pop(key) for key in ("dns", "ntp", "management_access", "snmp", "logging")}},
         "failover": {"config": source.pop("failover_config"), "settings": source.pop("failover")},
@@ -131,8 +131,8 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
                     "translation_semantics": row.translation_semantics, "issues": row.issues}
                     for row in derived.nat.source_nat_pools],
                 "vips": [{"source_context": row.source_context, "source_rule": row.source_rule.name,
-                    "source_nat_order": row.source_nat_order, "external_interface": _name(row.external_interface),
-                    "internal_interface": _name(row.internal_interface), "mapped_address": row.mapped_address,
+                    "source_nat_order": row.source_nat_order, "source_nat_interface": _name(row.source_nat_interface),
+                    "destination_nat_interface": _name(row.destination_nat_interface), "mapped_address": row.mapped_address,
                     "real_address": row.real_address, "mapped_service": row.mapped_service,
                     "real_service": row.real_service, "protocol": row.protocol,
                     "translation_type": row.translation_type, "inactive": row.inactive, "issues": safe_value(row.issues)}

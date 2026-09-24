@@ -1057,13 +1057,6 @@ class JuniperRemoteAccessConfig(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperDHCPRelayGroup(BaseModel):
-    name: str
-    interfaces: List[str] = Field(default_factory=list)
-    server_groups: List[str] = Field(default_factory=list)
-    source_attributes: Dict[str, Any] = Field(default_factory=dict)
-
-
 class JuniperContextConfig(BaseModel):
     name: str = "root"
     context_type: str = "root"  # root, logical-system, tenant

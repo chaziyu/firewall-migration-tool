@@ -34,6 +34,14 @@ def test_checkpoint_source_report_resolves_group_and_rule_references():
     result = extract_checkpoint_source(_source("r81_golden_matrix.json"))
 
     assert result.config.hosts
+    address_range = result.config.address_ranges[0]
+    assert (address_range.ipv4_address_first, address_range.ipv4_address_last) == ("198.51.100.20", "198.51.100.30")
+    assert len(result.config.gaia_static_routes) == 3
+    assert len(result.config.gaia_static_routes[1].next_hops) == 2
+    assert result.config.gaia_static_routes[2].address_family == "ipv6"
+    assert len(result.config.gaia_dhcp_servers[0].subnets[0].included_pools) == 1
+    assert len(result.config.gaia_dhcp_servers[0].subnets[0].excluded_pools) == 1
+    assert {item.tunnel_type for item in result.config.vtis} == {"numbered", "unnumbered"}
     assert isinstance(result.derived.broken_references, tuple)
 
 

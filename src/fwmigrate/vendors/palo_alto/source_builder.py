@@ -10,7 +10,7 @@ from .extraction.extractor import extract_typed, registered_typed_collections
 from .model import PANOSConfig
 from .schema_registry import match_path_spec
 from .source_context import walk_pan_source
-from .source_model import PANSourceRecord, PANScope, pan_scope_identity
+from .source_model import PANExtractionIssue, PANSourceRecord, PANScope, pan_scope_identity
 from .xml_loader import load_pan_source
 
 
@@ -33,6 +33,7 @@ def build_panos_config(content: str) -> PANOSConfig:
     scopes: list[PANScope] = []
     records: list[PANSourceRecord] = []
     unknown_paths: list[str] = []
+    extraction_issues: list[PANExtractionIssue] = []
     typed: dict[str, list[object]] = {collection: [] for collection in registered_typed_collections()}
     for element, path, context in walk_pan_source(source.root):
         if context.scope and pan_scope_identity(context.scope) not in {pan_scope_identity(item) for item in scopes}:
@@ -47,10 +48,15 @@ def build_panos_config(content: str) -> PANOSConfig:
             source_order = len(records) + 1
         try:
             result = extract_typed(element, path, context, source_order)
-        except Exception:
+        except Exception as error:
             # Inventory is source evidence; a typed-model defect must not make
             # the source disappear or prevent the remaining tree from loading.
             unknown_paths.append("/".join(path))
+            extraction_issues.append(PANExtractionIssue(
+                source_path="/".join(path), source_name=element.get("name"), source_order=source_order,
+                scope=context.scope, domain=spec.name if spec else None,
+                exception_type=type(error).__name__, message=sanitize_raw_text(str(error))[:500],
+            ))
             if element.tag == "entry":
                 records[-1].unsupported = True
             continue
@@ -58,4 +64,4 @@ def build_panos_config(content: str) -> PANOSConfig:
             collection, model = result
             typed[collection].append(model)
     typed["static_routes"] = [route for router in typed["virtual_routers"] for route in router.static_routes or ()] + [route for router in typed["logical_routers"] for vrf in router.vrfs or () for route in vrf.static_routes or ()]
-    return PANOSConfig(hostname=source.hostname, source_version=source.source_version, scopes=scopes, **typed, source_inventory=records, unknown_paths=unknown_paths)
+    return PANOSConfig(hostname=source.hostname, source_version=source.source_version, scopes=scopes, **typed, source_inventory=records, unknown_paths=unknown_paths, extraction_issues=extraction_issues)

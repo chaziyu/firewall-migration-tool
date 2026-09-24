@@ -230,7 +230,7 @@ def _validate_nat(config, derived):
     order_owners = {}
     for rule in config.nat_rules:
         if rule.order is not None:
-            order_owners.setdefault((_domain(rule), rule.order), []).append(rule)
+            order_owners.setdefault((_domain(rule), rule.package_uid or rule.package, rule.order), []).append(rule)
         if isinstance(rule, CPNATRule):
             if any((rule.translated_source, rule.translated_destination, rule.translated_service)) and not any(
                 (rule.original_source, rule.original_destination, rule.original_service)
@@ -251,7 +251,7 @@ def _validate_nat(config, derived):
         result.append(_issue("nat_structure_incomplete", "nat", item.message,
             domain=item.domain, object_uid=item.source_uid, object_name=item.source_name,
             field=item.source_field, reference=item.reference))
-    for (_, order), rules in order_owners.items():
+    for (_, _, order), rules in order_owners.items():
         if len(rules) > 1:
             result.append(_issue("nat_order_malformed", "nat",
                 f"Multiple NAT rules share ordering value {order}.", source=rules[0],
@@ -300,17 +300,32 @@ def _validate_gaia(config, inventory):
             result.append(_issue("gaia_route_malformed", "gaia", "Static route address family is invalid.", source=route, field="address_family"))
         if family == "ipv4" and route.ipv6_destination or family == "ipv6" and route.ipv4_destination:
             result.append(_issue("gaia_route_malformed", "gaia", "Static route destination conflicts with its address family.", source=route, field="destination"))
-        if route.blackhole is True and route.reject is True:
-            result.append(_issue("gaia_route_malformed", "gaia", "Static route cannot be both blackhole and reject.", source=route, field="blackhole"))
-        for field in ("priority", "rank"):
-            value = getattr(route, field)
-            if value is not None and value < 0:
-                result.append(_issue("gaia_route_malformed", "gaia", f"Static route {field} must not be negative.", source=route, field=field))
         destination = route.ipv4_destination or route.ipv6_destination
         if not destination and getattr(route, "default", False) is not True:
             result.append(_issue("gaia_route_malformed", "gaia", "Static route destination is missing.", source=route, field="destination"))
-        if route.blackhole is not True and route.reject is not True and not (route.next_hop or route.outgoing_interface):
-            result.append(_issue("gaia_route_malformed", "gaia", "Static route has no next hop or outgoing interface.", source=route, field="next_hop"))
+        if not route.next_hops:
+            result.append(_issue("gaia_route_malformed", "gaia", "Static route has no explicit next-hop type.", source=route, field="next_hops"))
+        for hop in route.next_hops:
+            if hop.next_hop_type not in {"gateway", "interface", "blackhole", "reject"}:
+                result.append(_issue("gaia_route_malformed", "gaia", "Static route next-hop type is missing or unsupported.", source=hop, field="type"))
+            if hop.blackhole is True and hop.reject is True:
+                result.append(_issue("gaia_route_malformed", "gaia", "Static route next hop cannot be both blackhole and reject.", source=hop, field="type"))
+            if hop.next_hop_type == "gateway" and not hop.gateway:
+                result.append(_issue("gaia_route_malformed", "gaia", "Gateway next hop has no address.", source=hop, field="gateway"))
+            if hop.next_hop_type == "interface" and not hop.interface:
+                result.append(_issue("gaia_route_malformed", "gaia", "Interface next hop has no interface.", source=hop, field="interface"))
+            for field in ("priority", "rank"):
+                value = getattr(hop, field)
+                if value is not None:
+                    try:
+                        if int(value) < 0: raise ValueError
+                    except (ValueError, TypeError):
+                        result.append(_issue("gaia_route_malformed", "gaia", f"Static route {field} must be a non-negative integer.", source=hop, field=field))
+        if route.rank is not None:
+            try:
+                if int(route.rank) < 0: raise ValueError
+            except (ValueError, TypeError):
+                result.append(_issue("gaia_route_malformed", "gaia", "Static route rank must be a non-negative integer.", source=route, field="rank"))
     for server in config.gaia_dhcp_servers:
         result.extend(_dhcp_issues(server))
     for item in inventory:
@@ -329,7 +344,10 @@ def _dhcp_issues(server):
             result.append(_issue("gaia_dhcp_malformed", "gaia", "DHCP subnet identity is missing.", source=subnet, field="subnet"))
         try:
             if subnet.subnet:
-                ip_network(f"{subnet.subnet}/{subnet.prefix}" if subnet.prefix is not None else subnet.subnet, strict=False)
+                network = subnet.subnet
+                if "/" not in network and (subnet.netmask is not None or subnet.prefix is not None):
+                    network = f"{network}/{subnet.netmask if subnet.netmask is not None else subnet.prefix}"
+                ip_network(network, strict=False)
             elif subnet.prefix is not None:
                 raise ValueError
         except (ValueError, TypeError):

@@ -55,6 +55,10 @@ def build_vpn_relationships(config: Any, references: ASAReferenceIndex) -> ASAVP
                     (ASAReferenceKind.ACL, getattr(item, "split_tunnel_acl", None), "split-tunnel-acl"),
                     (ASAReferenceKind.ACL, getattr(item, "vpn_filter_acl", None), "vpn-filter-acl"),
                     (ASAReferenceKind.TIME_RANGE, getattr(item, "vpn_access_hours", None), "vpn-access-hours")])
+    for item in getattr(config, "ipsec_profiles", ()):
+        make(item, [(ASAReferenceKind.IPSEC_TRANSFORM_SET, item.ikev1_transform_sets, "ikev1-transform-set"),
+                    (ASAReferenceKind.IKEV2_PROPOSAL, item.ikev2_ipsec_proposals, "ikev2-ipsec-proposal"),
+                    (ASAReferenceKind.TRUSTPOINT, item.trustpoint, "trustpoint")])
     webvpn_records = getattr(config, "webvpn_configs", ()) or tuple(filter(None, (getattr(config, "webvpn", None),)))
     for webvpn in webvpn_records:
         make(webvpn, [(ASAReferenceKind.INTERFACE, webvpn.enabled_interfaces, "enabled-interface"),
@@ -75,6 +79,7 @@ def build_vpn_relationships(config: Any, references: ASAReferenceIndex) -> ASAVP
                     targets.append(("local-pool", pool))
         rows.append(ASAVPNRelationship(assignment, tuple(targets), tuple(issues), tuple(source_only)))
     for item in config.interfaces:
-        if getattr(item, "ipsec_profile", None):
-            rows.append(ASAVPNRelationship(item, (), (), ("ipsec-profile",)))
+        if getattr(item, "ipsec_profile", None) or getattr(item, "ipsec_policy_acl", None):
+            make(item, [(ASAReferenceKind.IPSEC_PROFILE, getattr(item, "ipsec_profile", None), "ipsec-profile"),
+                        (ASAReferenceKind.ACL, getattr(item, "ipsec_policy_acl", None), "ipsec-policy-acl")])
     return ASAVPNRelationships(tuple(rows), tuple(all_issues))

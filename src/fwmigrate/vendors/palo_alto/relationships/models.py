@@ -28,6 +28,7 @@ class PANReferenceResolution:
     target_source_path: str | None = None
     resolution_reason: str = ""
     owner_family: str | None = None
+    owner_source_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

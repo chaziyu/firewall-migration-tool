@@ -69,3 +69,36 @@ def test_route_sla_monitor_is_a_typed_resolvable_source_reference():
     assert [cell.value for cell in sheet[1]] == ["Name", "Interface", "Destination", "Gateway", "SLA Monitor",
         "Source Plane", "Address Family", "Mask", "Normalized Destination"]
     assert sheet[2][4].value == "WAN-Monitor"
+
+
+def test_fmc_route_normalization_and_interface_topology_keep_device_scope():
+    payload = {"format": "cisco-fmc-rest-export-v1", "domain": {"id": "d1"},
+        "objects": {"networkaddresses": [
+            {"id": "net4", "name": "IPv4 network", "type": "Network", "value": "10.0.0.0/24"},
+            {"id": "net6", "name": "IPv6 network", "type": "Network", "value": "2001:db8::/64"}],
+            "network_address_overrides": []},
+        "devices": [
+            {"id": "dev1", "name": "FTD-A", "resources": {"ftd_interfaces": [
+                {"id": "if1", "name": "GigabitEthernet0/0", "interfaceType": "PhysicalInterface"},
+                {"id": "if2", "name": "GigabitEthernet0/0.10", "interfaceType": "SubInterface"}],
+                "static_routes": [
+                    {"id": "r4", "name": "route4", "network": {"id": "net4", "name": "IPv4 network"}, "addressFamily": "iPv4"},
+                    {"id": "r6", "name": "route6", "network": {"id": "net6", "name": "IPv6 network"}, "addressFamily": "IPv6"},
+                    {"id": "null", "name": "null-route", "network": {"id": "net4", "name": "IPv4 network"}, "gateway": "Null0", "addressFamily": "IPv4"},
+                    {"id": "missing", "name": "unresolved", "network": {"id": "missing", "name": "Missing"}, "addressFamily": "IPv4"}]}},
+            {"id": "dev2", "name": "FTD-B", "resources": {"ftd_interfaces": [
+                {"id": "if3", "name": "GigabitEthernet0/0", "interfaceType": "PhysicalInterface"},
+                {"id": "if4", "name": "GigabitEthernet0/0.10", "interfaceType": "SubInterface"}]}}]}
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    before = result.config.model_dump()
+    normalized = {item.source_name: item for item in result.derived.normalized_routes}
+    assert normalized["route4"].normalized_destination == "10.0.0.0/24"
+    assert normalized["route6"].normalized_destination == "2001:db8::/64"
+    assert normalized["null-route"].gateway == "Null0"
+    assert normalized["unresolved"].normalized_destination is None
+    subinterfaces = [item for item in result.derived.interface_topology.interfaces
+                     if item.name == "GigabitEthernet0/0.10"]
+    assert {(item.device_id, item.parent, item.kind) for item in subinterfaces} == {
+        ("dev1", "GigabitEthernet0/0", "subinterface"),
+        ("dev2", "GigabitEthernet0/0", "subinterface")}
+    assert result.config.model_dump() == before

@@ -1,6 +1,6 @@
 SHEET_ORDER = (
     "Summary", "Managed Objects", "Object Groups", "Services", "Zones",
-    "Interfaces", "Routes", "ACP Rules", "Inspection Policies", "NAT Rules",
+    "Interfaces", "Routes", "ACP Policies", "ACP Rules", "Object Overrides", "DHCP", "Inspection Policies", "NAT Rules",
     "RA VPN Policies", "RA Connection Profiles", "RA Group Policies", "RA Address Pools",
     "RA Certificates", "RA Certificate Maps", "RA Secure Client", "RA IPsec Settings",
     "RA Address Assignment", "Native Sources", "Source Evidence", "Validation",
@@ -13,6 +13,10 @@ SHEET_HEADERS = {
     "Zones": ("Name", "Interfaces", "Source Plane"),
     "Interfaces": ("Name", "Type", "Address", "Zone", "Source Plane", "Derived Kind", "Derived Parent", "Explicit VLAN ID"),
     "Routes": ("Name", "Interface", "Destination", "Gateway", "SLA Monitor", "Source Plane", "Address Family", "Mask", "Normalized Destination"),
+    "ACP Policies": ("Policy", "ID", "Description", "Inherit", "Base Policy", "Default Action",
+        "Prefilter Policy", "Network Analysis Policy", "Decryption Policy", "DNS Policy", "Identity Policy", "Source Plane"),
+    "Object Overrides": ("Name", "ID", "Base Object", "Target", "Type", "Value", "Domain", "Source Plane", "Additional Settings"),
+    "DHCP": ("Kind", "Name", "ID", "Device", "Interface", "Server Settings", "Relay Settings", "Source Plane"),
     "ACP Rules": ("Policy", "Rule", "Rule ID", "Enabled", "Position", "Section", "Category", "Action",
         "Source Zones", "Destination Zones", "Source Networks", "Destination Networks", "Source Ports", "Destination Ports",
         "Realm Users", "Users", "User Groups", "Applications", "Application Filters", "Inline Application Filters",

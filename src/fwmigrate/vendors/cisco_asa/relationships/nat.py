@@ -20,6 +20,8 @@ class ASANATRelationship:
     pat_pool: Any = None
     original_service: Any = None
     translated_service: Any = None
+    service_operand_1: Any = None
+    service_operand_2: Any = None
     access_list: Any = None
     issues: tuple[Any, ...] = ()
 
@@ -51,8 +53,8 @@ def build_nat_relationships(config: Any, references: ASAReferenceIndex) -> ASANA
             if obj is not None: return obj
             return one(ASAReferenceKind.NETWORK_GROUP, name, field, required=True)
         owner = one(ASAReferenceKind.NETWORK_OBJECT, rule.owning_object, "owning-object", required=True)
-        source_if = one(ASAReferenceKind.INTERFACE, rule.source_interface, "source-interface", required=True)
-        dest_if = one(ASAReferenceKind.INTERFACE, rule.destination_interface, "destination-interface", required=True)
+        source_if = one(ASAReferenceKind.INTERFACE, rule.source_interface, "source-interface", required=True) if rule.source_interface and rule.source_interface.casefold() != "any" else None
+        dest_if = one(ASAReferenceKind.INTERFACE, rule.destination_interface, "destination-interface", required=True) if rule.destination_interface and rule.destination_interface.casefold() != "any" else None
         real_s = address(rule.real_source, "real-source"); mapped_s = address(rule.mapped_source, "mapped-source")
         real_d = address(rule.real_destination, "real-destination"); mapped_d = address(rule.mapped_destination, "mapped-destination")
         pat = address(rule.pat_pool, "pat-pool")
@@ -61,7 +63,9 @@ def build_nat_relationships(config: Any, references: ASAReferenceIndex) -> ASANA
             value = one(ASAReferenceKind.SERVICE_OBJECT, name, field)
             return value if value is not None else one(ASAReferenceKind.SERVICE_GROUP, name, field, required=True)
         original = service(rule.original_service, "original-service"); translated = service(rule.translated_service, "translated-service")
+        operand_1 = service(getattr(rule, "service_operand_1", None), "service-operand-1")
+        operand_2 = service(getattr(rule, "service_operand_2", None), "service-operand-2")
         acl = one(ASAReferenceKind.ACL, rule.access_list, "access-list", required=True)
-        row = ASANATRelationship(context, rule, owner, source_if, dest_if, real_s, mapped_s, real_d, mapped_d, pat, original, translated, acl, tuple(issues))
+        row = ASANATRelationship(context, rule, owner, source_if, dest_if, real_s, mapped_s, real_d, mapped_d, pat, original, translated, operand_1, operand_2, acl, tuple(issues))
         rows.append(row); all_issues.extend(issues)
     return ASANATRelationships(tuple(rows), tuple(all_issues))

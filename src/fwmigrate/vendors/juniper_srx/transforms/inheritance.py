@@ -7,9 +7,9 @@ from ..group_resolver import resolve_group_commands
 from ..tokenizer import JunosActivationState
 
 
-_GROUP_ERRORS = {
+_GROUP_FAILURES = {
     "GROUP_NOT_FOUND", "GROUP_CYCLE", "GROUP_RECURSION_DEPTH_EXCEEDED",
-    "GROUP_HIERARCHY_INCOMPATIBLE", "GROUP_EXCLUDED", "GROUP_INACTIVE",
+    "GROUP_HIERARCHY_INCOMPATIBLE",
 }
 _SCALAR_FIELDS = {"description", "action", "class", "hostname", "host-name", "mtu", "routing-instance",
                   "instance-type", "scheduler-name", "bind-interface", "proposal-set", "ike-policy",
@@ -86,7 +86,7 @@ def build_inheritance_view(source_commands=()) -> dict:
                 "status": status,
                 "active": active,
             })
-        if command.group_resolution in _GROUP_ERRORS:
+        if command.group_resolution in _GROUP_FAILURES:
             target_path = tuple(sanitize_tokens(list(command.target_path or ())))
             issue = {"status": command.group_resolution,
                      "context": scope_for(command, target_path or command.tokens[1:]),

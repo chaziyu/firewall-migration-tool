@@ -25,7 +25,7 @@ from fwmigrate.vendors.cisco_asa.model.routing import CiscoPolicyRoutePathMonito
 from fwmigrate.vendors.cisco_asa.model.schedule import CiscoTimeRange, CiscoTimeRangeClause
 from fwmigrate.vendors.cisco_asa.model.service import CiscoNetworkServiceObject, CiscoPortSpec, CiscoServiceGroup, CiscoServiceGroupMember, CiscoServiceObject, CiscoServicePort
 from fwmigrate.vendors.cisco_asa.model.source import CiscoASAConfig
-from fwmigrate.vendors.cisco_asa.model.vpn import CiscoCryptoMap, CiscoGroupPolicy, CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecTransformSet, CiscoTunnelGroup, CiscoTrustpointRecord, CiscoVPNAddressAssignment, CiscoVPNAddressPool, CiscoWebVPNConfig
+from fwmigrate.vendors.cisco_asa.model.vpn import CiscoCryptoMap, CiscoGroupPolicy, CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecProfile, CiscoIPsecTransformSet, CiscoTunnelGroup, CiscoTrustpointRecord, CiscoVPNAddressAssignment, CiscoVPNAddressPool, CiscoWebVPNConfig
 from fwmigrate.vendors.cisco_asa.model.zone import CiscoTrafficZone
 from fwmigrate.vendors.cisco_asa.net_utils import normalize_ipv4_network, parse_ipv4_netmask
 from fwmigrate.vendors.cisco_asa.service_parser import parse_service_clause
@@ -720,6 +720,38 @@ class CiscoASAParser:
                     source_attributes={"raw_command": line, "subcommands": children},
                 ), index + 1))
                 self._parse_ike_child(self.config.ike_policies[-1], children, index + 1)
+            elif re.match(r"^crypto\s+ipsec\s+profile\s+\S+", lower):
+                name = line.split()[3]
+                record = CiscoIPsecProfile(name=name, raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": sanitize_raw_text(line)})
+                for child in children:
+                    parts = child.split()
+                    lowered = [part.lower() for part in parts]
+                    if lowered[:3] == ["set", "ikev1", "transform-set"] and len(parts) > 3:
+                        self._append_unique(record.ikev1_transform_sets, parts[3:])
+                        _mark_explicit(record, "ikev1_transform_sets")
+                    elif lowered[:3] == ["set", "ikev2", "ipsec-proposal"] and len(parts) > 3:
+                        self._append_unique(record.ikev2_ipsec_proposals, parts[3:])
+                        _mark_explicit(record, "ikev2_ipsec_proposals")
+                    elif lowered[:2] == ["set", "pfs"] and len(parts) > 2:
+                        record.pfs = " ".join(parts[2:])
+                        _mark_explicit(record, "pfs")
+                    elif lowered[:3] == ["set", "security-association", "lifetime"] and len(parts) == 5 and parts[3].lower() in {"seconds", "kilobytes"} and parts[4].isdigit():
+                        setattr(record, f"sa_lifetime_{parts[3].lower()}", int(parts[4]))
+                        _mark_explicit(record, f"sa_lifetime_{parts[3].lower()}")
+                    elif lowered[:2] == ["set", "trustpoint"] and len(parts) == 3:
+                        record.trustpoint = parts[2]
+                        _mark_explicit(record, "trustpoint")
+                    elif lowered == ["responder-only"]:
+                        record.responder_only = True
+                        _mark_explicit(record, "responder_only")
+                    else:
+                        safe_child = sanitize_raw_text(child)
+                        record.raw_lines.append(safe_child)
+                        record.raw_extra.setdefault("unmodeled_lines", []).append(safe_child)
+                        record.extraction_status = "PARTIAL"
+                        record.requires_manual_review = True
+                        record.review_reasons.append("Unsupported IPsec profile child syntax")
+                self.config.ipsec_profiles.append(self._with_source_context(record, index + 1))
             elif re.match(r"^crypto\s+ipsec\s+ikev2\s+ipsec-proposal\s+\S+", lower):
                 match = re.match(r"^crypto\s+ipsec\s+ikev2\s+ipsec-proposal\s+(\S+)", line, re.I)
                 record = CiscoIKEv2Proposal(name=match.group(1), raw_lines=[sanitize_raw_text(line), *map(sanitize_raw_text, children)], source_attributes={"raw_command": line})
@@ -766,9 +798,16 @@ class CiscoASAParser:
             elif lower.startswith("ip local pool "):
                 parts = line.split()
                 record = CiscoVPNAddressPool(name=parts[3] if len(parts) > 3 else "unknown", raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": line})
-                if len(parts) >= 6:
-                    record.start, record.end = parts[4], parts[5]
-                    record.mask = parts[6] if len(parts) > 6 else None
+                range_parts = parts[4].split("-", 1) if len(parts) > 4 else []
+                if len(range_parts) == 2 and range_parts[0] and range_parts[1]:
+                    record.start, record.end = range_parts
+                    if len(parts) == 7 and parts[5].lower() == "mask":
+                        record.mask = parts[6]
+                    elif len(parts) != 5:
+                        record.extraction_status = "PARSE_ERROR"
+                        record.requires_manual_review = True
+                        record.raw_extra["unparsed_tokens"] = parts[5:]
+                        self._record_diagnostic(index + 1, line, "Malformed VPN address pool options", "ip local pool", record.name)
                     try:
                         start, end = ipaddress.ip_address(record.start), ipaddress.ip_address(record.end)
                         valid_mask = not record.mask
@@ -787,6 +826,7 @@ class CiscoASAParser:
                 else:
                     record.extraction_status = "PARSE_ERROR"
                     record.requires_manual_review = True
+                    self._record_diagnostic(index + 1, line, "Malformed VPN address pool range", "ip local pool", record.name)
                 self.config.vpn_address_pools.append(self._with_source_context(record, index + 1))
             elif lower.startswith("tunnel-group "):
                 parts = line.split()
@@ -2029,6 +2069,9 @@ class CiscoASAParser:
                         interface.source_attributes["route_based_vpn"] = True
                         interface.extraction_status = "PARTIAL"
                         interface.requires_manual_review = True
+                    elif lower.startswith("tunnel protection ipsec policy ") and len(parts) >= 5:
+                        interface.ipsec_policy_acl = parts[4]
+                        _mark_explicit(interface, "ipsec_policy_acl")
                     elif lower.startswith("dhcprelay server "):
                         address = parts[2] if len(parts) == 3 else ""
                         relay = next((item for item in self.config.dhcp_relays if item.name == "dhcprelay"), None)
@@ -2662,8 +2705,9 @@ class CiscoASAParser:
         tokens = line.split()
         ipv6 = len(tokens) >= 2 and tokens[0].lower() == "ipv6" and tokens[1].lower() == "route"
         index = 2 if ipv6 else 1
-        required = 3 if ipv6 else 4
         interface = tokens[index] if len(tokens) > index else None
+        null_route = not ipv6 and interface and interface.lower() == "null0"
+        required = 3 if ipv6 or null_route else 4
         if len(tokens) - index < required:
             return CiscoStaticRoute(interface=interface, address_family="ipv6" if ipv6 else "ipv4", raw_line=line,
                                     extraction_status="PARSE_ERROR", requires_manual_review=True,
@@ -2680,6 +2724,10 @@ class CiscoASAParser:
                     address_family="ipv6", raw_line=line, extraction_status="PARSE_ERROR",
                     requires_manual_review=True, explicit_fields={"interface", "destination", "gateway", "address_family"},
                 ), "Invalid IPv6 route prefix or next hop"
+        elif null_route:
+            destination, mask = tokens[index + 1:index + 3]
+            gateway = None
+            index += 3
         else:
             destination, mask, gateway = tokens[index + 1:index + 4]
             index += 4
@@ -2693,7 +2741,7 @@ class CiscoASAParser:
         route = CiscoStaticRoute(
             interface=interface, destination=destination, mask=mask, gateway=gateway,
             address_family="ipv6" if ipv6 else "ipv4", raw_line=line,
-            explicit_fields={"interface", "destination", "gateway", "address_family"} | (set() if ipv6 else {"mask"}),
+            explicit_fields={"interface", "destination", "address_family"} | ({"gateway"} if gateway is not None else set()) | (set() if ipv6 else {"mask"}),
         )
         if not ipv6 and normalize_ipv4_network(destination, mask or "") is None:
             route.extraction_status = "PARSE_ERROR"
@@ -2845,19 +2893,23 @@ class CiscoASAParser:
                 index = len(tail)
 
         if index < len(tail) and tail[index].lower() == "service":
-            if index + 3 < len(tail):
+            if owning_object and index + 3 < len(tail):
                 rule.service_protocol = tail[index + 1].lower()
                 rule.original_service = tail[index + 2]
                 rule.translated_service = tail[index + 3]
                 _mark_explicit(rule, "service_protocol", "original_service", "translated_service")
                 index += 4
-            elif index + 2 < len(tail):
-                rule.original_service = tail[index + 1]
-                rule.translated_service = tail[index + 2]
-                _mark_explicit(rule, "original_service", "translated_service")
+            elif not owning_object and index + 2 < len(tail) and index + 3 == len(tail):
+                rule.service_operand_1, rule.service_operand_2 = tail[index + 1:index + 3]
+                _mark_explicit(rule, "service_operand_1", "service_operand_2")
                 index += 3
             else:
-                rule.review_reasons.append("Incomplete NAT service translation")
+                tokens = tail[index:]
+                rule.raw_options.extend(tokens)
+                rule.raw_extra.setdefault("unparsed_tokens", []).extend(sanitize_raw_text(token) for token in tokens)
+                rule.extraction_status = "PARSE_ERROR"
+                rule.requires_manual_review = True
+                rule.review_reasons.append("NAT service clause does not match object NAT or twice NAT grammar")
                 index = len(tail)
 
         option_names = {
@@ -2895,6 +2947,21 @@ class CiscoASAParser:
         rule.unidirectional = "unidirectional" in rule.options
         rule.inactive = "inactive" in rule.options
         rule.net_to_net = "net-to-net" in rule.options
+
+        if not owning_object:
+            for field in ("real_source", "mapped_source", "mapped_destination", "real_destination"):
+                value = getattr(rule, field)
+                if not value or value.lower() in {"any", "interface", "original", "translated"}:
+                    continue
+                try:
+                    ipaddress.ip_address(value)
+                except ValueError:
+                    continue
+                rule.extraction_status = "PARSE_ERROR"
+                rule.requires_manual_review = True
+                rule.review_reasons.append(f"Inline IP address is not supported for manual NAT operand {field}")
+                rule.raw_extra.setdefault("unsupported_inline_addresses", []).append(value)
+                break
 
         if sequence == 0 and len(tail) >= 2 and tail[0].lower() == "access-list":
             rule.access_list = tail[1]

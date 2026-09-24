@@ -46,8 +46,14 @@ def _destination(element: ET.Element):
     node = element.find("destination-translation")
     if node is None:
         return None
-    extra, explicit = typed_fields(node, {"translated-address", "translated-port"}, {"translated-address": "translated_address", "translated-port": "translated_port"})
-    return PANDestinationTranslation(translated_address=value(node, "translated-address"), translated_port=value(node, "translated-port"), raw_extra=extra, explicit_fields=explicit)
+    extra, explicit = typed_fields(node, {"translated-address", "translated-port", "dns-rewrite"}, {"translated-address": "translated_address", "translated-port": "translated_port"})
+    rewrite = node.find("dns-rewrite")
+    dns = None
+    if rewrite is not None:
+        rewrite_extra, rewrite_explicit = typed_fields(rewrite, {"direction"})
+        dns = PANDNSRewrite(direction=value(rewrite, "direction"), raw_extra=rewrite_extra, explicit_fields=rewrite_explicit)
+        explicit.add("dns_rewrite")
+    return PANDestinationTranslation(translated_address=value(node, "translated-address"), translated_port=value(node, "translated-port"), dns_rewrite=dns, raw_extra=extra, explicit_fields=explicit)
 
 
 def _dynamic_destination(element: ET.Element):

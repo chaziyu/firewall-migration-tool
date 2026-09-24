@@ -44,8 +44,10 @@ BUILTIN_ADDRESS_KEYWORDS = {
 class JuniperReferenceResolver:
     """Resolves cross-object references according to Junos scope and hierarchy rules."""
 
-    def __init__(self, context: JuniperContextConfig) -> None:
+    def __init__(self, context: JuniperContextConfig, effective_lookup=None) -> None:
         self.context = context
+        self.effective_lookup = effective_lookup
+        self.scope = context.name if context.context_type == "root" else f"{context.context_type} {context.name}"
         self._address_set_cache: Dict[Tuple[int, str], Tuple[List[str], bool]] = {}
         self.unverified_applications: Set[str] = set()
         # Precompute zone -> address book attachment map
@@ -104,10 +106,9 @@ class JuniperReferenceResolver:
                     return res
 
         # 2. Fallback to global address book
-        if "global" in self.context.address_books:
-            res = self._resolve_in_book("global", reference)
-            if not res.is_unresolved:
-                return res
+        res = self._resolve_in_book("global", reference)
+        if not res.is_unresolved:
+            return res
 
         # If not in zone-attached book or global book, address is unresolved in this zone scope
         return ResolvedAddressReference(
@@ -132,6 +133,11 @@ class JuniperReferenceResolver:
 
         book = self.context.address_books.get(book_name)
         if not book:
+            if self._effective(("security", "address-book", book_name, "address", reference)):
+                return ResolvedAddressReference(name=reference, original_name=reference, address_book=book_name)
+            if self._effective(("security", "address-book", book_name, "address-set", reference)):
+                return ResolvedAddressReference(name=reference, original_name=reference,
+                                                address_book=book_name, is_group=True)
             return ResolvedAddressReference(
                 name=reference,
                 original_name=reference,
@@ -161,6 +167,9 @@ class JuniperReferenceResolver:
                 address=book.addresses[reference],
             )
 
+        if self._effective(("security", "address-book", book_name, "address", reference)):
+            return ResolvedAddressReference(name=reference, original_name=reference, address_book=book_name)
+
         # Check address-set
         if reference in book.address_sets and self._object_is_effective(book.address_sets[reference]):
             aset = book.address_sets[reference]
@@ -174,6 +183,9 @@ class JuniperReferenceResolver:
                 resolved_members=members,
                 has_cycle=has_cycle,
             )
+
+        if self._effective(("security", "address-book", book_name, "address-set", reference)):
+            return ResolvedAddressReference(name=reference, original_name=reference, address_book=book_name, is_group=True)
 
         return ResolvedAddressReference(
             name=reference,
@@ -278,7 +290,13 @@ class JuniperReferenceResolver:
         if reference in self.context.applications and self._object_is_effective(self.context.applications[reference]):
             return True, False, f"{ctx_prefix}{reference}"
 
+        if self._effective(("applications", "application", reference)):
+            return True, False, f"{ctx_prefix}{reference}"
+
         if reference in self.context.application_sets and self._object_is_effective(self.context.application_sets[reference]):
+            return False, True, f"{ctx_prefix}{reference}"
+
+        if self._effective(("applications", "application-set", reference)):
             return False, True, f"{ctx_prefix}{reference}"
 
         return False, False, None
@@ -288,16 +306,19 @@ class JuniperReferenceResolver:
 
     def resolve_scheduler(self, reference: str):
         scheduler = self.context.schedulers.get(reference)
-        return scheduler if scheduler and self._object_is_effective(scheduler) else None
+        return scheduler if scheduler and self._object_is_effective(scheduler) else (
+            True if self._effective(("schedulers", "scheduler", reference)) else None)
 
     def resolve_nat_pool(self, reference: str, nat_type: str):
         pools = self.context.nat.source_pools if nat_type == "source" else self.context.nat.destination_pools
         pool = pools.get(reference)
-        return pool if pool and self._object_is_effective(pool) else None
+        return pool if pool and self._object_is_effective(pool) else (
+            True if self._effective(("security", "nat", nat_type, "pool", reference)) else None)
 
     def resolve_routing_instance(self, reference: str):
         instance = self.context.routing_instances.get(reference)
-        return instance if instance and self._object_is_effective(instance) else None
+        return instance if instance and self._object_is_effective(instance) else (
+            True if self._effective(("routing-instances", reference), ("routing-instances", reference, "instance-type")) else None)
 
     def resolve_interface(self, reference: str):
         interface = self.context.interfaces.get(reference)
@@ -308,15 +329,53 @@ class JuniperReferenceResolver:
             interface = self.context.interfaces.get(parent)
             if interface and unit in interface.units:
                 return interface.units[unit]
+            if self._effective(("interfaces", parent, "unit", unit)):
+                return True
+        if self._effective(("interfaces", reference)):
+            return True
         return None
 
-    def resolve_ike_policy(self, reference: str): return self.context.vpn.ike_policies.get(reference)
-    def resolve_ike_proposal(self, reference: str): return self.context.vpn.ike_proposals.get(reference)
-    def resolve_ipsec_policy(self, reference: str): return self.context.vpn.ipsec_policies.get(reference)
-    def resolve_ipsec_vpn(self, reference: str): return self.context.vpn.ipsec_vpns.get(reference)
-    def resolve_access_profile(self, reference: str): return self.context.access_profiles.get(reference)
-    def resolve_remote_access_client_config(self, reference: str): return self.context.remote_access.client_configs.get(reference)
-    def resolve_apbr_overlay_path(self, reference: str): return self.context.apbr.overlay_paths.get(reference)
+    def resolve_zone(self, reference: str):
+        return self.context.zones.get(reference) or (
+            True if self._effective(("security", "zones", "security-zone", reference)) else None)
+
+    def resolve_apbr_named(self, reference: str, kind: str):
+        collection = getattr(self.context.apbr, {
+            "metrics-profile": "metrics_profiles", "active-probe-params": "active_probe_params",
+            "passive-probe-params": "passive_probe_params", "multipath-rule": "multipath_rules",
+            "overlay-path": "overlay_paths", "destination-path-group": "destination_path_groups",
+            "sla-rule": "sla_rules",
+        }.get(kind, ""), {})
+        return self._lookup(collection, reference,
+                            ("security", "advance-policy-based-routing", kind, reference))
+
+    def resolve_ike_policy(self, reference: str):
+        return self._lookup(self.context.vpn.ike_policies, reference, ("security", "ike", "policy", reference))
+    def resolve_ike_gateway(self, reference: str):
+        return self._lookup(self.context.vpn.ike_gateways, reference, ("security", "ike", "gateway", reference))
+    def resolve_ike_proposal(self, reference: str):
+        return self._lookup(self.context.vpn.ike_proposals, reference, ("security", "ike", "proposal", reference))
+    def resolve_ipsec_policy(self, reference: str):
+        return self._lookup(self.context.vpn.ipsec_policies, reference, ("security", "ipsec", "policy", reference))
+    def resolve_ipsec_proposal(self, reference: str):
+        return self._lookup(self.context.vpn.ipsec_proposals, reference, ("security", "ipsec", "proposal", reference))
+    def resolve_ipsec_vpn(self, reference: str):
+        return self._lookup(self.context.vpn.ipsec_vpns, reference, ("security", "ipsec", "vpn", reference))
+    def resolve_access_profile(self, reference: str):
+        return self._lookup(self.context.access_profiles, reference, ("access", "profile", reference))
+    def resolve_remote_access_client_config(self, reference: str):
+        return self._lookup(self.context.remote_access.client_configs, reference,
+                            ("security", "remote-access", "client-config", reference))
+    def resolve_apbr_overlay_path(self, reference: str):
+        return self._lookup(self.context.apbr.overlay_paths, reference,
+                            ("security", "advance-policy-based-routing", "overlay-path", reference))
+
+    def _effective(self, *paths):
+        return bool(self.effective_lookup and self.effective_lookup.contains(self.scope, *paths))
+
+    def _lookup(self, collection, reference, path):
+        item = collection.get(reference)
+        return item if item else (True if self._effective(path) else None)
 
     def resolve_firewall_filter(self, reference: str, family: Optional[str] = None):
         filt = self.context.firewall_filters.get(reference)

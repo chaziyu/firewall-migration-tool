@@ -5,6 +5,8 @@ from typing import Protocol
 from ..model.vpn import (
     FGIPsecPhase1,
     FGIPsecPhase2,
+    FGIPsecPolicyPhase1,
+    FGIPsecPolicyPhase2,
 )
 from ..nodes import (
     CommandNode,
@@ -31,7 +33,9 @@ class VPNConfig(Protocol):
     """Minimal destination required by IPsec extraction."""
 
     ipsec_phase1: list[FGIPsecPhase1]
+    ipsec_policy_phase1: list[FGIPsecPolicyPhase1]
     ipsec_phase2: list[FGIPsecPhase2]
+    ipsec_policy_phase2: list[FGIPsecPolicyPhase2]
 
 
 def extract_vpn(
@@ -41,15 +45,25 @@ def extract_vpn(
     """Extract FortiGate route-based IPsec source objects."""
 
     _extract_phase1(tree, config)
+    _extract_phase1(
+        tree, config, section_path="vpn ipsec phase1",
+        model_type=FGIPsecPolicyPhase1, destination="ipsec_policy_phase1",
+    )
     _extract_phase2(tree, config)
+    _extract_phase2(
+        tree, config, section_path="vpn ipsec phase2",
+        model_type=FGIPsecPolicyPhase2, destination="ipsec_policy_phase2",
+    )
 
 
 def _extract_phase1(
     tree: SectionIndex,
     config: VPNConfig,
+    *,
+    section_path: str = "vpn ipsec phase1-interface",
+    model_type=FGIPsecPhase1,
+    destination: str = "ipsec_phase1",
 ) -> None:
-    section_path = "vpn ipsec phase1-interface"
-
     for source in iter_section_edits(
         tree,
         section_path,
@@ -61,7 +75,7 @@ def _extract_phase1(
 
         attributes = source_model_kwargs(
             evaluation,
-            model_type=FGIPsecPhase1,
+            model_type=model_type,
             name=source.edit.name,
             vdom=source.vdom,
         )
@@ -104,17 +118,17 @@ def _extract_phase1(
             "group-authentication-secret"
         ]
 
-        config.ipsec_phase1.append(
-            FGIPsecPhase1(**attributes)
-        )
+        getattr(config, destination).append(model_type(**attributes))
 
 
 def _extract_phase2(
     tree: SectionIndex,
     config: VPNConfig,
+    *,
+    section_path: str = "vpn ipsec phase2-interface",
+    model_type=FGIPsecPhase2,
+    destination: str = "ipsec_phase2",
 ) -> None:
-    section_path = "vpn ipsec phase2-interface"
-
     for source in iter_section_edits(
         tree,
         section_path,
@@ -126,14 +140,12 @@ def _extract_phase2(
 
         attributes = source_model_kwargs(
             evaluation,
-            model_type=FGIPsecPhase2,
+            model_type=model_type,
             name=source.edit.name,
             vdom=source.vdom,
         )
 
-        config.ipsec_phase2.append(
-            FGIPsecPhase2(**attributes)
-        )
+        getattr(config, destination).append(model_type(**attributes))
 
 
 def _evaluate_secret_state(

@@ -12,10 +12,10 @@ from .models import PANOSValidationIssue, PANOSValidationResult
 _PORT = re.compile(r"^(\d+)(?:\s*-\s*(\d+))?$")
 
 
-def _issue(issues, severity, domain, message, item=None, field=None, *, scope=None, object_type=None, source_name=None):
+def _issue(issues, severity, domain, message, item=None, field=None, *, scope=None, object_type=None, source_name=None, source_path=None):
     scope = scope or getattr(item, "scope", None)
     issues.append(PANOSValidationIssue(severity, domain, message,
-        getattr(item, "source_path", None), source_name if source_name is not None else getattr(item, "name", None), field,
+        source_path if source_path is not None else getattr(item, "source_path", None), source_name if source_name is not None else getattr(item, "name", None), field,
         scope, pan_scope_identity(scope) if scope else None, object_type or domain))
 
 
@@ -45,7 +45,19 @@ def _validate_ip(value: str, *, ranges: bool = True) -> bool:
             return False
 
 
-def _validate_ports(value: str) -> bool:
+def _validate_ip_wildcard(value: str) -> bool:
+    if value.count("/") != 1:
+        return False
+    address, mask = value.split("/")
+    try:
+        ipaddress.IPv4Address(address)
+        ipaddress.IPv4Address(mask)
+        return True
+    except ValueError:
+        return False
+
+
+def _validate_ports(value: str, *, minimum: int = 1, maximum: int = 65535) -> bool:
     parts = [part.strip() for part in value.split(",")]
     if not parts or any(not part for part in parts):
         return False
@@ -54,13 +66,20 @@ def _validate_ports(value: str) -> bool:
         if not match:
             return False
         start, end = int(match.group(1)), int(match.group(2) or match.group(1))
-        if not 1 <= start <= 65535 or not 1 <= end <= 65535 or start > end:
+        if not minimum <= start <= maximum or not minimum <= end <= maximum or start > end:
             return False
     return True
 
 
 def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PANOSValidationResult:
     issues: list[PANOSValidationIssue] = []
+    for diagnostic in config.extraction_issues:
+        issues.append(PANOSValidationIssue(
+            "warning", "extraction", f"{diagnostic.exception_type}: {diagnostic.message}", diagnostic.source_path, diagnostic.source_name,
+            "typed_extraction", diagnostic.scope,
+            pan_scope_identity(diagnostic.scope) if diagnostic.scope else None,
+            diagnostic.domain or "extraction",
+        ))
     if not config.source_inventory:
         _issue(issues, "warning", "source", "PAN-OS XML contains no entry records.")
     if not config.scopes:
@@ -100,11 +119,11 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
     for item in derived.reference_resolutions:
         if item.status == "SOURCE_ONLY" and item.resolution_reason.startswith("EXTRACTION_INCOMPLETE"):
             _issue(issues, "warning", "reference", f"source-only PAN-OS reference {item.reference_name!r}: extraction incomplete",
-                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference")
+                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference", source_path=item.owner_source_path)
         if item.status in {"UNRESOLVED", "AMBIGUOUS"}:
             _issue(issues, "error" if item.status == "UNRESOLVED" else "warning", "reference",
                    f"{item.status.lower()} PAN-OS reference {item.reference_name!r} in {item.owner_name or '<unnamed>'}.{item.owner_field}",
-                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference")
+                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference", source_path=item.owner_source_path)
     for item in derived.relationship_issues:
         _issue(issues, "warning", "relationship", item.message, field=item.field,
                scope=item.source_scope, source_name=item.source_name, object_type=item.category)
@@ -112,7 +131,8 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
     for address in config.addresses:
         for field in ("ip_netmask", "ip_range", "ip_wildcard"):
             value = getattr(address, field)
-            if value is not None and field in address.explicit_fields and not _validate_ip(value):
+            valid = (_validate_ip_wildcard(value) if field == "ip_wildcard" else _validate_ip(value)) if value is not None else True
+            if value is not None and field in address.explicit_fields and not valid:
                 _issue(issues, "error", "address", f"malformed {field}: {value!r}", address, field)
     for item in (*config.interfaces, *config.interface_units):
         for value in getattr(item, "ipv4_addresses", ()) or ():
@@ -130,10 +150,17 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
 
     for service in config.services:
         for protocol in (service.tcp, service.udp):
-            if protocol and protocol.port and not _validate_ports(protocol.port):
+            if protocol and protocol.port and not _validate_ports(protocol.port, minimum=0):
                 _issue(issues, "error", "service", f"malformed port expression: {protocol.port!r}", service, "port")
-            if protocol and protocol.source_port and not _validate_ports(protocol.source_port):
+            if protocol and protocol.source_port and not _validate_ports(protocol.source_port, minimum=0):
                 _issue(issues, "error", "service", f"malformed source port expression: {protocol.source_port!r}", service, "source_port")
+
+    for tunnel in config.ipsec_tunnels:
+        for proxy in tunnel.proxy_ids or ():
+            for field in ("local_port", "remote_port"):
+                port = getattr(proxy, field)
+                if port and not _validate_ports(port, minimum=0):
+                    _issue(issues, "error", "ipsec-tunnel", f"malformed proxy {field.replace('_', '-')} expression: {port!r}", tunnel, field)
 
     for rule in config.security_rules:
         explicit = rule.explicit_fields
@@ -143,7 +170,7 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
     for rule in config.nat_rules:
         for translation in (rule.destination_translation, rule.dynamic_destination_translation):
             port = getattr(translation, "translated_port", None) if translation else None
-            if port and not _validate_ports(port):
+            if port and not _validate_ports(port, minimum=1):
                 _issue(issues, "error", "nat", f"malformed translated port: {port!r}", rule, "translated_port")
         if rule.disabled in {"yes", "true"} and not rule.source_translation and not rule.destination_translation:
             continue

@@ -72,8 +72,8 @@ def test_implemented_source_sheets_do_not_use_empty_placeholder_builders():
 
 
 def test_not_implemented_sheets_need_no_row_builder():
-    assert SHEET_IMPLEMENTATION_STATUS["Route Path Monitors"] == "NOT_IMPLEMENTED"
-    assert "Route Path Monitors" not in ROW_BUILDERS
+    assert SHEET_IMPLEMENTATION_STATUS["Route Path Monitors"] == "IMPLEMENTED"
+    assert "Route Path Monitors" in ROW_BUILDERS
 
 
 def test_failed_typed_extraction_preserves_inventory_and_later_objects():
@@ -89,3 +89,11 @@ def test_failed_typed_extraction_preserves_inventory_and_later_objects():
     assert any("traffic-distribution-profile/entry" in path for path in config.unknown_paths)
     assert [item.name for item in config.sdwan_traffic_distribution_profiles] == ["valid"]
     assert [item.name for item in config.addresses] == ["later-address"]
+    issue = config.extraction_issues[0]
+    assert (issue.source_name, issue.domain, issue.exception_type) == ("malformed", "sdwan_traffic_distribution_profile", "ValidationError")
+    assert issue.source_path.endswith("traffic-distribution-profile/entry")
+    assert issue.scope == config.source_inventory[1].scope
+    assert "not-a-scalar" in issue.message
+    from fwmigrate.vendors.palo_alto.native import build_derived_views, validate_panos_config
+    validation = validate_panos_config(config, build_derived_views(config))
+    assert any(item.severity == "warning" and item.domain == "extraction" and item.source_name == "malformed" for item in validation.issues)

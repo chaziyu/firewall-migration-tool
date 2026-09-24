@@ -2,6 +2,7 @@ from copy import deepcopy
 
 from fwmigrate.vendors.juniper_srx.parser import JuniperSRXParser
 from fwmigrate.vendors.juniper_srx.export.excel import export_juniper_excel
+from fwmigrate.vendors.juniper_srx.derived import build_juniper_derived_views
 from fwmigrate.vendors.juniper_srx.source_report import extract_juniper_source
 from fwmigrate.vendors.juniper_srx.web_report import build_juniper_preview
 from fwmigrate.vendors.juniper_srx.transforms.inheritance import build_inheritance_view
@@ -48,7 +49,7 @@ set apply-groups G
 deactivate apply-groups G
 """)
     assert any(item["status"] == "INACTIVE" for item in view["candidates"])
-    assert "GROUP_INACTIVE" in {item["status"] for item in view["issues"]}
+    assert "GROUP_INACTIVE" not in {item["status"] for item in view["issues"]}
 
 
 def test_missing_and_cyclic_groups_are_reported_without_synthetic_targets():
@@ -137,3 +138,111 @@ def test_validation_and_excel_keep_group_failures_and_excluded_candidates():
     rows = list(load_workbook(output, read_only=True)["Inheritance"].values)
     assert any(row[0] == "candidate" and str(row[3]).endswith("EXCLUDED") for row in rows[1:])
     assert any(row[0] == "issue" and str(row[3]) == "GROUP_NOT_FOUND" for row in rows[1:])
+    assert not any(issue.code == "GROUP_EXCLUDED" for issue in result.validation.issues)
+
+
+def test_effective_inherited_address_resolves_without_mutating_source():
+    parser = JuniperSRXParser("\n".join([
+        "set groups G security address-book global address INHERITED 192.0.2.5/32",
+        "set apply-groups G",
+        "set security policies global policy P match source-address INHERITED",
+    ]))
+    config = parser.extract_source()
+    before = deepcopy(config)
+    derived = build_juniper_derived_views(config, parser.commands)
+    dependency = next(item for item in derived.dependencies if item.reference == "INHERITED")
+    assert dependency.result == "RESOLVED"
+    assert "global" not in config.get_context().address_books
+    assert config == before
+
+
+def test_excluded_or_deactivated_inherited_address_does_not_resolve():
+    for extra, expected_status in (("set apply-groups-except G", "EXCLUDED"),
+                                   ("deactivate groups G security address-book global address INHERITED", "INACTIVE")):
+        parser = JuniperSRXParser("\n".join([
+            "set groups G security address-book global address INHERITED 192.0.2.5/32",
+            "set apply-groups G", extra,
+            "set security policies global policy P match source-address INHERITED",
+        ]))
+        config = parser.extract_source()
+        derived = build_juniper_derived_views(config, parser.commands)
+        dependency = next(item for item in derived.dependencies if item.reference == "INHERITED")
+        assert dependency.result == "UNRESOLVED"
+        candidates = derived.inheritance_view["candidates"]
+        statements = derived.inheritance_view["effective_statements"]
+        source = candidates
+        assert any(item["status"] == expected_status for item in source), (
+            expected_status, [(item["status"], item.get("target_path")) for item in source])
+
+
+def test_effective_lookup_stays_with_its_logical_system():
+    parser = JuniperSRXParser("\n".join([
+        "set logical-systems LS1 groups G security address-book global address A 192.0.2.5/32",
+        "set logical-systems LS1 apply-groups G",
+        "set logical-systems LS1 security policies global policy P match source-address A",
+        "set logical-systems LS2 security policies global policy P match source-address A",
+    ]))
+    config = parser.extract_source()
+    derived = build_juniper_derived_views(config, parser.commands)
+    results = {item.source_context: item.result for item in derived.dependencies
+               if item.source_field == "source-address" and item.reference == "A"}
+    assert results == {"logical-system LS1": "RESOLVED", "logical-system LS2": "UNRESOLVED"}, (
+        results, [(item["context"], item["target_path"], item["status"], item["source_group"])
+                  for item in derived.inheritance_view["effective_statements"]])
+
+
+def test_hierarchical_inactive_parent_emits_one_deactivation_and_keeps_children():
+    parser = JuniperSRXParser("""interfaces {
+    inactive: ge-0/0/0 {
+        description WAN;
+        mtu 1500;
+    }
+    ge-0/0/1 {
+        description LAN;
+    }
+}
+""")
+    config = parser.extract_source()
+    assert parser.source_format == "junos_hierarchical"
+    deactivations = [cmd for cmd in parser.commands if cmd.operation.value == "deactivate"]
+    assert [cmd.tokens[1:] for cmd in deactivations] == [["interfaces", "ge-0/0/0"]]
+    assert config.get_context().interfaces["ge-0/0/0"].description == "WAN"
+    assert config.get_context().interfaces["ge-0/0/1"].description == "LAN"
+    view = build_inheritance_view(parser.commands)
+    assert any(item["status"] == "INACTIVE" and item["target_path"][:2] == ("interfaces", "ge-0/0/0")
+               for item in view["effective_statements"])
+    assert any(item["status"] == "EFFECTIVE" and item["target_path"][:2] == ("interfaces", "ge-0/0/1")
+               for item in view["effective_statements"])
+
+
+def test_hierarchical_nested_and_leaf_inactive_paths_are_exact():
+    parser = JuniperSRXParser("""interfaces {
+    ge-0/0/0 {
+        unit 0 {
+            inactive: family inet {
+                address 192.0.2.1/24;
+            }
+        }
+    }
+    ge-0/0/1 {
+        unit 0 {
+            family inet {
+                inactive: address 198.51.100.1/24;
+            }
+        }
+    }
+    ge-0/0/2 {
+        unit 0 {
+            family inet {
+                address 203.0.113.1/24;
+            }
+        }
+    }
+}
+""")
+    parser.extract_source()
+    directives = [cmd.tokens[1:] for cmd in parser.commands if cmd.operation.value == "deactivate"]
+    assert directives == [
+        ["interfaces", "ge-0/0/0", "unit", "0", "family", "inet"],
+        ["interfaces", "ge-0/0/1", "unit", "0", "family", "inet", "address", "198.51.100.1/24"],
+    ]

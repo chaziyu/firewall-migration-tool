@@ -45,6 +45,18 @@ def test_validation_index_queries_stable_issue_metadata():
     assert index.issues_for_category("duplicate") == (issue,)
 
 
+def test_nat_rule_order_is_unique_within_package_scope():
+    from fwmigrate.vendors.checkpoint.model.policy import CPNATRule
+    from fwmigrate.vendors.checkpoint.validation.validator import _validate_nat
+    config = CheckPointConfig(nat_rules=[
+        CPNATRule(uid="n1", name="n1", package="P1", order=1),
+        CPNATRule(uid="n2", name="n2", package="P2", order=1),
+    ])
+    assert not any(item.code == "nat_order_malformed" for item in _validate_nat(config, CheckPointDerivedViews()))
+    config.nat_rules.append(CPNATRule(uid="n3", name="n3", package="P1", order=1))
+    assert any(item.code == "nat_order_malformed" for item in _validate_nat(config, CheckPointDerivedViews()))
+
+
 def test_secret_finding_never_includes_material():
     secret = "phase7-secret-sentinel"
     config = CheckPointConfig(hosts=[CPHost(uid="h1", name="host", raw_extra={"authentication": {"password": secret}})])

@@ -45,13 +45,13 @@ def test_supported_fixtures_export_real_workbooks(name):
     assert workbook["Summary"]["B3"].value == name
 
 
-def test_complete_schema_is_retained_while_unimplemented_sheets_are_omitted():
+def test_complete_schema_is_retained_and_route_path_monitors_are_implemented():
     workbook = _workbook("objects.xml")
     assert "DHCP Servers" in SHEET_HEADERS
     assert SHEET_IMPLEMENTATION_STATUS["DHCP Servers"] == "IMPLEMENTED"
     assert "DHCP Servers" in workbook.sheetnames
-    assert SHEET_IMPLEMENTATION_STATUS["Route Path Monitors"] == "NOT_IMPLEMENTED"
-    assert "Route Path Monitors" not in workbook.sheetnames
+    assert SHEET_IMPLEMENTATION_STATUS["Route Path Monitors"] == "IMPLEMENTED"
+    assert "Route Path Monitors" in workbook.sheetnames
 
 
 def test_workbook_uses_fortigate_presentation_structure():

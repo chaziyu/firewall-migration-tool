@@ -18,19 +18,20 @@ class R81CommandSpec:
     scope_type: str = "DOMAIN"
     pagination_required: bool = True
     required: bool = False
+    details_level_full: bool = False
 
 
 R81_COMMAND_REGISTRY: Dict[str, R81CommandSpec] = {
     # Management/domain and gateway inventory.
     "show-domains": R81CommandSpec("show-domains", scope_type="GLOBAL", required=True),
     "show-gateways-and-servers": R81CommandSpec("show-gateways-and-servers", required=True),
-    "show-simple-gateways": R81CommandSpec("show-simple-gateways"),
-    "show-simple-clusters": R81CommandSpec("show-simple-clusters"),
+    "show-simple-gateways": R81CommandSpec("show-simple-gateways", details_level_full=True),
+    "show-simple-clusters": R81CommandSpec("show-simple-clusters", details_level_full=True),
     "show-global-properties": R81CommandSpec("show-global-properties", scope_type="GLOBAL"),
     # Network/address objects.
-    "show-hosts": R81CommandSpec("show-hosts"),
-    "show-networks": R81CommandSpec("show-networks"),
-    "show-address-ranges": R81CommandSpec("show-address-ranges"),
+    "show-hosts": R81CommandSpec("show-hosts", details_level_full=True),
+    "show-networks": R81CommandSpec("show-networks", details_level_full=True),
+    "show-address-ranges": R81CommandSpec("show-address-ranges", details_level_full=True),
     "show-wildcards": R81CommandSpec("show-wildcards"),
     "show-multicast-address-ranges": R81CommandSpec("show-multicast-address-ranges"),
     "show-users": R81CommandSpec("show-users"),

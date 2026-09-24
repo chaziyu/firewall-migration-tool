@@ -8,7 +8,7 @@ from typing import Any
 from ..model.gateway import CPCluster, CPGateway, CPInteroperableDevice
 from ..model.gaia import CPVTI
 from ..model.vpn import CPVPNCommunity, CPVPNDomain
-from ..relationships.references import CPBrokenReference, CPReferenceIndex, CPReferenceKind, CPResolvedReference
+from ..relationships.references import CPBrokenReference, CPReferenceIndex
 from ..relationships.vpn_topology import CPVPNCommunityTopology, CPVPNTopology, CPVTITopology
 
 
@@ -93,17 +93,12 @@ def transform_vpn(topology: CPVPNTopology, references: CPReferenceIndex) -> CPVP
                     relation.vti.uid, relation.vti.name, "matching_communities",
                     relation.vti.name, "ambiguous",
                 ))
-        domains: tuple[CPVPNDomain, ...] = ()
-        if community and community.vpn_domain:
-            resolved = references.resolve(
-                community.vpn_domain, owner=community,
-                expected_kinds=(CPReferenceKind.VPN_DOMAIN,), source_field="vpn_domain",
-            )
-            if isinstance(resolved, CPResolvedReference) and isinstance(resolved.target, CPVPNDomain):
-                domains = (resolved.target,)
-            elif isinstance(resolved, CPBrokenReference):
-                view_issues.append(_issue(resolved))
         devices = _unique_identity((*members, *(item.owning_gateway for item in vti_topology if item.owning_gateway)))
+        domains = tuple(item.domain for item in topology.vpn_domains
+                        if any(member in devices for member in item.members))
+        for item in topology.vpn_domains:
+            if item.domain in domains:
+                view_issues.extend(_issue(issue) for issue in item.issues)
         gateway_sources = tuple(item for item in devices if isinstance(item, CPGateway) and item.vpn is not None)
         member_gateways = tuple(item for item in members if isinstance(item, CPGateway)
                                 and not isinstance(item, (CPCluster, CPInteroperableDevice)))
@@ -119,7 +114,7 @@ def transform_vpn(topology: CPVPNTopology, references: CPReferenceIndex) -> CPVP
             vpn_domains=domains,
             vtis=tuple(item.vti for item in vti_topology),
             vti_topology=vti_topology,
-            route_based=True if vti_topology else None,
+            route_based=True if any(item.matching_communities or item.owning_gateway or item.peer for item in vti_topology) else None,
             ike_properties=community.ike_properties if community else None,
             ipsec_properties=community.ipsec_properties if community else None,
             community_source=community,

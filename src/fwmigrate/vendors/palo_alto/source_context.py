@@ -16,6 +16,8 @@ class PANWalkContext:
     vsys: str | None = None
     device_group: str | None = None
     parent_device_group: str | None = None
+    template: str | None = None
+    template_stack: str | None = None
     scope: PANScope | None = None
     rulebase_position: str | None = None
     interface_name: str | None = None
@@ -43,6 +45,11 @@ def _transition(element: ET.Element, path: tuple[str, ...], parent: PANWalkConte
     if element.tag == "entry" and parent_tag in {"devices", "device"}:
         if "device-group" in path:
             context = replace(context, device_serial=_serial(element) or element.get("name"))
+        elif context.scope and context.scope.kind in {"template", "template-stack"}:
+            name, serial = element.get("name"), _serial(element)
+            scope = context.scope.model_copy(update={"device_name": name, "device_serial": serial,
+                "template_provenance": {**context.scope.template_provenance, "managed_device": name, "managed_device_serial": serial}})
+            context = replace(context, device_name=name, device_serial=serial, scope=scope)
         else:
             name = element.get("name")
             serial = _serial(element)
@@ -52,6 +59,17 @@ def _transition(element: ET.Element, path: tuple[str, ...], parent: PANWalkConte
                 device_serial=serial,
                 scope=PANScope(kind="device", name=name or "device", device_name=name, device_serial=serial),
             )
+
+    if element.tag == "entry" and parent_tag in {"template", "template-stack"}:
+        name = element.get("name") or parent_tag
+        context = replace(
+            context,
+            template=name if parent_tag == "template" else context.template,
+            template_stack=name if parent_tag == "template-stack" else context.template_stack,
+            scope=PANScope(kind=parent_tag, name=name, device_name=context.device_name,
+                device_serial=context.device_serial, template_stack=name if parent_tag == "template-stack" else None,
+                template_provenance={"template": name} if parent_tag == "template" else {"template_stack": name}),
+        )
 
     if element.tag == "entry" and parent_tag == "device-group":
         name = element.get("name") or "device-group"
@@ -72,19 +90,14 @@ def _transition(element: ET.Element, path: tuple[str, ...], parent: PANWalkConte
 
     if element.tag == "entry" and parent_tag == "vsys":
         name = element.get("name") or "vsys"
-        context = replace(
-            context,
-            vsys=name,
-            scope=PANScope(
-                kind="vsys",
-                name=name,
-                device_name=context.device_name,
-                device_serial=context.device_serial,
-                vsys=name,
-                device_group=context.device_group,
-                parent_device_group=context.parent_device_group,
-            ),
-        )
+        if context.scope and context.scope.kind in {"template", "template-stack"}:
+            scope = context.scope.model_copy(update={"vsys": name, "template_provenance": {**context.scope.template_provenance, "vsys": name}})
+        else:
+            scope = PANScope(
+                kind="vsys", name=name, device_name=context.device_name, device_serial=context.device_serial,
+                vsys=name, device_group=context.device_group, parent_device_group=context.parent_device_group,
+            )
+        context = replace(context, vsys=name, scope=scope)
 
     rulebase_position = {"pre-rulebase": "pre", "rulebase": "local", "post-rulebase": "post"}.get(element.tag)
     if rulebase_position is not None:

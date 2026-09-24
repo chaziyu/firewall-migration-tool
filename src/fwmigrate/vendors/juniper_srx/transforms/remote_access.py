@@ -2,21 +2,26 @@
 
 from .vpn import build_vpn_graph
 from .interface_topology import build_interface_topology
+from ..resolver import JuniperReferenceResolver
 
 
-def build_secure_connect_graph(context, scope: str, certificates=()) -> tuple[dict, ...]:
+def build_secure_connect_graph(context, scope: str, certificates=(), effective_lookup=None) -> tuple[dict, ...]:
     edges = []
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     topology = {row["name"]: row for row in build_interface_topology(context, scope)}
     for profile in context.remote_access.profiles.values():
-        for target_type, relationship, reference, collection in (
-            ("access-profile", "ACCESS_PROFILE", profile.access_profile, context.access_profiles),
-            ("remote-access-client-config", "CLIENT_CONFIG", profile.client_config, context.remote_access.client_configs),
-            ("ipsec-vpn", "IPSEC_VPN", profile.ipsec_vpn, context.vpn.ipsec_vpns),
+        for target_type, relationship, reference in (
+            ("access-profile", "ACCESS_PROFILE", profile.access_profile),
+            ("remote-access-client-config", "CLIENT_CONFIG", profile.client_config),
+            ("ipsec-vpn", "IPSEC_VPN", profile.ipsec_vpn),
         ):
             if reference:
                 edges.append({"context": scope, "source_type": "remote-access-profile", "source_name": profile.name,
                               "relationship": relationship, "target_type": target_type, "target_name": reference,
-                              "resolved": reference in collection})
+                              "resolved": (
+                                  resolver.resolve_access_profile(reference) is not None if relationship == "ACCESS_PROFILE" else
+                                  resolver.resolve_remote_access_client_config(reference) is not None if relationship == "CLIENT_CONFIG" else
+                                  resolver.resolve_ipsec_vpn(reference) is not None)})
         if profile.ipsec_vpn and profile.ipsec_vpn in context.vpn.ipsec_vpns:
             tunnel = context.vpn.ipsec_vpns[profile.ipsec_vpn]
             interface = tunnel.bind_interface
@@ -32,6 +37,6 @@ def build_secure_connect_graph(context, scope: str, certificates=()) -> tuple[di
                             edges.append({"context": scope, "source_type": "security-zone", "source_name": zone,
                                           "relationship": "ZONE_ASSOCIATED_POLICY", "target_type": "security-policy",
                                           "target_name": policy.name, "resolved": True})
-    edges.extend(edge for edge in build_vpn_graph(context, scope, certificates)
+    edges.extend(edge for edge in build_vpn_graph(context, scope, certificates, effective_lookup)
                  if edge["source_type"] in {"ipsec-vpn", "ike-gateway", "ike-policy", "ipsec-policy"})
     return tuple(edges)

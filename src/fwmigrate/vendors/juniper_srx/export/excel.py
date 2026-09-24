@@ -88,6 +88,7 @@ def export_juniper_excel(result: Any, output: Any) -> Any:
             "Applications": views.applications, "Policies": views.policies, "NAT": views.nat_rule_sets,
             "VPN": views.vpn_relationships,
             "DHCP Local Servers": tuple(item for item in views.dhcp if item["kind"] == "local-server"),
+            "DHCP Relay Groups": tuple(item for item in views.dhcp if item["kind"] == "relay-group"),
             "DHCP Pools": tuple(item for item in views.dhcp if item["kind"] == "address-assignment-pool"),
             "Access Profiles": views.access_profiles, "Firewall Users": views.firewall_users,
             "APBR": views.apbr, "Remote Access": views.remote_access,

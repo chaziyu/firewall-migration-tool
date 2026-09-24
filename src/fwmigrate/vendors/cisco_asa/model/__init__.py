@@ -10,7 +10,7 @@ from .nat import CiscoNATRule
 from .schedule import CiscoTimeRangeClause, CiscoTimeRange
 from .routing import CiscoStaticRoute, CiscoTrack, CiscoSLAMonitor, CiscoRouteMapRule, CiscoRouteMap, CiscoPolicyRoutePathMonitor
 from .identity import CiscoAAARecord, CiscoAAAServerGroup, CiscoAAAServerHost, CiscoLocalUser, CiscoAAAAuthenticationRule, CiscoAAAAuthorizationRule, CiscoAAAAccountingRule, CiscoCommandPrivilege
-from .vpn import CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecTransformSet, CiscoVPNAddressPool, CiscoCryptoMap, CiscoTunnelGroup, CiscoGroupPolicy, CiscoTrustpointRecord, CiscoWebVPNConfig, CiscoVPNAddressAssignment
+from .vpn import CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecTransformSet, CiscoIPsecProfile, CiscoVPNAddressPool, CiscoCryptoMap, CiscoTunnelGroup, CiscoGroupPolicy, CiscoTrustpointRecord, CiscoWebVPNConfig, CiscoVPNAddressAssignment
 from .mpf import CiscoInspectionPolicySection, CiscoTCPMapSetting, CiscoClassMapMatch, CiscoClassMap, CiscoInspectAction, CiscoMPFConnectionAction, CiscoMPFPoliceAction, CiscoPolicyMapClass, CiscoPolicyMap, CiscoTCPMap, CiscoServicePolicy, CiscoIPSAction
 from .dhcp import CiscoDHCPOption, CiscoDHCPServer, CiscoDHCPRelayServer, CiscoDHCPReservation, CiscoDHCPRelay
 from .management import CiscoHTTPServerConfig, CiscoDNSServerGroup, CiscoDNSSettings, CiscoConnectionControl, CiscoManagementSetting, CiscoSystemSettings, CiscoNTPServer, CiscoManagementAccessRule, CiscoICMPManagementRule, CiscoSNMPSetting, CiscoLoggingSetting, CiscoEnableCredential
@@ -51,6 +51,7 @@ __all__ = [
     'CiscoIKEPolicy',
     'CiscoIKEv2Proposal',
     'CiscoIPsecTransformSet',
+    'CiscoIPsecProfile',
     'CiscoVPNAddressPool',
     'CiscoCryptoMap',
     'CiscoTunnelGroup',

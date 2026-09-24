@@ -34,6 +34,7 @@ class ASAReferenceKind(str, Enum):
     TUNNEL_GROUP = "tunnel_group"
     CRYPTO_MAP = "crypto_map"
     IPSEC_TRANSFORM_SET = "ipsec_transform_set"
+    IPSEC_PROFILE = "ipsec_profile"
     IKEV2_PROPOSAL = "ikev2_proposal"
     TRUSTPOINT = "trustpoint"
     IKE_POLICY = "ike_policy"
@@ -255,7 +256,8 @@ def build_asa_reference_index(config: Any) -> ASAReferenceIndex:
         ("security_groups", ASAReferenceKind.SECURITY_GROUP),
         ("time_ranges", ASAReferenceKind.TIME_RANGE), ("route_maps", ASAReferenceKind.ROUTE_MAP),
         ("ike_policies", ASAReferenceKind.IKE_POLICY), ("ikev2_proposals", ASAReferenceKind.IKEV2_PROPOSAL),
-        ("ipsec_transform_sets", ASAReferenceKind.IPSEC_TRANSFORM_SET), ("vpn_address_pools", ASAReferenceKind.VPN_ADDRESS_POOL),
+        ("ipsec_transform_sets", ASAReferenceKind.IPSEC_TRANSFORM_SET), ("ipsec_profiles", ASAReferenceKind.IPSEC_PROFILE),
+        ("vpn_address_pools", ASAReferenceKind.VPN_ADDRESS_POOL),
         ("crypto_maps", ASAReferenceKind.CRYPTO_MAP), ("tunnel_groups", ASAReferenceKind.TUNNEL_GROUP),
         ("group_policies", ASAReferenceKind.GROUP_POLICY), ("class_maps", ASAReferenceKind.CLASS_MAP),
         ("tcp_maps", ASAReferenceKind.TCP_MAP), ("dns_server_groups", ASAReferenceKind.DNS_SERVER_GROUP),

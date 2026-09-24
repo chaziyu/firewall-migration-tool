@@ -17,7 +17,7 @@ from .nat import CiscoNATRule
 from .routing import CiscoRouteMap, CiscoSLAMonitor, CiscoStaticRoute, CiscoTrack
 from .schedule import CiscoTimeRange
 from .service import CiscoNetworkServiceObject, CiscoServiceGroup, CiscoServiceObject
-from .vpn import CiscoCryptoMap, CiscoGroupPolicy, CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecTransformSet, CiscoTrustpointRecord, CiscoTunnelGroup, CiscoVPNAddressAssignment, CiscoVPNAddressPool, CiscoWebVPNConfig
+from .vpn import CiscoCryptoMap, CiscoGroupPolicy, CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecProfile, CiscoIPsecTransformSet, CiscoTrustpointRecord, CiscoTunnelGroup, CiscoVPNAddressAssignment, CiscoVPNAddressPool, CiscoWebVPNConfig
 from .zone import CiscoTrafficZone
 
 
@@ -48,6 +48,7 @@ class CiscoASAConfig(CiscoSourceModel):
     ike_policies: List[CiscoIKEPolicy] = Field(default_factory=list)
     ikev2_proposals: List[CiscoIKEv2Proposal] = Field(default_factory=list)
     ipsec_transform_sets: List[CiscoIPsecTransformSet] = Field(default_factory=list)
+    ipsec_profiles: List[CiscoIPsecProfile] = Field(default_factory=list)
     vpn_address_pools: List[CiscoVPNAddressPool] = Field(default_factory=list)
     trustpoints: List[str] = Field(default_factory=list)
     crypto_maps: List[CiscoCryptoMap] = Field(default_factory=list)

@@ -16,6 +16,7 @@ class CPReferenceKind(str, Enum):
     TIME = "time"; TIME_GROUP = "time_group"; SECURITY_ZONE = "security_zone"; USER = "user"; USER_GROUP = "user_group"
     ACCESS_ROLE = "access_role"; PERMISSION_PROFILE = "permission_profile"; ADMINISTRATOR = "administrator"; GATEWAY = "gateway"; CLUSTER = "cluster"
     INTEROPERABLE_DEVICE = "interoperable_device"; VPN_COMMUNITY = "vpn_community"; VPN_DOMAIN = "vpn_domain"
+    APPLICATION_SITE = "application_site"
     POLICY_PACKAGE = "policy_package"; ACCESS_LAYER = "access_layer"; ACCESS_SECTION = "access_section"; ACCESS_RULE = "access_rule"
     THREAT_PROFILE = "threat_profile"; THREAT_LAYER = "threat_layer"; THREAT_RULE = "threat_rule"; HTTPS_INSPECTION_RULE = "https_inspection_rule"
 
@@ -67,7 +68,8 @@ _FIELDS = {
     "hosts": CPReferenceKind.HOST, "networks": CPReferenceKind.NETWORK, "address_ranges": CPReferenceKind.ADDRESS_RANGE,
     "dns_domains": CPReferenceKind.ADDRESS, "wildcard_addresses": CPReferenceKind.ADDRESS, "dynamic_addresses": CPReferenceKind.ADDRESS,
     "updatable_objects": CPReferenceKind.ADDRESS, "groups": CPReferenceKind.GROUP, "groups_with_exclusion": CPReferenceKind.GROUP_WITH_EXCLUSION,
-    "services": CPReferenceKind.SERVICE, "service_groups": CPReferenceKind.SERVICE_GROUP, "times": CPReferenceKind.TIME,
+    "services": CPReferenceKind.SERVICE, "service_groups": CPReferenceKind.SERVICE_GROUP,
+    "applications": CPReferenceKind.APPLICATION_SITE, "times": CPReferenceKind.TIME,
     "time_groups": CPReferenceKind.TIME_GROUP, "security_zones": CPReferenceKind.SECURITY_ZONE, "users": CPReferenceKind.USER,
     "user_groups": CPReferenceKind.USER_GROUP, "access_roles": CPReferenceKind.ACCESS_ROLE, "permission_profiles": CPReferenceKind.PERMISSION_PROFILE,
     "administrators": CPReferenceKind.ADMINISTRATOR, "gateways": CPReferenceKind.GATEWAY, "clusters": CPReferenceKind.CLUSTER,
@@ -152,14 +154,15 @@ def build_memberships(config: CheckPointConfig, index: CPReferenceIndex) -> tupl
 def collect_broken_references(config: CheckPointConfig, index: CPReferenceIndex | None = None) -> tuple[CPBrokenReference, ...]:
     index = index or build_reference_index(config); broken = []
     rule_fields = {
-        "source": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP),
-        "destination": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP),
-        "service": (CPReferenceKind.SERVICE, CPReferenceKind.SERVICE_GROUP), "services_and_applications": (CPReferenceKind.SERVICE, CPReferenceKind.SERVICE_GROUP),
+        "source": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP, CPReferenceKind.GROUP_WITH_EXCLUSION, CPReferenceKind.SECURITY_ZONE, CPReferenceKind.ACCESS_ROLE),
+        "destination": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP, CPReferenceKind.GROUP_WITH_EXCLUSION, CPReferenceKind.SECURITY_ZONE, CPReferenceKind.ACCESS_ROLE),
+        "service": (CPReferenceKind.SERVICE, CPReferenceKind.SERVICE_GROUP, CPReferenceKind.APPLICATION_SITE), "services_and_applications": (CPReferenceKind.SERVICE, CPReferenceKind.SERVICE_GROUP, CPReferenceKind.APPLICATION_SITE),
+        "vpn": (CPReferenceKind.VPN_COMMUNITY,),
         "install_on": (CPReferenceKind.GATEWAY, CPReferenceKind.CLUSTER, CPReferenceKind.INTEROPERABLE_DEVICE), "time": (CPReferenceKind.TIME, CPReferenceKind.TIME_GROUP),
-        "original_source": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP),
-        "original_destination": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP),
-        "original_service": (CPReferenceKind.SERVICE, CPReferenceKind.SERVICE_GROUP), "translated_source": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP),
-        "translated_destination": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP), "translated_service": (CPReferenceKind.SERVICE, CPReferenceKind.SERVICE_GROUP),
+        "original_source": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP, CPReferenceKind.GROUP_WITH_EXCLUSION),
+        "original_destination": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP, CPReferenceKind.GROUP_WITH_EXCLUSION),
+        "original_service": (CPReferenceKind.SERVICE, CPReferenceKind.SERVICE_GROUP), "translated_source": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP, CPReferenceKind.GROUP_WITH_EXCLUSION),
+        "translated_destination": (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS, CPReferenceKind.GROUP, CPReferenceKind.GROUP_WITH_EXCLUSION), "translated_service": (CPReferenceKind.SERVICE, CPReferenceKind.SERVICE_GROUP),
     }
     for owner in (*config.access_rules, *config.nat_rules, *config.threat_rules, *config.https_inspection_rules):
         for field, expected in rule_fields.items():

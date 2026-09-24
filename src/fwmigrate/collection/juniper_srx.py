@@ -1,6 +1,6 @@
 """Junos set-format collection over SSH."""
 
-from fwmigrate.extraction.sanitize import sanitize_raw_text
+from fwmigrate.vendors.juniper_srx.extraction import sanitize_junos_source_text
 
 from .contracts import CollectedSource, CollectionError, SSH_FIELDS, validate_connection
 
@@ -40,4 +40,4 @@ class JuniperSRXCollector:
             raise CollectionError("The device returned an empty configuration.")
         if len(content.encode("utf-8")) > 25_000_000:
             raise CollectionError("The device configuration exceeds the size limit.")
-        return CollectedSource(self.vendor_id, sanitize_raw_text(content), "live-juniper-srx.set", self.method)
+        return CollectedSource(self.vendor_id, sanitize_junos_source_text(content), "live-juniper-srx.set", self.method)

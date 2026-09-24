@@ -33,3 +33,18 @@ vpn-addr-assign dhcp
     assert [item.source_context for item in config.webvpn_configs] == ["blue", "green"]
     assert [item.source_context for item in config.vpn_address_assignments] == ["blue", "green"]
     assert config.vpn_address_assignments[1].dhcp_enabled is True
+
+
+def test_local_pool_uses_single_hyphenated_range_and_only_explicit_mask():
+    config = CiscoASAParser(
+        "ip local pool POOL 10.0.0.1-10.0.0.20\n"
+        "ip local pool POOL2 10.1.0.10-10.1.0.30 mask 255.255.255.0\n"
+    ).parse_raw()
+    first, second = config.vpn_address_pools
+    assert (first.start, first.end, first.mask) == ("10.0.0.1", "10.0.0.20", None)
+    assert (second.start, second.end, second.mask) == ("10.1.0.10", "10.1.0.30", "255.255.255.0")
+
+
+def test_local_pool_rejects_separate_addresses_instead_of_reinterpreting_them():
+    config = CiscoASAParser("ip local pool POOL 10.0.0.1 10.0.0.20 mask 255.255.255.0\n").parse_raw()
+    assert config.vpn_address_pools[0].extraction_status == "PARSE_ERROR"

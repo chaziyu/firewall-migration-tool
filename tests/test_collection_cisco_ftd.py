@@ -34,13 +34,14 @@ def test_fmc_pagination_bundle_and_read_only_requests(monkeypatch):
 
         def get(self, url, **kwargs):
             calls.append(("GET", url))
-            if url.endswith("/networkaddresses/h1"):
-                return Response({"id": "h1", "name": "first", "value": "192.0.2.1"})
-            if url.endswith("/networkaddresses/h2"):
-                return Response({"id": "h2", "name": "second", "value": "192.0.2.2", "password": "do-not-save"})
-            if url.endswith("/networkaddresses"):
-                return Response({"items": [{"id": "h1", "name": "first"}], "paging": {"next": {"href": url + "?offset=1"}, "total": 2}})
-            if url.endswith("/networkaddresses?offset=1"):
+            path = url.split("?", 1)[0]
+            if path.endswith("/networkaddresses/h1"):
+                return Response({"id": "h1", "name": "first", "type": "Host", "value": "192.0.2.1"})
+            if path.endswith("/networkaddresses/h2"):
+                return Response({"id": "h2", "name": "second", "type": "Host", "value": "192.0.2.2", "password": "do-not-save"})
+            if path.endswith("/networkaddresses") and "offset=1" not in url:
+                return Response({"items": [{"id": "h1", "name": "first"}], "paging": {"next": {"href": url + "&offset=1"}, "total": 2}})
+            if path.endswith("/networkaddresses") and "offset=1" in url:
                 return Response({"items": [{"id": "h2", "name": "second", "password": "do-not-save"}], "paging": {"total": 2}})
             return Response({"items": [], "paging": {"total": 0}})
 
@@ -71,9 +72,9 @@ def test_fmc_partial_endpoint_failure_keeps_usable_source(monkeypatch):
             return Response(headers={"X-auth-access-token": "token", "DOMAINS": '[{"uuid":"d1","name":"Global"}]'})
 
         def get(self, url, **kwargs):
-            if url.endswith("/networkaddresses"):
+            if url.split("?", 1)[0].endswith("/networkaddresses"):
                 raise TimeoutError("secret-password")
-            items = [{"id": "z1", "name": "inside"}] if url.endswith("/object/securityzones") else []
+            items = [{"id": "z1", "name": "inside"}] if url.split("?", 1)[0].endswith("/object/securityzones") else []
             return Response({"items": items, "paging": {"total": len(items)}})
 
         def close(self):
@@ -96,11 +97,12 @@ def test_fmc_failed_later_page_keeps_first_page(monkeypatch):
             return Response(headers={"X-auth-access-token": "token", "DOMAINS": '[{"uuid":"d1","name":"Global"}]'})
 
         def get(self, url, **kwargs):
-            if url.endswith("/networkaddresses?offset=1"):
+            path = url.split("?", 1)[0]
+            if path.endswith("/networkaddresses") and "offset=1" in url:
                 raise TimeoutError("connection-secret")
-            if url.endswith("/networkaddresses"):
-                return Response({"items": [{"id": "h1", "name": "host", "value": "192.0.2.1"}],
-                                 "paging": {"next": {"href": url + "?offset=1"}, "total": 2}})
+            if path.endswith("/networkaddresses"):
+                return Response({"items": [{"id": "h1", "name": "host", "type": "Host", "value": "192.0.2.1"}],
+                                 "paging": {"next": {"href": url + "&offset=1"}, "total": 2}})
             return Response({"items": [], "paging": {"total": 0}})
 
         def close(self):
@@ -250,10 +252,11 @@ def test_fmc_access_rules_request_expanded_fields(monkeypatch):
 
         def get(self, url, **kwargs):
             calls.append(("GET", url))
-            if url.endswith("/policy/accesspolicies/policy-1"):
+            path = url.split("?", 1)[0]
+            if path.endswith("/policy/accesspolicies/policy-1"):
                 return Response({"id": "policy-1", "name": "Policy"})
-            if url.endswith("/policy/accesspolicies"):
-                return Response({"items": [{"id": "policy-1", "name": "Policy"}], "paging": {"total": 1}})
+            if path.endswith("/policy/accesspolicies"):
+                return Response({"items": [{"id": "policy-1", "name": "Policy", "defaultAction": {"id": "default-1"}}], "paging": {"total": 1}})
             if "/accessrules?expanded=true" in url:
                 return Response({"items": [{
                     "id": "rule-1", "name": "Allow-Web", "enabled": True, "action": "ALLOW",
@@ -285,10 +288,11 @@ def test_fmc_access_rule_later_page_failure_keeps_rules_and_marks_partial(monkey
             return Response(headers={"X-auth-access-token": "token", "DOMAINS": '[{"uuid":"d1","name":"Global"}]'})
 
         def get(self, url, **kwargs):
-            if url.endswith("/policy/accesspolicies/policy-1"):
+            path = url.split("?", 1)[0]
+            if path.endswith("/policy/accesspolicies/policy-1"):
                 return Response({"id": "policy-1", "name": "Policy"})
-            if url.endswith("/policy/accesspolicies"):
-                return Response({"items": [{"id": "policy-1", "name": "Policy"}], "paging": {"total": 1}})
+            if path.endswith("/policy/accesspolicies"):
+                return Response({"items": [{"id": "policy-1", "name": "Policy", "defaultAction": {"id": "default-1"}}], "paging": {"total": 1}})
             if "/accessrules?expanded=true&offset=1" in url:
                 raise TimeoutError("transport-secret")
             if "/accessrules?expanded=true" in url:
@@ -330,9 +334,9 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkey
                 data = [{"id": "dev-1", "name": "edge", "type": "DeviceRecord", "model": "FTD"}]
             elif url.endswith("/routing/virtualrouters"):
                 data = [{"id": "vr-1", "name": "blue", "interfaces": [{"name": "inside"}]}]
-            elif url.endswith("/routing/virtualrouters/vr-1/staticroutes"):
+            elif url.split("?", 1)[0].endswith("/routing/virtualrouters/vr-1/staticroutes"):
                 data = [{"id": "route-1", "name": "default-v6", "type": "IPv6StaticRoute", "destination": "::/0"}]
-            elif url.endswith("/object/networkaddresses"):
+            elif url.split("?", 1)[0].endswith("/object/networkaddresses"):
                 data = [{"id": "addr-1", "name": "vpn-client", "type": "Host", "value": "192.0.2.8"}]
             elif url.endswith("/object/ipv4addresspools"):
                 data = [{"id": "pool-1", "name": "ra-pool", "range": "192.0.2.8-192.0.2.20"}]
@@ -340,6 +344,8 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkey
                 data = [{"id": "ips-1", "name": "IPS", "description": "configured policy"}]
             elif "/intrusionrulegroups?" in url:
                 data = [{"id": "group-1", "name": "local-overrides", "rules": [{"id": "sig-1", "action": "DROP"}]}]
+            elif "/intrusionrules?" in url and "overrides=true" in url:
+                data = []
             elif "/intrusionrules?" in url:
                 data = [{"id": "sig-1", "gid": 1, "sid": 50, "action": "DROP", "enabled": True}]
             elif url.endswith("/policy/ftds2svpns"):
@@ -358,8 +364,8 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkey
                 data = [{"id": "profile-1", "name": "staff", "realm": {"id": "realm-1"}}]
             elif url.endswith("/ra-1/addressassignmentsettings?expanded=true"):
                 data = [{"id": "assign-1", "ipv4AddressPool": {"id": "pool-1"}}]
-            elif url.endswith("/policy/accesspolicies"):
-                data = [{"id": "acp-1", "name": "ACP", "description": "configured policy"}]
+            elif url.split("?", 1)[0].endswith("/policy/accesspolicies"):
+                data = [{"id": "acp-1", "name": "ACP", "description": "configured policy", "defaultAction": {"id": "default-1"}}]
             elif url.endswith("/acp-1/defaultactions?expanded=true"):
                 data = [{"id": "default-1", "action": "BLOCK"}]
             elif "/policy/prefilterpolicies" in url and "defaultactions" not in url:
@@ -408,8 +414,8 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkey
     assert analysis.config.routes[0].virtual_router == "blue"
     assert any(item.source_attributes.get("parent_policy_id") == "ra-1"
                for item in analysis.config.ra_vpn_address_assignment_settings)
-    assert any(item.source_attributes.get("resource_type") == "default_actions"
-               and item.source_attributes.get("parent_policy_id") == "acp-1" for item in analysis.config.native_resources)
+    assert any(item.source_attributes.get("parent_policy_id") == "acp-1"
+               and item.action == "BLOCK" for item in analysis.config.access_control_default_actions)
     assert any(item.source_attributes.get("parent_policy_id") == "prefilter-1"
                for item in analysis.config.prefilter_default_actions)
     assert analysis.derived is not None and analysis.validation is not None
@@ -430,7 +436,7 @@ def test_fmc_device_intrusion_and_vpn_failures_keep_successful_source(monkeypatc
         def get(self, url, **kwargs):
             if url.endswith("/devices/devicerecords"):
                 return Response({"items": [{"id": "dev-1", "name": "edge", "model": "FTD"}], "paging": {"total": 1}})
-            if url.endswith("/dev-1/routing/ipv6staticroutes"):
+            if url.split("?", 1)[0].endswith("/dev-1/routing/ipv6staticroutes"):
                 raise TimeoutError("device-resource-secret")
             if url.endswith("/dev-1/ftdallinterfaces"):
                 return Response({"items": [{"id": "if-1", "name": "inside", "type": "PhysicalInterface", "physicalName": "eth0"}], "paging": {"total": 1}})
@@ -442,7 +448,7 @@ def test_fmc_device_intrusion_and_vpn_failures_keep_successful_source(monkeypatc
                 return Response({"items": [{"id": "vpn-1", "name": "S2S", "description": "topology"}], "paging": {"total": 1}})
             if url.endswith("/vpn-1/endpoints"):
                 raise TimeoutError("vpn-child-secret")
-            if url.endswith("/object/networkaddresses"):
+            if url.split("?", 1)[0].endswith("/object/networkaddresses"):
                 return Response({"items": [{"id": "addr-1", "name": "server", "type": "Host", "value": "192.0.2.1"}], "paging": {"total": 1}})
             return Response({"items": [], "paging": {"total": 0}})
 
