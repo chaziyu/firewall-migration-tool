@@ -5,7 +5,8 @@ def classify_cisco_ftd_coverage(sections: list[SourceSectionResult]) -> None:
     for section in sections:
         if section.path in {"interfaces", "routes"}:
             section.status = ExtractionStatus.EXTRACTED
-            section.notes.append("FTD syntax was parsed into canonical interface/route inventory.")
+            noun = "interface" if section.path == "interfaces" else "route"
+            section.notes.append(f"FTD syntax was parsed into Cisco FTD source {noun} state.")
         elif section.path == "management":
             section.status = ExtractionStatus.PARTIAL
             section.notes.append("FTD management syntax is retained as source-oriented data.")

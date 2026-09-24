@@ -10,9 +10,12 @@ from fwmigrate.extraction.models import ExtractionStatus, SourceInventoryItem, S
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 
 from .derived import FTDDerivedViews, build_ftd_derived_views
-from .model import CiscoFTDConfig, CiscoFTDInterfaceSource, CiscoFTDRoute
+from .model import CiscoFTDConfig
 from .cli.parser import CiscoFTDParser
+from .cli.section_scanner import scan_cisco_ftd_sections
+from .cli.coverage import classify_cisco_ftd_coverage
 from .validation import FTDValidationResult, validate_ftd_config
+from .reporting_counts import count_acp_rules, count_nat_rules
 
 
 def _sanitize(value: Any) -> Any:
@@ -43,15 +46,6 @@ def _text_source(text: str, zone_mapping: dict[str, str] | None) -> CiscoFTDConf
     config = CiscoFTDParser(text, zone_mapping=zone_mapping).parse_raw()
     config.input_source_type = config.source_plane = "ftd-text-evidence"
     config.source_metadata = {"authoritative": "device CLI/text evidence"}
-    config.source_interfaces = [CiscoFTDInterfaceSource(
-        name=item.name, source_plane="ftd-text-evidence", raw_extra={"raw_lines": item.raw_lines},
-        interface_type=item.interface_type, address=item.ip, zone=zone_mapping.get(item.nameif, zone_mapping.get(item.name))
-        if zone_mapping else None,
-    ) for item in config.interfaces]
-    config.routes = [CiscoFTDRoute(
-        name=item.name, source_plane="ftd-text-evidence", raw_extra={"raw_line": item.raw_line},
-        interface=item.interface, destination=item.destination, gateway=item.gateway,
-    ) for item in config.static_routes]
     return config
 
 
@@ -65,6 +59,21 @@ def _inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
         ("network_addresses", "network-addresses"), ("network_groups", "network-groups"),
         ("protocol_port_objects", "protocol-port-objects"), ("port_object_groups", "port-object-groups"),
         ("applications", "applications"),
+        ("virtual_routers", "virtual-routers"), ("policy_based_routes", "policy-based-routes"),
+        ("ecmp_zones", "ecmp-zones"), ("sla_monitors", "sla-monitors"),
+        ("certificates", "certificates"), ("certificate_maps", "certificate-maps"),
+        ("certificate_enrollments", "certificate-enrollments"), ("address_pools", "address-pools"),
+        ("group_policies", "group-policies"),
+        ("s2s_ike_settings", "s2s-ike-settings"), ("s2s_ipsec_settings", "s2s-ipsec-settings"),
+        ("s2s_advanced_settings", "s2s-advanced-settings"),
+        ("ra_vpn_ipsec_settings", "ra-vpn-ipsec-settings"), ("ldap_attribute_maps", "ldap-attribute-maps"),
+        ("ra_vpn_load_balance_settings", "ra-vpn-load-balance-settings"),
+        ("ra_vpn_address_assignment_settings", "ra-vpn-address-assignment-settings"),
+        ("secure_client_settings", "secure-client-settings"), ("ra_vpn_ipsec_crypto_maps", "ra-vpn-ipsec-crypto-maps"),
+        ("prefilter_policies", "prefilter-policies"), ("prefilter_rules", "prefilter-rules"),
+        ("prefilter_default_actions", "prefilter-default-actions"),
+        ("network_analysis_policies", "network-analysis-policies"), ("inspector_configs", "inspector-configs"),
+        ("inspector_override_configs", "inspector-override-configs"),
         ("variable_sets", "variable-sets"), ("url_categories", "url-categories"), ("vlan_objects", "vlan-objects"),
         ("security_zones", "security-zones"), ("interface_groups", "interface-groups"),
         ("device_interfaces", "device-interfaces"),
@@ -94,6 +103,18 @@ def _inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
                 status=ExtractionStatus.SOURCE_ONLY if config.source_plane == "ftd-text-evidence" else ExtractionStatus.EXTRACTED,
                 requires_manual_review=any(item.get("source_name") == record.name for item in config.unsupported_evidence),
             ))
+    if config.source_plane == "ftd-text-evidence":
+        for path, records, kind in (("interfaces", config.interfaces, "interface"),
+                                    ("routes", config.static_routes, "static-route")):
+            for record in records:
+                items.append(SourceInventoryItem(domain="cisco_ftd", source_path=f"ftd-cli/{path}",
+                    source_id=str(record.source_attributes.get("source_line_number", record.name)), name=record.name,
+                    source_type=kind, source_attributes={"source_plane": config.source_plane,
+                        "explicit_fields": list(getattr(record, "explicit_fields", ())),
+                        "raw_lines": getattr(record, "raw_lines", None),
+                        "raw_line": getattr(record, "raw_line", None), **record.source_attributes},
+                    status=ExtractionStatus.SOURCE_ONLY,
+                    requires_manual_review=any(item.get("source_name") == record.name for item in config.unsupported_evidence)))
     for policy_attribute, path in (("access_control_policies", "access-control-rules"),):
         for policy in getattr(config, policy_attribute):
             for index, record in enumerate(policy.rules or [], 1):
@@ -142,10 +163,7 @@ def extract_cisco_ftd_source(text: str, zone_mapping: dict[str, str] | None = No
         return sum(len(getattr(config, field)) for field in (
             "network_addresses", "network_groups", "protocol_port_objects", "port_object_groups", "applications",
             "file_policies", "variable_sets", "url_categories", "vlan_objects", "security_zones", "interface_groups",
-            "source_interfaces", "routes", "access_control_policies", "nat_policies")) + sum(
-            len(policy.rules) for policy in config.access_control_policies) + sum(
-            sum(len(rules or []) for rules in (policy.manual_rules_before_auto, policy.auto_rules, policy.manual_rules_after_auto,
-                policy.unclassified_manual_rules, policy.rules)) for policy in config.nat_policies)
+            "source_interfaces", "routes", "access_control_policies", "nat_policies")) + count_acp_rules(config) + count_nat_rules(config)
 
     if is_fmc_bundle(text):
         config = CiscoFMCBundleParser(text).parse_source()
@@ -164,10 +182,43 @@ def extract_cisco_ftd_source(text: str, zone_mapping: dict[str, str] | None = No
                                          object_count_extracted=source_count(config))]
     else:
         config = _text_source(text, zone_mapping)
-        sections = [SourceSectionResult(path="ftd-cli/source", status=ExtractionStatus.SOURCE_ONLY,
-                                         object_count_source=len(config.interfaces) + len(config.static_routes),
-                                         object_count_parsed=len(config.interfaces) + len(config.static_routes),
-                                         object_count_extracted=0)]
+        sections = scan_cisco_ftd_sections(text)
+        classify_cisco_ftd_coverage(sections)
+        interfaces = {item.source_attributes.get("source_line_number"): item for item in config.interfaces}
+        routes = {item.source_attributes.get("source_line_number"): item for item in config.static_routes}
+        management = {item.source_attributes.get("source_line_number"): item for item in config.management_settings}
+        for section in sections:
+            line = section.line_start
+            if section.path == "interfaces":
+                parsed = interfaces.get(line)
+                section.object_count_parsed = int(parsed is not None)
+                section.object_count_extracted = section.object_count_parsed
+                if parsed is None:
+                    section.status = ExtractionStatus.PARSE_ERROR
+                    section.object_count_parse_error = 1
+                    section.notes.append("Interface section was not parsed into Cisco FTD source state.")
+            elif section.path == "routes":
+                parsed = routes.get(line)
+                malformed = parsed is not None and any(
+                    item.get("source_name") == parsed.name and item.get("source_path") == "ftd-cli/routes"
+                    for item in config.unsupported_evidence
+                )
+                section.object_count_parsed = int(parsed is not None and not malformed)
+                section.object_count_extracted = int(parsed is not None and not malformed)
+                if malformed:
+                    section.status = ExtractionStatus.PARSE_ERROR
+                    section.object_count_parse_error = 1
+                    section.notes.append("Malformed FTD static route was preserved as source evidence.")
+                elif parsed is None:
+                    section.status = ExtractionStatus.PARSE_ERROR
+                    section.object_count_parse_error = 1
+                    section.notes.append("Route section was not parsed into Cisco FTD source state.")
+            elif section.path == "management":
+                section.object_count_parsed = int(line in management)
+                section.object_count_extracted = 0
+            else:
+                section.object_count_parsed = 0
+                section.object_count_extracted = 0
     config = _sanitize(deepcopy(config))
     collection = config.collection_metadata
     if config.source_plane == "fmc-rest-bundle" and collection.status in {"PARTIAL", "FAILED"}:

@@ -8,26 +8,28 @@ def scan_cisco_ftd_sections(text: str) -> list[SourceSectionResult]:
     for number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith(("!", ":", "#")):
+            if current is not None:
+                current.line_end = number - 1
             current = None
             continue
         indent = len(raw) - len(raw.lstrip())
         if current is not None and indent > current_indent:
             current.line_end = number
-            current.object_count_source = (current.object_count_source or 0) + 1
             continue
         if current is not None:
             current.line_end = number - 1
         first = line.split()[0].lower()
         if first == "interface":
             path = "interfaces"
-        elif first in {"route", "ipv6"} and line.lower().startswith(("route ", "ipv6 route ")):
+        elif line.lower() == "route" or line.lower().startswith(("route ", "ipv6 route ")) or line.lower() == "ipv6 route":
             path = "routes"
         else:
-            path = "management" if first in {"configure", "management", "show-network-style"} else "other"
+            management_command = first in {"configure", "management", "show", "show-network-style"} or line.lower() == "no management-interface convergence"
+            path = "management" if management_command else "other"
         current = SourceSectionResult(
             path=path, line_start=number, line_end=number,
             object_count_source=1, status=ExtractionStatus.SOURCE_ONLY,
-            parser_handler="CiscoFTDParser.parse",
+            parser_handler="CiscoFTDParser.parse_raw",
         )
         sections.append(current)
         current_indent = indent
