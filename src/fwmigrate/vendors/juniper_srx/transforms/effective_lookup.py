@@ -1,21 +1,50 @@
-"""Read-only lookup of effective objects supplied by Junos groups."""
+"""Read-only lookup of local and inherited effective Junos paths."""
 
 
 class EffectiveJunosLookup:
     def __init__(self, statements=()):
-        self._objects = {}
+        self._inherited = {}
+        self._local = {}
+        self._inactive = {}
+        self.has_source = False
         for item in statements:
-            if item.get("origin") != "inherited-group" or item.get("status") != "EFFECTIVE":
+            self.has_source = True
+            if item.get("status") != "EFFECTIVE":
                 continue
             context = item.get("context", "root")
-            path = tuple(item.get("target_path") or ())
-            prefix = ("logical-systems", context.removeprefix("logical-system ")) if context.startswith("logical-system ") else (
-                "tenants", context.removeprefix("tenant ")) if context.startswith("tenant ") else ()
+            path = tuple(part.lower() for part in item.get("target_path") or ())
+            prefix = (("logical-systems", context.removeprefix("logical-system "))
+                      if context.startswith("logical-system ") else
+                      ("tenants", context.removeprefix("tenant "))
+                      if context.startswith("tenant ") else ())
             if prefix and path[:2] == prefix:
                 path = path[2:]
+            elif context == "root" and path[:1] in (("logical-systems",), ("tenants",)):
+                continue
             if path:
-                self._objects.setdefault(context, set()).add(path)
+                index = self._inherited if item.get("origin") == "inherited-group" else self._local
+                index.setdefault(context, set()).add(path)
+        for item in statements:
+            if item.get("origin") == "activation":
+                self._inactive.setdefault(item.get("context", "root"), set()).add(
+                    tuple(part.lower() for part in item.get("target_path") or ()))
+
+    @staticmethod
+    def _contains(paths, *targets):
+        return any(path[:len(target)] == target for target in targets for path in paths)
 
     def contains(self, context, *paths):
-        objects = self._objects.get(context, ())
-        return any(any(candidate[:len(path)] == path for candidate in objects) for path in paths)
+        """Keep inherited-only semantics for existing callers."""
+        return self._contains(self._inherited.get(context, ()), *paths)
+
+    def contains_effective_path(self, context, *paths):
+        return (self._contains(self._inherited.get(context, ()), *paths)
+                or self._contains(self._local.get(context, ()), *paths)) and not self.hierarchy_is_inactive(context, *paths)
+
+    def hierarchy_is_inactive(self, context, *paths):
+        inactive = self._inactive.get(context, ())
+        return any(target[:len(prefix)] == prefix for prefix in inactive for target in paths)
+
+    def explicit_object_is_effective(self, context, path):
+        path = tuple(part.lower() for part in path)
+        return self._contains(self._local.get(context, ()), path) and not self.hierarchy_is_inactive(context, path)

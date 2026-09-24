@@ -48,7 +48,10 @@ class JuniperDerivedViews:
 def build_juniper_derived_views(config: Any, source_commands=()) -> JuniperDerivedViews:
     """Resolve relationships from source state without changing ``config``."""
     inheritance_view = build_inheritance_view(source_commands)
-    effective_lookup = EffectiveJunosLookup(inheritance_view["effective_statements"])
+    activation_statements = tuple({"context": item["context"], "target_path": item["path"],
+                                   "origin": "activation"}
+                                  for item in inheritance_view.get("inactive_hierarchies", ()))
+    effective_lookup = EffectiveJunosLookup((*inheritance_view["effective_statements"], *activation_statements))
     compatibility = build_compatibility_views(config, effective_lookup)
     nat_usage, nat_pool_usage, policy_views, vpn_graph, secure_connect, apbr_graph = [], [], [], [], [], []
     for context in config.iter_contexts():

@@ -158,7 +158,9 @@ class JuniperReferenceResolver:
             )
 
         # Check address object
-        if reference in book.addresses and self._object_is_effective(book.addresses[reference]):
+        address_path = ("security", "address-book", book_name, "address", reference)
+        if (reference in book.addresses and self._object_is_effective(book.addresses[reference])
+                and self._explicit_effective(address_path)):
             return ResolvedAddressReference(
                 name=canonical_name,
                 original_name=reference,
@@ -171,7 +173,9 @@ class JuniperReferenceResolver:
             return ResolvedAddressReference(name=reference, original_name=reference, address_book=book_name)
 
         # Check address-set
-        if reference in book.address_sets and self._object_is_effective(book.address_sets[reference]):
+        set_path = ("security", "address-book", book_name, "address-set", reference)
+        if (reference in book.address_sets and self._object_is_effective(book.address_sets[reference])
+                and self._explicit_effective(set_path)):
             aset = book.address_sets[reference]
             members, has_cycle = self.expand_address_set(book, reference)
             return ResolvedAddressReference(
@@ -287,13 +291,15 @@ class JuniperReferenceResolver:
 
         ctx_prefix = f"{self.context.name}__" if self.context.name != "root" else ""
 
-        if reference in self.context.applications and self._object_is_effective(self.context.applications[reference]):
+        if (reference in self.context.applications and self._object_is_effective(self.context.applications[reference])
+                and self._explicit_effective(("applications", "application", reference))):
             return True, False, f"{ctx_prefix}{reference}"
 
         if self._effective(("applications", "application", reference)):
             return True, False, f"{ctx_prefix}{reference}"
 
-        if reference in self.context.application_sets and self._object_is_effective(self.context.application_sets[reference]):
+        if (reference in self.context.application_sets and self._object_is_effective(self.context.application_sets[reference])
+                and self._explicit_effective(("applications", "application-set", reference))):
             return False, True, f"{ctx_prefix}{reference}"
 
         if self._effective(("applications", "application-set", reference)):
@@ -321,23 +327,27 @@ class JuniperReferenceResolver:
             True if self._effective(("routing-instances", reference), ("routing-instances", reference, "instance-type")) else None)
 
     def resolve_interface(self, reference: str):
-        interface = self.context.interfaces.get(reference)
-        if interface:
-            return interface
+        interface_path = ("interfaces", reference)
         if "." in reference:
             parent, unit = reference.rsplit(".", 1)
+            interface_path = ("interfaces", parent, "unit", unit)
             interface = self.context.interfaces.get(parent)
-            if interface and unit in interface.units:
+            if interface and unit in interface.units and self._explicit_effective(interface_path):
                 return interface.units[unit]
-            if self._effective(("interfaces", parent, "unit", unit)):
+            if self._effective(interface_path):
                 return True
+        else:
+            interface = self.context.interfaces.get(reference)
+            if interface and self._explicit_effective(interface_path):
+                return interface
         if self._effective(("interfaces", reference)):
             return True
         return None
 
     def resolve_zone(self, reference: str):
-        return self.context.zones.get(reference) or (
-            True if self._effective(("security", "zones", "security-zone", reference)) else None)
+        path = ("security", "zones", "security-zone", reference)
+        zone = self.context.zones.get(reference)
+        return zone if zone and self._explicit_effective(path) else (True if self._effective(path) else None)
 
     def resolve_apbr_named(self, reference: str, kind: str):
         collection = getattr(self.context.apbr, {
@@ -371,11 +381,22 @@ class JuniperReferenceResolver:
                             ("security", "advance-policy-based-routing", "overlay-path", reference))
 
     def _effective(self, *paths):
-        return bool(self.effective_lookup and self.effective_lookup.contains(self.scope, *paths))
+        if not self.effective_lookup:
+            return False
+        if hasattr(self.effective_lookup, "contains_effective_path"):
+            return self.effective_lookup.contains_effective_path(self.scope, *paths)
+        return bool(self.effective_lookup.contains(self.scope, *paths))
+
+    def _explicit_effective(self, path):
+        if not self.effective_lookup or not getattr(self.effective_lookup, "has_source", False):
+            return True
+        return self.effective_lookup.explicit_object_is_effective(self.scope, path)
 
     def _lookup(self, collection, reference, path):
         item = collection.get(reference)
-        return item if item else (True if self._effective(path) else None)
+        if item and self._object_is_effective(item) and self._explicit_effective(path):
+            return item
+        return True if self._effective(path) else None
 
     def resolve_firewall_filter(self, reference: str, family: Optional[str] = None):
         filt = self.context.firewall_filters.get(reference)
@@ -394,11 +415,25 @@ class JuniperReferenceResolver:
         ) for values in history.values() for c in values]
         return not candidates or any(is_effective_candidate(c) for c in candidates)
 
-    def resolve_named_reference(self, reference: str, collection: dict) -> Optional[str]:
+    def resolve_named_reference(self, reference: str, collection: dict, path=()) -> Optional[str]:
         """Resolve a typed source-profile reference without inventing a target object."""
-        if reference in collection and self._object_is_effective(collection[reference]):
+        if (reference in collection and self._object_is_effective(collection[reference])
+                and self._explicit_effective(path)):
+            return f"{self.context.name}__{reference}" if self.context.name != "root" else reference
+        if path and self._effective(path):
             return f"{self.context.name}__{reference}" if self.context.name != "root" else reference
         return None
+
+    def resolve_source_profile(self, profile_type: str, reference: str) -> Optional[str]:
+        profiles = {
+            "idp-policy": (self.context.idp_policies, ("security", "idp", "idp-policy", reference)),
+            "utm-policy": (self.context.utm_policies, ("security", "utm", "utm-policy", reference)),
+            "ssl-proxy-profile": (self.context.ssl_proxy_profiles, ("services", "ssl", "proxy", "profile", reference)),
+            "security-intelligence": (self.context.security_intelligence_profiles,
+                                      ("security", "intelligence", "profile", reference)),
+        }
+        collection, path = profiles.get(profile_type, ({}, ()))
+        return self.resolve_named_reference(reference, collection, path)
 
     def resolve_reth_cluster(self, interface_name: str) -> Dict[str, Optional[str]]:
         """Resolve physical interface -> reth -> redundancy group without guessing."""

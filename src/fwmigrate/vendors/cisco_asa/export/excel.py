@@ -5,7 +5,7 @@ from typing import Any
 
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 from ..presentation_schema import DERIVED_SECTIONS, SOURCE_SECTIONS
-from ..presentation import excel_value
+from ..presentation import excel_value, has_source_evidence
 
 
 def _name(value: Any) -> Any:
@@ -227,8 +227,11 @@ def export_asa_excel(result: Any, output: Any) -> Any:
             sheet.append(SHEET_HEADERS[name])
             spec = SOURCE_SECTIONS[name]
             values = getattr(config, spec[0], ()) or ()
-            if getattr(type(values), "model_fields", None):
+            singleton = bool(getattr(type(values), "model_fields", None))
+            if singleton:
                 values = (values,)
+            if name in {"DNS Settings", "System Settings", "HTTP Server"} and not has_source_evidence(values[0] if singleton else values):
+                values = ()
             if len(spec) == 3:
                 values = (child for parent in values for child in (getattr(parent, spec[1], ()) or ()))
                 fields = spec[2].split()
@@ -259,7 +262,8 @@ def export_asa_excel(result: Any, output: Any) -> Any:
 
 def _derived_row(sheet: str, item: Any) -> tuple[Any, ...]:
     if sheet == "ACL Bindings":
-        return item.acl_name, item.source_context, item.scope, item.interface, item.direction, item.resolved_acl, item.issues
+        return (item.acl_name, item.source_context, item.scope, item.interface, item.direction,
+                _name(item.resolved_acl), _name(item.resolved_interface), item.issues)
     return _row(sheet, item)
 
 

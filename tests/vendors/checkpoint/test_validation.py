@@ -57,6 +57,25 @@ def test_nat_rule_order_is_unique_within_package_scope():
     assert any(item.code == "nat_order_malformed" for item in _validate_nat(config, CheckPointDerivedViews()))
 
 
+def test_shared_access_layer_is_valid_package_reuse_and_missing_layer_still_fails():
+    layer = CPAccessLayer(uid="layer", name="Shared")
+    shared = CheckPointConfig(policy_packages=[
+        CPPolicyPackage(uid="p1", name="Package A", access_layers=["layer"]),
+        CPPolicyPackage(uid="p2", name="Package B", access_layers=["layer"]),
+    ], access_layers=[layer])
+    before = shared.model_dump()
+    derived = build_checkpoint_derived_views(shared)
+    issues = validate_checkpoint_config(shared, derived).issues
+    assert len(derived.policy_structure.package_layers) == 2
+    assert all(relation.layer is layer for relation in derived.policy_structure.package_layers)
+    assert "policy_duplicate_ownership" not in {issue.code for issue in issues}
+    assert shared.model_dump() == before
+
+    missing = CheckPointConfig(policy_packages=[CPPolicyPackage(uid="p3", name="Package C", access_layers=["absent"])])
+    missing_derived = build_checkpoint_derived_views(missing)
+    assert "package_layer_missing" in {issue.code for issue in validate_checkpoint_config(missing, missing_derived).issues}
+
+
 def test_secret_finding_never_includes_material():
     secret = "phase7-secret-sentinel"
     config = CheckPointConfig(hosts=[CPHost(uid="h1", name="host", raw_extra={"authentication": {"password": secret}})])

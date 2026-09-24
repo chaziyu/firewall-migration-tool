@@ -32,6 +32,11 @@ class CheckPointCollector:
         {"name": "verify_tls", "label": "Verify TLS certificate", "type": "checkbox", "default": True},
     )
 
+    def __init__(self, api_session_factory=None, gaia_connection_factory=None, command_registry=None):
+        self.api_session_factory = _default_api_session_factory if api_session_factory is None else api_session_factory
+        self.gaia_connection_factory = _default_gaia_connection_factory if gaia_connection_factory is None else gaia_connection_factory
+        self.command_registry = R81_COMMAND_REGISTRY if command_registry is None else command_registry
+
     def validate_options(self, connection):
         options = validate_connection(connection, port=443, optional=("domain", "package", "layer", "gateway", "gaia_host", "gaia_username", "gaia_password"))
         options["verify_tls"] = connection.get("verify_tls", True)
@@ -48,11 +53,7 @@ class CheckPointCollector:
         return options
 
     def _open(self, options):
-        try:
-            import requests
-        except ImportError as exc:
-            raise CollectionError("Live collection requires the collection extra (requests).") from exc
-        session = requests.Session()
+        session = self.api_session_factory()
         session.verify = options["verify_tls"]
         base = f'https://{options["host"]}:{options["port"]}/web_api/'
         payload = {"user": options["username"], "password": options["password"]}
@@ -93,33 +94,16 @@ class CheckPointCollector:
                                        requested_scope={key: options[key] or None for key in ("domain", "package", "layer", "gateway")})
         parts = []
         try:
-            for command, spec in R81_COMMAND_REGISTRY.items():
-                selector = {"ACCESS_LAYER": ("name", options["layer"]), "PACKAGE": ("package", options["package"])}.get(spec.scope_type)
-                if command == "show-access-rulebase" and not options["layer"]:
-                    layers = [item for response in bundle.responses if response.command == "show-access-layers"
-                              for item in response.data.get("objects", []) if isinstance(item, dict) and item.get("name")]
-                    if layers:
-                        for item in layers:
-                            self._collect_command(session, base, command, spec, ("name", item["name"]), bundle, parts, options)
-                        continue
-                if selector and not selector[1]:
-                    status = CPStatus.UNSUPPORTED_COMMAND if not spec.required else CPStatus.API_ERROR
-                    scope = self._response_scope(spec, options)
-                    response = CheckPointResponse(command=command, data={}, collection_status=status, error="Scope selector required",
-                                                  scope_type=spec.scope_type.lower(), **scope)
-                    bundle.responses.append(response)
-                    parts.append(CollectionPart(command, status.value, False))
-                    key = self._operation_key(command, scope)
-                    bundle.collection_completeness[key] = CollectionCompletenessRecord(command=command, status=status, complete=False,
-                                                                                       error_message="Scope selector required", **scope)
-                    continue
-                self._collect_command(session, base, command, spec, selector, bundle, parts, options)
+            for command, spec in self.command_registry.items():
+                selectors = self._plan_selectors(command, spec, bundle, options)
+                for selector in selectors:
+                    self._collect_command(session, base, command, spec, selector, bundle, parts, options)
             if options["gaia_host"]:
                 self._collect_gaia(options, bundle, parts)
         finally:
             self._close(session, base)
         usable = any(part.count for part in parts)
-        failed = any(not part.complete and R81_COMMAND_REGISTRY.get(part.name, None) and R81_COMMAND_REGISTRY[part.name].required for part in parts)
+        failed = any(not part.complete and self.command_registry.get(part.name, None) and self.command_registry[part.name].required for part in parts)
         failed = failed or any(part.status in (CPStatus.API_ERROR.value, CPStatus.PERMISSION_DENIED.value, CPStatus.TRANSPORT_ERROR.value) for part in parts)
         status = CollectionStatus.PARTIAL if failed and usable else CollectionStatus.FAILED if failed else CollectionStatus.SUCCESS
         if status == CollectionStatus.FAILED:
@@ -129,6 +113,25 @@ class CheckPointCollector:
                                "management-api+ssh" if options["gaia_host"] else self.method, status,
                                {"domain": options["domain"], "package": options["package"]}, tuple(parts),
                                tuple(f"{part.name}: collection incomplete" for part in parts if not part.complete)[:30])
+
+    @staticmethod
+    def _plan_selectors(command, spec, bundle, options):
+        if spec.scope_type == "PACKAGE":
+            selected = options["package"]
+            inventory_command, selector_key = "show-packages", "package"
+        elif spec.scope_type == "ACCESS_LAYER":
+            selected = options["layer"]
+            inventory_command, selector_key = "show-access-layers", "name"
+        else:
+            return [None]
+        if selected:
+            return [(selector_key, selected)]
+        return [
+            (selector_key, item["name"])
+            for response in bundle.responses if response.command == inventory_command
+            for item in response.data.get("objects", [])
+            if isinstance(item, dict) and item.get("name")
+        ]
 
     def _collect_command(self, session, base, command, spec, selector, bundle, parts, options,
                          parent_layer_uid=None, parent_rule_uid=None, seen_inline=None):
@@ -192,10 +195,7 @@ class CheckPointCollector:
                     raise CollectionError("Check Point pagination stopped early.")
                 offset = to_index
             except Exception as exc:
-                code = getattr(getattr(exc, "response", None), "status_code", None)
-                status = (CPStatus.PERMISSION_DENIED if code == 403 else
-                          CPStatus.API_ERROR if code or isinstance(exc, (CollectionError, ValueError, TypeError)) else
-                          CPStatus.TRANSPORT_ERROR)
+                status = _classify_management_error(exc)
                 bundle.responses.append(CheckPointResponse(command=command, data={}, collection_status=status,
                                                             error="Collection request failed.", **scope))
                 parts.append(CollectionPart(command, status.value, False))
@@ -254,8 +254,7 @@ class CheckPointCollector:
     def _collect_gaia(self, options, bundle, parts):
         connection = None
         try:
-            from netmiko import ConnectHandler
-            connection = ConnectHandler(device_type="checkpoint_gaia", host=options["gaia_host"], port=options["gaia_port"],
+            connection = self.gaia_connection_factory(device_type="checkpoint_gaia", host=options["gaia_host"], port=options["gaia_port"],
                                         username=options["gaia_username"], password=options["gaia_password"],
                                         conn_timeout=15, auth_timeout=15, banner_timeout=15,
                                         ssh_strict=True, system_host_keys=True)
@@ -275,3 +274,28 @@ class CheckPointCollector:
         finally:
             if connection is not None:
                 connection.disconnect()
+
+
+def _default_api_session_factory():
+    try:
+        import requests
+    except ImportError as exc:
+        raise CollectionError("Live collection requires the collection extra (requests).") from exc
+    return requests.Session()
+
+
+def _default_gaia_connection_factory(**kwargs):
+    try:
+        from netmiko import ConnectHandler
+    except ImportError as exc:
+        raise CollectionError("Live Gaia collection requires the collection extra (netmiko).") from exc
+    return ConnectHandler(**kwargs)
+
+
+def _classify_management_error(error):
+    code = getattr(getattr(error, "response", None), "status_code", None)
+    if code == 403:
+        return CPStatus.PERMISSION_DENIED
+    if code is not None or isinstance(error, (CollectionError, ValueError, TypeError)):
+        return CPStatus.API_ERROR
+    return CPStatus.TRANSPORT_ERROR

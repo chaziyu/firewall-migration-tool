@@ -149,9 +149,6 @@ def build_address_book_dependencies(context, effective_lookup=None) -> list[Depe
 def build_policy_dependencies(context, effective_lookup=None) -> list[DependencyRecord]:
     dependencies = []
     resolver = JuniperReferenceResolver(context, effective_lookup)
-    profile_collections = {"idp-policy": context.idp_policies, "utm-policy": context.utm_policies,
-                           "ssl-proxy-profile": context.ssl_proxy_profiles,
-                           "security-intelligence": context.security_intelligence_profiles}
     for policy in [*context.policies, *context.global_policies]:
         for zone in [*policy.from_zones, *policy.to_zones]:
             dependencies.append(_dependency(context, "security policies", policy.name, "zone", zone,
@@ -171,13 +168,10 @@ def build_policy_dependencies(context, effective_lookup=None) -> list[Dependency
                                             "application/application-set",
                                             resolver.resolve_application(reference)[2] is not None))
         for profile_type, references in policy.security_profile_references.items():
-            collection = profile_collections.get(profile_type)
-            if collection is None:
-                continue
             for reference in references:
                 dependencies.append(_dependency(context, "security policies", policy.name, profile_type,
                                                 reference, "source-profile",
-                                                resolver.resolve_named_reference(reference, collection) is not None))
+                                                resolver.resolve_source_profile(profile_type, reference) is not None))
         if policy.scheduler_name:
             dependencies.append(_dependency(context, "security policies", policy.name, "scheduler",
                                             policy.scheduler_name, "scheduler",
