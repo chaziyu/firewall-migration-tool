@@ -17,6 +17,7 @@ from .policy import (
 )
 from .result import ExtractionResult
 from .source_metadata import capture_source_metadata
+from .reconcile import reconcile_append
 
 
 _POLICY_EXTRACTORS = {
@@ -68,7 +69,7 @@ def extract_checkpoint_config(
             if destination is None:
                 source_objects.append(item)
             else:
-                destination.append(item)
+                reconcile_append(destination, item)
 
     return ExtractionResult(
         config=config,

@@ -126,6 +126,24 @@ class CheckPointCollector:
             return [None]
         if selected:
             return [(selector_key, selected)]
+        if spec.scope_type == "ACCESS_LAYER" and options["package"]:
+            package = next((item for response in bundle.responses if response.command == "show-packages"
+                            for item in response.data.get("objects", [])
+                            if isinstance(item, dict) and item.get("name") == options["package"]), None)
+            references = package.get("access-layers", package.get("access_layers", [])) if package else []
+            layers = [item for response in bundle.responses if response.command == "show-access-layers"
+                      for item in response.data.get("objects", []) if isinstance(item, dict)]
+            by_uid = {item.get("uid"): item.get("name") for item in layers if item.get("uid") and item.get("name")}
+            selectors = []
+            for reference in references if isinstance(references, list) else []:
+                if isinstance(reference, dict):
+                    name = reference.get("name") or by_uid.get(reference.get("uid"))
+                else:
+                    name = reference if any(item.get("name") == reference for item in layers) else by_uid.get(reference)
+                if name and (selector_key, name) not in selectors:
+                    selectors.append((selector_key, name))
+            if selectors:
+                return selectors
         return [
             (selector_key, item["name"])
             for response in bundle.responses if response.command == inventory_command
@@ -212,7 +230,6 @@ class CheckPointCollector:
         if spec.scope_type == "PACKAGE":
             scope["package"] = (selector[1] if selector else options["package"]) or None
         elif spec.scope_type == "ACCESS_LAYER":
-            scope["package"] = options["package"] or None
             scope["layer"] = (selector[1] if selector else options["layer"]) or None
         return scope
 

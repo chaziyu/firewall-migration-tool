@@ -278,15 +278,81 @@ deactivate security ike proposal P1 lifetime-seconds
 
 def test_activation_order_and_scalar_vs_member_inheritance():
     view = _view("""set groups G security ike proposal P1 encryption-algorithm aes-128-cbc
-set groups G security ike proposal P1 proposals P1
+set groups G security ike policy IP1 proposals P1
 set apply-groups G
 set security ike proposal P1 encryption-algorithm aes-256-cbc
-set security ike policy IP1 proposals P1
+set security ike policy IP1 proposals P2
 deactivate security ike proposal P1
 activate security ike proposal P1
 """)
     statements = [item for item in view["effective_statements"] if item["origin"] == "inherited-group"]
     assert next(item for item in statements if item["target_path"][-2:] == ("encryption-algorithm", "aes-128-cbc"))["status"] == "SHADOWED"
-    assert next(item for item in statements if "proposals" in item["target_path"])["status"] == "EFFECTIVE"
+    inherited_member = next(item for item in statements if "proposals" in item["target_path"])
+    assert inherited_member["value"] == "P1" and inherited_member["status"] == "EFFECTIVE"
     assert any(item["target_path"] == ("security", "ike", "proposal", "P1", "encryption-algorithm", "aes-256-cbc")
                and item["status"] == "EFFECTIVE" for item in view["effective_statements"])
+
+
+def test_all_core_resolvers_reject_deactivated_source_hierarchies():
+    source = """set security address-book global address A 192.0.2.1/32
+set applications application APP protocol tcp
+set schedulers scheduler SCH daily 12:00-13:00
+set routing-instances RI instance-type virtual-router
+set interfaces ge-0/0/0 unit 0 family inet address 192.0.2.1/24
+set security zones security-zone Z interfaces ge-0/0/0.0
+set security ike proposal IP encryption-algorithm aes-128-cbc
+set security ike policy IK proposals IP
+set security ike gateway IG ike-policy IK
+set security ipsec proposal SP protocol esp
+set security ipsec policy SK proposals SP
+set security ipsec vpn VPN ike gateway IG
+set security ipsec vpn VPN ike ipsec-policy SK
+deactivate security address-book global address A
+deactivate applications application APP
+deactivate schedulers scheduler SCH
+deactivate routing-instances RI
+deactivate interfaces ge-0/0/0
+deactivate security zones security-zone Z
+deactivate security ike proposal IP
+deactivate security ike policy IK
+deactivate security ike gateway IG
+deactivate security ipsec policy SK
+deactivate security ipsec vpn VPN
+"""
+    parser = JuniperSRXParser(source)
+    config = parser.extract_source()
+    view = build_inheritance_view(parser.commands)
+    from fwmigrate.vendors.juniper_srx.transforms.effective_lookup import EffectiveJunosLookup
+    activation = ({"context": item["context"], "target_path": item["path"], "origin": "activation"}
+                  for item in view["inactive_hierarchies"])
+    lookup = EffectiveJunosLookup((*view["effective_statements"], *activation))
+    from fwmigrate.vendors.juniper_srx.resolver import JuniperReferenceResolver
+    resolver = JuniperReferenceResolver(config.get_context(), lookup)
+    assert resolver._resolve_in_book("global", "A").is_unresolved
+    assert resolver.resolve_application("APP")[2] is None
+    assert resolver.resolve_scheduler("SCH") is None
+    assert resolver.resolve_routing_instance("RI") is None
+    assert resolver.resolve_interface("ge-0/0/0") is None
+    assert resolver.resolve_interface("ge-0/0/0.0") is None
+    assert resolver.resolve_zone("Z") is None
+    assert resolver.resolve_ike_proposal("IP") is None
+    assert resolver.resolve_ike_policy("IK") is None
+    assert resolver.resolve_ike_gateway("IG") is None
+    assert resolver.resolve_ipsec_policy("SK") is None
+    assert resolver.resolve_ipsec_vpn("VPN") is None
+    assert "A" in config.get_context().address_books["global"].addresses
+    assert "APP" in config.get_context().applications
+
+
+def test_deactivated_explicit_scheduler_stays_in_source_and_is_unresolved_everywhere():
+    result = extract_juniper_source("""set schedulers scheduler SCH daily 12:00-13:00
+deactivate schedulers scheduler SCH
+set security policies global policy P scheduler-name SCH
+""")
+    assert "SCH" in result.config.get_context().schedulers
+    assert result.config.activation_directives
+    dependency = next(item for item in result.derived.dependencies if item.reference == "SCH")
+    edge = next(item for item in result.derived.policy_relationships[0]["edges"]
+                if item["source_field"] == "scheduler")
+    assert dependency.result == "UNRESOLVED"
+    assert edge["resolved"] is False

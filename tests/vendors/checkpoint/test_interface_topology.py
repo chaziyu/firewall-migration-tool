@@ -25,3 +25,4 @@ def test_native_security_zone_field_reaches_interface_relationship():
     config = extract_checkpoint_config(bundle).config
     relation = build_interface_topology(config).interfaces[0]
     assert relation.resolved_zone.name == "inside"
+    assert relation.assignment_source is None

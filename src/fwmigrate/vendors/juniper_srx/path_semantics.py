@@ -7,10 +7,10 @@ SCALAR_LEAVES = {
     "digital-signature-scheme", "prf-algorithm", "signature-hash-algorithm", "lifetime-seconds",
     "mode", "proposal-set", "ike-policy", "address", "external-interface", "version",
     "local-address", "local-identity", "remote-identity", "protocol", "lifetime-kilobytes",
-    "pfs", "bind-interface", "type", "start-date", "stop-date", "daily", "interval",
+    "pfs", "bind-interface", "type", "start-date", "stop-date", "interval",
 }
 MEMBER_LEAVES = {"members", "applications", "application", "interfaces", "proposals", "source-address",
-                 "destination-address", "from-zone", "to-zone", "source-identity", "address", "address-set"}
+                 "destination-address", "from-zone", "to-zone", "source-identity", "address", "address-set", "daily"}
 
 
 def candidate_field_value(path: tuple[str, ...]) -> tuple[str, object]:
@@ -72,7 +72,7 @@ def scalar_identity(path: tuple[str, ...]):
     low = tuple(part.lower() for part in path)
     if "then" in low:
         index = low.index("then")
-        if index + 1 < len(low) and low[index + 1] == "permit":
+        if index + 2 == len(low) and low[index + 1] in {"permit", "deny", "reject", "discard", "next-term"}:
             return path[:index], "action"
     index = next((i for i in range(len(low) - 1, -1, -1) if low[i] in SCALAR_LEAVES), None)
     if index is None or (low[index] in MEMBER_LEAVES and

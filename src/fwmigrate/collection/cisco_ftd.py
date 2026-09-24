@@ -63,6 +63,18 @@ class CiscoFTDCollector:
         "prefilterpolicies": ("rules", "prefilterrules?expanded=true"),
         "networkanalysispolicies": ("inspectorconfigs", "inspectorconfigs?expanded=true"),
     }
+    _detail_fields = {
+        "networkaddresses": (("value",), ("type",)),
+        "networkaddressoverrides": (("overrides",), ("value",), ("type",)),
+        "policyassignments": (("policy",), ("targets",)),
+        "accesspolicies": (("defaultAction",),),
+        "devicerecords": (("type",),),
+        "accessrules": (("action",),),
+        "intrusionrules": (("ruleId", "sid"),),
+        "staticroutes": (("selectedNetworks", "network", "destination"),),
+        "ipv4staticroutes": (("selectedNetworks", "network", "destination"),),
+        "ipv6staticroutes": (("selectedNetworks", "network", "destination"),),
+    }
 
     def validate_options(self, connection):
         options = validate_connection(connection, port=443, optional=("domain",))
@@ -120,33 +132,22 @@ class CiscoFTDCollector:
                     if not isinstance(item, dict):
                         raise CollectionError("FMC returned an unexpected item.")
                     items.append(item)
-                    required_fields = (
-                        {"value", "type"} if "/object/networkaddresses" in url else
-                        {"overrides", "value", "type"} if "/object/networkaddressoverrides" in url else
-                        {"policy", "targets"} if "/assignment/policyassignments" in url else
-                        {"defaultAction"} if "/policy/accesspolicies" in url and "/accessrules" not in url and "/defaultactions" not in url else
-                        {"type"} if urlparse(url).path.rstrip("/").endswith("/devices/devicerecords") else
-                        set()
-                    )
-                    missing_required = bool(required_fields and not required_fields <= item.keys())
-                    if "/accessrules" in url:
-                        required_fields = {"action"}
-                        missing_required = "action" not in item
-                    elif "/intrusionrules" in url:
-                        missing_required = not any(key in item for key in ("ruleId", "sid"))
-                    elif "/routing/" in url and "staticroutes" in url:
-                        missing_required = not any(key in item for key in ("selectedNetworks", "network", "destination"))
+                    endpoint = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
+                    if endpoint == "accesspolicies" and "/accessrules/" not in url and "/defaultactions/" not in url:
+                        endpoint_fields = self._detail_fields["accesspolicies"]
+                    else:
+                        endpoint_fields = next((fields for name, fields in self._detail_fields.items()
+                                                 if endpoint == name or endpoint.startswith(name + "/")), ())
+                    missing_required = any(not any(key in item for key in alternatives)
+                                           for alternatives in endpoint_fields)
                     if missing_required and re.fullmatch(r"[A-Za-z0-9_-]+", str(item.get("id", ""))):
                         parsed = urlparse(url)
                         detail_url = urljoin(base, parsed.path.rstrip("/") + "/" + item["id"] + ("?" + parsed.query if parsed.query else ""))
                         detail = session.get(detail_url, timeout=(15, 60), allow_redirects=False)
                         detail.raise_for_status()
                         detail_data = detail.json()
-                        detail_complete = isinstance(detail_data, dict) and required_fields <= detail_data.keys()
-                        if "/intrusionrules" in url:
-                            detail_complete = detail_complete and any(key in detail_data for key in ("ruleId", "sid"))
-                        if "/routing/" in url and "staticroutes" in url:
-                            detail_complete = detail_complete and any(key in detail_data for key in ("selectedNetworks", "network", "destination"))
+                        detail_complete = isinstance(detail_data, dict) and all(
+                            any(key in detail_data for key in alternatives) for alternatives in endpoint_fields)
                         if len(detail.content) > 10_000_000 or not detail_complete:
                             raise CollectionError("FMC returned an invalid object detail.")
                         items[-1] = detail_data
@@ -188,9 +189,9 @@ class CiscoFTDCollector:
                                     ("virtual_tunnel_interfaces", f"devices/devicerecords/{device_id}/virtualtunnelinterfaces"),
                                     ("dhcp_servers", f"devices/devicerecords/{device_id}/dhcp/dhcpserver"),
                                     ("dhcp_relay_settings", f"devices/devicerecords/{device_id}/dhcp/dhcprelaysettings"),
-                                    ("ecmp_zones", f"devices/devicerecords/{device_id}/routing/ecmpzones"),
-                                    ("pbr_policies", f"devices/devicerecords/{device_id}/routing/policybasedroutes"),
-                                    ("virtual_routers", f"devices/devicerecords/{device_id}/routing/virtualrouters")):
+                                    ("ecmp_zones", f"devices/devicerecords/{device_id}/routing/ecmpzones?expanded=true"),
+                                    ("pbr_policies", f"devices/devicerecords/{device_id}/routing/policybasedroutes?expanded=true"),
+                                    ("virtual_routers", f"devices/devicerecords/{device_id}/routing/virtualrouters?expanded=true")):
                     self._collect_family(session, base, prefix + "/" + suffix, device["resources"], key, parts,
                                          f"device/{device_id}/{key}")
                 for vr in device["resources"]["virtual_routers"]:
@@ -201,7 +202,7 @@ class CiscoFTDCollector:
                     vr["resources"] = {}
                     for key, endpoint in (("ipv4_static_routes", "ipv4staticroutes"), ("ipv6_static_routes", "ipv6staticroutes"),
                                           ("pbr_policies", "policybasedroutes"), ("ecmp_zones", "ecmpzones")):
-                        path = prefix + f"/devices/devicerecords/{device_id}/routing/virtualrouters/{vr_id}/{endpoint}"
+                        path = prefix + f"/devices/devicerecords/{device_id}/routing/virtualrouters/{vr_id}/{endpoint}?expanded=true"
                         self._collect_family(session, base, path, vr["resources"], key, parts,
                                              f"device/{device_id}/virtual_router/{vr_id}/{key}")
             for roots, target in ((self._domain_objects, bundle["objects"]),

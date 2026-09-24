@@ -87,7 +87,7 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
     normalized_routes = {(item.device_id or "", item.source_name): item.normalized_destination
                          for item in getattr(derived, "normalized_routes", ())}
     def ref_text(value):
-        return value.name or value.source_id if value is not None else None
+        return (value.name or value.source_id or str(value.value)) if value is not None else None
     rows = {
         "Managed Objects": [(x.name, x.source_id, x.address_type, x.value, x.description, x.address_family,
             x.fqdn_lookup_type, x.override_metadata, x.source_plane) for x in config.network_addresses],
@@ -98,26 +98,29 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
                      + [(x.name, None, None, None, None, None, x.description, x.override_metadata,
                          _refs(x.members), x.source_plane) for x in config.port_object_groups]),
         "Zones": [(x.name, x.interfaces, x.source_plane) for x in config.security_zones],
-        "Interfaces": [(x.name, x.interface_type, x.address, x.zone.name if x.zone else None, x.source_plane,
+        "Interfaces": [(x.name, x.device_id, x.interface_type, x.address, x.zone.name if x.zone else None, x.source_plane,
                          (topologies.get((x.device_id or "", x.name)).kind if topologies.get((x.device_id or "", x.name)) else None),
                          (topologies.get((x.device_id or "", x.name)).parent if topologies.get((x.device_id or "", x.name)) else None), None)
                         for x in config.device_interfaces]
-                      + [(x.name, x.interface_type, x.address, x.zone, x.source_plane,
+                      + [(x.name, x.device_id, x.interface_type, x.address, x.zone, x.source_plane,
                           (topologies.get((x.device_id or "", x.name)).kind if topologies.get((x.device_id or "", x.name)) else None),
                           (topologies.get((x.device_id or "", x.name)).parent if topologies.get((x.device_id or "", x.name)) else None), None)
                          for x in config.source_interfaces]
-                      + [(item.name, None, item.ip, None, config.source_plane, topology.kind, topology.parent, item.vlan_id)
+                      + [(item.name, None, None, item.ip, None, config.source_plane, topology.kind, topology.parent, item.vlan_id)
                          for item in config.interfaces
                          for topology in (topologies["", item.name],) if ("", item.name) in topologies],
-        "Routes": [(x.name, *(ref.name or ref.source_id if ref else None for ref in
-            (x.interface, x.destination, x.gateway, x.sla_monitor)), x.source_plane, x.address_family, None,
+        "Routes": [(x.name, x.device_id, x.virtual_router or (x.virtual_router_ref.name if x.virtual_router_ref else None),
+            ref_text(x.interface),
+            ", ".join(filter(None, (ref_text(ref) for ref in x.selected_networks))) if x.selected_networks else ref_text(x.destination),
+            ref_text(x.gateway), ref_text(x.sla_monitor), x.source_plane, x.address_family, None,
             normalized_routes.get((x.device_id or "", x.name))) for x in config.routes]
-            + [(route.name, route.interface, route.destination, route.gateway, None, config.source_plane,
+            + [(route.name, None, None, route.interface, route.destination, route.gateway, None, config.source_plane,
                 route.address_family, route.mask, normalized_routes.get(("", route.name))) for route in config.static_routes],
         "ACP Policies": [(policy.name, policy.source_id, policy.description, policy.inherit,
             ref_text(policy.base_policy), ref_text(policy.default_action), ref_text(policy.prefilter_policy),
             ref_text(policy.network_analysis_policy), ref_text(policy.decryption_policy), ref_text(policy.dns_policy),
-            ref_text(policy.identity_policy), policy.source_plane) for policy in config.access_control_policies],
+            ref_text(policy.identity_policy), json.dumps(policy.logging_settings, sort_keys=True) if policy.logging_settings is not None else None,
+            policy.source_plane) for policy in config.access_control_policies],
         "ACP Rules": [(rule.policy_name, rule.name, rule.source_id, rule.enabled, rule.position,
             rule.section, rule.category, rule.action, _refs(rule.source_zones), _refs(rule.destination_zones),
             _refs(rule.source_networks), _refs(rule.destination_networks), _refs(rule.source_ports),

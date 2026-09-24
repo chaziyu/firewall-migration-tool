@@ -365,7 +365,7 @@ class CiscoFTDAccessControlPolicy(CiscoFTDSourceRecord):
     decryption_policy: Optional[CiscoFTDReference] = None
     dns_policy: Optional[CiscoFTDReference] = None
     identity_policy: Optional[CiscoFTDReference] = None
-    logging_settings: Optional[Dict[str, Any]] = None
+    logging_settings: Optional[Any] = None
 
 
 class CiscoFTDIdentityPolicy(CiscoFTDSourceRecord): pass

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from fwmigrate.collection.checkpoint import CheckPointCollector, _classify_management_error
 from fwmigrate.vendors.checkpoint.models import CheckPointExportBundle, CheckPointResponse, CollectionStatus as CPStatus
-from fwmigrate.vendors.checkpoint.r81_commands import R81CommandSpec
+from fwmigrate.vendors.checkpoint.r81_commands import R81CommandSpec, R81_COMMAND_REGISTRY
 
 
 class Response:
@@ -94,7 +94,7 @@ def test_checkpoint_bundle_keeps_command_status_and_gaia_separate():
     nat = next(item for item in bundle["responses"] if item["command"] == "show-nat-rulebase")
     layer = next(item for item in bundle["responses"] if item["command"] == "show-access-rulebase")
     assert nat["package"] == "P" and nat.get("layer") is None
-    assert layer["layer"] == "L" and layer["package"] == "P"
+    assert layer["layer"] == "L" and layer.get("package") is None
     assert bundle["management_server"] == "mgmt"
     assert bundle["requested_scope"] == {"domain": "D", "package": "P", "layer": "L", "gateway": "G"}
     assert commands[0] == "login" and commands[-1] == "logout"
@@ -180,8 +180,8 @@ def test_inline_rulebase_collection_is_recursive_and_scoped():
     assert [item["name"] for item in requests_seen] == ["root", "child"]
     child = bundle.responses[-1]
     assert child.parent_layer_uid == "root-uid" and child.parent_rule_uid == "parent-rule"
-    assert "show-access-rulebase|domain=D|package=P|layer=root" in bundle.collection_completeness
-    assert "show-access-rulebase|domain=D|package=P|layer=child" in bundle.collection_completeness
+    assert "show-access-rulebase|domain=D|layer=root" in bundle.collection_completeness
+    assert "show-access-rulebase|domain=D|layer=child" in bundle.collection_completeness
 
 
 def test_full_details_is_limited_to_marked_commands():
@@ -242,3 +242,22 @@ def test_management_error_classifier_requires_confirmed_capability_evidence():
     assert _classify_management_error(ApiFailure()) == CPStatus.API_ERROR
     assert _classify_management_error(ValueError("bad response")) == CPStatus.API_ERROR
     assert _classify_management_error(TimeoutError()) == CPStatus.TRANSPORT_ERROR
+
+
+def test_selected_package_discovers_its_layers_without_labeling_layer_scope_as_package():
+    bundle = CheckPointExportBundle.model_validate({"responses": [
+        {"command": "show-packages", "data": {"objects": [{"name": "Package A", "access-layers": [{"uid": "l1"}, {"name": "Layer B"}]}]}},
+        {"command": "show-access-layers", "data": {"objects": [
+            {"uid": "l1", "name": "Layer A"}, {"uid": "l2", "name": "Layer B"},
+            {"uid": "l3", "name": "Unrelated"},
+        ]}},
+    ]})
+    options = {"package": "Package A", "layer": None, "domain": "Domain A"}
+    spec = R81_COMMAND_REGISTRY["show-access-rulebase"]
+
+    assert CheckPointCollector._plan_selectors("show-access-rulebase", spec, bundle, options) == [
+        ("name", "Layer A"), ("name", "Layer B"),
+    ]
+    scope = CheckPointCollector._response_scope(spec, options, ("name", "Layer A"))
+    assert scope == {"domain": "Domain A", "layer": "Layer A"}
+    assert CheckPointCollector._operation_key("show-access-rulebase", scope) == "show-access-rulebase|domain=Domain A|layer=Layer A"

@@ -61,6 +61,7 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
                 config.secure_client_settings, config.ra_vpn_ipsec_crypto_maps))),
             "prefilter_policies": len(config.prefilter_policies), "prefilter_rules": len(config.prefilter_rules),
             "network_analysis_policies": len(config.network_analysis_policies),
+            "identity_policies": len(config.identity_policies),
             "inspector_configs": len(config.inspector_configs),
             "dhcp_servers": len(config.dhcp_servers), "native_resources": len(config.native_resources),
             "dhcp_relay_settings": len(config.dhcp_relay_settings),
@@ -68,7 +69,7 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
         "source_metadata": config.source_metadata,
         "capability_coverage": config.source_metadata.get("coverage", {}),
         "source_plane_completeness": result.derived.source_plane_completeness,
-        "interface_topology": [{"name": item.name, "kind": item.kind, "parent": item.parent,
+        "interface_topology": [{"name": item.name, "device_id": item.device_id, "kind": item.kind, "parent": item.parent,
             "aggregate": item.aggregate, "physical_interfaces": item.physical_interfaces}
             for item in result.derived.interface_topology.interfaces],
         "normalized_routes": [item.__dict__ for item in result.derived.normalized_routes],

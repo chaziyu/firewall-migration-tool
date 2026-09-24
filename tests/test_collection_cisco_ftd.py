@@ -136,11 +136,12 @@ def test_fmc_nat_rule_sections_preserve_order(monkeypatch):
             return Response(headers={"X-auth-access-token": "token", "DOMAINS": '[{"uuid":"d1","name":"Global"}]'})
 
         def get(self, url, **kwargs):
-            if url.endswith("/ftdnatpolicies"):
+            endpoint = url.split("?", 1)[0]
+            if endpoint.endswith("/ftdnatpolicies"):
                 return Response({"items": [{"id": "p1", "name": "NAT", "type": "FTDNatPolicy", "description": "policy"}], "paging": {"total": 1}})
-            if url.endswith("/manualnatrules"):
+            if endpoint.endswith("/manualnatrules"):
                 return Response({"items": [{"id": "m1", "section": "BEFORE_AUTO"}, {"id": "m2", "section": "AFTER_AUTO"}], "paging": {"total": 2}})
-            if url.endswith("/autonatrules"):
+            if endpoint.endswith("/autonatrules"):
                 return Response({"items": [{"id": "a1", "section": "AUTO"}], "paging": {"total": 1}})
             return Response({"items": [], "paging": {"total": 0}})
 
@@ -166,20 +167,21 @@ def test_fmc_collects_device_interfaces_separately_from_zones_and_groups(monkeyp
 
         def get(self, url, **kwargs):
             calls.append(url)
-            if url.endswith("/object/securityzones/z1"):
+            endpoint = url.split("?", 1)[0]
+            if endpoint.endswith("/object/securityzones/z1"):
                 return Response({"id": "z1", "name": "inside", "type": "SecurityZone"})
-            if url.endswith("/object/interfacegroups/g1"):
+            if endpoint.endswith("/object/interfacegroups/g1"):
                 return Response({"id": "g1", "name": "trusted-group", "type": "InterfaceGroup"})
-            if url.endswith("/devices/devicerecords"):
+            if endpoint.endswith("/devices/devicerecords"):
                 return Response({"items": [{"id": "d1", "name": "ftd-1", "type": "DeviceRecord", "model": "FTD"}], "paging": {"total": 1}})
-            if url.endswith("/d1/ftdallinterfaces"):
+            if endpoint.endswith("/d1/ftdallinterfaces"):
                 return Response({"items": [
                     {"id": "if0", "name": "GigabitEthernet0/0", "type": "PhysicalInterface", "physicalName": "eth0"},
                     {"id": "if1", "name": "GigabitEthernet0/1", "type": "PhysicalInterface", "physicalName": "eth1"},
                 ], "paging": {"total": 2}})
-            if url.endswith("/object/securityzones"):
+            if endpoint.endswith("/object/securityzones"):
                 return Response({"items": [{"id": "z1", "name": "inside", "type": "SecurityZone", "interfaces": []}], "paging": {"total": 1}})
-            if url.endswith("/object/interfacegroups"):
+            if endpoint.endswith("/object/interfacegroups"):
                 return Response({"items": [{"id": "g1", "name": "trusted-group", "type": "InterfaceGroup", "interfaces": []}], "paging": {"total": 1}})
             return Response({"items": [], "paging": {"total": 0}})
 
@@ -209,6 +211,7 @@ def test_fmc_device_interface_failure_is_device_scoped_and_partial(monkeypatch):
             return Response(headers={"X-auth-access-token": "token", "DOMAINS": '[{"uuid":"d0","name":"Global"}]'})
 
         def get(self, url, **kwargs):
+            url = url.split("?", 1)[0]
             if url.endswith("/devices/devicerecords"):
                 return Response({"items": [
                     {"id": "d1", "name": "ftd-1", "type": "DeviceRecord", "model": "FTD"},
@@ -274,6 +277,8 @@ def test_fmc_access_rules_request_expanded_fields(monkeypatch):
     rule = json.loads(source.source_text)["access_policies"][0]["rules"][0]
 
     assert any("/accessrules?expanded=true" in url for _, url in calls)
+    assert any("/inheritancesettings?expanded=true" in url for _, url in calls)
+    assert any("/loggingsettings?expanded=true" in url for _, url in calls)
     assert rule["sourcePorts"]["objects"][0]["id"] == "src-port"
     assert rule["destinationPorts"]["objects"][0]["id"] == "dst-port"
     assert all(method == "GET" for method, _ in calls)
@@ -329,28 +334,29 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkey
 
         def get(self, url, **kwargs):
             calls.append(("GET", url))
+            endpoint = url.split("?", 1)[0]
             data = []
-            if url.endswith("/devices/devicerecords"):
+            if endpoint.endswith("/devices/devicerecords"):
                 data = [{"id": "dev-1", "name": "edge", "type": "DeviceRecord", "model": "FTD"}]
-            elif url.endswith("/routing/virtualrouters"):
+            elif endpoint.endswith("/routing/virtualrouters"):
                 data = [{"id": "vr-1", "name": "blue", "interfaces": [{"name": "inside"}]}]
-            elif url.split("?", 1)[0].endswith("/routing/virtualrouters/vr-1/staticroutes"):
+            elif url.split("?", 1)[0].endswith("/routing/virtualrouters/vr-1/ipv6staticroutes"):
                 data = [{"id": "route-1", "name": "default-v6", "type": "IPv6StaticRoute", "destination": "::/0"}]
             elif url.split("?", 1)[0].endswith("/object/networkaddresses"):
                 data = [{"id": "addr-1", "name": "vpn-client", "type": "Host", "value": "192.0.2.8"}]
-            elif url.endswith("/object/ipv4addresspools"):
+            elif endpoint.endswith("/object/ipv4addresspools"):
                 data = [{"id": "pool-1", "name": "ra-pool", "range": "192.0.2.8-192.0.2.20"}]
-            elif url.endswith("/policy/intrusionpolicies"):
+            elif endpoint.endswith("/policy/intrusionpolicies"):
                 data = [{"id": "ips-1", "name": "IPS", "description": "configured policy"}]
             elif "/intrusionrulegroups?" in url:
                 data = [{"id": "group-1", "name": "local-overrides", "rules": [{"id": "sig-1", "action": "DROP"}]}]
-            elif "/intrusionrules?" in url and "overrides=true" in url:
+            elif "/intrusionrules?" in url and "filter=overrides:true" in url:
                 data = []
             elif "/intrusionrules?" in url:
                 data = [{"id": "sig-1", "gid": 1, "sid": 50, "action": "DROP", "enabled": True}]
-            elif url.endswith("/policy/ftds2svpns"):
+            elif endpoint.endswith("/policy/ftds2svpns"):
                 data = [{"id": "s2s-1", "name": "branch", "description": "configured topology"}]
-            elif url.endswith("/s2s-1/endpoints"):
+            elif endpoint.endswith("/s2s-1/endpoints"):
                 data = [{"id": "endpoint-1", "ikeSettings": {"id": "ike-1"}}]
             elif url.endswith("/s2s-1/ikesettings?expanded=true"):
                 data = [{"id": "ike-1", "ikeVersion": "IKEv2"}]
@@ -358,7 +364,7 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkey
                 data = [{"id": "ipsec-1", "proposal": "AES256"}]
             elif url.endswith("/s2s-1/advancedsettings?expanded=true"):
                 data = [{"id": "adv-1", "rekey": 3600}]
-            elif url.endswith("/policy/ravpns"):
+            elif endpoint.endswith("/policy/ravpns"):
                 data = [{"id": "ra-1", "name": "remote", "description": "configured topology"}]
             elif url.endswith("/ra-1/connectionprofiles?expanded=true"):
                 data = [{"id": "profile-1", "name": "staff", "realm": {"id": "realm-1"}}]
@@ -391,7 +397,7 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkey
     assert bundle["devices"][0]["id"] == "dev-1"
     assert any("prefilter-1/defaultactions" in url for method, url in calls if method == "GET"), [url for method, url in calls if method == "GET" and "prefilter" in url]
     vr = bundle["devices"][0]["resources"]["virtual_routers"][0]
-    assert vr["id"] == "vr-1" and vr["resources"]["static_routes"][0]["id"] == "route-1"
+    assert vr["id"] == "vr-1" and vr["resources"]["ipv6_static_routes"][0]["id"] == "route-1"
     assert bundle["objects"]["intrusionpolicies"][0]["rules"][0]["sid"] == 50
     assert bundle["objects"]["s2svpns"][0]["ike_settings"][0]["id"] == "ike-1"
     assert bundle["objects"]["ravpns"][0]["address_assignment_settings"][0]["id"] == "assign-1"
@@ -401,7 +407,7 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership(monkey
     assert bundle["objects"]["networkanalysispolicies"][0]["inspectoroverrideconfigs"][0]["id"] == "override-1"
     assert bundle["coverage"]["fmc_cli_users"]["status"] == "UNAVAILABLE"
     parts = {part.name for part in source.parts}
-    assert "device/dev-1/virtual_router/vr-1/static_routes" in parts
+    assert "device/dev-1/virtual_router/vr-1/ipv6_static_routes" in parts
     assert "intrusionpolicies/ips-1/rules" in parts
     assert "s2svpns/s2s-1/ike_settings" in parts
     assert "ravpns/ra-1/address_assignment_settings" in parts
