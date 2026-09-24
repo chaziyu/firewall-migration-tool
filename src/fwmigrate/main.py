@@ -1,8 +1,10 @@
 import os
 import sys
 import io
+import json
+import hashlib
 import click
-from pathlib import Path
+import yaml
 
 # Safe stdout/stderr fallback in windowed (GUI) mode
 if sys.stdout is None:
@@ -10,13 +12,17 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = io.StringIO()
 
-from fwmigrate.builtin_plugins import register_builtin_plugins
+from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
+from fwmigrate.source_reporting import source_reporters
+from fwmigrate.conversion.builtin import register_builtin_migration_planners
+from fwmigrate.conversion import migration_planners
+from fwmigrate.conversion.fortigate_to_palo_alto import PANMigrationOptions
+from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer, RenderedMigration
+from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
+from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
 
-register_builtin_plugins()
-
-from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.application import MigrationPipeline, MigrationRequest
-from fwmigrate.config import MigrationConfig
+register_builtin_source_reporters()
+register_builtin_migration_planners()
 
 @click.group()
 def cli():
@@ -25,16 +31,15 @@ def cli():
 
 @cli.command()
 def vendors():
-    """List all registered source and target vendor plugins."""
+    """List all registered source-reporting vendor plugins."""
     click.echo("\n--- Supported Source Vendors ---")
-    for s in PluginRegistry.list_source_vendors():
-        exts = s.get('file_extensions') or s.get('supported_extensions') or []
-        click.echo(f"  • {s['vendor_id']:<15} : {s['display_name']} (Ext: {', '.join(exts)})")
+    for s in source_reporters.list():
+        click.echo(
+            f"  • {s.vendor_id:<15} : {s.display_name} "
+            f"(Ext: {', '.join(s.supported_extensions)})"
+        )
 
-    click.echo("\n--- Supported Target Platforms ---")
-    for t in PluginRegistry.list_target_vendors():
-        click.echo(f"  • {t['vendor_id']:<15} : {t['display_name']} (Formats: {', '.join(t['supported_formats'])})")
-    click.echo("")
+    click.echo("\nMigration planning is temporarily unavailable.")
 
 @cli.command()
 @click.option('--input', '-i', required=True, type=click.Path(exists=True), help='Input configuration file (.conf, .cfg, .json, .set)')
@@ -42,86 +47,71 @@ def vendors():
 @click.option('--source-vendor', type=str, default='fortigate', help='Registered source vendor identifier')
 @click.option('--target-vendor', type=str, default='palo_alto', help='Registered target vendor identifier')
 @click.option('--zone-map', type=click.Path(exists=True), help='YAML file with interface to zone mappings')
-@click.option('--format', type=click.Choice(['xml', 'set', 'terraform', 'cli']), default='xml', help='Output format')
-@click.option('--optimize', is_flag=True, default=False, help='Prune unused objects and optimize rules')
-def migrate(input, output, source_vendor, target_vendor, zone_map, format, optimize):
-    """Migrate a firewall configuration between vendors."""
-    try:
-        # 1. Load config
-        migration_config = MigrationConfig()
-        if zone_map:
-            migration_config = MigrationConfig.from_yaml(zone_map)
+@click.option('--format', type=click.Choice(['xml', 'set', 'cli']), default='xml', help='Output format')
+def migrate(input, output, source_vendor, target_vendor, zone_map, format):
+    """Plan the supported portion of a source configuration."""
+    if (source_vendor.casefold(), target_vendor.casefold()) != ("fortigate", "palo_alto"):
+        raise click.ClickException("Only fortigate -> palo_alto is supported")
+    if format != "set":
+        raise click.ClickException("The MVP supports only --format set")
+    mapping = {}
+    if zone_map:
+        with open(zone_map, encoding="utf-8") as stream:
+            mapping = yaml.safe_load(stream) or {}
+    with open(input, encoding="utf-8") as stream:
+        analysis = source_reporters.get("fortigate").analyze_source(stream.read())
+    plan = migration_planners.get(source_vendor, target_vendor).plan(
+        analysis.extracted.config, analysis.derived, options=PANMigrationOptions(**mapping)
+    )
+    validation = validate_plan(plan)
+    rendered = PANSetRenderer().render(plan, validation)
+    PANSetRenderer().write_files(rendered, output)
+    click.echo(f"Generated {len(rendered.commands)} commands in {output}")
+    click.echo(f"Validation findings: {len(validation.issues)}")
 
-        # 2. Ingest Configuration (File)
-        click.echo(f"Parsing {source_vendor} config: {input}")
-        with open(input, 'r', encoding='utf-8') as f:
-            content = f.read()
+@cli.command()
+@click.argument('commands_file', type=click.Path(exists=True, dir_okay=False))
+@click.option('--host', required=True)
+@click.option('--port', default=22, show_default=True, type=click.IntRange(1, 65535))
+@click.option('--username', required=True)
+@click.option('--password', prompt=True, hide_input=True)
+def deploy(commands_file, host, port, username, password):
+    """Push a .set file as a candidate and validate it. Does not commit."""
+    artifact_path = os.path.join(os.path.dirname(commands_file), 'migration_report.json')
+    with open(commands_file, encoding='utf-8') as stream:
+        commands = tuple(line.strip() for line in stream if line.strip())
+    with open(artifact_path, encoding='utf-8') as stream:
+        report = json.load(stream)
+    digest = hashlib.sha256("\n".join(commands).encode("utf-8")).hexdigest()
+    if (not isinstance(report, dict) or report.get('commands') != len(commands)
+            or report.get('command_sha256') != digest):
+        raise click.ClickException('The .set file does not match its rendered migration report')
+    rendered = RenderedMigration(commands, report)
+    result = PANSSHDeployer(PANDeploymentOptions(host, username, password, port=port)).deploy(rendered)
+    if result.failure_message or result.validation.status == 'FAILED':
+        raise click.ClickException(result.failure_message or result.validation.response or 'Candidate validation failed')
+    click.echo(f"Pushed {result.commands_succeeded} candidate commands; validation {result.validation.status}")
 
-        if optimize:
-            click.echo("Running rule & object optimizer...")
-
-        result = MigrationPipeline().run(MigrationRequest(
-            source_vendor=source_vendor,
-            target_vendor=target_vendor,
-            source_content=content,
-            target_format=format,
-            optimize=optimize,
-            source_name=Path(input).name,
-            zone_mapping=migration_config.zone_mapping,
-            context_mapping=migration_config.context_mapping,
-        ))
-
-        if not result.generation_allowed:
-            click.echo("Migration blocked: generation safety checks failed.", err=True)
-            for reason in result.blocking_reasons:
-                click.echo(f"  - {reason}", err=True)
-            if result.requires_manual_review:
-                click.echo("Manual review is required before generation.", err=True)
-            sys.exit(1)
-
-        if result.capability_analysis and len(result.capability_analysis):
-            click.echo(
-                f"Capability analysis: {result.capability_analysis.partial_count} partial, "
-                f"{result.capability_analysis.unsupported_count} unsupported, "
-                f"{result.capability_analysis.manual_review_count} manual review."
-            )
-
-        ir_config = result.final_ir
-        if ir_config is None:
-            raise RuntimeError("Migration pipeline returned no final IR")
-        click.echo(f"  Parsed {len(result.source_ir.interfaces)} interfaces, {len(result.source_ir.policies)} policies.")
-
-        # Optional Optimization
-        if optimize:
-            unused = result.unused_objects
-            click.echo(f"  Found {len(unused['unused_addresses'])} unused addresses, {len(unused['unused_services'])} unused services. Pruning...")
-
-        # Generate Target Artifacts
-        click.echo(f"Generating {target_vendor.upper()} ({format.upper()}) configuration...")
-        out_dir = Path(output)
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        for artifact in result.artifacts:
-            out_path = out_dir / artifact.filename
-            with open(out_path, 'w', encoding='utf-8') as f:
-                f.write(artifact.content)
-            click.echo(f"  Saved {out_path}")
-
-        click.echo("Migration complete!")
-
-    except Exception as e:
-        click.echo(f"Error during migration: {e}", err=True)
-        sys.exit(1)
+@cli.command()
+@click.option('--host', required=True)
+@click.option('--port', default=22, show_default=True, type=click.IntRange(1, 65535))
+@click.option('--username', required=True)
+@click.option('--password', prompt=True, hide_input=True)
+def commit(host, port, username, password):
+    """Explicitly commit the current Palo Alto candidate configuration."""
+    result = PANSSHDeployer(PANDeploymentOptions(host, username, password, port=port)).commit()
+    if result.status != 'SUCCESS':
+        raise click.ClickException(result.response or 'Commit failed')
+    click.echo(f"Commit submitted (job {result.job_id or 'unknown'})")
 
 @cli.command()
 @click.option('--port', default=5000, help='Port to run the web server on')
 def serve(port):
-    """Start the migration web interface with live source extraction enabled."""
+    """Start the migration web interface."""
     try:
         from fwmigrate.web_live import create_app
         app = create_app()
         click.echo(f"Starting web server on http://localhost:{port}")
-        click.echo("FortiGate live source extraction: Extract Data to Excel > Live Firewall")
         app.run(host='0.0.0.0', port=port, debug=False)
     except ImportError:
         click.echo("Flask is required to run the web server. Install with: pip install flask", err=True)

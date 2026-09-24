@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#172321" />
     <meta
       name="description"
-      content="A focused workspace for firewall configuration conversion, source inventory extraction, and live migration."
+      content="Firewall source analysis, migration planning, Excel inventory, and controlled live migration."
     />
     <title>Firewall Migration Tool · Workspace</title>
     <link
@@ -32,28 +32,28 @@
     <script src="{{ url_for('static', filename='theme.js') }}?v=5.0"></script>
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='style.css') }}?v=5.2"
+      href="{{ url_for('static', filename='style.css') }}?v=5.5"
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='themes.css') }}?v=5.2"
+      href="{{ url_for('static', filename='themes.css') }}?v=5.4"
     />
     <script
       defer
-      src="{{ url_for('static', filename='app.js') }}?v=5.0"
+      src="{{ url_for('static', filename='app.js') }}?v=5.5"
     ></script>
     <script
       defer
       src="{{ url_for('static', filename='default_workflow.js') }}?v=5.1"
     ></script>
   </head>
-  <body data-default-workflow="extract">
+  <body data-default-workflow="report">
     <a class="skip-link" href="#main-content">Skip to workspace</a>
     <aside class="sidebar" aria-label="Workspace navigation">
       <a class="brand" href="/" aria-label="Firewall Migration Tool home"
         ><span class="brand-mark">{{ icon('switch') }}</span
         ><span class="brand-wordmark"
-          >Firewall<span>MIGRATION TOOL</span></span
+          ><span id="brand-name">Firewall</span><span id="brand-tagline">MIGRATION TOOL</span></span
         ></a
       >
       <nav
@@ -62,6 +62,17 @@
         aria-label="Workflow"
         aria-orientation="vertical"
       >
+        <button
+          id="tab-report"
+          class="tab-btn"
+          role="tab"
+          aria-selected="false"
+          aria-controls="report-container"
+          data-tab="report"
+        >
+          {{ icon('activity') }}<span>View Report</span
+          ><span class="nav-active-dot"></span>
+        </button>
         <button
           id="tab-extract"
           class="tab-btn"
@@ -76,6 +87,18 @@
           ><span class="nav-active-dot"></span>
         </button>
         <button
+          id="tab-collect"
+          class="tab-btn"
+          role="tab"
+          aria-selected="false"
+          aria-controls="ingest-live-container"
+          data-tab="collect"
+          tabindex="-1"
+        >
+          {{ icon('activity') }}<span>Live Collection</span
+          ><span class="nav-active-dot"></span>
+        </button>
+        <button
           id="tab-download"
           class="tab-btn active"
           role="tab"
@@ -83,7 +106,7 @@
           aria-controls="mode-download-form"
           data-tab="download"
         >
-          {{ icon('switch') }}<span>Convert config</span
+          {{ icon('switch') }}<span>Plan migration</span
           ><span class="nav-active-dot"></span>
         </button>
         <button
@@ -120,10 +143,10 @@
       <main class="main-content" id="main-content" tabindex="-1">
         <div class="page-heading reveal">
           <div>
-            <p class="eyebrow">FIREWALL OPERATIONS</p>
-            <h1 id="page-title">Convert configuration</h1>
+            <p class="eyebrow" id="page-eyebrow">FIREWALL OPERATIONS</p>
+            <h1 id="page-title">Plan migration</h1>
             <p id="page-description">
-              A clear path from your existing firewall to what comes next.
+              Review what can be migrated, what needs attention, and generate supported PAN-OS commands.
             </p>
           </div>
           <div class="page-heading-actions">
@@ -169,9 +192,13 @@
             </button>
           </div>
         </div>
+        <div id="development-banner" class="development-banner hidden" role="status">
+          <strong>Under development.</strong> Plan migration and Live migration are not functional yet.
+        </div>
         <div class="workspace-grid">
           <div class="workspace-main">
             {% include 'partials/source_configuration.html' %} {% include
+            'partials/report.html' %} {% include
             'partials/exports.html' %} {% include 'partials/live_migration.html'
             %}
             <div
@@ -180,66 +207,9 @@
               role="alert"
             ></div>
           </div>
-          <aside
-            class="context-column reveal"
-            aria-label="Configuration overview"
-          >
-            <section class="context-card">
-              <div class="context-heading">
-                <span class="eyebrow">AT A GLANCE</span>{{ icon('network') }}
-              </div>
-              <h2>Your migration path</h2>
-              <div class="migration-path">
-                <div class="path-node">
-                  <span class="node-icon">{{ icon('shield') }}</span>
-                  <div>
-                    <span class="field-caption">SOURCE FIREWALL</span
-                    ><strong id="summary-source">Fortinet FortiGate</strong>
-                  </div>
-                </div>
-                <div class="path-connector">
-                  <span></span><small>Configuration mapping</small>
-                </div>
-                <div class="path-node">
-                  <span class="node-icon node-target"
-                    >{{ icon('layers') }}</span
-                  >
-                  <div>
-                    <span class="field-caption">OUTPUT</span
-                    ><strong id="summary-target">Palo Alto Networks</strong>
-                  </div>
-                </div>
-              </div>
-              <div class="context-divider"></div>
-              <div class="summary-row">
-                <span>Source</span
-                ><strong id="summary-file">No configuration yet</strong>
-              </div>
-              <div class="summary-row">
-                <span>Status</span
-                ><span class="state-badge" id="summary-state"
-                  >Awaiting source</span
-                >
-              </div>
-              <div class="inventory-counts">
-                <div>
-                  <strong id="inventory-interface-count">—</strong
-                  ><span>Interfaces</span>
-                </div>
-                <div>
-                  <strong id="inventory-policy-count">—</strong
-                  ><span>Policies</span>
-                </div>
-              </div>
-            </section>
-          </aside>
         </div>
         <footer class="app-footer">
-          <span>Firewall Migration Tool</span
-          ><span
-            >Built for the next configuration.
-            <span class="footer-dot">·</span> Multi-vendor workspace</span
-          >
+          <span>Firewall Migration Tool</span>
         </footer>
       </main>
     </div>
@@ -277,10 +247,10 @@
           <li>
             <span>01</span>
             <div>
-              <strong>Convert configuration</strong>
+              <strong>Plan migration</strong>
               <p>
-                Select a source and target, upload a backup, then download a
-                migration bundle with configuration artifacts and source inventory.
+                Select a source and target, upload a backup, review supported and
+                manual-review items, then generate the PAN-OS migration bundle.
               </p>
             </div>
           </li>
@@ -300,9 +270,8 @@
             <div>
               <strong>Live migration</strong>
               <p>
-                Configure the target connection, run diagnostics, then generate
-                and review a plan. Applying changes requires your explicit
-                confirmation.
+                Configure the target connection, then use the future CLI/SSH
+                Validate, Deploy, and Commit workflow.
               </p>
             </div>
           </li>

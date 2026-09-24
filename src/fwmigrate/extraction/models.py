@@ -5,27 +5,14 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from fwmigrate.ir import IRConfig
-
-
 class ExtractionStatus(str, Enum):
-    NORMALIZED = "NORMALIZED"
-    PARTIALLY_NORMALIZED = "PARTIALLY_NORMALIZED"
-    EXTRACT_ONLY = "EXTRACT_ONLY"
-    # Compatibility alias for the conservative unknown-section fallback.  It
-    # intentionally retains the historical serialized value so existing
-    # clients that only understand UNSUPPORTED remain safe.
-    EXTRACT_ONLY_UNKNOWN = "UNSUPPORTED"
-    VENDOR_EXTENSION = "VENDOR_EXTENSION"
+    EXTRACTED = "EXTRACTED"
+    PARTIAL = "PARTIAL"
+    SOURCE_ONLY = "SOURCE_ONLY"
     UNSUPPORTED = "UNSUPPORTED"
-    IGNORED_BY_POLICY = "IGNORED_BY_POLICY"
+    UNKNOWN = "UNKNOWN"
+    IGNORED = "IGNORED"
     PARSE_ERROR = "PARSE_ERROR"
-
-
-class MigrationImpact(str, Enum):
-    NONE = "NONE"
-    REVIEW = "REVIEW"
-    BLOCKING = "BLOCKING"
 
 
 class SourceSectionResult(BaseModel):
@@ -38,7 +25,7 @@ class SourceSectionResult(BaseModel):
 
     object_count_source: Optional[int] = None
     object_count_parsed: Optional[int] = None
-    object_count_normalized: Optional[int] = None
+    object_count_extracted: Optional[int] = None
 
     # Optional additive coverage fields.  Existing vendor extractors continue
     # to use ``path`` and the original counters.
@@ -47,7 +34,7 @@ class SourceSectionResult(BaseModel):
     domain_name: Optional[str] = None
     object_count_total: Optional[int] = None
     object_count_partial: int = 0
-    object_count_extract_only: int = 0
+    object_count_source_only: int = 0
     object_count_unsupported: int = 0
     object_count_parse_error: int = 0
     supported_empty: bool = False
@@ -58,13 +45,11 @@ class SourceSectionResult(BaseModel):
 
     # Counted independently from object cardinality.  Matching source and
     # parsed object counts is not proof that every semantic setting was
-    # normalized.
+    # extracted.
     semantic_unknowns: List[str] = Field(default_factory=list)
     unresolved_dependencies: int = 0
 
     status: ExtractionStatus
-    migration_impact: MigrationImpact = MigrationImpact.REVIEW
-
     parser_handler: Optional[str] = None
     notes: List[str] = Field(default_factory=list)
 
@@ -97,8 +82,7 @@ class SourceInventoryItem(BaseModel):
     source_references: List[str] = Field(default_factory=list)
     children: List["SourceInventoryItem"] = Field(default_factory=list)
 
-    status: ExtractionStatus = ExtractionStatus.EXTRACT_ONLY
-    migration_impact: MigrationImpact = MigrationImpact.REVIEW
+    status: ExtractionStatus = ExtractionStatus.SOURCE_ONLY
     requires_manual_review: bool = False
     evidence_class: str = "configuration"
 
@@ -120,7 +104,7 @@ class DependencyRecord(BaseModel):
     target_uid: Optional[str] = None
     target_name: Optional[str] = None
     semantic_kind: Optional[str] = None
-    normalization_status: Optional[str] = None
+    resolution_status: Optional[str] = None
     reason: Optional[str] = None
 
 
@@ -135,9 +119,9 @@ class CoverageSummary(BaseModel):
     operational: bool = False
     status: ExtractionStatus
     total: int = 0
-    normalized: int = 0
+    extracted: int = 0
     partial: int = 0
-    extract_only: int = 0
+    source_only: int = 0
     unsupported: int = 0
     parse_errors: int = 0
     supported_empty: bool = False
@@ -153,28 +137,5 @@ class UnsupportedItem(BaseModel):
     requires_manual_review: bool = True
     raw_capture: Optional[str] = None
     source_context: Optional[str] = None
-    migration_impact: MigrationImpact = MigrationImpact.REVIEW
 
-
-class ExtractionResult(BaseModel):
-    canonical_ir: IRConfig
-
-    source_sections: List[SourceSectionResult] = Field(default_factory=list)
-    coverage: List[CoverageSummary] = Field(default_factory=list)
-    inventory_items: List[SourceInventoryItem] = Field(default_factory=list)
-    unsupported_items: List[UnsupportedItem] = Field(default_factory=list)
-    dependencies: List[DependencyRecord] = Field(default_factory=list)
-
-    # Derived migration safety state. These additive fields intentionally keep
-    # the existing ExtractionResult API and serialized shape backward
-    # compatible for consumers that ignore unknown/new fields.
-    requires_manual_review: bool = False
-    migration_complete: bool = True
-    generation_safe: bool = True
-    blocking_reasons: List[str] = Field(default_factory=list)
-
-    input_source_type: str = "unknown"
-    policy_extraction_supported: bool = True
-    nat_extraction_supported: bool = True
-    object_extraction_supported: bool = True
 
