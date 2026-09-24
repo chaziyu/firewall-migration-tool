@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('src/fwmigrate/templates', 'fwmigrate/templates'), ('src/fwmigrate/static', 'fwmigrate/static'), ('bin/terraform.exe', 'bin')]
+datas = [('src/fwmigrate/templates', 'fwmigrate/templates'), ('src/fwmigrate/static', 'fwmigrate/static')]
 binaries = []
 hiddenimports = ['clr', 'clr_loader', 'pythonnet']
 tmp_ret = collect_all('fwmigrate')

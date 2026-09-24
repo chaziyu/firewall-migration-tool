@@ -1,9 +1,29 @@
 <div id="mode-download-form" role="tabpanel" aria-labelledby="tab-download">
+  <section class="card hidden" id="migration-mapping" aria-labelledby="mapping-heading">
+    <div class="card-header"><div class="section-heading"><h2 id="mapping-heading"><span class="step-num">02</span>Target mappings</h2></div>
+      <p class="card-desc">Map each FortiGate scope and interface explicitly to PAN-OS.</p></div>
+    <div class="mapping-toolbar">
+      <label>Filter <select id="mapping-filter"><option value="all">All</option><option value="unmapped">Unmapped</option><option value="mapped">Mapped</option><option value="zones">Zones</option><option value="interfaces">Interfaces</option><option value="route-nat">Route/NAT</option></select></label>
+      <button type="button" id="mapping-template">Download mapping template</button>
+      <label>Import YAML <input type="file" id="mapping-import" accept=".yaml,.yml,text/yaml"></label>
+      <input type="text" id="bulk-zone-value" placeholder="PAN zone for selected rows" aria-label="PAN zone for selected rows">
+      <button type="button" id="bulk-zone-apply">Set selected zones</button>
+      <button type="button" id="bulk-zone-name">Use same name for selected zones</button>
+      <button type="button" id="bulk-mapping-clear">Clear selected mappings</button>
+      <button type="button" id="mapping-completion" aria-live="polite"></button>
+    </div>
+    <div id="migration-mapping-fields"></div>
+    <details id="optional-mappings" class="hidden"><summary>Show optional / unreferenced inventory</summary><ul id="optional-mapping-list"></ul></details>
+  </section>
+  <section class="card hidden" id="migration-plan" aria-live="polite">
+    <div class="card-header"><div class="section-heading"><h2><span class="step-num">03</span>Migration plan</h2></div></div>
+    <div id="migration-plan-summary"></div>
+  </section>
   <section class="card output-card reveal" aria-labelledby="bundle-heading">
     <div class="card-header">
       <div class="section-heading">
         <h2 id="bundle-heading">
-          <span class="step-num">02</span>Your migration bundle
+          <span class="step-num">04</span>Download migration bundle
         </h2>
         <span class="format-badge">.ZIP</span>
       </div>
@@ -15,19 +35,9 @@
       <div class="feature-item">
         <div class="feature-icon">{{ icon('code') }}</div>
         <div class="feature-info">
-          <strong>Target configuration</strong
+          <strong>Planned PAN-OS configuration</strong
           ><span id="feature-card-pan-desc"
-            >Native configuration for your selected platform.</span
-          >
-        </div>
-        {{ icon('check', 'feature-check') }}
-      </div>
-      <div class="feature-item">
-        <div class="feature-icon">{{ icon('layers') }}</div>
-        <div class="feature-info">
-          <strong>Terraform files</strong
-          ><span id="feature-card-tf-desc"
-            >Infrastructure definitions for supported target platforms.</span
+            >Generated commands for the supported portion of the migration.</span
           >
         </div>
         {{ icon('check', 'feature-check') }}
@@ -52,7 +62,10 @@
         class="btn btn-primary"
         disabled
       >
-        {{ icon('download') }}<span>Generate bundle</span>
+        {{ icon('activity') }}<span>Build migration plan</span>
+      </button>
+      <button type="button" id="btn-download-bundle" class="btn btn-primary hidden" disabled>
+        {{ icon('download') }}<span>Download bundle</span>
       </button>
     </div>
   </section>
@@ -63,45 +76,4 @@
   role="tabpanel"
   aria-labelledby="tab-extract"
 >
-  <section class="card output-card reveal" aria-labelledby="excel-heading">
-    <div class="card-header">
-      <div class="section-heading">
-        <h2 id="excel-heading">
-          <span class="step-num">02</span>Your source inventory
-        </h2>
-        <span class="format-badge format-excel">.XLSX</span>
-      </div>
-      <p class="card-desc">
-        Turn your configuration into a workbook you can explore.
-      </p>
-    </div>
-    <div class="excel-intro">
-      <span class="excel-file-icon">{{ icon('table') }}</span>
-      <div>
-        <strong>A closer look at your firewall.</strong>
-        <p>
-          Interfaces, addresses, policies, NAT, routes, and more, organized into
-          worksheets.
-        </p>
-      </div>
-    </div>
-    <div class="worksheet-list">
-      <span>{{ icon('check') }}Interfaces & source settings</span
-      ><span>{{ icon('check') }}Objects & security policies</span
-      ><span>{{ icon('check') }}Routing, NAT & VPN</span
-      ><span>{{ icon('check') }}Warnings & review items</span>
-    </div>
-    <div class="export-footer">
-      <span class="export-hint"
-        >{{ icon('table') }}Source inventory, before optimization.</span
-      ><button
-        type="button"
-        id="btn-extract-excel"
-        class="btn btn-primary"
-        disabled
-      >
-        {{ icon('download') }}<span>Download Excel</span>
-      </button>
-    </div>
-  </section>
 </div>

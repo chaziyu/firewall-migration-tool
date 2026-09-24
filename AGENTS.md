@@ -1,159 +1,334 @@
 # AGENTS.md
 
-## Core Pipeline
-
-All source extraction MUST follow this pipeline:
+This repository uses **vendor-native firewall extraction and reporting**.
 
 ```text
-Raw Source
-→ Input Adapter / Normalization
-→ Vendor Parser / Loader
-→ Vendor Source Model
-→ Scope / Context / Inheritance Resolution
-→ Reference / Dependency Resolution
-→ Source Inventory + Coverage Accounting
-→ IR V2 Transformation
-   ├── Canonical vendor-neutral IR
-   └── Typed vendor extensions
-→ Semantic Validation
-→ Extraction Safety / Finalization
-→ ExtractionResult
-→ Reporting / Target Generation
+Vendor Source
+→ Parser / Source Adapter
+→ VendorConfig
+→ Relationships / Transforms
+→ DerivedViews
+→ Validation
+→ Preview / Excel
 ```
 
-Do not create alternate source-to-report or source-to-target paths.
+Cross-vendor conversion is not implemented yet.
 
-`extract()` is the authoritative parser API.
+For vendor-specific command and configuration coverage, use the matching selected reference in `documentation/official-cli-references-selected version/`:
 
-`parse()` is compatibility only and MUST return or project `extract(...).canonical_ir`.
+- FortiGate: `FortiGate Selected CLI References.md`
+- Cisco ASA: `Cisco_ASA_Selected_Configuration_References.md`
+- Cisco FTD: `Cisco_FTD_Selected_Configuration_References.md`
+- Juniper SRX: `Juniper_Selected_CLI_References.md`
+- Check Point R81: `Check_Point_R81_Selected_CLI_and_Management_API_References.md`
+- PAN-OS: `Palo_Alto_Selected_CLI_References.md`
 
-## IR Rules
+Use these files to check the selected extraction coverage for that vendor. They do not make vendor defaults explicit source configuration.
 
-Canonical IR MUST contain only portable cross-vendor semantics.
+## Core invariants
 
-Vendor-specific semantics MUST go into typed `vendor_extensions` unless a portable equivalent is proven.
+### 1. Preserve source truth
 
-Source-only evidence, unsupported data, parse failures, unresolved dependencies, and extraction accounting belong in `ExtractionResult`, not in canonical IR merely for convenience.
+`VendorConfig` represents **explicit source state**.
 
-Do not force unlike vendor concepts into one generic model.
-
-Do not add new vendor-specific fields to canonical IR.
-
-If portability is uncertain, preserve the source semantics and keep them vendor-specific.
-
-## Extraction Rules
-
-Zero silent loss.
-
-Every meaningful source item MUST end in an explicit state such as:
+A missing field means:
 
 ```text
-NORMALIZED
-PARTIALLY_NORMALIZED
-VENDOR_EXTENSION
-EXTRACT_ONLY
-UNSUPPORTED
-IGNORED_BY_POLICY
-PARSE_ERROR
+not explicitly configured
 ```
 
-Unknown, malformed, unresolved, or unsupported semantics MUST fail closed.
-
-Never silently convert uncertainty into values such as:
+Do not silently interpret missing values as:
 
 ```text
+vendor default
+false
+disabled
+empty
+zero
+inherit
 any
-allow
-0.0.0.0/0
-::/0
-enabled
-fabricated objects
-fabricated interfaces or zones
 ```
 
-Preserve source context, ordering, inheritance, references, provenance, and vendor-only behavior when required for correctness.
+Keep distinct:
 
-## Vendor Parser Rules
+```text
+explicit source
+derived value
+effective/default value
+unknown value
+unsupported/source-only value
+```
 
-Vendor syntax handling remains vendor-specific.
+Only expose `Effective ...` fields when current vendor logic actually calculates them.
 
-Do not force FortiOS CLI, Junos hierarchy, PAN-OS XML, Cisco CLI, and Check Point management/Gaia syntax through one generic grammar.
+When uncertain:
 
-Parsers MAY use different internal implementations but MUST converge on the same `ExtractionResult` and IR V2 contracts.
+```text
+preserve source
+→ mark unknown / unsupported
+→ report it
+→ do not guess
+```
 
-Official vendor documentation is authoritative for source syntax and semantics.
+### 2. Respect layer boundaries
 
-Implementation and regression tests are authoritative for what the repository currently supports.
+```text
+Tokenizer / Scanner   syntax only
+Parser / Adapter      explicit source structure
+Command Evaluator     vendor command semantics
+VendorConfig          authoritative source state
+Relationships         references / bindings / topology
+Transforms            vendor semantics / derivation
+DerivedViews          read-only derived state
+Validation            detect and report only
+Preview / Excel       presentation only
+```
 
-Do not guess undocumented semantics.
+Do not move semantics into parsers, validation, web, or Excel for convenience.
 
-## Runtime Mutation
+### 3. Never mutate source downstream
 
-Do not monkey patch classes, functions, modules, parser entry points, registries, or model methods at runtime.
+After extraction, treat `VendorConfig` as read-only.
 
-Do not rebind imported functions to change behavior after import.
+Relationships, transforms, validation, preview, and Excel must not:
 
-Behavior changes MUST be implemented through explicit code paths, typed extension points, subclassing/composition, or the existing plugin/registry interfaces.
+```text
+fill defaults
+repair references
+insert inferred objects
+rename objects
+rewrite values
+delete unsupported data
+silently fix configuration
+```
 
-Tests may use temporary patching/mocking only when scoped to the test and automatically restored afterward.
+Derived information belongs in relationships, transforms, or `DerivedViews`.
 
-If existing production code relies on monkey patching, replace it with an explicit implementation rather than adding more runtime mutation.
+Existing violations are technical debt, not patterns to copy.
 
-## Change Rules
+### 4. Preserve unsupported data
 
-Before changing parser or IR semantics:
+Keep useful unsupported or partially understood source evidence through existing mechanisms such as:
 
-1. Inspect the existing parser, source model, transformer, consumers, and tests.
-2. Trace all readers and writers of fields being changed.
-3. Check the relevant vendor mapping and official CLI/API reference.
-4. Make the smallest change that preserves current supported behavior.
-5. Add or update tests for semantics, coverage, dependencies, and safety.
+```text
+raw_extra
+unsupported commands
+source metadata
+Source Inventory
+Additional Settings
+source appendix sheets
+collection evidence
+```
 
-Do not combine semantic changes with unrelated architecture cleanup.
+Do not add fake source-model fields only to satisfy reports.
 
-Do not remove source/vendor-specific data until equivalent information is preserved in canonical IR, typed vendor extensions, or `ExtractionResult`.
+## Shared code
 
-## Compatibility
+Shared `source_reporting/` and web code may know:
 
-Serialized IR compatibility MUST be preserved through the IR loader.
+```text
+vendor ID
+display name
+supported extensions
+analyze_source()
+build_preview()
+export_excel()
+```
 
-When changing serialized IR:
+Vendor results are otherwise opaque.
 
-- update the model;
-- update migration/compatibility handling;
-- update round-trip tests;
-- update affected vendor tests.
+Do not create shared firewall semantic models.
 
-Do not introduce a new IR schema version unless the current V2 contract cannot safely represent the required change.
+Excel is presentation only and must not drive source-model design.
+
+## Vendor-specific rules
+
+**FortiGate**
+- Use `fortigate-extract` as the responsibility-boundary reference.
+- Prefer `FortiGate Selected CLI References.md`.
+- Do not copy FortiGate syntax/models into other vendors.
+
+**Cisco ASA**
+- Preserve command, ACL and NAT ordering, modes, contexts, `nameif`, and explicit `no`.
+- Resolve relationships outside parsing.
+
+**Cisco FTD**
+- Keep FMC, FDM, and CLI/device evidence distinct.
+- CLI evidence must not manufacture FMC/FDM-managed policy.
+- Preserve source-plane provenance and completeness.
+
+**Juniper SRX**
+- Preserve hierarchy, logical systems, groups, inheritance, routing-instance scope, and provenance.
+- Calculate effective state without rewriting source state.
+
+**Check Point**
+- Preserve UID, domain, package, layer, gateway/cluster scope, and collection completeness.
+- Failed/incomplete collection does not mean empty configuration.
+
+**PAN-OS**
+- Current source input is XML.
+- Do not assume CLI `set` support.
+- Preserve VSYS/shared/device-group/device scope.
+
+## Terminology
+
+Prefer source-oriented terms:
+
+```text
+EXTRACTED
+PARTIAL
+SOURCE_ONLY
+UNSUPPORTED
+UNKNOWN
+PARSE_ERROR
+collection incomplete
+```
+
+Avoid migration-era terms such as `NORMALIZED`, `migration safe`, or `target compatible` in source-reporting code.
+
+## Conversion
+
+`src/fwmigrate/conversion/` is a reserved future boundary:
+
+```text
+VendorSourceConfig
+→ VendorDerivedViews
+→ pair-specific converter
+→ TargetVendorConfig
+→ target validation
+→ target renderer
+```
+
+Do not implement conversion unless explicitly requested.
+
+Do not reintroduce:
+
+```text
+vendor-neutral IR
+shared firewall object model
+generic migration framework
+shared cross-vendor mappings
+target generators
+Terraform
+SQLite / .fgreport
+target concepts in source models
+```
+
+Source reporting must not depend on `conversion/`.
 
 ## Secrets
 
-Never expose usable passwords, PSKs, private keys, tokens, API keys, or customer secrets in:
+Never export, preview, log, or preserve actual secrets in reportable evidence:
 
 ```text
-IR output
-ExtractionResult
-reports
-logs
-fixtures
+passwords
+PSKs
+private keys
+API keys
+tokens
+credentials
+sensitive SNMP communities
+```
+
+Safe metadata is allowed:
+
+```text
+Password Configured = Yes
+PSK Configured = Yes
+Credential Present = Yes
+```
+
+Apply redaction to source evidence, raw/unsupported data, validation, preview, Excel, and logs.
+
+## Documentation
+
+Use official vendor documentation as the primary semantic reference.
+
+Prefer project-curated reference files for supported extraction coverage.
+
+Documentation defaults are not explicit source configuration.
+
+If behavior remains unclear:
+
+```text
+preserve source
+→ mark unknown / unsupported
+→ do not guess
+```
+
+## Before editing
+
+Inspect first:
+
+```text
+current branch
+actual paths
+actual models
+actual symbols
+callers
 tests
-generated artifacts
+current pipeline
 ```
 
-Preserve only safe presence/status metadata where required.
+Then:
 
-## Required Validation
-
-Run focused tests first.
-
-For shared, IR, extraction, or semantic changes, run:
-
-```bash
-python -m pytest -q
-python -m compileall -q src tests
-python -m py_compile scripts/*.py scripts/docs/*.py
-python scripts/docs/validate_docs.py
-python scripts/docs/generate_docs.py --check
+```text
+make the smallest coherent change
+avoid unrelated refactoring
+do not guess APIs
+prefer package-relative imports
 ```
 
-Do not claim validation passed unless the commands were actually run successfully.
+Do not reorganize the repository unless required by the task.
+
+## Testing
+
+Test the real path:
+
+```text
+source
+→ parser / adapter
+→ VendorConfig
+→ DerivedViews
+→ validation
+→ preview / Excel
+```
+
+Protect against regressions in:
+
+```text
+nested/scoped configuration
+unknown/unsupported fields
+references
+interface topology
+policy/NAT ordering
+provenance
+collection completeness
+secret redaction
+preview
+Excel
+```
+
+Architecture tests should enforce:
+
+```text
+VendorConfig is not mutated downstream
+source_reporting has no firewall semantic model
+vendor Excel consumes only vendor state
+vendors do not depend on conversion/
+web treats vendor results as opaque
+secrets never reach preview or Excel
+```
+
+Do not claim CI passes unless the current workflow actually ran successfully.
+
+## Priority
+
+```text
+correctness
+→ source preservation
+→ clear semantics
+→ traceability
+→ maintainability
+→ convenience
+```

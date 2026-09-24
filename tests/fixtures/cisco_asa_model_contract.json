@@ -1,0 +1,1733 @@
+{
+  "models": {
+    "CiscoSourceModel": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra"
+      ],
+      "sha256": "98b1cd3d74afed4da1282116732cab9c15bcd292796e99362f2e70fb8a65a36d"
+    },
+    "CiscoInterface": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "interface_type",
+        "parent_interface",
+        "vlan_id",
+        "interface_suffix_vlan_id",
+        "secondary_vlan_ids",
+        "secondary_vlan_ranges",
+        "port_channel_id",
+        "channel_group",
+        "channel_group_mode",
+        "redundant_interface_members",
+        "bridge_group",
+        "bvi_id",
+        "mtu",
+        "routing_context",
+        "vrf",
+        "administrative_state",
+        "nameif",
+        "ip",
+        "mask",
+        "ip_mode",
+        "standby_ip",
+        "dhcp_setroute",
+        "ipv6_addresses",
+        "ipv6_autoconfig",
+        "ipv6_dhcp",
+        "ipv6_dhcp_setroute",
+        "management_only",
+        "security_level",
+        "description",
+        "shutdown",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "policy_route_maps",
+        "policy_route_cost",
+        "policy_route_path_monitors",
+        "tunnel_source",
+        "tunnel_destination",
+        "ipsec_profile",
+        "traffic_zone_members"
+      ],
+      "sha256": "a95882f39f9d0ee7ad100fbf9583d45c12ccdd90939e5e53c648e37931f3795c"
+    },
+    "CiscoNetworkObject": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "type",
+        "value",
+        "description",
+        "raw_lines",
+        "nat_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "address_family"
+      ],
+      "sha256": "31c93ef3ae94355910e6534de54b8b981f66a13e011b3442d2b43711bece18d9"
+    },
+    "CiscoNetworkGroupMember": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "type",
+        "value",
+        "address_family",
+        "raw",
+        "review_reasons"
+      ],
+      "sha256": "5b68c4b42e6a97011ae4c5af5ab8b5b30907ccf8e6a0ec8f442956046ee08a24"
+    },
+    "CiscoNetworkGroup": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "members",
+        "description",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "address_family",
+        "source_attributes",
+        "member_entries",
+        "review_reasons"
+      ],
+      "sha256": "71fe3fd71bde175a4ce208a6093c90f74730029fc289648dc79992ac44d48fa6"
+    },
+    "CiscoIPv6Address": {
+      "fields": [
+        "address",
+        "standby",
+        "eui64",
+        "link_local",
+        "raw"
+      ],
+      "sha256": "d97ef16c07c8bf7c23e87f82bdf3be1bca3cab9c103f046b8cab9a059516336b"
+    },
+    "CiscoNamedGroupMember": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "type",
+        "value",
+        "raw",
+        "review_reasons"
+      ],
+      "sha256": "0743d1c0b66ce142dd4a7b34826da128058e1cfd877efa2ac8caf10df684069d"
+    },
+    "CiscoNamedGroup": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "group_type",
+        "members",
+        "description",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "member_entries",
+        "review_reasons"
+      ],
+      "sha256": "aed6212f014c04b54258576dbd8f00842035c6a5c802678e71da7b1cc30ef13a"
+    },
+    "CiscoNetworkServiceObject": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "members",
+        "description",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes"
+      ],
+      "sha256": "360328b6de3de0e428e5b7a30c8b6d1e57b26e13354944c961aba05f460e6af5"
+    },
+    "CiscoPortSpec": {
+      "fields": [
+        "operator",
+        "values",
+        "object_name",
+        "raw"
+      ],
+      "sha256": "3eba5422310c19a212ac2a7acd86029aa86782007479c96aaf607d94bf84f817"
+    },
+    "CiscoServicePort": {
+      "fields": [
+        "protocol",
+        "destination",
+        "source",
+        "icmp_type",
+        "icmp_code",
+        "raw"
+      ],
+      "sha256": "8c84a8959de5fd4e70be0229b2be482f4471461274be35f9a38c4f7002c8e873"
+    },
+    "CiscoServiceGroupMember": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "type",
+        "value",
+        "raw",
+        "protocol",
+        "destination",
+        "source",
+        "icmp_type",
+        "icmp_code",
+        "review_reasons"
+      ],
+      "sha256": "73fb3bdc9d7a7384ee5bbb1f7af2d0611cf49d8e194dbd006eff695358491040"
+    },
+    "CiscoServiceObject": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "ports",
+        "description",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes"
+      ],
+      "sha256": "4c8ba12fa3ec9a48280741a1ee7972a1d0649ccbc6b7892c32d60d680fdf4181"
+    },
+    "CiscoServiceGroup": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "protocol",
+        "members",
+        "service_objects",
+        "description",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "member_entries",
+        "review_reasons"
+      ],
+      "sha256": "c76c72789890cbdbbef59fbca5825dd7bc08c890d9f3363dc9df23c8e68d47f5"
+    },
+    "CiscoACLEndpoint": {
+      "fields": [
+        "type",
+        "value",
+        "address_family",
+        "raw",
+        "valid"
+      ],
+      "sha256": "1ac619c34d68031c50fa394a3a4f0e3bc290cd21b6639417d30e6c401efb357a"
+    },
+    "CiscoACLBinding": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "acl_name",
+        "source_context",
+        "interface",
+        "direction",
+        "control_plane",
+        "per_user_override",
+        "raw_line",
+        "line_number",
+        "source_attributes",
+        "extraction_status",
+        "requires_manual_review",
+        "review_reasons"
+      ],
+      "sha256": "7397c3925b18a8b8a5749c5e22ee229363ee92792aa2d77f2ab41b268e9f3427"
+    },
+    "CiscoAccessRule": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "id",
+        "acl_name",
+        "source_context",
+        "acl_type",
+        "source_line_number",
+        "source_order",
+        "source_sequence",
+        "action",
+        "protocol",
+        "protocol_object",
+        "source_endpoint",
+        "source_port",
+        "destination_endpoint",
+        "destination_port",
+        "service",
+        "icmp_type",
+        "icmp_code",
+        "time_range",
+        "log_enabled",
+        "log_level",
+        "log_interval",
+        "log_raw",
+        "inactive",
+        "user",
+        "user_group",
+        "security_group",
+        "source_security_group_type",
+        "source_security_group_value",
+        "destination_security_group_type",
+        "destination_security_group_value",
+        "icmp_object_group",
+        "remark",
+        "raw_line",
+        "extraction_status",
+        "requires_manual_review",
+        "review_reasons",
+        "source_attributes"
+      ],
+      "sha256": "5ec658767de9a183fcf22e417d07acb1e36d5fa885f161a982064ed8be14c9a3"
+    },
+    "CiscoNATRule": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "source_interface",
+        "destination_interface",
+        "section",
+        "syntax_family",
+        "sequence",
+        "type",
+        "source_mode",
+        "mapped_source_mode",
+        "mapped_source_address_family",
+        "pat_pool",
+        "pat_pool_options",
+        "real_source",
+        "mapped_source",
+        "destination_mode",
+        "real_destination",
+        "mapped_destination",
+        "original_service",
+        "translated_service",
+        "service_protocol",
+        "owning_object",
+        "access_list",
+        "identity_nat",
+        "nat_exemption",
+        "options",
+        "raw_options",
+        "net_to_net",
+        "dns",
+        "no_proxy_arp",
+        "route_lookup",
+        "unidirectional",
+        "inactive",
+        "source_sequence",
+        "source_order",
+        "source_order_within_section",
+        "section_order",
+        "raw_line",
+        "description",
+        "extraction_status",
+        "requires_manual_review",
+        "review_reasons",
+        "source_attributes"
+      ],
+      "sha256": "55299ce565f550f05109ea62ad389ebbe74dabfca9ed4903969d32892c34e7aa"
+    },
+    "CiscoStaticRoute": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "source_context",
+        "interface",
+        "destination",
+        "mask",
+        "gateway",
+        "administrative_distance",
+        "address_family",
+        "routing_context",
+        "track_id",
+        "tunneled",
+        "raw_options",
+        "raw_line",
+        "extraction_status",
+        "requires_manual_review",
+        "review_reasons",
+        "source_attributes"
+      ],
+      "sha256": "5ceee7170e04761b919db46c2f9928c60c3eda3a90755ad1184cf21556c23a3c"
+    },
+    "CiscoTrack": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "track_id",
+        "track_type",
+        "sla_id",
+        "target",
+        "review_reasons"
+      ],
+      "sha256": "31a419857ece43573fca2ec0af517dda823f91ba60cb6df45753dc8fab5cc9fb"
+    },
+    "CiscoSLAMonitor": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "sla_id",
+        "operation",
+        "frequency",
+        "target",
+        "interface",
+        "review_reasons"
+      ],
+      "sha256": "254538cd54bd911143fe103551bd6695da7c9bf1f85d23326e479aab8743a46c"
+    },
+    "CiscoRouteMapRule": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "sequence",
+        "action",
+        "match_acl",
+        "match_acls",
+        "set_next_hop",
+        "next_hops",
+        "set_interface",
+        "output_interfaces",
+        "raw_lines",
+        "raw_options",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes"
+      ],
+      "sha256": "05197c7b4e9b37626c9caf0a946edd15e8ef148f1a17fe01e6590531411a55cc"
+    },
+    "CiscoRouteMap": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "rules",
+        "raw_lines"
+      ],
+      "sha256": "9e465230e7cb69ee529a0cd9faf6c752f80ec2180730adbea1d4fc2caba7e6d6"
+    },
+    "CiscoPolicyRoutePathMonitor": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "mode",
+        "peer",
+        "raw",
+        "source_order"
+      ],
+      "sha256": "b95e9494cb0799cf35012f718114235b81bd8521d9320565d43e92c4310ca55f"
+    },
+    "CiscoTimeRangeClause": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "clause_type",
+        "raw",
+        "start",
+        "end",
+        "days",
+        "end_days",
+        "source_order"
+      ],
+      "sha256": "3509536188f4b8e552dc8a2f96eb0ba0ec5fdcac113ff77a5475f3a9a1df13dc"
+    },
+    "CiscoTimeRange": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "clauses",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "review_reasons",
+        "source_attributes"
+      ],
+      "sha256": "3cce01d6529da227cd36a597f0c2672477b7b69eb25801c2275473bf12d95bc3"
+    },
+    "CiscoSourceRecord": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes"
+      ],
+      "sha256": "9d85ad0c613d79d346030a81f01c855534753f0de8f2f3992c79fd672087ed39"
+    },
+    "CiscoTrafficZone": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "members"
+      ],
+      "sha256": "def765a48f3347a59f021fc7ef97ec00e8e7311e25d92e0cb94cf5020090afe1"
+    },
+    "CiscoIKEPolicy": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "version",
+        "number",
+        "authentication",
+        "encryption",
+        "integrity",
+        "hash_algorithm",
+        "dh_group",
+        "lifetime_seconds",
+        "prf",
+        "encryption_algorithms",
+        "hash_algorithms",
+        "integrity_algorithms",
+        "prf_algorithms",
+        "dh_groups",
+        "raw_options",
+        "review_reasons"
+      ],
+      "sha256": "b95d8e786be60a599de6d82d11057ae7fb61f83dff5d8a83a54272238491a49c"
+    },
+    "CiscoIKEv2Proposal": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "encryption_algorithms",
+        "integrity_algorithms",
+        "prf_algorithms",
+        "dh_groups",
+        "review_reasons"
+      ],
+      "sha256": "9ba4f6058f5c896e0194b4109fc5a89fcec4c6cea1acf027701e90b8cf90aeb7"
+    },
+    "CiscoIPsecTransformSet": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "encryption",
+        "authentication",
+        "mode",
+        "raw_line",
+        "review_reasons"
+      ],
+      "sha256": "2af02dad6339e2dcc47a2f980d79e5a7e8ca81e0d65bab545d9205433a4a8240"
+    },
+    "CiscoVPNAddressPool": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "start",
+        "end",
+        "mask",
+        "address_family",
+        "raw_line",
+        "review_reasons"
+      ],
+      "sha256": "5b4b658ef9620fba23d9c6590df85676f5f1d81d8a92efdac3251d8b52501237"
+    },
+    "CiscoCryptoMap": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "sequence",
+        "acl_name",
+        "peer",
+        "peers",
+        "transform_sets",
+        "dynamic_map",
+        "map_name",
+        "map_type",
+        "ikev2_proposals",
+        "pfs_group",
+        "security_association_lifetime_seconds",
+        "security_association_lifetime_kilobytes",
+        "interface_attachment",
+        "is_dynamic",
+        "source_order",
+        "raw_options",
+        "review_reasons"
+      ],
+      "sha256": "5db940276d343bab35a345ca39fb13fa02e2b6d4bd94667b21a98e6dff2e9ab9"
+    },
+    "CiscoTunnelGroup": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "group_type",
+        "default_group_policy",
+        "address_pools",
+        "authentication_method",
+        "peer_address",
+        "trustpoint",
+        "ikev1_psk_present",
+        "ikev2_local_authentication",
+        "ikev2_remote_authentication",
+        "general_attributes",
+        "ipsec_attributes",
+        "webvpn_attributes",
+        "review_reasons"
+      ],
+      "sha256": "157362f511cefcff1782848f4173c117ec916d5fd7070612250015a1c1e58081"
+    },
+    "CiscoGroupPolicy": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "policy_type",
+        "parent",
+        "address_pools",
+        "dns_servers",
+        "split_tunnel_policy",
+        "split_tunnel_acl",
+        "vpn_access_hours",
+        "vpn_filter_acl",
+        "vpn_simultaneous_logins",
+        "wins_servers",
+        "webvpn_attributes",
+        "vpn_protocols",
+        "idle_timeout",
+        "session_timeout",
+        "default_domain",
+        "raw_attributes",
+        "review_reasons"
+      ],
+      "sha256": "697899ad15deda9c24df347c26466fec09b42272bbe132d65a40341d68307489"
+    },
+    "CiscoAAARecord": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "protocol",
+        "address",
+        "has_secret"
+      ],
+      "sha256": "b3710698cdd0811807707ab538be5252ab8a1e1456454607973457bdf4770b4e"
+    },
+    "CiscoAAAServerGroup": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "protocol",
+        "hosts",
+        "review_reasons"
+      ],
+      "sha256": "f705b3a8ef4adf80f1a9e21d4b96665bcd2a15c7874b69a072664c3a78e622ba"
+    },
+    "CiscoAAAServerHost": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "group_name",
+        "host",
+        "interface",
+        "protocol",
+        "authentication_port",
+        "accounting_port",
+        "timeout",
+        "retries",
+        "key_present",
+        "password_present",
+        "server_secret_present",
+        "ldap_base_dn",
+        "ldap_scope",
+        "ldap_naming_attribute",
+        "ldap_login_dn",
+        "ldap_over_ssl",
+        "radius_common_password_present",
+        "review_reasons"
+      ],
+      "sha256": "d3940eca199505facbd475e6e6989883393756260bd72a54d183e21dc244e5e3"
+    },
+    "CiscoLocalUser": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "username",
+        "privilege",
+        "authentication_type",
+        "password_present",
+        "secret_present",
+        "encrypted",
+        "nopassword",
+        "raw_line",
+        "review_reasons"
+      ],
+      "sha256": "13ffd8dfc4930ef7898454d99dabcdcbc7417261e4ecd603230559ee24f93673"
+    },
+    "CiscoAAAAuthenticationRule": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "service",
+        "management_protocol",
+        "target",
+        "server_group",
+        "fallback_local",
+        "interface",
+        "options",
+        "acl_reference",
+        "user_identity",
+        "raw_line",
+        "review_reasons"
+      ],
+      "sha256": "07c654cd08f97a0d99d2d65038976f3e0f4205ecbbff53b50f3cf7548e862fa0"
+    },
+    "CiscoAAAAuthorizationRule": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "service",
+        "management_protocol",
+        "target",
+        "server_group",
+        "fallback_local",
+        "interface",
+        "options",
+        "acl_reference",
+        "user_identity",
+        "raw_line",
+        "review_reasons"
+      ],
+      "sha256": "07c654cd08f97a0d99d2d65038976f3e0f4205ecbbff53b50f3cf7548e862fa0"
+    },
+    "CiscoAAAAccountingRule": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "service",
+        "management_protocol",
+        "target",
+        "server_group",
+        "fallback_local",
+        "interface",
+        "options",
+        "acl_reference",
+        "user_identity",
+        "raw_line",
+        "review_reasons"
+      ],
+      "sha256": "07c654cd08f97a0d99d2d65038976f3e0f4205ecbbff53b50f3cf7548e862fa0"
+    },
+    "CiscoInspectionPolicySection": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "kind",
+        "header",
+        "source_order",
+        "class_name",
+        "match_expression",
+        "negated",
+        "actions",
+        "parameters",
+        "raw_lines",
+        "source_attributes"
+      ],
+      "sha256": "80e0a8a3de6d05a28827ab31efe0076ca25aa9c1e54a762668d247d539599839"
+    },
+    "CiscoTCPMapSetting": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "key",
+        "values",
+        "negated",
+        "raw",
+        "source_order",
+        "supported"
+      ],
+      "sha256": "653453e5bea9b06b881cd5d64c5bf5b993dfe4fe4b8c3092d7d92135436dfac4"
+    },
+    "CiscoHTTPServerConfig": {
+      "fields": [
+        "enabled",
+        "port",
+        "idle_timeout",
+        "session_timeout",
+        "raw_lines",
+        "source_order",
+        "extraction_status",
+        "requires_manual_review",
+        "review_reasons"
+      ],
+      "sha256": "7b49a024874f0b4e2b866321998d5c1916ce85e73a82980ca1c08a7c7fef59a9"
+    },
+    "CiscoTrustpointRecord": {
+      "fields": [
+        "name",
+        "source_context",
+        "enrollment",
+        "subject_name",
+        "keypair_reference",
+        "revocation_check",
+        "validation_settings",
+        "crl_settings",
+        "ocsp_settings",
+        "certificate_present",
+        "certificate_references",
+        "raw_lines",
+        "source_order",
+        "extraction_status",
+        "requires_manual_review",
+        "review_reasons",
+        "source_attributes"
+      ],
+      "sha256": "aab2ded241b9379eaf66cd3a61f6fefeeca7b8b0689809d1f0b59e8bf01b78cf"
+    },
+    "CiscoAllocatedInterface": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "physical_interface",
+        "mapped_name",
+        "range_expression",
+        "source_order",
+        "raw",
+        "review_reasons"
+      ],
+      "sha256": "cba6a3e53a9d6857ead0a635306a149ba80d8fae236336e1c1be8c76c6cee953"
+    },
+    "CiscoWebVPNConfig": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "enabled_interfaces",
+        "tunnel_group_list",
+        "client_images",
+        "client_profiles",
+        "trustpoint_references"
+      ],
+      "sha256": "ff2117ebe49e3f0fca0b0fdf0536750b3af31d92f4677a07f3db7a3d5d1127fc"
+    },
+    "CiscoVPNAddressAssignment": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "aaa_enabled",
+        "dhcp_enabled",
+        "local_enabled",
+        "reuse_delay"
+      ],
+      "sha256": "19f1731e5f9e084b99534bfb07ec8270465a6f37424b1a0447f9a68fc193c677"
+    },
+    "CiscoCommandPrivilege": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "privilege_level",
+        "command_form",
+        "command",
+        "cli_mode",
+        "raw_line",
+        "source_order"
+      ],
+      "sha256": "df352a7ee4a54102ac4d61803e4ba45b55f025ecb1f50e3f2c8f4de513fa7240"
+    },
+    "CiscoMultiContextSystem": {
+      "fields": [
+        "admin_context_name",
+        "raw_lines",
+        "source_attributes",
+        "review_reasons"
+      ],
+      "sha256": "d2f5a84fba7cb778d480943029b9ae483ee22878b384b5658343cfca70f7577a"
+    },
+    "CiscoClassMapMatch": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "negated",
+        "expression",
+        "inspection_expression",
+        "match_type",
+        "value",
+        "acl_name",
+        "protocol",
+        "port",
+        "class_map_name",
+        "raw",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "5145c0f915fffb70e5f803d390c205e953e3c674cf0305e95dee1ae344004dd2"
+    },
+    "CiscoClassMap": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "class_map_type",
+        "inspection_protocol",
+        "typed",
+        "match_type",
+        "matches",
+        "match_any",
+        "match_all",
+        "description",
+        "review_reasons",
+        "match_lines"
+      ],
+      "sha256": "7a3108a96d548ea1da770263eaf5801edbd8a742ccc8d2339c6df29069e3394a"
+    },
+    "CiscoInspectAction": {
+      "fields": [
+        "protocol",
+        "policy_name",
+        "parameters",
+        "raw",
+        "source_order",
+        "extraction_status",
+        "requires_manual_review",
+        "review_reasons"
+      ],
+      "sha256": "66f8c828aabcce0087d5d0fbceb46d127b5189ae327d9e7be943287a492fe026"
+    },
+    "CiscoMPFConnectionAction": {
+      "fields": [
+        "syn_cookie_mss",
+        "advanced_options",
+        "timeouts",
+        "negated",
+        "raw_options",
+        "max_connections",
+        "max_embryonic",
+        "per_client_max",
+        "per_client_embryonic",
+        "random_sequence_number",
+        "tcp_intercept",
+        "timeout_embryonic",
+        "raw",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "8cc9aa9133dffec6758aaedd40df778cee4e3c9f661f3fff5052ecb0ca049ffa"
+    },
+    "CiscoMPFPoliceAction": {
+      "fields": [
+        "direction",
+        "negated",
+        "raw_options",
+        "rate",
+        "burst",
+        "conform_action",
+        "exceed_action",
+        "raw",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "e36eac69f70c9dbdc6ddb6dc563d30bd1c9c1723b47da4df4308b771e2dc760e"
+    },
+    "CiscoPolicyMapClass": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "class_name",
+        "source_order",
+        "inspect_actions",
+        "connection_actions",
+        "police_actions",
+        "ips_actions",
+        "tcp_map",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "review_reasons",
+        "source_attributes"
+      ],
+      "sha256": "63bf50f3360f205c5befd455b1a5d22fa9e0ee6299eea94c7c9120c218f5cd6d"
+    },
+    "CiscoPolicyMap": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "policy_map_type",
+        "inspection_protocol",
+        "typed",
+        "inspection_sections",
+        "parameter_lines",
+        "classes",
+        "description",
+        "review_reasons",
+        "class_sections"
+      ],
+      "sha256": "f7db1e81b4c8d5e8ed628570bbe4a1ac48400b5ec877b7a3e25b42b025ab1633"
+    },
+    "CiscoTCPMap": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "setting_entries",
+        "setting_history",
+        "settings",
+        "review_reasons"
+      ],
+      "sha256": "f490d036458408ef5857786164d58b9a6077cac0e3efb025da9290cd598d2a8b"
+    },
+    "CiscoServicePolicy": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "enabled",
+        "negated",
+        "fail_close",
+        "attachment",
+        "policy_name",
+        "scope",
+        "global_attachment",
+        "interface",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "10644de38e33a9b6f08a2a7f04269395314f1a866803e2b321e3047d93b1b1f3"
+    },
+    "CiscoIPSAction": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "mode",
+        "failure_mode",
+        "sensor",
+        "raw",
+        "source_order"
+      ],
+      "sha256": "680b205b933028662f4d3ab99ddc0b3c47a40e933f82f80103cda9341bb415c7"
+    },
+    "CiscoDHCPOption": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "code",
+        "name",
+        "value",
+        "raw",
+        "source_order",
+        "value_type",
+        "encoding"
+      ],
+      "sha256": "fd794026cfe632215a953c99d0c88071f748fe617a4393d69192c6a8b13b1154"
+    },
+    "CiscoDHCPServer": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "interface",
+        "pool",
+        "pool_start",
+        "pool_end",
+        "dns_servers",
+        "wins_servers",
+        "ping_timeout",
+        "auto_config",
+        "dns_update",
+        "reservations",
+        "domain_name",
+        "lease_seconds",
+        "options",
+        "enabled",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "458921353c2cefb50d4f391ccd42ff6e2847118cde2da9e8209dd3faa0bd0af9"
+    },
+    "CiscoDHCPRelayServer": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "server",
+        "interface",
+        "raw",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "3279da0f876eabe0a9b5978bbba74bfe9093a2227f3b98dc519b374d2534e778"
+    },
+    "CiscoDHCPReservation": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "ip",
+        "mac",
+        "interface",
+        "source_order"
+      ],
+      "sha256": "0273a612575899ce19fa2acd774448e5a5d188f1aba9c9afa066c3d7251b03a1"
+    },
+    "CiscoDHCPRelay": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "interface",
+        "server",
+        "servers",
+        "server_entries",
+        "enabled_interfaces",
+        "timeout",
+        "options",
+        "enabled",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "b687f3c61c0eb0af3189d22f9c7eeb34ab5363a489a8e3a5ffcd0a55540ed641"
+    },
+    "CiscoDNSServerGroup": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "retries",
+        "timeout",
+        "expire_entry_timer",
+        "poll_timer",
+        "child_order",
+        "raw_settings",
+        "name_servers",
+        "domain_name",
+        "interface_lookup",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "29ba60b719921e024a2860f92c06a7120bc4cda15be7ecc54f7b91809bbe51c0"
+    },
+    "CiscoDNSSettings": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "name_servers",
+        "command_history",
+        "domain_name",
+        "lookup_interfaces",
+        "default_server_group",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "c8215ebbc0e7a277d50133b207b1c1d11aa26dec10945e5f8ce67d03b1c407f0"
+    },
+    "CiscoConnectionControl": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "negated",
+        "statistics_target",
+        "number_of_rate",
+        "rate_interval",
+        "average_rate",
+        "burst_rate",
+        "raw_parameters",
+        "setting",
+        "values",
+        "control_type",
+        "max_connections",
+        "max_embryonic",
+        "per_client_max",
+        "per_client_embryonic",
+        "timeout_embryonic",
+        "timeout_half_closed",
+        "timeout_tcp",
+        "timeout_udp",
+        "timeout_icmp",
+        "timeout_xlate",
+        "timeout_pat_xlate",
+        "timeout_sunrpc",
+        "timeout_h225",
+        "timeout_h323",
+        "timeout_sip",
+        "timeout_sip_media",
+        "tcp_map",
+        "rate",
+        "burst",
+        "threat_detection_type",
+        "enabled",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "6c4acae8ffa29beecd0a362ce696201f3f7bc61811edd8a1694bd800e11b9568"
+    },
+    "CiscoManagementSetting": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "setting",
+        "enabled"
+      ],
+      "sha256": "3d5d32f480e3cc04e69b3e72c24c0c2ab49e0c23e1ea196e40276974aaac9653"
+    },
+    "CiscoSystemSettings": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "hostname",
+        "domain_name",
+        "timezone_name",
+        "timezone_offset",
+        "dst_name",
+        "management_access_interface",
+        "same_security_inter",
+        "same_security_intra",
+        "review_reasons"
+      ],
+      "sha256": "fb8f837451c010346d8053f526836a04db4b46ebb0eb2df0836279e1e9642ad8"
+    },
+    "CiscoNTPServer": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "negated",
+        "server",
+        "interface",
+        "prefer",
+        "key_id",
+        "source_order",
+        "raw_line",
+        "review_reasons"
+      ],
+      "sha256": "69ab2ae4a5b8ac452642c67f712e85eaee68c58b5760dc83f4a699f205869035"
+    },
+    "CiscoManagementAccessRule": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "address_family",
+        "negated",
+        "protocol",
+        "source",
+        "mask_or_prefix",
+        "interface",
+        "port",
+        "raw_line",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "4e3ebf65fe72406d2d8269129b7bab4c1f6b2d9a792f6357e684d57947dd210c"
+    },
+    "CiscoICMPManagementRule": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "action",
+        "source",
+        "interface",
+        "icmp_type",
+        "raw_line",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "c755a6c8df7a324b05e5e2cf2136627add7b16aa200a37de9c7b0b9a98123166"
+    },
+    "CiscoSNMPSetting": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "setting_type",
+        "host",
+        "interface",
+        "community_present",
+        "version",
+        "username",
+        "trap_types",
+        "location",
+        "contact",
+        "source_order",
+        "raw_line",
+        "review_reasons"
+      ],
+      "sha256": "3d7cbb559cbfdb8cf5963c9f7cbcae05cf3a94eef5b2a62b0505bbeb70964110"
+    },
+    "CiscoLoggingSetting": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "setting_type",
+        "enabled",
+        "host",
+        "interface",
+        "severity",
+        "facility",
+        "buffer_size",
+        "timestamp",
+        "source_order",
+        "raw_line",
+        "review_reasons"
+      ],
+      "sha256": "d7c30de608cb3f918ff92fc434a17ff458e5d5c56d61e47f2cf1914bf6dd7d19"
+    },
+    "CiscoEnableCredential": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "password_present",
+        "secret_present",
+        "encrypted",
+        "raw_line",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "34c354debd89d538fb2d50f03161057a0477107c33230f110ac294a47ce9dfcb"
+    },
+    "CiscoFailoverSetting": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "setting"
+      ],
+      "sha256": "49c12557bd88899e590fc84a6f00c7e86f7a99c9e8b6963877449f52c1fb4d20"
+    },
+    "CiscoFailoverGroup": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "preempt",
+        "replication_http",
+        "interface_policy",
+        "polltime",
+        "raw_children",
+        "group_id",
+        "unit_role",
+        "priority",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "294f819010543d29fe40652c4c9f18aa69401db018260d1dbbeb6ee689e7341a"
+    },
+    "CiscoFailoverInterfaceIP": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "logical_name",
+        "interface",
+        "active_ip",
+        "standby_ip",
+        "netmask_or_prefix",
+        "address_family",
+        "raw_line",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "365c2cc33cf1326e3e7996478d05341314818e23351ba6078c6ce3d09595acd9"
+    },
+    "CiscoFailoverMACAddress": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "interface",
+        "active_mac",
+        "standby_mac",
+        "raw_line",
+        "source_order",
+        "review_reasons"
+      ],
+      "sha256": "512a614c26532799475a7464e95ba7e0d7b6a2daee3e5c957124096d2c25d0c3"
+    },
+    "CiscoFailoverConfig": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "enabled",
+        "unit_role",
+        "lan_interface_name",
+        "lan_interface",
+        "stateful_link_name",
+        "stateful_link_interface",
+        "state_link_name",
+        "state_link_interface",
+        "interface_ips",
+        "interface_monitoring",
+        "failover_groups",
+        "mac_addresses",
+        "replication_http",
+        "polltime",
+        "holdtime",
+        "timeout",
+        "key_present",
+        "review_reasons"
+      ],
+      "sha256": "cc5645fa1ca2b9dcf1283787d92a9f5bf5f0d8a7f2b8d51a37c60eb1c4f89a07"
+    },
+    "CiscoASAContext": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "allocated_interface_entries",
+        "config_url",
+        "admin_context",
+        "allocated_interfaces",
+        "resource_class",
+        "review_reasons"
+      ],
+      "sha256": "db39f567d359aefb7d81784916a25a78b05b50b126f7b8a5cc8cf6aabd2fc057"
+    },
+    "CiscoDiagnostic": {
+      "fields": [
+        "line_number",
+        "section",
+        "object_name",
+        "raw_line",
+        "severity",
+        "reason",
+        "extraction_effect"
+      ],
+      "sha256": "0663e0f64d306bc6ad445f2f99432065f73ce84868c9f997ab022a67c377be85"
+    },
+    "CiscoASAConfig": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "hostname",
+        "interfaces",
+        "traffic_zones",
+        "network_objects",
+        "network_groups",
+        "protocol_groups",
+        "icmp_type_groups",
+        "user_groups",
+        "security_groups",
+        "network_service_objects",
+        "network_service_groups",
+        "service_objects",
+        "service_groups",
+        "access_rules",
+        "acl_bindings",
+        "nat_rules",
+        "static_routes",
+        "route_tracking_ids",
+        "tracks",
+        "sla_monitors",
+        "dynamic_routing",
+        "route_maps",
+        "time_ranges",
+        "ike_policies",
+        "ikev2_proposals",
+        "ipsec_transform_sets",
+        "vpn_address_pools",
+        "trustpoints",
+        "crypto_maps",
+        "tunnel_groups",
+        "group_policies",
+        "webvpn",
+        "webvpn_configs",
+        "vpn_address_assignment",
+        "vpn_address_assignments",
+        "command_privileges",
+        "aaa_records",
+        "aaa_server_groups",
+        "aaa_server_hosts",
+        "local_users",
+        "aaa_authentication_rules",
+        "aaa_authorization_rules",
+        "aaa_accounting_rules",
+        "class_maps",
+        "policy_maps",
+        "service_policies",
+        "tcp_maps",
+        "dhcp_servers",
+        "dhcp_relays",
+        "dns_server_groups",
+        "dns_settings",
+        "connection_controls",
+        "management_settings",
+        "system_settings",
+        "ntp_servers",
+        "management_access_rules",
+        "icmp_management_rules",
+        "snmp_settings",
+        "logging_settings",
+        "enable_credentials",
+        "failover_settings",
+        "failover_config",
+        "contexts",
+        "trustpoint_records",
+        "http_server",
+        "multi_context_system",
+        "acl_consumers",
+        "unsupported_commands",
+        "parse_errors",
+        "diagnostics"
+      ],
+      "sha256": "7fae911fdb42aa542fc842bbf8d4f359596bbbf945500ae9ec70260d65da0c04"
+    }
+  },
+  "serialized_config_sha256": "0fcf1137d46c515462b465598f6f57950864c3d789a956d6abe870b85b051494"
+}

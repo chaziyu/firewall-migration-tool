@@ -1,10 +1,7 @@
-"""Vendor-neutral source extraction accounting models."""
+"""Shared source-accounting models used by vendor-native pipelines."""
 
-from fwmigrate.extraction.finalize import finalize_extraction
 from fwmigrate.extraction.models import (
-    ExtractionResult,
     ExtractionStatus,
-    MigrationImpact,
     SourceCommand,
     SourceInventoryItem,
     SourceSectionResult,
@@ -12,12 +9,9 @@ from fwmigrate.extraction.models import (
 )
 
 __all__ = [
-    "ExtractionResult",
     "ExtractionStatus",
-    "MigrationImpact",
     "SourceCommand",
     "SourceInventoryItem",
     "SourceSectionResult",
     "UnsupportedItem",
-    "finalize_extraction",
 ]

@@ -4,10 +4,10 @@
       <h2 id="source-heading">
         <span class="step-num">01</span>Source configuration
       </h2>
-      <span class="section-meta">START HERE</span>
+      <span class="section-meta" id="source-section-meta">START HERE</span>
     </div>
-    <p class="card-desc">
-      Choose your platforms and bring in your firewall configuration.
+    <p class="card-desc" id="source-card-description">
+      Choose your source vendor and bring in your firewall configuration.
     </p>
   </div>
   <div class="vendor-selector-grid" id="vendor-selector-grid">
@@ -24,7 +24,8 @@
         >
           <option value="fortigate" selected>Fortinet FortiGate</option>
           <option value="palo_alto">Palo Alto Networks</option>
-          <option value="cisco_asa">Cisco ASA / FTD</option>
+          <option value="cisco_asa">Cisco ASA</option>
+          <option value="cisco_ftd">Cisco FTD / FMC</option>
           <option value="checkpoint">Check Point</option>
           <option value="juniper_srx">Juniper SRX</option></select
         ><span class="select-arrow">⌄</span>
@@ -59,17 +60,10 @@
       aria-selected="true"
       aria-controls="ingest-file-container"
     >
-      {{ icon('upload') }}Upload file</button
-    ><button
-      type="button"
-      id="btn-ingest-api"
-      class="ingest-tab-btn"
-      role="tab"
-      aria-selected="false"
-      aria-controls="ingest-api-container"
-      tabindex="-1"
-    >
-      {{ icon('activity') }}Connect FortiGate over SSH
+      {{ icon('upload') }}Upload Config
+    </button>
+    <button type="button" id="btn-ingest-snapshot" class="ingest-tab-btn" role="tab" aria-selected="false" aria-controls="ingest-file-container" tabindex="-1">
+      {{ icon('file') }}Upload Snapshot
     </button>
   </div>
   <div
@@ -124,59 +118,6 @@
     </div>
   </div>
   <div
-    id="ingest-api-container"
-    class="hidden"
-    role="tabpanel"
-    aria-labelledby="btn-ingest-api"
-  >
-    <div class="connection-note">
-      {{ icon('network') }}<span id="live-ingest-note"
-        >Connect to the FortiGate over SSH to retrieve its configuration.</span
-      >
-    </div>
-    <div class="form-grid" id="api-credential-fields"></div>
-    <div class="action-footer">
-      <button type="button" id="btn-api-extract" class="btn btn-primary">
-        <span class="spinner hidden" aria-hidden="true"></span
-        ><span class="btn-text">Connect & retrieve configuration</span>
-      </button>
-    </div>
-    <div
-      id="api-ingest-success"
-      class="selected-file api-success-card hidden"
-      role="status"
-    >
-      <div class="file-icon">{{ icon('check') }}</div>
-      <div class="file-details">
-        <span class="filename" id="api-hostname">Device connected</span
-        ><span class="filesize" id="api-stats-summary"></span>
-      </div>
-      <button
-        type="button"
-        id="btn-clear-api-ingest"
-        class="btn-icon"
-        aria-label="Clear retrieved configuration"
-      >
-        {{ icon('close') }}
-      </button>
-    </div>
-    <div id="api-ingest-error" class="api-error-card hidden" role="alert">
-      <div class="api-error-header">
-        {{ icon('info') }}<strong id="api-error-title">Connection failed</strong
-        ><button
-          type="button"
-          id="btn-dismiss-api-error"
-          class="btn-icon"
-          aria-label="Dismiss connection error"
-        >
-          {{ icon('close') }}
-        </button>
-      </div>
-      <div class="api-error-body" id="api-error-detail"></div>
-      <div class="api-error-hint hidden" id="api-error-hint"></div>
-    </div>
-  </div>
-  <div
     id="preview-status"
     class="preview-status hidden"
     role="status"
@@ -184,22 +125,47 @@
   ></div>
   <div class="optimizer-panel hidden" id="optimizer-panel">
     <div class="optimizer-header">
-      <strong>{{ icon('activity') }}Configuration overview</strong
-      ><label class="checkbox-label" id="optimizer-controls"
-        ><input type="checkbox" id="opt-prune-objects" checked /><span
-          >Prune unused objects on conversion</span
-        ></label
+      <strong id="preview-heading">{{ icon('activity') }}Configuration overview</strong
       >
     </div>
     <div class="optimizer-stats-grid">
       <div class="opt-stat-box">
         <div class="opt-stat-value" id="stat-total-rules">0</div>
-        <div class="opt-stat-label">Security policies</div>
+        <div class="opt-stat-label">Policies</div>
       </div>
       <div class="opt-stat-box">
         <div class="opt-stat-value" id="stat-total-objects">0</div>
         <div class="opt-stat-label">Total objects</div>
       </div>
+      <div class="opt-stat-box">
+        <div class="opt-stat-value" id="stat-errors">0</div>
+        <div class="opt-stat-label">Errors</div>
+      </div>
+      <div class="opt-stat-box">
+        <div class="opt-stat-value" id="stat-warnings">0</div>
+        <div class="opt-stat-label">Warnings</div>
+      </div>
     </div>
+  </div>
+  <div id="ingest-live-container" class="hidden" role="tabpanel" aria-label="Live Collection">
+    <button type="button" class="btn btn-secondary btn-sm" id="btn-collection-guide" aria-expanded="false" aria-controls="collection-guide">
+      {{ icon('info') }}<span>Collection guide</span>
+    </button>
+    <div id="collection-guide" class="preview-status hidden">
+      <strong id="collection-guide-title"></strong>
+      <p id="collection-guide-details"></p>
+      <p id="collection-guide-workflow">Test Connection checks access. Collect retrieves the source configuration, prepares a preview, and downloads a reusable JSON snapshot. It does not change the device.</p>
+    </div>
+    <div class="form-grid" id="collection-fields"></div>
+    <div class="button-row">
+      <button type="button" class="btn btn-secondary" id="btn-test-collection">Test Connection</button>
+      <button type="button" class="btn btn-primary" id="btn-collect-configuration">Collect &amp; Download Snapshot</button>
+    </div>
+    <div id="collection-status" class="preview-status hidden" role="status" aria-live="polite"></div>
+  </div>
+  <div class="export-footer extract-export-footer hidden">
+    <button type="button" id="btn-extract-excel" class="btn btn-primary" disabled>
+      {{ icon('download') }}<span>Download Excel</span>
+    </button>
   </div>
 </section>

@@ -21,25 +21,49 @@
     "manual_rules_before_auto": [{
       "id": "fmc-twice",
       "name": "Manual Twice",
+      "enabled": true,
+      "position": 3,
       "natType": "STATIC",
+      "identityNat": false,
+      "dns": false,
+      "routeLookup": true,
+      "proxyArp": true,
       "sourceInterface": {"id": "inside-zone", "name": "inside", "type": "SecurityZone"},
       "destinationInterface": {"id": "outside-zone", "name": "outside", "type": "SecurityZone"},
       "originalSource": {"id": "inside", "name": "InsideHost", "type": "Host"},
       "translatedSource": {"id": "public", "name": "PublicHost", "type": "Host"},
       "originalDestination": {"id": "public", "name": "PublicHost", "type": "Host"},
       "translatedDestination": {"id": "inside", "name": "InsideHost", "type": "Host"},
+      "originalSourcePort": {"id": "http", "name": "HTTP", "type": "ProtocolPortObject"},
+      "translatedSourcePort": {"id": "http", "name": "HTTP", "type": "ProtocolPortObject"},
+      "originalSourceService": {"id": "http", "name": "HTTP", "type": "ProtocolPortObject"},
+      "translatedSourceService": {"id": "http", "name": "HTTP", "type": "ProtocolPortObject"},
       "originalDestinationPort": {"port": "80", "endPort": "90", "protocol": "TCP"},
-      "translatedDestinationPort": {"port": "8080", "protocol": "TCP"}
+      "translatedDestinationPort": {"port": "8080", "protocol": "TCP"},
+      "originalDestinationService": {"id": "http", "name": "HTTP", "type": "ProtocolPortObject"},
+      "translatedDestinationService": {"id": "http", "name": "HTTP", "type": "ProtocolPortObject"}
     }],
     "auto_rules": [{
       "id": "fmc-pat",
       "name": "Interface PAT",
       "natType": "DYNAMIC",
+      "enabled": true,
+      "position": 1,
       "sourceInterface": {"id": "inside-zone", "name": "inside", "type": "SecurityZone"},
       "destinationInterface": {"id": "outside-zone", "name": "outside", "type": "SecurityZone"},
       "originalNetwork": {"id": "inside", "name": "InsideHost", "type": "Host"},
       "interfaceInTranslatedNetwork": true
     }],
-    "manual_rules_after_auto": []
+    "manual_rules_after_auto": [{
+      "id": "manual-after",
+      "name": "Manual After",
+      "enabled": false,
+      "position": 4,
+      "natType": "IDENTITY",
+      "section": "AFTER_AUTO",
+      "originalSource": {"id": "inside", "name": "InsideHost", "type": "Host"},
+      "translatedSource": {"id": "inside", "name": "InsideHost", "type": "Host"},
+      "identityNat": true
+    }]
   }]
 }

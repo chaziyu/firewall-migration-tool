@@ -1,53 +1,53 @@
 import os
 import sys
 import io
-import json
 import uuid
-import zipfile
 import re
 import hashlib
 import logging
 import threading
 import time
+import json
+import zipfile
+import yaml
+from dataclasses import asdict
 from copy import deepcopy
-from collections import Counter
 from dataclasses import dataclass
-from pathlib import Path
 from time import perf_counter
-from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
+from flask import Flask, render_template, request, send_file, jsonify
 
-from fwmigrate.builtin_plugins import register_builtin_plugins
+from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
+from fwmigrate.conversion.builtin import register_builtin_migration_planners
+from fwmigrate.conversion import migration_planners
+from fwmigrate.conversion.fortigate_to_palo_alto import PANMigrationOptions
+from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
+from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
+from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
+from fwmigrate.collection import CollectionStatus, source_collectors
+from fwmigrate.collection.builtin import register_builtin_collectors
+from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot, MAX_BYTES
 
-register_builtin_plugins()
+register_builtin_source_reporters()
+register_builtin_migration_planners()
 
-from fwmigrate.core.registry import PluginRegistry
-from fwmigrate.application import MigrationPipeline, MigrationRequest
-from fwmigrate.application.metrics import PipelineMetrics
-from fwmigrate.report import (
+from fwmigrate.source_reporting import (
     ExcelExportUnavailableError,
-    ExcelExportOptions,
     ExcelExportProfile,
-    IRExcelExporter,
-    StreamingFastExcelExporter,
+    SourceReportMetrics,
     XLSX_MIMETYPE,
+    source_reporters,
 )
-from fwmigrate.engine.diagnostics import PaloAltoDiagnostics
-from fwmigrate.engine.runner import TerraformSandbox, TerraformRunner
-
-# In-memory session registry (session_id -> metadata/sandbox)
-ACTIVE_SESSIONS = {}
+from fwmigrate.source_reporting.web_report import normalize_web_report
 _LOGGER = logging.getLogger(__name__)
-_READ_ONLY_PREVIEW_EXPORTERS = frozenset({StreamingFastExcelExporter})
-
-
 @dataclass(frozen=True)
 class _PreviewCacheEntry:
     preview_id: str
     source_vendor: str
     source_digest: str
     created_at: float
-    ir_config: object
-    extraction_result: object
+    analysis: object
+    source_name: str | None = None
 
 
 _PREVIEW_CACHE: dict[str, _PreviewCacheEntry] = {}
@@ -58,6 +58,15 @@ _PREVIEW_CACHE_TTL_SECONDS = 15 * 60
 
 class ConfigurationDecodeError(ValueError):
     """Raised when an uploaded configuration cannot be decoded losslessly."""
+
+
+def _conversion_unavailable():
+    return jsonify({
+        'error': (
+            'Migration planning is temporarily unavailable while the '
+            'pair-specific planning architecture is being implemented.'
+        ),
+    }), 503
 
 
 def _decode_configuration(raw: bytes) -> str:
@@ -71,18 +80,13 @@ def _decode_configuration(raw: bytes) -> str:
 
 
 def _extract_source_result(source_vendor: str, content: str):
-    return PluginRegistry.get_parser(source_vendor).extract(content)
+    reporter = source_reporters.get(source_vendor)
+    return reporter.analyze_source(content)
 
 
 def _extract_source_config(source_vendor: str, content: str):
-    """Return canonical IR and optional authoritative source accounting."""
-    extraction_result = _extract_source_result(source_vendor, content)
-    has_accounting = bool(
-        extraction_result.source_sections
-        or extraction_result.inventory_items
-        or extraction_result.unsupported_items
-    )
-    return extraction_result.canonical_ir, (extraction_result if has_accounting else None)
+    """Compatibility name for source-report analysis extraction."""
+    return _extract_source_result(source_vendor, content)
 
 
 def _source_digest(source_vendor: str, raw: bytes) -> str:
@@ -104,7 +108,7 @@ def _cleanup_preview_cache(now: float | None = None) -> None:
         _PREVIEW_CACHE.pop(preview_id, None)
 
 
-def _cache_preview(source_vendor: str, raw: bytes, extraction_result) -> _PreviewCacheEntry:
+def _cache_preview(source_vendor: str, raw: bytes, analysis, source_name: str | None = None) -> _PreviewCacheEntry:
     now = time.monotonic()
     source_digest = _source_digest(source_vendor, raw)
     with _PREVIEW_CACHE_LOCK:
@@ -115,14 +119,13 @@ def _cache_preview(source_vendor: str, raw: bytes, extraction_result) -> _Previe
         while len(_PREVIEW_CACHE) >= _PREVIEW_CACHE_MAX_ENTRIES:
             oldest_id = min(_PREVIEW_CACHE, key=lambda key: _PREVIEW_CACHE[key].created_at)
             _PREVIEW_CACHE.pop(oldest_id, None)
-        extraction_result.canonical_ir.metadata.input_type = "Configuration File"
         entry = _PreviewCacheEntry(
             preview_id=uuid.uuid4().hex,
             source_vendor=source_vendor,
             source_digest=source_digest,
             created_at=now,
-            ir_config=extraction_result.canonical_ir,
-            extraction_result=extraction_result,
+            analysis=analysis,
+            source_name=source_name,
         )
         _PREVIEW_CACHE[entry.preview_id] = entry
         return entry
@@ -144,7 +147,7 @@ def _lookup_preview(
 
 
 def _clone_preview(entry: _PreviewCacheEntry):
-    return deepcopy(entry.ir_config), deepcopy(entry.extraction_result)
+    return deepcopy(entry.analysis)
 
 
 def _parse_bool(value, default=False):
@@ -163,73 +166,12 @@ def _timed(metrics, stage, operation):
         metrics.add(stage, (perf_counter() - started) * 1000)
 
 
-def _ir_stats(ir_config):
-    return {
-        "zones": len(ir_config.zones),
-        "interfaces": len(ir_config.interfaces),
-        "addresses": len(ir_config.addresses),
-        "address_groups": len(ir_config.address_groups),
-        "services": len(ir_config.services),
-        "service_groups": len(ir_config.service_groups),
-        "policies": len(ir_config.policies),
-        "nat_rules": len(ir_config.nat_rules),
-        "routes": len(ir_config.routes),
-    }
-
-
-def _policy_preview(ir_config):
-    return [
-        {
-            "id": policy.name,
-            "index": index,
-            "from_zone": policy.from_zone,
-            "to_zone": policy.to_zone,
-            "source": policy.source,
-            "destination": policy.destination,
-            "service": policy.service,
-            "action": policy.action.value if policy.action else None,
-            "disabled": policy.disabled,
-            "description": policy.description or "",
-        }
-        for index, policy in enumerate(ir_config.policies[:50], 1)
-    ]
-
-
-def _extraction_summary(extraction):
-    statuses = Counter(
-        getattr(item.status, "value", item.status)
-        for item in extraction.inventory_items
-    )
-    return {
-        "generation_safe": extraction.generation_safe,
-        "requires_manual_review": extraction.requires_manual_review,
-        "migration_complete": extraction.migration_complete,
-        "blocking_reasons": extraction.blocking_reasons,
-        "accounting": {
-            "source_sections": len(extraction.source_sections),
-            "coverage_sections": len(extraction.coverage),
-            "inventory_items": len(extraction.inventory_items),
-            "unsupported_items": len(extraction.unsupported_items),
-            "dependencies": len(extraction.dependencies),
-            "inventory_status": dict(statuses),
-        },
-    }
-
-
-def _ir_preview_fields(ir_config):
-    return {
-        "hostname": ir_config.metadata.hostname,
-        "source_vendor": ir_config.metadata.source_vendor,
-        "stats": _ir_stats(ir_config),
-        "policies": _policy_preview(ir_config),
-    }
-
-
 def _safe_vendor_filename(vendor_id: str) -> str:
     """Return a deterministic, filesystem-safe vendor identifier."""
     return re.sub(r'[^A-Za-z0-9_.-]+', '_', vendor_id).strip('._') or 'source'
 
 def create_app(test_config=None):
+    register_builtin_collectors()
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         base_dir = os.path.join(sys._MEIPASS, 'fwmigrate')
         if not os.path.exists(os.path.join(base_dir, 'templates')):
@@ -250,6 +192,9 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
+    rendered_artifacts = {}
+    artifact_sources = {}
+
     @app.route('/')
     def index():
         return render_template('index.html')
@@ -260,11 +205,24 @@ def create_app(test_config=None):
 
     @app.route('/api/vendors', methods=['GET'])
     def list_vendors():
-        """Returns lists of supported source vendors and target platforms."""
+        """Return registered source-reporting vendors."""
+        sources = [
+            {
+                'vendor_id': reporter.vendor_id,
+                'display_name': getattr(reporter, 'display_name', reporter.vendor_id),
+                'file_extensions': list(reporter.supported_extensions),
+                'web_report': True,
+                'live_collection': reporter.vendor_id in {collector.vendor_id for collector in source_collectors.list()},
+                'collection': ({'method': source_collectors.get(reporter.vendor_id).method,
+                                'connection_fields': source_collectors.get(reporter.vendor_id).fields}
+                               if reporter.vendor_id in {collector.vendor_id for collector in source_collectors.list()} else None),
+            }
+            for reporter in source_reporters.list()
+        ]
         return jsonify({
             'success': True,
-            'sources': PluginRegistry.list_source_vendors(),
-            'targets': PluginRegistry.list_target_vendors()
+            'sources': sources,
+            'targets': [],
         })
 
     @app.route('/api/preview', methods=['POST'])
@@ -275,30 +233,24 @@ def create_app(test_config=None):
             if 'file' not in request.files or request.files['file'].filename == '':
                 return jsonify({'success': False, 'error': 'A configuration file is required'}), 400
 
-            metrics = PipelineMetrics() if _parse_bool(request.form.get('collect_metrics')) else None
+            metrics = SourceReportMetrics() if _parse_bool(request.form.get('collect_metrics')) else None
             started = perf_counter()
             file = request.files['file']
             raw_content = file.read()
             file_content = _timed(metrics, 'decode', lambda: _decode_configuration(raw_content))
-            extraction = _timed(
+            reporter = source_reporters.get(source_vendor)
+            source_vendor = reporter.vendor_id
+            analysis = _timed(
                 metrics,
                 'extraction',
-                lambda: _extract_source_result(source_vendor, file_content),
+                lambda: reporter.analyze_source(file_content),
             )
-            ir_config = extraction.canonical_ir
-
-            if not ir_config:
-                return jsonify({'success': False, 'error': 'Failed to extract configuration from file'}), 400
-
-            preview_entry = _cache_preview(source_vendor, raw_content, extraction)
+            preview_entry = _cache_preview(source_vendor, raw_content, analysis, os.path.basename(file.filename))
+            report = _timed(metrics, 'preview', lambda: normalize_web_report(reporter.build_preview(analysis), source_vendor))
             response = {
                 'success': True,
                 'preview_id': preview_entry.preview_id,
-                **_ir_preview_fields(ir_config),
-                'extraction': _extraction_summary(extraction),
-                'generation_allowed': 'not_evaluated',
-                'blocking_reasons': extraction.blocking_reasons,
-                'requires_manual_review': extraction.requires_manual_review,
+                **report,
             }
             if metrics is not None:
                 metrics.add('preview_total', (perf_counter() - started) * 1000)
@@ -306,90 +258,241 @@ def create_app(test_config=None):
             return jsonify(response)
         except ConfigurationDecodeError as e:
             return jsonify({'success': False, 'error': str(e), 'stage': 'decode'}), 400
+        except KeyError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 
+    def collection_options():
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            raise ValueError('Collection request must be a JSON object.')
+        collector = source_collectors.get(payload.get('vendor'))
+        return collector, collector.validate_options(payload.get('connection'))
+
+    @app.route('/api/collection/test', methods=['POST'])
+    def test_collection_connection():
+        try:
+            collector, options = collection_options()
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        try:
+            collector.test_connection(options)
+            return jsonify({'success': True, 'status': 'CONNECTED'})
+        except Exception:
+            return jsonify({'success': False, 'error': 'Connection failed. Check the device and credentials.'}), 502
+
+    @app.route('/api/collection/collect', methods=['POST'])
+    def collect_configuration():
+        try:
+            collector, options = collection_options()
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        try:
+            source = collector.collect(options)
+            if source.status == CollectionStatus.FAILED or not source.source_text.strip():
+                return jsonify({'success': False, 'error': 'Collection returned no usable source.'}), 502
+            snapshot = make_snapshot(source)
+            raw = snapshot['source_text'].encode('utf-8')
+            reporter = source_reporters.get(source.vendor_id)
+            analysis = reporter.analyze_source(snapshot['source_text'])
+            entry = _cache_preview(source.vendor_id, raw, analysis, source.source_name)
+            return jsonify({
+                'success': True,
+                'preview_id': entry.preview_id,
+                'collection': {'vendor': source.vendor_id, 'method': source.method, 'status': source.status.value,
+                               'parts': snapshot['parts'], 'warnings': snapshot['warnings']},
+                'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id),
+                'snapshot': snapshot,
+            })
+        except Exception:
+            return jsonify({'success': False, 'error': 'Collection or extraction failed. Check the device configuration and connection.'}), 502
+
+    @app.route('/api/collection/snapshot/import', methods=['POST'])
+    def import_collection_snapshot():
+        try:
+            uploaded = request.files.get('file')
+            raw = uploaded.read(MAX_BYTES + 1) if uploaded else request.stream.read(MAX_BYTES + 1)
+            source = parse_snapshot(raw)
+            reporter = source_reporters.get(source.vendor_id)
+            analysis = reporter.analyze_source(source.source_text)
+            entry = _cache_preview(source.vendor_id, source.source_text.encode('utf-8'), analysis, source.source_name)
+            return jsonify({'success': True, 'vendor_id': source.vendor_id, 'preview_id': entry.preview_id,
+                            'collection': {'status': source.status.value, 'parts': [asdict(part) for part in source.parts],
+                                           'warnings': source.warnings}, 'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id)})
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid or unsupported collection snapshot.'}), 400
+        except Exception:
+            return jsonify({'success': False, 'error': 'Snapshot import failed.'}), 400
+
+    @app.route('/api/migration/requirements', methods=['POST'])
+    def migration_requirements():
+        payload = request.get_json(silent=True) or request.form
+        try:
+            preview_id = payload.get('preview_id')
+            entry = _lookup_preview(preview_id, 'fortigate') if preview_id else None
+            if entry is None:
+                uploaded = request.files.get('file')
+                if uploaded is None or not uploaded.filename:
+                    return jsonify({'success': False, 'error': 'A valid preview_id or configuration file is required'}), 400
+                raw = uploaded.read()
+                analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
+                entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
+            analysis = _clone_preview(entry)
+            requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
+            return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': requirements})
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        except Exception as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 500
+
+    @app.route('/api/migration/mapping/import', methods=['POST'])
+    def import_migration_mapping():
+        try:
+            import yaml
+            mapping = yaml.safe_load(request.get_json(force=True).get('yaml', '')) or {}
+            if not isinstance(mapping, dict):
+                raise ValueError('Mapping YAML must contain an object')
+            PANMigrationOptions(**mapping)
+            return jsonify({'success': True, 'mapping': mapping})
+        except Exception as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
     @app.route('/api/migrate', methods=['POST'])
     def migrate():
-        """Generate a multi-vendor migration bundle."""
+        """Plan the supported FortiGate to Palo Alto configuration."""
+        payload = request.get_json(silent=True) or request.form
+        source_vendor = payload.get('source_vendor', 'fortigate')
+        target_vendor = payload.get('target_vendor', 'palo_alto')
+        if not isinstance(source_vendor, str) or not isinstance(target_vendor, str):
+            return jsonify({'success': False, 'error': 'source_vendor and target_vendor must be strings'}), 400
+        if (source_vendor.casefold(), target_vendor.casefold()) != ('fortigate', 'palo_alto'):
+            return jsonify({'success': False, 'error': 'Only fortigate -> palo_alto is supported'}), 400
+        uploaded = request.files.get('file')
         try:
-            source_vendor = request.form.get('source_vendor', 'fortigate')
-            target_vendor = request.form.get('target_vendor', 'palo_alto')
-            optimize = request.form.get('optimize', 'false').lower() == 'true'
-            include_inventory = request.form.get('include_inventory', 'true').lower() == 'true'
-
-            if 'file' not in request.files or request.files['file'].filename == '':
-                return jsonify({'error': 'A configuration file is required'}), 400
-
-            file = request.files['file']
-            file_content = _decode_configuration(file.read())
-            result = MigrationPipeline().run(MigrationRequest(
-                source_vendor=source_vendor,
-                target_vendor=target_vendor,
-                source_content=file_content,
-                target_format='all',
-                optimize=optimize,
-                source_name=file.filename,
-            ))
-
-            if not result.generation_allowed:
-                return jsonify({
-                    'error': 'Migration blocked: generation safety checks failed.',
-                    'blocking_reasons': result.blocking_reasons,
-                    'requires_manual_review': result.requires_manual_review,
-                    'capability_analysis': (
-                        result.capability_analysis.to_dict()
-                        if result.capability_analysis else None
-                    ),
-                }), 422
-
-            ir_config = result.final_ir
-            if ir_config is None or result.source_ir is None:
-                return jsonify({'error': 'Failed to extract configuration from file'}), 400
-
-            artifacts = result.artifacts
-            source_inventory = None
-            if include_inventory:
-                # The inventory must represent parser output, before normalization or pruning.
-                source_inventory = IRExcelExporter(
-                    result.source_ir,
-                    extraction_result=result.extraction,
-                ).generate()
-
-            # Package into ZIP
-            memory_file = io.BytesIO()
-            with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for art in artifacts:
-                    fname = f"terraform/{art.filename}" if art.format == "terraform" else art.filename
-                    zf.writestr(fname, art.content)
-                if include_inventory:
-                    inventory_name = f"source_inventory_{_safe_vendor_filename(source_vendor)}.xlsx"
-                    zf.writestr(inventory_name, source_inventory)
-
-            memory_file.seek(0)
-            return send_file(
-                memory_file,
-                mimetype='application/zip',
-                as_attachment=True,
-                download_name=f'migration_{source_vendor}_to_{target_vendor}.zip'
+            mapping_value = payload.get('mapping', '{}')
+            mapping = json.loads(mapping_value) if isinstance(mapping_value, str) else mapping_value
+            preview_id = payload.get('preview_id')
+            entry = _lookup_preview(preview_id, 'fortigate') if preview_id else None
+            if uploaded is not None and uploaded.filename:
+                raw = uploaded.read()
+                analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
+                entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
+            elif entry is not None:
+                analysis = _clone_preview(entry)
+            else:
+                return jsonify({'success': False, 'error': 'A valid preview_id or configuration file is required'}), 400
+            plan = migration_planners.get(source_vendor, target_vendor).plan(
+                analysis.extracted.config, analysis.derived, options=PANMigrationOptions(**mapping)
             )
+            validation = validate_plan(plan)
+            rendered = PANSetRenderer().render(plan, validation)
+            artifact_id = uuid.uuid4().hex
+            rendered_artifacts[artifact_id] = rendered
+            artifact_sources[artifact_id] = (analysis, mapping, entry.source_name)
+            counts = rendered.report['counts']
+            mapping_codes = {'missing_vsys_mapping', 'missing_target_vsys', 'missing_virtual_router', 'missing_route_interface'}
+            missing = [issue for issue in rendered.report['issue_summary'] if issue['code'] in mapping_codes or 'missing target' in issue['message'].lower() or 'missing palo alto vsys mapping' in issue['message'].lower()]
+            plan_status = 'NEEDS_MAPPING' if not rendered.commands else ('READY' if not missing and not counts.get('PARTIAL', 0) and not counts.get('MANUAL_REVIEW', 0) and not counts.get('UNSUPPORTED', 0) else 'PARTIAL')
+            return jsonify({
+                'success': True,
+                'artifact_id': artifact_id,
+                'plan_status': plan_status,
+                'commands': len(rendered.commands),
+                'counts': {**counts, 'renderable': sum(item['renderable'] for item in rendered.report['items'])},
+                'missing_mappings': missing,
+                'blocking_reasons': [issue['message'] for issue in missing],
+                'report': rendered.report,
+                'validation': {'issue_summary': rendered.report['issue_summary']},
+            })
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
 
-        except ExcelExportUnavailableError as e:
-            return jsonify({'error': str(e)}), 503
-        except ConfigurationDecodeError as e:
-            return jsonify({'error': str(e), 'stage': 'decode'}), 400
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
+    @app.route('/api/migration/bundle', methods=['POST'])
+    def migration_bundle():
+        payload = request.get_json(silent=True) or {}
+        artifact_id = payload.get('artifact_id')
+        rendered = rendered_artifacts.get(artifact_id)
+        if rendered is None:
+            return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
+        if not rendered.commands:
+            return jsonify({'success': False, 'error': 'No PAN-OS commands are currently renderable. Complete the required target mappings first.'}), 422
+        source = artifact_sources.get(artifact_id)
+        if source is None:
+            return jsonify({'success': False, 'error': 'The migration source has expired'}), 400
+        analysis, mapping, source_name = source
+        bundle = io.BytesIO()
+        workbook = io.BytesIO()
+        try:
+            source_reporters.get('fortigate').export_excel(analysis, workbook, source_name=source_name)
+            with zipfile.ZipFile(bundle, 'w', zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr('palo_alto_config.set', '\n'.join(rendered.commands) + '\n')
+                archive.writestr('migration_report.json', json.dumps(rendered.report, indent=2))
+                archive.writestr('target_mapping.yaml', yaml.safe_dump(mapping, sort_keys=False))
+                archive.writestr('source_inventory.xlsx', workbook.getvalue())
+            bundle.seek(0)
+            return send_file(bundle, mimetype='application/zip', as_attachment=True, download_name='migration_fortigate_to_palo_alto.zip')
+        except Exception as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 500
+
+    def _deployment_options(payload):
+        try:
+            host, username, password = payload['host'], payload['username'], payload['password']
+            if not all(isinstance(value, str) for value in (host, username, password)):
+                raise ValueError
+            options = PANDeploymentOptions(
+                host=host.strip(), username=username.strip(),
+                password=password, port=int(payload.get('port', 22)),
+                validate=False,
+            )
+        except (KeyError, TypeError, ValueError):
+            raise ValueError('Host, SSH username, and password are required; port must be numeric')
+        if not options.host or not options.username or not options.password or not 1 <= options.port <= 65535:
+            raise ValueError('Host, SSH username, password, and a valid port are required')
+        return options
+
+    @app.route('/api/deploy', methods=['POST'])
+    def deploy_candidate():
+        try:
+            payload = request.get_json(silent=True) or {}
+            artifact_id = payload.get('artifact_id')
+            rendered = rendered_artifacts.get(artifact_id)
+            if rendered is None:
+                raise ValueError('A current validated rendered migration is required')
+            if not rendered.commands:
+                raise ValueError('The migration artifact contains no renderable commands')
+            options = _deployment_options(payload)
+            result = PANSSHDeployer(options).deploy(rendered)
+            return jsonify({'success': result.failure_message is None and result.failed_command_index is None,
+                            'result': asdict(result)}), (200 if result.failure_message is None and result.failed_command_index is None else 502)
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
+    @app.route('/api/validate-candidate', methods=['POST'])
+    def validate_candidate():
+        try:
+            result = PANSSHDeployer(_deployment_options(request.get_json(silent=True) or {})).validate()
+            return jsonify({'success': result.status == 'SUCCESS', 'result': asdict(result)}), (200 if result.status == 'SUCCESS' else 502)
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
+    @app.route('/api/commit', methods=['POST'])
+    def commit_candidate():
+        try:
+            result = PANSSHDeployer(_deployment_options(request.get_json(silent=True) or {})).commit()
+            return jsonify({'success': result.status == 'SUCCESS', 'result': asdict(result)}), (200 if result.status == 'SUCCESS' else 502)
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
 
     @app.route('/api/extract/excel', methods=['POST'])
     def extract_excel():
-        """Parse a source configuration and download its vendor-neutral IR inventory."""
+        """Parse a source configuration and download its vendor-native report."""
         try:
             payload = request.get_json(silent=True) or {}
             source_vendor = request.form.get('source_vendor') or payload.get('source_vendor') or 'fortigate'
             preview_id = request.form.get('preview_id') or payload.get('preview_id') or ''
             metrics = (
-                PipelineMetrics()
+                SourceReportMetrics()
                 if _parse_bool(request.form.get('collect_metrics') or payload.get('collect_metrics'))
                 or _LOGGER.isEnabledFor(logging.DEBUG)
                 else None
@@ -400,11 +503,8 @@ def create_app(test_config=None):
                 profile = ExcelExportProfile(profile_value)
             except (TypeError, ValueError):
                 return jsonify({'error': 'excel_profile must be one of: fast, full, data_only'}), 400
-            exporter_type = (
-                StreamingFastExcelExporter
-                if profile is ExcelExportProfile.FAST
-                else IRExcelExporter
-            )
+            reporter = source_reporters.get(source_vendor)
+            source_vendor = reporter.vendor_id
 
             uploaded_file = request.files.get('file')
             raw_content = (
@@ -422,13 +522,7 @@ def create_app(test_config=None):
                 else None
             )
             if preview_entry is not None:
-                if exporter_type in _READ_ONLY_PREVIEW_EXPORTERS:
-                    ir_config, extraction_result = (
-                        preview_entry.ir_config,
-                        preview_entry.extraction_result,
-                    )
-                else:
-                    ir_config, extraction_result = _clone_preview(preview_entry)
+                analysis = _clone_preview(preview_entry)
             else:
                 if raw_content is None:
                     return jsonify({'error': 'A configuration file or valid preview_id is required for Excel extraction'}), 400
@@ -437,37 +531,19 @@ def create_app(test_config=None):
                     'decode',
                     lambda: _decode_configuration(raw_content),
                 )
-                ir_config, extraction_result = _timed(
+                analysis = _timed(
                     metrics,
                     'extraction/fallback extraction',
                     lambda: _extract_source_config(source_vendor, file_content),
                 )
 
-            if not ir_config:
-                return jsonify({'error': 'Failed to extract configuration from file'}), 400
-            if preview_entry is None:
-                ir_config.metadata.input_type = "Configuration File"
-
             workbook = io.BytesIO()
-            exporter = exporter_type(
-                ir_config,
-                extraction_result=extraction_result,
-                options=ExcelExportOptions(profile=profile),
-            )
-            generate_to = getattr(exporter, 'generate_to', None)
             export_started = perf_counter()
-            if generate_to is None:
-                workbook.write(exporter.generate())
-            else:
-                generate_to(workbook)
+            source_name = os.path.basename(uploaded_file.filename) if uploaded_file is not None and uploaded_file.filename else (preview_entry.source_name if preview_entry else None)
+            reporter.export_excel(analysis, workbook, profile=profile, source_name=source_name)
             export_elapsed = perf_counter() - export_started
-            exporter_metrics = getattr(exporter, '_last_export_metrics', None)
             if metrics is not None:
-                if exporter_metrics is None:
-                    metrics.add('workbook construction', export_elapsed * 1000)
-                else:
-                    for stage, elapsed in exporter_metrics.timings.items():
-                        metrics.add(stage, elapsed * 1000)
+                metrics.add('workbook construction', export_elapsed * 1000)
             workbook.seek(0)
             response = send_file(
                 workbook,
@@ -489,310 +565,15 @@ def create_app(test_config=None):
             return jsonify({'error': str(e)}), 503
         except ConfigurationDecodeError as e:
             return jsonify({'error': str(e), 'stage': 'decode'}), 400
+        except KeyError as e:
+            return jsonify({'error': f'Vendor-native Excel is not available: {e}'}), 422
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/diagnostics', methods=['POST'])
     def run_diagnostics():
-        """Pre-flight diagnostic probe for Terraform CLI, Registry, and firewall target."""
-        data = request.get_json() or {}
-        host = data.get('host', '').strip()
-        port = int(data.get('port', 443))
-        api_key = data.get('api_key', '').strip() or None
-        username = data.get('username', '').strip() or None
-        password = data.get('password', '').strip() or None
-        verify_ssl = bool(data.get('verify_ssl', True))
-        auto_download_tf = bool(data.get('auto_download_tf', False))
-
-        try:
-            diag = PaloAltoDiagnostics()
-            results = diag.run_all(
-                host=host if host else None,
-                port=port,
-                api_key=api_key,
-                username=username,
-                password=password,
-                verify_ssl=verify_ssl,
-                auto_download_tf=auto_download_tf
-            )
-            return jsonify({
-                'success': True,
-                'results': [r.model_dump() for r in results]
-            })
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
-
-    @app.route('/api/terraform/prepare', methods=['POST'])
-    def terraform_prepare():
-        """Prepares Terraform deployment sandbox for target platform."""
-        try:
-            source_vendor = request.form.get('source_vendor', 'fortigate')
-            target_vendor = request.form.get('target_vendor', 'palo_alto')
-            if 'file' not in request.files or request.files['file'].filename == '':
-                return jsonify({'error': 'A configuration file is required'}), 400
-
-            file = request.files['file']
-            file_content = _decode_configuration(file.read())
-            # Target connection parameters
-            host = request.form.get('host', '192.168.1.1').strip()
-            username = request.form.get('username', '').strip()
-            password = request.form.get('password', '').strip()
-            api_key = request.form.get('api_key', '').strip()
-            vsys = request.form.get('vsys', 'vsys1').strip()
-            device_group = request.form.get('device_group', 'shared').strip()
-
-            # Generate target terraform artifacts through the shared migration pipeline.
-            result = MigrationPipeline().run(MigrationRequest(
-                source_vendor=source_vendor,
-                target_vendor='palo_alto',
-                source_content=file_content,
-                target_format='terraform',
-                source_name=file.filename,
-                target_options={'vsys': vsys, 'device_group': device_group},
-            ))
-            if not result.generation_allowed:
-                return jsonify({
-                    'error': 'Migration blocked: generation safety checks failed.',
-                    'blocking_reasons': result.blocking_reasons,
-                    'requires_manual_review': result.requires_manual_review,
-                }), 422
-
-            ir_config = result.final_ir
-            if ir_config is None:
-                return jsonify({'error': 'Failed to extract configuration from file'}), 400
-            tf_artifacts = result.artifacts
-
-            # Create Sandbox
-            session_id = str(uuid.uuid4())
-            sandbox = TerraformSandbox(session_id=session_id)
-
-            tfvars = {
-                'panos_hostname': host,
-                'panos_username': username,
-                'panos_vsys': vsys,
-                'panos_device_group': device_group,
-            }
-
-            sandbox_dir = sandbox.create(tf_artifacts, tfvars=tfvars)
-
-            secrets = [s for s in [password, api_key] if s]
-            secret_env = {}
-            if password:
-                secret_env['TF_VAR_panos_password'] = password
-            if api_key:
-                secret_env['TF_VAR_panos_api_key'] = api_key
-
-            ACTIVE_SESSIONS[session_id] = {
-                'status': 'REVIEW_REQUIRED',
-                'sandbox': sandbox,
-                'sandbox_dir': sandbox_dir,
-                'secrets': secrets,
-                'secret_env': secret_env,
-                'host': host,
-                'stats': {
-                    'interfaces': len(ir_config.interfaces),
-                    'addresses': len(ir_config.addresses),
-                    'address_groups': len(ir_config.address_groups),
-                    'services': len(ir_config.services),
-                    'policies': len(ir_config.policies),
-                    'nat_rules': len(ir_config.nat_rules),
-                }
-            }
-
-            return jsonify({
-                'success': True,
-                'session_id': session_id,
-                'stats': ACTIVE_SESSIONS[session_id]['stats'],
-                'message': f'Prepared session {session_id} with {len(tf_artifacts)} Terraform files.'
-            })
-
-        except ConfigurationDecodeError as e:
-            return jsonify({'success': False, 'error': str(e), 'stage': 'decode'}), 400
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
-
-    @app.route('/api/terraform/plan', methods=['POST'])
-    def terraform_plan():
-        """Executes `terraform init` and `terraform plan` in the session sandbox."""
-        data = request.get_json() or {}
-        session_id = data.get('session_id')
-
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            return jsonify({'success': False, 'error': f'Session {session_id} not found or expired'}), 404
-
-        session = ACTIVE_SESSIONS[session_id]
-        sandbox_dir = session['sandbox_dir']
-        secret_env = session.get('secret_env')
-        secrets = session.get('secrets', [])
-
-        try:
-            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets, secret_env=secret_env)
-
-            # 1. Terraform Init
-            init_ok, init_log = runner.run_init()
-            if not init_ok:
-                return jsonify({
-                    'success': False,
-                    'stage': 'init',
-                    'init_log': init_log,
-                    'error': 'Terraform init failed. Review provider configuration.'
-                })
-
-            # 2. Terraform Plan
-            plan_ok, plan_log, plan_summary = runner.run_plan()
-            if not plan_ok:
-                return jsonify({
-                    'success': False,
-                    'stage': 'plan',
-                    'init_log': init_log,
-                    'plan_log': plan_log,
-                    'error': 'Terraform plan failed. Review firewall connectivity or schema constraints.'
-                })
-
-            return jsonify({
-                'success': True,
-                'stage': 'ready_to_apply',
-                'init_log': init_log,
-                'plan_log': plan_log,
-                'summary': plan_summary
-            })
-
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
-
-    @app.route('/api/terraform/apply/stream')
-    def terraform_apply_stream():
-        """Server-Sent Events (SSE) streaming endpoint for live `terraform apply`."""
-        session_id = request.args.get('session_id')
-
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            def error_gen():
-                yield f"data: {json.dumps({'event': 'error', 'message': f'Session {session_id} not found'})}\n\n"
-            return Response(error_gen(), mimetype='text/event-stream')
-
-        session = ACTIVE_SESSIONS[session_id]
-        
-        # Security Boundary: Server-side apply gate
-        status = session.get('status', 'CREATED')
-        if status != 'APPROVED':
-            def error_gen():
-                yield f"data: {json.dumps({'event': 'error', 'message': f'Server-side rejection: Job is not APPROVED (current status: {status})'})}\n\n"
-            return Response(error_gen(), mimetype='text/event-stream')
-
-        sandbox_dir = session['sandbox_dir']
-        secrets = session['secrets']
-        secret_env = session.get('secret_env')
-
-        def generate_sse():
-            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets, secret_env=secret_env)
-            for event in runner.run_apply_stream():
-                yield f"data: {json.dumps(event)}\n\n"
-
-        return Response(
-            stream_with_context(generate_sse()),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no',
-                'Connection': 'keep-alive'
-            }
-        )
-
-    @app.route('/api/terraform/destroy/stream')
-    def terraform_destroy_stream():
-        """Server-Sent Events (SSE) streaming endpoint for live `terraform destroy` (rollback)."""
-        session_id = request.args.get('session_id')
-
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            def error_gen():
-                yield f"data: {json.dumps({'event': 'error', 'message': f'Session {session_id} not found'})}\n\n"
-            return Response(error_gen(), mimetype='text/event-stream')
-
-        session = ACTIVE_SESSIONS[session_id]
-        
-        # Security Boundary: Server-side destroy gate
-        status = session.get('status', 'CREATED')
-        if status != 'APPROVED':
-            def error_gen():
-                yield f"data: {json.dumps({'event': 'error', 'message': f'Server-side rejection: Job is not APPROVED (current status: {status})'})}\n\n"
-            return Response(error_gen(), mimetype='text/event-stream')
-            
-        sandbox_dir = session['sandbox_dir']
-        secrets = session.get('secrets', [])
-        secret_env = session.get('secret_env')
-
-        def generate_sse():
-            runner = TerraformRunner(sandbox_dir=sandbox_dir, secrets=secrets, secret_env=secret_env)
-            for event in runner.run_destroy_stream():
-                yield f"data: {json.dumps(event)}\n\n"
-
-        return Response(
-            stream_with_context(generate_sse()),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no',
-                'Connection': 'keep-alive'
-            }
-        )
-
-    @app.route('/api/terraform/approve', methods=['POST'])
-    def terraform_approve():
-        data = request.get_json() or {}
-        session_id = data.get('session_id')
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            return jsonify({'success': False, 'error': f'Session {session_id} not found'}), 404
-            
-        session = ACTIVE_SESSIONS[session_id]
-        if session.get('status') == 'REVIEW_REQUIRED':
-            session['status'] = 'APPROVED'
-            return jsonify({'success': True, 'message': 'Session approved for deployment.'})
-        return jsonify({'success': False, 'error': f'Invalid status: {session.get("status")}'}), 400
-
-    @app.route('/api/download/state')
-    def download_state():
-        """Downloads current `terraform.tfstate`."""
-        session_id = request.args.get('session_id')
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            return jsonify({'error': 'Session not found'}), 404
-
-        session = ACTIVE_SESSIONS[session_id]
-        state_file = session['sandbox_dir'] / 'terraform.tfstate'
-
-        if not state_file.exists():
-            return jsonify({'error': 'No terraform.tfstate file exists for this session'}), 404
-
-        return send_file(
-            state_file,
-            mimetype='application/json',
-            as_attachment=True,
-            download_name=f'terraform_{session_id}.tfstate'
-        )
-
-    @app.route('/api/download/package')
-    def download_package():
-        """Downloads session directory as ZIP."""
-        session_id = request.args.get('session_id')
-        if not session_id or session_id not in ACTIVE_SESSIONS:
-            return jsonify({'error': 'Session not found'}), 404
-
-        session = ACTIVE_SESSIONS[session_id]
-        sandbox_dir = session['sandbox_dir']
-
-        memory_file = io.BytesIO()
-        with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for file_path in sandbox_dir.rglob('*'):
-                if file_path.is_file() and not file_path.name.startswith('.'):
-                    rel_path = file_path.relative_to(sandbox_dir)
-                    zf.write(file_path, arcname=str(rel_path))
-
-        memory_file.seek(0)
-        return send_file(
-            memory_file,
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name=f'terraform_package_{session_id}.zip'
-        )
+        """Plan diagnostics are unavailable without a migration planner."""
+        return _conversion_unavailable()
 
     return app
 
@@ -818,8 +599,8 @@ class DesktopAPI:
                 file_types = ('Zip Archive (*.zip)', 'All files (*.*)')
             elif ext == '.xlsx':
                 file_types = ('Excel Workbook (*.xlsx)', 'All files (*.*)')
-            elif ext in ('.json', '.tfstate'):
-                file_types = ('JSON/State (*.json;*.tfstate)', 'All files (*.*)')
+            elif ext == '.json':
+                file_types = ('JSON (*.json)', 'All files (*.*)')
             elif ext == '.md':
                 file_types = ('Markdown (*.md)', 'All files (*.*)')
             else:
