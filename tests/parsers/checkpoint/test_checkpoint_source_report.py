@@ -47,6 +47,6 @@ def test_checkpoint_source_report_excel_has_traceability_and_redacts_secrets():
     workbook = load_workbook(output, read_only=True)
 
     assert "Collection" in workbook.sheetnames
-    assert "Validation" in workbook.sheetnames
+    assert "Review Required" in workbook.sheetnames
     serialized = json.dumps(result.config.model_dump())
     assert "[REDACTED]" in serialized or "password" not in serialized.lower()
