@@ -21,7 +21,8 @@ def build_policy_relationships(context, scope: str, effective_lookup=None) -> di
     globals_ = []
     for order, policy in enumerate(context.global_policies):
         globals_.append({"context": scope, "policy_scope": "global",
-                         "from_zone": tuple(policy.from_zones), "to_zone": tuple(policy.to_zones),
+                         "from_zone": tuple(policy.from_zones) or None,
+                         "to_zone": tuple(policy.to_zones) or None,
                          "name": policy.name, "order": order,
                          "source_identities": tuple(policy.source_identities)})
         _policy_edges(edges, resolver, context, scope, policy)

@@ -58,3 +58,51 @@ def test_excel_policy_projection_keeps_zone_and_global_orders_separate():
         ("zone", "a", "b", "P1", 0), ("zone", "a", "b", "P2", 1),
         ("zone", "c", "d", "P3", 0), ("global", None, None, "G1", 0), ("global", None, None, "G2", 1),
     ]
+
+
+def test_global_policy_zone_matches_survive_derived_view_and_excel():
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from fwmigrate.vendors.juniper_srx.export.excel import export_juniper_excel
+    from fwmigrate.vendors.juniper_srx.source_report import extract_juniper_source
+
+    result = extract_juniper_source("""set security policies from-zone trust to-zone untrust policy P1 then permit
+set security policies global policy G1 match from-zone [ trust dmz ]
+set security policies global policy G1 match to-zone untrust
+""")
+    rows = result.derived.policy_relationships[0]
+    assert rows["zone_policy_sets"][0]["policies"][0]["from_zone"] == "trust"
+    global_policy = rows["global_policies"][0]
+    assert global_policy["policy_scope"] == "global"
+    assert global_policy["from_zone"] == ("trust", "dmz")
+    assert global_policy["to_zone"] == ("untrust",)
+    assert global_policy["order"] == 0
+
+    output = BytesIO()
+    export_juniper_excel(result, output)
+    output.seek(0)
+    workbook_rows = list(load_workbook(output, read_only=True)["Policy Relationships"].values)
+    global_row = next(row for row in workbook_rows[1:] if row[4] == "G1")
+    assert global_row[2:4] == ("('trust', 'dmz')", "('untrust',)")
+
+
+def test_inherited_policy_profiles_resolve_only_when_effective():
+    for modifier, expected in ((None, "RESOLVED"),
+                               ("set apply-groups-except G", "UNRESOLVED"),
+                               ("deactivate groups G security idp idp-policy IPS", "UNRESOLVED")):
+        lines = ["set groups G security idp idp-policy IPS rulebase-ips rule R match signature 1",
+                 "set apply-groups G",
+                 "set security policies global policy P then permit application-services idp-policy IPS"]
+        if modifier:
+            lines.append(modifier)
+        parser = JuniperSRXParser("\n".join(lines))
+        config = parser.extract_source()
+        before = config.model_copy(deep=True)
+        derived = build_juniper_derived_views(config, parser.commands)
+        dependency = next(item for item in derived.dependencies if item.source_field == "idp-policy")
+        edge = next(item for item in derived.policy_relationships[0]["edges"]
+                    if item["source_field"] == "idp-policy")
+        assert dependency.result == expected
+        assert edge["resolved"] == (expected == "RESOLVED")
+        assert config.get_context().idp_policies == {}
+        assert config == before

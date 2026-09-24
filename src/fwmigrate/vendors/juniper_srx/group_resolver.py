@@ -12,6 +12,7 @@ from fwmigrate.vendors.juniper_srx.tokenizer import (
 )
 from fwmigrate.vendors.juniper_srx.model import JuniperResolutionStatus
 from fwmigrate.vendors.juniper_srx.provenance import build_candidate
+from fwmigrate.vendors.juniper_srx.path_semantics import candidate_field_value as _candidate_field_value
 
 MAX_GROUP_RECURSION_DEPTH = 64
 _APPLY = {"apply-groups", "apply-groups-except"}
@@ -69,61 +70,6 @@ def _build_precedence_key(command: JunosCommand) -> tuple[int, int, int, int, in
         -command.group_recursion_depth,
         command.source_order or command.line_number,
     )
-
-
-def _candidate_field_value(path: tuple[str, ...]) -> tuple[str, object]:
-    low = [part.lower() for part in path]
-    if "security-zone" in low:
-        if "interfaces" in low:
-            i = low.index("interfaces")
-            if i + 1 < len(path) and "host-inbound-traffic" not in low[i + 1:]:
-                return "interfaces", path[i + 1]
-            if "host-inbound-traffic" in low[i + 1:]:
-                h = low.index("host-inbound-traffic", i + 1)
-                interface = path[i + 1] if i + 1 < h and low[i + 1] != "host-inbound-traffic" else None
-                kind = low[h + 1] if h + 1 < len(path) else ""
-                field = f"interface:{interface}:{'system_services' if kind == 'system-services' else 'protocols'}" if interface else (
-                    "host_inbound_system_services" if kind == "system-services" else "host_inbound_protocols"
-                )
-                return field, path[h + 2] if h + 2 < len(path) else None
-        if "description" in low:
-            i = low.index("description")
-            return "description", " ".join(path[i + 1:])
-        if "screen" in low:
-            return "screen", path[low.index("screen") + 1]
-        if "tcp-rst" in low:
-            return "tcp_rst", True
-    if low[:2] == ["schedulers", "scheduler"]:
-        key = low[2] if len(low) > 2 else ""
-        value = path[3] if len(path) > 3 else None
-        if key in {"description", "start-date", "stop-date"}:
-            return key.replace("-", "_"), value
-        if key == "daily":
-            return "daily", " ".join(path[3:])
-        if key in _DAYS_OF_WEEK:
-            return f"weekday:{key}", " ".join(path[3:])
-    if low[:2] == ["security", "policies"]:
-        if "scheduler-name" in low:
-            i = low.index("scheduler-name")
-            return "scheduler_name", path[i + 1]
-        if "match" in low:
-            i = low.index("match")
-            key = low[i + 1] if i + 1 < len(low) else ""
-            names = {"source-address": "source_addresses", "destination-address": "destination_addresses",
-                     "application": "applications", "dynamic-application": "dynamic_applications",
-                     "source-identity": "source_identities"}
-            return names.get(key, key), path[i + 2] if i + 2 < len(path) else None
-        if "then" in low:
-            i = low.index("then")
-            return "action", path[i + 1] if i + 1 < len(path) else None
-    if low[:3] == ["security", "address-book", low[2] if len(low) > 2 else ""] and "address-set" in low:
-        i = low.index("address-set")
-        if i + 2 < len(path) and low[i + 2] in {"address", "address-set"}:
-            return low[i + 2], path[i + 3] if i + 3 < len(path) else None
-    if "routing-options" in low and "route" in low:
-        key = low[-2] if len(low) > 1 else ""
-        return {"next-hop": "next_hops", "qualified-next-hop": "next_hops"}.get(key, key.replace("-", "_")), path[-1] if path else None
-    return (low[-2] if len(low) > 1 else low[-1] if low else "unknown"), path[-1] if path else None
 
 
 def _record_non_effective_definition(application, name, path, source, status, reason, target,

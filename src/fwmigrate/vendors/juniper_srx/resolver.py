@@ -417,10 +417,11 @@ class JuniperReferenceResolver:
 
     def resolve_named_reference(self, reference: str, collection: dict, path=()) -> Optional[str]:
         """Resolve a typed source-profile reference without inventing a target object."""
+        paths = (path,) if path and isinstance(path[0], str) else path
         if (reference in collection and self._object_is_effective(collection[reference])
-                and self._explicit_effective(path)):
+                and any(self._explicit_effective(candidate) for candidate in paths)):
             return f"{self.context.name}__{reference}" if self.context.name != "root" else reference
-        if path and self._effective(path):
+        if any(self._effective(candidate) for candidate in paths):
             return f"{self.context.name}__{reference}" if self.context.name != "root" else reference
         return None
 
@@ -428,7 +429,11 @@ class JuniperReferenceResolver:
         profiles = {
             "idp-policy": (self.context.idp_policies, ("security", "idp", "idp-policy", reference)),
             "utm-policy": (self.context.utm_policies, ("security", "utm", "utm-policy", reference)),
-            "ssl-proxy-profile": (self.context.ssl_proxy_profiles, ("services", "ssl", "proxy", "profile", reference)),
+            "ssl-proxy-profile": (self.context.ssl_proxy_profiles, (
+                ("services", "ssl", "proxy", "profile", reference),
+                ("services", "ssl", "profile", reference),
+                ("services", "ssl-proxy", "profile", reference),
+            )),
             "security-intelligence": (self.context.security_intelligence_profiles,
                                       ("security", "intelligence", "profile", reference)),
         }

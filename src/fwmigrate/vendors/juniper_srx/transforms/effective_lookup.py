@@ -9,6 +9,9 @@ class EffectiveJunosLookup:
         self.has_source = False
         for item in statements:
             self.has_source = True
+            if item.get("origin") == "activation":
+                self._inactive.setdefault(item.get("context", "root"), set()).add(
+                    tuple(part.lower() for part in item.get("target_path") or ()))
             if item.get("status") != "EFFECTIVE":
                 continue
             context = item.get("context", "root")
@@ -17,6 +20,7 @@ class EffectiveJunosLookup:
                       if context.startswith("logical-system ") else
                       ("tenants", context.removeprefix("tenant "))
                       if context.startswith("tenant ") else ())
+            prefix = tuple(part.lower() for part in prefix)
             if prefix and path[:2] == prefix:
                 path = path[2:]
             elif context == "root" and path[:1] in (("logical-systems",), ("tenants",)):
@@ -24,13 +28,10 @@ class EffectiveJunosLookup:
             if path:
                 index = self._inherited if item.get("origin") == "inherited-group" else self._local
                 index.setdefault(context, set()).add(path)
-        for item in statements:
-            if item.get("origin") == "activation":
-                self._inactive.setdefault(item.get("context", "root"), set()).add(
-                    tuple(part.lower() for part in item.get("target_path") or ()))
 
     @staticmethod
     def _contains(paths, *targets):
+        targets = (tuple(part.lower() for part in target) for target in targets)
         return any(path[:len(target)] == target for target in targets for path in paths)
 
     def contains(self, context, *paths):
@@ -43,7 +44,8 @@ class EffectiveJunosLookup:
 
     def hierarchy_is_inactive(self, context, *paths):
         inactive = self._inactive.get(context, ())
-        return any(target[:len(prefix)] == prefix for prefix in inactive for target in paths)
+        return any(tuple(part.lower() for part in target)[:len(prefix)] == prefix
+                   for prefix in inactive for target in paths)
 
     def explicit_object_is_effective(self, context, path):
         path = tuple(part.lower() for part in path)

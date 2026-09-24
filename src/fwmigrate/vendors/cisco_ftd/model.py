@@ -145,12 +145,15 @@ class CiscoFTDInterfaceSource(CiscoFTDSourceRecord):
 class CiscoFTDRoute(CiscoFTDSourceRecord):
     interface: Optional[CiscoFTDReference] = None
     destination: Optional[CiscoFTDReference] = None
+    selected_networks: Optional[List[CiscoFTDReference]] = None
     gateway: Optional[CiscoFTDReference] = None
     address_family: Optional[str] = None
     metric: Optional[int] = None
     virtual_router: Optional[str] = None
     virtual_router_ref: Optional[CiscoFTDReference] = None
     sla_monitor: Optional[CiscoFTDReference] = None
+    route_tracking: Optional[Dict[str, Any]] = None
+    tunneled: Optional[bool] = None
     device_id: Optional[str] = None
 
 
@@ -362,6 +365,10 @@ class CiscoFTDAccessControlPolicy(CiscoFTDSourceRecord):
     decryption_policy: Optional[CiscoFTDReference] = None
     dns_policy: Optional[CiscoFTDReference] = None
     identity_policy: Optional[CiscoFTDReference] = None
+    logging_settings: Optional[Dict[str, Any]] = None
+
+
+class CiscoFTDIdentityPolicy(CiscoFTDSourceRecord): pass
 
 
 class CiscoFTDAccessControlDefaultAction(CiscoFTDSourceRecord):
@@ -758,6 +765,7 @@ class CiscoFTDConfig(BaseModel):
     source_interfaces: List[CiscoFTDInterfaceSource] = Field(default_factory=list)
     routes: List[CiscoFTDRoute] = Field(default_factory=list)
     access_control_policies: List[CiscoFTDAccessControlPolicy] = Field(default_factory=list)
+    identity_policies: List[CiscoFTDIdentityPolicy] = Field(default_factory=list)
     access_control_default_actions: List[CiscoFTDAccessControlDefaultAction] = Field(default_factory=list)
     access_policy_inheritance_settings: List[CiscoFTDAccessPolicyInheritanceSettings] = Field(default_factory=list)
     policy_assignments: List[CiscoFTDPolicyAssignment] = Field(default_factory=list)

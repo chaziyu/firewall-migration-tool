@@ -26,10 +26,10 @@ class CiscoFTDCollector:
     _domain_objects = {
         "networkaddresses": "object/networkaddresses?expanded=true",
         "network_address_overrides": "object/networkaddressoverrides?expanded=true",
-        "networkgroups": "object/networkgroups", "protocolportobjects": "object/protocolportobjects",
-        "portobjectgroups": "object/portobjectgroups", "securityzones": "object/securityzones",
-        "interfacegroups": "object/interfacegroups",
-        "applications": "object/applications", "timeranges": "object/timeranges",
+        "networkgroups": "object/networkgroups?expanded=true", "protocolportobjects": "object/protocolportobjects?expanded=true",
+        "portobjectgroups": "object/portobjectgroups?expanded=true", "securityzones": "object/securityzones?expanded=true",
+        "interfacegroups": "object/interfacegroups?expanded=true",
+        "applications": "object/applications?expanded=true", "timeranges": "object/timeranges?expanded=true",
         "realms": "object/realms", "realmusergroups": "object/realmusergroups",
         "realmusers": "object/realmusers", "localrealmusers": "object/localrealmusers",
         "slamonitors": "object/slamonitors",
@@ -134,8 +134,8 @@ class CiscoFTDCollector:
                         missing_required = "action" not in item
                     elif "/intrusionrules" in url:
                         missing_required = not any(key in item for key in ("ruleId", "sid"))
-                    elif "/routing/staticroutes" in url or "/routing/ipv6staticroutes" in url:
-                        missing_required = not any(key in item for key in ("network", "destination"))
+                    elif "/routing/" in url and "staticroutes" in url:
+                        missing_required = not any(key in item for key in ("selectedNetworks", "network", "destination"))
                     if missing_required and re.fullmatch(r"[A-Za-z0-9_-]+", str(item.get("id", ""))):
                         parsed = urlparse(url)
                         detail_url = urljoin(base, parsed.path.rstrip("/") + "/" + item["id"] + ("?" + parsed.query if parsed.query else ""))
@@ -145,8 +145,8 @@ class CiscoFTDCollector:
                         detail_complete = isinstance(detail_data, dict) and required_fields <= detail_data.keys()
                         if "/intrusionrules" in url:
                             detail_complete = detail_complete and any(key in detail_data for key in ("ruleId", "sid"))
-                        if "/routing/staticroutes" in url or "/routing/ipv6staticroutes" in url:
-                            detail_complete = detail_complete and any(key in detail_data for key in ("network", "destination"))
+                        if "/routing/" in url and "staticroutes" in url:
+                            detail_complete = detail_complete and any(key in detail_data for key in ("selectedNetworks", "network", "destination"))
                         if len(detail.content) > 10_000_000 or not detail_complete:
                             raise CollectionError("FMC returned an invalid object detail.")
                         items[-1] = detail_data
@@ -182,7 +182,7 @@ class CiscoFTDCollector:
                     parts.append(CollectionPart("device_resources/unknown", "FAILED", False))
                     continue
                 device["resources"] = {}
-                for key, suffix in (("static_routes", f"devices/devicerecords/{device_id}/routing/staticroutes?expanded=true"),
+                for key, suffix in (("static_routes", f"devices/devicerecords/{device_id}/routing/ipv4staticroutes?expanded=true"),
                                     ("ipv6_static_routes", f"devices/devicerecords/{device_id}/routing/ipv6staticroutes?expanded=true"),
                                     ("ftd_interfaces", f"devices/devicerecords/{device_id}/ftdallinterfaces"),
                                     ("virtual_tunnel_interfaces", f"devices/devicerecords/{device_id}/virtualtunnelinterfaces"),
@@ -199,8 +199,8 @@ class CiscoFTDCollector:
                         parts.append(CollectionPart(f"device/{device_id}/virtual_router/unknown", "FAILED", False))
                         continue
                     vr["resources"] = {}
-                    for key, endpoint in (("static_routes", "staticroutes"), ("pbr_policies", "policybasedroutes"),
-                                          ("ecmp_zones", "ecmpzones")):
+                    for key, endpoint in (("ipv4_static_routes", "ipv4staticroutes"), ("ipv6_static_routes", "ipv6staticroutes"),
+                                          ("pbr_policies", "policybasedroutes"), ("ecmp_zones", "ecmpzones")):
                         path = prefix + f"/devices/devicerecords/{device_id}/routing/virtualrouters/{vr_id}/{endpoint}"
                         self._collect_family(session, base, path, vr["resources"], key, parts,
                                              f"device/{device_id}/virtual_router/{vr_id}/{key}")
@@ -218,6 +218,10 @@ class CiscoFTDCollector:
             for policy in bundle["access_policies"]:
                 policy_id = str(policy.get("id", ""))
                 if re.fullmatch(r"[A-Za-z0-9_-]+", policy_id):
+                    self._collect_family(session, base, prefix + f"/policy/accesspolicies/{policy_id}/inheritancesettings?expanded=true",
+                                         policy, "inheritance_settings", parts, f"accesspolicies/{policy_id}/inheritance_settings")
+                    self._collect_family(session, base, prefix + f"/policy/accesspolicies/{policy_id}/loggingsettings?expanded=true",
+                                         policy, "logging_settings", parts, f"accesspolicies/{policy_id}/logging_settings")
                     self._collect_family(session, base, prefix + f"/policy/accesspolicies/{policy_id}/defaultactions?expanded=true",
                                          policy, "default_actions", parts, f"accesspolicies/{policy_id}/default_actions")
             for policy in bundle["access_policies"]:
@@ -238,7 +242,7 @@ class CiscoFTDCollector:
                     if family == "intrusionpolicies":
                         self._collect_family(session, base, prefix + f"/policy/intrusionpolicies/{policy_id}/intrusionrules?expanded=true",
                                              policy, "rules", parts, f"intrusionpolicies/{policy_id}/rules")
-                        self._collect_family(session, base, prefix + f"/policy/intrusionpolicies/{policy_id}/intrusionrules?expanded=true&overrides=true&ipspolicy={policy_id}",
+                        self._collect_family(session, base, prefix + f"/policy/intrusionpolicies/{policy_id}/intrusionrules?expanded=true&filter=overrides:true;ipspolicy:{policy_id}",
                                              policy, "overrides", parts, f"intrusionpolicies/{policy_id}/overrides")
                     elif family == "dnspolicies":
                         self._collect_family(session, base, prefix + f"/policy/dnspolicies/{policy_id}/blockdnsrules?expanded=true",
@@ -270,13 +274,13 @@ class CiscoFTDCollector:
                     parts.append(CollectionPart("nat_rules", "FAILED", False))
                     continue
                 policy["manual_rules"] = []
-                self._collect_family(session, base, prefix + f'/policy/ftdnatpolicies/{policy["id"]}/manualnatrules', policy, "manual_rules", parts,
+                self._collect_family(session, base, prefix + f'/policy/ftdnatpolicies/{policy["id"]}/manualnatrules?expanded=true', policy, "manual_rules", parts,
                                      f'manual_rules/{policy["id"]}')
                 manual = policy.pop("manual_rules")
                 policy["manual_rules_before_auto"] = [rule for rule in manual if rule.get("section") == "BEFORE_AUTO"]
                 policy["manual_rules_after_auto"] = [rule for rule in manual if rule.get("section") == "AFTER_AUTO"]
                 policy["manual_rules"] = [rule for rule in manual if rule.get("section") != "BEFORE_AUTO" and rule.get("section") != "AFTER_AUTO"]
-                self._collect_family(session, base, prefix + f'/policy/ftdnatpolicies/{policy["id"]}/autonatrules', policy, "auto_rules", parts,
+                self._collect_family(session, base, prefix + f'/policy/ftdnatpolicies/{policy["id"]}/autonatrules?expanded=true', policy, "auto_rules", parts,
                                      f'auto_rules/{policy["id"]}')
             bundle["coverage"] = {
                 "address_objects": {"status": "AVAILABLE", "source": "objects/networkaddresses"},
