@@ -509,9 +509,13 @@ let currentRenderedArtifactId = null;
     const body = document.createDocumentFragment();
     rows.forEach((row) => {
       const tr = document.createElement("tr");
+      tr.tabIndex = 0;
       tr.addEventListener("click", () => {
         if (activeReportSection === "validation") { navigateToValidationTarget(row); return; }
         showReportDetails(row);
+      });
+      tr.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); tr.click(); }
       });
       columns.forEach(([key, , layout = "text"]) => {
         const td = document.createElement("td");
