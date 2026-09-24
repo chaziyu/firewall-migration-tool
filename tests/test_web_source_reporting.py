@@ -58,6 +58,8 @@ def test_source_preview_and_excel_use_opaque_cached_asa_analysis():
     payload = preview.get_json()
     assert payload["vendor"] == "cisco_asa"
     assert payload["summary"]["interfaces"] == 1
+    assert "interfaces" in payload["sections"]
+    assert "vpn_phase2" in payload["sections"]
     assert "canonical_ir" not in str(payload)
 
     workbook = _post(client, "/api/extract/excel", preview_id=payload["preview_id"])
@@ -127,3 +129,12 @@ def test_fortigate_preview_exposes_policy_fields_and_overview_sections():
     assert report["sections"]["vpn_tunnels"] == []
     assert report["sections"]["vpn_phase2"] == []
     assert "unsupported_count" not in report["summary"]
+
+
+def test_all_registered_sources_advertise_view_report():
+    client = create_app({"TESTING": True}).test_client()
+    sources = client.get("/api/vendors").get_json()["sources"]
+    assert {item["vendor_id"] for item in sources} >= {
+        "fortigate", "palo_alto", "cisco_asa", "cisco_ftd", "checkpoint", "juniper_srx",
+    }
+    assert all(item["web_report"] is True for item in sources)

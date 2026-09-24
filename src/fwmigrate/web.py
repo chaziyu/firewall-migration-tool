@@ -38,6 +38,7 @@ from fwmigrate.source_reporting import (
     XLSX_MIMETYPE,
     source_reporters,
 )
+from fwmigrate.source_reporting.web_report import normalize_web_report
 _LOGGER = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class _PreviewCacheEntry:
@@ -210,6 +211,7 @@ def create_app(test_config=None):
                 'vendor_id': reporter.vendor_id,
                 'display_name': getattr(reporter, 'display_name', reporter.vendor_id),
                 'file_extensions': list(reporter.supported_extensions),
+                'web_report': True,
                 'live_collection': reporter.vendor_id in {collector.vendor_id for collector in source_collectors.list()},
                 'collection': ({'method': source_collectors.get(reporter.vendor_id).method,
                                 'connection_fields': source_collectors.get(reporter.vendor_id).fields}
@@ -244,7 +246,7 @@ def create_app(test_config=None):
                 lambda: reporter.analyze_source(file_content),
             )
             preview_entry = _cache_preview(source_vendor, raw_content, analysis, os.path.basename(file.filename))
-            report = _timed(metrics, 'preview', lambda: reporter.build_preview(analysis))
+            report = _timed(metrics, 'preview', lambda: normalize_web_report(reporter.build_preview(analysis), source_vendor))
             response = {
                 'success': True,
                 'preview_id': preview_entry.preview_id,
@@ -300,7 +302,7 @@ def create_app(test_config=None):
                 'preview_id': entry.preview_id,
                 'collection': {'vendor': source.vendor_id, 'method': source.method, 'status': source.status.value,
                                'parts': snapshot['parts'], 'warnings': snapshot['warnings']},
-                'preview': reporter.build_preview(analysis),
+                'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id),
                 'snapshot': snapshot,
             })
         except Exception:
@@ -317,7 +319,7 @@ def create_app(test_config=None):
             entry = _cache_preview(source.vendor_id, source.source_text.encode('utf-8'), analysis, source.source_name)
             return jsonify({'success': True, 'vendor_id': source.vendor_id, 'preview_id': entry.preview_id,
                             'collection': {'status': source.status.value, 'parts': [asdict(part) for part in source.parts],
-                                           'warnings': source.warnings}, 'preview': reporter.build_preview(analysis)})
+                                           'warnings': source.warnings}, 'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id)})
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid or unsupported collection snapshot.'}), 400
         except Exception:
