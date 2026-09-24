@@ -68,6 +68,50 @@ def test_acl_rule_relationships_resolve_endpoints_services_protocol_time_and_ide
     assert not relationship.issues
 
 
+def test_acl_protocol_selector_types_resolve_service_protocol_and_icmp_namespaces():
+    from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
+
+    result = extract_cisco_asa_source(
+        "object service WEB\n service tcp destination eq 80\n"
+        "object-group service WEB-GROUP tcp\n port-object eq 443\n"
+        "object-group protocol PROTOCOLS\n protocol-object icmp\n"
+        "object-group icmp-type PINGS\n icmp-object echo\n"
+        "access-list ACL1 extended permit object WEB any any\n"
+        "access-list ACL2 extended permit object-group WEB-GROUP any any\n"
+        "access-list ACL3 extended permit object-group PROTOCOLS any any\n"
+        "access-list ACL4 extended permit icmp any any object-group PINGS\n"
+    )
+    rules = {rule.acl_name: rule for rule in result.config.access_rules}
+    relationships = {row.rule.acl_name: row for row in result.derived.acl_relationships.rules}
+    expected = {
+        "ACL1": ("object", "WEB", "service_objects"),
+        "ACL2": ("object-group", "WEB-GROUP", "service_groups"),
+        "ACL3": ("object-group", "PROTOCOLS", "protocol_groups"),
+    }
+    for acl, (selector, name, kind) in expected.items():
+        assert (rules[acl].protocol_reference_type, rules[acl].protocol_object) == (selector, name)
+        target = dict(relationships[acl].references)["protocol"]
+        assert target is next(item for item in getattr(result.config, kind) if item.name == name)
+        assert not relationships[acl].issues
+    assert "PINGS" == next(value for key, value in relationships["ACL4"].references
+                             if key == "icmp-object-group").name
+    assert not relationships["ACL4"].issues
+
+
+def test_acl_protocol_object_group_namespace_ambiguity_is_reported():
+    from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
+
+    result = extract_cisco_asa_source(
+        "object-group service SHARED tcp\n port-object eq 80\n"
+        "object-group protocol SHARED\n protocol-object tcp\n"
+        "access-list ACL extended permit object-group SHARED any any\n"
+    )
+    rule = result.derived.acl_relationships.rules[0]
+    assert not any(key == "protocol" for key, _ in rule.references)
+    issue = next(issue for issue in rule.issues if issue.reference_name == "SHARED")
+    assert issue.status.value == "AMBIGUOUS"
+
+
 def test_nat_address_operand_can_resolve_to_network_group():
     rule = CiscoNATRule(name="manual-1", source_context="ctx", real_source="WEB-GROUP", mapped_source="interface")
     rule = rule.model_copy(update={"source_interface": "inside", "destination_interface": "outside"})

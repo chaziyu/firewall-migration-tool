@@ -71,10 +71,16 @@ class CiscoFTDCollector:
         "devicerecords": (("type",),),
         "accessrules": (("action",),),
         "intrusionrules": (("ruleId", "sid"),),
-        "staticroutes": (("selectedNetworks", "network", "destination"),),
-        "ipv4staticroutes": (("selectedNetworks", "network", "destination"),),
-        "ipv6staticroutes": (("selectedNetworks", "network", "destination"),),
+        "staticroutes": (("selectedNetworks", "network", "destination"),
+                         ("gateway", "gatewayAddress", "interfaceName", "interface")),
+        "ipv4staticroutes": (("selectedNetworks", "network", "destination"),
+                             ("gateway", "gatewayAddress", "interfaceName", "interface")),
+        "ipv6staticroutes": (("selectedNetworks", "network", "destination"),
+                             ("gateway", "gatewayAddress", "interfaceName", "interface")),
     }
+
+    def __init__(self, session_factory=None):
+        self._session_factory = session_factory
 
     def validate_options(self, connection):
         options = validate_connection(connection, port=443, optional=("domain",))
@@ -85,11 +91,14 @@ class CiscoFTDCollector:
         return options
 
     def _session(self, options):
-        try:
-            import requests
-        except ImportError as exc:
-            raise CollectionError("Live collection requires the collection extra (requests).") from exc
-        session = requests.Session()
+        if self._session_factory is None:
+            try:
+                import requests
+            except ImportError as exc:
+                raise CollectionError("Live collection requires the collection extra (requests).") from exc
+            session = requests.Session()
+        else:
+            session = self._session_factory()
         session.verify = options["verify_tls"]
         base = f'https://{options["host"]}:{options["port"]}'
         try:
@@ -132,23 +141,13 @@ class CiscoFTDCollector:
                     if not isinstance(item, dict):
                         raise CollectionError("FMC returned an unexpected item.")
                     items.append(item)
-                    endpoint = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
-                    if endpoint == "accesspolicies" and "/accessrules/" not in url and "/defaultactions/" not in url:
-                        endpoint_fields = self._detail_fields["accesspolicies"]
-                    else:
-                        endpoint_fields = next((fields for name, fields in self._detail_fields.items()
-                                                 if endpoint == name or endpoint.startswith(name + "/")), ())
-                    missing_required = any(not any(key in item for key in alternatives)
-                                           for alternatives in endpoint_fields)
-                    if missing_required and re.fullmatch(r"[A-Za-z0-9_-]+", str(item.get("id", ""))):
+                    if self._needs_detail(path, item):
                         parsed = urlparse(url)
                         detail_url = urljoin(base, parsed.path.rstrip("/") + "/" + item["id"] + ("?" + parsed.query if parsed.query else ""))
                         detail = session.get(detail_url, timeout=(15, 60), allow_redirects=False)
                         detail.raise_for_status()
                         detail_data = detail.json()
-                        detail_complete = isinstance(detail_data, dict) and all(
-                            any(key in detail_data for key in alternatives) for alternatives in endpoint_fields)
-                        if len(detail.content) > 10_000_000 or not detail_complete:
+                        if len(detail.content) > 10_000_000 or not self._detail_is_complete(path, detail_data):
                             raise CollectionError("FMC returned an invalid object detail.")
                         items[-1] = detail_data
                 paging = data.get("paging") or {}
@@ -162,6 +161,25 @@ class CiscoFTDCollector:
             except Exception:
                 return items, False
         return items, False
+
+    @classmethod
+    def _detail_fields_for(cls, path):
+        endpoint = urlparse(path).path.rstrip("/").rsplit("/", 1)[-1]
+        if endpoint == "accesspolicies" and "/accessrules/" not in path and "/defaultactions/" not in path:
+            return cls._detail_fields["accesspolicies"]
+        return next((fields for name, fields in cls._detail_fields.items()
+                     if endpoint == name or endpoint.startswith(name + "/")), ())
+
+    @classmethod
+    def _needs_detail(cls, path, item):
+        fields = cls._detail_fields_for(path)
+        return bool(fields) and re.fullmatch(r"[A-Za-z0-9_-]+", str(item.get("id", ""))) is not None and any(
+            not any(key in item for key in alternatives) for alternatives in fields)
+
+    @classmethod
+    def _detail_is_complete(cls, path, item):
+        fields = cls._detail_fields_for(path)
+        return isinstance(item, dict) and all(any(key in item for key in alternatives) for alternatives in fields)
 
     def test_connection(self, options):
         session, _, _ = self._session(options)
@@ -183,7 +201,7 @@ class CiscoFTDCollector:
                     parts.append(CollectionPart("device_resources/unknown", "FAILED", False))
                     continue
                 device["resources"] = {}
-                for key, suffix in (("static_routes", f"devices/devicerecords/{device_id}/routing/ipv4staticroutes?expanded=true"),
+                for key, suffix in (("ipv4_static_routes", f"devices/devicerecords/{device_id}/routing/ipv4staticroutes?expanded=true"),
                                     ("ipv6_static_routes", f"devices/devicerecords/{device_id}/routing/ipv6staticroutes?expanded=true"),
                                     ("ftd_interfaces", f"devices/devicerecords/{device_id}/ftdallinterfaces"),
                                     ("virtual_tunnel_interfaces", f"devices/devicerecords/{device_id}/virtualtunnelinterfaces"),
@@ -223,6 +241,8 @@ class CiscoFTDCollector:
                                          policy, "inheritance_settings", parts, f"accesspolicies/{policy_id}/inheritance_settings")
                     self._collect_family(session, base, prefix + f"/policy/accesspolicies/{policy_id}/loggingsettings?expanded=true",
                                          policy, "logging_settings", parts, f"accesspolicies/{policy_id}/logging_settings")
+                    self._collect_family(session, base, prefix + f"/policy/accesspolicies/{policy_id}/securityintelligencepolicies?expanded=true",
+                                         policy, "security_intelligence", parts, f"accesspolicies/{policy_id}/security_intelligence")
                     self._collect_family(session, base, prefix + f"/policy/accesspolicies/{policy_id}/defaultactions?expanded=true",
                                          policy, "default_actions", parts, f"accesspolicies/{policy_id}/default_actions")
             for policy in bundle["access_policies"]:

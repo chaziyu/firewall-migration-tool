@@ -124,6 +124,13 @@ def _address_family(value: str | None, resolved: Any, owner: Any) -> str | None:
             return None
 
 
+def derive_twice_nat_service_semantics(rule: Any) -> tuple[str | None, str | None, str | None]:
+    """Keep twice-NAT service operands source-faithful until grammar proves their roles."""
+    if not getattr(rule, "service_operand_1", None) and not getattr(rule, "service_operand_2", None):
+        return None, None, None
+    return None, None, "Twice NAT service operand mapping is unknown; source operands are preserved"
+
+
 def transform_nat(config: Any, relationships: Any) -> ASANATTransformResult:
     related = {id(row.rule): row for row in relationships.rules}
     grouped: dict[str | None, list[tuple[Any, Any, ASANATOrderInputs, str | None]]] = {}
@@ -215,13 +222,17 @@ def transform_nat(config: Any, relationships: Any) -> ASANATTransformResult:
             real_ref = rel.owning_object if object_static and rel else rel.real_destination if rel else None
             mapped = getattr(mapped_ref, "value", None) or (rule.mapped_source if object_static else rule.mapped_destination)
             real = (getattr(real_ref, "value", None) or rule.real_source) if object_static else (getattr(real_ref, "value", None) or rule.real_destination)
+            mapped_service, real_service, service_issue = derive_twice_nat_service_semantics(rule)
+            vip_issues = [issue.reason for issue in (rel.issues if rel else ())]
+            if service_issue:
+                vip_issues.append(service_issue)
             vips.append(ASADerivedVIP(
                 rule.source_context, rule, transformed.effective_order,
                 (rel.source_interface if rel else None) or rule.source_interface,
                 (rel.destination_interface if rel else None) or rule.destination_interface,
-                mapped, real, rule.translated_service, rule.original_service,
+                mapped, real, mapped_service or rule.translated_service, real_service or rule.original_service,
                 rule.service_protocol, transformed.translation_semantics, rule.inactive,
-                tuple(issue.reason for issue in (rel.issues if rel else ())),
+                tuple(dict.fromkeys(vip_issues)),
             ))
             issues.extend(vips[-1].issues)
     return ASANATTransformResult(tuple(output), tuple(source_pools), tuple(vips), tuple(dict.fromkeys(issues)))

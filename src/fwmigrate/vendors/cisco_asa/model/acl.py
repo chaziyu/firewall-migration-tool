@@ -39,6 +39,7 @@ class CiscoAccessRule(CiscoSourceModel):
     action: Optional[str] = None
     protocol: Optional[str] = None
     protocol_object: Optional[str] = None
+    protocol_reference_type: Optional[str] = None
     source_endpoint: Optional[CiscoACLEndpoint] = None
     source_port: Optional[CiscoPortSpec] = None
     destination_endpoint: Optional[CiscoACLEndpoint] = None

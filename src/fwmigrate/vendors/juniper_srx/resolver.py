@@ -229,7 +229,10 @@ class JuniperReferenceResolver:
             branch_members: List[str] = []
             branch_has_cycle = False
             for m in aset.members:
-                if not self._member_is_effective(aset, m):
+                member_path = ("security", "address-book", book.name, "address-set", current_set_name,
+                               "address" if m.member_type == "address" else "address-set", m.name)
+                if (not self._member_is_effective(aset, m)
+                        or not self.source_path_is_effective(member_path)):
                     continue
                 if m.member_type == "address":
                     # Canonical member name
@@ -380,6 +383,94 @@ class JuniperReferenceResolver:
         if hasattr(self.effective_lookup, "contains_effective_path"):
             return self.effective_lookup.contains_effective_path(self.scope, *paths)
         return bool(self.effective_lookup.contains(self.scope, *paths))
+
+    def source_path_is_effective(self, path):
+        if not self.effective_lookup or not getattr(self.effective_lookup, "has_source", False):
+            return True
+        if hasattr(self.effective_lookup, "path_is_effective"):
+            return self.effective_lookup.path_is_effective(self.scope, path)
+        return not self.effective_lookup.hierarchy_is_inactive(self.scope, path)
+
+    def source_reference_is_effective(self, *paths):
+        return any(self.source_path_is_effective(path) for path in paths)
+
+    @staticmethod
+    def policy_reference_paths(policy, field, reference):
+        base = ("security", "policies")
+        if policy.policy_scope == "global":
+            bases = (base + ("global", "policy", policy.name),)
+        else:
+            from_zones = policy.from_zones or ([policy.from_zone] if policy.from_zone else [])
+            to_zones = policy.to_zones or ([policy.to_zone] if policy.to_zone else [])
+            bases = tuple(base + ("from-zone", source, "to-zone", target, "policy", policy.name)
+                          for source in from_zones for target in to_zones)
+        tails = {
+            "from-zone": ("match", "from-zone", reference),
+            "to-zone": ("match", "to-zone", reference),
+            "source-address": ("match", "source-address", reference),
+            "destination-address": ("match", "destination-address", reference),
+            "application": ("match", "application", reference),
+            "scheduler": ("scheduler-name", reference),
+            "vpn-reference": ("then", "permit", "tunnel", "ipsec-vpn", reference),
+        }
+        if field in policy.security_profile_references:
+            tails[field] = ("then", "permit", "application-services", field, reference)
+        tail = tails.get(field)
+        return tuple(path + tail for path in bases) if tail else bases if field == "policy" else ()
+
+    def policy_reference_is_effective(self, policy, field, reference):
+        paths = self.policy_reference_paths(policy, field, reference)
+        if field == "vpn-reference":
+            paths += tuple(path[:-5] + ("then", "permit", "ipsec-vpn", reference)
+                           for path in paths)
+        return self.source_reference_is_effective(*paths)
+
+    def policy_is_effective(self, policy):
+        return self.source_reference_is_effective(*self.policy_reference_paths(policy, "policy", ""))
+
+    def vpn_reference_is_effective(self, source_type, name, field, reference):
+        base = {
+            "ike-gateway": ("security", "ike", "gateway", name),
+            "ike-policy": ("security", "ike", "policy", name),
+            "ipsec-policy": ("security", "ipsec", "policy", name),
+            "ipsec-vpn": ("security", "ipsec", "vpn", name),
+        }[source_type]
+        tails = {
+            ("ike-gateway", "ike-policy"): ("ike-policy", reference),
+            ("ike-policy", "proposal"): ("proposals", reference),
+            ("ipsec-policy", "proposal"): ("proposals", reference),
+            ("ipsec-vpn", "ike-gateway"): ("ike", "gateway", reference),
+            ("ipsec-vpn", "ipsec-policy"): ("ike", "ipsec-policy", reference),
+            ("ipsec-vpn", "bind-interface"): ("bind-interface", reference),
+            ("ipsec-vpn", "source-interface"): ("vpn-monitor", "source-interface", reference),
+        }
+        return self.source_path_is_effective(base + tails[(source_type, field)])
+
+    def nat_reference_is_effective(self, nat_type, rule_set, rule, field, reference):
+        if field == "pool-routing-instance":
+            return self.source_path_is_effective(("security", "nat", nat_type, "pool", rule_set,
+                                                  "routing-instance", reference))
+        base = ("security", "nat", nat_type, "rule-set", rule_set)
+        if field in {"pool", "prefix-name", "source-address-name", "destination-address-name"}:
+            base += ("rule", rule)
+            tails = {
+                "pool": ("then", {"source": "source-nat", "destination": "destination-nat"}.get(nat_type, "static-nat"), "pool", reference),
+                "prefix-name": ("then", "static-nat", "prefix-name", reference),
+                "source-address-name": ("match", "source-address-name", reference),
+                "destination-address-name": ("match", "destination-address-name", reference),
+            }
+            return self.source_path_is_effective(base + tails[field])
+        if field.startswith("from-") or field.startswith("to-"):
+            direction, kind = field.split("-", 1)
+            return self.source_path_is_effective(base + (direction, kind, reference))
+        return True
+
+    def apbr_reference_is_effective(self, source_type, name, field, reference):
+        base = ("security", "advance-policy-based-routing", source_type, name)
+        return self.source_path_is_effective(base + (field, reference))
+
+    def remote_access_reference_is_effective(self, name, field, reference):
+        return self.source_path_is_effective(("security", "remote-access", "profile", name, field, reference))
 
     def _explicit_effective(self, path):
         if not self.effective_lookup or not getattr(self.effective_lookup, "has_source", False):

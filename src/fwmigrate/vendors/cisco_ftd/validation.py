@@ -35,9 +35,17 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
                   for item in config.unsupported_evidence)
     issues.extend(FTDValidationIssue("warning", item.category, item.message, config.source_plane, item.interface)
                   for item in derived.interface_topology.issues)
-    issues.extend(FTDValidationIssue("warning", "invalid-route", item.issue or "Invalid FTD static route",
-                                     config.source_plane, item.source_name)
-                  for item in derived.normalized_routes if item.issue)
+    for item in derived.normalized_routes:
+        if not item.issue:
+            continue
+        if item.issue == "Route destination is missing" and derived.source_plane_completeness.get("routing") != "present":
+            continue
+        issues.append(FTDValidationIssue("warning", "invalid-route", item.issue, config.source_plane, item.source_name))
+    for route in config.routes:
+        family = (route.address_family or route.source_attributes.get("collection_address_family") or "").casefold()
+        if family == "ipv6" and (route.route_tracking is not None or "sla_monitor" in route.explicit_fields):
+            issues.append(FTDValidationIssue("warning", "ipv6-route-tracking",
+                "IPv6 route contains explicit route-tracking source state", route.source_plane, route.name))
     issues.extend(FTDValidationIssue("warning", "intrusion-rule-group-conflict",
         f"Intrusion rule {item.rule_id or item.source_id} differs between policy behavior and rule-group evidence",
         item.source_plane, item.name) for item in config.intrusion_rule_behaviors

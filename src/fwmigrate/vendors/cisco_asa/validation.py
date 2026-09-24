@@ -113,26 +113,18 @@ def validate_asa_config(config: Any, derived: ASADerivedViews) -> ASAValidationR
         if len(protocols) == 2 and protocols[0] != protocols[1]:
             issues.append(ASAValidationIssue("warning", "nat", "Twice NAT service operands use different protocols", rule.source_context, rule.name))
 
-    zone_members: dict[tuple[str | None, str], set[str]] = {}
+    zone_members, interface_zones = _zone_memberships(config, derived)
     for zone in getattr(config, "traffic_zones", ()):
-        if len(zone.members) > 8:
+        members = zone_members.get((zone.source_context, zone.name), {})
+        if len(members) > 8:
             issues.append(ASAValidationIssue("error", "zone", "Traffic zone exceeds the eight-interface limit", zone.source_context, zone.name))
-        levels = set()
-        for member in zone.members:
-            reference = derived.references.resolve(zone.source_context, ASAReferenceKind.INTERFACE, member)
-            interface = reference.target
-            if interface is not None:
-                zone_members.setdefault((zone.source_context, interface.name.casefold()), set()).add(zone.name)
-                if interface.security_level is not None:
-                    levels.add(interface.security_level)
-                if interface.management_only or interface.channel_group is not None:
-                    issues.append(ASAValidationIssue("error", "zone", "Traffic zone contains an unsupported interface member", zone.source_context, zone.name))
+        levels = {interface.security_level for interface in members.values() if interface.security_level is not None}
+        for interface in members.values():
+            if interface.management_only or interface.channel_group is not None:
+                issues.append(ASAValidationIssue("error", "zone", "Traffic zone contains an unsupported interface member", zone.source_context, zone.name))
         if len(levels) > 1:
             issues.append(ASAValidationIssue("error", "zone", "Traffic zone members have different security levels", zone.source_context, zone.name))
-    for interface in getattr(config, "interfaces", ()):
-        for zone_name in interface.traffic_zone_members:
-            zone_members.setdefault((interface.source_context, interface.name.casefold()), set()).add(zone_name)
-    for (context, interface), zones in zone_members.items():
+    for (context, interface), zones in interface_zones.items():
         if len(zones) > 1:
             issues.append(ASAValidationIssue("error", "zone", "Interface belongs to more than one traffic zone", context, interface))
 
@@ -164,6 +156,29 @@ def validate_asa_config(config: Any, derived: ASADerivedViews) -> ASAValidationR
                 break
             parent = parent_policy.parent
     return ASAValidationResult(tuple(issues))
+
+
+def _zone_memberships(config: Any, derived: ASADerivedViews) -> tuple[
+    dict[tuple[str | None, str], dict[str, Any]], dict[tuple[str | None, str], set[str]],
+]:
+    memberships: dict[tuple[str | None, str], dict[str, Any]] = {}
+    by_zone_member: dict[tuple[str | None, str], set[str]] = {}
+    for entry in derived.interface_topology.interfaces:
+        for zone in entry.zones:
+            zone_name = getattr(zone, "name", zone)
+            memberships.setdefault((entry.source_context, zone_name), {})[entry.name.casefold()] = next(
+                (item for item in config.interfaces
+                 if item.source_context == entry.source_context and item.name.casefold() == entry.name.casefold()), None)
+            by_zone_member.setdefault((entry.source_context, entry.name.casefold()), set()).add(zone_name)
+    for zone in getattr(config, "traffic_zones", ()):
+        for name in zone.members:
+            reference = derived.references.resolve(zone.source_context, ASAReferenceKind.INTERFACE, name)
+            if reference.target is None:
+                continue
+            interface = reference.target
+            memberships.setdefault((zone.source_context, zone.name), {})[interface.name.casefold()] = interface
+            by_zone_member.setdefault((zone.source_context, interface.name.casefold()), set()).add(zone.name)
+    return memberships, by_zone_member
 
 
 __all__ = ["ASAValidationIssue", "ASAValidationResult", "validate_asa_config"]

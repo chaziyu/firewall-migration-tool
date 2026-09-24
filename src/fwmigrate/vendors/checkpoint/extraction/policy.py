@@ -58,14 +58,20 @@ def _extract_structured(
     root_response = response.model_copy(update={
         "layer": response.layer or response.data.get("name"),
         "layer_uid": root_layer_uid,
+        "package": None,
+        "package_uid": None,
         "parent_layer_uid": response.parent_layer_uid or response.data.get("parent-layer-uid"),
         "parent_rule_uid": response.parent_rule_uid or response.data.get("parent-rule-uid"),
     })
     if response.command.lower() == "show-access-rulebase" and response.data.get("uid"):
+        root_layer = {"uid": response.data.get("uid"), "name": response.data.get("name"), "type": "access-layer"}
+        for key in ("package", "package-uid", "parent-layer-uid", "parent-rule-uid"):
+            if key in response.data:
+                root_layer[key] = response.data[key]
         layer_response = root_response.model_copy(update={"parent_layer_uid": None, "parent_rule_uid": None})
         results.append(("access_layers", build_typed_object(
             layer_response,
-            {"uid": response.data.get("uid"), "name": response.data.get("name"), "type": "access-layer"},
+            root_layer,
             CPAccessLayer,
         )))
 
@@ -95,6 +101,8 @@ def _extract_structured(
                 layer_response = current_response.model_copy(update={
                     "layer": entry.get("name") or current_response.layer,
                     "layer_uid": layer_uid,
+                    "package": None,
+                    "package_uid": None,
                     "parent_layer_uid": current_layer_uid,
                     "parent_rule_uid": parent_rule_uid,
                 })

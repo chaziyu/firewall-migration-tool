@@ -727,7 +727,20 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
         interface = values[0]
         values = values[1:]
 
-    global_scope = interface is None and command in {"dns", "domain", "lease", "option", "ping_timeout", "wins"}
+    if command == "reserve-address" and len(values) == 3:
+        interface = values[2]
+    elif command == "auto_config" and interface is None and len(values) >= 3:
+        marker = next((index for index, value in enumerate(values) if value.lower() == "interface"), None)
+        if marker is not None and marker + 1 < len(values):
+            interface = values[marker + 1]
+
+    global_scope = interface is None and command in {
+        "dns", "domain", "lease", "option", "ping_timeout", "wins", "auto_config", "update",
+    }
+    if not global_scope and interface is None:
+        self._record_diagnostic(line_number, line, "DHCP command requires an explicit interface", "dhcpd")
+        self._record_unsupported(line_number, line, "DHCP command scope is not explicit")
+        return
     if global_scope:
         context = self._line_contexts.get(line_number)
         item = next((record for record in self.config.dhcp_global_settings if record.source_context == context), None)
@@ -876,11 +889,17 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
         ))
         return
     if command == "auto_config":
+        if not values:
+            item.extraction_status = "PARSE_ERROR"
+            item.requires_manual_review = True
+            item.review_reasons.append("DHCP auto_config requires a client interface")
+            self._record_diagnostic(line_number, line, "Malformed DHCP auto_config command", "dhcpd")
+            return
         item.auto_config = " ".join(values) if values else ""
         item.explicit_fields.add("auto_config")
         return
-    if command == "update" and values[:1] == ["dns"]:
-        item.dns_update = " ".join(values[1:]) if len(values) > 1 else "enabled"
+    if command == "update" and values[:1] and values[0].lower() == "dns":
+        item.dns_update = None if negated else " ".join(values[1:]) if len(values) > 1 else "enabled"
         item.explicit_fields.add("dns_update")
         return
     item.requires_manual_review = True

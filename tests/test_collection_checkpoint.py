@@ -246,8 +246,8 @@ def test_management_error_classifier_requires_confirmed_capability_evidence():
 
 def test_selected_package_discovers_its_layers_without_labeling_layer_scope_as_package():
     bundle = CheckPointExportBundle.model_validate({"responses": [
-        {"command": "show-packages", "data": {"objects": [{"name": "Package A", "access-layers": [{"uid": "l1"}, {"name": "Layer B"}]}]}},
-        {"command": "show-access-layers", "data": {"objects": [
+        {"command": "show-packages", "domain": "Domain A", "data": {"objects": [{"name": "Package A", "access-layers": [{"uid": "l1"}, {"name": "Layer B"}]}]}},
+        {"command": "show-access-layers", "domain": "Domain A", "data": {"objects": [
             {"uid": "l1", "name": "Layer A"}, {"uid": "l2", "name": "Layer B"},
             {"uid": "l3", "name": "Unrelated"},
         ]}},

@@ -3,6 +3,7 @@ from fwmigrate.vendors.checkpoint.model.gaia import CPGaiaInterface
 from fwmigrate.vendors.checkpoint.model.gateway import CPGateway, CPGatewayInterface
 from fwmigrate.vendors.checkpoint.model.source import CheckPointConfig
 from fwmigrate.vendors.checkpoint.model.zone import CPSecurityZone
+from fwmigrate.vendors.checkpoint.validation import validate_checkpoint_config
 
 
 def test_interface_view_uses_topology_and_keeps_unmatched_gaia_separate():
@@ -80,3 +81,5 @@ def test_gaia_interface_ambiguous_gateway_identity_is_a_structured_finding():
 
     assert any(issue.source_field == "gateway" and issue.status == "ambiguous"
                for issue in derived.interface_topology.issues)
+    assert any(issue.code == "interface_correlation_ambiguous"
+               for issue in validate_checkpoint_config(config, derived).issues)

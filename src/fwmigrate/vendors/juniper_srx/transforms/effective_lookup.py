@@ -39,8 +39,13 @@ class EffectiveJunosLookup:
         return self._contains(self._inherited.get(context, ()), *paths)
 
     def contains_effective_path(self, context, *paths):
-        return (self._contains(self._inherited.get(context, ()), *paths)
-                or self._contains(self._local.get(context, ()), *paths)) and not self.hierarchy_is_inactive(context, *paths)
+        return any(self._contains(index.get(context, ()), path)
+                   and not self.hierarchy_is_inactive(context, path)
+                   for index in (self._inherited, self._local) for path in paths)
+
+    def path_is_effective(self, context, path):
+        """Check one exact local or inherited source hierarchy path."""
+        return self.contains_effective_path(context, path)
 
     def hierarchy_is_inactive(self, context, *paths):
         inactive = self._inactive.get(context, ())

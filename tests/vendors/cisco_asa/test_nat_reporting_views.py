@@ -74,6 +74,27 @@ def test_manual_nat_rejects_inline_address_and_object_nat_keeps_port_semantics()
     assert (object_rule.service_protocol, object_rule.original_service, object_rule.translated_service) == ("tcp", "80", "8080")
 
 
+def test_twice_nat_service_consumes_two_operands_then_continues_with_options():
+    result = extract_cisco_asa_source(
+        "nat (inside,outside) source static REAL MAPPED service REAL-SVC MAPPED-SVC inactive "
+        "route-lookup description preserve me\n"
+    )
+    rule = result.config.nat_rules[0]
+    assert (rule.service_operand_1, rule.service_operand_2) == ("REAL-SVC", "MAPPED-SVC")
+    assert rule.inactive and rule.route_lookup and rule.description == "preserve me"
+    assert not rule.raw_options
+
+
+def test_twice_nat_rejects_unknown_modes_without_reinterpreting_them():
+    result = extract_cisco_asa_source(
+        "nat (inside,outside) source dynamicx REAL MAPPED\n"
+        "nat (inside,outside) source static REAL MAPPED destination dynamic MAPPED-D REAL-D\n"
+    )
+    source_mode, destination_mode = result.config.nat_rules
+    assert source_mode.source_mode == "dynamicx" and source_mode.extraction_status == "PARSE_ERROR"
+    assert destination_mode.destination_mode == "dynamic" and destination_mode.extraction_status == "PARSE_ERROR"
+
+
 def test_source_nat_pools_keep_duplicate_names_separate_by_context():
     result = extract_cisco_asa_source(
         "changeto context customer-a\nobject network WEB\n host 10.0.0.1\n"

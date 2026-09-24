@@ -30,8 +30,8 @@ def _row(sheet: str, item: Any) -> tuple[Any, ...]:
                 item.translation_semantics, rule.source_interface, rule.destination_interface,
                 rule.real_source, rule.mapped_source, item.source_context, rule.raw_line)
     if sheet == "Source NAT Pools":
-        return (item.source_rule.name, item.pool_type, item.mapped_source, _name(item.mapped_interface),
-                item.address_family, item.translation_semantics, _name(item.source_interface),
+        return (item.source_rule.name, item.pool_type, item.mapped_source, _name(item.mapped_object),
+                _name(item.mapped_interface), item.address_family, item.translation_semantics, _name(item.source_interface),
                 _name(item.destination_interface), item.source_context, item.issues)
     if sheet == "Published Services - VIPs":
         return (item.source_rule.name, item.mapped_address, item.real_address, item.mapped_service,
@@ -45,23 +45,26 @@ def _row(sheet: str, item: Any) -> tuple[Any, ...]:
     if sheet in {"VPN", "IPsec VPN"}:
         source = item.source_identity
         return (item.topology_type, source.name, item.crypto_map, item.crypto_map_sequence,
-                getattr(item.crypto_acl, "acl_name", item.crypto_acl), item.peers,
+                getattr(item.crypto_acl, "acl_name", item.crypto_acl),
+                getattr(item.selector_acl, "acl_name", item.selector_acl), item.peers,
                 tuple(getattr(value, "name", value) for value in item.tunnel_groups),
                 getattr(item.interface, "name", None), tuple(getattr(value, "name", value) for value in item.transform_sets),
                 tuple(getattr(value, "name", value) for value in item.ikev2_proposals), item.tunnel_interface,
-                item.ipsec_profile, getattr(item.group_policy, "name", None),
-                tuple(getattr(value, "name", value) for value in item.address_pools), item.source_context, item.issues)
+                item.tunnel_source, item.tunnel_destination, item.ipsec_profile,
+                item.resolution_status, item.issues)
     if sheet == "Remote Access VPN":
         authentication = _name(item.authentication_server_group)
         if authentication is None and item.local_authentication_available:
             authentication = "Local"
-        return (item.tunnel_group.name, _name(item.group_policy), authentication,
+        return (item.tunnel_group.name, item.connection_profile_type, _name(item.group_policy),
+                _name(item.inherited_group_policy), authentication,
                 tuple(_name(value) for value in item.address_pools),
                 tuple(_name(value) for value in item.dhcp_servers), item.address_assignment_methods,
-                item.vpn_protocols, _name(item.split_tunnel_acl), _name(item.vpn_filter_acl),
-                _name(item.vpn_access_hours), item.dns_servers, item.wins_servers, item.default_domain,
+                item.vpn_protocols, _name(item.vpn_access_hours), _name(item.vpn_filter_acl),
+                item.split_tunnel_policy, _name(item.split_tunnel_acl), item.dns_servers, item.wins_servers, item.default_domain,
                 tuple(_name(value) for value in item.enabled_interfaces),
-                tuple(_name(value) for value in item.trustpoints), item.source_context, item.issues)
+                tuple(_name(value) for value in item.trustpoints), item.source_context,
+                item.resolution_status, item.issues)
     raise KeyError(sheet)
 
 
@@ -218,10 +221,19 @@ def export_asa_excel(result: Any, output: Any) -> Any:
             continue
         if name == "Failover":
             sheet.append(("Record Type", "Context", "Source Values"))
-            sheet.append(("Failover Configuration", None, excel_value(result.config.failover_config)))
+            if has_source_evidence(result.config.failover_config):
+                sheet.append(("Failover Configuration", None, excel_value(result.config.failover_config)))
             for item in config.failover_settings:
                 sheet.append(("Failover Setting", item.source_context,
                               excel_value({"setting": item.setting})))
+            continue
+        if name == "DHCP Reservations":
+            sheet.append(SHEET_HEADERS[name])
+            for server in config.dhcp_servers:
+                for item in server.reservations:
+                    sheet.append(tuple(excel_value(value) for value in (
+                        item.ip, item.mac, item.interface, server.source_context, item.source_order,
+                    )))
             continue
         if name in SOURCE_SECTIONS:
             sheet.append(SHEET_HEADERS[name])

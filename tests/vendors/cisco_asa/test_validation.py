@@ -49,6 +49,18 @@ def test_zone_validation_checks_members_count_levels_and_single_zone_ownership()
     assert "Interface belongs to more than one traffic zone" in messages
 
 
+def test_zone_validation_uses_interface_zone_member_relationships():
+    source = "zone EDGE\n"
+    for index in range(9):
+        source += (f"interface Ethernet0/{index}\n nameif edge{index}\n security-level {100 if index < 8 else 90}\n"
+                   f" {'management-only\n' if index == 8 else ''} zone-member EDGE\n")
+    result = extract_cisco_asa_source(source)
+    messages = [issue.message for issue in result.validation.issues if issue.category == "zone"]
+    assert "Traffic zone exceeds the eight-interface limit" in messages
+    assert "Traffic zone members have different security levels" in messages
+    assert "Traffic zone contains an unsupported interface member" in messages
+
+
 def test_group_policy_inheritance_cycle_is_reported_without_mutation():
     config = CiscoASAConfig(group_policies=[
         CiscoGroupPolicy(name="A", parent="B"), CiscoGroupPolicy(name="B", parent="A")

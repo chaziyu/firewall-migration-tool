@@ -5,8 +5,7 @@ from typing import Any
 from ..model.common import CheckPointSourceObject
 
 
-_CONTEXT_FIELDS = {"source_plane", "command", "package", "package_uid", "layer", "layer_uid",
-                   "parent_layer_uid", "parent_rule_uid", "gateway", "order", "explicit_fields", "raw_extra"}
+_CONTEXT_FIELDS = {"source_plane", "command", "order", "explicit_fields", "raw_extra"}
 
 
 def _domain(item: CheckPointSourceObject) -> str | None:
@@ -52,8 +51,11 @@ def _merge(existing: CheckPointSourceObject, incoming: CheckPointSourceObject) -
     data["explicit_fields"] = tuple(sorted(set(existing.explicit_fields) | set(incoming.explicit_fields)))
 
     primary = max((existing, incoming), key=_preferred_rank)
+    explicit_names = {name.replace("-", "_") for name in data["explicit_fields"]}
     for name in ("source_plane", "command", "package", "package_uid", "layer", "layer_uid",
                  "parent_layer_uid", "parent_rule_uid", "gateway", "order"):
+        if name not in {"source_plane", "command", "order"} and name in explicit_names:
+            continue
         data[name] = getattr(primary, name)
     return type(existing).model_validate(data)
 
