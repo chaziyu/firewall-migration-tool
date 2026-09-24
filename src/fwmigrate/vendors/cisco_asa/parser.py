@@ -72,7 +72,6 @@ from fwmigrate.vendors.cisco_asa.model_phase10_17 import (
 )
 from fwmigrate.vendors.cisco_asa.net_utils import normalize_ipv4_network, parse_ipv4_netmask
 from fwmigrate.vendors.cisco_asa.service_parser import parse_service_clause
-from fwmigrate.vendors.cisco_asa.reference_validation import apply_reference_issues, validate_references
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 
 
@@ -96,15 +95,35 @@ def _valid_ip(value: str) -> bool:
         return False
 
 
-def _asa_interface_default_state(interface_type: Optional[str]) -> str:
-    return {
-        "physical": "down",
-        "management": "down",
-        "subinterface": "up",
-        "redundant": "up",
-        "port-channel": "up",
-        "bvi": "up",
-    }.get(interface_type or "", "down")
+def _mark_explicit(record: Any, *field_names: str) -> None:
+    for name in field_names:
+        if name not in record.explicit_fields:
+            record.explicit_fields.append(name)
+
+
+def _parse_interface_header(header: str) -> Optional[Dict[str, Any]]:
+    match = re.fullmatch(r"interface\s+(.+?)\s*", header.strip(), re.I)
+    if not match:
+        return None
+    value = match.group(1)
+    logical = re.fullmatch(r"(BVI|Redundant|Port-channel|Vlan)\s*(\d+)(?:\.(\d+))?", value, re.I)
+    if logical:
+        family, number, suffix = logical.groups()
+        label = {"bvi": "BVI", "redundant": "Redundant", "port-channel": "Port-channel", "vlan": "Vlan"}[family.lower()]
+        name = f"{label}{number}" + (f".{suffix}" if suffix else "")
+        kind = "subinterface" if suffix else {"bvi": "bvi", "redundant": "redundant", "port-channel": "port-channel", "vlan": "vlan"}[family.lower()]
+        return {"name": name, "interface_type": kind, "parent_interface": f"{label}{number}" if suffix else None,
+                "interface_suffix_vlan_id": int(suffix) if suffix else None,
+                "bvi_id": int(number) if family.lower() == "bvi" and not suffix else None,
+                "port_channel_id": int(number) if family.lower() == "port-channel" and not suffix else None,
+                "vlan_id": int(number) if family.lower() == "vlan" and not suffix else None}
+    if re.fullmatch(r"\S+\.\d+", value):
+        parent, _, suffix = value.rpartition(".")
+        return {"name": value, "interface_type": "subinterface", "parent_interface": parent,
+                "interface_suffix_vlan_id": int(suffix), "bvi_id": None, "port_channel_id": None, "vlan_id": None}
+    kind = "management" if re.match(r"Management", value, re.I) else "physical"
+    return {"name": value, "interface_type": kind, "parent_interface": None,
+            "interface_suffix_vlan_id": None, "bvi_id": None, "port_channel_id": None, "vlan_id": None}
 
 
 def _pbr_acl_match_evidence(acl_names: List[str], rules: Iterable[CiscoAccessRule]) -> List[Dict[str, Any]]:
@@ -372,6 +391,19 @@ class CiscoASAParser:
     def _parse_crypto_map_line(self, line: str, line_number: int, dynamic: bool = False) -> None:
         parts = line.split()
         offset = 2
+        if len(parts) == offset + 3 and parts[offset + 1].lower() == "interface":
+            name, interface = parts[offset], parts[offset + 2]
+            context = self._line_contexts.get(line_number)
+            record = next((item for item in self.config.crypto_maps
+                           if item.name == name and item.sequence is None
+                           and item.source_context == context), None)
+            if record is None:
+                record = CiscoCryptoMap(name=name, map_name=name, source_order=line_number,
+                                        raw_lines=[], source_attributes={"raw_command": line})
+                self.config.crypto_maps.append(self._with_source_context(record, line_number))
+            record.interface_attachment = interface
+            record.raw_lines.append(sanitize_raw_text(line))
+            return
         if len(parts) <= offset + 1 or not parts[offset + 1].isdigit():
             self._record_diagnostic(line_number, line, "Malformed crypto map sequence", "crypto map", extraction_effect="PARSE_ERROR")
             return
@@ -1465,6 +1497,7 @@ class CiscoASAParser:
         lines = [line.rstrip() for line in self.raw_lines]
         self._line_contexts = self._build_context_ownership(lines)
         remarks: Dict[str, List[str]] = {}
+        pending_global_mtu: List[Dict[str, Any]] = []
         i = 0
         while i < len(lines):
             raw = lines[i]
@@ -1478,6 +1511,8 @@ class CiscoASAParser:
                 if len(parts) == 2:
                     self.config.hostname = parts[1]
                     self.config.system_settings.hostname = parts[1]
+                    _mark_explicit(self.config, "hostname")
+                    _mark_explicit(self.config.system_settings, "hostname")
                 i += 1
                 continue
 
@@ -1698,27 +1733,12 @@ class CiscoASAParser:
                 i += 1
                 continue
 
-            match = re.match(r"^interface\s+(\S+)", line, re.IGNORECASE)
-            if match:
-                interface = CiscoInterface(name=match.group(1))
-                interface_name = interface.name
-                if re.match(r"^Port-channel(\d+)$", interface_name, re.IGNORECASE):
-                    interface.interface_type = "port-channel"
-                    interface.port_channel_id = int(re.search(r"(\d+)$", interface_name).group(1))
-                elif re.match(r"^BVI(\d+)$", interface_name, re.IGNORECASE):
-                    interface.interface_type = "bvi"
-                    interface.bvi_id = int(re.search(r"(\d+)$", interface_name).group(1))
-                elif re.match(r"^Redundant(\d+)$", interface_name, re.IGNORECASE):
-                    interface.interface_type = "redundant"
-                elif re.match(r"^\S+\.\d+$", interface_name):
-                    interface.interface_type = "subinterface"
-                    interface.parent_interface, _, vlan = interface_name.rpartition(".")
-                    interface.interface_suffix_vlan_id = int(vlan)
-                    interface.source_attributes["interface_suffix_vlan_id"] = interface.interface_suffix_vlan_id
-                elif re.match(r"^Management\S*$", interface_name, re.IGNORECASE):
-                    interface.interface_type = "management"
-                else:
-                    interface.interface_type = "physical"
+            header = _parse_interface_header(line)
+            if header:
+                interface = CiscoInterface(name=header["name"], source_context=self._line_contexts.get(line_number))
+                for field in ("interface_type", "parent_interface", "interface_suffix_vlan_id", "bvi_id", "port_channel_id", "vlan_id"):
+                    setattr(interface, field, header[field])
+                _mark_explicit(interface, "interface_type", "parent_interface", "interface_suffix_vlan_id", "bvi_id", "port_channel_id", "vlan_id")
                 interface.source_attributes.update({"source_line_number": line_number, "raw_header": line})
                 i += 1
                 while i < len(lines) and bool(lines[i][:1].isspace()) and not lines[i].strip().startswith("!"):
@@ -1730,10 +1750,13 @@ class CiscoASAParser:
                         if interface.nameif is not None:
                             interface.source_attributes.setdefault("nameif_history", []).append(interface.nameif)
                         interface.nameif = sub.split(maxsplit=1)[1]
+                        _mark_explicit(interface, "nameif")
                     elif lower == "no nameif":
                         interface.nameif = None
+                        _mark_explicit(interface, "nameif")
                         interface.source_attributes.setdefault("negated_commands", []).append(sub)
                     elif lower.startswith("security-level "):
+                        _mark_explicit(interface, "security_level")
                         if interface.security_level is not None:
                             interface.source_attributes.setdefault("security_level_history", []).append(interface.security_level)
                         try:
@@ -1743,8 +1766,12 @@ class CiscoASAParser:
                             interface.requires_manual_review = True
                     elif lower == "no security-level":
                         interface.security_level = None
+                        _mark_explicit(interface, "security_level")
                         interface.source_attributes.setdefault("negated_commands", []).append(sub)
                     elif lower.startswith("vlan "):
+                        _mark_explicit(interface, "vlan_id")
+                        if len(parts) > 2 and parts[2].lower() == "secondary":
+                            _mark_explicit(interface, "secondary_vlan_ids", "secondary_vlan_ranges")
                         try:
                             explicit_vlan = int(parts[1])
                             interface.source_attributes["explicit_vlan_id"] = explicit_vlan
@@ -1758,23 +1785,28 @@ class CiscoASAParser:
                                         interface.secondary_vlan_ranges.append(value)
                                     elif value:
                                         raise ValueError
+                                _mark_explicit(interface, "secondary_vlan_ids", "secondary_vlan_ranges")
                             interface.interface_type = "subinterface"
                         except (IndexError, ValueError):
                             interface.extraction_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
-                            interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
+                            interface.raw_extra.setdefault("invalid_interface_settings", []).append(sanitize_raw_text(sub))
                     elif lower.startswith("channel-group "):
+                        _mark_explicit(interface, "channel_group", "channel_group_mode")
                         try:
                             interface.channel_group = int(parts[1])
                             interface.channel_group_mode = parts[3] if len(parts) >= 4 and parts[2].lower() == "mode" else None
+                            _mark_explicit(interface, "channel_group", "channel_group_mode")
                         except (IndexError, ValueError):
                             interface.extraction_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
-                            interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
+                            interface.raw_extra.setdefault("invalid_interface_settings", []).append(sanitize_raw_text(sub))
                     elif lower.startswith("member-interface "):
+                        _mark_explicit(interface, "redundant_interface_members")
                         interface.redundant_interface_members.append(parts[1])
                         interface.interface_type = "redundant"
                     elif lower.startswith("bridge-group "):
+                        _mark_explicit(interface, "bridge_group")
                         try:
                             interface.bridge_group = int(parts[1])
                             if interface.interface_type == "physical":
@@ -1782,8 +1814,9 @@ class CiscoASAParser:
                         except (IndexError, ValueError):
                             interface.extraction_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
-                            interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
+                            interface.raw_extra.setdefault("invalid_interface_settings", []).append(sanitize_raw_text(sub))
                     elif lower.startswith("mtu "):
+                        _mark_explicit(interface, "mtu")
                         try:
                             if interface.mtu is not None:
                                 interface.source_attributes.setdefault("mtu_history", []).append(interface.mtu)
@@ -1791,12 +1824,13 @@ class CiscoASAParser:
                         except (IndexError, ValueError):
                             interface.extraction_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
-                            interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
+                            interface.raw_extra.setdefault("invalid_interface_settings", []).append(sanitize_raw_text(sub))
                     elif lower.startswith(("routing-context ", "vrf forwarding ")):
+                        _mark_explicit(interface, "vrf" if lower.startswith("vrf forwarding ") else "routing_context")
                         if len(parts) != 2:
                             interface.extraction_status = "PARSE_ERROR"
                             interface.requires_manual_review = True
-                            interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
+                            interface.raw_extra.setdefault("invalid_interface_settings", []).append(sanitize_raw_text(sub))
                             i += 1
                             continue
                         _, value = sub.split(maxsplit=1)
@@ -1805,6 +1839,7 @@ class CiscoASAParser:
                         else:
                             interface.routing_context = value
                     elif lower.startswith("ip address "):
+                        _mark_explicit(interface, "ip_mode", "ip", "mask", "standby_ip", "dhcp_setroute")
                         interface.source_attributes.setdefault("ip_address_history", []).append(sub)
                         if len(parts) >= 3 and parts[2].lower() == "dhcp":
                             interface.ip_mode = "dhcp"
@@ -1815,14 +1850,17 @@ class CiscoASAParser:
                             if len(parts) >= 6 and parts[4].lower() == "standby":
                                 interface.standby_ip = parts[5]
                             elif len(parts) > 4:
-                                interface.source_attributes.setdefault("unmodeled_ip_address_tokens", []).extend(parts[4:])
+                                interface.raw_extra.setdefault("unmodeled_ip_address_tokens", []).extend(map(sanitize_raw_text, parts[4:]))
                     elif lower.startswith("ipv6 address "):
+                        _mark_explicit(interface, "ipv6_autoconfig", "ipv6_dhcp", "ipv6_dhcp_setroute", "ipv6_addresses")
                         args = parts[2:]
                         if args and args[0].lower() == "autoconfig":
                             interface.ipv6_autoconfig = True
+                            _mark_explicit(interface, "ipv6_autoconfig")
                         elif args and args[0].lower() == "dhcp":
                             interface.ipv6_dhcp = True
                             interface.ipv6_dhcp_setroute = "setroute" in {p.lower() for p in args[1:]}
+                            _mark_explicit(interface, "ipv6_dhcp", "ipv6_dhcp_setroute")
                         elif args:
                             try:
                                 address = str(ipaddress.IPv6Interface(args[0]))
@@ -1836,65 +1874,66 @@ class CiscoASAParser:
                                     address=address, standby=standby, eui64=eui64,
                                     link_local=link_local, raw=sub,
                                 ))
+                                _mark_explicit(interface, "ipv6_addresses")
                             except (ValueError, IndexError):
                                 interface.extraction_status = "PARSE_ERROR"
                                 interface.requires_manual_review = True
-                                interface.source_attributes.setdefault("invalid_ipv6_addresses", []).append(sub)
+                                interface.raw_extra.setdefault("invalid_ipv6_addresses", []).append(sanitize_raw_text(sub))
                     elif lower.startswith("tunnel source ") and len(parts) >= 3:
+                        _mark_explicit(interface, "tunnel_source")
                         interface.tunnel_source = " ".join(parts[2:])
                     elif lower.startswith("tunnel destination ") and len(parts) >= 3:
+                        _mark_explicit(interface, "tunnel_destination")
                         interface.tunnel_destination = parts[2]
                     elif lower.startswith("tunnel protection ipsec profile ") and len(parts) >= 5:
+                        _mark_explicit(interface, "ipsec_profile")
                         interface.ipsec_profile = parts[4]
                         interface.source_attributes["route_based_vpn"] = True
                         interface.extraction_status = "PARTIAL"
                         interface.requires_manual_review = True
                     elif lower == "management-only":
                         interface.management_only = True
+                        _mark_explicit(interface, "management_only")
                     elif lower.startswith("description "):
                         interface.description = sub.split(maxsplit=1)[1]
+                        _mark_explicit(interface, "description")
                     elif lower.startswith("policy-route route-map "):
+                        _mark_explicit(interface, "policy_route_maps")
                         parts = sub.split()
                         if len(parts) == 3:
                             interface.policy_route_maps.append(parts[2])
+                            _mark_explicit(interface, "policy_route_maps")
                         else:
-                            interface.source_attributes.setdefault("invalid_routing_settings", []).append(sub)
+                            interface.raw_extra.setdefault("invalid_routing_settings", []).append(sanitize_raw_text(sub))
                     elif lower.startswith("zone-member "):
+                        _mark_explicit(interface, "traffic_zone_members")
                         if len(parts) == 2:
                             if parts[1] not in interface.traffic_zone_members:
                                 interface.traffic_zone_members.append(parts[1])
+                            _mark_explicit(interface, "traffic_zone_members")
                         else:
-                            interface.source_attributes.setdefault("invalid_interface_settings", []).append(sub)
+                            interface.raw_extra.setdefault("invalid_interface_settings", []).append(sanitize_raw_text(sub))
                     elif lower == "shutdown":
                         interface.shutdown = True
                         interface.administrative_state = "down"
-                        interface.administrative_state_explicit = "down"
+                        _mark_explicit(interface, "shutdown", "administrative_state")
                     elif lower == "no shutdown":
                         interface.shutdown = False
                         interface.administrative_state = "up"
-                        interface.administrative_state_explicit = "up"
+                        _mark_explicit(interface, "shutdown", "administrative_state")
                     elif lower == "no ip address":
                         interface.ip = interface.mask = interface.ip_mode = interface.standby_ip = None
+                        _mark_explicit(interface, "ip", "mask", "ip_mode", "standby_ip")
                         interface.source_attributes.setdefault("negated_commands", []).append(sub)
                     else:
-                        interface.source_attributes.setdefault("unmodeled_lines", []).append(sub)
+                        interface.raw_extra.setdefault("unmodeled_lines", []).append(sanitize_raw_text(sub))
                     i += 1
                 if interface.ip_mode == "static" and normalize_ipv4_network(interface.ip or "", interface.mask or "") is None:
                     interface.extraction_status = "PARSE_ERROR"
                     interface.requires_manual_review = True
                     interface.source_attributes["invalid_ip_address"] = f"{interface.ip or ''} {interface.mask or ''}".strip()
                     self._record_diagnostic(line_number, line, "Invalid interface IPv4 address/netmask", "interface", interface.name)
-                interface.administrative_state_effective = (
-                    interface.administrative_state_explicit
-                    or _asa_interface_default_state(interface.interface_type)
-                )
-                interface.administrative_state = interface.administrative_state_effective
-                interface.shutdown = interface.administrative_state_effective == "down"
-                interface.source_attributes.update({
-                    "administrative_state_explicit": interface.administrative_state_explicit,
-                    "administrative_state_effective": interface.administrative_state_effective,
-                })
-                if interface.source_attributes.get("unmodeled_lines"):
+                if interface.raw_extra.get("unmodeled_lines"):
                     interface.requires_manual_review = True
                     interface.extraction_status = "PARTIAL"
                 if interface.dhcp_setroute or interface.ipv6_dhcp_setroute or interface.management_only or interface.ipv6_addresses:
@@ -2320,6 +2359,15 @@ class CiscoASAParser:
                 for acl_name in rule.match_acls:
                     self._record_acl_consumer(acl_name, "route-map", line_number, line)
                 continue
+            global_mtu = re.fullmatch(r"mtu\s+(\S+)\s+(\d+)", line, re.I) if not raw[:1].isspace() else None
+            if global_mtu:
+                pending_global_mtu.append({
+                    "target": global_mtu.group(1), "value": int(global_mtu.group(2)),
+                    "line_number": line_number, "raw_command": sanitize_raw_text(line),
+                    "source_context": self._line_contexts.get(line_number),
+                })
+                i += 1
+                continue
             if not raw[:1].isspace() and re.match(r"^(?:class-map|policy-map|tcp-map)\b", line, re.IGNORECASE):
                 i += 1
                 while i < len(lines) and lines[i][:1].isspace() and not lines[i].strip().startswith("!"):
@@ -2336,105 +2384,21 @@ class CiscoASAParser:
             self._record_unsupported(line_number, line, "No Cisco ASA extraction handler")
             i += 1
         self._parse_source_only_records(lines)
-        apply_reference_issues(self.config, validate_references(self.config))
-        self._compute_object_nat_order()
-        return self.config
-
-    def _compute_object_nat_order(self) -> None:
-        """Resolve Section 2 precedence after all network objects are known."""
-        objects = {(item.source_context, item.name): item for item in self.config.network_objects}
-        for rule in self.config.nat_rules:
-            if rule.section != "object":
-                rule.effective_source_order = (
-                    rule.section_order or 0
-                ) * 1_000_000 + (rule.sequence if rule.sequence is not None else rule.source_order_within_section or 0)
-                continue
-
-            owner = objects.get((rule.source_context, rule.owning_object or ""))
-            details: Dict[str, Any] = {
-                "section": rule.section,
-                "source_mode": rule.source_mode,
-                "real_source": rule.real_source,
-                "owning_object": rule.owning_object,
-                "object_name": rule.owning_object,
-                "source_order": rule.source_order,
-                "source_order_within_section": rule.source_order_within_section,
-                "static_before_dynamic": rule.source_mode == "static",
-            }
-            if rule.source_mode not in {"static", "dynamic"}:
-                rule.object_nat_precedence = None
-                rule.object_nat_specificity = None
-                rule.requires_manual_review = True
-                if rule.extraction_status != "PARSE_ERROR":
-                    rule.extraction_status = "PARTIAL"
-                rule.review_reasons.append("Object NAT type is unresolved")
-            elif owner is None or owner.type is None or owner.value is None or owner.extraction_status == "PARSE_ERROR":
-                rule.object_nat_precedence = 0 if rule.source_mode == "static" else 1
-                rule.object_nat_specificity = None
-                rule.requires_manual_review = True
-                if rule.extraction_status != "PARSE_ERROR":
-                    rule.extraction_status = "PARTIAL"
-                rule.review_reasons.append("Object NAT owning object is missing or malformed")
+        for command in pending_global_mtu:
+            candidates = [item for item in self.config.interfaces
+                          if getattr(item, "source_context", None) == command["source_context"]
+                          and command["target"].casefold() in {item.name.casefold(), (item.nameif or "").casefold()}]
+            if len(candidates) == 1:
+                interface = candidates[0]
+                if interface.mtu is not None and interface.mtu != command["value"]:
+                    interface.source_attributes.setdefault("mtu_history", []).append(interface.mtu)
+                interface.mtu = command["value"]
+                interface.source_attributes.setdefault("global_mtu_commands", []).append(command["raw_command"])
+                _mark_explicit(interface, "mtu")
+                interface.source_attributes.setdefault("mtu_source_history", []).append(command)
             else:
-                details["address_kind"] = owner.type
-                if owner.type == "fqdn":
-                    rule.object_nat_specificity = None
-                    rule.requires_manual_review = True
-                    if rule.extraction_status != "PARSE_ERROR":
-                        rule.extraction_status = "PARTIAL"
-                    rule.review_reasons.append("FQDN object NAT address size and lowest IP are unresolved")
-                else:
-                    try:
-                        if owner.type == "host":
-                            address = ipaddress.ip_address(owner.value)
-                            quantity, lowest, specificity = 1, int(address), address.max_prefixlen
-                        elif owner.type == "subnet":
-                            network = ipaddress.ip_network(owner.value, strict=False)
-                            quantity, lowest, specificity = network.num_addresses, int(network.network_address), network.prefixlen
-                        elif owner.type == "range":
-                            start, end = (ipaddress.ip_address(value) for value in owner.value.split("-", 1))
-                            if start.version != end.version or int(start) > int(end):
-                                raise ValueError("invalid address range")
-                            quantity, lowest, specificity = int(end) - int(start) + 1, int(start), None
-                        else:
-                            raise ValueError("unsupported address type")
-                        details.update({
-                            "address_quantity": quantity,
-                            "lowest_real_ip": str(ipaddress.ip_address(lowest)),
-                            "lowest_real_ip_int": lowest,
-                            "address_prefix_length": specificity,
-                        })
-                        rule.object_nat_specificity = quantity
-                    except ValueError:
-                        rule.requires_manual_review = True
-                        if rule.extraction_status != "PARSE_ERROR":
-                            rule.extraction_status = "PARTIAL"
-                        rule.review_reasons.append("Object NAT owning object address characteristics are unresolved")
-                rule.object_nat_precedence = 0 if rule.source_mode == "static" else 1
-
-            details.update({
-                "object_nat_precedence": rule.object_nat_precedence,
-                "object_nat_specificity": rule.object_nat_specificity,
-            })
-            rule.effective_order_inputs = details
-
-        def key(rule: CiscoNATRule) -> tuple:
-            if rule.section == "manual":
-                return (1, rule.sequence if rule.sequence is not None else 1_000_000, rule.source_order or 0)
-            if rule.section == "object":
-                inputs = rule.effective_order_inputs
-                quantity = inputs.get("address_quantity", 2**129)
-                lowest = inputs.get("lowest_real_ip_int", 2**129)
-                return (
-                    2, rule.object_nat_precedence if rule.object_nat_precedence is not None else 2,
-                    quantity,
-                    lowest,
-                    (rule.owning_object or "").casefold(), rule.source_order or 0,
-                )
-            return (3, rule.sequence if rule.sequence is not None else 1_000_000, rule.source_order or 0)
-
-        for index, rule in enumerate(sorted(self.config.nat_rules, key=key), 1):
-            rule.effective_source_order = index
+                self._record_unsupported(command["line_number"], command["raw_command"], "Global MTU target is unresolved or ambiguous")
+        return self.config
 
     def _parse_route_line(self, line: str) -> Tuple[Optional[CiscoStaticRoute], Optional[str]]:
         tokens = line.split()
@@ -2449,7 +2413,7 @@ class CiscoASAParser:
             destination, mask, gateway = tokens[index + 1], None, tokens[index + 2]
             index += 3
             try:
-                destination = str(ipaddress.IPv6Network(destination, strict=False))
+                ipaddress.IPv6Network(destination, strict=False)
                 ipaddress.IPv6Address(gateway)
             except ValueError:
                 return CiscoStaticRoute(
@@ -2469,6 +2433,7 @@ class CiscoASAParser:
         route = CiscoStaticRoute(
             interface=interface, destination=destination, mask=mask, gateway=gateway,
             address_family="ipv6" if ipv6 else "ipv4", raw_line=line,
+            explicit_fields=["interface", "destination", "gateway", "address_family"] + ([] if ipv6 else ["mask"]),
         )
         if not ipv6 and normalize_ipv4_network(destination, mask or "") is None:
             route.extraction_status = "PARSE_ERROR"
@@ -2478,15 +2443,19 @@ class CiscoASAParser:
             token = tokens[index].lower()
             if token.isdigit() and route.administrative_distance is None and index == 5:
                 route.administrative_distance = int(token)
+                _mark_explicit(route, "administrative_distance")
                 index += 1
             elif token == "track" and index + 1 < len(tokens) and tokens[index + 1].isdigit():
                 route.track_id = int(tokens[index + 1])
+                _mark_explicit(route, "track_id")
                 index += 2
             elif token == "tunneled":
                 route.tunneled = True
+                _mark_explicit(route, "tunneled")
                 index += 1
             else:
                 route.raw_options.append(tokens[index])
+                route.raw_extra.setdefault("unparsed_options", []).append(sanitize_raw_text(tokens[index]))
                 index += 1
         route.source_attributes.update({"source_line": line, "optional_tokens": tokens[index:]})
         if route.track_id is not None:
@@ -2495,17 +2464,32 @@ class CiscoASAParser:
             route.review_reasons.append("ASA tunneled route semantics require target review")
         if route.raw_options:
             route.review_reasons.append(f"Unparsed route options: {' '.join(route.raw_options)}")
-        route.effective_administrative_distance = route.administrative_distance if route.administrative_distance is not None else 1
-        route.source_attributes.update({
-            "configured_administrative_distance": route.administrative_distance,
-            "effective_administrative_distance": route.effective_administrative_distance,
-        })
         if route.review_reasons:
             route.extraction_status = "PARTIAL"
             route.requires_manual_review = True
         return route, None
 
     def _parse_nat_line(self, line: str, line_number: int, owning_object: Optional[str] = None) -> None:
+        legacy = re.fullmatch(r"nat\s+\(([^,)]+)\)\s+0\s+access-list\s+(\S+)(?:\s+(.*))?", line.strip(), re.I)
+        if legacy and owning_object is None:
+            interface_name, acl_name, remainder = legacy.groups()
+            self._nat_section_counts["manual"] = self._nat_section_counts.get("manual", 0) + 1
+            extras = remainder.split() if remainder else []
+            rule = CiscoNATRule(
+                name=f"nat_legacy_exemption_{line_number}", source_interface=interface_name.strip(),
+                section="manual", section_order=1, syntax_family="legacy-exemption", sequence=0,
+                source_sequence=0, source_order=line_number,
+                source_order_within_section=self._nat_section_counts["manual"], access_list=acl_name,
+                identity_nat=True, nat_exemption=True, raw_line=line, raw_options=extras,
+                extraction_status="SOURCE_ONLY", requires_manual_review=True,
+                review_reasons=["ASA legacy NAT exemption is preserved as source-only access-list semantics"],
+                source_attributes={"raw_command": sanitize_raw_text(line), "legacy_nat": True},
+                explicit_fields=["source_interface", "section", "section_order", "syntax_family", "sequence", "source_sequence", "source_order", "source_order_within_section", "access_list", "identity_nat", "nat_exemption"],
+                raw_extra={"unparsed_tokens": [sanitize_raw_text(token) for token in extras]} if extras else {},
+            )
+            self.config.nat_rules.append(self._with_source_context(rule, line_number))
+            self._record_acl_consumer(acl_name, "nat-exemption", line_number, line)
+            return
         match = re.match(r"^nat(?:\s+\(([^,]*),([^)]*)\))?\s+(.+)$", line, re.IGNORECASE)
         if not match:
             self._record_diagnostic(line_number, line, "Malformed NAT statement", "nat")
@@ -2529,6 +2513,11 @@ class CiscoASAParser:
             raw_line=line,
             source_attributes={"raw_command": line},
         )
+        _mark_explicit(rule, "section", "syntax_family", "source_order", "source_order_within_section", "section_order")
+        if src_if is not None or match.group(1) is not None:
+            _mark_explicit(rule, "source_interface", "destination_interface")
+        if sequence is not None:
+            _mark_explicit(rule, "sequence", "source_sequence")
         index = 0
 
         def parse_mapped_source(position: int) -> int:
@@ -2539,13 +2528,16 @@ class CiscoASAParser:
             if lower == "interface":
                 rule.mapped_source_mode = "interface"
                 rule.mapped_source = "interface"
+                _mark_explicit(rule, "mapped_source_mode", "mapped_source")
                 position += 1
                 if position < len(tail) and tail[position].lower() == "ipv6":
                     rule.mapped_source_address_family = "ipv6"
+                    _mark_explicit(rule, "mapped_source_address_family")
                     position += 1
                 return position
             if lower == "pat-pool":
                 rule.mapped_source_mode = "pat_pool"
+                _mark_explicit(rule, "mapped_source_mode", "pat_pool", "mapped_source")
                 if position + 1 < len(tail):
                     rule.pat_pool = tail[position + 1]
                     rule.mapped_source = rule.pat_pool
@@ -2554,16 +2546,19 @@ class CiscoASAParser:
                         "round-robin", "extended", "flat", "include-reserve", "block-allocation"
                     }:
                         rule.pat_pool_options.append(tail[position])
+                        _mark_explicit(rule, "pat_pool_options")
                         position += 1
                 return position
             rule.mapped_source_mode = rule.source_mode
             rule.mapped_source = token
+            _mark_explicit(rule, "mapped_source_mode", "mapped_source")
             return position + 1
 
         if owning_object:
             if index < len(tail) and tail[index].lower() in {"static", "dynamic"}:
                 rule.source_mode = tail[index].lower()
                 rule.real_source = owning_object
+                _mark_explicit(rule, "source_mode", "real_source", "owning_object")
                 index = parse_mapped_source(index + 1)
             else:
                 rule.review_reasons.append("Object NAT is missing static/dynamic translation mode")
@@ -2571,6 +2566,7 @@ class CiscoASAParser:
             if index + 2 < len(tail):
                 rule.source_mode = tail[index + 1].lower()
                 rule.real_source = tail[index + 2]
+                _mark_explicit(rule, "source_mode", "real_source")
                 index = parse_mapped_source(index + 3)
             else:
                 index = len(tail)
@@ -2582,6 +2578,7 @@ class CiscoASAParser:
                 # Cisco twice-NAT grammar is destination static MAPPED REAL.
                 rule.mapped_destination = tail[index + 2]
                 rule.real_destination = tail[index + 3]
+                _mark_explicit(rule, "destination_mode", "mapped_destination", "real_destination")
                 index += 4
             else:
                 rule.review_reasons.append("Incomplete NAT destination clause")
@@ -2592,10 +2589,12 @@ class CiscoASAParser:
                 rule.service_protocol = tail[index + 1].lower()
                 rule.original_service = tail[index + 2]
                 rule.translated_service = tail[index + 3]
+                _mark_explicit(rule, "service_protocol", "original_service", "translated_service")
                 index += 4
             elif index + 2 < len(tail):
                 rule.original_service = tail[index + 1]
                 rule.translated_service = tail[index + 2]
+                _mark_explicit(rule, "original_service", "translated_service")
                 index += 3
             else:
                 rule.review_reasons.append("Incomplete NAT service translation")
@@ -2610,14 +2609,24 @@ class CiscoASAParser:
             lower = token.lower()
             if lower == "description":
                 rule.description = " ".join(tail[index + 1:]) or None
+                _mark_explicit(rule, "description")
                 index = len(tail)
             elif lower in option_names:
                 rule.options.append(lower)
+                _mark_explicit(rule, "options")
+                option_field = {"dns": "dns", "no-proxy-arp": "no_proxy_arp", "route-lookup": "route_lookup",
+                                "unidirectional": "unidirectional", "inactive": "inactive", "net-to-net": "net_to_net"}.get(lower)
+                if option_field:
+                    _mark_explicit(rule, option_field)
+                elif lower in {"round-robin", "extended", "flat", "include-reserve", "block-allocation"}:
+                    _mark_explicit(rule, "pat_pool_options")
                 if lower in {"round-robin", "extended", "flat", "include-reserve", "block-allocation"}:
                     rule.pat_pool_options.append(lower)
+                    _mark_explicit(rule, "pat_pool_options")
                 index += 1
             else:
                 rule.raw_options.append(token)
+                rule.raw_extra.setdefault("unparsed_tokens", []).append(sanitize_raw_text(token))
                 index += 1
 
         rule.dns = "dns" in rule.options
@@ -2630,6 +2639,7 @@ class CiscoASAParser:
         if sequence == 0 and len(tail) >= 2 and tail[0].lower() == "access-list":
             rule.access_list = tail[1]
             rule.identity_nat = rule.nat_exemption = True
+            _mark_explicit(rule, "access_list", "identity_nat", "nat_exemption")
             rule.syntax_family = "legacy-exemption"
             rule.extraction_status = "SOURCE_ONLY"
             rule.requires_manual_review = True
@@ -2687,40 +2697,27 @@ class CiscoASAParser:
     def _parse_time_range_absolute_clause(cls, raw: str, source_order: int) -> Tuple[CiscoTimeRangeClause, Optional[str]]:
         parts = raw.split()
         clause = CiscoTimeRangeClause(clause_type="absolute", raw=raw, source_order=source_order)
-        if len(parts) < 2 or parts[1].lower() not in {"start", "end"}:
+        if not parts or parts[0].lower() != "absolute":
             return clause, "Malformed absolute time-range clause"
-
+        months = {name.lower(): number for number, name in enumerate(
+            ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"), 1
+        )}
         def timestamp(tokens: List[str]) -> Optional[str]:
-            if len(tokens) != 4 or not cls._validate_time_range_clock(tokens[0]):
-                return None
-            months = {name.lower(): number for number, name in enumerate(
-                ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"), 1
-            )}
-            if not tokens[1].isdigit() or tokens[2].lower() not in months or not tokens[3].isdigit():
-                return None
-            try:
-                date(int(tokens[3]), months[tokens[2].lower()], int(tokens[1]))
-            except ValueError:
-                return None
+            if len(tokens) != 4 or not cls._validate_time_range_clock(tokens[0]): return None
+            if not tokens[1].isdigit() or tokens[2].lower() not in months or not tokens[3].isdigit(): return None
+            year = int(tokens[3])
+            if not 1993 <= year <= 2035: return None
+            try: date(year, months[tokens[2].lower()], int(tokens[1]))
+            except ValueError: return None
             return " ".join(tokens)
-
-        index = 2
-        if parts[1].lower() == "start":
-            clause.start = timestamp(parts[index:index + 4])
-            if clause.start is None:
-                return clause, "Malformed absolute start value"
-            index += 4
-        elif parts[1].lower() == "end":
-            clause.end = timestamp(parts[index:index + 4])
-            if clause.end is None or index + 4 != len(parts):
-                return clause, "Malformed absolute end value"
-            return clause, None
-        if index < len(parts):
-            if parts[index].lower() != "end":
-                return clause, "Malformed absolute end value"
-            clause.end = timestamp(parts[index + 1:index + 5])
-            if clause.end is None or index + 5 != len(parts):
-                return clause, "Malformed absolute end value"
+        index, seen = 1, set()
+        while index < len(parts):
+            key = parts[index].lower()
+            if key not in {"start", "end"} or key in seen: return clause, "Malformed absolute time-range clause"
+            value = timestamp(parts[index + 1:index + 5])
+            if value is None: return clause, f"Malformed absolute {key} value"
+            setattr(clause, key, value)
+            seen.add(key); index += 5
         return clause, None
 
     @classmethod

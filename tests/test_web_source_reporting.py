@@ -18,6 +18,29 @@ ASA_SOURCE = (
 
 PALO_SOURCE = '<config><shared><address><entry name="web"><ip-netmask>203.0.113.10</ip-netmask><future-password>palo-web-secret</future-password></entry></address></shared></config>'
 CHECKPOINT_SOURCE = '{"format":"checkpoint-export-v1","domain":"SMC User","gateway":"CP-Enterprise-Gateway","selected_domain":"SMC User","selected_package":"Standard","selected_access_layer":"Network","selected_gateway":"CP-Enterprise-Gateway","responses":[{"command":"show-hosts","domain":"SMC User","data":{"objects":[{"name":"web","type":"host","ipv4-address":"203.0.113.10","password":"checkpoint-web-secret"}],"from":1,"to":1,"total":1}}]}'
+FORTIGATE_SOURCE = """config system interface
+    edit "port1"
+        set ip 192.0.2.1 255.255.255.0
+    next
+end
+config firewall policy
+    edit 1
+        set name "web"
+        set srcintf "port1"
+        set dstintf "port1"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set schedule "always"
+        set action accept
+    next
+end
+config router static
+    edit 1
+        set dst 0.0.0.0 0.0.0.0
+    next
+end
+"""
 
 
 def _post(client, path, **fields):
@@ -85,3 +108,22 @@ def test_check_point_upload_cached_preview_and_excel_redact_secrets():
     workbook = client.post("/api/extract/excel", data={"source_vendor": "checkpoint", "preview_id": payload["preview_id"]}, content_type="multipart/form-data")
     assert workbook.status_code == 200
     assert b"checkpoint-web-secret" not in response.data + workbook.data
+
+
+def test_fortigate_preview_exposes_policy_fields_and_overview_sections():
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post(
+        "/api/preview",
+        data={"source_vendor": "fortigate", "file": (io.BytesIO(FORTIGATE_SOURCE.encode()), "fortigate.conf")},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    report = response.get_json()
+    policy = report["sections"]["policies"][0]
+    assert policy["source_addresses"] == ["all"]
+    assert policy["destination_addresses"] == ["all"]
+    assert policy["schedule"] == "always"
+    assert len(report["sections"]["routes"]) == 1
+    assert report["sections"]["vpn_tunnels"] == []
+    assert report["sections"]["vpn_phase2"] == []
+    assert "unsupported_count" not in report["summary"]

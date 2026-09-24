@@ -41,6 +41,17 @@ def test_coverage_counts_include_new_typed_domains():
     assert counts["globalprotect_portal"] == 1
 
 
+def test_crypto_profiles_are_counted_in_registered_source_domains():
+    analysis = PaloAltoSourceReporter().analyze_source("""<config><shared><network><ike><crypto-profiles>
+      <ike-crypto-profiles><entry name='ike'/></ike-crypto-profiles>
+      <ipsec-crypto-profiles><entry name='ipsec'/></ipsec-crypto-profiles>
+    </crypto-profiles></ike></network></shared></config>""")
+    context = _PANExcelContext(analysis)
+    for domain in ("ike_crypto_profile", "ipsec_crypto_profile"):
+        assert (context.source_domains[domain], context.extracted_domains[domain]) == (1, 1)
+        assert _typed_counts(context)[domain] == 1
+
+
 def test_source_builder_initializes_all_registered_collections():
     config = build_panos_config("<config />")
     assert all(isinstance(getattr(config, collection), list) for collection in registered_typed_collections())

@@ -33,6 +33,7 @@ from fwmigrate.vendors.cisco_asa.model_phase10_17 import (
     CiscoTCPMapSetting,
     CiscoTrustpointRecord,
 )
+from fwmigrate.vendors.cisco_asa.parser import _parse_interface_header
 from fwmigrate.vendors.cisco_asa.reference_validation import ReferenceIssue
 
 
@@ -970,10 +971,10 @@ def _postprocess_interface_dhcprelay(self: Any) -> None:
     for index, raw in enumerate(lines):
         if raw[:1].isspace():
             continue
-        match = re.fullmatch(r"interface\s+(\S+)", raw.strip(), re.I)
-        if not match:
+        header = _parse_interface_header(raw.strip())
+        if not header:
             continue
-        interface_name = match.group(1)
+        interface_name = header["name"]
         interface_obj = next((item for item in self.config.interfaces if item.name == interface_name and getattr(item, "source_context", None) == self._line_contexts.get(index + 1)), None)
         for line_number, _, child, _ in _raw_child_rows(lines, index):
             server = re.fullmatch(r"dhcprelay\s+server\s+(\S+)", child, re.I)
@@ -993,7 +994,7 @@ def _postprocess_interface_dhcprelay(self: Any) -> None:
                     relay.review_reasons.append("DHCP relay server must be an IP address")
                     self._record_diagnostic(line_number, child, "Malformed DHCP relay server", "dhcprelay")
                 if interface_obj is not None:
-                    unmodeled = interface_obj.source_attributes.get("unmodeled_lines", [])
+                    unmodeled = interface_obj.raw_extra.get("unmodeled_lines", [])
                     if sanitize_raw_text(child) in unmodeled:
                         unmodeled.remove(sanitize_raw_text(child))
                 continue
@@ -1002,7 +1003,7 @@ def _postprocess_interface_dhcprelay(self: Any) -> None:
                 found = True
                 relay.options.append(f"{interface_name}: information {info.group(1)}")
                 if interface_obj is not None:
-                    unmodeled = interface_obj.source_attributes.get("unmodeled_lines", [])
+                    unmodeled = interface_obj.raw_extra.get("unmodeled_lines", [])
                     if sanitize_raw_text(child) in unmodeled:
                         unmodeled.remove(sanitize_raw_text(child))
     if found and relay not in self.config.dhcp_relays:
@@ -1195,102 +1196,6 @@ def _postprocess_http_server(self: Any) -> None:
         seen.add(safe)
 
 
-def _extend_reference_validation(original_validate: Any):
-    def validate(config: Any) -> List[ReferenceIssue]:
-        issues = list(original_validate(config))
-
-        def context_of(item: Any) -> Optional[str]:
-            return getattr(item, "source_context", None) or getattr(item, "source_attributes", {}).get("source_context")
-
-        def scoped(items: List[Any], name: str, context: Optional[str]) -> Optional[Any]:
-            return next((item for item in items if getattr(item, "name", None) == name and context_of(item) == context), None)
-
-        for class_map in config.class_maps:
-            context = context_of(class_map)
-            for match in class_map.matches:
-                if getattr(match, "match_type", None) != "class_map" or not getattr(match, "class_map_name", None):
-                    continue
-                target = scoped(config.class_maps, match.class_map_name, context)
-                match.resolved = target is not None
-                match.resolved_target_type = "class_map" if target is not None else None
-                if target is None:
-                    reason = f"Unresolved class map reference: {match.class_map_name}"
-                    if reason not in match.review_reasons:
-                        match.review_reasons.append(reason)
-                    class_map.requires_manual_review = True
-                    if class_map.extraction_status != "PARSE_ERROR":
-                        class_map.extraction_status = "PARTIAL"
-                    issues.append(ReferenceIssue("class_map", class_map.name, match.class_map_name, False, "Unresolved class map reference", context, "class-map"))
-
-        for policy in config.policy_maps:
-            if getattr(policy, "policy_map_type", None) != "inspect":
-                continue
-            context = context_of(policy)
-            for section in getattr(policy, "inspection_sections", []):
-                if section.kind != "class" or not section.class_name:
-                    continue
-                target = scoped(config.class_maps, section.class_name, context)
-                if target is None:
-                    policy.requires_manual_review = True
-                    if policy.extraction_status != "PARSE_ERROR":
-                        policy.extraction_status = "PARTIAL"
-                    issues.append(ReferenceIssue("class_map", policy.name, section.class_name, False, "Unresolved inspection class map reference", context, section.class_name))
-
-        if config.dns_settings.default_server_group:
-            name = config.dns_settings.default_server_group
-            resolved = any(group.name == name and context_of(group) is None for group in config.dns_server_groups)
-            issues.append(ReferenceIssue("dns_server_group", config.dns_settings.name, name, resolved, "resolved" if resolved else "Unresolved DNS server group reference", None, "dns-group"))
-
-        for tunnel in config.tunnel_groups:
-            if not tunnel.trustpoint:
-                continue
-            context = context_of(tunnel)
-            resolved = any(record.name == tunnel.trustpoint and record.source_context == context for record in config.trustpoint_records)
-            if not resolved:
-                issues.append(ReferenceIssue("trustpoint", tunnel.name, tunnel.trustpoint, False, "Unresolved context-local trustpoint reference", context, "vpn"))
-
-        admin_name = config.multi_context_system.admin_context_name
-        if admin_name:
-            resolved = any(context.name == admin_name for context in config.contexts)
-            issues.append(ReferenceIssue("context", "admin-context", admin_name, resolved, "resolved" if resolved else "Unresolved admin context reference", None, "system"))
-
-        system_interfaces = {
-            item.name for item in config.interfaces if context_of(item) is None
-        }
-        system_interfaces.update(
-            item.nameif for item in config.interfaces if context_of(item) is None and getattr(item, "nameif", None)
-        )
-        for context in config.contexts:
-            for entry in getattr(context, "allocated_interface_entries", []):
-                if entry.range_expression:
-                    entry.resolved = None
-                    entry.review_reasons.append("Interface range resolution requires platform-specific expansion")
-                    continue
-                entry.resolved = entry.physical_interface in system_interfaces
-                if not entry.resolved:
-                    entry.review_reasons.append(f"Unresolved allocated interface: {entry.physical_interface}")
-                    context.requires_manual_review = True
-                    issues.append(ReferenceIssue("interface", context.name, entry.physical_interface, False, "Unresolved allocated interface reference", None, "allocate-interface"))
-        return issues
-    return validate
-
-
-def _parse_raw_phase(self: Any) -> Any:
-    config = _ORIGINALS["parse_raw"](self)
-    _postprocess_dns(self)
-    _postprocess_interface_dhcprelay(self)
-    _postprocess_trustpoints(self)
-    _postprocess_contexts(self)
-    _postprocess_failover_groups(self)
-    _postprocess_no_service_policies(self)
-    _postprocess_http_server(self)
-    # Enrichment above adds references that do not exist during the first
-    # validation pass in the legacy parser.
-    import fwmigrate.vendors.cisco_asa.parser as parser_module
-    parser_module.apply_reference_issues(self.config, parser_module.validate_references(self.config))
-    return self.config
-
-
 def apply_phase_10_17_patches(parser_cls: Any) -> None:
     """Install the Phase 10-17 compatibility extension on CiscoASAParser.
 
@@ -1307,7 +1212,6 @@ def apply_phase_10_17_patches(parser_cls: Any) -> None:
 
     _ORIGINALS["parse_raw"] = parser_cls.parse_raw
     _ORIGINALS["management"] = parser_cls._parse_management_command
-    _ORIGINALS["validate_references"] = parser_module.validate_references
 
     # Replace parser-module model symbols so the existing parser creates the
     # extended Pydantic models in all legacy code paths as well.
@@ -1327,7 +1231,6 @@ def apply_phase_10_17_patches(parser_cls: Any) -> None:
     parser_module.CiscoNTPServer = CiscoNTPServerPhase14
     parser_module.CiscoFailoverGroup = CiscoFailoverGroupPhase15
 
-    parser_module.validate_references = _extend_reference_validation(parser_module.validate_references)
 
     parser_cls._build_context_ownership = staticmethod(_build_context_ownership_phase)
     parser_cls._parse_class_map_block = _parse_class_map_block_phase

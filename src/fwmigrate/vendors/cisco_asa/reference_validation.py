@@ -5,6 +5,8 @@ import ipaddress
 import re
 from typing import Any, Dict, Iterable, List, Optional, Set
 
+from .relationships.references import ASAReferenceIndex, ASAReferenceKind, ASAReferenceStatus, build_asa_reference_index, source_context_of
+
 
 @dataclass(frozen=True)
 class ReferenceIssue:
@@ -25,68 +27,18 @@ def _index(items: Iterable[Any]) -> Dict[str, Any]:
 
 
 def _source_context(item: Any) -> Optional[str]:
-    return getattr(item, "source_context", None) or getattr(item, "source_attributes", {}).get("source_context")
+    return source_context_of(item)
 
 
 def _entry_get(entry: Any, key: str, default: Any = None) -> Any:
     return entry.get(key, default) if isinstance(entry, dict) else getattr(entry, key, default)
 
 
-def _entry_set(entry: Any, key: str, value: Any) -> None:
-    if isinstance(entry, dict):
-        entry[key] = value
-    else:
-        setattr(entry, key, value)
-
-
-def _entry_reason(entry: Any, reason: str) -> None:
-    reasons = _entry_get(entry, "review_reasons")
-    if reasons is not None and reason not in reasons:
-        reasons.append(reason)
-
-
-def build_reference_indexes(config: Any, source_context: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
-    def scoped(items: Iterable[Any]) -> Iterable[Any]:
-        return (item for item in items if _source_context(item) == source_context)
-
-    interfaces = _index(scoped(config.interfaces))
-    interfaces.update({item.nameif: item for item in scoped(config.interfaces) if getattr(item, "nameif", None)})
-    return {
-        "network_object": _index(scoped(config.network_objects)),
-        "network_group": _index(scoped(config.network_groups)),
-        "service_object": _index(scoped(config.service_objects)),
-        "service_group": _index(scoped(config.service_groups)),
-        "protocol_group": _index(scoped(config.protocol_groups)),
-        "icmp_group": _index(scoped(config.icmp_type_groups)),
-        "acl": {name: name for name in {item.acl_name for item in scoped(config.access_rules)}},
-        "time_range": _index(scoped(config.time_ranges)),
-        "route_map": _index(scoped(config.route_maps)),
-        "interface": interfaces,
-        "nameif": {item.nameif: item for item in scoped(config.interfaces) if item.nameif},
-        "traffic_zone": _index(scoped(config.traffic_zones)),
-        "ike_policy": _index(scoped(config.ike_policies)),
-        "ikev2_proposal": _index(scoped(config.ikev2_proposals)),
-        "ipsec_transform_set": _index(scoped(config.ipsec_transform_sets)),
-        "vpn_address_pool": _index(scoped(config.vpn_address_pools)),
-        "trustpoint": {name: name for name in config.trustpoints},
-        "crypto_map": _index(scoped(config.crypto_maps)),
-        "tunnel_group": _index(scoped(config.tunnel_groups)),
-        "group_policy": _index(scoped(config.group_policies)),
-        "class_map": _index(scoped(config.class_maps)),
-        "policy_map": _index(scoped(config.policy_maps)),
-        "tcp_map": _index(scoped(config.tcp_maps)),
-        "dns_server_group": _index(scoped(config.dns_server_groups)),
-        "aaa_server_group": _index(scoped(config.aaa_server_groups)) or {
-            item.name: item for item in scoped(config.aaa_records)
-            if item.source_attributes.get("raw_command", "").lower().startswith("aaa-server ")
-        },
-        "route_tracking": {str(item.track_id): item for item in config.tracks} or {str(track_id): track_id for track_id in config.route_tracking_ids},
-        "sla_monitor": {str(item.sla_id): item for item in config.sla_monitors},
-    }
-
-
-def _issue(kind: str, source: str, name: str, indexes: Dict[str, Dict[str, Any]], source_context: Optional[str] = None, reference_context: Optional[str] = None) -> ReferenceIssue:
-    resolved = name in indexes[kind]
+def _issue(kind: str, source: str, name: str, source_context: Optional[str], reference_context: Optional[str], references: ASAReferenceIndex) -> ReferenceIssue:
+    result = references.resolve(source_context, ASAReferenceKind(kind), name)
+    if result.status is ASAReferenceStatus.AMBIGUOUS:
+        return ReferenceIssue(kind, source, name, False, f"Ambiguous {kind.replace('_', ' ')} reference", source_context, reference_context)
+    resolved = result.status is ASAReferenceStatus.RESOLVED
     return ReferenceIssue(
         kind, source, name, resolved,
         "resolved" if resolved else f"Unresolved {kind.replace('_', ' ')} reference",
@@ -95,7 +47,7 @@ def _issue(kind: str, source: str, name: str, indexes: Dict[str, Dict[str, Any]]
     )
 
 
-def _cycle_issues(kind: str, groups: Iterable[Any], indexes: Dict[str, Dict[str, Any]], source_context: Optional[str] = None) -> List[ReferenceIssue]:
+def _cycle_issues(kind: str, groups: Iterable[Any], source_context: Optional[str] = None) -> List[ReferenceIssue]:
     by_name = _index(groups)
     edges: Dict[str, List[str]] = {}
     for group in groups:
@@ -138,120 +90,29 @@ def _cycle_issues(kind: str, groups: Iterable[Any], indexes: Dict[str, Dict[str,
     return issues
 
 
-def derive_group_address_families(indexes: Dict[str, Dict[str, Any]]) -> Dict[str, Optional[str]]:
-    groups = indexes["network_group"]
-    resolved: Dict[str, Optional[str]] = {}
-    visiting: Set[str] = set()
-
-    def visit(name: str) -> Optional[str]:
-        if name in resolved:
-            return resolved[name]
-        if name in visiting:
-            return None
-        group = groups[name]
-        visiting.add(name)
-        families: Set[str] = set()
-        uncertain = False
-        for entry in group.member_entries:
-            kind = _entry_get(entry, "type")
-            if kind in {"host", "inline_network"}:
-                family = _entry_get(entry, "address_family")
-            elif kind == "network_object":
-                target = indexes["network_object"].get(_entry_get(entry, "value"))
-                family = getattr(target, "address_family", None) if target is not None else None
-                uncertain = uncertain or target is None or family is None
-            elif kind == "network_group":
-                target_name = _entry_get(entry, "value")
-                target = groups.get(target_name)
-                family = visit(target_name) if target is not None else None
-                uncertain = uncertain or target is None or family is None
-            else:
-                continue
-            if family == "mixed":
-                families.update({"ipv4", "ipv6"})
-            elif family in {"ipv4", "ipv6"}:
-                families.add(family)
-            else:
-                uncertain = True
-        visiting.remove(name)
-        family = None if uncertain else (next(iter(families)) if len(families) == 1 else "mixed" if families else None)
-        resolved[name] = family
-        return family
-
-    for name in sorted(groups):
-        visit(name)
-    return resolved
-
-
 def validate_references(config: Any) -> List[ReferenceIssue]:
-    collections = (
-        config.interfaces, config.traffic_zones, config.network_objects, config.network_groups,
-        config.service_objects, config.service_groups, config.protocol_groups,
-        config.icmp_type_groups, config.access_rules, config.acl_bindings,
-        config.time_ranges, config.route_maps, config.crypto_maps,
-        config.ike_policies, config.ikev2_proposals, config.ipsec_transform_sets,
-        config.vpn_address_pools, config.tunnel_groups, config.group_policies,
-        config.class_maps, config.policy_maps, config.tcp_maps,
-        config.dns_server_groups, config.aaa_server_groups,
-        config.aaa_server_hosts, config.aaa_records, config.local_users,
-        config.aaa_authentication_rules, config.aaa_authorization_rules,
-        config.aaa_accounting_rules, config.dhcp_servers, config.dhcp_relays,
-        config.ntp_servers, config.management_access_rules, config.icmp_management_rules, config.snmp_settings,
-        config.logging_settings, config.tracks, config.sla_monitors,
-    )
-    source_contexts = {None}
-    for collection in collections:
-        source_contexts.update(_source_context(item) for item in collection)
-    scoped_indexes = {context: build_reference_indexes(config, context) for context in source_contexts}
-    indexes = dict(scoped_indexes[None])
+    reference_index = build_asa_reference_index(config)
+    source_contexts = sorted(set(reference_index.contexts) | {None}, key=lambda value: (value is not None, value or ""))
     active_source_context: Optional[str] = None
 
     def select_context(source_context: Optional[str]) -> None:
         nonlocal active_source_context
-        indexes.clear()
-        indexes.update(scoped_indexes.get(source_context, scoped_indexes[None]))
         active_source_context = source_context
 
     issues: List[ReferenceIssue] = []
 
     def add(kind: str, source: str, name: Optional[str], context: Optional[str] = None) -> None:
         if name and name not in {"any", "any4", "any6"}:
-            issues.append(_issue(kind, source, name, indexes, active_source_context, context))
+            issues.append(_issue(kind, source, name, active_source_context, context, reference_index))
 
-    # Resolve interface topology only after every interface block is parsed.
-    interface_by_name = {item.name.casefold(): item for item in config.interfaces}
-    port_channels = {item.name.casefold() for item in config.interfaces if item.interface_type == "port-channel"}
-    redundant_members: Dict[str, List[str]] = {}
-    for item in config.interfaces:
-        context = _source_context(item)
-        if item.parent_interface and item.parent_interface.casefold() not in interface_by_name:
-            issues.append(ReferenceIssue("interface", item.name, item.parent_interface, False, "Unresolved subinterface parent reference", context, "parent-interface"))
-        if item.channel_group is not None:
-            target = f"Port-channel{item.channel_group}"
-            if target.casefold() not in port_channels:
-                issues.append(ReferenceIssue("interface", item.name, target, False, "Unresolved Port-channel reference", context, "channel-group"))
-        if item.redundant_interface_members:
-            redundant_members.setdefault(context or "", []).extend(item.redundant_interface_members)
-            for member in item.redundant_interface_members:
-                if member.casefold() not in interface_by_name:
-                    issues.append(ReferenceIssue("interface", item.name, member, False, "Unresolved redundant-interface member reference", context, "member-interface"))
-        if item.interface_type == "bridge-member" and item.bridge_group is not None:
-            target = f"BVI{item.bridge_group}"
-            if target.casefold() not in interface_by_name:
-                issues.append(ReferenceIssue("interface", item.name, target, False, "Unresolved bridge-group BVI reference", context, "bridge-group"))
-        for zone_name in getattr(item, "traffic_zone_members", []):
-            select_context(context)
-            add("traffic_zone", item.name, zone_name, "zone-member")
-    for zone in config.traffic_zones:
-        select_context(_source_context(zone))
-        for member in zone.members:
-            add("interface", zone.name, member, "zone-member")
-    for context, members in redundant_members.items():
-        seen: set[str] = set()
-        for member in members:
-            if member.casefold() in seen:
-                issues.append(ReferenceIssue("interface", member, member, False, "Duplicate redundant-interface membership", context or None, "member-interface"))
-            seen.add(member.casefold())
+    from .relationships.interface_topology import build_asa_interface_topology
+    topology = build_asa_interface_topology(config, reference_index)
+    issues.extend(ReferenceIssue(issue.reference_kind.value, issue.source_object, issue.reference_name,
+                                 issue.status is ASAReferenceStatus.RESOLVED, issue.reason,
+                                 issue.source_context, issue.reference_context) for issue in topology.issues)
+    issues.extend(ReferenceIssue(duplicate.reference_kind.value, duplicate.source_name, duplicate.source_name,
+                                 False, f"Duplicate {duplicate.reference_kind.value} definition",
+                                 duplicate.source_context) for duplicate in reference_index.duplicates)
 
     for group in config.network_groups:
         select_context(_source_context(group))
@@ -262,11 +123,12 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
                 add(kind, group.name, name)
         if not group.member_entries:
             for name in group.members:
-                add("network_group" if name in indexes["network_group"] else "network_object", group.name, name)
+                group_ref = reference_index.resolve(_source_context(group), ASAReferenceKind.NETWORK_GROUP, name)
+                add("network_group" if group_ref.status is not ASAReferenceStatus.UNRESOLVED else "network_object", group.name, name)
 
     for source_context in source_contexts:
         select_context(source_context)
-        families = derive_group_address_families(indexes)
+        families = reference_index.group_address_families(source_context)
         for group in config.network_groups:
             if _source_context(group) != source_context:
                 continue
@@ -287,7 +149,8 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
                     add(kind, group.name, name)
         else:
             for name in group.members:
-                add("service_group" if name in indexes["service_group"] else "service_object", group.name, name)
+                group_ref = reference_index.resolve(_source_context(group), ASAReferenceKind.SERVICE_GROUP, name)
+                add("service_group" if group_ref.status is not ASAReferenceStatus.UNRESOLVED else "service_object", group.name, name)
         for member in group.service_objects:
             for port in (member.destination, member.source):
                 if port and port.operator in {"object", "object-group"}:
@@ -319,7 +182,8 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
         select_context(_source_context(rule))
         add("time_range", rule.acl_name, rule.time_range)
         if rule.time_range:
-            schedule = indexes["time_range"].get(rule.time_range)
+            schedule_result = reference_index.resolve(active_source_context, ASAReferenceKind.TIME_RANGE, rule.time_range)
+            schedule = schedule_result.target
             if schedule is not None and schedule.extraction_status == "PARSE_ERROR":
                 issues.append(ReferenceIssue(
                     "time_range", rule.acl_name, rule.time_range, True,
@@ -371,14 +235,7 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
             add("crypto_map", item.name, item.dynamic_map)
     for item in config.tunnel_groups:
         select_context(_source_context(item))
-        policy = item.default_group_policy or item.ipsec_attributes.get("default_group_policy")
-        if not policy:
-            for command in item.ipsec_attributes.get("raw_subcommands", []):
-                match = re.match(r"(?:default-)?group-policy\s+(\S+)", command, re.I)
-                if match:
-                    policy = match.group(1)
-                    break
-        add("group_policy", item.name, policy)
+        add("group_policy", item.name, item.default_group_policy)
         for pool in item.address_pools:
             add("vpn_address_pool", item.name, pool)
         add("trustpoint", item.name, item.trustpoint)
@@ -477,7 +334,14 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
                 continue
             except ValueError:
                 pass
-            add("network_object", nat.name, value, "nat")
+            object_ref = reference_index.resolve(active_source_context, ASAReferenceKind.NETWORK_OBJECT, value)
+            group_ref = reference_index.resolve(active_source_context, ASAReferenceKind.NETWORK_GROUP, value)
+            if object_ref.status is ASAReferenceStatus.RESOLVED or group_ref.status is ASAReferenceStatus.RESOLVED:
+                continue
+            if object_ref.status is ASAReferenceStatus.AMBIGUOUS or group_ref.status is ASAReferenceStatus.AMBIGUOUS:
+                issues.append(ReferenceIssue("network_object", nat.name, value, False, "Ambiguous NAT address operand", active_source_context, "nat"))
+            else:
+                issues.append(ReferenceIssue("network_object", nat.name, value, False, "Unresolved NAT address operand", active_source_context, "nat"))
     for track in config.tracks:
         select_context(_source_context(track))
         if track.sla_id is not None:
@@ -485,121 +349,10 @@ def validate_references(config: Any) -> List[ReferenceIssue]:
 
     for source_context in source_contexts:
         select_context(source_context)
-        issues.extend(_cycle_issues("network_group", [item for item in config.network_groups if _source_context(item) == source_context], indexes, source_context))
-        issues.extend(_cycle_issues("service_group", [item for item in config.service_groups if _source_context(item) == source_context], indexes, source_context))
-        issues.extend(_cycle_issues("protocol_group", [item for item in config.protocol_groups if _source_context(item) == source_context], indexes, source_context))
-        issues.extend(_cycle_issues("icmp_group", [item for item in config.icmp_type_groups if _source_context(item) == source_context], indexes, source_context))
+        issues.extend(_cycle_issues("network_group", [item for item in config.network_groups if _source_context(item) == source_context], source_context))
+        issues.extend(_cycle_issues("service_group", [item for item in config.service_groups if _source_context(item) == source_context], source_context))
+        issues.extend(_cycle_issues("protocol_group", [item for item in config.protocol_groups if _source_context(item) == source_context], source_context))
+        issues.extend(_cycle_issues("icmp_group", [item for item in config.icmp_type_groups if _source_context(item) == source_context], source_context))
     return issues
 
-
-def apply_reference_issues(config: Any, issues: List[ReferenceIssue]) -> None:
-    config.reference_issues = [issue.as_dict() for issue in issues]
-    for issue in issues:
-        invalid_schedule = (
-            issue.reference_type == "time_range"
-            and issue.resolved
-            and "contains parse errors" in issue.reason
-        )
-        if issue.resolved and not invalid_schedule:
-            continue
-        reason = issue.reason if issue.reason.startswith("Cycle detected") else f"{issue.reason}: {issue.reference_name}"
-        if issue.reference_type == "route_tracking":
-            for route in config.static_routes:
-                if route.track_id == int(issue.reference_name) and _source_context(route) == issue.source_context:
-                    route.extraction_status = "PARTIAL" if route.extraction_status != "PARSE_ERROR" else route.extraction_status
-                    route.requires_manual_review = True
-                    if reason not in route.review_reasons:
-                        route.review_reasons.append(reason)
-                    route.source_attributes.setdefault("reference_issues", []).append(issue.as_dict())
-            continue
-        if issue.reference_type == "class_map" and any(item.name == issue.source_object and _source_context(item) == issue.source_context for item in config.policy_maps):
-            policy = next(item for item in config.policy_maps if item.name == issue.source_object and _source_context(item) == issue.source_context)
-            policy.extraction_status = "PARTIAL" if policy.extraction_status != "PARSE_ERROR" else policy.extraction_status
-            policy.requires_manual_review = True
-            if reason not in policy.review_reasons:
-                policy.review_reasons.append(reason)
-            for section in policy.classes:
-                if section.class_name == issue.reference_context:
-                    section.extraction_status = "PARTIAL" if section.extraction_status != "PARSE_ERROR" else section.extraction_status
-                    section.requires_manual_review = True
-                    if reason not in section.review_reasons:
-                        section.review_reasons.append(reason)
-            continue
-        if issue.reference_type == "tcp_map" and any(item.name == issue.source_object and _source_context(item) == issue.source_context for item in config.policy_maps):
-            policy = next(item for item in config.policy_maps if item.name == issue.source_object and _source_context(item) == issue.source_context)
-            policy.extraction_status = "PARTIAL" if policy.extraction_status != "PARSE_ERROR" else policy.extraction_status
-            policy.requires_manual_review = True
-            if reason not in policy.review_reasons:
-                policy.review_reasons.append(reason)
-            for section in policy.classes:
-                if section.class_name == issue.reference_context:
-                    section.extraction_status = "PARTIAL" if section.extraction_status != "PARSE_ERROR" else section.extraction_status
-                    section.requires_manual_review = True
-                    if reason not in section.review_reasons:
-                        section.review_reasons.append(reason)
-            continue
-        if issue.reference_type == "acl" and issue.reference_context == "class-map":
-            item = next((item for item in config.class_maps if item.name == issue.source_object and _source_context(item) == issue.source_context), None)
-            if item is not None:
-                item.extraction_status = "PARTIAL" if item.extraction_status != "PARSE_ERROR" else item.extraction_status
-                item.requires_manual_review = True
-                if reason not in item.review_reasons:
-                    item.review_reasons.append(reason)
-                for match in item.matches:
-                    if match.acl_name == issue.reference_name:
-                        _entry_reason(match, reason)
-                continue
-        if issue.reference_type in {"policy_map", "interface"} and issue.reference_context == "service-policy":
-            matched = [
-                item for item in config.service_policies
-                if item.name == issue.source_object
-                and _source_context(item) == issue.source_context
-                and (issue.reference_type != "interface" or item.interface == issue.reference_name)
-            ]
-            for item in matched:
-                item.extraction_status = "PARTIAL" if item.extraction_status != "PARSE_ERROR" else item.extraction_status
-                item.requires_manual_review = True
-                if reason not in item.review_reasons:
-                    item.review_reasons.append(reason)
-            if matched:
-                continue
-        for collection in (config.network_groups, config.service_objects, config.service_groups, config.protocol_groups,
-                           config.icmp_type_groups, config.access_rules, config.acl_bindings,
-                           config.route_maps, config.interfaces, config.traffic_zones, config.crypto_maps,
-                           config.static_routes, config.nat_rules,
-                           config.tunnel_groups, config.group_policies, config.aaa_records,
-                           config.aaa_server_groups, config.aaa_server_hosts, config.local_users,
-                           config.aaa_authentication_rules, config.aaa_authorization_rules,
-                           config.aaa_accounting_rules, config.dhcp_servers, config.dhcp_relays,
-                           [config.dns_settings, config.system_settings, config.failover_config],
-                           config.ntp_servers, config.management_access_rules, config.icmp_management_rules,
-                           config.snmp_settings, config.logging_settings, config.enable_credentials,
-                           config.tracks, config.sla_monitors,
-                           config.failover_config.interface_ips, config.failover_config.mac_addresses):
-            for item in collection:
-                if _source_context(item) != issue.source_context:
-                    continue
-                if getattr(item, "name", None) != issue.source_object and getattr(item, "acl_name", None) != issue.source_object:
-                    continue
-                if hasattr(item, "extraction_status"):
-                    if item.extraction_status != "PARSE_ERROR":
-                        item.extraction_status = "PARTIAL"
-                if hasattr(item, "requires_manual_review"):
-                    item.requires_manual_review = True
-                if hasattr(item, "review_reasons"):
-                    if reason not in item.review_reasons:
-                        item.review_reasons.append(reason)
-                if hasattr(item, "source_attributes"):
-                    item.source_attributes.setdefault("reference_issues", []).append(issue.as_dict())
-                    if issue.reference_type == "network_group":
-                        validations = item.source_attributes.setdefault("reference_validation", [])
-                        if issue.reason.startswith("Cycle detected") and "Cyclic nested network-group reference" not in validations:
-                            validations.append("Cyclic nested network-group reference")
-                        if reason not in validations:
-                            validations.append(reason)
-                if issue.reference_type in {"network_object", "network_group", "service_object", "service_group", "protocol_group", "icmp_group"} and hasattr(item, "member_entries"):
-                    for entry in item.member_entries:
-                        if _entry_get(entry, "value") == issue.reference_name:
-                            _entry_reason(entry, reason)
-                break
 

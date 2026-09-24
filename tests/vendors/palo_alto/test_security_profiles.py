@@ -24,14 +24,17 @@ def test_security_profile_unknown_source_is_retained_separately():
 
 def test_vulnerability_block_ip_and_exempt_ips_are_extracted_explicitly():
     config = build_panos_config("""<config><shared><profiles><vulnerability><entry name='vulnerability-main'>
-      <rules><entry name='block-threat'><threat-name>critical-threat</threat-name><action>reset-both</action><block-ip><track-by>source</track-by><duration>3600</duration><future-action>retain-me</future-action></block-ip><future-rule-field>retain-rule</future-rule-field></entry></rules>
-      <exceptions><entry name='allow-known'><action>allow</action><block-ip><track-by>source-and-destination</track-by><duration>60</duration></block-ip><exempt-ips><member>192.0.2.10</member><member>192.0.2.11</member></exempt-ips></entry></exceptions>
+      <rules><entry name='block-threat'><threat-name>critical-threat</threat-name><vendor-id><member>123</member></vendor-id><severity><member>critical</member></severity><action><block-ip><track-by>source</track-by><duration>3600</duration><future-action>retain-me</future-action></block-ip></action><future-rule-field>retain-rule</future-rule-field></entry><entry name='reset-threat'><action><reset-both/></action></entry></rules>
+      <exceptions><entry name='allow-known'><action><block-ip><track-by>source-and-destination</track-by><duration>60</duration></block-ip></action><exempt-ips><member>192.0.2.10</member><member>192.0.2.11</member></exempt-ips></entry></exceptions>
     </entry></vulnerability></profiles></shared></config>""")
 
     profile = config.vulnerability_profiles[0]
     rule = profile.rules[0]
     exception = profile.exceptions[0]
     assert (rule.block_ip.track_by, rule.block_ip.duration) == ("source", "3600")
+    assert (rule.vendor_ids, rule.severities, rule.action) == (["123"], ["critical"], "block-ip")
+    assert {"vendor_ids", "severities", "action", "block_ip"} <= rule.explicit_fields
+    assert profile.rules[1].action == "reset-both"
     assert rule.block_ip.raw_extra["future-action"] == "retain-me"
     assert rule.raw_extra["future-rule-field"] == "retain-rule"
     assert (exception.block_ip.track_by, exception.block_ip.duration) == ("source-and-destination", "60")

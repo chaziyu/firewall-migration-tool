@@ -43,6 +43,7 @@ class WebReportTest(unittest.TestCase):
                     srcaddr=["all"],
                     dstaddr=["server"],
                     service=["WEB"],
+                    schedule="always",
                     action="accept",
                     nat="enable",
                 )
@@ -107,6 +108,9 @@ class WebReportTest(unittest.TestCase):
 
         policy = self.report["sections"]["policies"][0]
         self.assertEqual("A" * 34, policy["name"])
+        self.assertEqual(["all"], policy["source_addresses"])
+        self.assertEqual(["server"], policy["destination_addresses"])
+        self.assertEqual("always", policy["schedule"])
         self.assertEqual("192.0.2.1", self.report["sections"]["nat"][0]["translated_addresses"][0])
 
         phase2 = self.report["sections"]["vpn_phase2"][0]
@@ -121,6 +125,12 @@ class WebReportTest(unittest.TestCase):
             len(self.validation.issues),
             self.report["summary"]["validation"]["issue_count"],
         )
+        self.assertEqual(1, len(self.report["sections"]["routes"]))
+        self.assertEqual(1, len(self.report["sections"]["vpn_tunnels"]))
+        self.assertEqual(1, len(self.report["sections"]["vpn_phase2"]))
+        self.assertEqual(1, len(broken))
+        self.assertNotIn("unsupported_count", self.report["summary"])
+        self.assertIsNone(self.report["sections"]["routes"][0]["distance"])
 
     def test_raw_extra_and_secrets_are_not_serialized(self):
         serialized = json.dumps(self.report)

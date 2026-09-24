@@ -364,6 +364,7 @@ def build_web_report(
                 "source_addresses": list(item.srcaddr),
                 "destination_addresses": list(item.dstaddr),
                 "services": list(item.service),
+                "schedule": item.schedule,
                 "action": item.action,
                 "nat": item.nat,
                 "status": item.status,

@@ -98,6 +98,9 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
     for message in getattr(derived.scope_hierarchy, "issues", ()):
         _issue(issues, "error", "scope", message)
     for item in derived.reference_resolutions:
+        if item.status == "SOURCE_ONLY" and item.resolution_reason.startswith("EXTRACTION_INCOMPLETE"):
+            _issue(issues, "warning", "reference", f"source-only PAN-OS reference {item.reference_name!r}: extraction incomplete",
+                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference")
         if item.status in {"UNRESOLVED", "AMBIGUOUS"}:
             _issue(issues, "error" if item.status == "UNRESOLVED" else "warning", "reference",
                    f"{item.status.lower()} PAN-OS reference {item.reference_name!r} in {item.owner_name or '<unnamed>'}.{item.owner_field}",

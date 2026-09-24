@@ -146,8 +146,9 @@ def parse_acl_line(
     destination_sg_type = destination_sg_value = None
     source_port = destination_port = None
     destination = None
+    source = None
     if acl_type == "standard":
-        source, index = parse_endpoint(tokens, index)
+        destination, index = parse_endpoint(tokens, index)
     else:
         if index >= len(tokens):
             return None, "Missing ACL protocol"
@@ -230,9 +231,7 @@ def parse_acl_line(
         destination_security_group_value=destination_sg_value,
         remark="\n".join(remarks.pop(acl_name, [])) or None,
         raw_line=line,
-        extraction_status="PARTIAL" if acl_type == "standard" else "EXTRACTED",
-        requires_manual_review=acl_type == "standard",
-        review_reasons=["Standard ACL is source-only and is not an extended ACL rule"] if acl_type == "standard" else [],
+        extraction_status="EXTRACTED",
         source_attributes={
             "acl_type": acl_type,
             "raw_line": line,
@@ -255,11 +254,14 @@ def parse_acl_line(
         mark("TrustSec security-group condition is source-specific", "PARSE_ERROR" if "malformed" in {source_sg_type, destination_sg_type} else "PARTIAL")
     if protocol is not None and protocol not in KNOWN_PROTOCOLS and not protocol.isdigit() and protocol not in {"object", "object-group"}:
         mark(f"Unknown protocol selector '{protocol}' was not converted to IP")
-    if not source.valid or (destination is not None and not destination.valid):
+    endpoints = (source, destination)
+    if any(endpoint is None or not endpoint.valid for endpoint in endpoints if endpoint is not None) or (acl_type == "standard" and destination is None):
         mark("One or more ACL endpoints could not be parsed safely", "PARSE_ERROR")
         rule.source_attributes["invalid_endpoint_values"] = [
-            endpoint.raw for endpoint in (source, destination) if endpoint is not None and not endpoint.valid
+            endpoint.raw for endpoint in endpoints if endpoint is not None and not endpoint.valid
         ]
+    if acl_type == "standard" and destination is not None and (destination.address_family == "ipv6" or destination.value == "any6"):
+        mark("ASA standard ACLs are IPv4-only", "PARSE_ERROR")
     if any(spec is not None and not spec.values for spec in (source_port, destination_port)):
         mark("ACL port expression is incomplete", "PARSE_ERROR")
 

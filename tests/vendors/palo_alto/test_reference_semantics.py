@@ -10,6 +10,10 @@ from fwmigrate.vendors.palo_alto.model.tag import PANTag
 from fwmigrate.vendors.palo_alto.model.zone import PANZone
 from fwmigrate.vendors.palo_alto.relationships.references import resolve_references
 from fwmigrate.vendors.palo_alto.source_model import PANScope
+from fwmigrate.vendors.palo_alto.source_model import PANSourceRecord
+from fwmigrate.vendors.palo_alto.model.security_profile import PANSecurityProfileGroup
+from fwmigrate.vendors.palo_alto.validation.validator import validate_panos_config
+from fwmigrate.vendors.palo_alto.native import build_derived_views
 from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter
 
 
@@ -18,6 +22,19 @@ def test_reference_resolution_reports_missing_references_without_repairing_sourc
     result = PaloAltoSourceReporter().analyze_source(source)
     assert isinstance(result.derived.relationship_issues, tuple)
     assert result.config.source_inventory
+
+
+def test_source_only_target_is_reviewed_but_missing_target_is_error():
+    shared = PANScope(kind="shared", name="shared")
+    config = PANOSConfig(scopes=[shared], security_profile_groups=[PANSecurityProfileGroup(name="group", scope=shared, vulnerability=["visible", "missing"])],
+                        source_inventory=[PANSourceRecord(kind="vulnerability", source_path="config/shared/profiles/vulnerability/entry", name="visible", scope=shared)])
+    resolutions, _ = resolve_references(config)
+    assert [(item.reference_name, item.status) for item in resolutions] == [("visible", "SOURCE_ONLY"), ("missing", "UNRESOLVED")]
+    assert resolutions[0].resolution_reason.startswith("EXTRACTION_INCOMPLETE")
+    derived = build_derived_views(config)
+    issues = validate_panos_config(config, derived).issues
+    assert any(item.severity == "warning" and "visible" in item.message for item in issues)
+    assert any(item.severity == "error" and "missing" in item.message for item in issues)
 
 
 def test_sdwan_local_user_and_globalprotect_reference_semantics():

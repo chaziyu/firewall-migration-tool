@@ -161,23 +161,35 @@ def extract_vulnerability(element, path, context, source_order, spec):
         setattr(item, child_tag, entries)
         for entry in child.findall("entry"):
             exception = child_tag == "exceptions"
-            known = {"threat-name", "host", "vendor-ids", "severities", "category", "action", "block-ip", "packet-capture"}
+            known = {"threat-name", "host", "vendor-id", "severity", "category", "action", "packet-capture"}
             if exception:
                 known.update({"time-interval", "time-threshold", "time-track-by", "exempt-ips", "exempt-ip"})
             extra = raw_extra(entry, known)
-            fields = ("name", "threat_name", "host", "vendor_ids", "severities", "category", "action", "packet_capture")
+            fields = ("threat_name", "host", "category", "packet_capture")
             if exception:
                 fields += ("time_interval", "time_threshold", "time_track_by")
             data = {field: _value(entry, field.replace("_", "-")) for field in fields}
-            block_ip = entry.find("block-ip")
+            data["vendor_ids"] = _value(entry, "vendor-id")
+            data["severities"] = _value(entry, "severity")
+            action = entry.find("action")
+            branch = next(iter(action), None) if action is not None else None
+            if branch is not None:
+                data["action"] = branch.tag
+            elif action is not None:
+                data["action"] = _text(action)
+            block_ip = action.find("block-ip") if action is not None else None
             if block_ip is not None:
                 data["block_ip"] = _extract_block_ip(block_ip)
+            if action is not None:
+                action_extra = raw_extra(action, {branch.tag} if branch is not None and branch.tag in {"default", "allow", "alert", "drop", "reset-client", "reset-server", "reset-both", "block-ip"} else set())
+                if action_extra:
+                    extra["action"] = action_extra
             if exception:
                 data["exempt_ips"] = _exempt_ips(entry)
             data = {key: value for key, value in data.items() if value is not None}
             data["name"] = entry.get("name")
             data["raw_extra"] = extra
-            data["explicit_fields"] = {child.tag.replace("-", "_") for child in entry if child.tag in known}
+            data["explicit_fields"] = {"vendor_ids" if child.tag == "vendor-id" else "severities" if child.tag == "severity" else child.tag.replace("-", "_") for child in entry if child.tag in known}
             if block_ip is not None:
                 data["explicit_fields"].add("block_ip")
             entries.append(model(**data))

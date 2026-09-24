@@ -4,9 +4,9 @@ from fwmigrate.vendors.palo_alto.source_builder import build_panos_config
 def test_vpn_xml_reaches_typed_gateways_profiles_and_tunnels():
     config = build_panos_config("""<config><shared><network>
       <ike><gateway><entry name='gw1'><local-interface>ethernet1/1</local-interface><peer-address>198.51.100.1</peer-address><ike-version>ikev2</ike-version></entry></gateway>
-        <crypto-profiles><ike-crypto-profile><entry name='ike-strong'><encryption><member>aes-256-cbc</member></encryption></entry></ike-crypto-profile></crypto-profiles>
+        <crypto-profiles><ike-crypto-profiles><entry name='ike-strong'><encryption><member>aes-256-cbc</member></encryption></entry></ike-crypto-profiles><ipsec-crypto-profiles><entry name='ipsec-strong'><protocol>esp</protocol></entry></ipsec-crypto-profiles></crypto-profiles>
       </ike>
-      <ipsec><crypto-profiles><ipsec-crypto-profile><entry name='ipsec-strong'><protocol>esp</protocol></entry></ipsec-crypto-profile></crypto-profiles>
+      <ipsec>
         <entry name='vpn-main'><tunnel-interface>tunnel.1</tunnel-interface><ipsec-crypto-profile>ipsec-strong</ipsec-crypto-profile><auto-key><ike-gateway><member>gw1</member></ike-gateway></auto-key></entry>
       </ipsec>
     </network></shared></config>""")

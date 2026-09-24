@@ -24,8 +24,6 @@ class CiscoInterface(BaseModel):
     routing_context: Optional[str] = None
     vrf: Optional[str] = None
     administrative_state: Optional[str] = None
-    administrative_state_explicit: Optional[str] = None
-    administrative_state_effective: Optional[str] = None
     nameif: Optional[str] = None
     ip: Optional[str] = None
     mask: Optional[str] = None
@@ -39,7 +37,7 @@ class CiscoInterface(BaseModel):
     management_only: bool = False
     security_level: Optional[int] = None
     description: Optional[str] = None
-    shutdown: bool = False
+    shutdown: Optional[bool] = None
     raw_lines: List[str] = Field(default_factory=list)
     extraction_status: str = "PARTIAL"
     requires_manual_review: bool = False
@@ -49,6 +47,8 @@ class CiscoInterface(BaseModel):
     tunnel_destination: Optional[str] = None
     ipsec_profile: Optional[str] = None
     traffic_zone_members: List[str] = Field(default_factory=list)
+    explicit_fields: List[str] = Field(default_factory=list)
+    raw_extra: Dict[str, Any] = Field(default_factory=dict)
 
 
 class CiscoNetworkObject(BaseModel):
@@ -260,7 +260,7 @@ class CiscoAccessRule(BaseModel):
 
 
 class CiscoNATRule(BaseModel):
-    """Parsed ASA NAT rule with source and effective ordering provenance."""
+    """Parsed ASA NAT source rule and source-order provenance."""
 
     name: str
     source_context: Optional[str] = None
@@ -287,13 +287,6 @@ class CiscoNATRule(BaseModel):
     access_list: Optional[str] = None
     identity_nat: bool = False
     nat_exemption: bool = False
-    # Section 2 bucket: 0 = static object NAT, 1 = dynamic object NAT.
-    # This is not the final rule position.
-    object_nat_precedence: Optional[int] = None
-    # Determinable count of real addresses in the owning object. Lower counts
-    # are more specific under Cisco's Section 2 ordering; None is unresolved.
-    object_nat_specificity: Optional[int] = None
-    effective_order_inputs: Dict[str, Any] = Field(default_factory=dict)
     options: List[str] = Field(default_factory=list)
     raw_options: List[str] = Field(default_factory=list)
     net_to_net: bool = False
@@ -306,13 +299,14 @@ class CiscoNATRule(BaseModel):
     source_order: Optional[int] = None
     source_order_within_section: Optional[int] = None
     section_order: Optional[int] = None
-    effective_source_order: Optional[int] = None
     raw_line: str = ""
     description: Optional[str] = None
     extraction_status: str = "EXTRACTED"
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: List[str] = Field(default_factory=list)
+    raw_extra: Dict[str, Any] = Field(default_factory=dict)
 
 
 class CiscoStaticRoute(BaseModel):
@@ -322,7 +316,6 @@ class CiscoStaticRoute(BaseModel):
     mask: Optional[str] = None
     gateway: Optional[str] = None
     administrative_distance: Optional[int] = None
-    effective_administrative_distance: Optional[int] = None
     address_family: str = "ipv4"
     routing_context: Optional[str] = None
     track_id: Optional[int] = None
@@ -333,6 +326,8 @@ class CiscoStaticRoute(BaseModel):
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: List[str] = Field(default_factory=list)
+    raw_extra: Dict[str, Any] = Field(default_factory=dict)
 
 
 class CiscoTrack(BaseModel):
@@ -416,6 +411,8 @@ class CiscoSourceRecord(BaseModel):
     extraction_status: str = "SOURCE_ONLY"
     requires_manual_review: bool = True
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: List[str] = Field(default_factory=list)
+    raw_extra: Dict[str, Any] = Field(default_factory=dict)
 
 
 class CiscoTrafficZone(CiscoSourceRecord):
@@ -955,7 +952,9 @@ class CiscoDiagnostic(BaseModel):
 
 
 class CiscoASAConfig(BaseModel):
-    hostname: str = "cisco-asa"
+    hostname: Optional[str] = None
+    explicit_fields: List[str] = Field(default_factory=list)
+    raw_extra: Dict[str, Any] = Field(default_factory=dict)
     interfaces: List[CiscoInterface] = Field(default_factory=list)
     traffic_zones: List[CiscoTrafficZone] = Field(default_factory=list)
     network_objects: List[CiscoNetworkObject] = Field(default_factory=list)

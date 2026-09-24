@@ -278,6 +278,10 @@ let currentRenderedArtifactId = null;
   const reportRowCount = document.getElementById("report-row-count");
   const reportScrollHint = document.getElementById("report-scroll-hint");
   const reportEmpty = document.getElementById("report-empty");
+  const reportDetailPanel = document.getElementById("report-detail-panel");
+  const reportDetailTitle = document.getElementById("report-detail-title");
+  const reportDetailBody = document.getElementById("report-detail-body");
+  const reportDetailClose = document.getElementById("report-detail-close");
   let activeReportSection = "overview";
   let activeObjectSection = "addresses";
 
@@ -411,7 +415,7 @@ let currentRenderedArtifactId = null;
     address_groups: [["name", "Name"], ["members", "Members"], ["address_family", "Family", "compact"], ["exclude_members", "Excluded"], ["review", "Review", "notes"]],
     services: [["name", "Name"], ["protocol", "Protocol", "compact"], ["port", "Port", "compact"], ["source_port", "Source Port", "compact"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
     service_groups: [["name", "Name"], ["members", "Members"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
-    policies: [["policy_id", "ID", "compact"], ["name", "Name"], ["source_interfaces", "Source"], ["destination_interfaces", "Destination"], ["services", "Service"], ["action", "Action", "compact"], ["nat", "NAT", "compact"], ["review", "Review", "notes"]],
+    policies: [["policy_id", "ID", "compact"], ["name", "Name"], ["source_interfaces", "From"], ["destination_interfaces", "To"], ["source_addresses", "Source"], ["destination_addresses", "Destination"], ["services", "Service"], ["schedule", "Schedule"], ["action", "Action", "compact"], ["nat", "NAT", "compact"], ["review", "Review", "notes"]],
     nat: [["policy_id", "Policy ID", "compact"], ["policy_name", "Policy"], ["translation_type", "Type", "compact"], ["translated_addresses", "Address", "address"], ["egress_interfaces", "Egress"], ["review", "Review", "notes"]],
     routes: [["route_id", "ID", "compact"], ["destination", "Destination", "address"], ["gateway", "Gateway", "address"], ["device", "Device"], ["distance", "Distance", "compact"], ["status", "Status", "compact"], ["review", "Review", "notes"]],
     vpn: [["kind", "Type", "compact"], ["name", "Name"], ["attachment", "Interface / Phase 1"], ["peer", "Gateway / Selectors", "address"], ["crypto", "IKE / Proposal"], ["topology", "Topology"], ["review", "Review", "notes"]],
@@ -423,6 +427,49 @@ let currentRenderedArtifactId = null;
     if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
     if (typeof value === "boolean") return value ? "Yes" : "No";
     return String(value);
+  }
+
+  function showReportDetails(row) {
+    if (!reportDetailPanel || !reportDetailBody) return;
+    if (reportDetailTitle) reportDetailTitle.textContent = row.policy_id != null ? `Policy ${row.policy_id}` : row.name || row.display_name || row.object_name || "Row details";
+    const list = document.createElement("dl");
+    Object.entries(row).forEach(([key, value]) => {
+      if (/raw_extra|password|secret|credential|token|private.?key|psk/i.test(key)) return;
+      const term = document.createElement("dt");
+      term.textContent = key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+      const detail = document.createElement("dd");
+      if (Array.isArray(value)) {
+        if (value.length) {
+          const items = document.createElement("ul");
+          value.forEach((item) => { const entry = document.createElement("li"); entry.textContent = reportCell(item); items.appendChild(entry); });
+          detail.appendChild(items);
+        } else detail.textContent = "—";
+      } else detail.textContent = reportCell(value);
+      list.append(term, detail);
+    });
+    reportDetailBody.replaceChildren(list);
+    reportDetailPanel.classList.remove("hidden");
+  }
+
+  function navigateToValidationTarget(row) {
+    const targets = {
+      interface: ["interfaces"], address: ["objects", "addresses"], address6: ["objects", "addresses"],
+      address_group: ["objects", "address_groups"], service: ["objects", "services"], service_group: ["objects", "service_groups"],
+      policy: ["policies"], route: ["routes"], static_route: ["routes"], static_route6: ["routes"],
+      vpn: ["vpn"], ipsec_phase1: ["vpn"], vpn_phase2: ["vpn"],
+    };
+    const target = targets[row.domain];
+    if (!target || !row.object_name) return false;
+    activeReportSection = target[0];
+    if (target[1]) activeObjectSection = target[1];
+    document.querySelectorAll("[data-object-section]").forEach((button) => button.classList.toggle("active", button.dataset.objectSection === activeObjectSection));
+    if (reportVdomFilter) reportVdomFilter.value = row.vdom || "";
+    if (reportSearch) reportSearch.value = String(row.object_name);
+    reportDetailPanel?.classList.add("hidden");
+    renderReport();
+    const match = [...(reportTableBody?.rows || [])].find((tr) => [...tr.cells].some((cell) => cell.textContent.trim() === String(row.object_name)));
+    if (match) { match.classList.add("report-row-highlight"); match.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    return true;
   }
 
   function reportRows(section) {
@@ -462,6 +509,10 @@ let currentRenderedArtifactId = null;
     const body = document.createDocumentFragment();
     rows.forEach((row) => {
       const tr = document.createElement("tr");
+      tr.addEventListener("click", () => {
+        if (activeReportSection === "validation") { navigateToValidationTarget(row); return; }
+        showReportDetails(row);
+      });
       columns.forEach(([key, , layout = "text"]) => {
         const td = document.createElement("td");
         td.dataset.column = key;
@@ -511,7 +562,18 @@ let currentRenderedArtifactId = null;
     const objects = summary.objects || {};
     const severity = summary.validation?.severity_counts || {};
     const objectTotal = ["addresses", "address_groups", "services", "service_groups"].reduce((total, key) => total + count(objects[key]), 0);
-    const stats = [["Interfaces", objects.interfaces], ["Policies", objects.policies], ["Objects", objectTotal], ["Errors", severity.error], ["Warnings", severity.warning]];
+    const sections = currentReport.sections || {};
+    const stats = [];
+    if (objects.interfaces != null) stats.push(["Interfaces", objects.interfaces]);
+    if (objects.policies != null) stats.push(["Policies", objects.policies]);
+    if (["addresses", "address_groups", "services", "service_groups"].some((key) => objects[key] != null)) stats.push(["Objects", objectTotal]);
+    if (severity.error != null) stats.push(["Errors", severity.error]);
+    if (severity.warning != null) stats.push(["Warnings", severity.warning]);
+    if (sections.routes) stats.push(["Routes", sections.routes.length]);
+    if (sections.vpn_tunnels || sections.vpn_phase2) stats.push(["VPNs", (sections.vpn_tunnels || []).length + (sections.vpn_phase2 || []).length]);
+    if (sections.unresolved_references) stats.push(["Unresolved references", sections.unresolved_references.length]);
+    const unsupported = summary.unsupported_count ?? summary.source_only_count;
+    if (unsupported != null) stats.push(["Unsupported / source-only", unsupported]);
     const fragment = document.createDocumentFragment();
     stats.forEach(([label, value]) => { const stat = document.createElement("div"); stat.className = "report-stat"; const number = document.createElement("strong"); number.textContent = String(count(value)); const caption = document.createElement("span"); caption.textContent = label; stat.append(number, caption); fragment.appendChild(stat); });
     reportSummary.replaceChildren(fragment);
@@ -906,6 +968,7 @@ let currentRenderedArtifactId = null;
   reportSearch?.addEventListener("input", renderReportTable);
   reportVdomFilter?.addEventListener("change", renderReportTable);
   reportSeverityFilter?.addEventListener("change", renderReportTable);
+  reportDetailClose?.addEventListener("click", () => reportDetailPanel?.classList.add("hidden"));
 
   function clearSource() {
     currentFile = null;
