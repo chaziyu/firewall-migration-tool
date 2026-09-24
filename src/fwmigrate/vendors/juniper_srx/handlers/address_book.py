@@ -128,7 +128,7 @@ def _parse_address_book_body(
             cmd.extraction_status = ExtractionStatus.EXTRACTED
             return True
         elif sub in ("dns-name", "dns-address") and len(body_toks) >= 4:
-            addr.type = "dns-name"
+            addr.type = sub
             addr.fqdn = body_toks[3]
             record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "fqdn", addr.fqdn, cmd)
             cmd.extraction_status = ExtractionStatus.EXTRACTED

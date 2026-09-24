@@ -101,7 +101,6 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig,
                 elif sub == "login" and toks[3].lower() == "user" and len(toks) >= 5:
                     name, store = toks[4], config.admin_users
                     item = store.setdefault(name, JuniperAdminUser(name=name))
-                    config.local_users[name] = item
                     if len(toks) >= 7 and toks[5].lower() == "class":
                         item.login_class = toks[6]
                         if len(toks) == 7:
@@ -178,7 +177,7 @@ def _handle_ntp(toks: list[str], config: JuniperSRXConfig, cmd: JunosCommand) ->
         values = toks[2:]
         routing_instance = next((values[i + 1] for i, value in enumerate(values[:-1])
                                  if value.lower() == "routing-instance"), None)
-        preferred = "prefer" in {v.lower() for v in values}
+        preferred = True if "prefer" in {v.lower() for v in values} else None
         key = next((values[i + 1] for i, v in enumerate(values[:-1]) if v.lower() in {"key", "authentication-key"}), None)
         ntp.servers.append(JuniperNTPServer(address=address, role=kind, preferred=preferred,
                                              routing_instance=routing_instance,

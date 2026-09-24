@@ -4,12 +4,9 @@ import ipaddress
 import re
 from typing import Dict, List, Optional, Tuple
 
-from fwmigrate.vendors.cisco_asa.model import (
-    CiscoACLBinding,
-    CiscoACLEndpoint,
-    CiscoAccessRule,
-    CiscoPortSpec,
-)
+from fwmigrate.extraction.sanitize import sanitize_raw_text
+from fwmigrate.vendors.cisco_asa.model.acl import CiscoACLBinding, CiscoACLEndpoint, CiscoAccessRule
+from fwmigrate.vendors.cisco_asa.model.service import CiscoPortSpec
 from fwmigrate.vendors.cisco_asa.net_utils import normalize_ipv4_network
 
 
@@ -95,6 +92,15 @@ def parse_acl_binding(line: str, line_number: int) -> Optional[CiscoACLBinding]:
     unknown_tokens = [token for token in tokens[3:] if token.lower() not in modifiers and token.lower() != "interface" and token != interface]
     if unknown_tokens:
         review_reasons.append("Unmodeled access-group tokens were preserved")
+    explicit_fields = {"acl_name"}
+    if direction:
+        explicit_fields.add("direction")
+    if interface:
+        explicit_fields.add("interface")
+    if "control-plane" in lower:
+        explicit_fields.add("control_plane")
+    if "per-user-override" in lower:
+        explicit_fields.add("per_user_override")
     return CiscoACLBinding(
         acl_name=acl_name,
         interface=interface,
@@ -107,6 +113,7 @@ def parse_acl_binding(line: str, line_number: int) -> Optional[CiscoACLBinding]:
         extraction_status="PARTIAL" if review_reasons else "EXTRACTED",
         requires_manual_review=bool(review_reasons),
         review_reasons=review_reasons,
+        explicit_fields=explicit_fields,
     )
 
 
@@ -209,6 +216,19 @@ def parse_acl_line(
         if protocol in TRANSPORT_PROTOCOLS:
             destination_port, index = parse_port_spec(tokens, index)
 
+    explicit_fields = {"acl_name", "acl_type", "action"}
+    explicit_fields.update(
+        name for name, value in (
+            ("source_sequence", sequence), ("protocol", protocol), ("protocol_object", protocol_object),
+            ("source_endpoint", source), ("source_port", source_port),
+            ("destination_endpoint", destination), ("destination_port", destination_port),
+            ("user", identity_value if identity_type == "user" else None),
+            ("user_group", identity_value if identity_type in {"user-group", "object-group-user"} else None),
+            ("source_security_group_type", source_sg_type), ("source_security_group_value", source_sg_value),
+            ("destination_security_group_type", destination_sg_type),
+            ("destination_security_group_value", destination_sg_value),
+        ) if value is not None
+    )
     rule = CiscoAccessRule(
         id=f"{acl_name}_{sequence if sequence is not None else line_number}",
         acl_name=acl_name,
@@ -232,6 +252,7 @@ def parse_acl_line(
         remark="\n".join(remarks.pop(acl_name, [])) or None,
         raw_line=line,
         extraction_status="EXTRACTED",
+        explicit_fields=explicit_fields,
         source_attributes={
             "acl_type": acl_type,
             "raw_line": line,
@@ -269,51 +290,59 @@ def parse_acl_line(
         token = tokens[index].lower()
         if token == "time-range":
             if index + 1 >= len(tokens):
-                rule.source_attributes.setdefault("malformed_optional_tokens", []).append(" ".join(tokens[index:]))
+                rule.raw_extra.setdefault("invalid_options", []).append(sanitize_raw_text(" ".join(tokens[index:])))
                 mark("Missing time-range name", "PARSE_ERROR")
                 index += 1
             else:
                 rule.time_range = tokens[index + 1]
+                rule.explicit_fields.add("time_range")
                 index += 2
         elif token == "inactive":
             rule.inactive = True
+            rule.explicit_fields.add("inactive")
             index += 1
         elif token == "log":
             start = index
             rule.log_enabled = True
+            rule.explicit_fields.add("log_enabled")
             index += 1
             if index < len(tokens) and tokens[index].lower() == "disable":
                 rule.log_enabled = False
                 index += 1
             elif index < len(tokens) and tokens[index].lower() not in {"interval", "inactive", "time-range"}:
                 rule.log_level = tokens[index]
+                rule.explicit_fields.add("log_level")
                 index += 1
             if index < len(tokens) and tokens[index].lower() == "interval":
                 if index + 1 >= len(tokens) or not tokens[index + 1].isdigit():
-                    rule.source_attributes.setdefault("malformed_optional_tokens", []).append(" ".join(tokens[index:]))
+                    rule.raw_extra.setdefault("invalid_options", []).append(sanitize_raw_text(" ".join(tokens[index:])))
                     mark("Malformed log interval", "PARSE_ERROR")
                     index += 1
                 else:
                     rule.log_interval = int(tokens[index + 1])
+                    rule.explicit_fields.add("log_interval")
                     index += 2
             rule.log_raw = " ".join(tokens[start:index])
         elif protocol in {"icmp", "icmp6"} and token == "object-group" and index + 1 < len(tokens):
             rule.icmp_object_group = tokens[index + 1]
+            rule.explicit_fields.add("icmp_object_group")
             index += 2
         elif protocol in {"icmp", "icmp6"} and token == "object-group":
-            rule.source_attributes.setdefault("malformed_optional_tokens", []).append(" ".join(tokens[index:]))
+            rule.raw_extra.setdefault("invalid_options", []).append(sanitize_raw_text(" ".join(tokens[index:])))
             mark("Missing ICMP object-group name", "PARSE_ERROR")
             index += 1
         elif protocol in {"icmp", "icmp6"} and rule.icmp_type is None:
             rule.icmp_type = tokens[index]
+            rule.explicit_fields.add("icmp_type")
             if index + 1 < len(tokens) and tokens[index + 1].isdigit():
                 rule.icmp_code = int(tokens[index + 1])
+                rule.explicit_fields.add("icmp_code")
                 index += 2
             else:
                 index += 1
         else:
-            rule.source_attributes.setdefault("unmodeled_tokens", []).append(tokens[index])
+            rule.raw_extra.setdefault("unknown_subcommands", []).append(sanitize_raw_text(" ".join(tokens[index:])))
             mark(f"Unmodeled ACL token '{tokens[index]}'")
-            index += 1
+            index = len(tokens)
     return rule, None
 

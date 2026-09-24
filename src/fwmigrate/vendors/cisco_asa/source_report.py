@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from .model import CiscoASAConfig
+from .model.source import CiscoASAConfig
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
 

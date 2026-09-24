@@ -25,6 +25,10 @@ class JuniperConfigContext:
     def key(self) -> tuple[JuniperContextType, Optional[str]]:
         return self.context_type, self.name
 
+    @property
+    def storage_key(self) -> str:
+        return "root" if self.context_type is JuniperContextType.ROOT else f"{self.context_type.value}:{self.name}"
+
 
 class JuniperProvenanceKind(str, Enum):
     LOCAL = "LOCAL"
@@ -135,6 +139,8 @@ class JuniperGroupNode(BaseModel):
 class JuniperConfigurationGroup(BaseModel):
     name: str
     root_node: JuniperGroupNode
+    context_type: str = "root"
+    context_name: Optional[str] = None
     source_metadata: Dict[str, Any] = Field(default_factory=dict)
 
     def __bool__(self) -> bool:
@@ -142,10 +148,10 @@ class JuniperConfigurationGroup(BaseModel):
 
 
 class JuniperInterfaceAddress(JuniperEffectiveModel):
-    family: str = "inet"  # inet or inet6
+    family: str  # inet or inet6
     address: str
-    primary: bool = False
-    preferred: bool = False
+    primary: Optional[bool] = None
+    preferred: Optional[bool] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     provenance: Optional[JuniperEffectiveProvenance] = None
     candidate_history: List[JuniperEffectiveCandidate] = Field(default_factory=list)
@@ -161,7 +167,7 @@ class JuniperInterfaceUnit(JuniperEffectiveModel):
     filters: List[Dict[str, Any]] = Field(default_factory=list)
     vrrp: List[Dict[str, Any]] = Field(default_factory=list)
     addresses: List[JuniperInterfaceAddress] = Field(default_factory=list)
-    disabled: bool = False
+    disabled: Optional[bool] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     field_provenance: Dict[str, JuniperEffectiveProvenance] = Field(default_factory=dict)
     field_candidate_history: Dict[str, List[JuniperEffectiveCandidate]] = Field(default_factory=dict)
@@ -170,13 +176,11 @@ class JuniperInterfaceUnit(JuniperEffectiveModel):
 class JuniperScreenOption(BaseModel):
     path: List[str]
     values: List[str] = Field(default_factory=list)
-    disabled: bool = False
 
 
 class JuniperScreenProfile(BaseModel):
     name: str
     options: List[JuniperScreenOption] = Field(default_factory=list)
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -191,23 +195,21 @@ class JuniperFirewallFilterTerm(BaseModel):
 
 class JuniperFirewallFilter(BaseModel):
     name: str
-    family: str = "inet"
+    family: str
     terms: List[JuniperFirewallFilterTerm] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class JuniperInterface(JuniperEffectiveModel):
     name: str
-    interface_type: Optional[str] = None
     description: Optional[str] = None
-    disabled: bool = False
+    disabled: Optional[bool] = None
     mtu: Optional[int] = None
     speed: Optional[str] = None
     link_mode: Optional[str] = None
     encapsulation: Optional[str] = None
     physical_link: Dict[str, Any] = Field(default_factory=dict)
     aggregate_parent: Optional[str] = None
-    aggregate_members: List[str] = Field(default_factory=list)
     aggregate_options: List[Dict[str, Any]] = Field(default_factory=list)
     redundant_parent: Optional[str] = None
     redundancy_group: Optional[str] = None
@@ -226,47 +228,43 @@ class JuniperZone(JuniperEffectiveModel):
     host_inbound_protocol_exclusions: List[str] = Field(default_factory=list)
     interface_host_inbound: Dict[str, Dict[str, List[str]]] = Field(default_factory=dict)
     disabled_host_inbound: Dict[str, List[str]] = Field(default_factory=dict)
-    tcp_rst: bool = False
-    disabled: bool = False
+    tcp_rst: Optional[bool] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class JuniperAddress(JuniperEffectiveModel):
     name: str
-    address_book: str = "global"
+    address_book: str
     zone: Optional[str] = None
-    type: str = "ip-prefix"  # ip-prefix, dns-name, dns-address, range-address, wildcard-address
+    type: Optional[str] = None  # ip-prefix, dns-name, dns-address, range-address, wildcard-address
     prefix: Optional[str] = None
     fqdn: Optional[str] = None
     range_start: Optional[str] = None
     range_end: Optional[str] = None
     wildcard: Optional[str] = None
     description: Optional[str] = None
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
 class JuniperAddressSetMember(JuniperEffectiveModel):
     name: str
-    member_type: str = "address"  # address | address-set
-    disabled: bool = False
+    member_type: str  # address | address-set
     source_path: Optional[str] = None
 
 
 class JuniperAddressSet(JuniperEffectiveModel):
     name: str
-    address_book: str = "global"
+    address_book: str
     zone: Optional[str] = None
     members: List[JuniperAddressSetMember] = Field(default_factory=list)
     description: Optional[str] = None
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
 class JuniperAddressBook(JuniperEffectiveModel):
-    name: str = "global"
+    name: str
     attached_zones: List[str] = Field(default_factory=list)
     addresses: Dict[str, JuniperAddress] = Field(default_factory=dict)
     address_sets: Dict[str, JuniperAddressSet] = Field(default_factory=dict)
@@ -285,7 +283,6 @@ class JuniperApplicationTerm(JuniperEffectiveModel):
     icmp_code: Optional[Union[str, int]] = None
     application_protocol: Optional[str] = None
     inactivity_timeout: Optional[Union[str, int]] = None
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -293,7 +290,6 @@ class JuniperApplication(JuniperEffectiveModel):
     name: str
     description: Optional[str] = None
     terms: List[JuniperApplicationTerm] = Field(default_factory=list)
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
@@ -302,32 +298,30 @@ class JuniperApplicationSet(JuniperEffectiveModel):
     name: str
     applications: List[str] = Field(default_factory=list)
     description: Optional[str] = None
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)
 
 
 class JuniperPolicy(JuniperEffectiveModel):
     name: str
-    policy_scope: str = "zone"  # zone | global
+    policy_scope: str  # zone | global
     from_zones: List[str] = Field(default_factory=list)
     to_zones: List[str] = Field(default_factory=list)
     source_addresses: List[str] = Field(default_factory=list)
     destination_addresses: List[str] = Field(default_factory=list)
     applications: List[str] = Field(default_factory=list)
-    source_address_excluded: bool = False
-    destination_address_excluded: bool = False
+    source_address_excluded: Optional[bool] = None
+    destination_address_excluded: Optional[bool] = None
     dynamic_applications: List[str] = Field(default_factory=list)
     source_identities: List[str] = Field(default_factory=list)
     source_end_user_profiles: List[str] = Field(default_factory=list)
     scheduler_name: Optional[str] = None
     action: Optional[str] = None  # permit, deny, reject, or None
-    log_session_init: bool = False
-    log_session_close: bool = False
+    log_session_init: Optional[bool] = None
+    log_session_close: Optional[bool] = None
     logging_options: List[Dict[str, Any]] = Field(default_factory=list)
-    count: bool = False
+    count: Optional[bool] = None
     description: Optional[str] = None
-    disabled: bool = False
     permit_options: Dict[str, Any] = Field(default_factory=dict)
     unknown_match_conditions: Dict[str, Any] = Field(default_factory=dict)
     unknown_then_options: Dict[str, Any] = Field(default_factory=dict)
@@ -448,7 +442,7 @@ class JuniperScheduler(JuniperEffectiveModel):
 
 class JuniperRouteNextHop(JuniperEffectiveModel):
     value: str
-    qualified: bool = False
+    qualified: bool
     preference: Optional[int] = None
     metric: Optional[int] = None
     tag: Optional[int] = None
@@ -460,15 +454,11 @@ class JuniperRoute(JuniperEffectiveModel):
     routing_instance: Optional[str] = None
     next_hops: List[JuniperRouteNextHop] = Field(default_factory=list)
     next_table: Optional[str] = None
-    discard: bool = False
-    reject: bool = False
-    receive: bool = False
     preference: Optional[int] = None
     metric: Optional[int] = None
     tag: Optional[int] = None
-    disabled: bool = False
-    retain: bool = False
-    no_install: bool = False
+    disabled: Optional[bool] = None
+    retain: Optional[bool] = None
     installation: Optional[str] = None
     action: Optional[str] = None
     rib: Optional[str] = None
@@ -477,7 +467,7 @@ class JuniperRoute(JuniperEffectiveModel):
 
 class JuniperNATPool(JuniperEffectiveModel):
     name: str
-    nat_type: str = "source"  # source | destination
+    nat_type: str  # source | destination
     routing_instance: Optional[str] = None
     addresses: List[str] = Field(default_factory=list)
     ports: List[str] = Field(default_factory=list)
@@ -487,7 +477,6 @@ class JuniperNATPool(JuniperEffectiveModel):
 
 
 class JuniperPersistentNAT(JuniperEffectiveModel):
-    enabled: bool = True
     address_mapping: Optional[bool] = None
     inactivity_timeout: Optional[int] = None
     max_session_number: Optional[int] = None
@@ -516,24 +505,22 @@ class JuniperNATMatch(JuniperEffectiveModel):
 
 class JuniperNATRule(JuniperEffectiveModel):
     name: str
-    nat_type: str = "source"  # source | destination | static
-    nat_family: str = "ipv4"  # ipv4 | ipv6 | nptv6
+    nat_type: str  # source | destination | static
     match: JuniperNATMatch = Field(default_factory=JuniperNATMatch)
     action: Dict[str, Any] = Field(default_factory=dict)
     description: Optional[str] = None
-    disabled: bool = False
+    disabled: Optional[bool] = None
     sequence: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class JuniperNATRuleSet(JuniperEffectiveModel):
     name: str
-    nat_type: str = "source"  # source | destination | static
+    nat_type: str  # source | destination | static
     from_context: JuniperNATContext = Field(default_factory=JuniperNATContext)
     to_context: Optional[JuniperNATContext] = None
     rules: List[JuniperNATRule] = Field(default_factory=list)
     description: Optional[str] = None
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -567,7 +554,7 @@ class JuniperIKEPolicy(JuniperEffectiveModel):
     mode: Optional[str] = None
     proposal_set: Optional[str] = None
     proposals: List[str] = Field(default_factory=list)
-    has_pre_shared_key: bool = False
+    has_pre_shared_key: Optional[bool] = None
     certificate_reference: Optional[str] = None
     local_certificate: Optional[str] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -629,7 +616,6 @@ class JuniperTrafficSelector(JuniperEffectiveModel):
 
 
 class JuniperVPNMonitor(BaseModel):
-    enabled: bool = True
     destination_ip: Optional[str] = None
     source_interface: Optional[str] = None
     options: Dict[str, Any] = Field(default_factory=dict)
@@ -643,7 +629,6 @@ class JuniperIPSecVPN(JuniperEffectiveModel):
     establish_tunnels: Optional[str] = None
     traffic_selectors: Dict[str, JuniperTrafficSelector] = Field(default_factory=dict)
     vpn_monitor: Optional[JuniperVPNMonitor] = None
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -660,7 +645,6 @@ class JuniperVPNConfig(BaseModel):
 class JuniperSourceHierarchyItem(BaseModel):
     name: str
     settings: Dict[str, Any] = Field(default_factory=dict)
-    disabled: bool = False
 
 
 class JuniperUTMAntivirusProfile(BaseModel):
@@ -671,7 +655,6 @@ class JuniperUTMAntivirusProfile(BaseModel):
     file_controls: List[str] = Field(default_factory=list)
     mime_types: List[str] = Field(default_factory=list)
     settings: Dict[str, Any] = Field(default_factory=dict)
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -682,7 +665,6 @@ class JuniperUTMWebFilteringProfile(BaseModel):
     actions: List[str] = Field(default_factory=list)
     logging: List[str] = Field(default_factory=list)
     settings: Dict[str, Any] = Field(default_factory=dict)
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -692,7 +674,6 @@ class JuniperUTMContentFilteringProfile(BaseModel):
     content_types: List[str] = Field(default_factory=list)
     actions: List[str] = Field(default_factory=list)
     settings: Dict[str, Any] = Field(default_factory=dict)
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -701,7 +682,6 @@ class JuniperUTMAntiSpamProfile(BaseModel):
     servers: List[str] = Field(default_factory=list)
     actions: List[str] = Field(default_factory=list)
     settings: Dict[str, Any] = Field(default_factory=dict)
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -729,7 +709,6 @@ class JuniperPolicer(BaseModel):
 class JuniperPrefixList(BaseModel):
     name: str
     entries: List[str] = Field(default_factory=list)
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -747,7 +726,6 @@ class JuniperVLAN(BaseModel):
     vlan_id: Optional[int] = None
     l3_interface: Optional[str] = None
     members: List[str] = Field(default_factory=list)
-    disabled: bool = False
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -770,8 +748,8 @@ class JuniperDNSNameServer(BaseModel):
 
 class JuniperNTPServer(BaseModel):
     address: str
-    role: str = "server"
-    preferred: bool = False
+    role: str
+    preferred: Optional[bool] = None
     routing_instance: Optional[str] = None
     authentication_key_reference: Optional[str] = None
 
@@ -794,20 +772,20 @@ class JuniperAdminUser(JuniperSourceHierarchyItem):
 
 
 class JuniperSSHSettings(BaseModel):
-    enabled: bool = False
+    enabled: Optional[bool] = None
     options: Dict[str, Any] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class JuniperNETCONFSettings(BaseModel):
-    enabled: bool = False
+    enabled: Optional[bool] = None
     options: Dict[str, Any] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class JuniperWebManagementSettings(BaseModel):
-    http_enabled: bool = False
-    https_enabled: bool = False
+    http_enabled: Optional[bool] = None
+    https_enabled: Optional[bool] = None
     http_options: Dict[str, Any] = Field(default_factory=dict)
     https_options: Dict[str, Any] = Field(default_factory=dict)
     interfaces: List[str] = Field(default_factory=list)
@@ -869,7 +847,6 @@ class JuniperClusterIPMonitoring(BaseModel):
 
 
 class JuniperClusterPreempt(BaseModel):
-    enabled: bool = False
     delay: Optional[int] = None
     limit: Optional[int] = None
     period: Optional[int] = None
@@ -898,12 +875,185 @@ class JuniperChassisCluster(BaseModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class JuniperDHCPPool(BaseModel):
+class JuniperDHCPRange(BaseModel):
     name: str
-    ranges: List[Dict[str, str]] = Field(default_factory=list)
+    low: Optional[str] = None
+    high: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperDHCPHostReservation(BaseModel):
+    name: str
+    hardware_address: Optional[str] = None
+    ip_address: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperDHCPAttributes(BaseModel):
     router: List[str] = Field(default_factory=list)
     name_servers: List[str] = Field(default_factory=list)
     lease_time: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAddressAssignmentFamily(BaseModel):
+    name: str
+    ranges: Dict[str, JuniperDHCPRange] = Field(default_factory=dict)
+    hosts: Dict[str, JuniperDHCPHostReservation] = Field(default_factory=dict)
+    dhcp_attributes: JuniperDHCPAttributes = Field(default_factory=JuniperDHCPAttributes)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAddressAssignmentPool(BaseModel):
+    name: str
+    routing_instance: Optional[str] = None
+    families: Dict[str, JuniperAddressAssignmentFamily] = Field(default_factory=dict)
+    linked_pool: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperDHCPLocalServerGroup(BaseModel):
+    name: str
+    routing_instance: Optional[str] = None
+    family: Optional[str] = None
+    interfaces: List[str] = Field(default_factory=list)
+    options: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperDHCPRelayGroup(BaseModel):
+    name: str
+    routing_instance: Optional[str] = None
+    interfaces: List[str] = Field(default_factory=list)
+    server_groups: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperLegacyDHCPConfig(BaseModel):
+    commands: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class JuniperDHCPConfig(BaseModel):
+    local_servers: Dict[str, JuniperDHCPLocalServerGroup] = Field(default_factory=dict)
+    address_assignment_pools: Dict[str, JuniperAddressAssignmentPool] = Field(default_factory=dict)
+    relay_groups: Dict[str, JuniperDHCPRelayGroup] = Field(default_factory=dict)
+    legacy: JuniperLegacyDHCPConfig = Field(default_factory=JuniperLegacyDHCPConfig)
+
+
+class JuniperAccessFirewallUser(BaseModel):
+    name: str
+    password_configured: Optional[bool] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAccessClient(BaseModel):
+    name: str
+    client_groups: List[str] = Field(default_factory=list)
+    firewall_user: Optional[JuniperAccessFirewallUser] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAccessProfile(BaseModel):
+    name: str
+    clients: Dict[str, JuniperAccessClient] = Field(default_factory=dict)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAPBRMetricsProfile(BaseModel):
+    name: str
+    jitter: Optional[str] = None
+    packet_loss: Optional[str] = None
+    round_trip_delay: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAPBRProbeParams(BaseModel):
+    name: str
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAPBRActiveProbeParams(JuniperAPBRProbeParams):
+    pass
+
+
+class JuniperAPBRPassiveProbeParams(JuniperAPBRProbeParams):
+    pass
+
+
+class JuniperAPBROverlayPath(BaseModel):
+    name: str
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAPBRDestinationPathGroup(BaseModel):
+    name: str
+    probe_routing_instance: Optional[str] = None
+    overlay_paths: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAPBRMultipathRule(BaseModel):
+    name: str
+    bandwidth_limit: Optional[str] = None
+    applications: List[str] = Field(default_factory=list)
+    application_groups: List[str] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAPBRSLARule(BaseModel):
+    name: str
+    metrics_profile: Optional[str] = None
+    active_probe_params: Optional[str] = None
+    passive_probe_params: Optional[str] = None
+    multipath_rule: Optional[str] = None
+    switch_idle_time: Optional[str] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperAPBRConfig(BaseModel):
+    metrics_profiles: Dict[str, JuniperAPBRMetricsProfile] = Field(default_factory=dict)
+    active_probe_params: Dict[str, JuniperAPBRActiveProbeParams] = Field(default_factory=dict)
+    passive_probe_params: Dict[str, JuniperAPBRPassiveProbeParams] = Field(default_factory=dict)
+    overlay_paths: Dict[str, JuniperAPBROverlayPath] = Field(default_factory=dict)
+    destination_path_groups: Dict[str, JuniperAPBRDestinationPathGroup] = Field(default_factory=dict)
+    multipath_rules: Dict[str, JuniperAPBRMultipathRule] = Field(default_factory=dict)
+    sla_rules: Dict[str, JuniperAPBRSLARule] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperRemoteAccessApplicationBypassTerm(BaseModel):
+    name: str
+    description: Optional[str] = None
+    domain_names: List[str] = Field(default_factory=list)
+    protocols: List[str] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperRemoteAccessClientConfig(BaseModel):
+    name: str
+    application_bypass_terms: Dict[str, JuniperRemoteAccessApplicationBypassTerm] = Field(default_factory=dict)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperRemoteAccessProfile(BaseModel):
+    name: str
+    access_profile: Optional[str] = None
+    client_config: Optional[str] = None
+    ipsec_vpn: Optional[str] = None
+    multi_access: Optional[bool] = None
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JuniperRemoteAccessConfig(BaseModel):
+    profiles: Dict[str, JuniperRemoteAccessProfile] = Field(default_factory=dict)
+    client_configs: Dict[str, JuniperRemoteAccessClientConfig] = Field(default_factory=dict)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -933,13 +1083,13 @@ class JuniperContextConfig(BaseModel):
     policers: Dict[str, JuniperPolicer] = Field(default_factory=dict)
     prefix_lists: Dict[str, JuniperPrefixList] = Field(default_factory=dict)
     cos_schedulers: Dict[str, JuniperCoSScheduler] = Field(default_factory=dict)
-    dhcp_pools: Dict[str, JuniperDHCPPool] = Field(default_factory=dict)
-    dhcp_relays: Dict[str, JuniperDHCPRelayGroup] = Field(default_factory=dict)
-    dhcp_local_servers: Dict[str, List[str]] = Field(default_factory=dict)
+    dhcp: JuniperDHCPConfig = Field(default_factory=JuniperDHCPConfig)
+    apbr: JuniperAPBRConfig = Field(default_factory=JuniperAPBRConfig)
+    remote_access: JuniperRemoteAccessConfig = Field(default_factory=JuniperRemoteAccessConfig)
     nat: JuniperNATConfig = Field(default_factory=JuniperNATConfig)
     vpn: JuniperVPNConfig = Field(default_factory=JuniperVPNConfig)
     system_syslog: JuniperSyslogSettings = Field(default_factory=JuniperSyslogSettings)
-    access_profiles: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
+    access_profiles: Dict[str, JuniperAccessProfile] = Field(default_factory=dict)
     dynamic_vpns: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
     user_identification: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
     utm_policies: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
@@ -970,6 +1120,15 @@ class JuniperContextConfig(BaseModel):
         )
 
 
+class JuniperActivationDirective(BaseModel):
+    operation: str
+    hierarchy_path: tuple[str, ...]
+    context_type: str = "root"
+    context_name: Optional[str] = None
+    source_order: int = 0
+    line_number: int = 0
+
+
 class JuniperSRXConfig(BaseModel):
     hostname: Optional[str] = None
     version: Optional[str] = None
@@ -977,7 +1136,6 @@ class JuniperSRXConfig(BaseModel):
     name_servers: List[JuniperDNSNameServer] = Field(default_factory=list)
     domain_name: Optional[str] = None
     domain_search: List[str] = Field(default_factory=list)
-    local_users: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
     login_classes: Dict[str, JuniperLoginClass] = Field(default_factory=dict)
     admin_users: Dict[str, JuniperAdminUser] = Field(default_factory=dict)
     radius_servers: Dict[str, JuniperSourceHierarchyItem] = Field(default_factory=dict)
@@ -992,6 +1150,7 @@ class JuniperSRXConfig(BaseModel):
     pki: JuniperPKISettings = Field(default_factory=JuniperPKISettings)
     services: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     contexts: Dict[str, JuniperContextConfig] = Field(default_factory=dict)
+    activation_directives: List[JuniperActivationDirective] = Field(default_factory=list)
     unsupported_commands: List[JunosCommand] = Field(default_factory=list)
     configuration_groups: Dict[str, JuniperConfigurationGroup] = Field(default_factory=dict)
     applied_groups: Dict[str, List[str]] = Field(default_factory=dict)
@@ -999,7 +1158,21 @@ class JuniperSRXConfig(BaseModel):
     field_provenance: Dict[str, JuniperEffectiveProvenance] = Field(default_factory=dict)
     field_candidate_history: Dict[str, List[JuniperEffectiveCandidate]] = Field(default_factory=dict)
 
+    @staticmethod
+    def context_storage_key(name: str = "root", context_type: str = "root") -> str:
+        kind = JuniperContextType(context_type)
+        return JuniperConfigContext(kind, None if kind is JuniperContextType.ROOT else name).storage_key
+
+    def iter_contexts(self):
+        return self.contexts.values()
+
     def get_context(self, name: str = "root", context_type: str = "root") -> JuniperContextConfig:
-        if name not in self.contexts:
-            self.contexts[name] = JuniperContextConfig(name=name, context_type=context_type)
-        return self.contexts[name]
+        key = self.context_storage_key(name, context_type)
+        context = self.contexts.get(key)
+        if context is None:
+            context = self.contexts[key] = JuniperContextConfig(name=name, context_type=context_type)
+        return context
+
+    def group_storage_key(self, name: str, context_type: str = "root", context_name: Optional[str] = None) -> str:
+        scope = self.context_storage_key(context_name or "root", context_type)
+        return name if scope == "root" else f"{scope}:{name}"

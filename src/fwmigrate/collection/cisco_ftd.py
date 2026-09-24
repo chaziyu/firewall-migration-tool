@@ -225,6 +225,7 @@ class CiscoFTDCollector:
                         for key, endpoint in (("ipsec_advanced_settings", "ipsecadvancedsettings"),
                                               ("ldap_attribute_maps", "ldapattributemaps"),
                                               ("load_balance_settings", "loadbalancesettings"), ("address_assignment_settings", "addressassignmentsettings"),
+                                              ("certificate_map_settings", "certificatemapsettings"),
                                               ("secure_client_customization_settings", "secureclientcustomizationsettings"),
                                               ("ipsec_crypto_maps", "ipseccryptomaps")):
                             self._collect_family(session, base, prefix + f"/policy/ravpns/{policy_id}/{endpoint}?expanded=true",

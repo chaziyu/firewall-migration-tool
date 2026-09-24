@@ -5,16 +5,13 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text
-from .model import (
-    CiscoAllocatedInterface, CiscoASAConfig, CiscoASAContext, CiscoClassMap,
-    CiscoClassMapMatch, CiscoConnectionControl, CiscoDHCPOption, CiscoDHCPRelay,
-    CiscoDHCPRelayServer, CiscoDNSServerGroup, CiscoFailoverGroup,
-    CiscoHTTPServerConfig, CiscoInspectionPolicySection, CiscoManagementAccessRule,
-    CiscoManagementSetting, CiscoMPFConnectionAction, CiscoMPFPoliceAction,
-    CiscoNTPServer, CiscoPolicyMap, CiscoPolicyMapClass, CiscoServicePolicy,
-    CiscoTCPMap, CiscoTCPMapSetting, CiscoTrustpointRecord, CiscoMultiContextSystem,
-    CiscoInspectAction,
-)
+from .model.context import CiscoASAContext, CiscoAllocatedInterface, CiscoMultiContextSystem
+from .model.dhcp import CiscoDHCPOption, CiscoDHCPRelay, CiscoDHCPRelayServer, CiscoDHCPReservation
+from .model.failover import CiscoFailoverGroup
+from .model.management import CiscoConnectionControl, CiscoDNSServerGroup, CiscoHTTPServerConfig, CiscoManagementAccessRule, CiscoManagementSetting, CiscoNTPServer
+from .model.mpf import CiscoClassMap, CiscoClassMapMatch, CiscoInspectAction, CiscoInspectionPolicySection, CiscoIPSAction, CiscoMPFConnectionAction, CiscoMPFPoliceAction, CiscoPolicyMap, CiscoPolicyMapClass, CiscoServicePolicy, CiscoTCPMap, CiscoTCPMapSetting
+from .model.source import CiscoASAConfig
+from .model.vpn import CiscoTrustpointRecord
 
 
 
@@ -131,7 +128,7 @@ def _parse_class_map_block(self: Any, lines: List[str], index: int) -> CiscoClas
             continue
         if not lower.startswith("match"):
             self._mpf_partial(record, "Unsupported class-map child syntax")
-            record.source_attributes.setdefault("unmodeled_lines", []).append(safe_child)
+            record.raw_extra.setdefault("unmodeled_lines", []).append(safe_child)
             continue
 
         record.match_lines.append(safe_child)
@@ -199,7 +196,7 @@ def _parse_class_map_block(self: Any, lines: List[str], index: int) -> CiscoClas
             continue
 
         self._mpf_partial(record, "Unsupported class-map match syntax")
-        record.source_attributes.setdefault("unmodeled_lines", []).append(safe_child)
+        record.raw_extra.setdefault("unmodeled_lines", []).append(safe_child)
     return record
 
 
@@ -279,7 +276,7 @@ def _parse_policy_map_block(self: Any, lines: List[str], index: int) -> CiscoPol
 
             if current is None:
                 self._mpf_partial(record, "Orphan nested inspection policy command")
-                record.source_attributes.setdefault("unmodeled_lines", []).append(safe)
+                record.raw_extra.setdefault("unmodeled_lines", []).append(safe)
                 continue
             current.raw_lines.append(safe)
             if current.kind == "parameters":
@@ -311,7 +308,7 @@ def _parse_policy_map_block(self: Any, lines: List[str], index: int) -> CiscoPol
             continue
         if current is None:
             self._mpf_partial(record, "Unsupported policy-map child syntax")
-            record.source_attributes.setdefault("unmodeled_lines", []).append(safe_child)
+            record.raw_extra.setdefault("unmodeled_lines", []).append(safe_child)
             continue
         current.raw_lines.append(safe_child)
         self._parse_mpf_action(current, child, line_number)
@@ -325,6 +322,23 @@ def _parse_mpf_action(self: Any, section: CiscoPolicyMapClass, line: str, line_n
     effective = stripped[3:].strip() if negated else stripped
     parts = effective.split()
     lower = effective.lower()
+
+    if lower.startswith("ips "):
+        if len(parts) < 3 or parts[1].lower() not in {"inline", "promiscuous"} or parts[2].lower() not in {"fail-open", "fail-close"}:
+            self._mpf_parse_error(section, line_number, line, "policy-map", "Malformed IPS action")
+            section.raw_extra.setdefault("unmodeled_lines", []).append(safe)
+            return
+        sensor = parts[4] if len(parts) == 5 and parts[3].lower() == "sensor" else None
+        if len(parts) > 3 and sensor is None:
+            self._mpf_partial(section, "Unsupported IPS action syntax retained")
+            section.raw_extra.setdefault("unmodeled_lines", []).append(safe)
+            return
+        section.ips_actions.append(CiscoIPSAction(
+            mode=parts[1].lower(), failure_mode=parts[2].lower(), sensor=sensor,
+            raw=safe, source_order=line_number,
+            explicit_fields={"mode", "failure_mode", *(('sensor',) if sensor else ())},
+        ))
+        return
 
     if lower == "inspect" or lower.startswith("inspect "):
         if len(parts) < 2:
@@ -388,7 +402,7 @@ def _parse_mpf_action(self: Any, section: CiscoPolicyMapClass, line: str, line_n
         section.police_actions.append(self._parse_police_action(section, stripped, line_number))
         return
     self._mpf_partial(section, "Unsupported policy-map class action syntax")
-    section.source_attributes.setdefault("unmodeled_lines", []).append(safe)
+    section.raw_extra.setdefault("unmodeled_lines", []).append(safe)
 
 
 def _parse_connection_action(self: Any, section: Any, line: str, line_number: int) -> CiscoMPFConnectionAction:
@@ -545,7 +559,7 @@ def _parse_tcp_map_block(self: Any, lines: List[str], index: int) -> CiscoTCPMap
             record.settings[key] = list(values)
         if not supported:
             self._mpf_partial(record, "Unsupported tcp-map child syntax retained as structured raw setting")
-            record.source_attributes.setdefault("unmodeled_lines", []).append(safe)
+            record.raw_extra.setdefault("unmodeled_lines", []).append(safe)
     return record
 
 
@@ -722,6 +736,7 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
         pool_expression = "".join(values) if len(values) == 3 and values[1] == "-" else (values[0] if len(values) == 1 else "")
         if negated:
             item.pool = item.pool_start = item.pool_end = None
+            item.explicit_fields.add("pool")
             return
         if "-" not in pool_expression:
             item.extraction_status = "PARSE_ERROR"
@@ -743,10 +758,12 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
             return
         item.pool = pool_expression
         item.pool_start, item.pool_end = start, end
+        item.explicit_fields.update({"pool", "pool_start", "pool_end"})
         return
     if command == "enable":
         item.interface = interface or item.interface
         item.enabled = not negated
+        item.explicit_fields.add("enabled")
         if not interface:
             item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
@@ -755,6 +772,7 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
     if command == "dns":
         if negated:
             item.dns_servers = []
+            item.explicit_fields.add("dns_servers")
             return
         if not values:
             item.extraction_status = "PARSE_ERROR"
@@ -773,12 +791,15 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
                 continue
             parsed.append(str(address))
         item.dns_servers.extend(value for value in parsed if value not in item.dns_servers)
+        item.explicit_fields.add("dns_servers")
         return
     if command == "domain":
         if negated:
             item.domain_name = None
+            item.explicit_fields.add("domain_name")
         elif values:
             item.domain_name = " ".join(values)
+            item.explicit_fields.add("domain_name")
         else:
             item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
@@ -787,19 +808,82 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
     if command == "lease":
         if negated:
             item.lease_seconds = None
+            item.explicit_fields.add("lease_seconds")
         elif len(values) == 1 and values[0].isdigit():
             item.lease_seconds = int(values[0])
+            item.explicit_fields.add("lease_seconds")
         else:
             item.extraction_status = "PARSE_ERROR"
             item.requires_manual_review = True
             self._record_diagnostic(line_number, line, "Malformed DHCP lease", "dhcpd")
         return
     if command == "option" and len(values) >= 2:
-        item.options.append(CiscoDHCPOption(code=values[0], value=" ".join(values[1:]), raw=safe, source_order=line_number))
+        typed = values[1].lower() in {"ascii", "hex", "ip"}
+        option_type = values[1].lower() if typed else None
+        option_value = " ".join(values[2:] if typed else values[1:])
+        item.options.append(CiscoDHCPOption(
+            code=values[0], value=option_value, value_type=option_type,
+            encoding="hex" if option_type == "hex" else None, raw=safe, source_order=line_number,
+            explicit_fields={"code", "value", *(('value_type',) if option_type else ()), *(('encoding',) if option_type == "hex" else ())},
+        ))
+        return
+    if command == "wins":
+        if negated:
+            item.wins_servers = []
+            item.explicit_fields.add("wins_servers")
+        elif values and all(_is_ip(value) for value in values):
+            item.wins_servers.extend(value for value in values if value not in item.wins_servers)
+            item.explicit_fields.add("wins_servers")
+        else:
+            self._record_diagnostic(line_number, line, "Malformed DHCP WINS server", "dhcpd")
+        return
+    if command == "ping_timeout":
+        if negated:
+            item.ping_timeout = None
+            item.explicit_fields.add("ping_timeout")
+        elif len(values) == 1 and values[0].isdigit():
+            item.ping_timeout = int(values[0])
+            item.explicit_fields.add("ping_timeout")
+        else:
+            self._record_diagnostic(line_number, line, "Malformed DHCP ping timeout", "dhcpd")
+        return
+    if command == "reserve-address":
+        if len(values) != 3:
+            self._record_diagnostic(line_number, line, "Malformed DHCP reservation", "dhcpd")
+            return
+        address, mac, reservation_interface = values
+        try:
+            ipaddress.IPv4Address(address)
+            valid_mac = bool(re.fullmatch(r"(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}|[0-9a-fA-F]{4}(?:\.[0-9a-fA-F]{4}){2}", mac))
+        except ValueError:
+            valid_mac = False
+        if not valid_mac:
+            self._record_diagnostic(line_number, line, "Malformed DHCP reservation IP or MAC", "dhcpd")
+            return
+        item.reservations.append(CiscoDHCPReservation(
+            ip=address, mac=mac, interface=reservation_interface, source_order=line_number,
+            explicit_fields={"ip", "mac", "interface"},
+        ))
+        return
+    if command == "auto_config":
+        item.auto_config = " ".join(values) if values else ""
+        item.explicit_fields.add("auto_config")
+        return
+    if command == "update" and values[:1] == ["dns"]:
+        item.dns_update = " ".join(values[1:]) if len(values) > 1 else "enabled"
+        item.explicit_fields.add("dns_update")
         return
     item.requires_manual_review = True
     item.review_reasons.append("Unsupported DHCP command retained")
-    item.source_attributes.setdefault("unmodeled_lines", []).append(safe)
+    item.raw_extra.setdefault("unmodeled_lines", []).append(safe)
+
+
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
 
 
 def _parse_management_command(self: Any, line: str, line_number: int) -> None:
@@ -952,7 +1036,7 @@ def _parse_trustpoint_block(self: Any, lines: List[str], index: int) -> int:
             elif key.startswith("validation"): record.validation_settings.append(safe)
             elif key.startswith("crl"): record.crl_settings.append(safe)
             elif key.startswith("ocsp"): record.ocsp_settings.append(safe)
-            else: record.source_attributes.setdefault("unmodeled_lines", []).append(safe)
+            else: record.raw_extra.setdefault("unmodeled_lines", []).append(safe)
         cursor += 1
     self.config.trustpoint_records.append(record)
     if record.name not in self.config.trustpoints:

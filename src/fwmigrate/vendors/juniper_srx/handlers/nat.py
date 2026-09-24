@@ -298,7 +298,6 @@ def _record_unknown_context(
             }
         )
     )
-    _sync_rule_set_context_to_rules(rs)
     cmd.extraction_status = ExtractionStatus.PARTIAL
     cmd.requires_manual_review = True
 
@@ -307,7 +306,6 @@ def _record_unsupported_nat_context(rs: JuniperNATRuleSet, toks: list[str], cmd:
     rs.source_attributes.setdefault("unsupported_contexts", []).append(
         sanitize_source_attributes({"tokens": toks, "raw": cmd.raw_sanitized})
     )
-    _sync_rule_set_context_to_rules(rs)
     cmd.extraction_status = ExtractionStatus.PARTIAL
     cmd.requires_manual_review = True
 
@@ -315,11 +313,9 @@ def _record_unsupported_nat_context(rs: JuniperNATRuleSet, toks: list[str], cmd:
 def _get_or_create_nat_rule(rs: JuniperNATRuleSet, name: str, nat_type: str) -> JuniperNATRule:
     for rule in rs.rules:
         if rule.name == name:
-            _sync_rule_set_context_to_rule(rs, rule)
             return rule
     new_rule = JuniperNATRule(name=name, nat_type=nat_type, sequence=len(rs.rules) + 1)
     rs.rules.append(new_rule)
-    _sync_rule_set_context_to_rule(rs, new_rule)
     return new_rule
 
 
@@ -345,9 +341,6 @@ def _parse_nat_rule_body(cmd: JunosCommand, body_toks: list[str], rule: JuniperN
     if key == "match" and len(body_toks) >= 3:
         match_key = body_toks[1].lower()
         vals = extract_value_list(body_toks[2:])
-        if any(":" in value for value in vals):
-            rule.nat_family = "ipv6"
-
         if match_key == "source-address":
             _record_match(rule, "source_addresses", rule.match.source_addresses, vals, cmd)
         elif match_key == "destination-address":
@@ -520,39 +513,6 @@ def _record_context(rs, field, target, values, cmd):
         record_member_candidate(rs.member_candidate_history, field, value, cmd)
         if value not in target:
             target.append(value)
-    _sync_rule_set_context_to_rules(rs)
-
-
-def _rule_set_context_snapshot(rs: JuniperNATRuleSet) -> dict:
-    snapshot = {
-        "from": {
-            "zones": list(rs.from_context.zones),
-            "interfaces": list(rs.from_context.interfaces),
-            "routing_instances": list(rs.from_context.routing_instances),
-        }
-    }
-    if rs.to_context:
-        snapshot["to"] = {
-            "zones": list(rs.to_context.zones),
-            "interfaces": list(rs.to_context.interfaces),
-            "routing_instances": list(rs.to_context.routing_instances),
-        }
-    if rs.source_attributes.get("unsupported_contexts"):
-        snapshot["unsupported_contexts"] = list(rs.source_attributes["unsupported_contexts"])
-    if rs.source_attributes.get("unknown_contexts"):
-        snapshot["unknown_contexts"] = list(rs.source_attributes["unknown_contexts"])
-    return sanitize_source_attributes(snapshot)
-
-
-def _sync_rule_set_context_to_rule(rs: JuniperNATRuleSet, rule: JuniperNATRule) -> None:
-    rule.source_attributes["junos_rule_set_context"] = _rule_set_context_snapshot(rs)
-
-
-def _sync_rule_set_context_to_rules(rs: JuniperNATRuleSet) -> None:
-    for rule in rs.rules:
-        _sync_rule_set_context_to_rule(rs, rule)
-
-
 def _record_match(rule, field, target, values, cmd):
     for value in values:
         record_member_candidate(rule.match.member_candidate_history, field, value, cmd)

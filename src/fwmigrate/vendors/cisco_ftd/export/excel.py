@@ -19,6 +19,10 @@ def _refs(values: Any) -> Any:
     return [item.model_dump(exclude_none=True) if hasattr(item, "model_dump") else item for item in values]
 
 
+def _ra_ref(value: Any) -> Any:
+    return value.model_dump(exclude_none=True) if value is not None else None
+
+
 def _nat_ref(value: Any) -> Any:
     if isinstance(value, dict):
         return value.get("name") or value.get("id") or str(value)
@@ -45,6 +49,31 @@ def _nat_row(policy: Any, rule: Any, section: str | None, kind: str) -> tuple[An
         getattr(rule, "route_lookup", None), getattr(rule, "proxy_arp", None), rule.source_plane, rule.source_context,
         rule.raw_extra, _nat_ref(getattr(rule, "service", None)),
         getattr(rule, "source_translation_mode", None), getattr(rule, "destination_translation_mode", None))
+
+
+def _inspection_rows(config: Any) -> list[tuple[Any, ...]]:
+    rows = []
+    groups = (("File", config.file_policies, ()),
+              ("Decryption", config.decryption_policies, ("default_action", "undecryptable_action", "advanced_settings")),
+              ("DNS", config.dns_policies, ("default_action", "umbrella_settings")))
+    for kind, policies, behavior_fields in groups:
+        for policy in policies:
+            rules = policy.rules
+            for rule in rules or [None]:
+                fields = {} if rule is None else rule.model_dump(exclude_none=True, exclude={
+                    "name", "source_id", "source_plane", "source_context", "domain_id", "device_id",
+                    "explicit_fields", "source_attributes", "raw_extra", "parent_policy_id", "parent_policy_name",
+                    "position", "collection_order", "enabled", "action"})
+                behavior = {field: getattr(policy, field) for field in behavior_fields
+                            if getattr(policy, field) is not None}
+                rows.append((kind, policy.name, policy.source_id, rule.name if rule else None,
+                    rule.source_id if rule else None, "UNKNOWN" if rules is None else "PRESENT" if rules else "KNOWN EMPTY",
+                    rule.position if rule else None, rule.collection_order if rule else None,
+                    rule.enabled if rule else None, rule.action if rule else None,
+                    json.dumps(fields, default=str), json.dumps(behavior, default=str),
+                    json.dumps({"policy": policy.raw_extra, "rule": rule.raw_extra if rule else {}}, default=str),
+                    policy.source_plane, policy.source_context))
+    return rows
 
 
 def export_ftd_excel(result: Any, output: Any) -> Any:
@@ -92,10 +121,43 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
                 ("AUTO", "auto", policy.auto_rules), ("AFTER_AUTO", "manual", policy.manual_rules_after_auto),
                 (None, "manual", policy.unclassified_manual_rules), (None, "manual", policy.rules))
             for rule in (rules or [])],
+        "Inspection Policies": _inspection_rows(config),
+        "RA VPN Policies": [(x.name, x.source_id, _refs(x.target_devices), _refs(x.access_interfaces),
+            _refs(x.certificates), _refs(x.certificate_maps), x.certificate_map_settings, _refs(x.connection_profiles),
+            _refs(x.group_policies), _refs(x.address_pools), _refs(x.realms), x.ssl_tls_settings,
+            x.dtls_settings, x.session_settings, x.raw_extra) for x in config.ra_vpn_policies],
+        "RA Connection Profiles": [(x.parent_policy_name, x.name, x.source_id, x.alias, x.group_url,
+            x.enabled, x.authentication_method, _ra_ref(x.realm), _ra_ref(x.authentication_server),
+            _ra_ref(x.authorization), _ra_ref(x.accounting_server), _ra_ref(x.default_group_policy),
+            _refs(x.address_pools), x.address_assignment, _refs(x.certificates), _refs(x.certificate_maps),
+            x.connection_settings, x.raw_extra) for x in config.ra_vpn_connection_profiles],
+        "RA Group Policies": [(x.name, x.source_id, x.vpn_access, x.protocols, x.connection_settings,
+            x.dns_servers, x.wins_servers, x.domain_name, _ra_ref(x.realm), _ra_ref(x.aaa_server_group),
+            _refs(x.address_pools), x.split_tunnel_policy, _refs(x.split_tunnel_networks), _ra_ref(x.split_tunnel_acl), x.split_dns,
+            _refs(x.secure_client), x.session_settings, x.simultaneous_logins, x.raw_extra)
+            for x in config.group_policies],
+        "RA Address Pools": [(x.name, x.source_id, x.address_family, x.start_address, x.end_address,
+            x.source_representation, x.address_reuse_delay, x.override_metadata, x.raw_extra)
+            for x in config.address_pools],
+        "RA Certificates": [(x.name, x.source_id, x.certificate_type, x.issuer, x.subject,
+            x.validity, x.certificate_metadata, x.private_key_present, x.raw_extra) for x in config.certificates],
+        "RA Certificate Maps": [(x.name, x.source_id, x.conditions, _ra_ref(x.connection_profile),
+            _ra_ref(x.group_policy), x.raw_extra) for x in config.certificate_maps],
+        "RA Secure Client": [(x.name, x.source_id, _refs(x.packages), _refs(x.profiles), x.raw_extra)
+            for x in config.secure_client_settings],
+        "RA IPsec Settings": [(x.source_attributes.get("parent_policy_id"),
+            x.source_attributes.get("parent_policy_name"), x.name, x.ikev2_settings, x.ipsec_settings,
+            x.nat_keepalive, x.raw_extra) for x in config.ra_vpn_ipsec_settings],
+        "RA Address Assignment": [(x.source_attributes.get("parent_policy_id"),
+            x.source_attributes.get("parent_policy_name"), x.name, _refs(x.address_pools),
+            x.assignment_method, x.reuse_delay, x.use_dhcp, x.use_authorization_server_for_ipv4,
+            x.use_authorization_server_for_ipv6, x.use_internal_address_pool_for_ipv4,
+            x.use_internal_address_pool_for_ipv6, x.raw_extra)
+            for x in config.ra_vpn_address_assignment_settings],
     }
     native_collections = ("applications", "variable_sets", "url_categories", "vlan_objects", "time_ranges",
-        "intrusion_policies", "intrusion_rule_overrides", "file_policies",
-        "decryption_policies", "dns_policies", "fmc_user_roles", "fmc_users", "dhcp_servers", "realms",
+        "intrusion_policies", "intrusion_rule_groups", "intrusion_rule_behaviors", "intrusion_rule_overrides",
+        "fmc_user_roles", "fmc_users", "dhcp_servers", "realms",
         "realm_user_groups", "realm_users", "local_realm_users", "s2s_vpn_topologies", "s2s_vpn_endpoints",
         "ike_policies", "ipsec_proposals", "ra_vpn_policies", "ra_vpn_connection_profiles",
         "virtual_routers", "sla_monitors", "ecmp_zones", "policy_based_routes", "certificates",

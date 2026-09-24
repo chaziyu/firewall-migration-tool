@@ -80,7 +80,10 @@ def _inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
         ("source_interfaces", "interfaces"), ("routes", "routes"),
         ("access_control_policies", "access-control-policies"),
         ("time_ranges", "time-ranges"), ("intrusion_policies", "intrusion-policies"),
+        ("intrusion_rule_groups", "intrusion-rule-groups"),
+        ("intrusion_rule_behaviors", "intrusion-rule-behaviors"),
         ("intrusion_rule_overrides", "intrusion-rule-overrides"),
+        ("file_policies", "file-policies"),
         ("decryption_policies", "decryption-policies"), ("dns_policies", "dns-policies"),
         ("fmc_user_roles", "fmc-user-roles"), ("fmc_users", "fmc-users"),
         ("dhcp_servers", "dhcp-servers"), ("realms", "realms"),
@@ -99,10 +102,24 @@ def _inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
                 source_type=attribute[:-1], source_context=record.source_context,
                 source_attributes={"source_plane": record.source_plane, "device_id": record.device_id,
                     "device_name": record.source_attributes.get("device_name"), "domain_id": record.domain_id,
+                    "explicit_fields": list(record.explicit_fields),
                     **record.source_attributes},
                 status=ExtractionStatus.SOURCE_ONLY if config.source_plane == "ftd-text-evidence" else ExtractionStatus.EXTRACTED,
                 requires_manual_review=any(item.get("source_name") == record.name for item in config.unsupported_evidence),
             ))
+    for policies, path in ((config.file_policies, "file-policy-rules"),
+                           (config.decryption_policies, "decryption-policy-rules"),
+                           (config.dns_policies, "dns-policy-rules")):
+        for policy in policies:
+            for index, rule in enumerate(policy.rules or [], 1):
+                items.append(SourceInventoryItem(domain="cisco_ftd",
+                    source_path=f"{config.source_plane}/{path}",
+                    source_id=str(rule.source_id or f"{policy.source_id or policy.name}:{index}"),
+                    name=rule.name, source_type="policy-rule",
+                    source_context=rule.source_context,
+                    source_attributes={"source_plane": rule.source_plane, "domain_id": rule.domain_id,
+                        "policy_id": rule.parent_policy_id, "policy_name": rule.parent_policy_name,
+                        "position": rule.position, "collection_order": rule.collection_order}))
     if config.source_plane == "ftd-text-evidence":
         for path, records, kind in (("interfaces", config.interfaces, "interface"),
                                     ("routes", config.static_routes, "static-route")):
@@ -163,7 +180,10 @@ def extract_cisco_ftd_source(text: str, zone_mapping: dict[str, str] | None = No
         return sum(len(getattr(config, field)) for field in (
             "network_addresses", "network_groups", "protocol_port_objects", "port_object_groups", "applications",
             "file_policies", "variable_sets", "url_categories", "vlan_objects", "security_zones", "interface_groups",
-            "source_interfaces", "routes", "access_control_policies", "nat_policies")) + count_acp_rules(config) + count_nat_rules(config)
+            "intrusion_policies", "intrusion_rule_groups", "intrusion_rule_behaviors", "intrusion_rule_overrides",
+            "dhcp_servers", "file_policies", "decryption_policies", "dns_policies",
+            "source_interfaces", "routes", "access_control_policies", "nat_policies")) + count_acp_rules(config) + count_nat_rules(config) + sum(
+                len(policy.rules or []) for policy in (*config.file_policies, *config.decryption_policies, *config.dns_policies))
 
     if is_fmc_bundle(text):
         config = CiscoFMCBundleParser(text).parse_source()

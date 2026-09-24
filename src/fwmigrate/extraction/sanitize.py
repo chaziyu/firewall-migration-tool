@@ -50,6 +50,7 @@ SENSITIVE_KEY_PREFIXES = (
 )
 
 SENSITIVE_EXACT_KEYS = {
+    "credential", "credentials", "connection-string", "conn-string",
     "authorization",
     "cookie",
     "private-key-data", "private_key_data", "key-data", "key_data",
@@ -65,6 +66,9 @@ def is_sensitive_key(key: str) -> bool:
     """Check if a dictionary key name matches sensitive prefixes/names."""
     k = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", key.strip()).lower().replace("_", "-")
     if k in {item.replace("_", "-") for item in SENSITIVE_EXACT_KEYS}:
+        return True
+    if k.endswith(("-credential", "-credentials", "-credential-value", "-credentials-value",
+                   "-connection-string", "-conn-string")):
         return True
     if k.startswith("private-key-") or k.startswith("sic-password-"):
         return True

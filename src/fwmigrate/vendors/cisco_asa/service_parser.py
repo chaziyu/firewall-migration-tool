@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 from fwmigrate.vendors.cisco_asa.acl_parser import parse_port_spec
-from fwmigrate.vendors.cisco_asa.model import CiscoServicePort
+from fwmigrate.vendors.cisco_asa.model.service import CiscoServicePort
 
 
 SUPPORTED_PROTOCOLS = {

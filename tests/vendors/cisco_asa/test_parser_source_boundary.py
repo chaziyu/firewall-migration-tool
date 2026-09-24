@@ -51,6 +51,26 @@ def test_parser_does_not_attach_reference_failures_and_derived_views_do_not_muta
     validate_asa_config(config, derived)
     assert config == before
     assert any(not issue.resolved for issue in derived.relationship_issues)
+    member_relation = derived.group_relationships.members[0]
+    assert member_relation.status.value == "UNRESOLVED"
+    assert member_relation.target is None
+    assert "resolved" not in type(config.network_groups[0].member_entries[0]).model_fields
+
+
+def test_nested_group_member_target_is_available_only_in_derived_views():
+    config = parse(
+        "object network SERVER\n host 192.0.2.10\n"
+        "object-group network CHILD\n network-object object SERVER\n"
+        "object-group network PARENT\n group-object CHILD\n"
+    )
+    before = deepcopy(config)
+
+    derived = build_asa_derived_views(config)
+    resolved = [edge for edge in derived.group_relationships.members if edge.target is not None]
+    assert [(edge.reference_name, edge.target.name) for edge in resolved] == [
+        ("SERVER", "SERVER"), ("CHILD", "CHILD"),
+    ]
+    assert config == before
 
 
 def test_invalid_ipv6_standard_acl_is_a_parse_error_at_construction():
@@ -82,6 +102,25 @@ def test_source_blocks_are_built_when_the_parser_reaches_them():
     assert config.service_policies[0].enabled is False
     assert config.http_server.port == 8443
     assert config.trustpoint_records[0].certificate_present is True
+
+
+def test_dhcp_and_context_interface_resolution_stays_in_derived_relationships():
+    config = parse("\n".join([
+        "interface GigabitEthernet0/0", " nameif outside", " dhcprelay server 192.0.2.1",
+        "context blue", " allocate-interface GigabitEthernet0/0 mapped",
+    ]))
+    before = deepcopy(config)
+
+    assert config.dhcp_relays[0].server_entries[0].interface == "GigabitEthernet0/0"
+    assert config.dhcp_relays[0].server_entries[0].explicit_fields == {"server", "interface"}
+    assert config.contexts[0].allocated_interface_entries[0].physical_interface == "GigabitEthernet0/0"
+    assert config.contexts[0].allocated_interface_entries[0].explicit_fields == {"physical_interface", "mapped_name"}
+
+    derived = build_asa_derived_views(config)
+    routing = derived.routing_relationships
+    assert routing.dhcp_relay_interfaces[0].interface is config.interfaces[0]
+    assert routing.allocated_interfaces[0].interface is config.interfaces[0]
+    assert config == before
 
 
 def test_syntax_safety_is_recorded_during_source_parsing():

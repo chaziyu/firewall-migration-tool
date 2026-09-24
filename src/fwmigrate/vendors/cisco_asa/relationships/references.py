@@ -27,6 +27,7 @@ class ASAReferenceKind(str, Enum):
     TCP_MAP = "tcp_map"
     LOCAL_USER = "local_user"
     USER_GROUP = "user_group"
+    SECURITY_GROUP = "security_group"
     AAA_SERVER_GROUP = "aaa_server_group"
     VPN_ADDRESS_POOL = "vpn_address_pool"
     GROUP_POLICY = "group_policy"
@@ -83,10 +84,64 @@ class ASADuplicateReference:
     candidates: tuple[Any, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ASAGroupMemberRelationship:
+    group: Any
+    member: Any
+    reference_kind: ASAReferenceKind | None
+    reference_name: str | None
+    status: ASAReferenceStatus
+    target: Any = None
+
+
+@dataclass(frozen=True, slots=True)
+class ASAGroupRelationships:
+    members: tuple[ASAGroupMemberRelationship, ...] = ()
+    issues: tuple[ASAReferenceIssue, ...] = ()
+
+
 def source_context_of(item: Any) -> str | None:
     if hasattr(item, "source_context"):
         return getattr(item, "source_context")
     return getattr(item, "source_attributes", {}).get("source_context")
+
+
+def build_group_relationships(config: Any, references: ASAReferenceIndex) -> ASAGroupRelationships:
+    issues = []
+    relationships = []
+    collections = (
+        ("network_groups", {"network_object": ASAReferenceKind.NETWORK_OBJECT,
+                            "network_group": ASAReferenceKind.NETWORK_GROUP,
+                            "nested_group": ASAReferenceKind.NETWORK_GROUP}),
+        ("protocol_groups", {"protocol_group": ASAReferenceKind.PROTOCOL_GROUP}),
+        ("icmp_type_groups", {"icmp_group": ASAReferenceKind.ICMP_GROUP}),
+        ("user_groups", {"user_group": ASAReferenceKind.USER_GROUP}),
+        ("security_groups", {"security_group": ASAReferenceKind.SECURITY_GROUP}),
+        ("service_groups", {"service_group": ASAReferenceKind.SERVICE_GROUP,
+                            "service_object": ASAReferenceKind.SERVICE_OBJECT}),
+    )
+    for collection, member_kinds in collections:
+        for group in getattr(config, collection, ()):
+            context = source_context_of(group)
+            for member in getattr(group, "member_entries", ()):
+                get = member.get if isinstance(member, dict) else lambda key, default=None: getattr(member, key, default)
+                kind = member_kinds.get(get("type"))
+                name = get("value")
+                if kind is None or not name:
+                    relationships.append(ASAGroupMemberRelationship(
+                        group, member, kind, name, ASAReferenceStatus.SOURCE_SELECTOR,
+                    ))
+                    continue
+                result = references.resolve(context, kind, str(name))
+                relationships.append(ASAGroupMemberRelationship(
+                    group, member, kind, str(name), result.status, result.target,
+                ))
+                if result.status is not ASAReferenceStatus.RESOLVED:
+                    issues.append(ASAReferenceIssue(
+                        context, kind, group.name, str(name), result.status,
+                        f"Unresolved {kind.value.replace('_', ' ')} reference", "group-member",
+                    ))
+    return ASAGroupRelationships(tuple(relationships), tuple(issues))
 
 
 class ASAReferenceIndex:
@@ -197,6 +252,7 @@ def build_asa_reference_index(config: Any) -> ASAReferenceIndex:
         ("network_objects", ASAReferenceKind.NETWORK_OBJECT), ("network_groups", ASAReferenceKind.NETWORK_GROUP),
         ("service_objects", ASAReferenceKind.SERVICE_OBJECT), ("service_groups", ASAReferenceKind.SERVICE_GROUP),
         ("protocol_groups", ASAReferenceKind.PROTOCOL_GROUP), ("icmp_type_groups", ASAReferenceKind.ICMP_GROUP),
+        ("security_groups", ASAReferenceKind.SECURITY_GROUP),
         ("time_ranges", ASAReferenceKind.TIME_RANGE), ("route_maps", ASAReferenceKind.ROUTE_MAP),
         ("ike_policies", ASAReferenceKind.IKE_POLICY), ("ikev2_proposals", ASAReferenceKind.IKEV2_PROPOSAL),
         ("ipsec_transform_sets", ASAReferenceKind.IPSEC_TRANSFORM_SET), ("vpn_address_pools", ASAReferenceKind.VPN_ADDRESS_POOL),

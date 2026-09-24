@@ -5,6 +5,7 @@ from openpyxl import load_workbook
 
 from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
 from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
+from fwmigrate.vendors.cisco_asa.export.excel_schema import SHEET_ORDER
 from fwmigrate.vendors.cisco_asa.web_report import build_asa_preview
 from fwmigrate.vendors.cisco_asa.derived import build_asa_derived_views
 from fwmigrate.vendors.cisco_asa.validation import validate_asa_config
@@ -84,8 +85,5 @@ def test_source_preview_and_excel_contain_no_ir_or_secret_text():
     output = BytesIO()
     export_asa_excel(result, output)
     workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
-    assert workbook.sheetnames == [
-        "Summary", "Source Inventory", "Interfaces", "Network Objects",
-        "Network Groups", "ACL Rules", "NAT Rules", "Routes", "VPN", "Validation",
-    ]
+    assert workbook.sheetnames == list(SHEET_ORDER)
     assert all("super-secret" not in str(row) for sheet in workbook for row in sheet.iter_rows(values_only=True))

@@ -9,7 +9,7 @@ PARTIAL = {
     "object-group service", "access-list", "access-group", "nat object",
     "nat manual", "route", "ipv6 route", "route-map", "policy-route", "time-range",
     "object network-service", "object-group network-service", "object-group protocol",
-    "object-group icmp-type", "object-group user", "object-group security",
+    "object-group icmp-type", "object-group user", "object-group security", "vpn-addr-assign",
 }
 MPF_PARTIAL = {"class-map", "policy-map", "service-policy", "tcp-map"}
 TYPED_INSPECTION_PARTIAL = {"class-map type inspect", "policy-map type inspect"}
@@ -25,9 +25,9 @@ SOURCE_ONLY = {
 }
 VPN_PARTIAL = {
     "crypto ikev1 policy", "crypto ikev2 policy", "crypto ipsec", "crypto map",
-    "tunnel-group", "group-policy",
+    "tunnel-group", "group-policy", "webvpn",
 }
-AAA_PARTIAL = {"aaa-server", "aaa", "username"}
+AAA_PARTIAL = {"aaa-server", "aaa", "username", "privilege"}
 
 
 def classify_cisco_asa_coverage(sections: list[SourceSectionResult]) -> None:

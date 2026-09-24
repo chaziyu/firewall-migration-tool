@@ -48,6 +48,9 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^crypto ca certificate\b", "certificate/trustpoint"),
         (r"^certificate\b", "certificate/trustpoint"),
         (r"^ip local pool\b", "vpn address pool"),
+        (r"^webvpn\b", "webvpn"),
+        (r"^vpn-addr-assign\b", "vpn-addr-assign"),
+        (r"^privilege\b", "privilege"),
         (r"^tunnel-group\b", "tunnel-group"),
         (r"^group-policy\b", "group-policy"),
         (r"^username\b", "username"),
@@ -98,7 +101,7 @@ def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
         "object-group security", "time-range", "class-map", "class-map type inspect",
         "policy-map", "policy-map type inspect", "route-map", "tunnel-group",
         "group-policy", "aaa-server", "tcp-map", "dns", "context", "failover",
-        "crypto map", "crypto ikev1 policy", "crypto ikev2 policy", "crypto ipsec",
+        "crypto map", "crypto ikev1 policy", "crypto ikev2 policy", "crypto ipsec", "webvpn",
         "certificate/trustpoint", "vpn address pool", "dynamic-routing", "sla-monitor",
     }
     for number, raw in enumerate(text.splitlines(), 1):

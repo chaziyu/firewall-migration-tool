@@ -12,11 +12,13 @@ def test_nested_sensitive_source_attribute_keys_are_redacted():
     config = CiscoASAConfig(interfaces=[CiscoInterface(
         name="Ethernet0/0",
         source_attributes={"future": {"api_token": secret, "safe_option": "keep"}},
+        raw_extra={"future": {"api_token": secret, "safe_option": "keep"}},
     )])
     safe = _sanitize(deepcopy(config))
 
     assert_secret_absent(safe.model_dump(mode="python"), secret)
     assert safe.interfaces[0].source_attributes["future"]["safe_option"] == "keep"
+    assert safe.interfaces[0].raw_extra["future"]["safe_option"] == "keep"
 
 
 def test_cli_password_sentinel_does_not_reach_source_or_accounting():

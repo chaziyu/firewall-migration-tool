@@ -15,12 +15,22 @@ class ASAIdentityRelationship:
     local_user: Any = None
     user_group: Any = None
     selector_status: str | None = None
+    privilege_level: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ASACommandPrivilegeRelationship:
+    source: Any
+    privilege_level: int
+    valid: bool
+    source_context: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ASAIdentityRelationships:
     relationships: tuple[ASAIdentityRelationship, ...] = ()
     issues: tuple[Any, ...] = ()
+    command_privileges: tuple[ASACommandPrivilegeRelationship, ...] = ()
 
 
 def build_identity_relationships(config: Any, references: ASAReferenceIndex) -> ASAIdentityRelationships:
@@ -49,4 +59,10 @@ def build_identity_relationships(config: Any, references: ASAReferenceIndex) -> 
             else:
                 status = result.status.value
         rows.append(ASAIdentityRelationship(item, group, interface, acl, user, user_group, status))
-    return ASAIdentityRelationships(tuple(rows), tuple(issues))
+    for item in getattr(config, "local_users", ()):
+        rows.append(ASAIdentityRelationship(item, local_user=item, privilege_level=item.privilege))
+    privileges = tuple(
+        ASACommandPrivilegeRelationship(item, item.privilege_level, 0 <= item.privilege_level <= 15, item.source_context)
+        for item in getattr(config, "command_privileges", ())
+    )
+    return ASAIdentityRelationships(tuple(rows), tuple(issues), privileges)
