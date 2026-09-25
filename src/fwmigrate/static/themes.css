@@ -399,10 +399,6 @@
   border-color: #5d7066;
   color: #cad4ce;
 }
-[data-theme="dark"] .app-footer,
-[data-theme="dark"] .app-footer > span:first-child {
-  color: var(--dark-dim);
-}
 [data-theme="dark"] .skip-link {
   background: var(--surface);
   color: var(--text-heading);
