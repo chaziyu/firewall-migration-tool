@@ -5,6 +5,7 @@ from ipaddress import ip_interface
 
 from .decisions import PANDecisionMode, PANDecisionReviewState, PANMigrationDecisionSet, make_decision_key
 from .interface_candidates import viable_candidate
+from .target_candidates import target_vsys_value
 from ...vendors.palo_alto.source_model import pan_scope_identity
 
 
@@ -88,8 +89,11 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
             continue
         address = _addresses(item.ip)
         candidates = []
+        target_vsys = target_vsys_value(decisions, vdom)
         for target_item, topo in scoped:
             if not address or not _compatible(item, target_item):
+                continue
+            if target_vsys and (topo is None or target_vsys not in topo.imported_vsys):
                 continue
             valid, strong, supporting, _ = viable_candidate(item, target_item, topo)
             if valid:
@@ -112,7 +116,10 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
         if not parent:
             continue
         candidates = []
+        target_vsys = target_vsys_value(decisions, vdom)
         for target_item, topo in scoped:
+            if target_vsys and (topo is None or target_vsys not in topo.imported_vsys):
+                continue
             valid, strong, supporting, _ = viable_candidate(item, target_item, topo, parent)
             if valid and str(getattr(target_item, "tag", None)) == str(item.vlanid):
                 candidates.append((target_item, strong, supporting))
@@ -125,12 +132,19 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
 
     assignments = {}
     for (vdom, name), target_name in mapped.items():
-        candidates = [topo for item, topo in scoped if item.name == target_name and topo and not topo.issues]
+        target_vsys = target_vsys_value(decisions, vdom)
+        candidates = [topo for item, topo in scoped if item.name == target_name and topo and not topo.issues
+                      and (not target_vsys or target_vsys in topo.imported_vsys)]
         if len(candidates) != 1:
             if not candidates:
-                warnings[make_decision_key(vdom, "interface", name, "target_interface")] = (
-                    f"Target interface {target_name} is absent from the uploaded target XML; confirm whether it will be created."
-                )
+                if target_vsys:
+                    warnings[make_decision_key(vdom, "interface", name, "target_interface")] = (
+                        f"Target interface {target_name} is not verified as imported into VSYS {target_vsys}."
+                    )
+                else:
+                    warnings[make_decision_key(vdom, "interface", name, "target_interface")] = (
+                        f"Target interface {target_name} is absent from the uploaded target XML; confirm whether it will be created."
+                    )
             continue
         topo = candidates[0]
         assignments.setdefault(vdom, []).append(topo)
