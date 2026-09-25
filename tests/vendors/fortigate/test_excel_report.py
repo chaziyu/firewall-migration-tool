@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import io
 import unittest
 
@@ -214,47 +215,72 @@ class ExcelReportTest(unittest.TestCase):
         output.seek(0)
         return load_workbook(output, data_only=False)
 
-    def test_fast_inventory_and_sheet_selection(self):
+    def test_fast_excludes_traceability_appendices_and_keeps_full_intact(self):
         full = self._workbook(profile=ExcelExportProfile.FULL)
         fast = self._workbook(profile=ExcelExportProfile.FAST)
 
-        full_inventory = full["FortiGate Source Inventory"]
-        fast_inventory = fast["FortiGate Source Inventory"]
-        full_values = list(full_inventory.iter_rows(min_row=4, values_only=True))
-        fast_values = list(fast_inventory.iter_rows(min_row=4, values_only=True))
-        headers = list(SHEET_HEADERS["FortiGate Source Inventory"])
-        object_col = headers.index("Object")
-        status_col = headers.index("Extraction Status")
-
-        assert any(row[object_col] == "port2" for row in full_values)
-        assert not any(row[object_col] == "port2" for row in fast_values)
-        assert any(row[status_col] != "TYPED" for row in fast_values)
-        assert len(fast_values) < len(full_values)
+        assert {"FortiGate Source Inventory", "Extraction Coverage"} <= set(full.sheetnames)
+        assert {"FortiGate Source Inventory", "Extraction Coverage"}.isdisjoint(fast.sheetnames)
         assert "NTP Servers" not in fast.sheetnames
-        assert {"Summary", "Review Required", "FortiGate Source Inventory", "Extraction Coverage"} <= set(fast.sheetnames)
+        assert {"Summary", "Review Required"} <= set(fast.sheetnames)
 
         summary = fast["Summary"]
+        assert "FAST export omits command-level Source Inventory" in summary["B10"].value
         links = [
             cell.hyperlink.target
             for row in summary.iter_rows()
             for cell in row
             if cell.hyperlink
         ]
-        assert all(target.split("'!")[0].lstrip("#'") in fast.sheetnames for target in links)
+        link_sheets = {target.split("'!")[0].lstrip("#'") for target in links}
+        assert links
+        assert link_sheets <= set(fast.sheetnames)
+        assert {"FortiGate Source Inventory", "Extraction Coverage"}.isdisjoint(link_sheets)
+        assert summary.column_dimensions["A"].width == 42
+        assert summary.column_dimensions["B"].width == 52
+        assert list(full["FortiGate Source Inventory"].iter_rows(min_row=3, values_only=True))
+        assert list(full["Extraction Coverage"].iter_rows(min_row=3, values_only=True))
 
     def test_fast_preserves_values_and_uses_low_style_table_writer(self):
         full = self._workbook(profile=ExcelExportProfile.FULL)
         fast = self._workbook(profile=ExcelExportProfile.FAST)
 
-        for sheet_name in ("Addresses", "Interfaces", "Extraction Coverage"):
+        for sheet_name in ("Addresses", "Interfaces", "Policies", "NAT Rules", "Routes", "VPN Tunnels"):
             if sheet_name not in fast.sheetnames:
                 continue
             assert list(full[sheet_name].iter_rows(min_row=3, values_only=True)) == list(
                 fast[sheet_name].iter_rows(min_row=3, values_only=True)
             )
             assert fast[sheet_name]["A1"].has_style
-            assert fast[sheet_name].freeze_panes == full[sheet_name].freeze_panes
             assert fast[sheet_name].auto_filter.ref == full[sheet_name].auto_filter.ref
+            assert not fast[sheet_name].merged_cells.ranges
+            for column in range(1, fast[sheet_name].max_column + 1):
+                fast_width = fast[sheet_name].column_dimensions[get_column_letter(column)].width
+                full_width = full[sheet_name].column_dimensions[get_column_letter(column)].width
+                assert fast_width > full_width
+
+    def test_fast_does_not_build_typed_source_inventory(self):
+        from unittest.mock import patch
+
+        with patch(
+            "fwmigrate.vendors.fortigate.export.excel.build_typed_source_inventory",
+            side_effect=AssertionError("FAST must not build typed source inventory"),
+        ):
+            self._workbook(profile=ExcelExportProfile.FAST)
+
+    def test_fast_export_does_not_mutate_analysis(self):
+        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG), config=ExtractionConfig())
+        derived = build_derived_views(extracted.config)
+        validation = validate_config(extracted.config, derived=derived)
+        before = deepcopy((extracted.config, extracted.source_objects, derived, validation))
+        export_excel(
+            extracted=extracted,
+            derived=derived,
+            validation=validation,
+            output=io.BytesIO(),
+            profile=ExcelExportProfile.FAST,
+        )
+        assert (extracted.config, extracted.source_objects, derived, validation) == before
 
     def test_data_only_is_streaming_data_without_empty_or_presentation_sheets(self):
         fast = self._workbook(profile=ExcelExportProfile.FAST)
