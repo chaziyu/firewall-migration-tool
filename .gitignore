@@ -23,11 +23,6 @@ build/
 dist/
 pip-wheel-metadata/
 
-# Terraform state and working directory
-*.tfstate
-*.tfstate.*
-.terraform/
-
 # Local secrets and customer data: never commit actual configurations
 .env
 .env.*
@@ -74,7 +69,7 @@ split_configs/
 Thumbs.db
 
 # Local analysis and scratch files
-.codegraph/*
+/.codegraph/
 !.codegraph/.gitignore
 .codex-tmp/
 scratch/transcript_dumps/
