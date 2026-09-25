@@ -101,6 +101,12 @@
       <div class="file-details">
         <span class="filename" id="selected-filename"></span
         ><span class="filesize" id="selected-filesize"></span>
+        <div
+          id="preview-status"
+          class="preview-status hidden"
+          role="status"
+          aria-live="polite"
+        ></div>
       </div>
       <button
         type="button"
@@ -112,12 +118,6 @@
       </button>
     </div>
   </div>
-  <div
-    id="preview-status"
-    class="preview-status hidden"
-    role="status"
-    aria-live="polite"
-  ></div>
   <div class="optimizer-panel hidden" id="optimizer-panel">
     <div class="optimizer-header">
       <strong id="preview-heading">{{ icon('activity') }}Configuration overview</strong
