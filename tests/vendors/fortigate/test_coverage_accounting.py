@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import unittest
+from types import SimpleNamespace
 
 from openpyxl import load_workbook
 from fwmigrate.vendors.fortigate.config import ExtractionConfig
@@ -9,12 +10,19 @@ from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export import export_excel
 from fwmigrate.vendors.fortigate.export.excel_schema import SHEET_HEADERS
 from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
+from fwmigrate.vendors.fortigate.extraction.coverage import (
+    TypedSourceObject,
+    build_typed_source_identity_index,
+    find_typed_source_object,
+)
+from fwmigrate.vendors.fortigate.extraction.source_inventory import SourceObjectRecord
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
+from fwmigrate.source_reporting import ExcelExportProfile
 from fwmigrate.vendors.fortigate.validation.validator import validate_config
 
 
 class CoverageAccountingTest(unittest.TestCase):
-    def _report(self, source: str):
+    def _report(self, source: str, profile: ExcelExportProfile = ExcelExportProfile.FULL):
         extracted = extract_fortigate_config(parse_fortigate_config(source), config=ExtractionConfig())
         derived = build_derived_views(extracted.config)
         output = io.BytesIO()
@@ -23,6 +31,7 @@ class CoverageAccountingTest(unittest.TestCase):
             derived=derived,
             validation=validate_config(extracted.config, derived=derived),
             output=output,
+            profile=profile,
         )
         output.seek(0)
         return extracted, load_workbook(output, data_only=False)
@@ -31,6 +40,36 @@ class CoverageAccountingTest(unittest.TestCase):
     def _rows(sheet):
         headers = [sheet.cell(3, column).value for column in range(1, sheet.max_column + 1)]
         return headers, list(sheet.iter_rows(min_row=4, values_only=True))
+
+    @staticmethod
+    def _record(parent_objects):
+        return SourceObjectRecord(
+            vdom="root",
+            source_path="nested",
+            object_name="child",
+            parent_objects=parent_objects,
+            values={},
+            explicit_fields=(),
+            unset_fields=(),
+            commands=(),
+            start_line_number=None,
+            end_line_number=None,
+        )
+
+    def test_typed_identity_index_preserves_nested_parents_and_first_match(self):
+        first_model = SimpleNamespace(name="first")
+        second_model = SimpleNamespace(name="second")
+        inventory = {
+            "nested": (
+                TypedSourceObject(("root", "nested", "child", ("parent-a",)), first_model),
+                TypedSourceObject(("root", "nested", "child", ("parent-b",)), second_model),
+                TypedSourceObject(("root", "nested", "child", ("parent-a",)), second_model),
+            )
+        }
+        identity_index = build_typed_source_identity_index(inventory)
+
+        self.assertIs(first_model, find_typed_source_object(identity_index, self._record(("parent-a",))).model)
+        self.assertIs(second_model, find_typed_source_object(identity_index, self._record(("parent-b",))).model)
 
 
     def test_workbook_keeps_registration_model_coverage_and_raw_extra_separate(self):
@@ -111,6 +150,39 @@ end
         self.assertEqual(0, row[headers.index("Raw Extra Objects")])
         self.assertEqual(0, row[headers.index("Raw Extra Entries")])
         self.assertEqual(0, row[headers.index("Source-only Records")])
+
+    def test_fast_inventory_keeps_evidence_but_omits_fully_typed_duplicates(self):
+        source = '''
+config system interface
+    edit "port1"
+        set ip 192.0.2.1 255.255.255.0
+        set future-option preserve-me
+    next
+    edit "port2"
+    next
+end
+config firewall unsupported-section
+    edit "source-only"
+        set future-setting preserve-me
+    next
+end
+'''
+        _, full = self._report(source)
+        _, fast = self._report(source, ExcelExportProfile.FAST)
+
+        headers = list(SHEET_HEADERS["FortiGate Source Inventory"])
+        object_col = headers.index("Object")
+        status_col = headers.index("Extraction Status")
+        full_rows = list(full["FortiGate Source Inventory"].iter_rows(min_row=4, values_only=True))
+        fast_inventory = fast["FortiGate Source Inventory"]
+        fast_rows = list(fast_inventory.iter_rows(min_row=4, values_only=True))
+
+        assert any(row[object_col] == "port2" for row in full_rows)
+        assert not any(row[object_col] == "port2" for row in fast_rows)
+        assert {"TYPED_WITH_RAW_EXTRA", "SOURCE_ONLY"} <= {
+            row[status_col] for row in fast_rows
+        }
+        assert str(fast_inventory["A2"].value).startswith(f"{len(fast_rows)} selected source row(s).")
 
 
 

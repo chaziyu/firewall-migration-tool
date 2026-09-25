@@ -27,6 +27,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANMigrationOptions,
     build_decision_set,
     make_decision_key,
+    build_recommendations,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
@@ -453,6 +454,9 @@ def create_app(test_config=None):
                     analysis.extracted.config, decision_set, target, target_device
                 )
             target_findings = validate_against_target(analysis.extracted.config, decision_set, target, target_device)
+            recommendations = build_recommendations(
+                analysis.extracted.config, analysis.derived, decision_set, target, target_device
+            )
             return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': requirements,
                             'decisions': decision_set.to_dict(),
                             'decision_document': _decision_document(entry.source_digest, decision_set,
@@ -461,7 +465,8 @@ def create_app(test_config=None):
                             'target_device_metadata': target_device_metadata(target) if target else [],
                             'target_warnings': target_warnings,
                             'target_findings': [item.to_dict() for item in target_findings],
-                            'target_evidence': target_context.metadata if target_context else None})
+                            'target_evidence': target_context.metadata if target_context else None,
+                            'recommendations': [item.to_dict() for item in recommendations]})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception as exc:
@@ -566,8 +571,11 @@ def create_app(test_config=None):
             target_device = target_context.selected_device if target_context else None
             target_warnings = {}
             if target and target_device:
-                _, target_warnings = suggest_from_target(analysis.extracted.config, decision_set, target, target_device)
+                decision_set, target_warnings = suggest_from_target(analysis.extracted.config, decision_set, target, target_device)
             target_findings = validate_against_target(analysis.extracted.config, decision_set, target, target_device)
+            recommendations = build_recommendations(
+                analysis.extracted.config, analysis.derived, decision_set, target, target_device
+            )
             plan = migration_planners.get(source_vendor, target_vendor).plan(
                 analysis.extracted.config, analysis.derived, options=options
             )
@@ -581,6 +589,7 @@ def create_app(test_config=None):
                 'review': {
                     'target_findings': [item.to_dict() for item in target_findings],
                     'support_guidance': [item.to_dict() for item in support_guidance],
+                    'recommendations': [item.to_dict() for item in recommendations],
                 }})
             artifact_id = uuid.uuid4().hex
             rendered_artifacts[artifact_id] = rendered
@@ -602,6 +611,7 @@ def create_app(test_config=None):
                 'target_warnings': target_warnings,
                 'target_findings': [item.to_dict() for item in target_findings],
                 'support_guidance': [item.to_dict() for item in support_guidance],
+                'recommendations': [item.to_dict() for item in recommendations],
                 'target_evidence': safe_target_evidence,
                 'report': rendered.report,
                 'validation': {'issue_summary': rendered.report['issue_summary']},

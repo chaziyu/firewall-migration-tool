@@ -2,7 +2,7 @@ import io
 
 from openpyxl import load_workbook
 
-from fwmigrate.source_reporting import source_reporters
+from fwmigrate.source_reporting import ExcelExportProfile, source_reporters
 from fwmigrate.web import create_app
 from fwmigrate.vendors.fortigate.source_report import (
     FortiGateSourceReporter,
@@ -57,6 +57,51 @@ def test_fortigate_reporter_builds_preview_and_excel():
     workbook = load_workbook(io.BytesIO(output.getvalue()), read_only=True)
     assert "Summary" in workbook.sheetnames
     assert "Addresses" in workbook.sheetnames
+
+
+def test_fortigate_reporter_passes_requested_excel_profile(monkeypatch):
+    reporter = source_reporters.get("fortigate")
+    analysis = reporter.analyze_source(SOURCE)
+    captured = {}
+
+    def fake_export_excel(**kwargs):
+        captured["profile"] = kwargs["profile"]
+
+    monkeypatch.setattr("fwmigrate.vendors.fortigate.export.export_excel", fake_export_excel)
+    reporter.export_excel(analysis, io.BytesIO(), profile=ExcelExportProfile.DATA_ONLY)
+
+    assert captured["profile"] is ExcelExportProfile.DATA_ONLY
+
+
+def test_fortigate_reporter_defaults_to_full_excel_profile(monkeypatch):
+    reporter = source_reporters.get("fortigate")
+    analysis = reporter.analyze_source(SOURCE)
+    captured = {}
+
+    def fake_export_excel(**kwargs):
+        captured["profile"] = kwargs["profile"]
+
+    monkeypatch.setattr("fwmigrate.vendors.fortigate.export.export_excel", fake_export_excel)
+    reporter.export_excel(analysis, io.BytesIO())
+
+    assert captured["profile"] is ExcelExportProfile.FULL
+
+
+def test_fortigate_excel_profiles_use_distinct_workbook_paths():
+    reporter = source_reporters.get("fortigate")
+    analysis = reporter.analyze_source(SOURCE)
+
+    workbooks = {}
+    for profile in ExcelExportProfile:
+        output = io.BytesIO()
+        reporter.export_excel(analysis, output, profile=profile)
+        workbooks[profile] = load_workbook(io.BytesIO(output.getvalue()))
+
+    assert workbooks[ExcelExportProfile.FULL]["Addresses"]["A1"].value == "Addresses"
+    assert workbooks[ExcelExportProfile.FAST]["Addresses"]["A1"].value == "Addresses"
+    assert workbooks[ExcelExportProfile.DATA_ONLY]["Addresses"]["A1"].value == "Name"
+    assert workbooks[ExcelExportProfile.FAST]["Addresses"]["A1"].has_style
+    assert not workbooks[ExcelExportProfile.DATA_ONLY]["Addresses"]["A1"].has_style
 
 
 def test_shared_web_host_uses_fortigate_reporter_for_preview_and_excel():

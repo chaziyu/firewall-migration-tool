@@ -7,7 +7,8 @@ let currentRenderedArtifactId = null;
 let currentArtifactCommandCount = 0;
 let currentArtifactSha256 = null;
 let migrationPlanRevision = 0;
-let currentPlanItems = [];
+  let currentPlanItems = [];
+  let currentRecommendations = [];
   let currentDecisionSet = { decisions: [] };
   let currentDecisionDocument = null;
   let currentPreviewId = null;
@@ -415,6 +416,7 @@ let currentPlanItems = [];
   const btnDownloadBundle = document.getElementById("btn-download-bundle");
   const btnDownloadSet = document.getElementById("btn-download-set");
   const btnExtractExcel = document.getElementById("btn-extract-excel");
+  const excelProfile = document.getElementById("excel-profile");
 
   // Mode B Target Form & Diagnostics
   const panHost = document.getElementById("pan-host");
@@ -1306,6 +1308,7 @@ let currentPlanItems = [];
     targetWarnings = result.target_warnings || {};
     targetFindings = result.target_findings || [];
     targetEvidence = result.target_evidence || null;
+    currentRecommendations = result.recommendations || [];
     if (targetDeviceSelect) {
       const devices = result.target_devices || [];
       const metadata = Object.fromEntries((result.target_device_metadata || []).map(item => [item.id, item]));
@@ -1336,6 +1339,7 @@ let currentPlanItems = [];
       optionalPanel.classList.toggle("hidden", !(result.requirements.optional || []).length);
     }
     renderDecisionTable();
+    renderRecommendations();
     panel?.classList.toggle("hidden", !sourceReady || selectedTargetVendor !== "palo_alto");
     updateMappingCompletion();
   }
@@ -1351,6 +1355,7 @@ let currentPlanItems = [];
     targetWarnings = {};
     targetFindings = [];
     targetEvidence = null;
+    currentRecommendations = [];
     if (targetConfigFile) targetConfigFile.value = "";
     targetConfigRemove?.classList.add("hidden");
     targetDeviceGroup?.classList.add("hidden");
@@ -1563,6 +1568,44 @@ let currentPlanItems = [];
     updateSelectedDecisionCount();
   }
 
+  function renderRecommendations() {
+    const container = document.getElementById("migration-recommendation-fields");
+    const section = document.getElementById("migration-recommendations");
+    if (!container || !section) return;
+    section.classList.toggle("hidden", !currentRecommendations.length);
+    const table = document.createElement("table"); table.className = "mapping-table recommendation-table";
+    const labels = ["Source", "Family", "Recommendation", "Method", "Confidence", "Evidence", "Blockers", "Action"];
+    const thead = document.createElement("thead"), head = document.createElement("tr");
+    labels.forEach(label => { const th = document.createElement("th"); th.textContent = label; head.append(th); });
+    thead.append(head); table.append(thead);
+    const body = document.createElement("tbody");
+    currentRecommendations.forEach(item => {
+      const row = document.createElement("tr"); row.dataset.family = item.family || "";
+      row.dataset.needsDecision = String((item.blockers || []).length > 0 || (item.required_decision_keys || []).length > 0);
+      const add = (value, label) => { const cell = document.createElement("td"); cell.dataset.label = label; cell.textContent = value || "—"; row.append(cell); };
+      add(`${item.source_vdom} · ${item.source_kind} · ${item.source_name}`, labels[0]);
+      add(item.family, labels[1]); add(`${item.title}: ${item.summary}`, labels[2]);
+      add(item.method, labels[3]); add(item.confidence, labels[4]);
+      add((item.evidence || []).join(" · "), labels[5]);
+      add((item.blockers || []).concat(item.warnings || []).join(" · "), labels[6]);
+      const action = document.createElement("td"); action.dataset.label = labels[7];
+      const key = (item.required_decision_keys || [])[0];
+      if (key) {
+        const button = document.createElement("button"); button.type = "button"; button.className = "btn btn-secondary btn-sm"; button.textContent = "Review mapping";
+        button.addEventListener("click", () => focusDecision(key)); action.append(button);
+      } else action.textContent = "Manual design";
+      row.append(action); body.append(row);
+    });
+    table.append(body); container.replaceChildren(table); applyRecommendationFilters();
+  }
+
+  function applyRecommendationFilters() {
+    const filter = document.getElementById("recommendation-filter")?.value || "all";
+    document.querySelectorAll(".recommendation-table tbody tr").forEach(row => {
+      row.hidden = filter === "needs-decision" ? row.dataset.needsDecision !== "true" : filter !== "all" && row.dataset.family !== filter;
+    });
+  }
+
   function applyDecisionFilters() {
     const filter = document.getElementById("mapping-filter")?.value || "all";
     const vdom = document.getElementById("mapping-vdom-filter")?.value || "all";
@@ -1609,6 +1652,7 @@ let currentPlanItems = [];
   document.getElementById("mapping-vdom-filter")?.addEventListener("change", applyDecisionFilters);
   document.getElementById("decision-pending-only")?.addEventListener("change", applyDecisionFilters);
   document.getElementById("mapping-evidence-filter")?.addEventListener("change", applyDecisionFilters);
+  document.getElementById("recommendation-filter")?.addEventListener("change", applyRecommendationFilters);
 
   function selectedDecisions() {
     const keys = new Set([...document.querySelectorAll(".decision-select:checked")].map(input => input.closest("tr").dataset.key));
@@ -1820,12 +1864,14 @@ let currentPlanItems = [];
         if (requestRevision !== migrationPlanRevision) return;
         currentRenderedArtifactId = artifact.artifact_id;
         currentPlanItems = artifact.report?.items || [];
+        currentRecommendations = artifact.recommendations || artifact.report?.review?.recommendations || currentRecommendations;
         targetFindings = artifact.target_findings || [];
         supportGuidance = artifact.support_guidance || artifact.report?.review?.support_guidance || [];
         targetEvidence = artifact.target_evidence || artifact.report?.target_evidence || targetEvidence;
         const planFilter = document.getElementById("migration-plan-filter");
         planFilter.value = currentPlanItems.some(item => item.status !== "SUPPORTED" || !item.renderable || item.warnings?.length || item.render_blockers?.length) ? "attention" : "all";
         renderMigrationPlanItems(currentPlanItems);
+        renderRecommendations();
         document.getElementById("migration-plan")?.classList.remove("hidden");
         const counts = artifact.counts || {};
         const summary = document.getElementById("migration-plan-summary");
@@ -1924,7 +1970,7 @@ let currentPlanItems = [];
         formData.append("source_vendor", selectedSourceVendor);
       }
       if (currentPreviewId) formData.append("preview_id", currentPreviewId);
-      formData.append("excel_profile", "fast");
+      formData.append("excel_profile", excelProfile?.value || "fast");
 
       try {
         const resp = await fetch("/api/extract/excel", {

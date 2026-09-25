@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 from pydantic import BaseModel
 
@@ -24,6 +24,11 @@ class TypedSourceSpec:
 class TypedSourceObject:
     identity: tuple[str, str, str | None, tuple[str, ...]]
     model: BaseModel
+
+
+TypedSourceIdentity = tuple[str, str, str | None, tuple[str, ...]]
+TypedSourceInventory = dict[str, tuple[TypedSourceObject, ...]]
+TypedSourceIdentityIndex = dict[TypedSourceIdentity, TypedSourceObject]
 
 
 _SPECS = (
@@ -128,8 +133,8 @@ def supports_path(source_path: str) -> bool:
     return source_path in _SPEC_BY_PATH
 
 
-def build_typed_source_inventory(config: FGConfig) -> dict[str, tuple[TypedSourceObject, ...]]:
-    inventory: dict[str, tuple[TypedSourceObject, ...]] = {}
+def build_typed_source_inventory(config: FGConfig) -> TypedSourceInventory:
+    inventory: TypedSourceInventory = {}
     for spec in _SPECS:
         roots = getattr(config, spec.config_field)
         found: list[TypedSourceObject] = []
@@ -167,11 +172,22 @@ def _source_id(model: BaseModel, field: str) -> str | None:
 
 
 def find_typed_source_object(
-    inventory: dict[str, tuple[TypedSourceObject, ...]],
+    identity_index: Mapping[TypedSourceIdentity, TypedSourceObject],
     record: SourceObjectRecord,
 ) -> TypedSourceObject | None:
     identity = (record.vdom, record.source_path, record.object_name, record.parent_objects)
-    return next((item for item in inventory.get(record.source_path, ()) if item.identity == identity), None)
+    return identity_index.get(identity)
+
+
+def build_typed_source_identity_index(
+    inventory: Mapping[str, tuple[TypedSourceObject, ...]],
+) -> TypedSourceIdentityIndex:
+    identity_index: TypedSourceIdentityIndex = {}
+    for typed_objects in inventory.values():
+        for typed_object in typed_objects:
+            # Preserve the previous linear lookup's first-match behavior.
+            identity_index.setdefault(typed_object.identity, typed_object)
+    return identity_index
 
 
 def extraction_status(typed_supported: bool, typed_object: TypedSourceObject | None) -> str:

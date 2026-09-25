@@ -4,6 +4,7 @@ from collections import defaultdict
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from enum import Enum
+from itertools import chain
 from pathlib import Path
 from typing import Any, BinaryIO, Iterable, Iterator, Mapping, Sequence
 
@@ -11,11 +12,14 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from fwmigrate.source_reporting import ExcelExportProfile
+
 from ..config import ExtractionConfig
 from ..derived import DerivedViews, build_derived_views
 from ..extraction.result import ExtractionResult
 from ..extraction.source_inventory import SourceObjectRecord
 from ..extraction.coverage import (
+    build_typed_source_identity_index,
     build_typed_source_inventory,
     extraction_status,
     find_typed_source_object,
@@ -84,6 +88,15 @@ _SOURCE_INVENTORY_WIDTHS = {
     "Raw Extra Entries": 18,
 }
 
+_FAST_REQUIRED_SHEETS = frozenset(
+    {
+        "Summary",
+        "Review Required",
+        "FortiGate Source Inventory",
+        "Extraction Coverage",
+    }
+)
+
 
 def export_excel(
     *,
@@ -92,22 +105,29 @@ def export_excel(
     output: BinaryIO | Path | str,
     config: ExtractionConfig | None = None,
     derived: DerivedViews | None = None,
+    profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
     source_name: str | None = None,
 ) -> None:
     """Write the FortiGate configuration report."""
 
     del config
 
+    profile = ExcelExportProfile(profile)
     derived = derived or build_derived_views(extracted.config)
 
     context = _ExcelContext(
         extracted=extracted,
         derived=derived,
         validation=validation,
+        profile=profile,
         source_name=source_name,
     )
 
-    workbook = _build_workbook(context)
+    workbook = (
+        _build_data_only_workbook(context)
+        if profile is ExcelExportProfile.DATA_ONLY
+        else _build_workbook(context)
+    )
     if isinstance(output, (str, Path)):
         path = Path(output)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,12 +144,14 @@ class _ExcelContext:
         extracted: ExtractionResult,
         derived: DerivedViews,
         validation: ValidationResult,
+        profile: ExcelExportProfile,
         source_name: str | None,
     ) -> None:
         self.extracted = extracted
         self.config = extracted.config
         self.derived = derived
         self.validation = validation
+        self.profile = profile
         self.source_name = source_name or ""
         self.source_by_path: dict[str, list[SourceObjectRecord]] = defaultdict(list)
         self.source_by_vdom: dict[str, list[SourceObjectRecord]] = defaultdict(list)
@@ -148,6 +170,7 @@ class _ExcelContext:
         self.vdoms = frozenset(self.source_by_vdom)
         self.registered_sections = frozenset(registered_sections())
         self.typed_source_inventory = build_typed_source_inventory(self.config)
+        self.typed_source_identity_index = build_typed_source_identity_index(self.typed_source_inventory)
         self.source_only_counts = {
             path: len(records)
             for path, records in self.source_by_path.items()
@@ -158,12 +181,13 @@ class _ExcelContext:
             for record in extracted.source_objects
             for key in record.values
         )
-        self.source_inventory_row_count = sum(
-            max(1, len(record.commands))
-            for record in extracted.source_objects
-        )
+        self.source_inventory_row_count = _source_inventory_row_count(self)
 
         self.validation_index = ValidationIssueIndex(validation)
+        self._issues_cache: dict[
+            tuple[str, tuple[str, ...], tuple[str, ...]],
+            tuple[ValidationIssue, ...],
+        ] = {}
 
     def issues_for(
         self,
@@ -171,7 +195,21 @@ class _ExcelContext:
         vdom: str,
         names: Iterable[Any],
         domains: Iterable[str] | None = None,
-    ) -> list[ValidationIssue]:
+    ) -> tuple[ValidationIssue, ...]:
+        vdom = str(vdom or "")
+        names = tuple(
+            dict.fromkeys(
+                str(name)
+                for name in names
+                if name not in (None, "")
+            )
+        )
+        domains = tuple(sorted(set(domains or ())))
+        cache_key = (vdom, names, domains)
+        cached = self._issues_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         found: list[ValidationIssue] = []
         seen: set[tuple[str, str, str]] = set()
 
@@ -186,10 +224,15 @@ class _ExcelContext:
             seen.add(key)
             found.append(issue)
 
-        return found
+        result = tuple(found)
+        self._issues_cache[cache_key] = result
+        return result
 
 
 def _build_workbook(context: _ExcelContext) -> Workbook:
+    if context.profile is ExcelExportProfile.FAST:
+        return _build_fast_workbook(context)
+
     workbook = Workbook()
     workbook.remove(workbook.active)
 
@@ -211,6 +254,107 @@ def _build_workbook(context: _ExcelContext) -> Workbook:
             )
 
     return workbook
+
+
+def _build_fast_workbook(context: _ExcelContext) -> Workbook:
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+
+    rows_by_sheet: dict[str, Iterator[Any]] = {}
+    order = ["Summary"]
+    no_rows = object()
+
+    for sheet_name in SHEET_ORDER:
+        if sheet_name == "Summary":
+            continue
+
+        rows: Iterator[Any]
+        if sheet_name == "FortiGate Source Inventory":
+            rows = iter(_iter_fortigate_source_inventory_rows(context))
+        else:
+            headers = SHEET_HEADERS[sheet_name]
+            rows = iter(_rows_for_sheet(sheet_name, context, headers))
+
+        first = next(rows, no_rows)
+        if first is no_rows and sheet_name not in _FAST_REQUIRED_SHEETS:
+            continue
+
+        rows_by_sheet[sheet_name] = (
+            iter(()) if first is no_rows else chain((first,), rows)
+        )
+        order.append(sheet_name)
+
+    _build_summary(workbook, context, order)
+    for sheet_name in order[1:]:
+        rows = rows_by_sheet[sheet_name]
+        if sheet_name == "FortiGate Source Inventory":
+            _write_source_inventory_sheet(workbook, context, rows=rows)
+            continue
+
+        headers = list(SHEET_HEADERS[sheet_name])
+        _write_table_sheet(workbook, sheet_name, headers, rows, context=context)
+
+    return workbook
+
+
+_NO_DATA = object()
+
+
+def _build_data_only_workbook(context: _ExcelContext) -> Workbook:
+    workbook = Workbook(write_only=True)
+
+    for sheet_name in SHEET_ORDER:
+        if sheet_name == "Summary":
+            rows = iter(
+                tuple(_excel_safe(value) for value in row)
+                for row in _summary_values(context)
+            )
+            first = next(rows, _NO_DATA)
+            if first is _NO_DATA:
+                continue
+            values = chain((first,), rows)
+        else:
+            data_rows = iter(_data_only_data_rows(sheet_name, context))
+            first_data = next(data_rows, _NO_DATA)
+            if first_data is _NO_DATA:
+                continue
+            values = chain(
+                (tuple(SHEET_HEADERS[sheet_name]), first_data),
+                data_rows,
+            )
+
+        sheet = workbook.create_sheet(sheet_name)
+        for row in values:
+            sheet.append(row)
+
+    return workbook
+
+
+def _data_only_data_rows(
+    sheet_name: str,
+    context: _ExcelContext,
+) -> Iterator[tuple[Any, ...]]:
+    if sheet_name == "FortiGate Source Inventory":
+        yield from _iter_fortigate_source_inventory_rows(context)
+        return
+
+    headers = SHEET_HEADERS[sheet_name]
+    for row in _rows_for_sheet(sheet_name, context, headers):
+        yield tuple(_excel_safe(row.get(header)) for header in headers)
+
+
+def _summary_values(context: _ExcelContext) -> Iterator[tuple[Any, ...]]:
+    yield ("Field", "Value")
+    yield ("Source File", context.source_name)
+    yield ("Hostname", _hostname(context))
+    yield ("FortiOS Version", context.extracted.source_metadata.fortios_version)
+    yield ("VDOMs", "\n".join(_vdoms(context)))
+    yield ("Validation Errors", len(context.validation.errors))
+    yield ("Validation Warnings", len(context.validation.warnings))
+    yield ("Inventory", None)
+    yield from ((label, count) for label, count, _ in _inventory_counts(context))
+    yield ("Migration Indicators", None)
+    yield from _migration_indicators(context)
 
 def _rows_for_sheet(
     sheet_name: str,
@@ -381,6 +525,10 @@ def _write_table_sheet(
     *,
     context: _ExcelContext,
 ) -> None:
+    if context.profile is ExcelExportProfile.FAST:
+        _write_table_sheet_fast(workbook, sheet_name, headers, rows, context=context)
+        return
+
     sheet = workbook.create_sheet(sheet_name)
     sheet.sheet_view.showGridLines = False
     sheet.sheet_view.zoomScale = 90
@@ -458,13 +606,68 @@ def _write_table_sheet(
         _apply_review_colors(sheet, headers, row_count)
 
 
+def _write_table_sheet_fast(
+    workbook: Workbook,
+    sheet_name: str,
+    headers: Sequence[str],
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    context: _ExcelContext,
+) -> None:
+    sheet = workbook.create_sheet(sheet_name)
+    sheet.sheet_view.showGridLines = False
+    sheet.sheet_view.zoomScale = 90
+
+    max_col = max(len(headers), 1)
+    hidden_headers = set(HIDDEN_COLUMNS_BY_DEFAULT.get(sheet_name, ()))
+    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
+    sheet.cell(1, 1, sheet_name)
+    sheet.cell(1, 1).fill = _TITLE_FILL
+    sheet.cell(1, 1).font = _TITLE_FONT
+    sheet.row_dimensions[1].height = 24
+
+    if max_col > 2:
+        sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max_col - 1)
+    note = sheet.cell(2, 1)
+    note.font = _MUTED_FONT
+    note.alignment = Alignment(wrap_text=True, vertical="top")
+
+    for column, header in enumerate(headers, start=1):
+        cell = sheet.cell(3, column, header)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+
+    row_count = 0
+    for index, row in enumerate(rows, start=4):
+        row_count += 1
+        outline = row.get("__outline_level__")
+        if isinstance(outline, int) and outline > 0:
+            sheet.row_dimensions[index].outlineLevel = min(outline, 7)
+        sheet.append([_excel_safe(row.get(header)) for header in headers])
+
+    note.value = _sheet_note(sheet_name, row_count, context.profile)
+    if row_count:
+        sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
+
+    sheet.freeze_panes = _freeze_pane(sheet_name, headers)
+    _apply_widths(sheet, headers)
+    for column, header in enumerate(headers, start=1):
+        if header in hidden_headers:
+            sheet.column_dimensions[get_column_letter(column)].hidden = True
+    _add_back_link(sheet)
+
+    if sheet_name == "Review Required":
+        _apply_review_colors(sheet, headers, row_count, fast=True)
+
+
 def _write_source_inventory_sheet(
     workbook: Workbook,
     context: _ExcelContext,
+    *,
+    rows: Iterable[tuple[Any, ...]] | None = None,
 ) -> None:
     sheet_name = "FortiGate Source Inventory"
     headers = SHEET_HEADERS[sheet_name]
-    row_count = _source_inventory_row_count(context)
     sheet = workbook.create_sheet(sheet_name)
     sheet.sheet_view.showGridLines = False
     sheet.sheet_view.zoomScale = 90
@@ -479,7 +682,6 @@ def _write_source_inventory_sheet(
 
     sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max_col - 1)
     note = sheet.cell(2, 1)
-    note.value = _sheet_note(sheet_name, row_count)
     note.font = _MUTED_FONT
     note.alignment = Alignment(wrap_text=True, vertical="top")
 
@@ -490,8 +692,13 @@ def _write_source_inventory_sheet(
         cell.alignment = Alignment(wrap_text=True, vertical="center")
         cell.border = _BORDER
 
-    for values in _iter_fortigate_source_inventory_rows(context):
+    row_count = 0
+    source_rows = rows if rows is not None else _iter_fortigate_source_inventory_rows(context)
+    for values in source_rows:
         sheet.append(values)
+        row_count += 1
+
+    note.value = _sheet_note(sheet_name, row_count, context.profile)
 
     sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
     sheet.freeze_panes = "A4"
@@ -511,7 +718,13 @@ def _add_back_link(sheet) -> None:
     cell.alignment = Alignment(horizontal="right")
 
 
-def _apply_review_colors(sheet, headers: Sequence[str], row_count: int) -> None:
+def _apply_review_colors(
+    sheet,
+    headers: Sequence[str],
+    row_count: int,
+    *,
+    fast: bool = False,
+) -> None:
     if "Severity" not in headers:
         return
 
@@ -520,6 +733,10 @@ def _apply_review_colors(sheet, headers: Sequence[str], row_count: int) -> None:
     for row in range(4, row_count + 4):
         severity = str(sheet.cell(row, severity_col).value or "").lower()
         fill = _ERROR_FILL if severity == "error" else _REVIEW_FILL
+
+        if fast:
+            sheet.cell(row, severity_col).fill = fill
+            continue
 
         for column in range(1, len(headers) + 1):
             sheet.cell(row, column).fill = fill
@@ -558,8 +775,14 @@ def _freeze_pane(sheet_name: str, headers: Sequence[str]) -> str:
 def _sheet_note(
     sheet_name: str,
     row_count: int,
+    profile: ExcelExportProfile = ExcelExportProfile.FULL,
 ) -> str:
     if sheet_name == "FortiGate Source Inventory":
+        if profile is ExcelExportProfile.FAST:
+            return (
+                f"{row_count} selected source row(s). FAST retains source-only, model-gap, "
+                "raw-extra, and unsupported evidence; fully typed command duplication is omitted."
+            )
         return (
             "Explicit FortiGate source commands retained for traceability. "
             "Extraction Status identifies whether the source section has "
@@ -2249,9 +2472,11 @@ def _iter_fortigate_source_inventory_rows(
     context: _ExcelContext,
 ) -> Iterator[tuple[Any, ...]]:
     for record in context.extracted.source_objects:
-        typed = find_typed_source_object(context.typed_source_inventory, record)
+        typed = find_typed_source_object(context.typed_source_identity_index, record)
         raw_extra = getattr(typed.model, "raw_extra", {}) if typed else {}
         status = extraction_status(supports_path(record.source_path), typed)
+        if context.profile in {ExcelExportProfile.FAST, ExcelExportProfile.DATA_ONLY} and status == "TYPED":
+            continue
         registration = "REGISTERED" if record.source_path in context.registered_sections else "GENERIC"
         base = (
             _excel_safe(_source_category(record.source_path)),
@@ -2279,7 +2504,15 @@ def _iter_fortigate_source_inventory_rows(
 
 
 def _source_inventory_row_count(context: _ExcelContext) -> int:
-    return context.source_inventory_row_count
+    return sum(
+        max(1, len(record.commands))
+        for record in context.extracted.source_objects
+        if context.profile not in {ExcelExportProfile.FAST, ExcelExportProfile.DATA_ONLY}
+        or extraction_status(
+            supports_path(record.source_path),
+            find_typed_source_object(context.typed_source_identity_index, record),
+        ) != "TYPED"
+    )
 
 
 def _coverage_rows(
@@ -2298,7 +2531,7 @@ def _coverage_rows(
         typed_objects = context.typed_source_inventory.get(path, ())
         typed_support = supports_path(path)
         matched = sum(
-            find_typed_source_object(context.typed_source_inventory, record) is not None
+            find_typed_source_object(context.typed_source_identity_index, record) is not None
             for record in records
         )
         source_only = 0 if typed_support else len(records)
@@ -2518,10 +2751,6 @@ def _model_rows(
     issue_vdom: str | None = None,
 ) -> Iterator[dict[str, Any]]:
     for item in objects:
-        data = item.model_dump(
-            mode="python"
-        )
-
         row: dict[str, Any] = {}
 
         for header, attribute in mapping.items():
@@ -2531,12 +2760,12 @@ def _model_rows(
             if callable(attribute):
                 row[header] = attribute(item)
             elif attribute:
-                row[header] = data.get(
-                    attribute
+                row[header] = _serialize_nested_value(
+                    getattr(item, attribute, None)
                 )
 
-        raw_extra = _additional_settings_from_data(
-            data,
+        raw_extra = _additional_settings(
+            item,
             row.values(),
         )
 
@@ -2548,22 +2777,19 @@ def _model_rows(
 
         if "Source Explicit Fields" in headers:
             row["Source Explicit Fields"] = sorted(
-                data.get(
-                    "explicit_fields",
-                    [],
-                )
+                getattr(item, "explicit_fields", ())
             )
 
         if "Additional Settings" in headers:
             row["Additional Settings"] = raw_extra
 
-        vdom = issue_vdom if issue_vdom is not None else str(data.get("vdom") or "")
+        vdom = issue_vdom if issue_vdom is not None else str(getattr(item, "vdom", "") or "")
 
         name = (
-            data.get("name")
-            or data.get("policy_id")
-            or data.get("seq_num")
-            or data.get("id")
+            getattr(item, "name", None)
+            or getattr(item, "policy_id", None)
+            or getattr(item, "seq_num", None)
+            or getattr(item, "id", None)
         )
 
         _add_analysis_status(
@@ -2581,30 +2807,45 @@ def _additional_settings(
     item: Any,
     visible_values: Iterable[Any] = (),
 ) -> dict[str, Any]:
-    return _additional_settings_from_data(
-        item.model_dump(mode="python"),
-        visible_values,
-    )
+    return _additional_settings_from_data(item, visible_values)
 
 
 def _additional_settings_from_data(
-    data: Mapping[str, Any],
+    item: Any,
     visible_values: Iterable[Any] = (),
 ) -> dict[str, Any]:
     visible = list(visible_values)
-    settings = dict(data.get("raw_extra", {}))
+    settings = dict(getattr(item, "raw_extra", {}) or {})
 
-    explicit_fields = set(data.get("explicit_fields", ()))
-    for field, value in data.items():
+    explicit_fields = set(getattr(item, "explicit_fields", ()) or ())
+    for field in type(item).model_fields:
         if field not in explicit_fields:
             continue
         if field in {"name", "vdom", "raw_extra", "explicit_fields"}:
             continue
+        value = _serialize_nested_value(getattr(item, field, None))
         if value in (None, "", [], {}) or value in visible:
             continue
         settings[field] = value
 
     return sanitize_source_attributes(settings)
+
+
+def _serialize_nested_value(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="python")
+    if isinstance(value, Mapping):
+        return {
+            key: _serialize_nested_value(child)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_serialize_nested_value(child) for child in value]
+    if isinstance(value, tuple):
+        return tuple(_serialize_nested_value(child) for child in value)
+    if isinstance(value, set):
+        return {_serialize_nested_value(child) for child in value}
+    return value
 
 
 def _add_analysis_status(
@@ -2637,12 +2878,13 @@ def _overlay_raw(
     headers: Sequence[str],
 ) -> None:
     safe = sanitize_source_attributes(raw)
+    normalized_values = _normalized_source_values(safe)
 
     for header in headers:
         if row.get(header) not in (None, "", [], {}):
             continue
 
-        value, _ = _lookup_source_header(header, safe)
+        value, _ = _lookup_source_header(header, safe, normalized_values)
         if value not in (None, "", [], {}):
             row[header] = value
 
@@ -2650,11 +2892,13 @@ def _overlay_raw(
 def _lookup_source_header(
     header: str,
     values: Mapping[str, Any],
+    normalized_values: Mapping[str, tuple[str, Any]] | None = None,
 ) -> tuple[Any, str | None]:
-    normalized_values = {
-        _normalize_key(key): (key, value)
-        for key, value in values.items()
-    }
+    normalized_values = (
+        _normalized_source_values(values)
+        if normalized_values is None
+        else normalized_values
+    )
 
     candidates = [
         *_SOURCE_HEADER_ALIASES.get(
@@ -2679,6 +2923,15 @@ def _lookup_source_header(
         return value, source_key
 
     return None, None
+
+
+def _normalized_source_values(
+    values: Mapping[str, Any],
+) -> dict[str, tuple[str, Any]]:
+    return {
+        _normalize_key(key): (key, value)
+        for key, value in values.items()
+    }
 
 
 def _normalize_key(value: Any) -> str:
@@ -2786,6 +3039,7 @@ def _additional_source_settings(
     headers: Sequence[str],
 ) -> dict[str, Any]:
     consumed: set[str] = set()
+    normalized_values = _normalized_source_values(source_values)
 
     for header in headers:
         if row.get(header) in (None, "", [], {}):
@@ -2794,6 +3048,7 @@ def _additional_source_settings(
         _, source_key = _lookup_source_header(
             header,
             source_values,
+            normalized_values,
         )
 
         if source_key is not None:
