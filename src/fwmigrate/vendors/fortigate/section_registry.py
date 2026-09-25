@@ -45,6 +45,23 @@ class SectionSpec:
         default_factory=frozenset
     )
 
+    declared_fields: frozenset[str] = field(
+        init=False,
+        repr=False,
+    )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "declared_fields",
+            (
+                self.list_fields
+                | self.integer_fields
+                | self.integer_list_fields
+                | self.scalar_fields
+            ),
+        )
+
 
 _SECTION_REGISTRY: dict[str, SectionSpec] = {}
 SECTION_REGISTRY: Mapping[str, SectionSpec] = MappingProxyType(

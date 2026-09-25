@@ -64,6 +64,13 @@ end
     ]
     assert index.entries[3].source_path == "system interface secondaryip"
     assert index.entries[3].parent_objects == ("port1",)
+    assert [entry.source_path for entry in index.source_entries] == [
+        "firewall address",
+        "firewall address",
+        "system interface",
+        "system interface secondaryip",
+        "firewall address",
+    ]
 
 
 def test_section_index_keeps_empty_sections_and_excludes_vdom_control_node():

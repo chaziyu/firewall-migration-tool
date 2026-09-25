@@ -23,29 +23,28 @@ class SectionIndex:
 
     @classmethod
     def build(cls, tree: FortiGateConfigTree) -> "SectionIndex":
-        entries: list[IndexedConfig] = []
+        ordered_entries: list[IndexedConfig] = []
+        source_entries: list[IndexedConfig] = []
+        grouped: dict[str, list[IndexedConfig]] = {}
+        entries_by_node: dict[int, IndexedConfig] = {}
 
-        def walk(
+        def walk_ordered(
             node: ConfigNode,
             *,
             vdom: str,
             parent_path: str | None,
             parent_objects: tuple[str, ...],
-        ) -> tuple[list[IndexedConfig], list[IndexedConfig]]:
+        ) -> None:
             if node.name == "vdom":
-                entries: list[IndexedConfig] = []
-                source_entries: list[IndexedConfig] = []
                 for edit in node.edits:
                     for child in edit.children:
-                        child_entries, child_source_entries = walk(
+                        walk_ordered(
                             child,
                             vdom=edit.name,
                             parent_path=None,
                             parent_objects=(),
                         )
-                        entries.extend(child_entries)
-                        source_entries.extend(child_source_entries)
-                return entries, source_entries
+                return
 
             source_path = (
                 f"{parent_path} {node.name}"
@@ -59,51 +58,49 @@ class SectionIndex:
                 parent_objects=parent_objects,
             )
 
-            direct_entries: list[IndexedConfig] = []
-            direct_source_entries: list[IndexedConfig] = []
+            ordered_entries.append(entry)
+            grouped.setdefault(node.name, []).append(entry)
+            entries_by_node[id(node)] = entry
+
             for child in node.children:
-                child_entries, child_source_entries = walk(
+                walk_ordered(
                     child,
                     vdom=vdom,
                     parent_path=source_path,
                     parent_objects=parent_objects,
                 )
-                direct_entries.extend(child_entries)
-                direct_source_entries.extend(child_source_entries)
-
-            edit_entries: list[IndexedConfig] = []
-            edit_source_entries: list[IndexedConfig] = []
             for edit in node.edits:
                 for child in edit.children:
-                    child_entries, child_source_entries = walk(
+                    walk_ordered(
                         child,
                         vdom=vdom,
                         parent_path=source_path,
                         parent_objects=(*parent_objects, edit.name),
                     )
-                    edit_entries.extend(child_entries)
-                    edit_source_entries.extend(child_source_entries)
 
-            return (
-                [entry, *direct_entries, *edit_entries],
-                [entry, *edit_source_entries, *direct_source_entries],
-            )
+        def walk_source(node: ConfigNode) -> None:
+            if node.name == "vdom":
+                for edit in node.edits:
+                    for child in edit.children:
+                        walk_source(child)
+                return
 
-        ordered_entries: list[IndexedConfig] = []
-        source_entries: list[IndexedConfig] = []
+            source_entries.append(entries_by_node[id(node)])
+            for edit in node.edits:
+                for child in edit.children:
+                    walk_source(child)
+            for child in node.children:
+                walk_source(child)
+
         for root in tree.configs:
-            root_entries, root_source_entries = walk(
+            walk_ordered(
                 root,
                 vdom="root",
                 parent_path=None,
                 parent_objects=(),
             )
-            ordered_entries.extend(root_entries)
-            source_entries.extend(root_source_entries)
-
-        grouped: dict[str, list[IndexedConfig]] = {}
-        for entry in ordered_entries:
-            grouped.setdefault(entry.node.name, []).append(entry)
+        for root in tree.configs:
+            walk_source(root)
 
         return cls(
             entries=tuple(ordered_entries),

@@ -1,3 +1,5 @@
+import shlex
+
 import pytest
 
 from fwmigrate.vendors.fortigate.nodes import UnknownCommandNode
@@ -10,6 +12,39 @@ from fwmigrate.vendors.fortigate.tokenizer import (
     FortiGateTokenizer,
     TokenType,
 )
+
+
+def test_simple_commands_use_split_without_changing_tokens(monkeypatch):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("shlex should not run for simple commands")
+
+    monkeypatch.setattr("fwmigrate.vendors.fortigate.tokenizer.shlex.shlex", fail_if_called)
+
+    tokens = list(FortiGateTokenizer("set hostname edge01\n").tokenize())
+
+    assert [(token.type, token.value, token.line_number) for token in tokens] == [
+        (TokenType.SET, "set", 1),
+        (TokenType.STRING, "hostname", 1),
+        (TokenType.STRING, "edge01", 1),
+    ]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'set hostname edge01',
+        'set member port1 port2',
+        'set comment "hello world"',
+        'set comment "escaped \\\" quote"',
+        'set value ""',
+    ],
+)
+def test_fast_and_shlex_paths_have_the_same_parts(command):
+    lexer = shlex.shlex(command, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+
+    assert FortiGateTokenizer._split_command(command) == list(lexer)
 
 
 def test_lf_and_crlf_produce_the_same_tree():

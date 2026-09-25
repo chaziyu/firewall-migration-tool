@@ -136,6 +136,7 @@ def evaluate_commands(
     integer_fields: Iterable[str] = (),
     integer_list_fields: Iterable[str] = (),
     scalar_fields: Iterable[str] = (),
+    declared_fields: Iterable[str] | None = None,
     initial: Mapping[str, Any] | None = None,
 ) -> CommandEvaluation:
     """
@@ -157,19 +158,21 @@ def evaluate_commands(
         - construct FortiGate models
     """
 
-    list_fields = set(list_fields)
-    integer_fields = set(integer_fields)
-    integer_list_fields = set(
-        integer_list_fields
-    )
-    scalar_fields = set(scalar_fields)
-
-    declared_fields = (
-        list_fields
-        | integer_fields
-        | integer_list_fields
-        | scalar_fields
-    )
+    if not isinstance(list_fields, (set, frozenset)):
+        list_fields = frozenset(list_fields)
+    if not isinstance(integer_fields, (set, frozenset)):
+        integer_fields = frozenset(integer_fields)
+    if not isinstance(integer_list_fields, (set, frozenset)):
+        integer_list_fields = frozenset(integer_list_fields)
+    if not isinstance(scalar_fields, (set, frozenset)):
+        scalar_fields = frozenset(scalar_fields)
+    if declared_fields is None:
+        declared_fields = (
+            list_fields
+            | integer_fields
+            | integer_list_fields
+            | scalar_fields
+        )
 
     initial_values = dict(
         initial or {}
@@ -205,9 +208,7 @@ def evaluate_commands(
 
         key = command.key
         operation = command.operation.lower()
-        command_values = list(
-            command.values
-        )
+        command_values = command.values
 
         # ----------------------------------------------------------
         # unset

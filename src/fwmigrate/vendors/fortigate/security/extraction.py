@@ -1,5 +1,6 @@
 """Helpers for retaining safe FortiGate source attributes during extraction."""
 
+from functools import cache
 from typing import Any, Dict, Mapping
 
 
@@ -91,13 +92,10 @@ def sanitize_source_value(
 
     normalized_key = _normalize_source_key(key)
 
-    if normalized_key in NON_SECRET_CREDENTIAL_METADATA:
+    classification = _classify_source_key(normalized_key)
+    if classification == 1:
         return value
-
-    if (
-        normalized_key in _SENSITIVE_EXACT_KEYS
-        or normalized_key.endswith(_SENSITIVE_KEY_SUFFIXES)
-    ):
+    if classification == 2:
         return "[REDACTED]"
 
     return value
@@ -105,3 +103,15 @@ def sanitize_source_value(
 
 def _normalize_source_key(key: str) -> str:
     return str(key).lower().replace("-", "_")
+
+
+@cache
+def _classify_source_key(normalized_key: str) -> int:
+    if normalized_key in NON_SECRET_CREDENTIAL_METADATA:
+        return 1
+    if (
+        normalized_key in _SENSITIVE_EXACT_KEYS
+        or normalized_key.endswith(_SENSITIVE_KEY_SUFFIXES)
+    ):
+        return 2
+    return 0

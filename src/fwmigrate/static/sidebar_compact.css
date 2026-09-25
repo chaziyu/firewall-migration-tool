@@ -7,15 +7,6 @@
     margin: 28px 0 24px;
   }
 
-  .sidebar-bottom {
-    margin-top: auto;
-    padding-top: 0;
-  }
-
-  .sidebar-link {
-    padding: 16px 7px;
-  }
-
   .sidebar-status {
     padding-top: 12px;
   }
@@ -32,14 +23,6 @@
 
   .workspace-switch {
     margin: 24px 0 20px;
-  }
-
-  .sidebar-bottom {
-    margin-top: auto;
-  }
-
-  .sidebar-link {
-    padding: 13px 7px;
   }
 
   .sidebar-status {

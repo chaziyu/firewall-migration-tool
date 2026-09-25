@@ -35,12 +35,6 @@
   background: #e3eadf;
   border-color: #c6d1c1;
 }
-[data-theme="light"] .sidebar-link {
-  color: #536159;
-}
-[data-theme="light"] .sidebar-link:hover {
-  color: #b14925;
-}
 [data-theme="light"] .sidebar-status {
   color: #68766d;
   border-color: #d6ddd2;
@@ -59,15 +53,13 @@
   border-color: #bdc9bf;
 }
 [data-theme="light"] .tab-btn,
-[data-theme="light"] .sidebar-link,
 [data-theme="light"] .page-heading p:last-child,
 [data-theme="light"] .card-desc,
 [data-theme="light"] .dropzone p,
 [data-theme="light"] .dropzone-formats {
   color: #4f5f57;
 }
-[data-theme="light"] .tab-btn,
-[data-theme="light"] .sidebar-link {
+[data-theme="light"] .tab-btn {
   font-size: 13px;
 }
 [data-theme="light"] .sidebar-status,
@@ -382,22 +374,6 @@
 [data-theme="dark"] .toast-icon,
 [data-theme="dark"] .toast-close {
   color: #c7d0cb;
-}
-[data-theme="dark"] .guide-dialog {
-  background: #1d2722;
-  border-color: var(--dark-border);
-}
-[data-theme="dark"] .guide-dialog > p,
-[data-theme="dark"] .guide-steps p {
-  color: var(--dark-muted);
-}
-[data-theme="dark"] .guide-steps li > span {
-  color: #e1a273;
-}
-[data-theme="dark"] .guide-tip {
-  background: #26342d;
-  border-color: #5d7066;
-  color: #cad4ce;
 }
 [data-theme="dark"] .skip-link {
   background: var(--surface);
