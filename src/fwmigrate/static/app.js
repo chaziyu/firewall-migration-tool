@@ -2352,49 +2352,6 @@ let migrationPlanRevision = 0;
       sourceVendorSelect?.focus();
     });
 
-  const guideModal = document.getElementById("guide-modal");
-  let guideTrigger = null;
-  function closeGuide() {
-    guideModal?.classList.add("hidden");
-    if (guideModal) guideModal.setAttribute("aria-hidden", "true");
-    document.body.classList.remove("modal-open");
-    guideTrigger?.focus();
-  }
-  document
-    .getElementById("btn-open-guide")
-    ?.addEventListener("click", (event) => {
-      if (!guideModal) return;
-      guideTrigger = event.currentTarget;
-      guideModal.classList.remove("hidden");
-      guideModal.setAttribute("aria-hidden", "false");
-      document.body.classList.add("modal-open");
-      document.getElementById("btn-close-guide")?.focus();
-    });
-  document
-    .getElementById("btn-close-guide")
-    ?.addEventListener("click", closeGuide);
-  guideModal?.addEventListener("click", (event) => {
-    if (event.target === guideModal) closeGuide();
-  });
-  document.addEventListener("keydown", (event) => {
-    if (!guideModal || guideModal.classList.contains("hidden")) return;
-    if (event.key === "Escape") closeGuide();
-    if (event.key !== "Tab") return;
-    const focusable = [
-      ...guideModal.querySelectorAll('button, a[href], input, [tabindex="0"]'),
-    ].filter((element) => !element.disabled);
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  });
-
   const themeToggle = document.getElementById("btn-toggle-theme");
   const themePreference = window.matchMedia?.("(prefers-color-scheme: dark)");
   let explicitTheme = null;

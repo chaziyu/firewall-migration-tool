@@ -273,13 +273,14 @@ class ExcelReportTest(unittest.TestCase):
         derived = build_derived_views(extracted.config)
         validation = validate_config(extracted.config, derived=derived)
         before = deepcopy((extracted.config, extracted.source_objects, derived, validation))
-        export_excel(
-            extracted=extracted,
-            derived=derived,
-            validation=validation,
-            output=io.BytesIO(),
-            profile=ExcelExportProfile.FAST,
-        )
+        for profile in (ExcelExportProfile.FAST, ExcelExportProfile.DATA_ONLY):
+            export_excel(
+                extracted=extracted,
+                derived=derived,
+                validation=validation,
+                output=io.BytesIO(),
+                profile=profile,
+            )
         assert (extracted.config, extracted.source_objects, derived, validation) == before
 
     def test_data_only_is_streaming_data_without_empty_or_presentation_sheets(self):
@@ -292,6 +293,10 @@ class ExcelReportTest(unittest.TestCase):
         assert data_only["Addresses"].merged_cells.ranges == set()
         assert data_only["Addresses"].freeze_panes is None
         assert data_only["Addresses"].auto_filter.ref is None
+        assert data_only["Addresses"].sheet_view.showGridLines is True
+        assert data_only["Addresses"].column_dimensions["A"].width > 13
+        assert data_only["Summary"].column_dimensions["A"].width == 42
+        assert data_only["Summary"].column_dimensions["B"].width == 52
         assert not any(
             cell.hyperlink
             for sheet in data_only.worksheets

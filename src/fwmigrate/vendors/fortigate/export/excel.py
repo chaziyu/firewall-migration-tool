@@ -319,6 +319,17 @@ def _build_data_only_workbook(context: _ExcelContext) -> Workbook:
             )
 
         sheet = workbook.create_sheet(sheet_name)
+        sheet.sheet_view.showGridLines = True
+        if sheet_name == "Summary":
+            sheet.column_dimensions["A"].width = 42
+            sheet.column_dimensions["B"].width = 52
+        elif sheet_name == "FortiGate Source Inventory":
+            for column, header in enumerate(SHEET_HEADERS[sheet_name], start=1):
+                sheet.column_dimensions[get_column_letter(column)].width = (
+                    _SOURCE_INVENTORY_WIDTHS[header] + 10
+                )
+        else:
+            _apply_widths(sheet, SHEET_HEADERS[sheet_name], wide=True)
         for row in values:
             sheet.append(row)
 

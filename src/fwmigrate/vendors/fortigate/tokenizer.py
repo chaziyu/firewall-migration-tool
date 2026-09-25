@@ -42,6 +42,8 @@ class FortiGateTokenizer:
     def tokenize(self) -> Iterator[Token]:
         logical_lines: list[str] = []
         start_line_number: int | None = None
+        quote: str | None = None
+        escaped = False
 
         for line_number, raw_line in enumerate(
             io.StringIO(self.text),
@@ -71,14 +73,19 @@ class FortiGateTokenizer:
             # Preserve physical-line contents for multiline quoted values.
             logical_lines.append(physical_line)
 
+            quote, escaped = self._scan_lexical_state(
+                physical_line + ("\n" if raw_line.endswith("\n") else ""),
+                quote=quote,
+                escaped=escaped,
+            )
+            if quote is not None or escaped:
+                continue
+
             logical_command = "\n".join(logical_lines)
 
             try:
                 parts = self._split_command(logical_command)
             except ValueError as exc:
-                if self._is_incomplete_command(exc):
-                    continue
-
                 raise TokenizerError(
                     f"Malformed syntax at line {start_line_number}: {exc}"
                 ) from exc
@@ -92,6 +99,8 @@ class FortiGateTokenizer:
 
             logical_lines.clear()
             start_line_number = None
+            quote = None
+            escaped = False
 
         # Unterminated quote / malformed logical command.
         if logical_lines:
@@ -105,12 +114,43 @@ class FortiGateTokenizer:
 
     @staticmethod
     def _split_command(command: str) -> list[str]:
+        if not any(character in command for character in ('"', "'", "\\")):
+            return command.split()
+
         lexer = shlex.shlex(command, posix=True)
 
         lexer.whitespace_split = True
         lexer.commenters = ""
 
         return list(lexer)
+
+    @staticmethod
+    def _scan_lexical_state(
+        text: str,
+        *,
+        quote: str | None,
+        escaped: bool,
+    ) -> tuple[str | None, bool]:
+        """Track only quote/escape state across physical lines."""
+
+        for character in text:
+            if escaped:
+                escaped = False
+                continue
+
+            if quote == "'":
+                if character == "'":
+                    quote = None
+                continue
+
+            if character == "\\":
+                escaped = True
+            elif quote is None and character in ('"', "'"):
+                quote = character
+            elif quote == '"' and character == '"':
+                quote = None
+
+        return quote, escaped
 
     @staticmethod
     def _is_incomplete_command(

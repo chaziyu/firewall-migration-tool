@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from functools import cache
+from types import MappingProxyType
 from typing import Any
 
 from pydantic import BaseModel
@@ -17,6 +21,14 @@ from ..nodes import (
 )
 from .section_index import SectionIndex
 from ..section_registry import get_section_spec
+
+
+_EMPTY_FIELD_MAP = MappingProxyType({})
+
+
+@cache
+def _model_fields(model_type: type[BaseModel]) -> frozenset[str]:
+    return frozenset(model_type.model_fields)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +47,43 @@ class SectionConfig:
     section_path: str
     config: ConfigNode
     vdom: str = "root"
+
+
+@dataclass(slots=True)
+class CommandEvaluationCache:
+    """Extraction-scoped cache for one parser node's primitive evaluation."""
+
+    _values: dict[tuple[str, str, int], CommandEvaluation] = field(
+        default_factory=dict,
+    )
+
+    def get(self, kind: str, section_path: str, node: object):
+        return self._values.get((kind, section_path, id(node)))
+
+    def put(
+        self,
+        kind: str,
+        section_path: str,
+        node: object,
+        evaluation: CommandEvaluation,
+    ) -> CommandEvaluation:
+        self._values[(kind, section_path, id(node))] = evaluation
+        return evaluation
+
+
+_ACTIVE_EVALUATION_CACHE: ContextVar[CommandEvaluationCache | None] = ContextVar(
+    "fortigate_evaluation_cache",
+    default=None,
+)
+
+
+@contextmanager
+def use_evaluation_cache(cache: CommandEvaluationCache):
+    token = _ACTIVE_EVALUATION_CACHE.set(cache)
+    try:
+        yield cache
+    finally:
+        _ACTIVE_EVALUATION_CACHE.reset(token)
 
 
 def normalize_source_key(
@@ -151,6 +200,7 @@ def _evaluate_section_commands(
         integer_fields=spec.integer_fields,
         integer_list_fields=spec.integer_list_fields,
         scalar_fields=spec.scalar_fields,
+        declared_fields=spec.declared_fields,
     )
 
 
@@ -170,9 +220,18 @@ def evaluate_edit(
         - perform validation
     """
 
-    return _evaluate_section_commands(
+    cache = _ACTIVE_EVALUATION_CACHE.get()
+    if cache is None:
+        return _evaluate_section_commands(section_path, edit.commands)
+
+    cached = cache.get("edit", section_path, edit)
+    if cached is not None:
+        return cached
+    return cache.put(
+        "edit",
         section_path,
-        edit.commands,
+        edit,
+        _evaluate_section_commands(section_path, edit.commands),
     )
 
 
@@ -210,9 +269,18 @@ def evaluate_config(
         end
     """
 
-    return _evaluate_section_commands(
+    cache = _ACTIVE_EVALUATION_CACHE.get()
+    if cache is None:
+        return _evaluate_section_commands(section_path, config.commands)
+
+    cached = cache.get("config", section_path, config)
+    if cached is not None:
+        return cached
+    return cache.put(
+        "config",
         section_path,
-        config.commands,
+        config,
+        _evaluate_section_commands(section_path, config.commands),
     )
 
 
@@ -249,13 +317,8 @@ def source_model_kwargs(
     `explicit_fields`.
     """
 
-    field_map = dict(
-        field_map or {}
-    )
-
-    model_fields = set(
-        model_type.model_fields
-    )
+    field_map = field_map or _EMPTY_FIELD_MAP
+    model_fields = _model_fields(model_type)
 
     values: dict[str, Any] = {}
 

@@ -106,11 +106,6 @@
           {{ icon('terminal') }}<span>Live migration</span
         </button>
       </nav>
-      <div class="sidebar-bottom">
-        <button id="btn-open-guide" class="sidebar-link" type="button">
-          {{ icon('book') }}<span>Workspace guide</span>{{ icon('chevron') }}
-        </button>
-      </div>
     </aside>
     <div class="app-shell">
       <main class="main-content" id="main-content" tabindex="-1">
@@ -186,68 +181,6 @@
       aria-live="polite"
       aria-atomic="false"
     ></div>
-    <div
-      id="guide-modal"
-      class="modal-backdrop hidden"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="guide-title"
-    >
-      <section class="guide-dialog">
-        <div class="section-heading">
-          <span class="eyebrow">WORKSPACE GUIDE</span
-          ><button
-            id="btn-close-guide"
-            type="button"
-            class="btn-icon"
-            aria-label="Close guide"
-          >
-            {{ icon('close') }}
-          </button>
-        </div>
-        <h2 id="guide-title">From configuration to next step.</h2>
-        <p>
-          Choose the workflow that fits your task. You can use a backup file or
-          retrieve configuration from a supported device.
-        </p>
-        <ol class="guide-steps">
-          <li>
-            <span>01</span>
-            <div>
-              <strong>Plan migration</strong>
-              <p>
-                Review mappings, confirm required decisions, build a migration plan, inspect the results and commands, then download or deploy.
-              </p>
-            </div>
-          </li>
-          <li>
-            <span>02</span>
-            <div>
-              <strong>Configuration Report</strong>
-              <p>
-                Review the parsed source configuration, then download its complete
-                Excel inventory workbook from the report.
-              </p>
-            </div>
-          </li>
-          <li>
-            <span>03</span>
-            <div>
-              <strong>Live migration</strong>
-              <p>
-                Live migration is under development.
-              </p>
-            </div>
-          </li>
-        </ol>
-        <div class="guide-tip">
-          {{ icon('info') }}<span
-            >A downloaded workbook is a snapshot. Generate a new file whenever
-            you change the source configuration.</span
-          >
-        </div>
-      </section>
-    </div>
     <noscript
       ><div class="noscript-banner">
         JavaScript is required to upload configurations and use this workspace.

@@ -3,6 +3,7 @@ import io
 from openpyxl import load_workbook
 
 from fwmigrate.source_reporting import ExcelExportProfile, source_reporters
+from fwmigrate.source_reporting.metrics import SourceReportMetrics
 from fwmigrate.web import create_app
 from fwmigrate.vendors.fortigate.source_report import (
     FortiGateSourceReporter,
@@ -41,6 +42,41 @@ def test_fortigate_reporter_is_registered_and_keeps_analysis_opaque():
     assert analysis.extracted.config.interfaces == []
     assert analysis.extracted.source_objects
     assert not hasattr(analysis.extracted, "canonical_ir")
+
+
+def test_fortigate_metrics_are_detailed_without_source_values():
+    metrics = SourceReportMetrics()
+    analysis = source_reporters.get("fortigate").analyze_source(SOURCE, metrics=metrics)
+
+    assert analysis.extracted.source_objects
+    assert metrics.metadata["source_byte_count"] == len(SOURCE.encode())
+    assert metrics.metadata["section_index_entries"] >= 1
+    assert metrics.metadata["source_object_count"] == len(analysis.extracted.source_objects)
+    assert metrics.metadata["typed_object_count"] == 1
+    assert metrics.metadata["validation_issue_count"] == len(analysis.validation.issues)
+    assert {stage.stage for stage in metrics.stages} >= {
+        "fortigate_parse",
+        "fortigate_extraction",
+        "fortigate_derived_views",
+        "fortigate_validation",
+    }
+    assert "fg-report" not in str(metrics.as_dict())
+
+
+def test_fortigate_typed_and_source_extraction_share_edit_evaluation(monkeypatch):
+    import fwmigrate.vendors.fortigate.extraction.common as common
+
+    calls = []
+    original = common._evaluate_section_commands
+
+    def counted(section_path, commands):
+        calls.append(section_path)
+        return original(section_path, commands)
+
+    monkeypatch.setattr(common, "_evaluate_section_commands", counted)
+    source_reporters.get("fortigate").analyze_source(SOURCE)
+
+    assert calls.count("firewall address") == 1
 
 
 
@@ -120,6 +156,19 @@ def test_shared_web_host_uses_fortigate_reporter_for_preview_and_excel():
     assert preview_payload["summary"]["objects"]["addresses"] == 1
     assert preview_payload["preview_id"]
 
+    metrics_response = client.post(
+        "/api/preview",
+        data={
+            "source_vendor": "fortigate",
+            "collect_metrics": "1",
+            "file": (io.BytesIO(SOURCE.encode()), "fortigate-metrics.conf"),
+        },
+        content_type="multipart/form-data",
+    )
+    diagnostics = metrics_response.get_json()["diagnostics"]["metrics"]
+    assert diagnostics["total_duration_ms"] > 0
+    assert diagnostics["metadata"]["source_object_count"] >= 1
+
     workbook = client.post(
         "/api/extract/excel",
         data={
@@ -129,6 +178,30 @@ def test_shared_web_host_uses_fortigate_reporter_for_preview_and_excel():
     )
     assert workbook.status_code == 200
     assert workbook.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def test_data_only_preview_export_reuses_cached_analysis(monkeypatch):
+    client = create_app({"TESTING": True}).test_client()
+    preview = client.post(
+        "/api/preview",
+        data={
+            "source_vendor": "fortigate",
+            "file": (io.BytesIO(SOURCE.encode()), "fortigate.conf"),
+        },
+        content_type="multipart/form-data",
+    )
+    preview_id = preview.get_json()["preview_id"]
+
+    monkeypatch.setattr(
+        "fwmigrate.web._clone_preview",
+        lambda _: (_ for _ in ()).throw(AssertionError("DATA_ONLY should reuse cached analysis")),
+    )
+    workbook = client.post(
+        "/api/extract/excel",
+        data={"source_vendor": "fortigate", "preview_id": preview_id, "excel_profile": "data_only"},
+    )
+
+    assert workbook.status_code == 200
 
 
 def test_fortigate_web_upload_handles_vdom_config_and_downloads_workbook():

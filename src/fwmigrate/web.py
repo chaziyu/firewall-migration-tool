@@ -344,17 +344,18 @@ def create_app(test_config=None):
             analysis = _timed(
                 metrics,
                 'extraction',
-                lambda: reporter.analyze_source(file_content),
+                lambda: reporter.analyze_source(file_content, metrics=metrics),
             )
             preview_entry = _cache_preview(source_vendor, raw_content, analysis, os.path.basename(file.filename))
-            report = _timed(metrics, 'preview', lambda: normalize_web_report(reporter.build_preview(analysis), source_vendor))
+            report = _timed(metrics, 'web_preview_construction', lambda: normalize_web_report(reporter.build_preview(analysis), source_vendor))
             response = {
                 'success': True,
                 'preview_id': preview_entry.preview_id,
                 **report,
             }
             if metrics is not None:
-                metrics.add('preview_total', (perf_counter() - started) * 1000)
+                metrics.total_duration_ms = (perf_counter() - started) * 1000
+                metrics.add('preview_total', metrics.total_duration_ms)
                 response['diagnostics'] = {'metrics': metrics.as_dict()}
             return jsonify(response)
         except ConfigurationDecodeError as e:
@@ -776,7 +777,7 @@ def create_app(test_config=None):
             if preview_entry is not None:
                 analysis = (
                     preview_entry.analysis
-                    if profile is ExcelExportProfile.FAST
+                    if profile in (ExcelExportProfile.FAST, ExcelExportProfile.DATA_ONLY)
                     else _clone_preview(preview_entry)
                 )
             else:
