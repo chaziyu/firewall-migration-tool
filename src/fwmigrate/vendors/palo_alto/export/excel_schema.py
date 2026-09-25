@@ -81,6 +81,7 @@ SHEET_ORDER: tuple[str, ...] = (
     "Unresolved References",
     "Unsupported",
     "PAN-OS Source Inventory",
+    "PAN-OS Source Appendix",
     "Extraction Coverage",
 )
 
@@ -1039,6 +1040,11 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
         "Extraction Status",
     ),
 
+    "PAN-OS Source Appendix": (
+        "Scope Type", "Scope Name", "Source Path", "Kind", "Object", "Source Order",
+        "Evidence Order", "Evidence Path", "Evidence Type", "Evidence Value",
+    ),
+
     "Extraction Coverage": (
         "Source Domain",
         "Found",
@@ -1119,9 +1125,11 @@ SHEET_IMPLEMENTATION_STATUS.update({
     "Zones": "IMPLEMENTED",
     "Virtual Router Routes": "IMPLEMENTED",
     "Logical Router Routes": "IMPLEMENTED",
+    "Route Path Monitors": "IMPLEMENTED",
     "Unresolved References": "IMPLEMENTED",
     "Unsupported": "IMPLEMENTED",
     "PAN-OS Source Inventory": "IMPLEMENTED",
+    "PAN-OS Source Appendix": "IMPLEMENTED",
     "Extraction Coverage": "IMPLEMENTED",
     "Vulnerability Profiles": "IMPLEMENTED",
     "Vulnerability Rules": "IMPLEMENTED",

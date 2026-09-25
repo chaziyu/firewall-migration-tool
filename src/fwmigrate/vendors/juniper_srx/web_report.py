@@ -27,6 +27,94 @@ def _project(value: Any) -> Any:
 def build_juniper_preview(result: Any) -> dict[str, Any]:
     config = result.config
     issue_index = JuniperValidationIssueIndex(result.validation.issues)
+    scopes = [context.name if context.context_type == "root" else f"{context.context_type} {context.name}"
+              for context in config.iter_contexts()]
+    interfaces, addresses, address_groups, services, service_groups = [], [], [], [], []
+    schedules, policies, nat, routes, vpn_tunnels = [], [], [], [], []
+    for context in config.iter_contexts():
+        scope = context.name if context.context_type == "root" else f"{context.context_type} {context.name}"
+        zone_by_interface = {name: zone.name for zone in context.zones.values() for name in zone.interfaces}
+        for interface in context.interfaces.values():
+            unit_rows = [None, *interface.units.values()]
+            for unit in unit_rows:
+                name = interface.name if unit is None else f"{interface.name}.{unit.unit}"
+                addresses_for_unit = list(getattr(unit, "addresses", ())) if unit else []
+                interfaces.append({"name": name, "display_name": name, "kind": "logical" if unit else "physical",
+                                   "ip": [item.address for item in addresses_for_unit],
+                                   "zone": [zone_by_interface[name]] if name in zone_by_interface else [],
+                                   "parent": interface.name if unit else interface.redundant_parent,
+                                   "aggregate": interface.aggregate_parent, "physical_interfaces": [],
+                                   "status": "EXTRACTED", "scope": scope,
+                                   "provenance": _project(getattr(unit, "field_provenance", None) or interface.field_provenance)})
+        for book in context.address_books.values():
+            for item in book.addresses.values():
+                addresses.append({"name": item.name, "value": item.prefix or item.fqdn or item.range_start,
+                                  "type": item.type, "address_family": "IPv6" if ":" in (item.prefix or "") else "IPv4" if item.prefix else None,
+                                  "associated_interface": item.zone, "scope": scope, "address_book": book.name,
+                                  "provenance": _project(getattr(item, "provenance", None))})
+            for item in book.address_sets.values():
+                address_groups.append({"name": item.name, "members": [member.name for member in item.members],
+                                       "address_family": None, "exclude_members": [], "scope": scope,
+                                       "address_book": book.name, "zone": item.zone,
+                                       "provenance": _project(getattr(item, "provenance", None))})
+        for item in context.applications.values():
+            for term in item.terms or (None,):
+                services.append({"name": item.name, "protocol": term.protocol if term else None,
+                                 "port": term.destination_ports if term else [], "source_port": term.source_ports if term else None,
+                                 "scope": scope, "term": term.name if term else None,
+                                 "provenance": _project(getattr(item, "provenance", None))})
+        for item in context.application_sets.values():
+            service_groups.append({"name": item.name, "members": item.applications, "scope": scope,
+                                   "provenance": _project(getattr(item, "provenance", None))})
+        schedules.extend({"name": item.name, "start_date": item.start_date, "stop_date": item.stop_date,
+                          "daily": item.daily, "weekdays": item.weekdays, "exclusions": item.exclusions,
+                          "scope": scope, "provenance": _project(getattr(item, "provenance", None))}
+                         for item in context.schedulers.values())
+        for index, item in enumerate((*context.policies, *context.global_policies), 1):
+            policies.append({"policy_id": item.sequence or index, "name": item.name,
+                             "source_interfaces": item.from_zones, "destination_interfaces": item.to_zones,
+                             "source_addresses": item.source_addresses, "destination_addresses": item.destination_addresses,
+                             "services": [*item.applications, *item.dynamic_applications], "schedule": item.scheduler_name,
+                             "action": item.action, "nat": False, "policy_scope": item.policy_scope,
+                             "scope": scope, "provenance": _project(getattr(item, "provenance", None))})
+        for sets in (context.nat.source_rule_sets, context.nat.destination_rule_sets, context.nat.static_rule_sets):
+            for rule_set in sets.values():
+                for item in rule_set.rules:
+                    nat.append({"policy_name": item.name, "translation_type": item.nat_type,
+                                "translated_addresses": list(item.action.values()),
+                                "source_addresses": item.match.source_addresses,
+                                "destination_addresses": item.match.destination_addresses,
+                                "egress_interfaces": list(rule_set.from_context.interfaces),
+                                "scope": scope, "rule_set": rule_set.name,
+                                "routing_instance": ", ".join(rule_set.from_context.routing_instances),
+                                "provenance": _project(getattr(item, "provenance", None))})
+        for item in context.routes:
+            for hop in item.next_hops or (None,):
+                routes.append({"route_id": item.destination, "destination": item.destination,
+                               "gateway": hop.value if hop else item.next_table,
+                               "device": None, "distance": item.preference, "status": "INACTIVE" if item.disabled else "EXTRACTED",
+                               "routing_instance": item.routing_instance, "scope": scope,
+                               "provenance": _project(getattr(item, "provenance", None))})
+        for item in context.vpn.ipsec_vpns.values():
+            vpn_tunnels.append({"kind": "IPsec VPN", "name": item.name,
+                                "attachment": item.bind_interface, "peer": item.ike_gateway,
+                                "crypto": item.ipsec_policy,
+                                "topology": {"traffic_selectors": _project(item.traffic_selectors),
+                                             "establish_tunnels": item.establish_tunnels},
+                                "scope": scope, "provenance": _project(getattr(item, "provenance", None))})
+    validation_rows = [{"severity": issue.severity, "domain": issue.category,
+                        "object_name": issue.object_name, "field": issue.field,
+                        "message": issue.message, "scope": issue.context,
+                        "reference": issue.reference, "expected_type": issue.expected_type,
+                        "status": issue.code}
+                       for issue in result.validation.issues]
+    sections = {"interfaces": interfaces, "interface_topology": interfaces,
+                "addresses": addresses, "address_groups": address_groups,
+                "services": services, "service_groups": service_groups,
+                "schedules": schedules, "policies": policies, "nat": nat,
+                "routes": routes, "vpn_tunnels": vpn_tunnels, "vpn_phase2": [],
+                "validation": validation_rows,
+                "unresolved_references": [row for row in validation_rows if row.get("reference")]}
     return {
         "vendor": "juniper_srx",
         "hostname": config.hostname,
@@ -44,7 +132,15 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                      "interfaces": len(result.derived.interface_topology),
                      "policies": len(result.derived.policies), "nat_rule_sets": len(result.derived.nat_rule_sets),
                      "dhcp_objects": len(result.derived.dhcp), "apbr_objects": len(result.derived.apbr),
-                     "remote_access_objects": len(result.derived.remote_access)},
+                     "remote_access_objects": len(result.derived.remote_access),
+                     "objects": {"interfaces": len(interfaces), "addresses": len(addresses),
+                                 "address_groups": len(address_groups), "services": len(services),
+                                 "service_groups": len(service_groups), "policies": len(policies),
+                                 "nat": len(nat), "routes": len(routes)},
+                     "validation": {"issue_count": len(validation_rows),
+                                    "severity_counts": {"error": sum(row["severity"] == "error" for row in validation_rows),
+                                                        "warning": sum(row["severity"] == "warning" for row in validation_rows)}},
+                     "scopes": scopes},
         "contexts": [{"name": item.name, "type": item.context_type} for item in config.iter_contexts()],
         "source": {"hostname": config.hostname, "version": config.version, "time_zone": config.time_zone},
         "source_sections": _project(result.source_sections),
@@ -82,6 +178,7 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                                "warnings": len(result.validation.warnings)},
         "validation_by_context": {context: _project(issues)
                                   for context, issues in sorted(issue_index.by_context.items())},
+        "sections": sections,
     }
 
 

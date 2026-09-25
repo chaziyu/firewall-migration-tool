@@ -87,6 +87,14 @@ class CiscoFTDNetworkAddress(CiscoFTDSourceRecord):
     override_metadata: Optional[Dict[str, Any]] = None
 
 
+class CiscoFTDNetworkAddressOverride(CiscoFTDSourceRecord):
+    parent: Optional[CiscoFTDReference] = None
+    target: Optional[CiscoFTDReference] = None
+    address_type: Optional[str] = None
+    value: Optional[Any] = None
+    overridable: Optional[bool] = None
+
+
 class CiscoFTDNetworkGroup(CiscoFTDSourceRecord):
     members: Optional[List[CiscoFTDReference]] = None
     literal_members: Optional[List[CiscoFTDReference]] = None
@@ -137,12 +145,15 @@ class CiscoFTDInterfaceSource(CiscoFTDSourceRecord):
 class CiscoFTDRoute(CiscoFTDSourceRecord):
     interface: Optional[CiscoFTDReference] = None
     destination: Optional[CiscoFTDReference] = None
+    selected_networks: Optional[List[CiscoFTDReference]] = None
     gateway: Optional[CiscoFTDReference] = None
     address_family: Optional[str] = None
     metric: Optional[int] = None
     virtual_router: Optional[str] = None
     virtual_router_ref: Optional[CiscoFTDReference] = None
     sla_monitor: Optional[CiscoFTDReference] = None
+    route_tracking: Optional[Dict[str, Any]] = None
+    tunneled: Optional[bool] = None
     device_id: Optional[str] = None
 
 
@@ -345,10 +356,45 @@ class CiscoFTDAccessControlRule(CiscoFTDSourceRecord):
 
 class CiscoFTDAccessControlPolicy(CiscoFTDSourceRecord):
     rules: Optional[List[CiscoFTDAccessControlRule]] = None
+    description: Optional[str] = None
+    inherit: Optional[bool] = None
+    base_policy: Optional[CiscoFTDReference] = None
+    default_action: Optional[CiscoFTDReference] = None
     prefilter_policy: Optional[CiscoFTDReference] = None
     network_analysis_policy: Optional[CiscoFTDReference] = None
     decryption_policy: Optional[CiscoFTDReference] = None
     dns_policy: Optional[CiscoFTDReference] = None
+    identity_policy: Optional[CiscoFTDReference] = None
+    logging_settings: Optional[Any] = None
+
+
+class CiscoFTDAccessControlLoggingSetting(CiscoFTDSourceRecord):
+    policy_id: Optional[str] = None
+    policy_name: Optional[str] = None
+
+
+class CiscoFTDSecurityIntelligencePolicy(CiscoFTDSourceRecord):
+    policy_id: Optional[str] = None
+    policy_name: Optional[str] = None
+
+
+class CiscoFTDIdentityPolicy(CiscoFTDSourceRecord): pass
+
+
+class CiscoFTDAccessControlDefaultAction(CiscoFTDSourceRecord):
+    policy_id: Optional[str] = None
+    action: Optional[str] = None
+
+
+class CiscoFTDAccessPolicyInheritanceSettings(CiscoFTDSourceRecord):
+    policy_id: Optional[str] = None
+    base_policy: Optional[CiscoFTDReference] = None
+    description: Optional[str] = None
+
+
+class CiscoFTDPolicyAssignment(CiscoFTDSourceRecord):
+    policy: Optional[CiscoFTDReference] = None
+    targets: Optional[List[CiscoFTDReference]] = None
 
 
 class CiscoFTDFDMNATRule(CiscoFTDSourceRecord):
@@ -536,6 +582,14 @@ class CiscoFTDFMCUser(CiscoFTDSourceRecord):
     external_identity: Optional[Any] = None
 class CiscoFTDDHCPServer(CiscoFTDSourceRecord):
     interface: Optional[CiscoFTDReference] = None
+
+
+class CiscoFTDDHCPRelaySettings(CiscoFTDSourceRecord):
+    relay_agents: Optional[List[Any]] = None
+    relay_servers: Optional[List[Any]] = None
+    ipv4_timeout_seconds: Optional[Any] = None
+    ipv6_timeout_seconds: Optional[Any] = None
+    trust_all_information: Optional[bool] = None
 class CiscoFTDRealm(CiscoFTDSourceRecord):
     realm_type: Optional[str] = None
     enabled: Optional[bool] = None
@@ -683,6 +737,7 @@ class CiscoFTDConfig(BaseModel):
     source_metadata: Dict[str, Any] = Field(default_factory=dict)
     collection_metadata: CiscoFTDCollectionMetadata = Field(default_factory=CiscoFTDCollectionMetadata)
     network_addresses: List[CiscoFTDNetworkAddress] = Field(default_factory=list)
+    network_address_overrides: List[CiscoFTDNetworkAddressOverride] = Field(default_factory=list)
     network_groups: List[CiscoFTDNetworkGroup] = Field(default_factory=list)
     protocol_port_objects: List[CiscoFTDProtocolPortObject] = Field(default_factory=list)
     port_object_groups: List[CiscoFTDPortObjectGroup] = Field(default_factory=list)
@@ -720,6 +775,12 @@ class CiscoFTDConfig(BaseModel):
     source_interfaces: List[CiscoFTDInterfaceSource] = Field(default_factory=list)
     routes: List[CiscoFTDRoute] = Field(default_factory=list)
     access_control_policies: List[CiscoFTDAccessControlPolicy] = Field(default_factory=list)
+    access_control_logging_settings: List[CiscoFTDAccessControlLoggingSetting] = Field(default_factory=list)
+    security_intelligence_policies: List[CiscoFTDSecurityIntelligencePolicy] = Field(default_factory=list)
+    identity_policies: List[CiscoFTDIdentityPolicy] = Field(default_factory=list)
+    access_control_default_actions: List[CiscoFTDAccessControlDefaultAction] = Field(default_factory=list)
+    access_policy_inheritance_settings: List[CiscoFTDAccessPolicyInheritanceSettings] = Field(default_factory=list)
+    policy_assignments: List[CiscoFTDPolicyAssignment] = Field(default_factory=list)
     nat_policies: List[CiscoFTDNATPolicy] = Field(default_factory=list)
     time_ranges: List[CiscoFTDTimeRange] = Field(default_factory=list)
     intrusion_policies: List[CiscoFTDIntrusionPolicy] = Field(default_factory=list)
@@ -732,6 +793,7 @@ class CiscoFTDConfig(BaseModel):
     fmc_user_roles: List[CiscoFTDFMCUserRole] = Field(default_factory=list)
     fmc_users: List[CiscoFTDFMCUser] = Field(default_factory=list)
     dhcp_servers: List[CiscoFTDDHCPServer] = Field(default_factory=list)
+    dhcp_relay_settings: List[CiscoFTDDHCPRelaySettings] = Field(default_factory=list)
     realms: List[CiscoFTDRealm] = Field(default_factory=list)
     realm_user_groups: List[CiscoFTDRealmUserGroup] = Field(default_factory=list)
     realm_users: List[CiscoFTDRealmUser] = Field(default_factory=list)

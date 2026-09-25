@@ -31,3 +31,24 @@ def test_same_interface_name_keeps_separate_vdom_requirements():
     assert {(item["source_vdom"], item["source_name"]) for item in result["interfaces"]} == {
         ("root", "port1"), ("blue", "port1")
     }
+
+
+def test_policy_interface_references_count_unique_affected_policies():
+    config = FGConfig(policies=[
+        FGPolicy(policy_id=1, srcintf=["port1"], dstintf=["port1"]),
+        FGPolicy(policy_id=2, srcintf=["port1"]),
+    ])
+    item = build_mapping_requirements(config, object())["interfaces"][0]
+    assert item["affected_count"] == 2
+    assert item["affected_by"] == {"security_policy": 2}
+    assert item["reference_count"] == 2
+
+
+def test_same_interface_name_impact_stays_scoped_to_each_vdom():
+    config = FGConfig(policies=[
+        FGPolicy(policy_id=1, vdom="root", srcintf=["port1"]),
+        FGPolicy(policy_id=1, vdom="blue", srcintf=["port1"]),
+    ])
+    items = {(item["source_vdom"], item["source_name"]): item for item in build_mapping_requirements(config, object())["interfaces"]}
+    assert items[("root", "port1")]["affected_by"] == {"security_policy": 1}
+    assert items[("blue", "port1")]["affected_by"] == {"security_policy": 1}

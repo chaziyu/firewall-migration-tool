@@ -27,16 +27,23 @@ def _jsonable(value: Any) -> Any:
 def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
     config = analysis.config
     records = config.source_inventory
-    reviews: dict[str | None, list[str]] = defaultdict(list)
+    reviews: dict[tuple[str, str | None, str | None], list[str]] = defaultdict(list)
+    review_fallbacks: dict[tuple[str, str | None], list[str]] = defaultdict(list)
     for issue in analysis.validation.issues:
-        reviews[issue.source_name].append(issue.message)
+        scope_id = _scope_id(issue.source_scope)
+        reviews[(scope_id, issue.source_path, issue.source_name)].append(issue.message)
+        if issue.source_path is None:
+            review_fallbacks[(scope_id, issue.source_name)].append(issue.message)
 
     def vdom(item: Any) -> str | None:
         scope = getattr(item, "scope", None)
         return scope.vsys if scope else None
 
     def review(item: Any) -> list[str]:
-        return reviews.get(getattr(item, "name", None), [])
+        scope_id = _scope_id(getattr(item, "scope", None))
+        name = getattr(item, "name", None)
+        path = getattr(item, "source_path", None)
+        return reviews.get((scope_id, path, name), []) or (review_fallbacks.get((scope_id, name), []) if path is None else [])
 
     addresses = [
         {
@@ -135,7 +142,15 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
         for item in router.static_routes or ():
             routes.append({"route_id": item.name, "destination": item.destination, "gateway": item.nexthop_ip_address or item.nexthop,
                            "device": item.interface, "distance": item.admin_distance, "status": "EXTRACTED",
-                           "review": review(item), "vdom": vdom(router)})
+                           "review": review(item), "vdom": vdom(router), "router_type": "virtual-router",
+                           "router": router.name, "vrf": None})
+    for router in config.logical_routers:
+        for vrf in router.vrfs or ():
+            for item in vrf.static_routes or ():
+                routes.append({"route_id": item.name, "destination": item.destination, "gateway": item.nexthop_ip_address or item.nexthop,
+                               "device": item.interface, "distance": item.admin_distance, "status": "EXTRACTED",
+                               "review": review(item), "vdom": vdom(router), "router_type": "logical-router",
+                               "router": router.name, "vrf": vrf.name})
     validation_rows = [{"severity": item.severity, "domain": item.domain, "object_name": item.source_name,
                         "field": item.field, "message": item.message, "vdom": item.source_scope.vsys if item.source_scope else None}
                        for item in analysis.validation.issues]
@@ -163,7 +178,8 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
         "summary": {
             "objects": object_counts,
             "vdoms": vdoms,
-            "scopes": len(config.scopes),
+            "scopes": vdoms,
+            "scope_count": len(config.scopes),
             "records": len(records),
             "interfaces": len(config.interfaces),
             "addresses": len(config.addresses) + len(config.address_groups),

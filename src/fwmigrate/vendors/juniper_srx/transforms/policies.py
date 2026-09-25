@@ -3,8 +3,8 @@
 from ..resolver import JuniperReferenceResolver
 
 
-def build_policy_relationships(context, scope: str) -> dict:
-    resolver = JuniperReferenceResolver(context)
+def build_policy_relationships(context, scope: str, effective_lookup=None) -> dict:
+    resolver = JuniperReferenceResolver(context, effective_lookup)
     zone_groups = {}
     zone_orders = {}
     edges = []
@@ -20,7 +20,10 @@ def build_policy_relationships(context, scope: str) -> dict:
         _policy_edges(edges, resolver, context, scope, policy)
     globals_ = []
     for order, policy in enumerate(context.global_policies):
-        globals_.append({"context": scope, "policy_scope": "global", "name": policy.name, "order": order,
+        globals_.append({"context": scope, "policy_scope": "global",
+                         "from_zone": tuple(policy.from_zones) or None,
+                         "to_zone": tuple(policy.to_zones) or None,
+                         "name": policy.name, "order": order,
                          "source_identities": tuple(policy.source_identities)})
         _policy_edges(edges, resolver, context, scope, policy)
     return {"zone_policy_sets": tuple({"from_zone": pair[0], "to_zone": pair[1], "policies": tuple(items)}
@@ -30,10 +33,14 @@ def build_policy_relationships(context, scope: str) -> dict:
 
 def _policy_edges(edges, resolver, context, scope, policy):
     def add(field, target_type, reference, resolved, relationship=None):
+        source_effective = resolver.policy_reference_is_effective(policy, field, reference)
         edges.append({"context": scope, "policy_scope": policy.policy_scope, "source_type": "security-policy",
                       "source_name": policy.name, "source_field": field,
                       "relationship": relationship or field.upper().replace("-", "_"),
-                      "target_type": target_type, "target_name": reference, "resolved": bool(resolved)})
+                      "target_type": target_type, "target_name": reference, "resolved": bool(resolved),
+                      "source_effective": source_effective,
+                      "status": "INACTIVE_SOURCE" if not source_effective else
+                      "RESOLVED" if resolved else "UNRESOLVED"})
     for field, references, zone, source in (("source-address", policy.source_addresses, policy.from_zone, True),
                                             ("destination-address", policy.destination_addresses, policy.to_zone, False)):
         for reference in references:
@@ -48,13 +55,10 @@ def _policy_edges(edges, resolver, context, scope, policy):
                                         resolver.resolve_scheduler(policy.scheduler_name) if policy.scheduler_name else None),):
         if reference:
             add(field, "scheduler", reference, resolved is not None)
-    profile_collections = {"idp-policy": context.idp_policies, "utm-policy": context.utm_policies,
-                           "ssl-proxy-profile": context.ssl_proxy_profiles,
-                           "security-intelligence": context.security_intelligence_profiles}
     for profile_type, references in policy.security_profile_references.items():
-        collection = profile_collections.get(profile_type, {})
         for reference in references:
-            add(profile_type, "source-profile", reference, resolver.resolve_named_reference(reference, collection) is not None)
+            add(profile_type, "source-profile", reference,
+                resolver.resolve_source_profile(profile_type, reference) is not None)
     if policy.vpn_reference:
         add("vpn-reference", "ipsec-vpn", policy.vpn_reference,
-            policy.vpn_reference in context.vpn.ipsec_vpns, "EXPLICIT_VPN_REFERENCE")
+            resolver.resolve_ipsec_vpn(policy.vpn_reference) is not None, "EXPLICIT_VPN_REFERENCE")

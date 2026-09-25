@@ -88,12 +88,15 @@ def export_juniper_excel(result: Any, output: Any) -> Any:
             "Applications": views.applications, "Policies": views.policies, "NAT": views.nat_rule_sets,
             "VPN": views.vpn_relationships,
             "DHCP Local Servers": tuple(item for item in views.dhcp if item["kind"] == "local-server"),
+            "DHCP Relay Groups": tuple(item for item in views.dhcp if item["kind"] == "relay-group"),
             "DHCP Pools": tuple(item for item in views.dhcp if item["kind"] == "address-assignment-pool"),
             "Access Profiles": views.access_profiles, "Firewall Users": views.firewall_users,
             "APBR": views.apbr, "Remote Access": views.remote_access,
             "Policy Relationships": tuple(row for item in views.policy_relationships
                                            for group in item["zone_policy_sets"] for row in group["policies"])
                                   + tuple(row for item in views.policy_relationships for row in item["global_policies"]),
+            "Policy Reference Relationships": tuple(edge for item in views.policy_relationships
+                                                      for edge in item["edges"]),
             "NAT Usage": views.nat_usage, "NAT Pool Usage": views.nat_pool_usage, "VPN Relationships": views.vpn_graph,
             "Secure Connect": views.secure_connect_graph, "APBR Relationships": views.apbr_graph,
             "Inheritance": _inheritance_rows(views.inheritance_view),

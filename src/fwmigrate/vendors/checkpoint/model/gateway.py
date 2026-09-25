@@ -9,7 +9,7 @@ class CPGatewayInterface(CheckPointSourceObject):
     ipv4_address: str | None = Field(default=None, alias="ipv4-address")
     ipv4_network_mask: str | None = Field(default=None, alias="ipv4-network-mask")
     ipv6_address: str | None = Field(default=None, alias="ipv6-address")
-    zone: CheckPointObjectReference | str | None = None
+    zone: CheckPointObjectReference | str | None = Field(default=None, alias="security-zone")
     topology: str | None = None
 
 

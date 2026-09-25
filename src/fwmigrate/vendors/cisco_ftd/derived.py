@@ -47,6 +47,9 @@ class FTDReferenceKind(str, Enum):
     RAVPN_CONNECTION_PROFILE = "RAVPN_CONNECTION_PROFILE"
     INTRUSION_RULE_GROUP = "INTRUSION_RULE_GROUP"
     INTRUSION_RULE_BEHAVIOR = "INTRUSION_RULE_BEHAVIOR"
+    ACCESS_CONTROL_POLICY = "ACCESS_CONTROL_POLICY"
+    IDENTITY_POLICY = "IDENTITY_POLICY"
+    ACCESS_CONTROL_DEFAULT_ACTION = "ACCESS_CONTROL_DEFAULT_ACTION"
 
 
 @dataclass(frozen=True)
@@ -71,6 +74,7 @@ class FTDDerivedViews:
     resolved_references: tuple[dict[str, str | None], ...] = ()
     zone_interfaces: dict[str, tuple[str, ...]] = field(default_factory=dict)
     acp_relationships: tuple[dict[str, Any], ...] = ()
+    policy_relationships: tuple[dict[str, Any], ...] = ()
     nat_relationships: tuple[dict[str, Any], ...] = ()
     unresolved_references: tuple[FTDReferenceIssue, ...] = ()
     source_plane_completeness: dict[str, str] = field(default_factory=dict)
@@ -99,6 +103,9 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
 
     for kind, records in (
         (FTDReferenceKind.NETWORK_ADDRESS, config.network_addresses),
+        (FTDReferenceKind.ACCESS_CONTROL_POLICY, config.access_control_policies),
+        (FTDReferenceKind.IDENTITY_POLICY, config.identity_policies),
+        (FTDReferenceKind.ACCESS_CONTROL_DEFAULT_ACTION, config.access_control_default_actions),
         (FTDReferenceKind.NETWORK_GROUP, config.network_groups),
         (FTDReferenceKind.SERVICE_OBJECT, config.protocol_port_objects),
         (FTDReferenceKind.SERVICE_GROUP, config.port_object_groups),
@@ -345,8 +352,33 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
         for field_name, kinds in (("interface", (FTDReferenceKind.INTERFACE,)), ("destination", network),
             ("gateway", network), ("sla_monitor", (FTDReferenceKind.SLA_MONITOR,))):
             value = getattr(route, field_name, None)
+            if value is not None and not (field_name == "gateway" and getattr(value, "source_type", None) == "literal"):
+                resolve(route, field_name, value, kinds,
+                        special=frozenset({"null0"}) if field_name == "interface" else frozenset(),
+                        scope=route.device_id if field_name == "interface" else None)
+        for value in route.selected_networks or []:
+            resolve(route, "selected_networks", value, network)
+
+    for override in config.network_address_overrides:
+        if override.parent is not None:
+            resolve(override, "parent", override.parent, (FTDReferenceKind.NETWORK_ADDRESS,))
+    for policy in config.access_control_policies:
+        for field_name, kind in (("base_policy", FTDReferenceKind.ACCESS_CONTROL_POLICY),
+                                 ("default_action", FTDReferenceKind.ACCESS_CONTROL_DEFAULT_ACTION),
+                                 ("prefilter_policy", FTDReferenceKind.PREFILTER_POLICY),
+                                 ("network_analysis_policy", FTDReferenceKind.NETWORK_ANALYSIS_POLICY),
+                                 ("decryption_policy", FTDReferenceKind.DECRYPTION_POLICY),
+                                 ("dns_policy", FTDReferenceKind.DNS_POLICY),
+                                 ("identity_policy", FTDReferenceKind.IDENTITY_POLICY)):
+            value = getattr(policy, field_name, None)
             if value is not None:
-                resolve(route, field_name, value, kinds, scope=route.device_id if field_name == "interface" else None)
+                resolve(policy, field_name, value, (kind,))
+    for setting in config.access_policy_inheritance_settings:
+        if setting.base_policy is not None:
+            resolve(setting, "base_policy", setting.base_policy, (FTDReferenceKind.ACCESS_CONTROL_POLICY,))
+    for assignment in config.policy_assignments:
+        if assignment.policy is not None:
+            resolve(assignment, "policy", assignment.policy, (FTDReferenceKind.ACCESS_CONTROL_POLICY,))
 
     for owner, field_name, values in (
         *((vr, "interfaces", vr.interfaces or []) for vr in config.virtual_routers),
@@ -381,7 +413,9 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
         *((item, (("connection_profile", FTDReferenceKind.RAVPN_CONNECTION_PROFILE),
                   ("group_policy", FTDReferenceKind.GROUP_POLICY))) for item in config.certificate_maps),
         *((item, (("prefilter_policy", FTDReferenceKind.PREFILTER_POLICY),
-                  ("network_analysis_policy", FTDReferenceKind.NETWORK_ANALYSIS_POLICY)))
+                  ("network_analysis_policy", FTDReferenceKind.NETWORK_ANALYSIS_POLICY),
+                  ("decryption_policy", FTDReferenceKind.DECRYPTION_POLICY),
+                  ("dns_policy", FTDReferenceKind.DNS_POLICY)))
           for item in config.access_control_policies),
         *((item, (("interface", FTDReferenceKind.INTERFACE),
                   ("vti", FTDReferenceKind.INTERFACE), ("protected_networks", network)))
@@ -524,6 +558,12 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
     expected = {
         "network_objects": "present" if config.network_addresses or config.network_groups else "not_available",
         "security_zones": "present" if config.security_zones else "not_available",
+        "network_address_overrides": "present" if config.network_address_overrides else "not_available_from_source_plane",
+        "policy_assignments": "present" if config.policy_assignments else "not_available_from_source_plane",
+        "acp_default_actions": "present" if config.access_control_default_actions else "not_available_from_source_plane",
+        "acp_inheritance_settings": "present" if config.access_policy_inheritance_settings else "not_available_from_source_plane",
+        "acp_logging_settings": "present" if config.access_control_logging_settings else "not_available_from_source_plane",
+        "acp_security_intelligence": "present" if config.security_intelligence_policies else "not_available_from_source_plane",
         "interfaces": "present" if config.source_interfaces or config.device_interfaces or config.interfaces else "not_available",
         "acp": ("partial" if acp_rules and any(policy.rules is None for policy in config.access_control_policies)
                 else "present" if acp_rules else "not_available_from_source_plane"),
@@ -537,6 +577,9 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
     }
     if config.source_plane == "fmc-rest-bundle" and not config.collection_metadata.provided:
         expected["network_objects"] = "unknown"
+        expected["network_address_overrides"] = "unknown"
+        expected["policy_assignments"] = "unknown"
+        expected["acp_default_actions"] = "unknown"
         expected["acp"] = "partial" if acp_rules and any(
             policy.rules is None for policy in config.access_control_policies) else "unknown"
         expected["nat"] = "unknown"
@@ -549,12 +592,16 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
         families = {
             "hosts": ("hosts",), "networks": ("networks",), "ranges": ("ranges",),
             "network_objects": ("networkaddresses", "hosts", "networks", "ranges", "networkgroups"),
+            "network_address_overrides": ("network_address_overrides",),
+            "policy_assignments": ("policy_assignments",),
+            "acp_default_actions": ("/default_actions",),
             "security_zones": ("securityzones",), "interfaces": ("/ftd_interfaces",),
             "acp": ("access_policies", "access_rules/"), "nat": ("nat_policies", "manual_rules/", "auto_rules/"),
             "time_ranges": ("timeranges",), "intrusion": ("intrusionpolicies",),
             "file_policy": ("filepolicies",), "decryption": ("decryptionpolicies",), "dns": ("dnspolicies",),
             "administration": ("fmc_users", "fmc_roles"), "identity": ("realms", "realmusergroups", "realmusers", "localrealmusers"),
-            "routing": ("/static_routes",), "dhcp": ("/dhcp_servers",), "s2s_vpn": ("s2svpns",), "ra_vpn": ("ravpns",),
+            "routing": ("/ipv4_static_routes", "/ipv6_static_routes", "/static_routes"),
+            "dhcp": ("/dhcp_servers", "/dhcp_relay_settings"), "s2s_vpn": ("s2svpns",), "ra_vpn": ("ravpns",),
             "sdwan_related_native_resources": ("/pbr_policies", "/ecmp_zones", "/sla_monitors"),
         }
         parts = config.collection_metadata.parts
@@ -594,6 +641,14 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             [part for part in parts if part.name.startswith("intrusionpolicies/") and part.name.endswith("/rule_groups")])
         expected["intrusion_rule_behaviors"] = child_collection_state(
             [part for part in parts if part.name.startswith("intrusionpolicies/") and part.name.endswith("/rules")])
+        expected["intrusion_rule_overrides"] = child_collection_state(
+            [part for part in parts if part.name.startswith("intrusionpolicies/") and part.name.endswith("/overrides")])
+        for key, suffix in (("acp_inheritance_settings", "/inheritance_settings"),
+                            ("acp_logging_settings", "/logging_settings"),
+                            ("acp_security_intelligence", "/security_intelligence"),
+                            ("acp_default_actions", "/default_actions")):
+            expected[key] = child_collection_state([part for part in parts if part.name.startswith("accesspolicies/")
+                                                    and part.name.endswith(suffix)])
         for family, prefixes in (("file", ("filepolicies/", "filepolicyrules/")),
                                  ("decryption", ("decryptionpolicies/", "decryptionpolicyrules/")),
                                  ("dns", ("dnspolicies/", "block_rules/"))):
@@ -602,12 +657,12 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             expected[f"{family}_rules"] = child_collection_state(matching)
     else:
         expected.update({"intrusion_policies": "unknown", "intrusion_rule_groups": "unknown",
-                         "intrusion_rule_behaviors": "unknown", "file_rules": "unknown",
+                         "intrusion_rule_behaviors": "unknown", "intrusion_rule_overrides": "unknown", "file_rules": "unknown",
                          "decryption_rules": "unknown", "dns_rules": "unknown"})
 
     return FTDDerivedViews(
-        interface_topology=build_ftd_interface_topology(config.interfaces),
-        normalized_routes=normalize_ftd_routes(config.static_routes),
+        interface_topology=build_ftd_interface_topology([*config.interfaces, *config.source_interfaces]),
+        normalized_routes=normalize_ftd_routes([*config.routes, *config.static_routes], config.network_addresses),
         resolved_references=tuple(resolved), zone_interfaces=zone_interfaces,
         acp_relationships=tuple({"policy_id": rule.policy_id, "policy_name": rule.policy_name,
             "rule_id": rule.source_id, "rule_name": rule.name,
@@ -617,6 +672,14 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             "source_port_refs": rule.source_ports, "destination_port_refs": rule.destination_ports,
             **{key: getattr(rule, key) for key in ("realm", "time_range", "intrusion_policy", "variable_set", "file_policy")}}
             for rule in acp_rules),
+        policy_relationships=tuple({"policy_id": policy.source_id, "policy_name": policy.name,
+            **{field: getattr(policy, field).model_dump(exclude_none=True) for field in ("base_policy", "default_action", "prefilter_policy",
+                "network_analysis_policy", "decryption_policy", "dns_policy", "identity_policy")
+               if getattr(policy, field) is not None}}
+            for policy in config.access_control_policies) + tuple({"assignment_id": assignment.source_id,
+                "policy": assignment.policy.model_dump(exclude_none=True) if assignment.policy else None,
+                "targets": [item.model_dump(exclude_none=True) for item in assignment.targets or []]}
+                for assignment in config.policy_assignments),
         nat_relationships=tuple({"policy_id": None if policy.source_attributes.get("synthetic_container") else policy.source_id,
             "policy": None if policy.source_attributes.get("synthetic_container") else policy.name,
             "rule_id": rule.source_id, "rule": rule.name, "rule_kind": kind,

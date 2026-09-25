@@ -54,7 +54,7 @@ def build_policy_structure(config: CheckPointConfig, references: CPReferenceInde
             if isinstance(resolved, CPResolvedReference): package_layers.append(CPPackageLayerRelationship(package, resolved.target))
             else: package_layers.append(CPPackageLayerRelationship(package, None, issue=resolved)); issues.append(resolved)
     for layer in config.access_layers:
-        if layer.package_uid or layer.package:
+        if {"package_uid", "package"} & set(layer.explicit_fields) and (layer.package_uid or layer.package):
             package = references.by_uid.get(layer.package_uid or "")
             if package is None:
                 package = next((item for item in config.policy_packages if item.name == layer.package and (item.domain_uid or item.domain) == (layer.domain_uid or layer.domain)), None)

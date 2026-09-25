@@ -32,6 +32,14 @@ def test_absent_and_explicit_no_interface_values_survive_all_report_stages():
     assert workbook["Routes"]["A2"].value == "outside"
 
 
+def test_null0_route_keeps_gateway_absent():
+    route = extract_cisco_asa_source("route null0 192.168.2.0 255.255.255.0\n").config.static_routes[0]
+    assert (route.interface, route.destination, route.mask, route.gateway) == (
+        "null0", "192.168.2.0", "255.255.255.0", None
+    )
+    assert "gateway" not in route.explicit_fields
+
+
 def test_nat_optional_flags_distinguish_absent_from_explicit():
     result = extract_cisco_asa_source(
         "nat (inside,outside) source static 10.0.0.1 192.0.2.1\n"

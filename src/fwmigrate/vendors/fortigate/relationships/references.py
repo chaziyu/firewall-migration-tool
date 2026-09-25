@@ -27,18 +27,25 @@ class ReferenceKind(str, Enum):
     SCHEDULE_GROUP = "schedule_group"
 
     VIP = "vip"
+    VIP6 = "vip6"
     VIP_GROUP = "vip_group"
+    VIP_GROUP6 = "vip_group6"
 
     IP_POOL = "ip_pool"
+    IP_POOL6 = "ip_pool6"
 
     USER_GROUP = "user_group"
 
     SSL_VPN_PORTAL = "ssl_vpn_portal"
 
     PROFILE_GROUP = "profile_group"
+    PROTOCOL_OPTIONS = "protocol_options"
+    PER_IP_SHAPER = "per_ip_shaper"
     IPS_SENSOR = "ips_sensor"
+    ADMIN_PROFILE = "admin_profile"
 
     IPSEC_PHASE1 = "ipsec_phase1"
+    IPSEC_POLICY_PHASE1 = "ipsec_policy_phase1"
 
     SDWAN_ZONE = "sdwan_zone"
 
@@ -250,18 +257,21 @@ def build_reference_index(
         ReferenceKind.VIP,
         config.vips,
     )
+    _add_named(index, ReferenceKind.VIP6, config.vips6)
 
     _add_named(
         index,
         ReferenceKind.VIP_GROUP,
         config.vip_groups,
     )
+    _add_named(index, ReferenceKind.VIP_GROUP6, config.vip_groups6)
 
     _add_named(
         index,
         ReferenceKind.IP_POOL,
         config.ip_pools,
     )
+    _add_named(index, ReferenceKind.IP_POOL6, config.ip_pools6)
 
     _add_named(
         index,
@@ -280,6 +290,8 @@ def build_reference_index(
         ReferenceKind.PROFILE_GROUP,
         config.profile_groups,
     )
+    _add_named(index, ReferenceKind.PROTOCOL_OPTIONS, config.protocol_options)
+    _add_named(index, ReferenceKind.PER_IP_SHAPER, config.per_ip_shapers)
 
     _add_named(
         index,
@@ -287,11 +299,14 @@ def build_reference_index(
         config.ips_sensors,
     )
 
+    _add_named(index, ReferenceKind.ADMIN_PROFILE, config.admin_profiles)
+
     _add_named(
         index,
         ReferenceKind.IPSEC_PHASE1,
         config.ipsec_phase1,
     )
+    _add_named(index, ReferenceKind.IPSEC_POLICY_PHASE1, config.ipsec_policy_phase1)
 
     for sdwan in config.sdwans:
         for zone in sdwan.zones:
@@ -591,6 +606,15 @@ def collect_broken_references(
             ),
         )
 
+        check(
+            source_kind="policy",
+            vdom=policy.vdom,
+            source_name=source_name,
+            source_field="poolname6",
+            names=policy.poolname6,
+            kinds=(ReferenceKind.IP_POOL6,),
+        )
+
         if policy.vpntunnel:
             check(
                 source_kind="policy",
@@ -598,9 +622,7 @@ def collect_broken_references(
                 source_name=source_name,
                 source_field="vpntunnel",
                 names=(policy.vpntunnel,),
-                kinds=(
-                    ReferenceKind.IPSEC_PHASE1,
-                ),
+                kinds=(ReferenceKind.IPSEC_POLICY_PHASE1,),
             )
 
         if policy.profile_group:
@@ -626,6 +648,34 @@ def collect_broken_references(
                     ReferenceKind.IPS_SENSOR,
                 ),
             )
+
+        if policy.profile_protocol_options:
+            check(
+                source_kind="policy", vdom=policy.vdom, source_name=source_name,
+                source_field="profile_protocol_options", names=(policy.profile_protocol_options,),
+                kinds=(ReferenceKind.PROTOCOL_OPTIONS,),
+            )
+        if policy.per_ip_shaper:
+            check(
+                source_kind="policy", vdom=policy.vdom, source_name=source_name,
+                source_field="per_ip_shaper", names=(policy.per_ip_shaper,),
+                kinds=(ReferenceKind.PER_IP_SHAPER,),
+            )
+
+    for policy in config.nac_policies:
+        if policy.firewall_address:
+            check(source_kind="nac_policy", vdom=policy.vdom, source_name=policy.name,
+                  source_field="firewall_address", names=(policy.firewall_address,),
+                  kinds=(ReferenceKind.ADDRESS, ReferenceKind.ADDRESS_GROUP, ReferenceKind.ADDRESS6, ReferenceKind.ADDRESS_GROUP6))
+        if policy.user_group:
+            check(source_kind="nac_policy", vdom=policy.vdom, source_name=policy.name,
+                  source_field="user_group", names=(policy.user_group,),
+                  kinds=(ReferenceKind.USER_GROUP,))
+
+    for sniffer in config.on_demand_sniffers:
+        if sniffer.interface:
+            check(source_kind="on_demand_sniffer", vdom=sniffer.vdom, source_name=sniffer.name,
+                  source_field="interface", names=(sniffer.interface,), kinds=(ReferenceKind.INTERFACE,))
 
     # --------------------------------------------------------------
     # VPN
@@ -672,7 +722,6 @@ def collect_broken_references(
                 if member.seq_num is not None
                 else "<unknown>"
             )
-
             if member.interface:
                 check(
                     source_kind="sdwan_member",
@@ -698,6 +747,15 @@ def collect_broken_references(
                 )
 
     for administrator in config.administrators:
+        if administrator.accprofile:
+            check(
+                source_kind="administrator",
+                vdom="root",
+                source_name=administrator.name,
+                source_field="accprofile",
+                names=(administrator.accprofile,),
+                kinds=(ReferenceKind.ADMIN_PROFILE,),
+            )
         if administrator.schedule:
             check(
                 source_kind="administrator",
@@ -706,6 +764,102 @@ def collect_broken_references(
                 source_field="schedule",
                 names=(administrator.schedule,),
                 kinds=schedule_like,
+            )
+
+    for route in config.static_routes:
+        source_name = str(route.seq_num) if route.seq_num is not None else "<unknown>"
+        if route.dstaddr:
+            check(
+                source_kind="static_route6" if route.address_family == "ipv6" else "static_route",
+                vdom=route.vdom,
+                source_name=source_name,
+                source_field="dstaddr",
+                names=(route.dstaddr,),
+                kinds=(
+                    (ReferenceKind.ADDRESS6, ReferenceKind.ADDRESS_GROUP6)
+                    if route.address_family == "ipv6"
+                    else (ReferenceKind.ADDRESS, ReferenceKind.ADDRESS_GROUP)
+                ),
+            )
+        if route.device:
+            check(
+                source_kind="static_route6" if route.address_family == "ipv6" else "static_route",
+                vdom=route.vdom,
+                source_name=source_name,
+                source_field="device",
+                names=(route.device,),
+                kinds=(ReferenceKind.INTERFACE, ReferenceKind.IPSEC_PHASE1),
+            )
+        check(
+            source_kind="static_route6" if route.address_family == "ipv6" else "static_route",
+            vdom=route.vdom,
+            source_name=source_name,
+            source_field="sdwan_zone",
+            names=route.sdwan_zone,
+            kinds=(ReferenceKind.SDWAN_ZONE,),
+        )
+
+    for phase2 in config.ipsec_policy_phase2:
+        if phase2.phase1name:
+            check(
+                source_kind="ipsec_policy_phase2", vdom=phase2.vdom, source_name=phase2.name,
+                source_field="phase1name", names=(phase2.phase1name,),
+                kinds=(ReferenceKind.IPSEC_POLICY_PHASE1,),
+            )
+
+    for server in config.dhcp_servers:
+        if server.interface:
+            check(
+                source_kind="dhcp_server",
+                vdom=server.vdom,
+                source_name=str(server.id),
+                source_field="interface",
+                names=(server.interface,),
+                kinds=(ReferenceKind.INTERFACE,),
+            )
+
+    for group in config.vip_groups6:
+        check(
+            source_kind="vip_group6", vdom=group.vdom, source_name=group.name,
+            source_field="members", names=group.members, kinds=(ReferenceKind.VIP6,),
+        )
+
+    for vip in config.vips:
+        if vip.extintf:
+            check(
+                source_kind="vip", vdom=vip.vdom, source_name=vip.name,
+                source_field="extintf", names=(vip.extintf,),
+                kinds=(ReferenceKind.INTERFACE,),
+            )
+        check(
+            source_kind="vip", vdom=vip.vdom, source_name=vip.name,
+            source_field="extaddr", names=vip.extaddr,
+            kinds=(ReferenceKind.ADDRESS,),
+        )
+        if vip.mapped_addr:
+            check(
+                source_kind="vip", vdom=vip.vdom, source_name=vip.name,
+                source_field="mapped_addr", names=(vip.mapped_addr,),
+                kinds=(ReferenceKind.ADDRESS,),
+            )
+        check(
+            source_kind="vip", vdom=vip.vdom, source_name=vip.name,
+            source_field="service", names=vip.service, kinds=service_like,
+        )
+        for server in vip.realservers:
+            if server.address:
+                check(
+                    source_kind="vip", vdom=vip.vdom, source_name=vip.name,
+                    source_field=f"realservers[{server.id}].address",
+                    names=(server.address,), kinds=(ReferenceKind.ADDRESS,),
+                )
+
+    for group in config.vip_groups:
+        if group.interface:
+            check(
+                source_kind="vip_group", vdom=group.vdom, source_name=group.name,
+                source_field="interface", names=(group.interface,),
+                kinds=(ReferenceKind.INTERFACE,),
             )
 
     return issues

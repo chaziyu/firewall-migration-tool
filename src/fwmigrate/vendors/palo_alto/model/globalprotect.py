@@ -27,7 +27,9 @@ class PANGlobalProtectClientlessVPN(PANNestedSourceModel):
     hostname: str | None = None
     security_zone: str | None = None
     login_lifetime: str | None = None
+    login_lifetime_unit: str | None = None
     inactivity_logout: str | None = None
+    inactivity_logout_unit: str | None = None
     maximum_users: str | None = None
     dns_proxy: str | None = None
 

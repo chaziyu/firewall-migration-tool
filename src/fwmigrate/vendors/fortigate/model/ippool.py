@@ -1,4 +1,5 @@
 from typing import Any
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -6,6 +7,7 @@ from pydantic import BaseModel, Field
 class FGIPPool(BaseModel):
     name: str
     vdom: str = "root"
+    address_family: Literal["ipv4"] = "ipv4"
 
     # Pool identity / range
     type: str | None = None

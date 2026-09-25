@@ -3,6 +3,7 @@ from fwmigrate.vendors.checkpoint.model.gaia import CPGaiaInterface
 from fwmigrate.vendors.checkpoint.model.gateway import CPGateway, CPGatewayInterface
 from fwmigrate.vendors.checkpoint.model.source import CheckPointConfig
 from fwmigrate.vendors.checkpoint.model.zone import CPSecurityZone
+from fwmigrate.vendors.checkpoint.validation import validate_checkpoint_config
 
 
 def test_interface_view_uses_topology_and_keeps_unmatched_gaia_separate():
@@ -43,3 +44,42 @@ def test_unresolved_zone_and_unmatched_gaia_identity_stay_unknown():
     assert gaia.device_uid is None and gaia.device_name is None
     assert gaia.management_source is None and gaia.gaia_source is gaia_interface
     assert config.model_dump() == before
+
+
+def test_gaia_interface_correlates_only_from_explicit_gateway_identity():
+    management_interface = CPGatewayInterface(name="eth0", ipv4_address="192.0.2.1")
+    gateway = CPGateway(uid="g", name="gateway", interfaces=[management_interface])
+    gaia_interface = CPGaiaInterface(
+        name="eth0", gateway="g", ipv4_address="192.0.2.2", explicit_fields=("gateway",),
+    )
+    config = CheckPointConfig(gateways=[gateway], gaia_interfaces=[gaia_interface])
+    before = config.model_dump()
+
+    view, = build_checkpoint_derived_views(config).interface_views.views
+
+    assert view.device_uid == "g"
+    assert view.management_source is management_interface and view.gaia_source is gaia_interface
+    assert view.management_source_present and view.gaia_source_present
+    assert config.model_dump() == before
+
+
+def test_gaia_interface_keeps_device_association_when_interface_name_is_unknown():
+    gateway = CPGateway(uid="g", name="gateway")
+    source = CPGaiaInterface(name="eth9", gateway="g", explicit_fields=("gateway",))
+    view, = build_checkpoint_derived_views(CheckPointConfig(gateways=[gateway], gaia_interfaces=[source])).interface_views.views
+
+    assert view.device_uid == "g" and view.device_kind == "gateway"
+    assert view.management_source is None and view.gaia_source is source
+
+
+def test_gaia_interface_ambiguous_gateway_identity_is_a_structured_finding():
+    config = CheckPointConfig(
+        gateways=[CPGateway(uid="g1", name="gateway"), CPGateway(uid="g2", name="gateway")],
+        gaia_interfaces=[CPGaiaInterface(name="eth0", gateway="gateway", explicit_fields=("gateway",))],
+    )
+    derived = build_checkpoint_derived_views(config)
+
+    assert any(issue.source_field == "gateway" and issue.status == "ambiguous"
+               for issue in derived.interface_topology.issues)
+    assert any(issue.code == "interface_correlation_ambiguous"
+               for issue in validate_checkpoint_config(config, derived).issues)

@@ -49,16 +49,18 @@ def build_typed_object(
         source_values["section_path"] = list(section_path)
     if inline_layer_context is not None and "inline_layer" in model.model_fields:
         source_values["inline_layer"] = inline_layer_context
-    return model(
+    values = {
+        "source_plane": source_plane(response), "command": response.command,
+        "domain": response.domain, "domain_uid": response.domain_uid,
+        "package": response.package, "package_uid": response.package_uid,
+        "layer": response.layer, "layer_uid": response.layer_uid,
+        "parent_layer_uid": response.parent_layer_uid, "parent_rule_uid": response.parent_rule_uid,
+        "gateway": response.gateway, "order": order,
         **source_values,
-        source_plane=source_plane(response), command=response.command,
-        domain=response.domain, domain_uid=response.domain_uid,
-        package=response.package, package_uid=response.package_uid,
-        layer=response.layer, layer_uid=response.layer_uid,
-        parent_layer_uid=response.parent_layer_uid, parent_rule_uid=response.parent_rule_uid,
-        gateway=response.gateway,
-        order=order, raw_extra=raw_extra, explicit_fields=explicit_fields,
-    )
+    }
+    values.update(source_plane=source_plane(response), command=response.command,
+                  order=order, raw_extra=raw_extra, explicit_fields=explicit_fields)
+    return model(**values)
 
 
 def build_source_fields(

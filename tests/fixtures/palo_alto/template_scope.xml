@@ -1,0 +1,7 @@
+<config><devices><entry name="panorama">
+  <template>
+    <entry name="template-a"><config><devices><entry name="fw-a"><network><interface><ethernet><entry name="ethernet1/1"/></ethernet></interface></network></entry></devices></config></entry>
+    <entry name="template-b"><config><devices><entry name="fw-b"><network><interface><ethernet><entry name="ethernet1/1"/></ethernet></interface></network></entry></devices></config></entry>
+  </template>
+  <template-stack><entry name="stack-a"><config><devices><entry name="fw-c"><network><interface><ethernet><entry name="ethernet1/1"/></ethernet></interface></network></entry></devices></config></entry></template-stack>
+</entry></devices></config>

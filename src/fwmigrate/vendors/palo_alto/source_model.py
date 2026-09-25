@@ -45,6 +45,18 @@ class PANSourceRecord(BaseModel):
     unsupported: bool = False
 
 
+class PANExtractionIssue(BaseModel):
+    """Safe diagnostic metadata for a failed typed extraction attempt."""
+
+    source_path: str
+    source_name: Optional[str] = None
+    source_order: Optional[int] = None
+    scope: Optional[PANScope] = None
+    domain: Optional[str] = None
+    exception_type: str
+    message: str
+
+
 @dataclass(frozen=True)
 class PANOSDerivedViews:
     """Read-only views over PAN-OS source state."""

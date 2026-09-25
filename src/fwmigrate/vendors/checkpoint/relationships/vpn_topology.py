@@ -20,8 +20,14 @@ class CPVTITopology:
 
 
 @dataclass(frozen=True, slots=True)
+class CPVPNDomainTopology:
+    domain: Any; members: tuple[Any, ...] = (); issues: tuple[CPBrokenReference, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class CPVPNTopology:
-    communities: tuple[CPVPNCommunityTopology, ...] = (); vtis: tuple[CPVTITopology, ...] = (); issues: tuple[CPBrokenReference, ...] = ()
+    communities: tuple[CPVPNCommunityTopology, ...] = (); vtis: tuple[CPVTITopology, ...] = ()
+    vpn_domains: tuple[CPVPNDomainTopology, ...] = (); issues: tuple[CPBrokenReference, ...] = ()
 
 
 def _resolve_many(owner, values, index, kinds, field):
@@ -41,6 +47,10 @@ def build_vpn_topology(config: CheckPointConfig, references: CPReferenceIndex | 
         centers, bad_center = _resolve_many(community, community.center, references, device_kinds, "center")
         satellites, bad_sat = _resolve_many(community, community.satellites, references, device_kinds, "satellites")
         issues.extend((*bad, *bad_center, *bad_sat)); communities.append(CPVPNCommunityTopology(community, community.community_type, members, centers, satellites, (*bad, *bad_center, *bad_sat), (*bad, *bad_center, *bad_sat)))
+    vpn_domains = []
+    for domain in config.vpn_domains:
+        members, bad = _resolve_many(domain, domain.members, references, device_kinds, "members")
+        vpn_domains.append(CPVPNDomainTopology(domain, members, bad)); issues.extend(bad)
     vtis = []
     for vti in config.vtis:
         owner = references.resolve(vti.gateway, owner=vti, expected_kinds=device_kinds, source_field="gateway") if vti.gateway else None
@@ -50,7 +60,7 @@ def build_vpn_topology(config: CheckPointConfig, references: CPReferenceIndex | 
         vti_issues = tuple(item for item in (owner, peer) if isinstance(item, CPBrokenReference))
         matching = tuple(item.community for item in communities if owner_obj in item.members and (peer_obj is None or peer_obj in item.members))
         vtis.append(CPVTITopology(vti, owner_obj, peer_obj, matching, vti_issues)); issues.extend(vti_issues)
-    return CPVPNTopology(tuple(communities), tuple(vtis), tuple(issues))
+    return CPVPNTopology(tuple(communities), tuple(vtis), tuple(vpn_domains), tuple(issues))
 
 
-__all__ = ["CPVPNCommunityTopology", "CPVPNTopology", "CPVTITopology", "build_vpn_topology"]
+__all__ = ["CPVPNCommunityTopology", "CPVPNDomainTopology", "CPVPNTopology", "CPVTITopology", "build_vpn_topology"]

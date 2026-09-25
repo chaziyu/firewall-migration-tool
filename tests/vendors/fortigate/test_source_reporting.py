@@ -76,6 +76,16 @@ def test_fortigate_reporter_is_registered_and_keeps_analysis_opaque():
     assert not hasattr(analysis.extracted, "canonical_ir")
 
 
+def test_fortigate_analysis_does_not_retain_parser_tree_or_secrets():
+    analysis = source_reporters.get("fortigate").analyze_source(SECRET_SOURCE)
+
+    assert isinstance(analysis, FortiGateSourceResult)
+    assert not hasattr(analysis, "tree")
+    assert analysis.top_level_sections == 2
+    assert "do-not-export-this-secret" not in repr(analysis)
+    assert "another-do-not-export-secret" not in repr(analysis)
+
+
 def test_fortigate_reporter_builds_preview_and_excel():
     reporter = source_reporters.get("fortigate")
     analysis = reporter.analyze_source(SOURCE)

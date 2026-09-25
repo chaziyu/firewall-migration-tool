@@ -11,8 +11,16 @@ def test_nat_reporting_views_are_traceable_and_do_not_promote_manual_source_nat_
     result = extract_cisco_asa_source(
         "object network WEB\n host 10.0.0.2\n nat (inside,outside) static 192.0.2.2\n"
         "object network CLIENTS\n subnet 10.1.0.0 255.255.255.0\n nat (inside,outside) dynamic interface\n"
-        "nat (inside,outside) source static 10.2.0.1 192.0.2.10\n"
-        "nat (inside,outside) source static 10.2.0.10 192.0.2.20 destination static 203.0.113.50 10.2.0.10 service tcp 443 8443\n"
+        "object network REAL1\n host 10.2.0.1\n"
+        "object network MAPPED1\n host 192.0.2.10\n"
+        "object network REAL2\n host 10.2.0.10\n"
+        "object network MAPPED2\n host 192.0.2.20\n"
+        "object network DEST-MAPPED\n host 203.0.113.50\n"
+        "object network DEST-REAL\n host 10.2.0.10\n"
+        "object service REAL-SVC\n service tcp source eq 443\n"
+        "object service MAPPED-SVC\n service tcp source eq 8443\n"
+        "nat (inside,outside) source static REAL1 MAPPED1\n"
+        "nat (inside,outside) source static REAL2 MAPPED2 destination static DEST-MAPPED DEST-REAL service REAL-SVC MAPPED-SVC\n"
         "nat (inside,outside) source dynamic any pat-pool PATPOOL\n"
     )
 
@@ -28,7 +36,9 @@ def test_nat_reporting_views_are_traceable_and_do_not_promote_manual_source_nat_
     twice_nat_vip = next(row for row in vips if row.source_rule.destination_mode == "static")
     assert (object_vip.real_address, object_vip.mapped_address) == ("10.0.0.2", "192.0.2.2")
     assert (twice_nat_vip.real_address, twice_nat_vip.mapped_address) == ("10.2.0.10", "203.0.113.50")
-    assert (twice_nat_vip.real_service, twice_nat_vip.mapped_service, twice_nat_vip.protocol) == ("443", "8443", "tcp")
+    twice_rule = twice_nat_vip.source_rule
+    assert (twice_rule.service_operand_1, twice_rule.service_operand_2) == ("REAL-SVC", "MAPPED-SVC")
+    assert (twice_nat_vip.real_service, twice_nat_vip.mapped_service, twice_nat_vip.protocol) == (None, None, None)
     assert all(row.source_rule.syntax_family == "object" or row.source_rule.destination_mode == "static" for row in vips)
 
     nat_preview = build_asa_preview(result)["derived"]["nat"]
@@ -44,11 +54,45 @@ def test_nat_reporting_views_are_traceable_and_do_not_promote_manual_source_nat_
 
 def test_identity_nat_does_not_create_comparison_rows():
     result = extract_cisco_asa_source(
-        "nat (inside,outside) source static 10.0.0.1 10.0.0.1\n"
+        "object network SAME\n host 10.0.0.1\n"
+        "nat (inside,outside) source static SAME SAME\n"
         "nat (inside) 0 access-list NO_NAT\n"
     )
     assert not result.derived.nat.source_nat_pools
     assert not result.derived.nat.vips
+
+
+def test_manual_nat_rejects_inline_address_and_object_nat_keeps_port_semantics():
+    result = extract_cisco_asa_source(
+        "nat (any,any) source static 10.2.0.10 192.0.2.20\n"
+        "object network WEB\n host 10.0.0.2\n nat (inside,outside) static interface service tcp 80 8080\n"
+    )
+    manual, object_rule = result.config.nat_rules
+    assert manual.extraction_status == "PARSE_ERROR"
+    assert "unsupported_inline_addresses" in manual.raw_extra
+    assert not result.derived.nat_relationships.rules[0].issues
+    assert (object_rule.service_protocol, object_rule.original_service, object_rule.translated_service) == ("tcp", "80", "8080")
+
+
+def test_twice_nat_service_consumes_two_operands_then_continues_with_options():
+    result = extract_cisco_asa_source(
+        "nat (inside,outside) source static REAL MAPPED service REAL-SVC MAPPED-SVC inactive "
+        "route-lookup description preserve me\n"
+    )
+    rule = result.config.nat_rules[0]
+    assert (rule.service_operand_1, rule.service_operand_2) == ("REAL-SVC", "MAPPED-SVC")
+    assert rule.inactive and rule.route_lookup and rule.description == "preserve me"
+    assert not rule.raw_options
+
+
+def test_twice_nat_rejects_unknown_modes_without_reinterpreting_them():
+    result = extract_cisco_asa_source(
+        "nat (inside,outside) source dynamicx REAL MAPPED\n"
+        "nat (inside,outside) source static REAL MAPPED destination dynamic MAPPED-D REAL-D\n"
+    )
+    source_mode, destination_mode = result.config.nat_rules
+    assert source_mode.source_mode == "dynamicx" and source_mode.extraction_status == "PARSE_ERROR"
+    assert destination_mode.destination_mode == "dynamic" and destination_mode.extraction_status == "PARSE_ERROR"
 
 
 def test_source_nat_pools_keep_duplicate_names_separate_by_context():

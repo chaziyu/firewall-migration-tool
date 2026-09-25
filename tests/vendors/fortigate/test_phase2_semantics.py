@@ -1,6 +1,7 @@
 ﻿import unittest
 
 from fwmigrate.vendors.fortigate.derived import build_derived_views
+from fwmigrate.vendors.fortigate.model.address import FGAddress, FGAddressGroup
 from fwmigrate.vendors.fortigate.model.external_resource import FGExternalResource
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.policy import FGPolicy
@@ -12,6 +13,8 @@ from fwmigrate.vendors.fortigate.transform.nat import transform_nat
 from fwmigrate.vendors.fortigate.transform.vpn import normalize_vpn_phase2
 from fwmigrate.vendors.fortigate.transform.services import transform_services
 from fwmigrate.vendors.fortigate.validation.validator import validate_config
+from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+from fwmigrate.vendors.fortigate.export.excel import _nat_type
 
 
 class Phase2SemanticTest(unittest.TestCase):
@@ -50,6 +53,49 @@ class Phase2SemanticTest(unittest.TestCase):
         self.assertEqual(result.phase2[0].source_range, None)
         self.assertEqual(result.issues[0].message, "Selector has only one range endpoint.")
 
+    def test_named_selector_wins_over_stale_subnet(self):
+        config = FGConfig(
+            addresses=[
+                FGAddress(name="peer", subnet="192.0.2.0 255.255.255.0"),
+                FGAddress(name="peer2", subnet="203.0.113.0 255.255.255.0"),
+            ],
+            ipsec_phase2=[FGIPsecPhase2(
+                name="named", src_addr_type="name", src_name="peer",
+                src_subnet="198.51.100.0 255.255.255.0",
+                dst_addr_type="name", dst_name="peer2",
+                dst_subnet="198.51.100.0 255.255.255.0",
+            ), FGIPsecPhase2(
+                name="subnet", src_addr_type="subnet",
+                src_subnet="203.0.113.0 255.255.255.0", src_name="stale-name",
+            )],
+        )
+
+        result = normalize_vpn_phase2(config)
+
+        self.assertEqual(result.phase2[0].source_range, "192.0.2.0-192.0.2.255")
+        self.assertEqual(result.phase2[0].destination_range, "203.0.113.0-203.0.113.255")
+        self.assertEqual(result.phase2[1].source_range, "203.0.113.0-203.0.113.255")
+        self.assertTrue(any("ignored because 'name' is selected" in issue.message for issue in result.issues))
+        self.assertTrue(any("ignored because 'subnet' is selected" in issue.message for issue in result.issues))
+
+    def test_named_address_group_is_recognized_but_not_flattened(self):
+        result = normalize_vpn_phase2(FGConfig(
+            address_groups=[FGAddressGroup(name="peers", members=["peer1", "peer2"])],
+            ipsec_phase2=[FGIPsecPhase2(name="group", src_addr_type="name", src_name="peers")],
+        ))
+
+        self.assertIsNone(result.phase2[0].source_range)
+        self.assertTrue(any("valid selector reference" in issue.message for issue in result.issues))
+
+    def test_ipv6_named_selector_does_not_leak_into_ipv4(self):
+        result = normalize_vpn_phase2(FGConfig(
+            addresses=[FGAddress(name="peer6", address_family="ipv6", ip6="2001:db8::1/128")],
+            ipsec_phase2=[FGIPsecPhase2(name="v6", src_addr_type="name6", src_name6="peer6")],
+        ))
+
+        self.assertIsNone(result.phase2[0].source_range)
+        self.assertEqual(result.phase2[0].source_range6, "2001:db8::1-2001:db8::1")
+
     def test_missing_selector_type_keeps_conservative_range_behavior(self):
         result = normalize_vpn_phase2(
             FGConfig(
@@ -87,6 +133,73 @@ class Phase2SemanticTest(unittest.TestCase):
             [item.generated for item in result.services],
             [True, True, False],
         )
+
+    def test_explicit_service_protocol_controls_active_fields(self):
+        result = transform_services(FGConfig(services=[
+            FGService(name="ip50", protocol="IP", protocol_number=50, tcp_portrange="443"),
+            FGService(name="icmp", protocol="ICMP", icmptype=8, udp_portrange="53"),
+            FGService(name="tcp", protocol="TCP", tcp_portrange="443", udp_portrange="53", protocol_number=6),
+        ]))
+
+        self.assertEqual(
+            [(item.protocol, item.protocol_number, item.port) for item in result.services],
+            [("ip", 50, None), ("icmp", None, None), ("tcp", None, "443")],
+        )
+        self.assertEqual(len(result.issues), 4)
+
+    def test_cli_source_extracts_nat64_and_selector_driven_semantics(self):
+        source = '''
+config firewall address
+    edit "peer"
+        set subnet 192.0.2.0 255.255.255.0
+    next
+end
+config firewall ippool
+    edit "POOL64"
+        set type overload
+        set startip 198.51.100.10
+        set endip 198.51.100.20
+        set nat64 enable
+    next
+end
+config firewall policy
+    edit 64
+        set nat64 enable
+        set ippool enable
+        set poolname "POOL64"
+    next
+end
+config firewall service custom
+    edit "proto50"
+        set protocol IP
+        set protocol-number 50
+        set tcp-portrange 443
+    next
+end
+config vpn ipsec phase2-interface
+    edit "named-peer"
+        set src-addr-type name
+        set src-name "peer"
+        set src-subnet 198.51.100.0 255.255.255.0
+    next
+end
+'''
+        analysis = FortiGateSourceReporter().analyze_source(source)
+        policy = analysis.extracted.config.policies[0]
+        service = analysis.derived.services.services[0]
+        phase2 = analysis.derived.vpn.phase2[0]
+
+        self.assertEqual(policy.nat, None)
+        self.assertEqual(policy.nat64, "enable")
+        self.assertIn("nat64", policy.explicit_fields)
+        self.assertNotIn("nat64", policy.raw_extra)
+        self.assertEqual(analysis.derived.nat[0].translation_type, "nat64_ip_pool")
+        self.assertEqual(service.protocol_number, 50)
+        self.assertEqual(service.port, None)
+        self.assertEqual(phase2.source_range, "192.0.2.0-192.0.2.255")
+        self.assertTrue(any(issue.domain == "service" for issue in analysis.validation.issues))
+        self.assertTrue(any(issue.domain == "vpn_phase2" for issue in analysis.validation.issues))
+        self.assertEqual(_nat_type("nat64_ip_pool"), "NAT64 IP Pool")
 
     def test_ambiguous_interface_nat_has_no_address(self):
         config = FGConfig(

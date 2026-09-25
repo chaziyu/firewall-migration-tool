@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,7 @@ class FGVIPRealServer(BaseModel):
 class FGVIP(BaseModel):
     name: str
     vdom: str = "root"
+    address_family: Literal["ipv4"] = "ipv4"
 
     # Identity / state
     uuid: str | None = None
@@ -69,6 +70,7 @@ class FGVIP(BaseModel):
 class FGVIPGroup(BaseModel):
     name: str
     vdom: str = "root"
+    address_family: Literal["ipv4"] = "ipv4"
 
     uuid: str | None = None
 

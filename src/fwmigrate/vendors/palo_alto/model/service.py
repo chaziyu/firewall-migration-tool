@@ -8,6 +8,7 @@ from ..source_model import PANScope
 
 
 class PANServiceOverride(BaseModel):
+    enabled: str | None = None
     timeout: str | None = None
     halfclose_timeout: str | None = None
     timewait_timeout: str | None = None

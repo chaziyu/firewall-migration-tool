@@ -134,3 +134,99 @@ class FGSSLVPNHostCheckSoftware(BaseModel):
 
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGSSLVPNRealm(BaseModel):
+    url_path: str
+    vdom: str = "root"
+    login_page: str | None = None
+    max_concurrent_user: int | None = None
+    nas_ip: str | None = None
+    radius_port: int | None = None
+    radius_server: str | None = None
+    virtual_host: str | None = None
+    virtual_host_only: str | None = None
+    virtual_host_server_cert: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGSSLVPNClient(BaseModel):
+    name: str
+    vdom: str = "root"
+    certificate: str | None = None
+    class_id: int | None = None
+    comment: str | None = None
+    distance: int | None = None
+    interface: str | None = None
+    ipv4_subnets: str | None = None
+    ipv6_subnets: str | None = None
+    peer: str | None = None
+    port: int | None = None
+    priority: int | None = None
+    psk_configured: bool = False
+    realm: str | None = None
+    server: str | None = None
+    source_ip: str | None = None
+    status: str | None = None
+    user: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGSSLVPNBookmarkFormData(BaseModel):
+    name: str
+    value: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGSSLVPNBookmark(BaseModel):
+    name: str
+    additional_params: str | None = None
+    apptype: str | None = None
+    color_depth: str | None = None
+    description: str | None = None
+    domain: str | None = None
+    folder: str | None = None
+    form_data: list[FGSSLVPNBookmarkFormData] = Field(default_factory=list)
+    height: int | None = None
+    host: str | None = None
+    keyboard_layout: str | None = None
+    load_balancing_info: str | None = None
+    logon_password_configured: bool = False
+    logon_user: str | None = None
+    port: int | None = None
+    preconnection_blob: str | None = None
+    preconnection_id: int | None = None
+    restricted_admin: str | None = None
+    security: str | None = None
+    send_preconnection_id: str | None = None
+    sso: str | None = None
+    sso_credential: str | None = None
+    sso_credential_sent_once: str | None = None
+    sso_password_configured: bool = False
+    sso_username: str | None = None
+    url: str | None = None
+    vnc_keyboard_layout: str | None = None
+    width: int | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGSSLVPNUserBookmark(BaseModel):
+    owner_name: str
+    vdom: str = "root"
+    custom_lang: str | None = None
+    bookmarks: list[FGSSLVPNBookmark] = Field(default_factory=list)
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGSSLVPNUserGroupBookmark(BaseModel):
+    owner_name: str
+    vdom: str = "root"
+    custom_lang: str | None = None
+    bookmarks: list[FGSSLVPNBookmark] = Field(default_factory=list)
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)

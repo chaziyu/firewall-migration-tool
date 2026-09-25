@@ -8,7 +8,7 @@ from .administration import CPAdministrator, CPPermissionProfile
 from .common import CheckPointObjectReference, CheckPointSourceObject, ManagementDomain
 from .gateway import CPCluster, CPGateway, CPGatewayInterface, CPInteroperableDevice
 from .gaia import (
-    CPGaiaDHCPPool, CPGaiaDHCPServer, CPGaiaDHCPSubnet, CPGaiaInterface,
+    CPGaiaDHCPPool, CPGaiaDHCPServer, CPGaiaDHCPSubnet, CPGaiaInterface, CPGaiaRouteNextHop,
     CPGaiaRBAUserAssignment, CPGaiaRBARole, CPGaiaStaticRoute, CPGaiaUser, CPVTI,
 )
 from .identity import CPAccessRole, CPUser, CPUserGroup
@@ -30,7 +30,7 @@ __all__ = [
     "CPAdministrator", "CPAddressRange", "CPCluster", "CPHTTPSInspectionRule",
     "CPDNSDomain", "CPDynamicAddress", "CPGaiaDHCPPool", "CPGaiaDHCPServer",
     "CPGaiaDHCPSubnet", "CPGaiaInterface", "CPGaiaRBAUserAssignment", "CPGaiaRBARole",
-    "CPGaiaStaticRoute", "CPGaiaUser", "CPGateway", "CPGatewayInterface", "CPGroup",
+    "CPGaiaStaticRoute", "CPGaiaRouteNextHop", "CPGaiaUser", "CPGateway", "CPGatewayInterface", "CPGroup",
     "CPGroupWithExclusion", "CPHost", "CPNetwork", "CPService", "CPServiceGroup", "CPSecurityZone",
     "CPInteroperableDevice", "CPNATRule", "CPNATSection", "CPPermissionProfile", "CPPolicyPackage",
     "CPThreatLayer", "CPThreatProfile", "CPThreatRule", "CPThreatRuleException", "CPThreatSection",

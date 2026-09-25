@@ -30,6 +30,12 @@ def extract_routes(
         section_path="router static",
         address_family="ipv4",
     )
+    _extract_static_routes(
+        tree,
+        config,
+        section_path="router static6",
+        address_family="ipv6",
+    )
 
 
 def _extract_static_routes(

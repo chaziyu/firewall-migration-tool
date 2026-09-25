@@ -65,36 +65,28 @@ def transform_nat(
     ] = []
 
     for policy in config.policies:
-        if not _enabled(
-            policy.nat
-        ):
+        nat64 = _enabled(policy.nat64)
+        ordinary_nat = _enabled(policy.nat)
+        if not nat64 and not ordinary_nat:
             continue
 
-        use_pool = (
-            _enabled(
-                policy.ippool
-            )
-            or bool(
-                policy.poolname
-            )
-        )
+        if ordinary_nat:
+            if _enabled(policy.ippool) or policy.poolname:
+                result.append(
+                    _pool_nat(policy, references)
+                )
+            else:
+                result.append(_interface_nat(config, policy, references))
 
-        if use_pool:
+        if nat64:
             result.append(
                 _pool_nat(
                     policy,
                     references,
+                    translation_type="nat64_ip_pool",
+                    nat64=True,
                 )
             )
-            continue
-
-        result.append(
-            _interface_nat(
-                config,
-                policy,
-                references,
-            )
-        )
 
     return result
 
@@ -102,14 +94,18 @@ def transform_nat(
 def _pool_nat(
     policy,
     references: ReferenceIndex,
+    *,
+    translation_type: str = "ip_pool",
+    nat64: bool = False,
 ) -> NormalizedSourceNAT:
     addresses: list[str] = []
     issues: list[str] = []
 
     if not policy.poolname:
         issues.append(
-            "IP-pool NAT is enabled but "
-            "no poolname is configured."
+            "NAT64 is enabled but no poolname is configured."
+            if nat64
+            else "IP-pool NAT is enabled but no poolname is configured."
         )
 
     for pool_name in policy.poolname:
@@ -134,11 +130,24 @@ def _pool_nat(
             )
             continue
 
+        pool = resolution.target
+        if nat64 and (pool.nat64 or "").lower() == "disable":
+            issues.append(
+                f"IP pool {pool_name!r} explicitly disables NAT64."
+            )
+
         value = _pool_address(
-            resolution.target
+            pool
         )
 
         if value is None:
+            if pool.startip or pool.endip:
+                issues.append(
+                    "IP pool "
+                    f"{pool_name!r} has only one explicitly configured "
+                    "range endpoint; translated address cannot be derived safely."
+                )
+                continue
             issues.append(
                 "IP pool "
                 f"{pool_name!r} has no usable "
@@ -150,11 +159,16 @@ def _pool_nat(
             value
         )
 
+    if nat64 and not addresses:
+        issues.append(
+            "No deterministic NAT64 source translation could be derived."
+        )
+
     return NormalizedSourceNAT(
         vdom=policy.vdom,
         policy_id=policy.policy_id,
         policy_name=policy.name,
-        translation_type="ip_pool",
+        translation_type=translation_type,
         pool_names=tuple(
             policy.poolname
         ),
@@ -385,10 +399,7 @@ def _pool_address(
             f"{pool.endip}"
         )
 
-    return (
-        pool.startip
-        or pool.endip
-    )
+    return None
 
 
 def _sdwan_zone_interfaces(

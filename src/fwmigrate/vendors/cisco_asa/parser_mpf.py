@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 from .model.context import CiscoASAContext, CiscoAllocatedInterface, CiscoMultiContextSystem
-from .model.dhcp import CiscoDHCPOption, CiscoDHCPRelay, CiscoDHCPRelayServer, CiscoDHCPReservation
+from .model.dhcp import CiscoDHCPGlobalSettings, CiscoDHCPOption, CiscoDHCPRelay, CiscoDHCPRelayServer, CiscoDHCPReservation
 from .model.failover import CiscoFailoverGroup
 from .model.management import CiscoConnectionControl, CiscoDNSServerGroup, CiscoHTTPServerConfig, CiscoManagementAccessRule, CiscoManagementSetting, CiscoNTPServer
 from .model.mpf import CiscoClassMap, CiscoClassMapMatch, CiscoInspectAction, CiscoInspectionPolicySection, CiscoIPSAction, CiscoMPFConnectionAction, CiscoMPFPoliceAction, CiscoPolicyMap, CiscoPolicyMapClass, CiscoServicePolicy, CiscoTCPMap, CiscoTCPMapSetting
@@ -720,14 +720,36 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
     # Command families have different ASA grammars. Address and enable use a
     # trailing interface name; DNS/domain can use an explicit `interface NAME`
     # clause and must not guess an interface from an arbitrary final token.
-    if command == "address" and interface is None and values:
+    if command == "address" and interface is None and len(values) >= 2:
         interface = values[-1]
         values = values[:-1]
     elif command == "enable" and interface is None and values:
         interface = values[0]
         values = values[1:]
 
-    item = self._dhcp_server(interface, line_number)
+    if command == "reserve-address" and len(values) == 3:
+        interface = values[2]
+    elif command == "auto_config" and interface is None and len(values) >= 3:
+        marker = next((index for index, value in enumerate(values) if value.lower() == "interface"), None)
+        if marker is not None and marker + 1 < len(values):
+            interface = values[marker + 1]
+
+    global_scope = interface is None and command in {
+        "dns", "domain", "lease", "option", "ping_timeout", "wins", "auto_config", "update",
+    }
+    if not global_scope and interface is None:
+        self._record_diagnostic(line_number, line, "DHCP command requires an explicit interface", "dhcpd")
+        self._record_unsupported(line_number, line, "DHCP command scope is not explicit")
+        return
+    if global_scope:
+        context = self._line_contexts.get(line_number)
+        item = next((record for record in self.config.dhcp_global_settings if record.source_context == context), None)
+        if item is None:
+            item = CiscoDHCPGlobalSettings(name="dhcpd:global", source_order=line_number,
+                                           source_attributes={"scope": "global"})
+            self.config.dhcp_global_settings.append(self._with_source_context(item, line_number))
+    else:
+        item = self._dhcp_server(interface, line_number)
     item.raw_lines.append(safe)
     item.source_attributes.setdefault("raw_commands", []).append(safe)
     item.source_attributes.setdefault("command_history", []).append({"line": line_number, "negated": negated, "command": command})
@@ -826,6 +848,7 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
             encoding="hex" if option_type == "hex" else None, raw=safe, source_order=line_number,
             explicit_fields={"code", "value", *(('value_type',) if option_type else ()), *(('encoding',) if option_type == "hex" else ())},
         ))
+        item.explicit_fields.add("options")
         return
     if command == "wins":
         if negated:
@@ -866,11 +889,17 @@ def _parse_dhcpd_command(self: Any, line: str, line_number: int) -> None:
         ))
         return
     if command == "auto_config":
+        if not values:
+            item.extraction_status = "PARSE_ERROR"
+            item.requires_manual_review = True
+            item.review_reasons.append("DHCP auto_config requires a client interface")
+            self._record_diagnostic(line_number, line, "Malformed DHCP auto_config command", "dhcpd")
+            return
         item.auto_config = " ".join(values) if values else ""
         item.explicit_fields.add("auto_config")
         return
-    if command == "update" and values[:1] == ["dns"]:
-        item.dns_update = " ".join(values[1:]) if len(values) > 1 else "enabled"
+    if command == "update" and values[:1] and values[0].lower() == "dns":
+        item.dns_update = None if negated else " ".join(values[1:]) if len(values) > 1 else "enabled"
         item.explicit_fields.add("dns_update")
         return
     item.requires_manual_review = True

@@ -8,6 +8,7 @@ from fwmigrate.vendors.cisco_ftd.source_report import CiscoFTDSourceReporter, ex
 from fwmigrate.vendors.cisco_ftd.derived import build_ftd_derived_views
 from fwmigrate.vendors.cisco_ftd.validation import validate_ftd_config
 from fwmigrate.vendors.cisco_ftd.export.excel import export_ftd_excel
+from fwmigrate.vendors.cisco_ftd.web_report import build_ftd_preview
 
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "cisco_ftd" / "fmc_selected_domains.json"
@@ -208,6 +209,94 @@ def test_fmc_dhcp_interface_reference_is_typed_scoped_and_keeps_missing_state():
     missing = CiscoFMCBundleParser(json.dumps(payload)).parse_source().dhcp_servers[0]
     assert missing.interface is None
     assert "interface" not in missing.explicit_fields
+
+
+def test_fmc_override_acp_assignment_ips_and_dhcp_source_state_remain_separate():
+    payload = {
+        "format": "cisco-fmc-rest-export-v1", "domain": {"id": "d1", "name": "Global"},
+        "access_policies": [
+            {"id": "base-acp", "name": "Base", "rules": []},
+            {"id": "child-acp", "name": "Child", "description": "Child policy", "metadata": {
+                "inherit": False, "parentPolicy": {"id": "base-acp", "name": "Base", "type": "AccessPolicy"}},
+             "defaultAction": {"id": "default-1", "name": "Default", "type": "AccessPolicyDefaultAction"},
+             "identityPolicy": {"id": "identity-1", "name": "Identity", "type": "IdentityPolicy"},
+             "logging_settings": {"logAtBeginning": True},
+             "default_actions": [{"id": "default-1", "name": "Default", "action": "BLOCK"}], "rules": []},
+        ],
+        "objects": {"networkaddresses": [{"id": "net-1", "name": "Shared", "type": "Host", "value": "10.0.0.1"}],
+            "identitypolicies": [{"id": "identity-1", "name": "Identity"}],
+            "network_address_overrides": [
+                {"id": "ov-1", "name": "Shared", "type": "Host", "value": "10.0.0.2",
+                 "overridable": True, "overrides": {"parent": {"id": "net-1", "name": "Shared", "type": "Host"},
+                    "target": {"id": "dev-1", "name": "FTD-A", "type": "Device"}}, "password": "must-not-leak"},
+                {"id": "ov-2", "name": "Shared", "type": "Host", "value": "10.0.0.3",
+                 "overrides": {"parent": {"id": "net-1", "name": "Shared", "type": "Host"},
+                    "target": {"id": "dev-2", "name": "FTD-B", "type": "Device"}}}],
+            "intrusionpolicies": [{"id": "ips-1", "name": "IPS", "rules": [
+                {"id": "beh-1", "ruleId": "sig-1", "state": "enabled", "action": "alert"}],
+                "overrides": [{"id": "ov-rule-1", "ruleId": "sig-1", "state": "disabled"}]}],
+            "policy_assignments": [{"id": "assignment-1", "name": "ACP assignment", "policy":
+                {"id": "child-acp", "name": "Child", "type": "AccessPolicy"}, "targets": [
+                {"id": "dev-1", "name": "FTD-A", "type": "Device"}, {"id": "dev-2", "name": "FTD-B", "type": "Device"}]}]},
+        "devices": [{"id": "dev-1", "name": "FTD-A", "resources": {
+            "dhcp_servers": [{"id": "dhcp-1", "name": "DHCP", "interfaceName": "inside", "addressPool": "10.0.0.10-10.0.0.20"}],
+            "dhcp_relay_settings": [{"id": "relay-1", "name": "Relay", "dhcpRelayAgent": [], "dhcpRelayServers": [],
+                "ipv4TimeoutInSec": "20", "trustAllInformation": True}],
+            "ftd_interfaces": [{"id": "if-1", "name": "GigabitEthernet0/0.10", "interfaceType": "SubInterface"}],
+            "static_routes": [{"id": "route-1", "name": "inside-route", "network": {"id": "net-1", "name": "Shared", "type": "Host"}, "addressFamily": "IPv4"}],
+        }}],
+    }
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    config = result.config
+
+    assert config.network_addresses[0].value == "10.0.0.1"
+    assert [item.value for item in config.network_address_overrides] == ["10.0.0.2", "10.0.0.3"]
+    assert config.network_address_overrides[0].parent.source_id == "net-1"
+    assert config.network_address_overrides[0].target.name == "FTD-A"
+    assert config.access_control_policies[1].inherit is False
+    assert {"inherit", "base_policy"} <= set(config.access_control_policies[1].explicit_fields)
+    assert config.access_control_policies[1].logging_settings == {"logAtBeginning": True}
+    assert config.access_control_policies[1].base_policy.source_id == "base-acp"
+    assert len(config.access_control_default_actions) == 1
+    assert len(config.policy_assignments[0].targets) == 2
+    assert any(item["field"] == "identity_policy" and item["target_id"] == "identity-1"
+               for item in result.derived.resolved_references)
+    assert [(item.rule_id, item.state) for item in config.intrusion_rule_overrides] == [("sig-1", "disabled")]
+    assert config.dhcp_relay_settings[0].ipv4_timeout_seconds == "20"
+    assert "dhcpRelayAgent" not in config.dhcp_servers[0].raw_extra
+    assert not any(item.source_attributes.get("resource_type") == "dhcp_relay_settings" for item in config.native_resources)
+
+    before = config.model_dump()
+    assert any(item["field"] == "parent" and item["target_id"] == "net-1"
+               for item in result.derived.resolved_references)
+    assert any(item.source_name == "inside-route" and item.normalized_destination == "10.0.0.1/32"
+               for item in result.derived.normalized_routes), result.derived.normalized_routes
+    assert any(item.category == "dhcp-server-relay-conflict" for item in result.validation.issues)
+    assert any(item.device_id == "dev-1" and item.name == "GigabitEthernet0/0.10"
+               for item in result.derived.interface_topology.interfaces)
+    assert config.model_dump() == before
+
+    preview = result
+    output = BytesIO()
+    export_ftd_excel(preview, output)
+    output.seek(0)
+    workbook = load_workbook(output, read_only=True)
+    assert workbook["Object Overrides"].max_row == 3
+    assert workbook["ACP Policies"].max_row == 3
+    assert workbook["DHCP"].max_row == 3
+    assert "must-not-leak" not in json.dumps(config.model_dump())
+
+
+def test_failed_override_collection_is_not_reported_as_known_empty_or_capability_missing():
+    payload = {"format": "cisco-fmc-rest-export-v1", "domain": {"id": "d1"}, "objects": {},
+        "coverage": {"network_address_overrides": {"status": "AVAILABLE"}},
+        "collection": {"status": "PARTIAL", "parts": [
+            {"name": "network_address_overrides", "status": "FAILED", "complete": False, "count": 0}]}}
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    preview = build_ftd_preview(result)
+    assert result.config.network_address_overrides == []
+    assert result.derived.source_plane_completeness["network_address_overrides"] == "failed"
+    assert preview["capability_coverage"]["network_address_overrides"]["status"] == "AVAILABLE"
 
 
 def test_canonical_networkaddresses_suppresses_historical_duplicates():
@@ -414,7 +503,7 @@ def test_expanded_fmc_source_families_are_typed_scoped_and_secret_safe():
                 "slaMonitor": {"id": "sla-1", "name": "probe"}}],
             "pbr_policies": [{"id": "global-pbr", "name": "global-pbr"}], "ecmp_zones": [{"id": "global-ecmp", "name": "global-ecmp"}],
             "virtual_routers": [{"id": "vr-a", "name": "VR-A", "interfaces": [{"id": "if-1", "name": "outside"}], "resources": {
-                "static_routes": [{"id": "vr-route", "name": "vr-route"}],
+                "ipv4_static_routes": [{"id": "vr-route", "name": "vr-route"}],
                 "pbr_policies": [{"id": "vr-pbr", "name": "vr-pbr"}], "ecmp_zones": [{"id": "vr-ecmp", "name": "vr-ecmp"}]}}],
         }}],
     }
@@ -562,3 +651,103 @@ def test_failed_pbr_collection_remains_failed_when_typed_collection_is_empty():
     result = extract_cisco_ftd_source(json.dumps(payload))
     assert result.config.policy_based_routes == []
     assert result.derived.source_plane_completeness["collection:device-1/pbr_policies"] == "failed"
+
+
+def test_acp_child_collections_and_explicit_inheritance_are_source_safe():
+    payload = {"format": "cisco-fmc-rest-export-v1", "domain": {"id": "d1"},
+        "collection": {"status": "PARTIAL", "parts": [
+            {"name": "access_policies", "status": "SUCCESS", "complete": True, "count": 3},
+            {"name": "accesspolicies/child/logging_settings", "status": "SUCCESS", "complete": True, "count": 2},
+            {"name": "accesspolicies/child/security_intelligence", "status": "FAILED", "complete": False, "count": 0},
+            {"name": "accesspolicies/child/default_actions", "status": "EMPTY", "complete": True, "count": 0},
+        ]},
+        "access_policies": [
+            {"id": "base", "name": "Base", "rules": []},
+            {"id": "child", "name": "Child", "metadata": {"inherit": False,
+                "parentPolicy": {"id": "base", "name": "Base", "type": "AccessPolicy"}},
+             "identityPolicy": {"id": "identity", "name": "Identity", "type": "IdentityPolicy"},
+             "logging_settings": [
+                 {"id": "log-1", "name": "Beginning", "password": "logging-secret"},
+                 {"id": "log-2", "name": "End", "token": "logging-token"}],
+             "security_intelligence": [{"id": "si-1", "name": "SI", "apiKey": "si-secret"}],
+             "default_actions": [], "rules": []},
+            {"id": "missing", "name": "Missing", "rules": []},
+        ],
+        "objects": {"identitypolicies": [{"id": "identity", "name": "Identity"}]}}
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    config = result.config
+    child = next(policy for policy in config.access_control_policies if policy.source_id == "child")
+    missing = next(policy for policy in config.access_control_policies if policy.source_id == "missing")
+    assert child.inherit is False and "inherit" in child.explicit_fields
+    assert child.base_policy.source_id == "base" and "base_policy" in child.explicit_fields
+    assert missing.inherit is None and "inherit" not in missing.explicit_fields
+    assert [item.source_id for item in config.access_control_logging_settings] == ["log-1", "log-2"]
+    assert config.access_control_logging_settings[0].source_attributes["parent_policy_id"] == "child"
+    assert config.security_intelligence_policies[0].source_id == "si-1"
+    assert result.derived.source_plane_completeness["acp_logging_settings"] == "present"
+    assert result.derived.source_plane_completeness["acp_security_intelligence"] == "failed"
+    assert any(item["field"] == "base_policy" and item["target_id"] == "base"
+               for item in result.derived.resolved_references)
+    assert any(item["field"] == "identity_policy" and item["target_id"] == "identity"
+               for item in result.derived.resolved_references)
+    for secret in ("logging-secret", "logging-token", "si-secret"):
+        assert secret not in json.dumps(config.model_dump())
+
+    preview = CiscoFTDSourceReporter().build_preview(result)
+    assert preview["summary"]["access_control_logging_settings"] == 2
+    assert preview["summary"]["security_intelligence_policies"] == 1
+    output = BytesIO()
+    export_ftd_excel(result, output)
+    output.seek(0)
+    native = list(load_workbook(output, read_only=True)["Native Sources"].values)
+    assert any(row[0] == "access_control_logging_settings" and row[2] == "log-1" for row in native)
+    assert any(row[0] == "security_intelligence_policies" and row[2] == "si-1" for row in native)
+    assert not any(secret in json.dumps(native) for secret in ("logging-secret", "logging-token", "si-secret"))
+
+
+def test_fmc_routes_preserve_selected_networks_family_provenance_and_ownership():
+    payload = {"format": "cisco-fmc-rest-export-v1", "domain": {"id": "d1"},
+        "collection": {"status": "PARTIAL", "parts": [
+            {"name": "device/dev1/ipv4_static_routes", "status": "SUCCESS", "complete": True, "count": 2},
+            {"name": "device/dev1/ipv6_static_routes", "status": "SUCCESS", "complete": True, "count": 1},
+            {"name": "device/dev1/virtual_router/vr1/ipv4_static_routes", "status": "SUCCESS", "complete": True, "count": 1},
+            {"name": "device/dev1/virtual_router/vr1/ipv6_static_routes", "status": "FAILED", "complete": False, "count": 0},
+        ]},
+        "objects": {"networkaddresses": [
+            {"id": "net4", "name": "net4", "type": "Network", "value": "192.0.2.0/24"},
+            {"id": "net4b", "name": "net4b", "type": "Network", "value": "198.51.100.0/24"},
+            {"id": "net6", "name": "net6", "type": "Network", "value": "2001:db8::/64"},
+            {"id": "gw", "name": "gateway", "type": "Host", "value": "192.0.2.1"}],
+            "slamonitors": [{"id": "sla1", "name": "WAN SLA"}]},
+        "devices": [{"id": "dev1", "name": "FTD-A", "resources": {
+            "ipv4_static_routes": [
+                {"id": "multi", "name": "same", "selectedNetworks": [
+                    {"id": "net4", "name": "net4"}, {"id": "net4b", "name": "net4b"}],
+                 "gateway": {"literal": {"value": "192.0.2.1"}},
+                 "routeTracking": {"slaMonitor": {"id": "sla1", "name": "WAN SLA"}}},
+                {"id": "drop", "name": "drop", "network": {"id": "net4", "name": "net4"}, "interfaceName": "Null0"}],
+            "ipv6_static_routes": [{"id": "v6", "name": "v6", "selectedNetworks": [{"id": "net6", "name": "net6"}],
+                "routeTracking": {"slaMonitor": {"id": "sla1", "name": "WAN SLA"}}}],
+            "virtual_routers": [{"id": "vr1", "name": "VR1", "resources": {
+                "ipv4_static_routes": [{"id": "vr-route", "name": "same", "network": {"id": "net4", "name": "net4"},
+                    "gateway": {"object": {"id": "gw", "name": "gateway", "type": "Host"}}}],
+                "ipv6_static_routes": []}}]}}]}
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    global_route = next(route for route in result.config.routes if route.source_id == "multi")
+    assert global_route.destination is None
+    assert [item.source_id for item in global_route.selected_networks] == ["net4", "net4b"]
+    assert global_route.address_family is None and "address_family" not in global_route.explicit_fields
+    assert global_route.source_attributes["collection_address_family"] == "IPv4"
+    assert result.derived.source_plane_completeness["routing"] == "partial"
+    normalized = [item for item in result.derived.normalized_routes if item.source_id == "multi"]
+    assert [item.normalized_destination for item in normalized] == ["192.0.2.0/24", "198.51.100.0/24"]
+    assert all(item.destination_index in {1, 2} for item in normalized)
+    assert not any(item.owner == "same" and item.field == "gateway" for item in result.derived.unresolved_references)
+    assert not any(item.owner == "drop" and item.field == "interface" for item in result.derived.unresolved_references)
+    assert any(item.source_object == "v6" and item.category == "ipv6-route-tracking"
+               for item in result.validation.issues)
+    vr_route = next(route for route in result.config.routes if route.source_id == "vr-route")
+    assert vr_route.virtual_router == "VR1" and vr_route.source_attributes["device_id"] == "dev1"
+    before = result.config.model_dump()
+    build_ftd_derived_views(result.config)
+    assert result.config.model_dump() == before

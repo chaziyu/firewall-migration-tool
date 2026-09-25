@@ -161,7 +161,7 @@ def get_non_effective_candidate_history(context, target_path: Sequence[str], fie
 
 
 def is_effective_candidate(candidate) -> bool:
-    return candidate is None or (candidate.status is JuniperResolutionStatus.EFFECTIVE and candidate.effective)
+    return candidate is None or (candidate.status == JuniperResolutionStatus.EFFECTIVE and candidate.effective)
 
 
 candidate_is_effective = is_effective_candidate

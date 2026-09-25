@@ -1,4 +1,6 @@
 import io
+import json
+from pathlib import Path
 
 from openpyxl import load_workbook
 
@@ -38,6 +40,32 @@ end
 config router static
     edit 1
         set dst 0.0.0.0 0.0.0.0
+    next
+end
+"""
+
+FORTIGATE_IPV6_POLICY_SOURCE = """config system interface
+    edit "port1"
+        set ip 192.0.2.1 255.255.255.0
+    next
+end
+config firewall address6
+    edit "SRC-V6"
+        set ip6 2001:db8:1::/64
+    next
+    edit "DST-V6"
+        set ip6 2001:db8:2::/64
+    next
+end
+config firewall policy
+    edit 60
+        set srcintf "port1"
+        set dstintf "port1"
+        set srcaddr6 "SRC-V6"
+        set dstaddr6 "DST-V6"
+        set service "ALL"
+        set schedule always
+        set action accept
     next
 end
 """
@@ -131,6 +159,21 @@ def test_fortigate_preview_exposes_policy_fields_and_overview_sections():
     assert "unsupported_count" not in report["summary"]
 
 
+def test_fortigate_preview_preserves_ipv6_policy_addresses():
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post(
+        "/api/preview",
+        data={"source_vendor": "fortigate", "file": (io.BytesIO(FORTIGATE_IPV6_POLICY_SOURCE.encode()), "fortigate.conf")},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    policy = response.get_json()["sections"]["policies"][0]
+    assert policy["source_addresses"] == []
+    assert policy["source_addresses_ipv6"] == ["SRC-V6"]
+    assert policy["destination_addresses"] == []
+    assert policy["destination_addresses_ipv6"] == ["DST-V6"]
+
+
 def test_all_registered_sources_advertise_view_report():
     client = create_app({"TESTING": True}).test_client()
     sources = client.get("/api/vendors").get_json()["sources"]
@@ -138,3 +181,33 @@ def test_all_registered_sources_advertise_view_report():
         "fortigate", "palo_alto", "cisco_asa", "cisco_ftd", "checkpoint", "juniper_srx",
     }
     assert all(item["web_report"] is True for item in sources)
+
+
+def test_api_preview_contract_covers_every_registered_vendor():
+    fixtures = Path(__file__).parent / "fixtures"
+    cases = (
+        ("fortigate", fixtures / "example_fortigate.conf"),
+        ("palo_alto", fixtures / "example_palo_alto.xml"),
+        ("cisco_asa", fixtures / "example_cisco_asa.cfg"),
+        ("cisco_ftd", fixtures / "cisco_ftd" / "fmc_selected_domains.json"),
+        ("checkpoint", fixtures / "checkpoint" / "multidomain_full.json"),
+        ("juniper_srx", fixtures / "example_juniper_srx.set"),
+    )
+    required_sections = {"interfaces", "addresses", "address_groups", "services", "service_groups",
+                         "schedules", "policies", "nat", "routes", "vpn_tunnels", "vpn_phase2",
+                         "validation", "unresolved_references"}
+    client = create_app({"TESTING": True}).test_client()
+    for vendor, path in cases:
+        response = client.post(
+            "/api/preview",
+            data={"source_vendor": vendor, "file": (io.BytesIO(path.read_bytes()), path.name)},
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 200, (vendor, response.get_json())
+        report = response.get_json()
+        assert report["vendor"] == vendor
+        assert isinstance(report["summary"]["objects"], dict)
+        assert isinstance(report["summary"]["validation"], dict)
+        assert required_sections <= set(report["sections"])
+        assert all(isinstance(report["sections"][name], list) for name in required_sections)
+        json.dumps(report)

@@ -29,7 +29,7 @@
     {
       "command": "gaia/show-configuration",
       "data": {
-        "cli_text": "set hostname CP-Cluster-GW\nset interface eth0 ipv4-address 10.100.1.1 mask-length 24\nset interface eth0 state on\nset interface eth1 ipv4-address 198.51.100.1 mask-length 24\nset interface eth1 state on\nset interface eth2 ipv4-address 172.16.1.1 mask-length 24\nset interface eth2 state on\nset static-route default nexthop gateway address 198.51.100.254 on\nset static-route 10.0.0.0/8 nexthop gateway address 10.100.1.254 on"
+        "cli_text": "set hostname CP-Cluster-GW\nset interface eth0 ipv4-address 10.100.1.1 mask-length 24\nset interface eth0 state on\nset interface eth1 ipv4-address 198.51.100.1 mask-length 24\nset interface eth1 state on\nset interface eth2 ipv4-address 172.16.1.1 mask-length 24\nset interface eth2 state on\nset static-route default nexthop gateway address 198.51.100.254 on\nset static-route 10.0.0.0/8 nexthop gateway address 10.100.1.254 on priority 1\nset static-route 10.0.0.0/8 nexthop logical eth0 on priority 2\nset ipv6 static-route 2001:db8:1::/64 nexthop gateway address 2001:db8::1 on priority 5\nset dhcp server state on\nadd dhcp server subnet 10.100.1.0 netmask 255.255.255.0 include-ip-pool start 10.100.1.20 end 10.100.1.30\nadd dhcp server subnet 10.100.1.0 exclude-ip-pool start 10.100.1.25 end 10.100.1.26\nset dhcp server subnet 10.100.1.0 default-lease 3600 max-lease 7200 default-gateway 10.100.1.1 domain example.test dns 10.100.1.2,10.100.1.3\nadd vpn tunnel 10 type numbered local 192.0.2.1 remote 192.0.2.2 peer CP-Cluster-GW\nadd vpn tunnel 11 type unnumbered peer CP-Cluster-GW dev eth0"
       }
     },
     {
