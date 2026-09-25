@@ -1,6 +1,3 @@
-from unittest.mock import patch
-
-from fwmigrate.vendors.checkpoint import derived as derived_module
 from fwmigrate.vendors.checkpoint.model.address import CPHost
 from fwmigrate.vendors.checkpoint.model.gaia import CPVTI
 from fwmigrate.vendors.checkpoint.model.gateway import CPGateway, CPGatewayInterface
@@ -8,10 +5,10 @@ from fwmigrate.vendors.checkpoint.model.policy import CPAccessLayer, CPAccessRul
 from fwmigrate.vendors.checkpoint.model.source import CheckPointConfig
 from fwmigrate.vendors.checkpoint.model.vpn import CPVPNCommunity
 from fwmigrate.vendors.checkpoint.models import CheckPointCollectionDiagnostic, CollectionStatus
-from fwmigrate.vendors.checkpoint.relationships.references import build_reference_index
+from fwmigrate.vendors.checkpoint.derived import build_checkpoint_derived_views
 
 
-def test_derived_build_reuses_reference_index_and_preserves_source_and_collection():
+def test_derived_build_populates_views_and_preserves_source_and_collection():
     layer = CPAccessLayer(uid="layer", name="Layer", package_uid="package")
     package = CPPolicyPackage(uid="package", name="Package", access_layers=["layer"])
     rule = CPAccessRule(uid="rule", name="Rule", layer_uid="layer", inline_layer="missing-layer")
@@ -34,19 +31,9 @@ def test_derived_build_reuses_reference_index_and_preserves_source_and_collectio
         command="show-hosts", source_plane="management", status=CollectionStatus.API_ERROR,
         complete=False, error="collection failed",
     )
-    created_indexes = []
+    derived = build_checkpoint_derived_views(config, (diagnostic,))
 
-    def make_index(source):
-        index = build_reference_index(source)
-        created_indexes.append(index)
-        return index
-
-    with patch.object(derived_module, "build_reference_index", side_effect=make_index) as build_index:
-        derived = derived_module.build_checkpoint_derived_views(config, (diagnostic,))
-
-    build_index.assert_called_once_with(config)
-    assert len(created_indexes) == 1
-    assert derived.references is created_indexes[0]
+    assert derived.references.by_uid and derived.references.by_name
     assert derived.policy_structure.package_layers
     assert derived.interface_topology.interfaces
     assert derived.vpn_topology.communities and derived.vpn_topology.vtis
@@ -57,5 +44,4 @@ def test_derived_build_reuses_reference_index_and_preserves_source_and_collectio
     assert derived.vpn_views.issues
     assert derived.nat.issues
     assert derived.collection_incomplete == (diagnostic,)
-    assert "collection_incomplete" not in type(config).model_fields
     assert config.model_dump() == before

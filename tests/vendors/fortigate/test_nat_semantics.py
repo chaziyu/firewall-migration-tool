@@ -1,4 +1,19 @@
-﻿import unittest
+import unittest
+from fwmigrate.vendors.fortigate.derived import build_derived_views
+from fwmigrate.vendors.fortigate.model.address import FGAddress, FGAddressGroup
+from fwmigrate.vendors.fortigate.model.external_resource import FGExternalResource
+from fwmigrate.vendors.fortigate.model.interface import FGInterface
+from fwmigrate.vendors.fortigate.model.policy import FGPolicy
+from fwmigrate.vendors.fortigate.model.service import FGService
+from fwmigrate.vendors.fortigate.model.source import FGConfig
+from fwmigrate.vendors.fortigate.model.vip import FGVIP, FGVIPRealServer
+from fwmigrate.vendors.fortigate.model.vpn import FGIPsecPhase2
+from fwmigrate.vendors.fortigate.transform.nat import transform_nat
+from fwmigrate.vendors.fortigate.transform.vpn import normalize_vpn_phase2
+from fwmigrate.vendors.fortigate.transform.services import transform_services
+from fwmigrate.vendors.fortigate.validation.validator import validate_config
+from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+import unittest
 
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.ippool import FGIPPool
@@ -158,3 +173,57 @@ class NatSemanticsTest(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+class Phase2SemanticTest(unittest.TestCase):
+
+
+
+
+
+
+
+
+    def test_ambiguous_interface_nat_has_no_address(self):
+        config = FGConfig(
+            interfaces=[
+                FGInterface(name="port1", ip="192.0.2.1/24"),
+                FGInterface(name="port2", ip="192.0.2.2/24"),
+            ],
+            policies=[
+                FGPolicy(
+                    policy_id=1,
+                    nat="enable",
+                    dstintf=["port1", "port2"],
+                )
+            ],
+        )
+
+        result = transform_nat(config)[0]
+
+        self.assertEqual(result.egress_interfaces, ("port1", "port2"))
+        self.assertEqual(result.translated_addresses, ())
+        self.assertTrue(result.issues)
+
+    def test_cli_nat64_pool_source_reaches_derived_translation(self):
+        analysis = FortiGateSourceReporter().analyze_source('''config firewall ippool
+    edit "POOL64"
+        set startip 198.51.100.10
+        set endip 198.51.100.20
+        set nat64 enable
+    next
+end
+config firewall policy
+    edit 64
+        set nat64 enable
+        set ippool enable
+        set poolname "POOL64"
+    next
+end
+''')
+        policy = analysis.extracted.config.policies[0]
+
+        self.assertIsNone(policy.nat)
+        self.assertEqual(policy.nat64, "enable")
+        self.assertIn("nat64", policy.explicit_fields)
+        self.assertEqual(analysis.derived.nat[0].translation_type, "nat64_ip_pool")

@@ -8,7 +8,7 @@ def build_mapping_requirements(config, derived):
     def need(vdom, name, kind, reason, consumer, *fields):
         if not name:
             return
-        key = (vdom or "root", name)
+        key = (vdom or "root", name, kind)
         item = required.setdefault(key, {
             "source_vdom": key[0], "source_name": name, "kind": kind,
             "requires": [], "reasons": [], "_affected": {},
@@ -49,7 +49,7 @@ def build_mapping_requirements(config, derived):
                     need(vdom, name, "interface", "source_nat", consumer, "target_zone")
                 need(vdom, nat.egress_interfaces[0], "interface", "source_nat", consumer, "target_interface")
 
-    vdoms = sorted({vdom for vdom, _ in required} | {getattr(item, "vdom", None) or "root" for item in getattr(config, "static_routes", ())} | {getattr(item, "vdom", None) or "root" for item in getattr(config, "policies", ())} or {"root"})
+    vdoms = sorted({vdom for vdom, _, _ in required} | {getattr(item, "vdom", None) or "root" for item in getattr(config, "static_routes", ())} | {getattr(item, "vdom", None) or "root" for item in getattr(config, "policies", ())} or {"root"})
     interfaces = []
     for _, value in sorted(required.items()):
         item = {key: val for key, val in value.items() if key != "_affected"}
@@ -60,14 +60,14 @@ def build_mapping_requirements(config, derived):
         item["is_interface"] = value["kind"] == "interface"
         interfaces.append(item)
     zones = [{"source_vdom": vdom, "source_zone": name, "requires": ["target_zone"]}
-             for (vdom, name), item in sorted(required.items()) if item["kind"] == "zone"]
+             for (vdom, name, kind), item in sorted(required.items()) if kind == "zone"]
     required_keys = set(required)
     optional = [{"source_vdom": item.vdom or "root", "source_name": item.name, "kind": "interface"}
                 for item in getattr(config, "interfaces", ())
-                if item.name and (item.vdom or "root", item.name) not in required_keys]
+                if item.name and (item.vdom or "root", item.name, "interface") not in required_keys]
     optional.extend({"source_vdom": item.vdom or "root", "source_name": item.name, "kind": "zone"}
                     for item in getattr(config, "zones", ())
-                    if item.name and (item.vdom or "root", item.name) not in required_keys)
+                    if item.name and (item.vdom or "root", item.name, "zone") not in required_keys)
     return {"vdoms": [{"source_vdom": name, "requires": ["vsys", "virtual_router"]} for name in vdoms],
             "interfaces": interfaces, "zones": zones,
             "required_zones": [item["source_zone"] for item in zones],

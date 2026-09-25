@@ -38,6 +38,75 @@ def test_mapping_yaml_import_preserves_vdom_scopes():
     assert response.get_json()["mapping"]["interfaces"]["blue"]["port1"]["target_zone"] == "dmz"
 
 
+def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources():
+    client = create_app({"TESTING": True}).test_client()
+    preview_id = _preview(client)
+    requirements = client.post("/api/migration/requirements", json={"preview_id": preview_id}).get_json()
+    document = requirements["decision_document"]
+    assert requirements["decisions"]["decisions"]
+
+    mapping = {
+        "vdoms": {"root": {"vsys": "vsys1", "virtual_router": "vr-production"}},
+        "interfaces": {"root": {
+            "lan": {"target_interface": "ethernet1/1", "target_zone": "trust"},
+            "wan": {"target_interface": "ethernet1/2", "target_zone": "untrust"},
+            "trust": {"target_zone": "trust"},
+            "untrust": {"target_zone": "untrust"},
+        }},
+    }
+    for decision in document["decisions"]:
+        value = (mapping.get("vdoms", {}).get(decision["source_vdom"], {}).get(decision["target_field"])
+                 if decision["source_kind"] == "vdom" else
+                 mapping.get("interfaces", {}).get(decision["source_vdom"], {}).get(decision["source_name"], {}).get(decision["target_field"]))
+        if value is not None:
+            decision["value"] = value
+            decision["review_state"] = "CONFIRMED"
+
+    planned = client.post("/api/migrate", json={
+        "preview_id": preview_id, "decision_document": document,
+    })
+    assert planned.status_code == 200
+    assert planned.get_json()["commands"] > 0
+
+    # Same-named interfaces in different VDOMs remain distinct decision identities.
+    from fwmigrate.conversion.fortigate_to_palo_alto import PANDecisionReviewState, PANMigrationDecision
+    document["decisions"].append(PANMigrationDecision(
+        "blue", "interface", "port1", "target_zone", value="dmz",
+        review_state=PANDecisionReviewState.CONFIRMED,
+    ).to_dict())
+    exported = client.post("/api/migration/decisions/export", json={
+        "preview_id": preview_id, "decision_document": document,
+    })
+    assert exported.status_code == 200
+    saved = exported.get_json()["document"]
+    imported = client.post("/api/migration/decisions/import", json={
+        "preview_id": preview_id, "document": saved,
+    })
+    assert imported.status_code == 200
+    restored = imported.get_json()
+    assert restored["decision_document"] == saved
+    assert restored["mapping"]["vdoms"]["root"]["virtual_router"] == "vr-production"
+    assert restored["mapping"]["interfaces"]["root"]["lan"]["target_interface"] == "ethernet1/1"
+    assert restored["mapping"]["interfaces"]["blue"]["port1"]["target_zone"] == "dmz"
+
+    malformed = json.loads(json.dumps(saved))
+    malformed["decisions"][0].pop("key", None)
+    malformed["decisions"][0]["target_field"] = "unknown"
+    rejected = client.post("/api/migration/decisions/import", json={
+        "preview_id": preview_id, "document": malformed,
+    })
+    assert rejected.status_code == 400
+
+    changed_source = client.post("/api/preview", data={
+        "file": (io.BytesIO(MIGRATION_FIXTURE.read_bytes() + b"\n# source digest change\n"), MIGRATION_FIXTURE.name),
+    }, content_type="multipart/form-data").get_json()["preview_id"]
+    mismatch = client.post("/api/migration/decisions/import", json={
+        "preview_id": changed_source, "document": saved,
+    })
+    assert mismatch.status_code == 400
+    assert "different source" in mismatch.get_json()["error"]
+
+
 def test_plan_reports_missing_mappings_and_blocks_empty_bundle():
     client = create_app({"TESTING": True}).test_client()
     preview_id = _preview(client)
@@ -68,10 +137,16 @@ def test_complete_mappings_create_zip_for_same_plan_artifact():
     response = client.post("/api/migration/bundle", json={"artifact_id": plan["artifact_id"]})
     assert response.status_code == 200
     with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
-        assert set(archive.namelist()) == {"palo_alto_config.set", "migration_report.json", "target_mapping.yaml", "source_inventory.xlsx"}
+        assert set(archive.namelist()) == {"palo_alto_config.set", "migration_report.json", "migration_decisions.json", "target_mapping.yaml", "source_inventory.xlsx"}
         assert archive.read("palo_alto_config.set").strip()
         report = json.loads(archive.read("migration_report.json"))
+        decisions = json.loads(archive.read("migration_decisions.json"))
         assert report["commands"] == plan["commands"]
+        assert decisions["format_version"] == 1
+        assert decisions["source_vendor"] == "fortigate"
+        root_vsys = next(item for item in decisions["decisions"] if item["source_kind"] == "vdom" and item["target_field"] == "vsys")
+        assert root_vsys["value"] == "vsys1"
+        assert root_vsys["review_state"] == "CONFIRMED"
         import yaml
         assert yaml.safe_load(archive.read("target_mapping.yaml")) == mapping
 
@@ -127,10 +202,35 @@ def test_migration_workflow_uses_planning_terminology():
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "Plan migration" in html
+    assert "Configuration Report" in html
     assert "Planned PAN-OS configuration" in html
     assert "Live migration" in html
+    assert "FIREWALL OPERATIONS" not in html
+    assert "START HERE" not in html
+    assert 'id="source-card-description"' not in html
+    assert 'class="file-ready"' not in html
+    assert 'id="report-filename"' not in html
+    assert html.count('id="report-detail-modal"') == 1
+    assert 'class="report-detail-modal hidden"' in html
+    assert 'role="dialog" aria-modal="true" aria-labelledby="report-detail-title"' in html
+    assert 'id="report-detail-close"' in html and 'id="report-detail-body"' in html
+    assert 'id="report-detail-panel"' not in html
+    assert html.count('id="report-summary"') == 1
+    assert "Download Excel" in html
+    assert "Push candidate" in html
+    assert "Validate candidate" in html
+    assert "Activity log" in html
+    assert "Execution log" not in html
+    assert 'id="tab-extract"' not in html
+    assert 'id="mode-extract-form"' not in html
     assert html.count('id="btn-extract-excel"') == 1
-    assert html.index('id="btn-extract-excel"') < html.index('id="mode-extract-form"')
+    report_start = html.index('id="report-container"')
+    report_end = html.index("</section>", report_start)
+    assert report_start < html.index('id="btn-extract-excel"') < report_end
+    assert 'id="validation-groups-heading">Issue groups</h3>' in html
+    assert "Select an issue group to filter the findings below." in html
+    assert 'id="validation-details-heading"' in html and "Validation details" in html
+    assert 'id="validation-filter-clear"' in html and ">Clear</button>" in html
     assert "Your source inventory" not in html
     assert "Convert config" not in html
     assert "Convert configuration" not in html

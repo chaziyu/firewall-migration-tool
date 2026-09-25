@@ -887,6 +887,9 @@ def _implicit_reference(
     name: str,
     kinds: tuple[ReferenceKind, ...],
 ) -> ReferenceKind | None:
+    if ReferenceKind.ADMIN_PROFILE in kinds and name == "super_admin":
+        return ReferenceKind.ADMIN_PROFILE
+
     if (
         ReferenceKind.SERVICE in kinds
         or ReferenceKind.SERVICE_GROUP in kinds

@@ -38,7 +38,10 @@ def safe_value(value: Any) -> Any:
 
 def excel_value(value: Any) -> Any:
     value = safe_value(value)
-    return str(value) if isinstance(value, (list, tuple, dict)) else value
+    value = str(value) if isinstance(value, (list, tuple, dict)) else value
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r", "\n")):
+        return "'" + value
+    return value
 
 
 def has_source_evidence(value: Any) -> bool:

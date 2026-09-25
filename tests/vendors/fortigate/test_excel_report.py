@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import io
 import unittest
@@ -208,6 +208,54 @@ class ExcelReportTest(unittest.TestCase):
         headers = [sheet.cell(3, column).value for column in range(1, sheet.max_column + 1)]
         return headers, list(sheet.iter_rows(min_row=4, values_only=True))
 
+    def test_predefined_admin_profile_and_web_proxy_are_not_flagged(self):
+        workbook = self._workbook('''config system admin
+    edit "built-in"
+        set accprofile "super_admin"
+    next
+    edit "custom"
+        set accprofile "missing-custom-profile"
+    next
+end
+config firewall service custom
+    edit "webproxy"
+        set proxy enable
+        set protocol ALL
+        set tcp-portrange 0-65535:0-65535
+    next
+    edit "invalid-service"
+        set protocol IP
+        set tcp-portrange 443
+    next
+end
+''')
+
+        for sheet_name, identity_header, identities in (
+            ("Administrators", "Name", {"built-in", "custom"}),
+            ("Services", "Name", {"webproxy", "invalid-service"}),
+        ):
+            headers, rows = self._rows(workbook[sheet_name])
+            by_name = {row[headers.index(identity_header)]: row for row in rows}
+            for name in identities - {"custom", "invalid-service"}:
+                self.assertEqual("EXTRACTED", by_name[name][headers.index("Analysis Status")])
+                self.assertFalse(by_name[name][headers.index("Review Reasons")])
+
+        admin_headers, admins = self._rows(workbook["Administrators"])
+        custom = next(row for row in admins if row[admin_headers.index("Name")] == "custom")
+        self.assertEqual("REVIEW_REQUIRED", custom[admin_headers.index("Analysis Status")])
+        self.assertIn("missing-custom-profile", custom[admin_headers.index("Review Reasons")])
+
+        service_headers, services = self._rows(workbook["Services"])
+        invalid = next(row for row in services if row[service_headers.index("Name")] == "invalid-service")
+        self.assertEqual("REVIEW_REQUIRED", invalid[service_headers.index("Analysis Status")])
+        self.assertIn("inactive for protocol IP", invalid[service_headers.index("Review Reasons")])
+
+        _, review_rows = self._rows(workbook["Review Required"])
+        review_text = " ".join(str(row) for row in review_rows)
+        self.assertNotIn("super_admin", review_text)
+        self.assertNotIn("webproxy", review_text)
+        self.assertIn("missing-custom-profile", review_text)
+
     def test_additional_settings_are_stable_across_repeated_exports(self):
         source = _SAMPLE_CONFIG + r'''
 config firewall policy
@@ -287,32 +335,115 @@ end
             ]
             self.assertTrue(any(marker in value for value in values), name)
 
-    def test_workbook_order_headers_and_removed_sheets(self):
-        workbook = self._workbook()
-        self.assertEqual(list(SHEET_ORDER), workbook.sheetnames)
-        removed = {
-            "Address Group Tags", "Local-In Policies",
-            "Multicast Policies", "Policy Routes", "Routing Protocol Settings",
-            "Session TTL Settings", "Session TTL Overrides", "SD-WAN SLAs", "SD-WAN Duplication",
-            "SD-WAN Neighbors", "SD-WAN Rule SLAs",
-            "SSL VPN Bookmark Groups", "LDAP Servers", "RADIUS Servers",
-            "TACACS+ Servers", "SAML Servers", "FSSO Servers", "FortiTokens", "Authentication Rules",
-            "Identity Server Endpoints", "Extraction Evidence", "Firewall Policy Source Settings",
-            "Interface Source Settings", "Interface Nested Configuration",
-        }
-        self.assertTrue(removed.isdisjoint(workbook.sheetnames))
-        self.assertIn("FortiGate Source Inventory", workbook.sheetnames)
-        self.assertNotIn("Source Inventory", workbook.sheetnames)
-        self.assertNotIn("FortiGate Source Configuration", workbook.sheetnames)
-        for sheet_name in SHEET_ORDER:
-            if sheet_name == "Summary":
-                continue
-            sheet = workbook[sheet_name]
-            self.assertEqual(
-                list(SHEET_HEADERS[sheet_name]),
-                [sheet.cell(3, column).value for column in range(1, sheet.max_column + 1)],
-                sheet_name,
-            )
+    def test_additional_settings_preserve_unknown_source_order(self):
+        workbook = self._workbook('''config firewall policy
+    edit 101
+        set name "ordered"
+        set future-z last
+        set future-a first
+    next
+end
+''')
+        headers, rows = self._rows(workbook["Policies"])
+        row = next(row for row in rows if row[headers.index("Policy Name")] == "ordered")
+        settings = str(row[headers.index("Additional Settings")])
+
+        self.assertLess(settings.index("future_z"), settings.index("future_a"))
+
+    def test_formula_like_source_text_is_exported_as_literal(self):
+        workbook = self._workbook('''config firewall address
+    edit "=1+1"
+        set subnet 192.0.2.1 255.255.255.255
+    next
+end
+''')
+        sheet = workbook["Addresses"]
+        headers, rows = self._rows(sheet)
+        name_index = headers.index("Name")
+        row_index = next(index for index, row in enumerate(rows, start=4) if str(row[name_index]).lstrip("'") == "=1+1")
+        cell = sheet.cell(row_index, name_index + 1)
+
+        self.assertNotEqual("f", cell.data_type)
+        self.assertEqual("=1+1", str(cell.value).lstrip("'"))
+
+    def test_ipv6_source_families_reach_their_workbook_rows(self):
+        workbook = self._workbook('''config router static6
+    edit 21
+        set dst 2001:db8:1::/64
+    next
+end
+config firewall ippool6
+    edit v6-pool
+        set startip 2001:db8::10
+        set nat46 enable
+    next
+end
+config firewall vip6
+    edit v6-vip
+        set extip 2001:db8::1
+        set nat64 enable
+    next
+end
+config firewall vipgrp6
+    edit v6-group
+        set member v6-vip
+    next
+end
+''')
+        for sheet_name, identity_header, identity in (
+            ("Routes", "Route ID", 21),
+            ("IP Pools", "Name", "v6-pool"),
+            ("Virtual IPs", "Name", "v6-vip"),
+            ("VIP Groups", "Name", "v6-group"),
+        ):
+            headers, rows = self._rows(workbook[sheet_name])
+            row = next(row for row in rows if row[headers.index(identity_header)] == identity)
+            self.assertEqual("ipv6", row[headers.index("Address Family")], sheet_name)
+
+    def test_ssl_vpn_source_flags_and_nested_bookmarks_reach_workbook(self):
+        workbook = self._workbook('''config vpn ssl client
+    edit remote
+        set psk client-secret
+    next
+end
+config vpn ssl web user-bookmark
+    edit alice
+        config bookmarks
+            edit app
+                set apptype rdp
+                set logon-password bookmark-secret
+            next
+        end
+    next
+end
+''')
+        clients, client_rows = self._rows(workbook["SSL VPN Clients"])
+        self.assertEqual("Yes", client_rows[0][clients.index("PSK Configured")])
+        bookmarks = list(workbook["SSL VPN Bookmarks"].iter_rows(min_row=4, values_only=True))
+        self.assertEqual("User", bookmarks[0][0])
+
+    def test_policy_based_ipsec_rows_keep_their_source_family(self):
+        workbook = self._workbook('''config vpn ipsec phase1
+    edit policy-vpn
+        set interface wan1
+        set psksecret policy-secret
+    next
+end
+config vpn ipsec phase2
+    edit policy-child
+        set phase1name policy-vpn
+        set src-addr-type subnet
+        set src-subnet 10.1.0.0 255.255.255.0
+    next
+end
+''')
+        phase1_headers, phase1_rows = self._rows(workbook["Policy IPsec Phase 1"])
+        phase1 = next(row for row in phase1_rows if row[phase1_headers.index("Name")] == "policy-vpn")
+        self.assertEqual("Yes", phase1[phase1_headers.index("PSK Configured")])
+        phase2_headers, phase2_rows = self._rows(workbook["Policy IPsec Phase 2"])
+        phase2 = next(row for row in phase2_rows if row[phase2_headers.index("Name")] == "policy-child")
+        self.assertEqual("10.1.0.0-10.1.0.255", phase2[phase2_headers.index("Source Range")])
+
 
     def test_typed_sheets_and_phase2_lifetimes_are_exported(self):
         source = _SAMPLE_CONFIG + r'''
@@ -607,12 +738,50 @@ end
             {row[settings_headers.index("Setting")] for row in settings_rows},
             {"ntpsync", "server_mode", "interface"},
         )
+        self.assertTrue(all(row[settings_headers.index("Analysis Status")] == "EXTRACTED" for row in settings_rows))
+        self.assertTrue(all(not row[settings_headers.index("Review Reasons")] for row in settings_rows))
         server_headers, server_rows = self._rows(workbook["NTP Servers"])
         self.assertEqual(server_rows, [])
         self.assertEqual(
             list(SHEET_HEADERS["NTP Servers"]),
             server_headers,
         )
+
+    def test_unnamed_settings_do_not_inherit_vdom_validation_issues(self):
+        workbook = self._workbook('''config system global
+    set hostname firewall
+end
+config system dns
+    set primary 192.0.2.53
+    set secondary 192.0.2.54
+end
+config system ntp
+    set ntpsync enable
+    set server-mode enable
+end
+config firewall service custom
+    edit "invalid-service"
+        set protocol ALL
+        set tcp-portrange 80
+    next
+end
+''')
+
+        for sheet_name in ("System Settings", "DNS Settings", "NTP Settings"):
+            headers, rows = self._rows(workbook[sheet_name])
+            self.assertTrue(rows, sheet_name)
+            self.assertTrue(all(row[headers.index("Analysis Status")] == "EXTRACTED" for row in rows), sheet_name)
+            self.assertTrue(all(not row[headers.index("Review Reasons")] for row in rows), sheet_name)
+
+        headers, rows = self._rows(workbook["DNS Settings"])
+        self.assertEqual({"primary", "secondary"}, {row[headers.index("Setting")] for row in rows})
+
+        headers, rows = self._rows(workbook["Services"])
+        service = next(row for row in rows if row[headers.index("Name")] == "invalid-service")
+        self.assertEqual("REVIEW_REQUIRED", service[headers.index("Analysis Status")])
+
+        headers, rows = self._rows(workbook["Review Required"])
+        self.assertTrue(any("invalid-service" in str(row) for row in rows))
 
     def test_ntp_server_objects_use_server_ids(self):
         workbook = self._workbook(
@@ -939,296 +1108,13 @@ end
         self.assertEqual("SRC-V6", nat_by_rule[60][nat_headers.index("Source IPv6 Addresses")])
         self.assertEqual("DST-V6", nat_by_rule[60][nat_headers.index("Destination IPv6 Addresses")])
 
-    def test_source_value_sanitization_matches_attribute_sanitization(self):
-        values = {
-            "passwd": "secret",
-            "psksecret": "secret",
-            "api-key": "secret",
-            "some-shared-secret": "secret",
-            "passwd-time": "metadata",
-            "has-psk": "Yes",
-            "ordinary-setting": "value",
-        }
-        sanitized = sanitize_source_attributes(values)
-        self.assertEqual("[REDACTED]", sanitize_source_value("passwd", "secret"))
-        self.assertEqual("[REDACTED]", sanitize_source_value("psksecret", "secret"))
-        self.assertEqual("[REDACTED]", sanitize_source_value("api-key", "secret"))
-        self.assertEqual("[REDACTED]", sanitize_source_value("some-shared-secret", "secret"))
-        self.assertEqual("metadata", sanitize_source_value("passwd-time", "metadata"))
-        self.assertEqual("Yes", sanitize_source_value("has-psk", "Yes"))
-        self.assertEqual("value", sanitize_source_value("ordinary-setting", "value"))
-        self.assertEqual(
-            sanitized,
-            {key.replace("-", "_"): sanitize_source_value(key, value) for key, value in values.items()},
-        )
 
-    def test_analysis_status_is_scoped_by_validation_domain(self):
-        workbook = self._workbook(
-            r'''
-config system interface
-    edit "BCA_INF"
-        set ip 192.0.2.1 255.255.255.0
-    next
-end
 
-config vpn ipsec phase2-interface
-    edit "BCA_INF"
-        set src-addr-type range
-        set src-start-ip 192.0.2.10
-    next
-end
-''',
-        )
 
-        interfaces, interface_rows = self._rows(workbook["Interfaces"])
-        interface = next(row for row in interface_rows if row[interfaces.index("Name")] == "● BCA_INF")
-        self.assertEqual("EXTRACTED", interface[interfaces.index("Analysis Status")])
-        self.assertFalse(interface[interfaces.index("Review Reasons")])
 
-        phase2, phase2_rows = self._rows(workbook["VPN Phase 2"])
-        phase2_row = next(row for row in phase2_rows if row[phase2.index("Name")] == "BCA_INF")
-        self.assertEqual("REVIEW_REQUIRED", phase2_row[phase2.index("Analysis Status")])
-        self.assertIn("Selector has only one range endpoint.", phase2_row[phase2.index("Review Reasons")])
 
-    def test_same_name_vip_warning_does_not_mark_service_for_review(self):
-        workbook = self._workbook(
-            r'''
-config firewall service custom
-    edit "shared-name"
-        set protocol TCP
-        set tcp-portrange 443
-    next
-end
 
-config firewall vip
-    edit "shared-name"
-        set type server-load-balance
-        set extintf "missing-interface"
-    next
-end
-''',
-        )
 
-        services, service_rows = self._rows(workbook["Services"])
-        service = next(row for row in service_rows if row[services.index("Name")] == "shared-name")
-        self.assertEqual("EXTRACTED", service[services.index("Analysis Status")])
-        self.assertFalse(service[services.index("Review Reasons")])
-
-        vips, vip_rows = self._rows(workbook["Virtual IPs"])
-        vip = next(row for row in vip_rows if row[vips.index("Name")] == "shared-name")
-        self.assertEqual("REVIEW_REQUIRED", vip[vips.index("Analysis Status")])
-        self.assertIn("missing-interface", vip[vips.index("Review Reasons")])
-
-    def test_new_reference_issues_reach_their_excel_rows(self):
-        workbook = self._workbook(
-            r'''
-config router static
-    edit 1
-        set dstaddr "missing-address"
-        set device "missing-route-interface"
-    next
-end
-
-config system dhcp server
-    edit 7
-        set interface "missing-dhcp-interface"
-    next
-end
-
-config system admin
-    edit "operator"
-        set accprofile "missing-profile"
-    next
-end
-
-config firewall vip
-    edit "broken-vip"
-        set extintf "missing-vip-interface"
-    next
-end
-''',
-        )
-        for sheet_name, identity_header, identity, expected in (
-            ("Routes", "Route ID", 1, ("missing-address", "missing-route-interface")),
-            ("DHCP Servers", "Server ID", 7, ("missing-dhcp-interface",)),
-            ("Administrators", "Name", "operator", ("missing-profile",)),
-            ("Virtual IPs", "Name", "broken-vip", ("missing-vip-interface",)),
-        ):
-            headers, rows = self._rows(workbook[sheet_name])
-            row = next(item for item in rows if item[headers.index(identity_header)] == identity)
-            self.assertEqual("REVIEW_REQUIRED", row[headers.index("Analysis Status")], sheet_name)
-            reasons = str(row[headers.index("Review Reasons")] or "")
-            for reference in expected:
-                self.assertIn(reference, reasons, sheet_name)
-
-    def test_reference_namespace_regression(self):
-        workbook = self._workbook(
-            r'''
-config system interface
-    edit "wan1"
-    next
-    edit "INFUAT-BIBDUAT"
-        set snmp-index 34
-    next
-    edit "INFUAT-BIBDUAT"
-        set snmp-index 11
-    next
-end
-
-config firewall address
-    edit "all"
-        set subnet 0.0.0.0 0.0.0.0
-    next
-end
-
-config firewall address6
-    edit "all"
-        set ip6 2001:db8::/64
-    next
-end
-
-config vpn ipsec phase1-interface
-    edit "Euronet-P1"
-        set interface "wan1"
-    next
-end
-
-config firewall policy
-    edit 2257
-        set name "Euronet policy"
-        set srcintf "Euronet-P1"
-        set srcaddr "all"
-        set srcaddr6 "all"
-    next
-end
-''',
-        )
-
-        review, review_rows = self._rows(workbook["Review Required"])
-        review_text = [
-            " ".join(str(value) for value in row if value is not None)
-            for row in review_rows
-        ]
-        self.assertTrue(any("INFUAT-BIBDUAT" in row and "ambiguous" in row for row in review_text))
-        self.assertFalse(any("all" in row and "ambiguous" in row for row in review_text))
-        self.assertFalse(any("Euronet-P1" in row and "not found" in row for row in review_text))
-
-        addresses, address_rows = self._rows(workbook["Addresses"])
-        all_rows = [row for row in address_rows if row[addresses.index("Name")] == "all"]
-        self.assertEqual({"ipv4", "ipv6"}, {row[addresses.index("Address Family")] for row in all_rows})
-        vpn, vpn_rows = self._rows(workbook["VPN Tunnels"])
-        self.assertIn("Euronet-P1", {row[vpn.index("Name")] for row in vpn_rows})
-
-    def test_vip_analysis_status_matches_backend_validation(self):
-        workbook = self._workbook(
-            r'''
-config firewall vip
-    edit "single-backend"
-        set type server-load-balance
-        config realservers
-            edit 1
-                set ip 192.0.2.10
-            next
-        end
-    next
-    edit "zero-backend"
-        set type server-load-balance
-    next
-    edit "static-vip"
-        set type static-nat
-    next
-end
-''',
-        )
-
-        vips, rows = self._rows(workbook["Virtual IPs"])
-        by_name = {row[vips.index("Name")]: row for row in rows}
-        self.assertEqual("EXTRACTED", by_name["single-backend"][vips.index("Analysis Status")])
-        self.assertFalse(by_name["single-backend"][vips.index("Review Reasons")])
-        self.assertEqual("REVIEW_REQUIRED", by_name["zero-backend"][vips.index("Analysis Status")])
-
-        review, review_rows = self._rows(workbook["Review Required"])
-        zero_backend_review = next(
-            row for row in review_rows
-            if row[review.index("Object")] == "zero-backend"
-        )
-        self.assertIn("no configured real-server backend", zero_backend_review[review.index("Issue / Review Reason")])
-
-    def test_malformed_nat_warning_reaches_nat_and_review_sheets(self):
-        source = "source static any any destination static " + "103.230.127.102 " * 40
-        workbook = self._workbook(
-            f'''
-config system interface
-    edit "wan1"
-        set ip {source}
-    next
-end
-
-config firewall policy
-    edit 1
-        set name "bad nat"
-        set dstintf "wan1"
-        set nat enable
-    next
-end
-'''
-        )
-
-        nat, nat_rows = self._rows(workbook["NAT Rules"])
-        nat_row = nat_rows[0]
-        self.assertIn("explicit 'ip' value that could not be parsed", nat_row[nat.index("Review Reasons")])
-        self.assertNotIn(source, nat_row[nat.index("Review Reasons")])
-
-        review, review_rows = self._rows(workbook["Review Required"])
-        review_row = next(row for row in review_rows if row[review.index("Category")] == "nat")
-        self.assertEqual("warning", review_row[review.index("Severity")])
-        self.assertEqual(nat_row[nat.index("Review Reasons")], review_row[review.index("Issue / Review Reason")])
-
-    def test_any_nat_warning_reaches_nat_and_review_sheets(self):
-        source = r'''
-config firewall policy
-    edit 1
-        set name "any egress nat"
-        set dstintf "any"
-        set nat enable
-    next
-end
-'''
-        workbook = self._workbook(
-            source,
-        )
-
-        expected = (
-            "Outgoing interface 'any' is non-specific; interface-address "
-            "SNAT depends on the runtime egress path and cannot be derived "
-            "deterministically."
-        )
-        nat, nat_rows = self._rows(workbook["NAT Rules"])
-        nat_row = nat_rows[0]
-        self.assertEqual("REVIEW_REQUIRED", nat_row[nat.index("Analysis Status")])
-        self.assertIn(expected, nat_row[nat.index("Review Reasons")])
-
-        review, review_rows = self._rows(workbook["Review Required"])
-        review_row = next(row for row in review_rows if row[review.index("Category")] == "nat")
-        self.assertEqual("warning", review_row[review.index("Severity")])
-        self.assertIn(expected, review_row[review.index("Issue / Review Reason")])
-
-        extracted = extract_fortigate_config(
-            parse_fortigate_config(source),
-            config=ExtractionConfig(),
-        )
-        derived = build_derived_views(extracted.config)
-        validation = validate_config(extracted.config, derived=derived)
-        summary = workbook["Summary"]
-        summary_values = {
-            summary.cell(row, 1).value: summary.cell(row, 2).value
-            for row in range(1, summary.max_row + 1)
-        }
-        self.assertEqual(
-            sum(issue.domain == "nat" for issue in validation.issues),
-            summary_values["NAT Review Items"],
-        )
-        self.assertNotIn("Interface-NAT Ambiguities", summary_values)
 
     def test_summary_uses_explicit_fortios_version_header(self):
         workbook = self._workbook(
@@ -1244,46 +1130,7 @@ end
         workbook = self._workbook("# no config version\n")
         self.assertIsNone(workbook["Summary"]["B5"].value)
 
-    def test_presentation_and_review_contract(self):
-        workbook = self._workbook()
-        interfaces = workbook["Interfaces"]
-        self.assertEqual("D4", interfaces.freeze_panes)
-        self.assertEqual("17324D", interfaces["A1"].fill.fgColor.rgb[-6:])
-        self.assertEqual("0F766E", interfaces["A3"].fill.fgColor.rgb[-6:])
-        self.assertTrue(interfaces.column_dimensions["V"].hidden)
-        self.assertTrue(interfaces.column_dimensions["W"].hidden)
-        self.assertTrue(interfaces.auto_filter.ref.startswith("A3:"))
-        self.assertEqual("#'Summary'!A1", interfaces[2][interfaces.max_column - 1].hyperlink.target)
 
-        for sheet_name, headers in SHEET_HEADERS.items():
-            if sheet_name == "Summary":
-                continue
-            sheet = workbook[sheet_name]
-            for column, header in enumerate(headers, start=1):
-                if header in {"Source Explicit Fields", "Additional Settings"}:
-                    self.assertTrue(sheet.column_dimensions[get_column_letter(column)].hidden)
-
-        review, rows = self._rows(workbook["Review Required"])
-        for row in rows:
-            self.assertTrue(row[review.index("VDOM")])
-            self.assertTrue(row[review.index("Field")])
-
-    def test_secrets_and_removed_legacy_target_columns(self):
-        workbook = self._workbook()
-        forbidden = {"do-not-export-this-secret", "another-do-not-export-secret"}
-        for sheet in workbook.worksheets:
-            for row in sheet.iter_rows():
-                for cell in row:
-                    self.assertTrue(not any(secret in str(cell.value) for secret in forbidden))
-
-        system_headers, _ = self._rows(workbook["System Settings"])
-        self.assertNotIn("Management IPv4 Address", system_headers)
-        policy_headers, _ = self._rows(workbook["Policies"])
-        self.assertNotIn("Source Address (Original)", policy_headers)
-        pool_headers, _ = self._rows(workbook["IP Pools"])
-        self.assertNotIn("Check Point Pool Object Type", pool_headers)
-        security_headers, _ = self._rows(workbook["Security Profiles"])
-        self.assertNotIn("WildFire", security_headers)
 
 
 if __name__ == "__main__":

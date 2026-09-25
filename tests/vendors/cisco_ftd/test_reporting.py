@@ -1,3 +1,4 @@
+import json
 from io import BytesIO
 from pathlib import Path
 
@@ -37,3 +38,15 @@ def test_report_preserves_ftd_source_plane_and_partial_coverage():
     assert cli["source_plane"] == "ftd-text-evidence" and cli["sections"]["policies"] == []
     assert partial["source_plane_completeness"]["acp"] == "partial"
     assert partial["sections"]["policies"][0]["source_plane"] == "fmc-rest-bundle"
+
+
+def test_excel_formula_like_source_text_is_literal():
+    result = extract_cisco_ftd_source(json.dumps({"source": "fmc-rest-api", "objects": {
+        "networkaddresses": [{"id": "net-1", "name": "=1+1", "type": "Host", "value": "192.0.2.1"}]}}))
+    output = BytesIO()
+    CiscoFTDSourceReporter().export_excel(result, output)
+    workbook = load_workbook(output, read_only=True)
+    sheet = workbook["Managed Objects"]
+    row = next(sheet.iter_rows(min_row=2, max_row=2))
+    assert row[0].value == "'=1+1"
+    assert row[0].data_type != "f"

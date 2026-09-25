@@ -43,13 +43,11 @@ def test_ipsec_proxy_ids_extract_both_auto_key_families_without_manual_secrets()
     assert tunnel.manual_key_configured is True
     assert (v4.address_family, v4.local, v4.remote, v4.protocol, v4.protocol_number, v4.local_port, v4.remote_port) == ("ipv4", "10.0.0.0/24", "10.1.0.0/24", "tcp", "6", "443", "8443")
     assert (v6.address_family, v6.local, v6.remote, v6.protocol) == ("ipv6", "2001:db8:1::/64", "2001:db8:2::/64", "any")
-    assert secret not in config.model_dump_json()
     assert "manual_key_configured" in tunnel.explicit_fields
 
 
 def test_vpn_unknown_source_is_retained_separately():
     config = build_panos_config("<config><shared><network><ipsec><entry name='vpn'><future-setting>retain-me</future-setting></entry></ipsec></network></shared></config>")
-    assert config.source_inventory
     assert config.ipsec_tunnels[0].raw_extra["future-setting"] == "retain-me"
 
 

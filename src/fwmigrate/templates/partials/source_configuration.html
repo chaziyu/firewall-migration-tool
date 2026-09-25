@@ -4,11 +4,7 @@
       <h2 id="source-heading">
         <span class="step-num">01</span>Source configuration
       </h2>
-      <span class="section-meta" id="source-section-meta">START HERE</span>
     </div>
-    <p class="card-desc" id="source-card-description">
-      Choose your source vendor and bring in your firewall configuration.
-    </p>
   </div>
   <div class="vendor-selector-grid" id="vendor-selector-grid">
     <div class="vendor-select-group">
@@ -106,8 +102,7 @@
         <span class="filename" id="selected-filename"></span
         ><span class="filesize" id="selected-filesize"></span>
       </div>
-      <span class="file-ready">{{ icon('check') }}Selected</span
-      ><button
+      <button
         type="button"
         id="btn-remove-file"
         class="btn-icon"
@@ -162,10 +157,5 @@
       <button type="button" class="btn btn-primary" id="btn-collect-configuration">Collect &amp; Download Snapshot</button>
     </div>
     <div id="collection-status" class="preview-status hidden" role="status" aria-live="polite"></div>
-  </div>
-  <div class="export-footer extract-export-footer hidden">
-    <button type="button" id="btn-extract-excel" class="btn btn-primary" disabled>
-      {{ icon('download') }}<span>Download Excel</span>
-    </button>
   </div>
 </section>

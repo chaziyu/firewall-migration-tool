@@ -215,6 +215,10 @@ def _expand_service(
             for name in active_protocols
             if name in active_fields
         }
+        if service.proxy == "enable" and selector in {
+            "HTTP", "FTP", "CONNECT", "SOCKS-TCP", "SOCKS-UDP", "ALL",
+        }:
+            allowed.update(active_fields.values())
         if selector == "IP":
             allowed.add("protocol_number")
         elif selector in {"ICMP", "ICMP6"}:

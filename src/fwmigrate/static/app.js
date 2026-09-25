@@ -4,12 +4,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
 let currentFile = null;
 let currentRenderedArtifactId = null;
-  let currentMigrationMapping = { vdoms: {}, interfaces: {} };
+  let currentDecisionSet = { decisions: [] };
+  let currentDecisionDocument = null;
   let currentPreviewId = null;
   let selectedSourceVendor = "fortigate";
   let selectedTargetVendor = "palo_alto";
   let offlineTargetVendor = "palo_alto";
-  let activeMode = "download"; // 'download', 'live', 'extract', or 'report'
+  let activeMode = "download"; // 'download', 'live', 'collect', or 'report'
   let currentPolicies = [];
   let currentReport = null;
   let sourceReady = false;
@@ -20,21 +21,17 @@ let currentRenderedArtifactId = null;
 
   const MODE_COPY = {
     report: [
-      "View report",
-      "Review the extracted source configuration before downloading Excel.",
+      "Configuration Report",
+      "Review source details and download Excel.",
     ],
     download: [
       "Plan migration",
-      "Review supported mappings, manual-review items, and generated PAN-OS commands.",
+      "",
     ],
-    extract: [
-      "Export to Excel",
-      "Upload once, then download the complete Excel workbook.",
-    ],
-    collect: ["Live Collection", "Connect to a supported device and collect its configuration."],
+    collect: ["Live Collection", "Collect configuration directly from a supported device."],
     live: [
       "Live migration",
-      "Validate your target, deploy CLI commands, then commit with confidence.",
+      "",
     ],
   };
 
@@ -254,17 +251,14 @@ let currentRenderedArtifactId = null;
   const tabDownload = document.getElementById("tab-download");
   const tabReport = document.getElementById("tab-report");
   const tabLive = document.getElementById("tab-live");
-  const tabExtract = document.getElementById("tab-extract");
   const tabCollect = document.getElementById("tab-collect");
   const developmentBanner = document.getElementById("development-banner");
   const modeDownloadForm = document.getElementById("mode-download-form");
   const modeLiveForm = document.getElementById("mode-live-form");
-  const modeExtractForm = document.getElementById("mode-extract-form");
   const reportContainer = document.getElementById("report-container");
   const reportOverview = document.getElementById("report-overview");
   const reportData = document.getElementById("report-data");
   const reportSummary = document.getElementById("report-summary");
-  const reportFilename = document.getElementById("report-filename");
   const reportScopeSummary = document.getElementById("report-scope-summary");
   const reportObjectTabs = document.getElementById("report-object-tabs");
   const reportSearch = document.getElementById("report-search");
@@ -278,12 +272,26 @@ let currentRenderedArtifactId = null;
   const reportRowCount = document.getElementById("report-row-count");
   const reportScrollHint = document.getElementById("report-scroll-hint");
   const reportEmpty = document.getElementById("report-empty");
-  const reportDetailPanel = document.getElementById("report-detail-panel");
+  const reportPager = document.getElementById("report-pager");
+  const reportPageStatus = document.getElementById("report-page-status");
+  const reportPagePrevious = document.getElementById("report-page-previous");
+  const reportPageNext = document.getElementById("report-page-next");
+  const validationSummary = document.getElementById("validation-summary");
+  const validationGroupsPanel = document.getElementById("validation-groups-panel");
+  const validationDetailsHeading = document.getElementById("validation-details-heading");
+  const validationActiveFilter = document.getElementById("validation-active-filter");
+  const validationActiveFilterLabel = document.getElementById("validation-active-filter-label");
+  const validationFilterClear = document.getElementById("validation-filter-clear");
+  const reportDetailModal = document.getElementById("report-detail-modal");
   const reportDetailTitle = document.getElementById("report-detail-title");
   const reportDetailBody = document.getElementById("report-detail-body");
   const reportDetailClose = document.getElementById("report-detail-close");
+  let reportDetailTrigger = null;
   let activeReportSection = "overview";
   let activeObjectSection = "addresses";
+  let reportPage = 1;
+  let activeValidationGroup = "";
+  const REPORT_PAGE_SIZE = 100;
 
   // Ingestion Method Tabs
   const btnIngestFile = document.getElementById("btn-ingest-file");
@@ -317,6 +325,9 @@ let currentRenderedArtifactId = null;
   function renderCollectionFields() {
     const container = document.getElementById("collection-fields");
     const status = document.getElementById("collection-status");
+    const guideButton = document.getElementById("btn-collection-guide");
+    const guide = document.getElementById("collection-guide");
+    const actions = document.querySelector("#ingest-live-container .button-row");
     if (!container) return;
     container.replaceChildren();
     const capability = collectionCapabilities[selectedSourceVendor];
@@ -325,7 +336,12 @@ let currentRenderedArtifactId = null;
     document.getElementById("collection-guide-workflow").classList.toggle("hidden", !capability);
     document.getElementById("btn-test-collection").disabled = !capability;
     document.getElementById("btn-collect-configuration").disabled = !capability;
+    guideButton?.classList.toggle("hidden", !capability);
+    container.classList.toggle("hidden", !capability);
+    actions?.classList.toggle("hidden", !capability);
     if (!capability) {
+      guide?.classList.add("hidden");
+      guideButton?.setAttribute("aria-expanded", "false");
       status.textContent = "Live collection is unavailable for this vendor.";
       status.classList.remove("hidden");
       return;
@@ -381,6 +397,7 @@ let currentRenderedArtifactId = null;
   // Mode A Components
   const btnGenerateBundle = document.getElementById("btn-generate-bundle");
   const btnDownloadBundle = document.getElementById("btn-download-bundle");
+  const btnDownloadSet = document.getElementById("btn-download-set");
   const btnExtractExcel = document.getElementById("btn-extract-excel");
 
   // Mode B Target Form & Diagnostics
@@ -434,8 +451,8 @@ let currentRenderedArtifactId = null;
     return String(value);
   }
 
-  function showReportDetails(row) {
-    if (!reportDetailPanel || !reportDetailBody) return;
+  function showReportDetails(row, triggerElement) {
+    if (!reportDetailModal || !reportDetailBody) return;
     if (reportDetailTitle) reportDetailTitle.textContent = row.policy_id != null ? `Policy ${row.policy_id}` : row.name || row.display_name || row.object_name || "Row details";
     const list = document.createElement("dl");
     Object.entries(row).forEach(([key, value]) => {
@@ -453,7 +470,19 @@ let currentRenderedArtifactId = null;
       list.append(term, detail);
     });
     reportDetailBody.replaceChildren(list);
-    reportDetailPanel.classList.remove("hidden");
+    openReportDetailModal(triggerElement);
+  }
+
+  function openReportDetailModal(triggerElement) {
+    reportDetailTrigger = triggerElement;
+    reportDetailModal?.classList.remove("hidden");
+    reportDetailClose?.focus();
+  }
+
+  function closeReportDetailModal(restoreFocus = true) {
+    reportDetailModal?.classList.add("hidden");
+    if (restoreFocus && reportDetailTrigger?.isConnected) reportDetailTrigger.focus();
+    reportDetailTrigger = null;
   }
 
   function navigateToValidationTarget(row) {
@@ -467,10 +496,12 @@ let currentRenderedArtifactId = null;
     if (!target || !row.object_name) return false;
     activeReportSection = target[0];
     if (target[1]) activeObjectSection = target[1];
+    reportPage = 1;
+    activeValidationGroup = "";
     document.querySelectorAll("[data-object-section]").forEach((button) => button.classList.toggle("active", button.dataset.objectSection === activeObjectSection));
     if (reportScopeFilter) reportScopeFilter.value = row.scope || row.vdom || "";
     if (reportSearch) reportSearch.value = String(row.object_name);
-    reportDetailPanel?.classList.add("hidden");
+    closeReportDetailModal(false);
     renderReport();
     const match = [...(reportTableBody?.rows || [])].find((tr) => [...tr.cells].some((cell) => cell.textContent.trim() === String(row.object_name)));
     if (match) { match.classList.add("report-row-highlight"); match.scrollIntoView({ block: "center", behavior: "smooth" }); }
@@ -491,16 +522,24 @@ let currentRenderedArtifactId = null;
   function renderReportTable() {
     if (!currentReport || activeReportSection === "overview") return;
     const columnKey = activeReportSection === "objects" ? activeObjectSection : activeReportSection;
-    const columns = reportColumns[columnKey] || [];
+    let columns = reportColumns[columnKey] || [];
     const search = reportSearch?.value.trim().toLowerCase() || "";
     const scope = reportScopeFilter?.value || "";
     const severity = reportSeverityFilter?.value || "";
     const sectionRows = reportRows(activeReportSection);
     const rows = sectionRows.filter((row) => {
+      if (activeReportSection === "validation" && activeValidationGroup &&
+          JSON.stringify([row.severity, row.domain, row.field, row.message]) !== activeValidationGroup) return false;
       if (scope && (row.scope || row.vdom) !== scope) return false;
       if (severity && row.severity !== severity) return false;
       return !search || Object.values(row).some((value) => reportCell(value).toLowerCase().includes(search));
     });
+    const identityColumns = new Set(["name", "policy_id", "policy_name", "object_name", "display_name", "route_id", "destination", "id", "severity", "domain"]);
+    columns = columns.filter(([key]) => identityColumns.has(key) || rows.some((row) => reportCell(row[key]) !== "—"));
+    const pageCount = Math.max(1, Math.ceil(rows.length / REPORT_PAGE_SIZE));
+    reportPage = Math.min(reportPage, pageCount);
+    const start = (reportPage - 1) * REPORT_PAGE_SIZE;
+    const visibleRows = rows.slice(start, start + REPORT_PAGE_SIZE);
     const head = document.createElement("tr");
     columns.forEach(([key, label, layout = "text"]) => {
       const th = document.createElement("th");
@@ -512,12 +551,12 @@ let currentRenderedArtifactId = null;
     });
     reportTableHead?.replaceChildren(head);
     const body = document.createDocumentFragment();
-    rows.forEach((row) => {
+    visibleRows.forEach((row) => {
       const tr = document.createElement("tr");
       tr.tabIndex = 0;
       tr.addEventListener("click", () => {
         if (activeReportSection === "validation") { navigateToValidationTarget(row); return; }
-        showReportDetails(row);
+        showReportDetails(row, tr);
       });
       tr.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); tr.click(); }
@@ -543,11 +582,63 @@ let currentRenderedArtifactId = null;
     )?.textContent.trim() || "Configuration";
     if (reportTableCaption) reportTableCaption.textContent = `${sectionLabel} report`;
     if (reportRowCount) {
-      reportRowCount.textContent = `${rows.length} of ${sectionRows.length} ${sectionRows.length === 1 ? "row" : "rows"}`;
+      reportRowCount.textContent = rows.length
+        ? `${start + 1}–${Math.min(start + REPORT_PAGE_SIZE, rows.length)} of ${rows.length} ${rows.length === 1 ? "row" : "rows"}`
+        : `0 of 0 rows`;
     }
     reportTableWrap?.classList.toggle("hidden", rows.length === 0);
     reportEmpty?.classList.toggle("hidden", rows.length > 0);
+    reportPager?.classList.toggle("hidden", rows.length <= REPORT_PAGE_SIZE);
+    if (reportPageStatus) reportPageStatus.textContent = `Page ${reportPage} of ${pageCount}`;
+    if (reportPagePrevious) reportPagePrevious.disabled = reportPage <= 1;
+    if (reportPageNext) reportPageNext.disabled = reportPage >= pageCount;
     requestAnimationFrame(syncTableOverflow);
+  }
+
+  function renderValidationSummary() {
+    if (!validationSummary) return;
+    const groups = new Map();
+    reportRows("validation").forEach((row) => {
+      const key = JSON.stringify([row.severity, row.domain, row.field, row.message]);
+      const group = groups.get(key) || { row, count: 0 };
+      group.count += 1;
+      groups.set(key, group);
+    });
+    const fragment = document.createDocumentFragment();
+    const severityOrder = { error: 0, warning: 1 };
+    [...groups.entries()]
+      .sort(([, left], [, right]) =>
+        (severityOrder[String(left.row.severity).toLowerCase()] ?? 2) -
+        (severityOrder[String(right.row.severity).toLowerCase()] ?? 2) || right.count - left.count
+      )
+      .forEach(([key, { row, count: total }]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "validation-group";
+        button.classList.toggle("active", key === activeValidationGroup);
+        button.dataset.validationGroup = key;
+        button.setAttribute("aria-pressed", String(key === activeValidationGroup));
+        const severity = document.createElement("span");
+        severity.className = `validation-badge validation-badge-${String(row.severity || "other").toLowerCase()}`;
+        severity.textContent = (row.severity || "Issue").toUpperCase();
+        const count = document.createElement("span");
+        count.className = "validation-badge validation-count";
+        count.textContent = String(total);
+        const message = document.createElement("span");
+        message.className = "validation-group-message";
+        message.textContent = row.message || row.field || row.domain || "Validation finding";
+        button.append(severity, count, message);
+        fragment.appendChild(button);
+      });
+    validationSummary.replaceChildren(fragment);
+    const inValidation = activeReportSection === "validation";
+    validationGroupsPanel?.classList.toggle("hidden", !inValidation || groups.size === 0);
+    validationDetailsHeading?.classList.toggle("hidden", !inValidation);
+    validationActiveFilter?.classList.toggle("hidden", !inValidation || !activeValidationGroup);
+    if (activeValidationGroup) {
+      const selected = groups.get(activeValidationGroup);
+      if (validationActiveFilterLabel) validationActiveFilterLabel.textContent = `Filtered by: ${selected?.row.message || selected?.row.field || selected?.row.domain || "Validation finding"}`;
+    }
   }
 
   function syncTableOverflow() {
@@ -584,9 +675,31 @@ let currentRenderedArtifactId = null;
     const unsupported = summary.unsupported_count ?? summary.source_only_count;
     if (unsupported != null) stats.push(["Unsupported / source-only", unsupported]);
     const fragment = document.createDocumentFragment();
-    stats.forEach(([label, value]) => { const stat = document.createElement("div"); stat.className = "report-stat"; const number = document.createElement("strong"); number.textContent = String(count(value)); const caption = document.createElement("span"); caption.textContent = label; stat.append(number, caption); fragment.appendChild(stat); });
+    const destinations = { Interfaces: ["interfaces"], Objects: ["objects", "addresses"], Policies: ["policies"], Routes: ["routes"], VPNs: ["vpn"] };
+    stats.forEach(([label, value]) => {
+      const stat = destinations[label] || ["Errors", "Warnings"].includes(label)
+        ? document.createElement("button") : document.createElement("div");
+      stat.className = `report-stat${stat.tagName === "BUTTON" ? " report-stat-button" : ""}`;
+      if (stat.tagName === "BUTTON") {
+        stat.type = "button";
+        stat.setAttribute("aria-label", `Show ${label.toLowerCase()}`);
+        stat.addEventListener("click", () => {
+          const destination = destinations[label] || ["validation"];
+          activeReportSection = destination[0];
+          if (destination[1]) activeObjectSection = destination[1];
+          activeValidationGroup = "";
+          if (reportSearch) reportSearch.value = "";
+          if (reportScopeFilter) reportScopeFilter.value = "";
+          if (reportSeverityFilter) reportSeverityFilter.value = label === "Errors" ? "error" : label === "Warnings" ? "warning" : "";
+          reportPage = 1;
+          renderReport();
+        });
+      }
+      const number = document.createElement("strong"); number.textContent = String(count(value));
+      const caption = document.createElement("span"); caption.textContent = label;
+      stat.append(number, caption); fragment.appendChild(stat);
+    });
     reportSummary.replaceChildren(fragment);
-    if (reportFilename) reportFilename.textContent = currentFile?.name || "";
     if (reportScopeSummary) {
       const scopes = summary.scopes || summary.vdoms || [];
       reportScopeSummary.textContent = scopes.length ? `Scopes: ${scopes.map((scope) => typeof scope === "string" ? scope : scope.name || scope.vsys || JSON.stringify(scope)).join(", ")}` : "No scope data found.";
@@ -603,7 +716,9 @@ let currentRenderedArtifactId = null;
     reportData?.classList.toggle("hidden", overview);
     reportObjectTabs?.classList.toggle("hidden", activeReportSection !== "objects");
     reportSeverityFilter?.classList.toggle("hidden", activeReportSection !== "validation");
+    document.querySelectorAll("[data-object-section]").forEach((button) => button.classList.toggle("active", button.dataset.objectSection === activeObjectSection));
     document.querySelectorAll("[data-report-section]").forEach((button) => button.classList.toggle("active", button.dataset.reportSection === activeReportSection));
+    renderValidationSummary();
     if (!overview) renderReportTable();
   }
 
@@ -618,6 +733,7 @@ let currentRenderedArtifactId = null;
     if (btnExtractExcel)
       btnExtractExcel.disabled =
         !hasInput || !sourceReady || busyButtons.has(btnExtractExcel);
+    optimizerPanel?.classList.toggle("hidden", activeMode === "report" || !sourceReady);
     if (btnPushCandidate && !busyButtons.has(btnPushCandidate))
       btnPushCandidate.disabled = !hasFile || !sourceReady;
     const exportHint = document.querySelector(
@@ -651,7 +767,7 @@ let currentRenderedArtifactId = null;
     if (targetVendorSelect)
       targetVendorSelect.disabled =
       activeMode === "live";
-    reportContainer?.classList.toggle("hidden", activeMode !== "report" || !currentReport);
+    reportContainer?.classList.toggle("hidden", activeMode !== "report" || (!currentReport && !currentPreviewId));
   }
 
   function setBusy(button, busy) {
@@ -680,10 +796,12 @@ let currentRenderedArtifactId = null;
     sourceFailed = false;
     currentPreviewId = null;
     currentRenderedArtifactId = null;
-    currentMigrationMapping = { vdoms: {}, interfaces: {} };
+    currentDecisionSet = { decisions: [] };
+    currentDecisionDocument = null;
     document.getElementById("migration-mapping")?.classList.add("hidden");
     document.getElementById("migration-plan")?.classList.add("hidden");
     btnDownloadBundle?.classList.add("hidden");
+    btnDownloadSet?.classList.add("hidden");
     if (btnDownloadBundle) btnDownloadBundle.disabled = true;
     candidatePushed = false;
     candidateValidated = false;
@@ -692,6 +810,13 @@ let currentRenderedArtifactId = null;
     if (btnCommitCandidate) btnCommitCandidate.disabled = true;
     currentPolicies = [];
     currentReport = null;
+    reportPage = 1;
+    activeValidationGroup = "";
+    activeReportSection = "overview";
+    activeObjectSection = "addresses";
+    if (reportSearch) reportSearch.value = "";
+    if (reportScopeFilter) reportScopeFilter.value = "";
+    if (reportSeverityFilter) reportSeverityFilter.value = "";
     reportContainer?.classList.add("hidden");
     optimizerPanel?.classList.add("hidden");
     [statTotalRules, statTotalObjects, statErrors, statWarnings].forEach((element) => {
@@ -719,9 +844,6 @@ let currentRenderedArtifactId = null;
   if (tabLive) {
     tabLive.addEventListener("click", () => switchMode("live"));
   }
-  if (tabExtract) {
-    tabExtract.addEventListener("click", () => switchMode("extract"));
-  }
   tabCollect?.addEventListener("click", () => switchMode("collect"));
 
   function switchMode(mode) {
@@ -739,7 +861,6 @@ let currentRenderedArtifactId = null;
       [tabDownload, "download"],
       [tabReport, "report"],
       [tabLive, "live"],
-      [tabExtract, "extract"],
       [tabCollect, "collect"],
     ].forEach(([tab, tabMode]) => {
       if (!tab) return;
@@ -752,24 +873,27 @@ let currentRenderedArtifactId = null;
     if (modeDownloadForm)
       modeDownloadForm.classList.toggle("hidden", mode !== "download");
     if (modeLiveForm) modeLiveForm.classList.toggle("hidden", mode !== "live");
-    if (modeExtractForm)
-      modeExtractForm.classList.toggle("hidden", mode !== "extract");
     document.querySelector(".ingest-tabs")?.classList.toggle("hidden", mode === "collect");
     document.getElementById("ingest-file-container")?.classList.toggle("hidden", mode === "collect");
     liveContainer?.classList.toggle("hidden", mode !== "collect");
     if (mode === "collect") renderCollectionFields();
-    developmentBanner?.classList.toggle("hidden", !["download", "live"].includes(mode));
-    btnExtractExcel?.parentElement?.classList.toggle("hidden", mode !== "extract");
-    reportContainer?.classList.toggle("hidden", mode !== "report" || !currentReport);
+    const underDevelopment = ["download", "live"].includes(mode);
+    developmentBanner?.classList.toggle("hidden", !underDevelopment);
+    if (underDevelopment) developmentBanner.textContent = mode === "download"
+      ? "Plan migration is under development."
+      : "Live migration is under development.";
+    document.getElementById("workspace-grid")?.classList.toggle("hidden", underDevelopment);
+    reportContainer?.classList.toggle("hidden", mode !== "report" || (!currentReport && !currentPreviewId));
     if (targetVendorGroup)
-      targetVendorGroup.classList.toggle("hidden", ["extract", "report", "collect"].includes(mode));
+      targetVendorGroup.classList.toggle("hidden", ["report", "collect"].includes(mode));
     if (vendorSelectorGrid)
       vendorSelectorGrid.classList.toggle(
-        "extract-mode",
-        ["extract", "report", "collect"].includes(mode),
+        "report-mode",
+        ["report", "collect"].includes(mode),
       );
     setText("page-title", MODE_COPY[mode][0]);
     setText("page-description", MODE_COPY[mode][1]);
+    document.getElementById("page-description")?.classList.toggle("hidden", !MODE_COPY[mode][1]);
     syncWorkspace();
 
     if (mode === "report") {
@@ -785,11 +909,6 @@ let currentRenderedArtifactId = null;
     } else if (mode === "live") {
       logToTerminal(
         "[MODE] Switched to Direct Live Migration Engine (Target Pre-Flight & Live Push).",
-        "term-system",
-      );
-    } else {
-      logToTerminal(
-        "[MODE] Switched to Vendor-Neutral Excel Extraction.",
         "term-system",
       );
     }
@@ -827,7 +946,7 @@ let currentRenderedArtifactId = null;
       }),
     );
   }
-  enableTabKeys([tabReport, tabExtract, tabCollect, tabDownload, tabLive]);
+  enableTabKeys([tabReport, tabCollect, tabDownload, tabLive]);
   enableTabKeys([btnIngestFile, btnIngestSnapshot]);
 
   // =========================================================================
@@ -977,17 +1096,48 @@ let currentRenderedArtifactId = null;
 
   document.querySelectorAll("[data-report-section]").forEach((button) => button.addEventListener("click", () => {
     activeReportSection = button.dataset.reportSection;
+    if (activeReportSection !== "validation" && reportSeverityFilter) reportSeverityFilter.value = "";
+    reportPage = 1;
+    activeValidationGroup = "";
     renderReport();
   }));
   document.querySelectorAll("[data-object-section]").forEach((button) => button.addEventListener("click", () => {
     activeObjectSection = button.dataset.objectSection;
+    reportPage = 1;
     document.querySelectorAll("[data-object-section]").forEach((item) => item.classList.toggle("active", item === button));
     renderReportTable();
   }));
-  reportSearch?.addEventListener("input", renderReportTable);
-  reportScopeFilter?.addEventListener("change", renderReportTable);
-  reportSeverityFilter?.addEventListener("change", renderReportTable);
-  reportDetailClose?.addEventListener("click", () => reportDetailPanel?.classList.add("hidden"));
+  function updateReportFilters() {
+    reportPage = 1;
+    renderReportTable();
+    renderValidationSummary();
+  }
+  reportSearch?.addEventListener("input", updateReportFilters);
+  reportScopeFilter?.addEventListener("change", updateReportFilters);
+  reportSeverityFilter?.addEventListener("change", updateReportFilters);
+  reportPagePrevious?.addEventListener("click", () => { reportPage = Math.max(1, reportPage - 1); renderReportTable(); });
+  reportPageNext?.addEventListener("click", () => { reportPage += 1; renderReportTable(); });
+  validationSummary?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-validation-group]");
+    if (!button) return;
+    activeValidationGroup = activeValidationGroup === button.dataset.validationGroup ? "" : button.dataset.validationGroup;
+    reportPage = 1;
+    renderValidationSummary();
+    renderReportTable();
+  });
+  validationFilterClear?.addEventListener("click", () => {
+    activeValidationGroup = "";
+    reportPage = 1;
+    renderValidationSummary();
+    renderReportTable();
+  });
+  reportDetailClose?.addEventListener("click", () => closeReportDetailModal());
+  reportDetailModal?.addEventListener("click", (event) => {
+    if (event.target === reportDetailModal) closeReportDetailModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !reportDetailModal?.classList.contains("hidden")) closeReportDetailModal();
+  });
 
   function clearSource() {
     currentFile = null;
@@ -1038,68 +1188,18 @@ let currentRenderedArtifactId = null;
         });
         const result = await readJson(response, "Could not load target mapping requirements");
         if (requestRevision !== sourceRevision) return;
-        currentMigrationMapping = { vdoms: {}, interfaces: {} };
+        currentDecisionSet = result.decisions;
+        currentDecisionDocument = result.decision_document;
         const container = document.getElementById("migration-mapping-fields");
         const panel = document.getElementById("migration-mapping");
         if (container && panel) {
-          const fragment = document.createDocumentFragment();
-          result.requirements.vdoms.forEach(({ source_vdom }) => {
-            currentMigrationMapping.vdoms[source_vdom] = { vsys: "", virtual_router: "" };
-            const group = document.createElement("details"); group.open = true;
-            const legend = document.createElement("summary"); legend.textContent = `VDOM ${source_vdom} · Scope`; group.appendChild(legend);
-            [["vsys", "Target VSYS"], ["virtual_router", "Virtual Router"]].forEach(([key, label]) => {
-              const row = document.createElement("label"); row.textContent = label;
-              const input = document.createElement("input"); input.type = "text"; input.placeholder = label; input.setAttribute("aria-label", `${label} for ${source_vdom}`);
-              input.dataset.mappingScope = "vdom"; input.dataset.vdom = source_vdom; input.dataset.field = key;
-              input.addEventListener("input", () => { currentMigrationMapping.vdoms[source_vdom][key] = input.value.trim(); invalidateMigrationPlan(); updateMappingCompletion(); });
-              row.append(input); group.append(row);
-            });
-            fragment.appendChild(group);
-          });
-          result.requirements.interfaces.forEach((item) => {
-            const { source_vdom, source_interface, kind, requires, reasons, reference_count } = item;
-            const vdom = source_vdom || "root";
-            currentMigrationMapping.interfaces[vdom] ||= {};
-            currentMigrationMapping.interfaces[vdom][source_interface] ||= { target_interface: "", target_zone: "" };
-          });
           const optionalPanel = document.getElementById("optional-mappings");
           const optionalList = document.getElementById("optional-mapping-list");
           if (optionalPanel && optionalList) {
             optionalList.replaceChildren(...(result.requirements.optional || []).map(item => { const li = document.createElement("li"); li.textContent = `${item.source_vdom} · ${item.kind} · ${item.source_name}`; return li; }));
             optionalPanel.classList.toggle("hidden", !(result.requirements.optional || []).length);
           }
-          const section = document.createElement("details"); section.open = true;
-          const summary = document.createElement("summary"); summary.textContent = `Zones and interfaces · ${result.requirements.interfaces.length} required`; section.append(summary);
-          const table = document.createElement("table"); table.className = "mapping-table";
-          const head = document.createElement("tr");
-          ["FortiGate", "Used by", "PAN Interface", "PAN Zone"].forEach(text => { const th = document.createElement("th"); th.textContent = text; head.append(th); });
-          const thead = document.createElement("thead"); thead.append(head); table.append(thead);
-          const body = document.createElement("tbody");
-          result.requirements.interfaces.forEach(item => {
-            const { source_vdom, source_interface, kind, requires, reasons, reference_count } = item;
-            const vdom = source_vdom || "root"; const tr = document.createElement("tr");
-            tr.dataset.kind = kind; tr.dataset.reasons = (reasons || []).join(","); tr.dataset.vdom = vdom;
-            tr.dataset.name = source_interface;
-            const source = document.createElement("td");
-            const select = document.createElement("input"); select.type = "checkbox"; select.className = "mapping-select"; select.setAttribute("aria-label", `Select ${source_interface} in ${vdom}`); source.append(select, ` ${source_interface} (${vdom})`);
-            const used = document.createElement("td"); used.textContent = `${(reasons || []).join(", ")} · ${reference_count || 1}`;
-            tr.append(source, used);
-            [["target_interface", "PAN interface"], ["target_zone", "PAN zone"]].forEach(([key, label]) => {
-              const td = document.createElement("td");
-              if ((requires || []).includes(key)) {
-                const input = document.createElement("input"); input.type = "text"; input.placeholder = label; input.setAttribute("aria-label", `${label} for ${source_interface} in ${vdom}`);
-                input.dataset.mappingScope = "interface"; input.dataset.vdom = vdom; input.dataset.name = source_interface; input.dataset.field = key;
-                input.addEventListener("input", () => { currentMigrationMapping.interfaces[vdom][source_interface][key] = input.value.trim(); invalidateMigrationPlan(); updateMappingCompletion(); }); td.append(input);
-                if (key === "target_zone" && kind === "zone") {
-                  const suggest = document.createElement("button"); suggest.type = "button"; suggest.textContent = "Use same name"; suggest.title = "Apply the source zone name as a suggestion";
-                  suggest.addEventListener("click", () => { input.value = source_interface; input.dispatchEvent(new Event("input", { bubbles: true })); }); td.append(suggest);
-                }
-              } else td.textContent = "—";
-              tr.append(td);
-            }); body.append(tr);
-          });
-          table.append(body); section.append(table); fragment.append(section);
-          container.replaceChildren(fragment);
+          renderDecisionTable();
           panel.classList.remove("hidden");
           updateMappingCompletion();
         }
@@ -1107,7 +1207,6 @@ let currentRenderedArtifactId = null;
       const stats = data.stats || data.summary || {};
       const objects = stats.objects || stats;
       const severityCounts = stats.validation?.severity_counts || {};
-      if (optimizerPanel) optimizerPanel.classList.remove("hidden");
       if (statTotalRules) statTotalRules.textContent = count(objects.policies);
       if (statTotalObjects)
         statTotalObjects.textContent =
@@ -1117,6 +1216,8 @@ let currentRenderedArtifactId = null;
       if (statWarnings) statWarnings.textContent = count(severityCounts.warning);
       currentPolicies = Array.isArray(data.policies) ? data.policies : [];
       currentReport = data;
+      reportPage = 1;
+      activeValidationGroup = "";
       renderReport();
       sourceReady = true;
       const itemCount = Object.values(objects).reduce(
@@ -1125,7 +1226,7 @@ let currentRenderedArtifactId = null;
       );
       setPreviewStatus(
         itemCount
-          ? "Configuration parsed successfully. The report is ready."
+          ? "Parsed successfully."
           : "No supported objects were found. Review the source file and extraction warnings in the Excel workbook.",
         itemCount ? "ready" : "empty",
       );
@@ -1152,7 +1253,9 @@ let currentRenderedArtifactId = null;
     candidatePushed = false;
     candidateValidated = false;
     btnDownloadBundle?.classList.add("hidden");
+    btnDownloadSet?.classList.add("hidden");
     if (btnDownloadBundle) btnDownloadBundle.disabled = true;
+    if (btnDownloadSet) btnDownloadSet.disabled = true;
     document.getElementById("migration-plan")?.classList.add("hidden");
     if (btnValidateCandidate) btnValidateCandidate.disabled = true;
     if (btnCommitCandidate) btnCommitCandidate.disabled = true;
@@ -1185,6 +1288,10 @@ let currentRenderedArtifactId = null;
   function applyCollectionPreview(data) {
     currentPreviewId = data.preview_id;
     sourceReady = true;
+    currentReport = data.preview?.sections ? data.preview : null;
+    reportPage = 1;
+    activeValidationGroup = "";
+    if (currentReport) renderReport();
     currentRenderedArtifactId = null;
     const summary = data.preview?.summary || {};
     for (const [element, value] of [[statTotalRules, summary.rules], [statTotalObjects, summary.objects], [statErrors, summary.errors], [statWarnings, summary.warnings]]) {
@@ -1226,45 +1333,132 @@ let currentRenderedArtifactId = null;
   document.getElementById("btn-test-collection")?.addEventListener("click", () => collectionRequest("/api/collection/test"));
   document.getElementById("btn-collect-configuration")?.addEventListener("click", () => collectionRequest("/api/collection/collect"));
 
-  function updateMappingCompletion() {
-    const inputs = [...document.querySelectorAll("#migration-mapping-fields input[data-mapping-scope]")];
-    const completed = inputs.filter(input => input.value.trim()).length;
-    const status = document.getElementById("mapping-completion");
-    const categories = { VSYS: inputs.filter(input => input.dataset.mappingScope === "vdom" && input.dataset.field === "vsys"), "Virtual routers": inputs.filter(input => input.dataset.mappingScope === "vdom" && input.dataset.field === "virtual_router"), Zones: [...document.querySelectorAll('.mapping-table input[data-field="target_zone"]')], Interfaces: [...document.querySelectorAll('.mapping-table input[data-field="target_interface"]')] };
-    const breakdown = Object.entries(categories).map(([name, rows]) => `${name} ${rows.filter(input => input.value.trim()).length}/${rows.length}`).join(" · ");
-    if (status) { status.textContent = `Required: ${inputs.length} · Completed: ${completed} · Missing: ${inputs.length - completed}  |  ${breakdown}`; status.onclick = () => { document.getElementById("mapping-filter").value = "unmapped"; document.getElementById("mapping-filter").dispatchEvent(new Event("change")); }; }
+  function renderDecisionTable() {
+    const container = document.getElementById("migration-mapping-fields");
+    if (!container) return;
+    const table = document.createElement("table"); table.className = "mapping-table decision-table";
+    const labels = ["Select", "Source", "Decision", "Suggested", "Final Value", "State", "Affected", "Reason"];
+    const thead = document.createElement("thead"), head = document.createElement("tr");
+    labels.forEach(label => { const th = document.createElement("th"); th.textContent = label; head.append(th); });
+    thead.append(head); table.append(thead);
+    const body = document.createElement("tbody");
+    for (const decision of currentDecisionSet.decisions) {
+      const row = document.createElement("tr");
+      row.dataset.key = decision.key; row.dataset.kind = decision.source_kind;
+      row.dataset.vdom = decision.source_vdom; row.dataset.field = decision.target_field; row.dataset.state = decision.mode === "AUTO" ? "CONFIRMED" : decision.review_state;
+      row.dataset.mode = decision.mode;
+      row.dataset.affectedBy = Object.keys(decision.affected_by || {}).join(",");
+      const mode = decision.mode, unsupported = mode === "UNSUPPORTED";
+      row.classList.add(mode === "SUGGESTED" && decision.review_state === "PENDING" ? "decision-suggested" :
+        mode === "REQUIRED" && decision.review_state === "PENDING" ? "decision-required" :
+        mode === "UNSUPPORTED" ? "decision-unsupported" : "decision-resolved");
+      const selectCell = document.createElement("td"); selectCell.dataset.label = labels[0];
+      const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.className = "decision-select";
+      checkbox.setAttribute("aria-label", `Select ${decision.source_name} ${decision.target_field} in ${decision.source_vdom}`);
+      selectCell.append(checkbox); row.append(selectCell);
+      const addText = (value, label) => { const cell = document.createElement("td"); cell.dataset.label = label; cell.textContent = value || "—"; row.append(cell); return cell; };
+      addText(`${decision.source_vdom} · ${decision.source_kind} · ${decision.source_name}`, labels[1]);
+      addText(decision.target_field, labels[2]);
+      addText(decision.suggested_value, labels[3]);
+      const finalCell = document.createElement("td"); finalCell.dataset.label = labels[4];
+      const input = document.createElement("input"); input.type = "text"; input.className = "decision-value";
+      input.value = decision.value || "";
+      input.disabled = unsupported; input.setAttribute("aria-label", `${decision.target_field} for ${decision.source_name} in ${decision.source_vdom}`);
+      const stateCell = document.createElement("td"); stateCell.dataset.label = labels[5];
+      stateCell.textContent = decision.mode === "AUTO" ? "AUTO · CONFIRMED" : decision.review_state;
+      input.addEventListener("input", () => {
+        decision.value = input.value.trim() || null;
+        if (decision.mode === "AUTO") decision.mode = "REQUIRED";
+        decision.review_state = "PENDING";
+        row.dataset.mode = decision.mode; row.dataset.state = decision.review_state;
+        stateCell.textContent = "PENDING";
+        row.className = "decision-required";
+        invalidateMigrationPlan(); updateMappingCompletion();
+      });
+      finalCell.append(input); row.append(finalCell, stateCell);
+      const affected = Object.entries(decision.affected_by || {}).map(([name, count]) => `${name.replaceAll("_", " ")} ${count}`).join(" · ");
+      addText(`${decision.affected_count || 0}${affected ? ` · ${affected}` : ""}`, labels[6]);
+      addText(decision.reason, labels[7]);
+      body.append(row);
+    }
+    table.append(body); container.replaceChildren(table);
+    const vdomFilter = document.getElementById("mapping-vdom-filter");
+    const selectedVdom = vdomFilter?.value || "all";
+    if (vdomFilter) {
+      vdomFilter.replaceChildren(new Option("All VDOMs", "all"), ...[...new Set(currentDecisionSet.decisions.map(item => item.source_vdom))].sort().map(vdom => new Option(vdom, vdom)));
+      vdomFilter.value = selectedVdom;
+    }
+    applyDecisionFilters();
   }
 
-  document.getElementById("mapping-filter")?.addEventListener("change", event => {
-    const filter = event.target.value;
-    document.querySelectorAll(".mapping-table tbody tr").forEach(row => {
-      const reasons = row.dataset.reasons.split(",");
-      const inputs = [...row.querySelectorAll("input")];
-      const mapped = inputs.every(input => input.value.trim());
-      row.hidden = filter === "unmapped" ? mapped : filter === "mapped" ? !mapped : filter === "zones" ? row.dataset.kind !== "zone" : filter === "interfaces" ? row.dataset.kind !== "interface" : filter === "route-nat" ? !reasons.some(reason => ["static_route", "source_nat"].includes(reason)) : false;
+  function applyDecisionFilters() {
+    const filter = document.getElementById("mapping-filter")?.value || "all";
+    const vdom = document.getElementById("mapping-vdom-filter")?.value || "all";
+    const pendingOnly = document.getElementById("decision-pending-only")?.checked;
+    document.querySelectorAll(".decision-table tbody tr").forEach(row => {
+      const routeNat = row.dataset.affectedBy.split(",").some(item => ["static_route", "source_nat"].includes(item));
+      row.hidden = (vdom !== "all" && row.dataset.vdom !== vdom) || (pendingOnly && row.dataset.state !== "PENDING") ||
+        (filter === "zones" && row.dataset.kind !== "zone") || (filter === "interfaces" && row.dataset.kind !== "interface") ||
+        (filter === "route-nat" && !routeNat);
     });
-  });
+  }
 
-  document.getElementById("bulk-zone-apply")?.addEventListener("click", () => {
-    const value = document.getElementById("bulk-zone-value")?.value.trim(); if (!value) return;
-    document.querySelectorAll(".mapping-table tbody tr:has(.mapping-select:checked)").forEach(row => {
-      const input = row.querySelector('input[data-field="target_zone"]'); if (input) { input.value = value; input.dispatchEvent(new Event("input", { bubbles: true })); }
-    });
-  });
+  function updateMappingCompletion() {
+    const decisions = currentDecisionSet.decisions;
+    const count = (predicate) => decisions.filter(predicate).length;
+    const status = document.getElementById("mapping-completion");
+    if (status) status.textContent = `Confirmed ${count(item => item.review_state === "CONFIRMED" || item.mode === "AUTO")} · Suggested ${count(item => item.mode === "SUGGESTED" && item.review_state !== "CONFIRMED")} · Required ${count(item => item.mode === "REQUIRED" && item.review_state !== "CONFIRMED")} · Unsupported ${count(item => item.mode === "UNSUPPORTED")}`;
+  }
 
-  document.getElementById("bulk-zone-name")?.addEventListener("click", () => {
-    document.querySelectorAll(".mapping-table tbody tr:has(.mapping-select:checked)").forEach(row => {
-      if (row.dataset.kind !== "zone") return;
-      const input = row.querySelector('input[data-field="target_zone"]'); if (input) { input.value = row.dataset.name; input.dispatchEvent(new Event("input", { bubbles: true })); }
-    });
-  });
+  document.getElementById("mapping-filter")?.addEventListener("change", applyDecisionFilters);
+  document.getElementById("mapping-vdom-filter")?.addEventListener("change", applyDecisionFilters);
+  document.getElementById("decision-pending-only")?.addEventListener("change", applyDecisionFilters);
 
-  document.getElementById("bulk-mapping-clear")?.addEventListener("click", () => {
-    document.querySelectorAll(".mapping-table tbody tr:has(.mapping-select:checked) input[data-mapping-scope]").forEach(input => { input.value = ""; input.dispatchEvent(new Event("input", { bubbles: true })); });
+  function selectedDecisions() {
+    const keys = new Set([...document.querySelectorAll(".decision-select:checked")].map(input => input.closest("tr").dataset.key));
+    return currentDecisionSet.decisions.filter(item => keys.has(item.key) && item.mode !== "UNSUPPORTED");
+  }
+  function saveDecisionValues(decisions) {
+    for (const decision of decisions) {
+      decision.mode = decision.mode === "AUTO" ? "REQUIRED" : decision.mode;
+      decision.review_state = "CONFIRMED";
+    }
+    invalidateMigrationPlan(); renderDecisionTable(); updateMappingCompletion();
+  }
+  document.getElementById("decision-confirm-selected")?.addEventListener("click", () => {
+    const selected = selectedDecisions();
+    for (const decision of selected) {
+      const input = [...document.querySelectorAll(".decision-value")].find(node => node.closest("tr").dataset.key === decision.key);
+      decision.value = input?.value.trim() || decision.suggested_value || null;
+    }
+    saveDecisionValues(selected.filter(item => item.value));
+  });
+  document.getElementById("decision-confirm-suggestions")?.addEventListener("click", () => {
+    const selected = currentDecisionSet.decisions.filter(item => item.mode === "SUGGESTED" && item.suggested_value);
+    selected.forEach(item => { item.value = item.suggested_value; }); saveDecisionValues(selected);
+  });
+  document.getElementById("decision-set-selected")?.addEventListener("click", () => {
+    const value = document.getElementById("decision-bulk-value")?.value.trim(); if (!value) return;
+    const selected = selectedDecisions(); selected.forEach(item => { item.value = value; }); saveDecisionValues(selected);
+  });
+  document.getElementById("decision-use-source-name")?.addEventListener("click", () => {
+    const selected = selectedDecisions(); selected.forEach(item => { item.value = item.source_name; }); saveDecisionValues(selected);
+  });
+  document.getElementById("decision-clear-selected")?.addEventListener("click", () => {
+    for (const decision of selectedDecisions()) { decision.value = null; decision.review_state = "PENDING"; }
+    invalidateMigrationPlan(); renderDecisionTable(); updateMappingCompletion();
   });
 
   document.getElementById("mapping-template")?.addEventListener("click", () => {
-    const yaml = ["vdoms:", ...Object.keys(currentMigrationMapping.vdoms).flatMap(vdom => [`  ${JSON.stringify(vdom)}:`, "    vsys:", "    virtual_router:"]), "interfaces:", ...Object.entries(currentMigrationMapping.interfaces).flatMap(([vdom, items]) => [`  ${JSON.stringify(vdom)}:`, ...Object.keys(items).flatMap(name => [`    ${JSON.stringify(name)}:`, "      target_interface:", "      target_zone:"])])].join("\n") + "\n";
+    const decisions = currentDecisionSet.decisions;
+    const vdoms = [...new Set(decisions.filter(item => item.source_kind === "vdom").map(item => item.source_vdom))];
+    const interfaces = new Map();
+    for (const item of decisions.filter(item => item.source_kind !== "vdom")) {
+      interfaces.set(item.source_vdom, [...new Set([...(interfaces.get(item.source_vdom) || []), item.source_name])]);
+    }
+    const yaml = ["vdoms:", ...vdoms.flatMap(vdom => [`  ${JSON.stringify(vdom)}:`, "    vsys:", "    virtual_router:"]), "interfaces:", ...[...interfaces].flatMap(([vdom, names]) => [
+      `  ${JSON.stringify(vdom)}:`, ...names.flatMap(name => [`    ${JSON.stringify(name)}:`, "      target_interface:", "      target_zone:"]),
+    ])].join("\n") + "\n";
     const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([yaml], { type: "text/yaml" })); link.download = "target-mapping.yaml"; link.click(); URL.revokeObjectURL(link.href);
   });
 
@@ -1273,18 +1467,45 @@ let currentRenderedArtifactId = null;
     try {
       const response = await fetch("/api/migration/mapping/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ yaml: await file.text() }) });
       const imported = await readJson(response, "Could not import mapping YAML");
-      currentMigrationMapping = JSON.parse(JSON.stringify(currentMigrationMapping));
-      for (const [vdom, value] of Object.entries(imported.mapping.vdoms || {})) Object.assign(currentMigrationMapping.vdoms[vdom] ||= {}, value);
-      for (const [vdom, entries] of Object.entries(imported.mapping.interfaces || {})) {
-        currentMigrationMapping.interfaces[vdom] ||= {};
-        for (const [name, value] of Object.entries(entries)) Object.assign(currentMigrationMapping.interfaces[vdom][name] ||= {}, value);
+      for (const [vdom, values] of Object.entries(imported.mapping.vdoms || {})) for (const [field, value] of Object.entries(values)) {
+        upsertConfirmedDecision(vdom, "vdom", vdom, field, value);
       }
-      document.querySelectorAll("#migration-mapping-fields input[data-mapping-scope]").forEach(input => {
-        input.value = input.dataset.mappingScope === "vdom" ? currentMigrationMapping.vdoms?.[input.dataset.vdom]?.[input.dataset.field] || "" : currentMigrationMapping.interfaces?.[input.dataset.vdom]?.[input.dataset.name]?.[input.dataset.field] || "";
-      });
-      invalidateMigrationPlan(); updateMappingCompletion();
+      for (const [vdom, entries] of Object.entries(imported.mapping.interfaces || {})) for (const [name, values] of Object.entries(entries)) for (const [field, value] of Object.entries(values)) {
+        const kinds = field === "target_interface" ? ["interface"] : ["interface", "zone"].filter(kind => currentDecisionSet.decisions.some(item => item.source_vdom === vdom && item.source_kind === kind && item.source_name === name && item.target_field === field));
+        for (const kind of kinds.length ? kinds : ["interface"]) upsertConfirmedDecision(vdom, kind, name, field, value);
+      }
+      currentDecisionDocument.decisions = currentDecisionSet.decisions;
+      invalidateMigrationPlan(); renderDecisionTable(); updateMappingCompletion();
     } catch (error) { showError(error.message); }
     event.target.value = "";
+  });
+
+  function upsertConfirmedDecision(vdom, kind, name, field, value) {
+    let decision = currentDecisionSet.decisions.find(item => item.source_vdom === vdom && item.source_kind === kind && item.source_name === name && item.target_field === field);
+    if (!decision) {
+      decision = { key: JSON.stringify([vdom, kind, name, field]), source_vdom: vdom, source_kind: kind, source_name: name, target_field: field, suggested_value: null, value: null, mode: "REQUIRED", review_state: "PENDING", reason: "Imported explicit mapping", affected_count: 0, affected_by: {} };
+      currentDecisionSet.decisions.push(decision);
+    }
+    decision.value = value; decision.review_state = "CONFIRMED";
+  }
+
+  document.getElementById("decision-import")?.addEventListener("change", async event => {
+    const file = event.target.files?.[0]; if (!file || !currentPreviewId) return;
+    try {
+      const response = await fetch("/api/migration/decisions/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preview_id: currentPreviewId, document: JSON.parse(await file.text()) }) });
+      const imported = await readJson(response, "Could not import migration decisions");
+      currentDecisionSet = imported.decisions; currentDecisionDocument = imported.decision_document;
+      invalidateMigrationPlan(); renderDecisionTable(); updateMappingCompletion();
+    } catch (error) { showError(error.message); }
+    event.target.value = "";
+  });
+  document.getElementById("decision-export")?.addEventListener("click", async () => {
+    try {
+      const response = await fetch("/api/migration/decisions/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preview_id: currentPreviewId, decision_document: { ...currentDecisionDocument, decisions: currentDecisionSet.decisions } }) });
+      const result = await readJson(response, "Could not export migration decisions");
+      currentDecisionDocument = result.document;
+      await downloadBlob(new Blob([JSON.stringify(result.document, null, 2)], { type: "application/json" }), "migration_decisions.json");
+    } catch (error) { showError(error.message); }
   });
 
   if (btnGenerateBundle) {
@@ -1295,7 +1516,7 @@ let currentRenderedArtifactId = null;
       try {
         const resp = await fetch("/api/migrate", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ preview_id: currentPreviewId, source_vendor: selectedSourceVendor, target_vendor: selectedTargetVendor, mapping: currentMigrationMapping }),
+          body: JSON.stringify({ preview_id: currentPreviewId, source_vendor: selectedSourceVendor, target_vendor: selectedTargetVendor, decision_document: { ...currentDecisionDocument, decisions: currentDecisionSet.decisions } }),
         });
         const artifact = await readJson(resp, "Migration planning failed");
         currentRenderedArtifactId = artifact.artifact_id;
@@ -1303,12 +1524,24 @@ let currentRenderedArtifactId = null;
         const counts = artifact.counts || {};
         const summary = document.getElementById("migration-plan-summary");
         if (summary) summary.textContent = `${artifact.plan_status === "READY" ? "Migration artifact ready." : artifact.plan_status === "PARTIAL" ? "Plan created. Partial commands are ready." : "Plan created. Target mappings required."} ${counts.SUPPORTED || 0} supported, ${counts.renderable || 0} renderable, ${counts.MANUAL_REVIEW || 0} manual review, ${counts.UNSUPPORTED || 0} unsupported, ${artifact.commands} commands. ${artifact.blocking_reasons.join("; ")}`;
+        const previewElement = document.getElementById("migration-command-preview");
+        const reviewSummary = document.getElementById("migration-command-summary");
+        if (artifact.commands) {
+          const preview = await readJson(await fetch("/api/migration/command-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ artifact_id: currentRenderedArtifactId }) }), "Could not load command preview");
+          if (previewElement) previewElement.textContent = preview.command_text;
+          if (reviewSummary) reviewSummary.textContent = `Pending decisions ${preview.review_summary.pending} · Manual review ${preview.review_summary.manual} · Unsupported ${preview.review_summary.unsupported} · ${preview.command_count} commands · SHA-256 ${preview.command_sha256}`;
+        } else {
+          if (previewElement) previewElement.textContent = "No renderable commands. Complete required decisions to build a command preview.";
+          if (reviewSummary) reviewSummary.textContent = `Pending decisions ${currentDecisionSet.decisions.filter(item => item.review_state === "PENDING").length} · Manual review ${counts.MANUAL_REVIEW || 0} · Unsupported ${counts.UNSUPPORTED || 0}`;
+        }
         btnDownloadBundle?.classList.toggle("hidden", artifact.commands === 0);
+        btnDownloadSet?.classList.toggle("hidden", artifact.commands === 0);
         if (btnDownloadBundle) {
           btnDownloadBundle.disabled = artifact.commands === 0;
           const label = btnDownloadBundle.querySelector("span:last-child");
-          if (label) label.textContent = artifact.plan_status === "PARTIAL" ? "Generate partial bundle" : "Download bundle";
+          if (label) label.textContent = "Download bundle";
         }
+        if (btnDownloadSet) btnDownloadSet.disabled = artifact.commands === 0;
         logToTerminal(`[PLAN] ${artifact.plan_status}: ${artifact.commands} commands ready.`, artifact.commands ? "term-success" : "term-error");
       } catch (err) {
         showError(err.message);
@@ -1329,6 +1562,17 @@ let currentRenderedArtifactId = null;
       if (saved) showToast("success", "Migration artifact ready", "Download the migration bundle.");
     } catch (err) { showError(err.message); }
     finally { setBusy(btnDownloadBundle, false); }
+  });
+
+  btnDownloadSet?.addEventListener("click", async () => {
+    if (!currentRenderedArtifactId) return;
+    setBusy(btnDownloadSet, true);
+    try {
+      const response = await fetch("/api/migration/download", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ artifact_id: currentRenderedArtifactId }) });
+      if (!response.ok) throw new Error((await response.json()).error || "Command download failed");
+      await downloadBlob(await response.blob(), "palo_alto_config.set");
+    } catch (err) { showError(err.message); }
+    finally { setBusy(btnDownloadSet, false); }
   });
 
   // =========================================================================

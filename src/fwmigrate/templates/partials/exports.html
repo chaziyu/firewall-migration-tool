@@ -3,21 +3,30 @@
     <div class="card-header"><div class="section-heading"><h2 id="mapping-heading"><span class="step-num">02</span>Target mappings</h2></div>
       <p class="card-desc">Map each FortiGate scope and interface explicitly to PAN-OS.</p></div>
     <div class="mapping-toolbar">
-      <label>Filter <select id="mapping-filter"><option value="all">All</option><option value="unmapped">Unmapped</option><option value="mapped">Mapped</option><option value="zones">Zones</option><option value="interfaces">Interfaces</option><option value="route-nat">Route/NAT</option></select></label>
+      <label>Show <select id="mapping-filter"><option value="all">All decisions</option><option value="zones">Zones</option><option value="interfaces">Interfaces</option><option value="route-nat">Route/NAT impact</option></select></label>
+      <label>VDOM <select id="mapping-vdom-filter"><option value="all">All VDOMs</option></select></label>
+      <label><input type="checkbox" id="decision-pending-only"> Show pending only</label>
+      <button type="button" id="decision-confirm-selected">Confirm selected</button>
+      <button type="button" id="decision-confirm-suggestions">Confirm all suggestions</button>
+      <input type="text" id="decision-bulk-value" placeholder="Final value for selected" aria-label="Final value for selected decisions">
+      <button type="button" id="decision-set-selected">Set selected value</button>
+      <button type="button" id="decision-use-source-name">Use source name</button>
+      <button type="button" id="decision-clear-selected">Clear selected</button>
       <button type="button" id="mapping-template">Download mapping template</button>
       <label>Import YAML <input type="file" id="mapping-import" accept=".yaml,.yml,text/yaml"></label>
-      <input type="text" id="bulk-zone-value" placeholder="PAN zone for selected rows" aria-label="PAN zone for selected rows">
-      <button type="button" id="bulk-zone-apply">Set selected zones</button>
-      <button type="button" id="bulk-zone-name">Use same name for selected zones</button>
-      <button type="button" id="bulk-mapping-clear">Clear selected mappings</button>
-      <button type="button" id="mapping-completion" aria-live="polite"></button>
+      <label>Import decisions <input type="file" id="decision-import" accept=".json,application/json"></label>
+      <button type="button" id="decision-export">Download decisions</button>
     </div>
+    <p id="mapping-completion" aria-live="polite"></p>
     <div id="migration-mapping-fields"></div>
     <details id="optional-mappings" class="hidden"><summary>Show optional / unreferenced inventory</summary><ul id="optional-mapping-list"></ul></details>
   </section>
   <section class="card hidden" id="migration-plan" aria-live="polite">
     <div class="card-header"><div class="section-heading"><h2><span class="step-num">03</span>Migration plan</h2></div></div>
     <div id="migration-plan-summary"></div>
+    <h3>Command preview</h3>
+    <p id="migration-command-summary" aria-live="polite"></p>
+    <pre id="migration-command-preview" class="migration-command-preview" aria-label="Read-only PAN-OS command preview"></pre>
   </section>
   <section class="card output-card reveal" aria-labelledby="bundle-heading">
     <div class="card-header">
@@ -67,13 +76,9 @@
       <button type="button" id="btn-download-bundle" class="btn btn-primary hidden" disabled>
         {{ icon('download') }}<span>Download bundle</span>
       </button>
+      <button type="button" id="btn-download-set" class="btn btn-secondary hidden" disabled>
+        {{ icon('download') }}<span>Download .set</span>
+      </button>
     </div>
   </section>
-</div>
-<div
-  id="mode-extract-form"
-  class="hidden"
-  role="tabpanel"
-  aria-labelledby="tab-extract"
->
 </div>

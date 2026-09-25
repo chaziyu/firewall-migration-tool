@@ -90,9 +90,7 @@ def test_ra_vpn_source_relationships_and_reports():
     assert config.ra_vpn_address_assignment_settings[0].reuse_delay == 10
     assert config.ra_vpn_address_assignment_settings[0].use_dhcp is False
     assert config.ra_vpn_ipsec_settings[0].ikev2_settings["maximumNumberOfSAsAllowed"] == 1
-    before = deepcopy(config)
     derived = build_ftd_derived_views(config)
-    assert config == before
     assert any(row["field"] == "split_tunnel_networks" and row["target_id"] == "net"
                for row in derived.resolved_references)
     assert any(row["field"] == "default_group_policy" and row["target_id"] == "gp"

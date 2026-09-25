@@ -1,3 +1,8 @@
+import unittest
+from fwmigrate.vendors.fortigate.section_registry import (
+    SECTION_REGISTRY,
+    get_section_spec,
+)
 from fwmigrate.vendors.fortigate.extraction.section_index import SectionIndex
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
 
@@ -138,3 +143,11 @@ end
 
     assert list(index.iter_configs("not registered")) == []
     assert list(index.iter_edits("not registered")) == []
+
+
+class SectionRegistryTest(unittest.TestCase):
+    def test_public_registry_is_read_only(self):
+        self.assertIsNotNone(get_section_spec("system interface"))
+
+        with self.assertRaises(TypeError):
+            SECTION_REGISTRY["test"] = get_section_spec("system interface")

@@ -20,10 +20,16 @@ from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter
 
 
 def test_reference_resolution_reports_missing_references_without_repairing_source():
-    source = (Path(__file__).parents[2] / "fixtures" / "palo_alto" / "integrated_panorama.xml").read_text()
-    result = PaloAltoSourceReporter().analyze_source(source)
-    assert isinstance(result.derived.relationship_issues, tuple)
-    assert result.config.source_inventory
+    result = PaloAltoSourceReporter().analyze_source("""<config><shared><rulebase><security><rules>
+      <entry name='missing-reference'><source><member>missing-x</member></source></entry>
+    </rules></security></rulebase></shared></config>""")
+    rule = result.config.security_rules[0]
+    relationship = next(item for item in result.derived.reference_resolutions if item.reference_name == "missing-x")
+    assert rule.source == ["missing-x"]
+    assert relationship.status == "UNRESOLVED"
+    assert any(item.severity == "error" and "missing-x" in item.message for item in result.validation.issues)
+    assert result.config.addresses == []
+    assert rule.source == ["missing-x"]
 
 
 def test_source_only_target_is_reviewed_but_missing_target_is_error():

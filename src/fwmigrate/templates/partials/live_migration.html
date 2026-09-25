@@ -9,10 +9,7 @@
       <h2 class="section-heading" id="target-connection-title">
         <span class="step-num">02</span> Connect the target
       </h2>
-      <p class="card-desc">
-        Live deployment currently supports PAN-OS targets. Connect to your
-        management interface, then validate the CLI/SSH deployment path.
-      </p>
+      <p class="card-desc">Connect to the PAN-OS management interface.</p>
     </div>
 
     <div class="form-grid">
@@ -92,16 +89,13 @@
       <h2 class="section-heading" id="deployment-title">
         <span class="step-num">03</span> Review &amp; deploy
       </h2>
-      <p class="card-desc">
-        Validate the target, deploy the generated CLI commands, then commit.
-      </p>
     </div>
 
     <div class="workflow-stepper">
       <div class="step-box" id="step-box-validate">
         <div class="step-badge" aria-hidden="true">1</div>
         <div class="step-info">
-          <strong>Validate target</strong>
+          <strong>Push candidate</strong>
           <span role="status">Send generated commands to the candidate configuration.</span>
         </div>
         <button type="button" class="btn btn-secondary" id="btn-push-candidate" disabled>
@@ -112,7 +106,7 @@
       <div class="step-box" id="step-box-deploy">
         <div class="step-badge" aria-hidden="true">2</div>
         <div class="step-info">
-          <strong>Deploy configuration</strong>
+          <strong>Validate candidate</strong>
           <span role="status">Validate the candidate configuration on the target.</span>
         </div>
         <button type="button" class="btn btn-success" id="btn-validate-candidate" disabled>
@@ -138,7 +132,7 @@
           <span class="term-dot dot-red" aria-hidden="true"></span>
           <span class="term-dot dot-yellow" aria-hidden="true"></span>
           <span class="term-dot dot-green" aria-hidden="true"></span>
-          <span class="terminal-title" id="terminal-title">Execution log</span>
+          <span class="terminal-title" id="terminal-title">Activity log</span>
         </div>
         <div class="terminal-actions">
           <label class="term-checkbox"

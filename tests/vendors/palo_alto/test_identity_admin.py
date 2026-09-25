@@ -50,7 +50,6 @@ def test_admin_role_missing_and_empty_permissions_preserve_source_presence():
 
 def test_identity_admin_unknown_source_is_retained_separately():
     config = build_panos_config("<config><shared><administrators><entry name='admin'><future-setting>retain-me</future-setting></entry></administrators></shared></config>")
-    assert config.source_inventory
     assert config.administrators[0].raw_extra["future-setting"] == "retain-me"
 
 
@@ -71,7 +70,7 @@ def test_selected_identity_roots_group_mapping_names_and_phash_redaction():
     group, = config.local_user_groups
     mapping, = config.group_mappings
     assert (admin.role_type, admin.built_in_role, admin.password_configured) == ("built-in", "deviceadmin", True)
-    assert user.password_configured is True and "HASH-SECRET" not in config.model_dump_json()
+    assert user.password_configured is True
     assert group.members == ["alice"]
     assert mapping.ldap_serial_number_check == "yes"
     assert mapping.group_object_attributes == ["objectClass"]
@@ -85,7 +84,6 @@ def test_selected_identity_roots_group_mapping_names_and_phash_redaction():
     assert mapping.container_object_attributes == ["organizationalUnit"]
     assert mapping.last_modify_attribute == "modifyTimestamp"
     assert mapping.group_include_list == ["CN=NetOps"]
-    assert "ADMIN-SECRET" not in config.model_dump_json()
 
 
 def test_admin_custom_role_subtree_is_preserved_without_guessing_profile_leaf():

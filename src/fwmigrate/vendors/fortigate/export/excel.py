@@ -2760,7 +2760,8 @@ def _add_analysis_status(
     domains: Iterable[str] | None = None,
     extra_reasons: Iterable[str] = (),
 ) -> None:
-    issues = context.issues_for(vdom=vdom, names=names, domains=domains)
+    names = tuple(name for name in names if name not in (None, ""))
+    issues = context.issues_for(vdom=vdom, names=names, domains=domains) if names else []
     reasons = [issue.message for issue in issues]
     reasons.extend(str(reason) for reason in extra_reasons if reason)
     reasons = list(dict.fromkeys(reasons))
