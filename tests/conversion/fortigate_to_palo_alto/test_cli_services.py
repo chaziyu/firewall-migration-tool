@@ -9,7 +9,8 @@ def test_tcp_destination_tcp_source_and_udp_service_commands():
         PlannedService(source_object_type="service", source_name="https", target_vsys="vsys1",
                        status=PANMigrationStatus.SUPPORTED, protocol="tcp", destination_port="443"),
         PlannedService(source_object_type="service", source_name="tcp-source", target_vsys="vsys1",
-                       status=PANMigrationStatus.SUPPORTED, protocol="tcp", source_port="1024-65535"),
+                       status=PANMigrationStatus.SUPPORTED, protocol="tcp", source_port="1024-65535",
+                       destination_port="443"),
         PlannedService(source_object_type="service", source_name="dns", target_vsys="vsys1",
                        status=PANMigrationStatus.SUPPORTED, protocol="udp", destination_port="53"),
     ))
@@ -19,6 +20,7 @@ def test_tcp_destination_tcp_source_and_udp_service_commands():
         "set service https protocol tcp",
         "set service https protocol tcp port 443",
         "set service tcp-source protocol tcp",
+        "set service tcp-source protocol tcp port 443",
         "set service tcp-source protocol tcp source-port 1024-65535",
         "set service dns protocol udp",
         "set service dns protocol udp port 53",
