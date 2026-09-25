@@ -1724,23 +1724,6 @@ input[type="radio"] {
   border: 1px solid #dbb280;
   border-radius: 8px;
 }
-.app-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 15px;
-  border-top: 1px solid var(--line);
-  color: #8b9580;
-  padding: 20px 0 24px;
-  margin-top: 16px;
-  font-size: 9px;
-}
-.app-footer > span:first-child {
-  font-weight: 500;
-  color: #78876b;
-}
-.footer-dot {
-  padding: 0 7px;
-}
 .reveal {
   animation: reveal 0.45s ease both;
 }
@@ -2046,9 +2029,6 @@ select {
   .card {
     padding: 23px;
   }
-  .app-footer {
-    font-size: 8px;
-  }
 }
 @media (max-width: 480px) {
   .sidebar {
@@ -2191,10 +2171,6 @@ select {
   }
   .terminal-title {
     font-size: 8px;
-  }
-  .app-footer {
-    flex-direction: column;
-    gap: 4px;
   }
   .toast-container {
     bottom: 16px;
