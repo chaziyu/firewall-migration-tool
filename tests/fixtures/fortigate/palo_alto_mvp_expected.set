@@ -12,8 +12,6 @@ set schedule work-hours schedule-type recurring weekly friday [ 08:00-17:00 ]
 set schedule holiday schedule-type non-recurring [ "2026/12/25 00:00-2026/12/26 00:00" ]
 set zone trust network layer3 [ ethernet1/1 ]
 set zone untrust network layer3 [ ethernet1/2 ]
-set rulebase nat rules web-vip destination [ 198.51.100.10 ]
-set rulebase nat rules web-vip destination-translation translated-address 10.0.0.10
 set rulebase security rules allow-web from [ trust ]
 set rulebase security rules allow-web to [ untrust ]
 set rulebase security rules allow-web source [ web-host ]

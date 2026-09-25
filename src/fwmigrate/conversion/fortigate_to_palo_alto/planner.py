@@ -37,7 +37,7 @@ class FortiGateToPaloAltoPlanner:
         schedules = plan_schedules(source, options)
         requirements = build_mapping_requirements(source, derived)
         zones = plan_topology(source, derived, options, requirements["required_zone_keys"])
-        routes = plan_routes(source, options)
+        routes = plan_routes(source, options, derived)
         policies = plan_policies(source, options)
         nat_rules = plan_nat(source, derived, options)
         return PANMigrationPlan(

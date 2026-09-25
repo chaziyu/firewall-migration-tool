@@ -1,5 +1,5 @@
 from fwmigrate.conversion.fortigate_to_palo_alto.models import (
-    PANMigrationPlan, PANMigrationStatus, PlannedSecurityRule, PlannedZone,
+    PANMigrationPlan, PANMigrationStatus, PlannedSchedule, PlannedSecurityRule, PlannedZone,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 
@@ -12,6 +12,9 @@ def test_security_rule_match_flags_and_actions():
             PlannedZone(source_object_type="zone", source_name="untrust", target_vsys="vsys1",
                         status=PANMigrationStatus.SUPPORTED),
         ),
+        schedules=(PlannedSchedule(source_object_type="schedule", source_name="work", target_vsys="vsys1",
+                                   status=PANMigrationStatus.SUPPORTED, schedule_type="recurring",
+                                   weekly=(("monday", "08:00", "17:00"),)),),
         security_rules=(
         PlannedSecurityRule(source_object_type="security_rule", source_name="allow-web", target_vsys="vsys1",
                             status=PANMigrationStatus.SUPPORTED, from_zones=("trust",), to_zones=("untrust",),
@@ -23,6 +26,8 @@ def test_security_rule_match_flags_and_actions():
 
     assert PANSetRenderer().render(plan).commands == (
         "set system setting target-vsys vsys1",
+        "set schedule work schedule-type recurring",
+        "set schedule work schedule-type recurring weekly monday [ 08:00-17:00 ]",
         "set rulebase security rules allow-web from [ trust ]",
         "set rulebase security rules allow-web to [ untrust ]",
         "set rulebase security rules allow-web source [ any ]",
