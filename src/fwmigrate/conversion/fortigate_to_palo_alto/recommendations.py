@@ -22,6 +22,15 @@ class PANRecommendationConfidence(str, Enum):
     LOW = "LOW"
 
 
+class PANRecommendationReadiness(str, Enum):
+    AUTO_SAFE = "AUTO_SAFE"
+    SUGGEST = "SUGGEST"
+    REQUIRES_DECISION = "REQUIRES_DECISION"
+    MANUAL_DESIGN = "MANUAL_DESIGN"
+    INCOMPLETE_EVIDENCE = "INCOMPLETE_EVIDENCE"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
 @dataclass(frozen=True, slots=True)
 class PANMigrationRecommendation:
     key: str
@@ -39,6 +48,17 @@ class PANMigrationRecommendation:
     required_decision_keys: tuple[str, ...] = ()
     blockers: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    readiness: PANRecommendationReadiness | None = None
+
+    def __post_init__(self) -> None:
+        if self.readiness is not None and not isinstance(self.readiness, PANRecommendationReadiness):
+            raise ValueError("recommendation readiness is invalid")
+        if self.readiness is None:
+            object.__setattr__(
+                self,
+                "readiness",
+                PANRecommendationReadiness.MANUAL_DESIGN if self.blockers else PANRecommendationReadiness.SUGGEST,
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -52,6 +72,7 @@ class PANMigrationRecommendation:
             "summary": self.summary,
             "method": self.method.value,
             "confidence": self.confidence.value,
+            "readiness": self.readiness.value,
             "evidence": list(self.evidence),
             "candidate_target_objects": list(self.candidate_target_objects),
             "required_decision_keys": list(self.required_decision_keys),
@@ -111,7 +132,9 @@ def decision_value(decisions: PANMigrationDecisionSet | None, key: str | None) -
     if not decisions or not key:
         return None
     for item in decisions.decisions:
-        if item.key == key and (item.mode.value == "AUTO" or item.review_state is PANDecisionReviewState.CONFIRMED):
+        if item.key == key and item.mode.value != "UNSUPPORTED" and item.value and (
+            item.mode.value == "AUTO" or item.review_state is PANDecisionReviewState.CONFIRMED
+        ):
             return item.value
     return None
 

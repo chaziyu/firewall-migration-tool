@@ -32,6 +32,7 @@ from .recommendations import (
     PANMigrationRecommendation,
     PANRecommendationConfidence,
     PANRecommendationMethod,
+    PANRecommendationReadiness,
 )
 from .recommendation_engine import build_recommendations
 
@@ -67,5 +68,6 @@ __all__ = [
     "PANMigrationRecommendation",
     "PANRecommendationConfidence",
     "PANRecommendationMethod",
+    "PANRecommendationReadiness",
     "build_recommendations",
 ]
