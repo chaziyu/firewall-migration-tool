@@ -58,6 +58,14 @@ def test_management_and_gaia_families_do_not_cross_types():
     assert type(config.vtis[0]) is CPVTI
 
 
+def test_r81_security_zone_field_is_typed_on_gateway_interface():
+    config = _extract("show-gateways-and-servers", [{"uid": "g", "name": "gateway", "type": "gateway",
+      "interfaces": [{"name": "eth0", "security-zone": {"uid": "z", "name": "inside"}}]}])
+    interface = config.gateways[0].interfaces[0]
+    assert interface.zone.uid == "z"
+    assert "security-zone" not in interface.raw_extra
+
+
 def test_policy_gateway_threat_and_vpn_families_remain_distinct():
     nat = _extract("show-nat-rulebase", [{"type": "nat-rule", "name": "nat"}], "rulebase").nat_rules[0]
     auto_nat = _extract("show-nat-rulebase", [{"type": "automatic-nat-rule", "name": "auto", "automatic": True}], "rulebase").nat_rules[0]

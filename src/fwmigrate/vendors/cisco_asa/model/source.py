@@ -1,11 +1,11 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pydantic import Field
-from .acl import CiscoACLBinding, CiscoAccessRule
+from .acl import CiscoACLBinding, CiscoAccessRule, CiscoACLRemark
 from .address import CiscoNetworkGroup, CiscoNetworkObject
 from .base import CiscoSourceModel, CiscoSourceRecord
 from .context import CiscoASAContext, CiscoMultiContextSystem
-from .dhcp import CiscoDHCPRelay, CiscoDHCPServer
+from .dhcp import CiscoDHCPGlobalSettings, CiscoDHCPRelay, CiscoDHCPServer
 from .diagnostics import CiscoDiagnostic
 from .failover import CiscoFailoverConfig, CiscoFailoverSetting
 from .groups import CiscoNamedGroup
@@ -17,7 +17,7 @@ from .nat import CiscoNATRule
 from .routing import CiscoRouteMap, CiscoSLAMonitor, CiscoStaticRoute, CiscoTrack
 from .schedule import CiscoTimeRange
 from .service import CiscoNetworkServiceObject, CiscoServiceGroup, CiscoServiceObject
-from .vpn import CiscoCryptoMap, CiscoGroupPolicy, CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecTransformSet, CiscoTrustpointRecord, CiscoTunnelGroup, CiscoVPNAddressAssignment, CiscoVPNAddressPool, CiscoWebVPNConfig
+from .vpn import CiscoCryptoMap, CiscoGroupPolicy, CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecProfile, CiscoIPsecTransformSet, CiscoTrustpointRecord, CiscoTunnelGroup, CiscoVPNAddressAssignment, CiscoVPNAddressPool, CiscoWebVPNConfig
 from .zone import CiscoTrafficZone
 
 
@@ -36,6 +36,7 @@ class CiscoASAConfig(CiscoSourceModel):
     service_objects: List[CiscoServiceObject] = Field(default_factory=list)
     service_groups: List[CiscoServiceGroup] = Field(default_factory=list)
     access_rules: List[CiscoAccessRule] = Field(default_factory=list)
+    acl_remarks: List[CiscoACLRemark] = Field(default_factory=list)
     acl_bindings: List[CiscoACLBinding] = Field(default_factory=list)
     nat_rules: List[CiscoNATRule] = Field(default_factory=list)
     static_routes: List[CiscoStaticRoute] = Field(default_factory=list)
@@ -48,6 +49,7 @@ class CiscoASAConfig(CiscoSourceModel):
     ike_policies: List[CiscoIKEPolicy] = Field(default_factory=list)
     ikev2_proposals: List[CiscoIKEv2Proposal] = Field(default_factory=list)
     ipsec_transform_sets: List[CiscoIPsecTransformSet] = Field(default_factory=list)
+    ipsec_profiles: List[CiscoIPsecProfile] = Field(default_factory=list)
     vpn_address_pools: List[CiscoVPNAddressPool] = Field(default_factory=list)
     trustpoints: List[str] = Field(default_factory=list)
     crypto_maps: List[CiscoCryptoMap] = Field(default_factory=list)
@@ -70,6 +72,7 @@ class CiscoASAConfig(CiscoSourceModel):
     service_policies: List[CiscoServicePolicy] = Field(default_factory=list)
     tcp_maps: List[CiscoTCPMap] = Field(default_factory=list)
     dhcp_servers: List[CiscoDHCPServer] = Field(default_factory=list)
+    dhcp_global_settings: List[CiscoDHCPGlobalSettings] = Field(default_factory=list)
     dhcp_relays: List[CiscoDHCPRelay] = Field(default_factory=list)
     dns_server_groups: List[CiscoDNSServerGroup] = Field(default_factory=list)
     dns_settings: CiscoDNSSettings = Field(default_factory=lambda: CiscoDNSSettings(name="system-dns"))

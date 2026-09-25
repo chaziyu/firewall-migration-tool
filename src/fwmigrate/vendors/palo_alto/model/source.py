@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..source_model import PANScope, PANSourceRecord
+from ..source_model import PANExtractionIssue, PANScope, PANSourceRecord
 from .administration import PANAdministrator, PANAdminRole
 from .address import PANAddress, PANAddressGroup
 from .dhcp import PANDHCPServer
@@ -75,3 +75,4 @@ class PANOSConfig(BaseModel):
 
     source_inventory: list[PANSourceRecord] = Field(default_factory=list)
     unknown_paths: list[str] = Field(default_factory=list)
+    extraction_issues: list[PANExtractionIssue] = Field(default_factory=list)

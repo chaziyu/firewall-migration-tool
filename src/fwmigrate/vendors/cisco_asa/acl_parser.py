@@ -134,7 +134,6 @@ def parse_acl_line(
         sequence = int(tokens[index + 1])
         index += 2
     if index < len(tokens) and tokens[index].lower() == "remark":
-        remarks.setdefault(acl_name, []).append(" ".join(tokens[index + 1:]))
         return None, None
     if index >= len(tokens) or tokens[index].lower() not in {"standard", "extended"}:
         return None, f"Unsupported ACL type for {acl_name}"
@@ -147,6 +146,7 @@ def parse_acl_line(
 
     protocol = None
     protocol_object = None
+    protocol_reference_type = None
     identity_type = None
     identity_value = None
     source_sg_type = source_sg_value = None
@@ -165,6 +165,7 @@ def parse_acl_line(
             if index >= len(tokens):
                 return None, "Missing ACL protocol object name"
             protocol_object = tokens[index]
+            protocol_reference_type = protocol_token
             index += 1
             protocol = protocol_token
         elif protocol_token in KNOWN_PROTOCOLS or protocol_token.isdigit():
@@ -220,6 +221,7 @@ def parse_acl_line(
     explicit_fields.update(
         name for name, value in (
             ("source_sequence", sequence), ("protocol", protocol), ("protocol_object", protocol_object),
+            ("protocol_reference_type", protocol_reference_type),
             ("source_endpoint", source), ("source_port", source_port),
             ("destination_endpoint", destination), ("destination_port", destination_port),
             ("user", identity_value if identity_type == "user" else None),
@@ -239,6 +241,7 @@ def parse_acl_line(
         action=action,
         protocol=protocol,
         protocol_object=protocol_object,
+        protocol_reference_type=protocol_reference_type,
         source_endpoint=source,
         source_port=source_port,
         destination_endpoint=destination,
@@ -249,7 +252,7 @@ def parse_acl_line(
         source_security_group_value=source_sg_value,
         destination_security_group_type=destination_sg_type,
         destination_security_group_value=destination_sg_value,
-        remark="\n".join(remarks.pop(acl_name, [])) or None,
+        remark=None,
         raw_line=line,
         extraction_status="EXTRACTED",
         explicit_fields=explicit_fields,

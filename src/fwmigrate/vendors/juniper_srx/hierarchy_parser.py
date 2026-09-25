@@ -72,6 +72,11 @@ def normalize_hierarchy(content: str) -> str:
     output: list[str] = []
     index = 0
 
+    def clean(tokens: list[str]) -> tuple[list[str], bool]:
+        inactive = any(token.lower() == "inactive:" or token.lower().startswith("inactive:") for token in tokens)
+        return ([token[len("inactive:"):] if token.lower().startswith("inactive:") else token
+                 for token in tokens if token.lower() != "inactive:"], inactive)
+
     def parse_block(prefix: list[str], stop: str | None = None) -> None:
         nonlocal index
         statement: list[_Token] = []
@@ -81,7 +86,13 @@ def normalize_hierarchy(content: str) -> str:
             if token.value == stop:
                 return
             if token.value == "{":
-                parse_block(prefix + [t.value for t in statement], "}")
+                child_prefix, inactive = clean([t.value for t in statement])
+                path = prefix + child_prefix
+                if inactive and path:
+                    directive = "deactivate " + " ".join(path)
+                    if directive not in output:
+                        output.append(directive)
+                parse_block(path, "}")
                 statement = []
             elif token.value == ";":
                 emit(prefix + [t.value for t in statement], token.line)
@@ -94,14 +105,14 @@ def normalize_hierarchy(content: str) -> str:
     def emit(path: list[str], line: int) -> None:
         if not path:
             return
-        inactive = any(token.lower() == "inactive:" or token.lower().startswith("inactive:") for token in path)
-        path = [token[len("inactive:"):] if token.lower().startswith("inactive:") else token
-                for token in path if token.lower() != "inactive:"]
+        path, inactive = clean(path)
         if not path:
             return
         path = [p for p in path if p not in ("[", "]")]
         if inactive:
-            output.append("deactivate " + " ".join(path))
+            directive = "deactivate " + " ".join(path)
+            if directive not in output:
+                output.append(directive)
         output.append("set " + " ".join(path))
 
     parse_block([])

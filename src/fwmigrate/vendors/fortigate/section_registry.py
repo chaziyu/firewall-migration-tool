@@ -368,6 +368,60 @@ register_section(
     )
 )
 
+register_section(
+    SectionSpec(
+        source_path="system session-helper",
+        integer_fields=_fields("id", "port", "protocol"),
+        scalar_fields=_fields("name"),
+    )
+)
+
+register_section(SectionSpec(
+    source_path="vpn ssl web realm",
+    integer_fields=_fields("max-concurrent-user", "radius-port"),
+    scalar_fields=_fields("login-page", "nas-ip", "radius-server", "url-path", "virtual-host", "virtual-host-only", "virtual-host-server-cert"),
+))
+
+register_section(SectionSpec(
+    source_path="vpn ssl client",
+    integer_fields=_fields("class-id", "distance", "port", "priority"),
+    scalar_fields=_fields("certificate", "comment", "interface", "ipv4-subnets", "ipv6-subnets", "peer", "realm", "server", "source-ip", "status", "user"),
+))
+
+register_section(SectionSpec(source_path="vpn ssl web user-bookmark", scalar_fields=_fields("custom-lang")))
+register_section(SectionSpec(source_path="vpn ssl web user-group-bookmark", scalar_fields=_fields("custom-lang")))
+for _path in ("vpn ssl web user-bookmark bookmarks", "vpn ssl web user-group-bookmark bookmarks"):
+    register_section(SectionSpec(
+        source_path=_path,
+        integer_fields=_fields("height", "port", "preconnection-id", "width"),
+        scalar_fields=_fields("additional-params", "apptype", "color-depth", "description", "domain", "folder", "host", "keyboard-layout", "load-balancing-info", "logon-user", "preconnection-blob", "restricted-admin", "security", "send-preconnection-id", "sso", "sso-credential", "sso-credential-sent-once", "sso-username", "url", "vnc-keyboard-layout"),
+    ))
+for _path in ("vpn ssl web user-bookmark bookmarks form-data", "vpn ssl web user-group-bookmark bookmarks form-data"):
+    register_section(SectionSpec(source_path=_path, scalar_fields=_fields("value")))
+
+register_section(SectionSpec(
+    source_path="user nac-policy", list_fields=_fields("severity", "switch-group"),
+    integer_fields=_fields("match-period"),
+    scalar_fields=_fields("category", "description", "ems-tag", "family", "firewall-address", "fortivoice-tag", "host", "hw-vendor", "hw-version", "mac", "match-type", "os", "src", "ssid-policy", "status", "sw-version", "switch-fortilink", "switch-mac-policy", "type", "user", "user-group"),
+))
+register_section(SectionSpec(
+    source_path="firewall address6-template", integer_fields=_fields("subnet-segment-count"),
+    scalar_fields=_fields("fabric-object", "ip6"),
+))
+register_section(SectionSpec(source_path="firewall address6-template subnet-segment", integer_fields=_fields("bits"), scalar_fields=_fields("exclusive", "name")))
+register_section(SectionSpec(source_path="firewall address6-template subnet-segment values", scalar_fields=_fields("value")))
+register_section(SectionSpec(source_path="ips settings", integer_fields=_fields("ips-packet-quota", "packet-log-history")))
+register_section(SectionSpec(source_path="router setting", scalar_fields=_fields("hostname", "show-filter")))
+register_section(SectionSpec(source_path="vpn kmip-server", integer_fields=_fields("source-port"), scalar_fields=_fields("interface", "interface-select-method", "server-identity-check", "source-ip", "ssl-min-proto-version", "username")))
+register_section(SectionSpec(source_path="vpn kmip-server server-list", integer_fields=_fields("port"), scalar_fields=_fields("cert", "server", "status")))
+register_section(SectionSpec(source_path="user krb-keytab", list_fields=_fields("ldap-server"), scalar_fields=_fields("pac-data", "principal")))
+register_section(SectionSpec(source_path="system sdn-proxy", integer_fields=_fields("server-port"), scalar_fields=_fields("server", "type", "username")))
+register_section(SectionSpec(source_path="firewall on-demand-sniffer", list_fields=_fields("ports", "protocols"), integer_fields=_fields("max-packet-count"), scalar_fields=_fields("advanced-filter", "hosts", "interface", "non-ip-packet")))
+register_section(SectionSpec(source_path="system affinity-interrupt", scalar_fields=_fields("affinity-cpumask", "default-affinity-cpumask", "interrupt")))
+register_section(SectionSpec(source_path="system serial-port"))
+register_section(SectionSpec(source_path="firewall region", list_fields=_fields("city"), scalar_fields=_fields("name")))
+register_section(SectionSpec(source_path="firewall vendor-mac", integer_fields=_fields("mac-number", "obsolete"), scalar_fields=_fields("name")))
+
 # ----------------------------------------------------------------------
 # Schedules
 # ----------------------------------------------------------------------
@@ -446,6 +500,7 @@ register_section(
             "action",
             "schedule",
             "nat",
+            "nat64",
             "ippool",
 
             "session-ttl",
@@ -463,6 +518,8 @@ register_section(
             "inspection-mode",
             "profile-type",
             "profile-group",
+            "profile-protocol-options",
+            "per-ip-shaper",
 
             "av-profile",
             "ips-sensor",
@@ -606,6 +663,73 @@ register_section(
     )
 )
 
+register_section(
+    SectionSpec(
+        source_path="firewall security-policy",
+        integer_list_fields=_fields("app-category"),
+        scalar_fields=_fields("action"),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="firewall profile-protocol-options",
+        scalar_fields=_fields("comment", "oversize-log", "replacemsg-group", "rpc-over-http", "switching-protocols-log"),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="firewall shaper per-ip-shaper",
+        integer_fields=_fields("max-bandwidth", "max-concurrent-session", "max-concurrent-tcp-session", "max-concurrent-udp-session"),
+        scalar_fields=_fields("bandwidth-unit", "diffserv-forward", "diffserv-reverse", "diffservcode-forward", "diffservcode-rev"),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="firewall vip6",
+        list_fields=_fields("monitor"),
+        integer_fields=_fields("color", "http-cookie-age", "http-cookie-generation", "id", "max-embryonic-connections"),
+        scalar_fields=_fields(
+            "add-nat64-route", "comment", "embedded-ipv4-address", "extip", "extport",
+            "http-cookie-domain", "http-cookie-domain-from-host", "http-cookie-path", "http-cookie-share",
+            "http-ip-header", "http-ip-header-name", "http-multiplex", "http-redirect", "https-cookie-secure",
+            "ipv4-mappedip", "ipv4-mappedport", "ldb-method", "mappedip", "mappedport",
+            "nat-source-vip", "nat64", "nat66", "ndp-reply", "outlook-web-access", "persistence",
+            "portforward", "protocol",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="firewall vipgrp6",
+        list_fields=_fields("member"),
+        integer_fields=_fields("color"),
+        scalar_fields=_fields("comments", "uuid"),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="firewall ippool6",
+        scalar_fields=_fields("add-nat46-route", "comments", "endip", "nat46", "startip"),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="router static6",
+        list_fields=_fields("sdwan-zone"),
+        integer_fields=_fields("devindex", "distance", "priority", "vrf", "weight"),
+        scalar_fields=_fields(
+            "bfd", "blackhole", "comment", "device", "dst", "dstaddr",
+            "dynamic-gateway", "gateway", "link-monitor-exempt", "status",
+        ),
+    )
+)
+
 
 # ----------------------------------------------------------------------
 # IPsec
@@ -650,6 +774,21 @@ register_section(
 
 register_section(
     SectionSpec(
+        source_path="vpn ipsec phase1",
+        list_fields=_fields("proposal", "certificate"),
+        integer_fields=_fields("keylife", "distance", "priority", "client-resume-interval"),
+        integer_list_fields=_fields("dhgrp"),
+        scalar_fields=_fields(
+            "type", "interface", "local-gw", "remote-gw", "remotegw-ddns", "ike-version",
+            "authmethod", "authmethod-remote", "mode", "nattraversal", "dpd", "dpd-retrycount",
+            "dpd-retryinterval", "localid", "localid-type", "peerid", "comments", "psksecret",
+            "psksecret-remote", "ppk-secret", "authpasswd", "group-authentication-secret",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
         source_path="vpn ipsec phase2-interface",
         list_fields=_fields(
             "proposal",
@@ -688,6 +827,23 @@ register_section(
             "replay",
             "auto-negotiate",
             "comments",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="vpn ipsec phase2",
+        list_fields=_fields("proposal"),
+        integer_fields=_fields("keylifeseconds", "keylifekbs", "protocol", "src-port", "dst-port"),
+        integer_list_fields=_fields("dhgrp"),
+        scalar_fields=_fields(
+            "phase1name", "add-route", "auto-negotiate", "comments", "dhcp-ipsec", "diffserv",
+            "diffservcode", "dst-addr-type", "dst-end-ip", "dst-end-ip6", "dst-name", "dst-name6",
+            "dst-start-ip", "dst-start-ip6", "dst-subnet", "dst-subnet6", "encapsulation",
+            "inbound-dscp-copy", "initiator-ts-narrow", "ipv4-df", "keepalive", "keylife-type", "l2tp",
+            "pfs", "replay", "route-overlap", "src-addr-type", "src-end-ip", "src-end-ip6", "src-name",
+            "src-name6", "src-start-ip", "src-start-ip6", "src-subnet", "src-subnet6",
         ),
     )
 )

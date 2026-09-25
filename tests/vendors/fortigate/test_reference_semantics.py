@@ -2,9 +2,15 @@
 
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.model.address import FGAddress, FGAddressGroup
+from fwmigrate.vendors.fortigate.model.admin import FGAdministrator, FGAdminProfile
+from fwmigrate.vendors.fortigate.model.dhcp import FGDHCPServer
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.policy import FGPolicy
+from fwmigrate.vendors.fortigate.model.route_static import FGStaticRoute
+from fwmigrate.vendors.fortigate.model.sdwan import FGSDWAN, FGSDWANZone
+from fwmigrate.vendors.fortigate.model.service import FGService, FGServiceGroup
 from fwmigrate.vendors.fortigate.model.source import FGConfig
+from fwmigrate.vendors.fortigate.model.vip import FGVIP, FGVIPGroup, FGVIPRealServer
 from fwmigrate.vendors.fortigate.model.vpn import FGIPsecPhase1
 from fwmigrate.vendors.fortigate.relationships.references import (
     ReferenceKind,
@@ -109,6 +115,88 @@ class ReferenceSemanticsTest(unittest.TestCase):
         )
 
         self.assertFalse(collect_broken_references(config))
+
+    def test_admin_profiles_are_indexed_and_accprofile_is_validated(self):
+        config = FGConfig(
+            administrators=[
+                FGAdministrator(name="admin", accprofile="missing"),
+                FGAdministrator(name="operator", accprofile="read_only"),
+            ],
+            admin_profiles=[FGAdminProfile(name="read_only")],
+        )
+        broken = collect_broken_references(config)
+        self.assertEqual([("administrator", "accprofile", "missing")], [
+            (item.source_kind, item.source_field, item.reference) for item in broken
+        ])
+        duplicates = build_reference_index(FGConfig(admin_profiles=[
+            FGAdminProfile(name="duplicate"), FGAdminProfile(name="duplicate")
+        ])).duplicates
+        self.assertEqual([ReferenceKind.ADMIN_PROFILE], [item.kind for item in duplicates])
+
+    def test_route_and_dhcp_bindings_validate_only_typed_references(self):
+        config = FGConfig(
+            interfaces=[FGInterface(name="wan1")],
+            ipsec_phase1=[FGIPsecPhase1(name="tunnel1")],
+            addresses=[FGAddress(name="address1")],
+            address_groups=[FGAddressGroup(name="group1")],
+            sdwans=[FGSDWAN(zones=[FGSDWANZone(name="virtual-wan-link")])],
+            static_routes=[
+                FGStaticRoute(seq_num=1, dst="192.0.2.0/24", dstaddr="missing-address", device="missing-device", sdwan_zone=["missing-zone"]),
+                FGStaticRoute(seq_num=2, dstaddr="address1", device="tunnel1", sdwan_zone=["virtual-wan-link"]),
+                FGStaticRoute(seq_num=3, address_family="ipv6", dstaddr="missing-v6", device="wan1"),
+            ],
+            dhcp_servers=[
+                FGDHCPServer(id=1, interface="missing-interface"),
+                FGDHCPServer(id=2, interface="wan1"),
+            ],
+        )
+        broken = collect_broken_references(config)
+        found = {(item.source_kind, item.source_field, item.reference): item for item in broken}
+        self.assertEqual({
+            ("static_route", "dstaddr", "missing-address"),
+            ("static_route", "device", "missing-device"),
+            ("static_route", "sdwan_zone", "missing-zone"),
+            ("static_route6", "dstaddr", "missing-v6"),
+            ("dhcp_server", "interface", "missing-interface"),
+        }, set(found))
+        self.assertEqual(
+            (ReferenceKind.ADDRESS, ReferenceKind.ADDRESS_GROUP),
+            found[("static_route", "dstaddr", "missing-address")].expected_kinds,
+        )
+        self.assertEqual(
+            (ReferenceKind.INTERFACE, ReferenceKind.IPSEC_PHASE1),
+            found[("static_route", "device", "missing-device")].expected_kinds,
+        )
+        self.assertEqual((ReferenceKind.ADDRESS6, ReferenceKind.ADDRESS_GROUP6),
+            found[("static_route6", "dstaddr", "missing-v6")].expected_kinds)
+
+    def test_vip_references_and_group_interface_are_checked(self):
+        config = FGConfig(
+            interfaces=[FGInterface(name="wan1")],
+            addresses=[FGAddress(name="public"), FGAddress(name="backend")],
+            services=[FGService(name="https")],
+            service_groups=[FGServiceGroup(name="web")],
+            vips=[
+                FGVIP(name="good", extintf="wan1", extaddr=["public"], mapped_addr="backend", service=["web"], realservers=[FGVIPRealServer(id=1, address="backend")]),
+                FGVIP(name="bad", extintf="missing-interface", extaddr=["missing-external"], mapped_addr="missing-mapped", service=["missing-service"], realservers=[FGVIPRealServer(id=7, address="missing-backend")]),
+            ],
+            vip_groups=[
+                FGVIPGroup(name="good-group", interface="wan1"),
+                FGVIPGroup(name="bad-group", interface="missing-group-interface"),
+            ],
+        )
+        broken = collect_broken_references(config)
+        self.assertEqual({
+            ("vip", "bad", "extintf", "missing-interface"),
+            ("vip", "bad", "extaddr", "missing-external"),
+            ("vip", "bad", "mapped_addr", "missing-mapped"),
+            ("vip", "bad", "service", "missing-service"),
+            ("vip", "bad", "realservers[7].address", "missing-backend"),
+            ("vip_group", "bad-group", "interface", "missing-group-interface"),
+        }, {(item.source_kind, item.source_name, item.source_field, item.reference) for item in broken})
+        self.assertEqual((ReferenceKind.ADDRESS,), next(
+            item.expected_kinds for item in broken if item.source_field == "extaddr"
+        ))
 
 
 if __name__ == "__main__":

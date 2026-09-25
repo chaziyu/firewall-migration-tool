@@ -14,6 +14,18 @@ class CiscoDHCPOption(CiscoSourceModel):
     encoding: Optional[str] = None
 
 
+class CiscoDHCPGlobalSettings(CiscoSourceRecord):
+    source_order: int = 0
+    dns_servers: List[str] = Field(default_factory=list)
+    wins_servers: List[str] = Field(default_factory=list)
+    domain_name: Optional[str] = None
+    lease_seconds: Optional[int] = None
+    ping_timeout: Optional[int] = None
+    auto_config: Optional[str] = None
+    dns_update: Optional[str] = None
+    options: List[CiscoDHCPOption] = Field(default_factory=list)
+
+
 class CiscoDHCPServer(CiscoSourceRecord):
     interface: Optional[str] = None
     pool: Optional[str] = None

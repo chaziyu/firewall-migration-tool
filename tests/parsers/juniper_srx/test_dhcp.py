@@ -40,3 +40,35 @@ def test_native_dhcp_split_scope_family_and_references():
     validate_juniper_config(config, derived)
     assert config == before
     assert any(item.source_field == "link" and item.result == "UNRESOLVED" for item in derived.dependencies)
+
+
+def test_dhcp_relay_preserves_routing_instance_contract():
+    source = "\n".join([
+        "set interfaces ge-0/0/0 unit 0",
+        "set routing-instances RI1 instance-type virtual-router",
+        "set routing-instances RI1 system services dhcp-relay group RELAY routing-instance RI1",
+        "set routing-instances RI1 system services dhcp-relay group RELAY interface ge-0/0/0.0",
+    ])
+    config = JuniperSRXParser(source).extract_source()
+    before = deepcopy(config)
+    group = config.get_context().dhcp.relay_groups["RI1||RELAY"]
+    derived = build_juniper_derived_views(config)
+    assert group.routing_instance == "RI1"
+    assert all(item.result == "RESOLVED" for item in derived.dependencies
+               if item.source_object == "RELAY" and item.source_path == "system services dhcp-relay")
+    validation = validate_juniper_config(config, derived)
+    assert not [item for item in validation.errors if item.object_name == "RELAY"]
+    assert config == before
+
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    from fwmigrate.vendors.juniper_srx.export.excel import export_juniper_excel
+    from fwmigrate.vendors.juniper_srx.source_report import extract_juniper_source
+
+    output = BytesIO()
+    export_juniper_excel(extract_juniper_source(source), output)
+    output.seek(0)
+    rows = list(load_workbook(output, read_only=True)["DHCP Relay Groups"].values)
+    assert rows[1] == ("root", "RELAY", "RI1", "['ge-0/0/0.0']", "[]")

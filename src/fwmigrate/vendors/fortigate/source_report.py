@@ -9,7 +9,6 @@ from .config import ExtractionConfig
 from .derived import DerivedViews, build_derived_views
 from .extraction.extractor import extract_fortigate_config
 from .extraction.result import ExtractionResult
-from .nodes import FortiGateConfigTree
 from .parser import parse_fortigate_config
 from .validation.models import ValidationResult
 from .validation.validator import validate_config
@@ -19,10 +18,10 @@ from .validation.validator import validate_config
 class FortiGateSourceResult:
     """Opaque FortiGate analysis result crossing the shared boundary."""
 
-    tree: FortiGateConfigTree
     extracted: ExtractionResult
     derived: DerivedViews
     validation: ValidationResult
+    top_level_sections: int
 
 
 class FortiGateSourceReporter:
@@ -33,10 +32,16 @@ class FortiGateSourceReporter:
     def analyze_source(self, source: str, **options: Any) -> FortiGateSourceResult:
         extraction_config = options.get("config") or ExtractionConfig()
         tree = parse_fortigate_config(source)
+        top_level_sections = len(tree.configs)
         extracted = extract_fortigate_config(tree, config=extraction_config)
         derived = build_derived_views(extracted.config)
         validation = validate_config(extracted.config, derived=derived)
-        return FortiGateSourceResult(tree, extracted, derived, validation)
+        return FortiGateSourceResult(
+            extracted=extracted,
+            derived=derived,
+            validation=validation,
+            top_level_sections=top_level_sections,
+        )
 
     def build_preview(
         self,
@@ -50,7 +55,7 @@ class FortiGateSourceReporter:
             analysis.extracted.config,
             analysis.derived,
             analysis.validation,
-            top_level_sections=len(analysis.tree.configs),
+            top_level_sections=analysis.top_level_sections,
         )
 
     def export_excel(

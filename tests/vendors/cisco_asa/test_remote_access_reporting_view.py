@@ -13,7 +13,7 @@ def test_remote_access_view_keeps_context_and_source_layers_separate():
         "interface GigabitEthernet0/1\n nameif outside\n"
         "webvpn\n enable outside\n"
         "vpn-addr-assign local reuse-delay 10\n"
-        "ip local pool POOL 10.0.0.1 10.0.0.20 mask 255.255.255.0\n"
+        "ip local pool POOL 10.0.0.1-10.0.0.20 mask 255.255.255.0\n"
         "aaa-server AUTH protocol radius\n"
         "group-policy PARENT internal\n"
         "group-policy PARENT attributes\n dns-server value 8.8.8.8\n"

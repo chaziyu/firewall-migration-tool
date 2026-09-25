@@ -53,9 +53,10 @@
         "tunnel_source",
         "tunnel_destination",
         "ipsec_profile",
+        "ipsec_policy_acl",
         "traffic_zone_members"
       ],
-      "sha256": "a95882f39f9d0ee7ad100fbf9583d45c12ccdd90939e5e53c648e37931f3795c"
+      "sha256": "d853e44f14f5324c9f8797d5428f3fd1a8c568403ad3943bc8ae1714dbd8e1d2"
     },
     "CiscoNetworkObject": {
       "fields": [
@@ -206,9 +207,10 @@
         "raw_lines",
         "extraction_status",
         "requires_manual_review",
-        "source_attributes"
+        "source_attributes",
+        "review_reasons"
       ],
-      "sha256": "4c8ba12fa3ec9a48280741a1ee7972a1d0649ccbc6b7892c32d60d680fdf4181"
+      "sha256": "3bda89ab1bea40964a0b59cc8f216c7af54c0ad03ea96c446a0f6acdfdfb5e79"
     },
     "CiscoServiceGroup": {
       "fields": [
@@ -272,6 +274,7 @@
         "action",
         "protocol",
         "protocol_object",
+        "protocol_reference_type",
         "source_endpoint",
         "source_port",
         "destination_endpoint",
@@ -300,7 +303,21 @@
         "review_reasons",
         "source_attributes"
       ],
-      "sha256": "5ec658767de9a183fcf22e417d07acb1e36d5fa885f161a982064ed8be14c9a3"
+      "sha256": "5a6b907eaefd1dae8b3805b5f5e6fbad139fc80e2cb96d0597bf2595e06a0619"
+    },
+    "CiscoACLRemark": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "acl_name",
+        "source_context",
+        "sequence",
+        "source_order",
+        "remark",
+        "raw_line"
+      ],
+      "sha256": "0f65a1ddb96b1ff2f4906afc1d720d7d1e7529be96311938bda164009338ae31"
     },
     "CiscoNATRule": {
       "fields": [
@@ -327,6 +344,8 @@
         "original_service",
         "translated_service",
         "service_protocol",
+        "service_operand_1",
+        "service_operand_2",
         "owning_object",
         "access_list",
         "identity_nat",
@@ -350,7 +369,7 @@
         "review_reasons",
         "source_attributes"
       ],
-      "sha256": "55299ce565f550f05109ea62ad389ebbe74dabfca9ed4903969d32892c34e7aa"
+      "sha256": "236bf305c026025825485c2e6a62f12d7a28f8d8ba145fc996ae0cc24a50e4b5"
     },
     "CiscoStaticRoute": {
       "fields": [
@@ -575,6 +594,26 @@
         "review_reasons"
       ],
       "sha256": "2af02dad6339e2dcc47a2f980d79e5a7e8ca81e0d65bab545d9205433a4a8240"
+    },
+    "CiscoIPsecProfile": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "ikev1_transform_sets",
+        "ikev2_ipsec_proposals",
+        "pfs",
+        "sa_lifetime_seconds",
+        "sa_lifetime_kilobytes",
+        "trustpoint",
+        "responder_only"
+      ],
+      "sha256": "380675cf4ed2b079bc8f639dd6c3b831f866a81967e910f3d9e5ebf2eda17cb9"
     },
     "CiscoVPNAddressPool": {
       "fields": [
@@ -1206,6 +1245,28 @@
       ],
       "sha256": "458921353c2cefb50d4f391ccd42ff6e2847118cde2da9e8209dd3faa0bd0af9"
     },
+    "CiscoDHCPGlobalSettings": {
+      "fields": [
+        "explicit_fields",
+        "raw_extra",
+        "name",
+        "source_context",
+        "raw_lines",
+        "extraction_status",
+        "requires_manual_review",
+        "source_attributes",
+        "source_order",
+        "dns_servers",
+        "wins_servers",
+        "domain_name",
+        "lease_seconds",
+        "ping_timeout",
+        "auto_config",
+        "dns_update",
+        "options"
+      ],
+      "sha256": "bb681ff895530e89af5b51520a8822b7b324dc7c0d8c60ad777f352fac405a96"
+    },
     "CiscoDHCPRelayServer": {
       "fields": [
         "explicit_fields",
@@ -1669,6 +1730,7 @@
         "service_objects",
         "service_groups",
         "access_rules",
+        "acl_remarks",
         "acl_bindings",
         "nat_rules",
         "static_routes",
@@ -1681,6 +1743,7 @@
         "ike_policies",
         "ikev2_proposals",
         "ipsec_transform_sets",
+        "ipsec_profiles",
         "vpn_address_pools",
         "trustpoints",
         "crypto_maps",
@@ -1703,6 +1766,7 @@
         "service_policies",
         "tcp_maps",
         "dhcp_servers",
+        "dhcp_global_settings",
         "dhcp_relays",
         "dns_server_groups",
         "dns_settings",
@@ -1726,8 +1790,8 @@
         "parse_errors",
         "diagnostics"
       ],
-      "sha256": "7fae911fdb42aa542fc842bbf8d4f359596bbbf945500ae9ec70260d65da0c04"
+      "sha256": "895e174db48dbd188b92949938b425f6607e7610dac0930675ad653d86fdb94d"
     }
   },
-  "serialized_config_sha256": "0fcf1137d46c515462b465598f6f57950864c3d789a956d6abe870b85b051494"
+  "serialized_config_sha256": "e5d1e148001a87398e2ef6e737c941bb7b5e6e2c93214b4aa479297b6debb8cd"
 }

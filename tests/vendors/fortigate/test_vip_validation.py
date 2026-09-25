@@ -1,5 +1,6 @@
 ﻿import unittest
 
+from fwmigrate.vendors.fortigate.model.address import FGAddress
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.model.vip import FGVIP, FGVIPRealServer
 from fwmigrate.vendors.fortigate.validation.models import ValidationSeverity
@@ -7,8 +8,8 @@ from fwmigrate.vendors.fortigate.validation.validator import validate_config
 
 
 class VIPValidationTest(unittest.TestCase):
-    def _issues(self, vip):
-        return validate_config(FGConfig(vips=[vip])).issues
+    def _issues(self, vip, addresses=()):
+        return validate_config(FGConfig(vips=[vip], addresses=list(addresses))).issues
 
     def test_one_backend_with_ip_has_no_warning(self):
         self.assertFalse(self._issues(
@@ -25,7 +26,8 @@ class VIPValidationTest(unittest.TestCase):
                 name="qradartest",
                 type="server-load-balance",
                 realservers=[FGVIPRealServer(address="backend-address")],
-            )
+            ),
+            addresses=[FGAddress(name="backend-address")],
         ))
 
     def test_two_backends_have_no_warning(self):

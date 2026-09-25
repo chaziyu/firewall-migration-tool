@@ -36,6 +36,7 @@ def validate_checkpoint_config(
         _validate_nat(config, derived),
         _validate_interface_topology(derived),
         _validate_vpn_topology(derived),
+        _validate_vtis(config, derived),
         _validate_gaia(config, source_inventory),
         _validate_secret_safety(config, source_inventory),
         _validate_unsupported_selected_areas(collection, source_inventory),
@@ -43,8 +44,9 @@ def validate_checkpoint_config(
         issues.extend(check)
     unique = {}
     for issue in issues:
-        identity = (issue.code, issue.domain_uid or issue.domain, issue.object_uid or issue.object_name,
-                    issue.field, issue.reference)
+        identity = (issue.code, issue.domain_uid, issue.domain, issue.package_uid, issue.package,
+                    issue.layer_uid, issue.layer, issue.gateway, issue.command, issue.object_type,
+                    issue.object_uid, issue.object_name, issue.field, issue.reference)
         unique.setdefault(identity, issue)
     return CheckPointValidationResult(tuple(unique.values()))
 
@@ -155,7 +157,8 @@ def _validate_policy_structure(config, derived):
                 source=relation.package, field=relation.source_field, reference=relation.issue.reference))
     related_layer_ids = {id(item.layer) for item in derived.policy_structure.package_layers if item.layer}
     for layer in config.access_layers:
-        if (layer.package_uid or layer.package) and id(layer) not in related_layer_ids:
+        if ({"package_uid", "package"} & set(layer.explicit_fields)
+                and (layer.package_uid or layer.package) and id(layer) not in related_layer_ids):
             result.append(_issue("policy_layer_owner_invalid", "policy_structure",
                 "Access layer package ownership does not resolve to a package.", source=layer,
                 field="package_uid" if layer.package_uid else "package",
@@ -181,16 +184,6 @@ def _validate_policy_structure(config, derived):
             result.append(_issue("policy_parent_layer_invalid", "policy_structure",
                 "Rule parent layer UID does not match its owning layer.", source=rule,
                 field="parent_layer_uid", reference=rule.parent_layer_uid))
-    owned_layers = {}
-    for relation in derived.policy_structure.package_layers:
-        if relation.layer:
-            owned_layers.setdefault(id(relation.layer), []).append(relation.package)
-    for layer_id, relations in owned_layers.items():
-        if len({id(item) for item in relations}) > 1:
-            relation_layer = next(item.layer for item in derived.policy_structure.package_layers if item.layer and id(item.layer) == layer_id)
-            result.append(_issue("policy_duplicate_ownership", "policy_structure",
-                "Access layer is structurally owned by multiple packages.", source=relation_layer,
-                field="package_uid"))
     for issue in derived.policy_traversal.issues:
         result.append(_issue("policy_traversal_cycle" if "cycle" in issue.message.lower() else "policy_traversal_invalid",
             "policy_structure", issue.message, object_type="CPAccessRule", object_uid=issue.rule_uid,
@@ -210,15 +203,17 @@ def _validate_inline_layers(config, derived):
             continue
         child = relation.inline_layer
         rule = relation.parent_rule
-        if child.parent_rule_uid and child.parent_rule_uid != rule.uid:
+        if "parent_rule_uid" in child.explicit_fields and child.parent_rule_uid and child.parent_rule_uid != rule.uid:
             result.append(_issue("inline_layer_parent_rule_mismatch", "policy_structure",
                 "Inline layer parent rule does not match its referencing rule.", source=rule,
                 field="parent_rule_uid", reference=child.parent_rule_uid))
-        if child.parent_rule_uid and child.parent_rule_uid not in {item.uid for item in derived.policy_structure.rules}:
+        if ("parent_rule_uid" in child.explicit_fields and child.parent_rule_uid
+                and child.parent_rule_uid not in {item.uid for item in derived.policy_structure.rules}):
             result.append(_issue("inline_layer_parent_rule_invalid", "policy_structure",
                 "Inline layer parent rule UID does not exist in the policy structure.", source=child,
                 field="parent_rule_uid", reference=child.parent_rule_uid))
-        if relation.parent_layer and child.parent_layer_uid and child.parent_layer_uid != relation.parent_layer.uid:
+        if ("parent_layer_uid" in child.explicit_fields and relation.parent_layer and child.parent_layer_uid
+                and child.parent_layer_uid != relation.parent_layer.uid):
             result.append(_issue("inline_layer_parent_mismatch", "policy_structure",
                 "Inline layer parent does not match the referencing rule layer.", source=child,
                 field="parent_layer_uid", reference=child.parent_layer_uid))
@@ -230,7 +225,7 @@ def _validate_nat(config, derived):
     order_owners = {}
     for rule in config.nat_rules:
         if rule.order is not None:
-            order_owners.setdefault((_domain(rule), rule.order), []).append(rule)
+            order_owners.setdefault((_domain(rule), rule.package_uid or rule.package, rule.order), []).append(rule)
         if isinstance(rule, CPNATRule):
             if any((rule.translated_source, rule.translated_destination, rule.translated_service)) and not any(
                 (rule.original_source, rule.original_destination, rule.original_service)
@@ -251,7 +246,7 @@ def _validate_nat(config, derived):
         result.append(_issue("nat_structure_incomplete", "nat", item.message,
             domain=item.domain, object_uid=item.source_uid, object_name=item.source_name,
             field=item.source_field, reference=item.reference))
-    for (_, order), rules in order_owners.items():
+    for (_, _, order), rules in order_owners.items():
         if len(rules) > 1:
             result.append(_issue("nat_order_malformed", "nat",
                 f"Multiple NAT rules share ordering value {order}.", source=rules[0],
@@ -262,13 +257,10 @@ def _validate_nat(config, derived):
 def _validate_interface_topology(derived):
     result = []
     for item in derived.interface_topology.issues:
-        result.append(_issue("zone_reference_missing" if item.status == "missing" else f"zone_reference_{item.status}",
-            "interface_topology", item.message or f"Zone reference is {item.status}.", source=item.source,
+        prefix = "interface_correlation" if item.source_field in {"gateway", "interface"} else "zone_reference"
+        result.append(_issue(f"{prefix}_{item.status}",
+            "interface_topology", item.message or f"{item.source_field} reference is {item.status}.", source=item.source,
             field=item.source_field, reference=item.reference))
-    for item in derived.interface_views.issues:
-        if "ambigu" in item.message.lower() or "correlation" in item.message.lower():
-            result.append(_issue("interface_correlation_ambiguous", "interface_topology", item.message,
-                object_type="interface", object_uid=item.device_uid, object_name=item.interface_name))
     return result
 
 
@@ -292,6 +284,30 @@ def _validate_vpn_topology(derived):
     return result
 
 
+def _validate_vtis(config, derived):
+    result = []
+    topology = {id(item.vti): item for item in derived.vpn_topology.vtis}
+    for vti in config.vtis:
+        try:
+            tunnel_id = int(vti.tunnel_id)
+            if not 1 <= tunnel_id <= 99:
+                raise ValueError
+        except (TypeError, ValueError):
+            result.append(_issue("gaia_vti_malformed", "gaia", "VTI tunnel ID must be an integer from 1 through 99.", source=vti, field="tunnel_id"))
+        tunnel_type = (vti.tunnel_type or "").lower()
+        if tunnel_type not in {"numbered", "unnumbered"}:
+            result.append(_issue("gaia_vti_malformed", "gaia", "VTI tunnel type must be numbered or unnumbered.", source=vti, field="tunnel_type"))
+        required = ("local_address", "remote_address", "peer") if tunnel_type == "numbered" else ("peer", "local_device") if tunnel_type == "unnumbered" else ()
+        for field in required:
+            if not getattr(vti, field):
+                result.append(_issue("gaia_vti_malformed", "gaia", f"{tunnel_type} VTI is missing {field.replace('_', ' ')}.", source=vti, field=field))
+        relation = topology.get(id(vti))
+        if not relation or relation.owning_gateway is None:
+            result.append(_issue("vti_gateway_unresolved", "vpn_topology", "VTI owner Gateway identity is unknown or unresolved.",
+                                 source=vti, field="gateway", reference=str(vti.gateway) if vti.gateway else None))
+    return result
+
+
 def _validate_gaia(config, inventory):
     result = []
     for route in config.gaia_static_routes:
@@ -300,17 +316,32 @@ def _validate_gaia(config, inventory):
             result.append(_issue("gaia_route_malformed", "gaia", "Static route address family is invalid.", source=route, field="address_family"))
         if family == "ipv4" and route.ipv6_destination or family == "ipv6" and route.ipv4_destination:
             result.append(_issue("gaia_route_malformed", "gaia", "Static route destination conflicts with its address family.", source=route, field="destination"))
-        if route.blackhole is True and route.reject is True:
-            result.append(_issue("gaia_route_malformed", "gaia", "Static route cannot be both blackhole and reject.", source=route, field="blackhole"))
-        for field in ("priority", "rank"):
-            value = getattr(route, field)
-            if value is not None and value < 0:
-                result.append(_issue("gaia_route_malformed", "gaia", f"Static route {field} must not be negative.", source=route, field=field))
         destination = route.ipv4_destination or route.ipv6_destination
         if not destination and getattr(route, "default", False) is not True:
             result.append(_issue("gaia_route_malformed", "gaia", "Static route destination is missing.", source=route, field="destination"))
-        if route.blackhole is not True and route.reject is not True and not (route.next_hop or route.outgoing_interface):
-            result.append(_issue("gaia_route_malformed", "gaia", "Static route has no next hop or outgoing interface.", source=route, field="next_hop"))
+        if not route.next_hops:
+            result.append(_issue("gaia_route_malformed", "gaia", "Static route has no explicit next-hop type.", source=route, field="next_hops"))
+        for hop in route.next_hops:
+            if hop.next_hop_type not in {"gateway", "interface", "blackhole", "reject"}:
+                result.append(_issue("gaia_route_malformed", "gaia", "Static route next-hop type is missing or unsupported.", source=hop, field="type"))
+            if hop.blackhole is True and hop.reject is True:
+                result.append(_issue("gaia_route_malformed", "gaia", "Static route next hop cannot be both blackhole and reject.", source=hop, field="type"))
+            if hop.next_hop_type == "gateway" and not hop.gateway:
+                result.append(_issue("gaia_route_malformed", "gaia", "Gateway next hop has no address.", source=hop, field="gateway"))
+            if hop.next_hop_type == "interface" and not hop.interface:
+                result.append(_issue("gaia_route_malformed", "gaia", "Interface next hop has no interface.", source=hop, field="interface"))
+            for field in ("priority", "rank"):
+                value = getattr(hop, field)
+                if value is not None:
+                    try:
+                        if int(value) < 0: raise ValueError
+                    except (ValueError, TypeError):
+                        result.append(_issue("gaia_route_malformed", "gaia", f"Static route {field} must be a non-negative integer.", source=hop, field=field))
+        if route.rank is not None:
+            try:
+                if int(route.rank) < 0: raise ValueError
+            except (ValueError, TypeError):
+                result.append(_issue("gaia_route_malformed", "gaia", "Static route rank must be a non-negative integer.", source=route, field="rank"))
     for server in config.gaia_dhcp_servers:
         result.extend(_dhcp_issues(server))
     for item in inventory:
@@ -329,7 +360,10 @@ def _dhcp_issues(server):
             result.append(_issue("gaia_dhcp_malformed", "gaia", "DHCP subnet identity is missing.", source=subnet, field="subnet"))
         try:
             if subnet.subnet:
-                ip_network(f"{subnet.subnet}/{subnet.prefix}" if subnet.prefix is not None else subnet.subnet, strict=False)
+                network = subnet.subnet
+                if "/" not in network and (subnet.netmask is not None or subnet.prefix is not None):
+                    network = f"{network}/{subnet.netmask if subnet.netmask is not None else subnet.prefix}"
+                ip_network(network, strict=False)
             elif subnet.prefix is not None:
                 raise ValueError
         except (ValueError, TypeError):

@@ -35,13 +35,66 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
                   for item in config.unsupported_evidence)
     issues.extend(FTDValidationIssue("warning", item.category, item.message, config.source_plane, item.interface)
                   for item in derived.interface_topology.issues)
-    issues.extend(FTDValidationIssue("warning", "invalid-route", item.issue or "Invalid FTD static route",
-                                     config.source_plane, item.source_name)
-                  for item in derived.normalized_routes if item.issue)
+    for item in derived.normalized_routes:
+        if not item.issue:
+            continue
+        if item.issue == "Route destination is missing" and derived.source_plane_completeness.get("routing") != "present":
+            continue
+        issues.append(FTDValidationIssue("warning", "invalid-route", item.issue, config.source_plane, item.source_name))
+    for route in config.routes:
+        family = (route.address_family or route.source_attributes.get("collection_address_family") or "").casefold()
+        if family == "ipv6" and (route.route_tracking is not None or "sla_monitor" in route.explicit_fields):
+            issues.append(FTDValidationIssue("warning", "ipv6-route-tracking",
+                "IPv6 route contains explicit route-tracking source state", route.source_plane, route.name))
     issues.extend(FTDValidationIssue("warning", "intrusion-rule-group-conflict",
         f"Intrusion rule {item.rule_id or item.source_id} differs between policy behavior and rule-group evidence",
         item.source_plane, item.name) for item in config.intrusion_rule_behaviors
         if item.source_attributes.get("conflicting_group_payload"))
+
+    intrusion_policies_by_id = {item.source_id: item for item in config.intrusion_policies if item.source_id}
+    parts = config.collection_metadata.parts
+    if any(part.name == "access_policies" and part.status == "SUCCESS" for part in parts):
+        for policy in config.access_control_policies:
+            if not any(part.name == f"accesspolicies/{policy.source_id}/default_actions" for part in parts):
+                issues.append(FTDValidationIssue("warning", "missing-acp-default-action-collection",
+                    f"Access policy {policy.name} has no collected default-action child response",
+                    policy.source_plane, policy.name))
+
+    for override in config.intrusion_rule_overrides:
+        linked_policy = intrusion_policies_by_id.get(override.parent_policy_id)
+        known_behaviors = {item.rule_id or item.source_id for item in config.intrusion_rule_behaviors
+                           if item.parent_policy_id == override.parent_policy_id}
+        if linked_policy is None or (derived.source_plane_completeness.get("intrusion_rule_behaviors") in {"present", "known-empty"}
+                and override.rule_id and override.rule_id not in known_behaviors):
+            issues.append(FTDValidationIssue("warning", "unlinked-intrusion-rule-override",
+                f"Intrusion override {override.rule_id or override.name} cannot be linked to its policy/rule",
+                override.source_plane, override.name))
+
+    for policy in config.nat_policies:
+        for rule in policy.unclassified_manual_rules or ():
+            issues.append(FTDValidationIssue("warning", "unknown-nat-manual-section",
+                f"Manual NAT rule {rule.name} has an unclassified source section",
+                rule.source_plane, rule.name))
+
+    positions = {}
+    for route in config.policy_based_routes:
+        if route.position is None:
+            continue
+        key = (route.device_id or route.source_attributes.get("device_id"),
+               route.source_attributes.get("virtual_router_id"), route.position)
+        positions.setdefault(key, []).append(route)
+    for (_, _, position), routes in positions.items():
+        if len(routes) > 1:
+            issues.append(FTDValidationIssue("warning", "duplicate-pbr-position",
+                f"Policy-based routes share explicit position {position} within one device/virtual router",
+                routes[0].source_plane, routes[0].name))
+
+    servers_by_device = {item.device_id or item.source_attributes.get("device_id") for item in config.dhcp_servers}
+    relay_devices = {item.device_id or item.source_attributes.get("device_id") for item in config.dhcp_relay_settings}
+    for device_id in servers_by_device & relay_devices:
+        issues.append(FTDValidationIssue("error", "dhcp-server-relay-conflict",
+            f"Device {device_id or 'source'} has both DHCP server and DHCP relay source configuration",
+            config.source_plane, str(device_id) if device_id else None))
 
     identity_collections = (
         ("realm user", config.realm_users), ("realm group", config.realm_user_groups),

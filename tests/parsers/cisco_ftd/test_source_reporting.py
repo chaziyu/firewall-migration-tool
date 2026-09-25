@@ -104,7 +104,7 @@ def test_ftd_cli_preserves_route_tokens_and_derives_normalized_destinations():
     workbook = load_workbook(output, read_only=True)
     route_headers = [cell.value for cell in workbook["Routes"][1]]
     route = dict(zip(route_headers, [cell.value for cell in workbook["Routes"][2]]))
-    assert (route["Destination"], route["Mask"], route["Normalized Destination"]) == (
+    assert (route["Destination"], route["Mask"], route["Normalized Destination(s)"]) == (
         "10.0.0.7", "255.255.255.0", "10.0.0.0/24")
     interface_headers = [cell.value for cell in workbook["Interfaces"][1]]
     interface_row = dict(zip(interface_headers, [cell.value for cell in workbook["Interfaces"][2]]))

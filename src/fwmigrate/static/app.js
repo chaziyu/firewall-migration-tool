@@ -420,7 +420,7 @@ let currentRenderedArtifactId = null;
     address_groups: [["name", "Name"], ["members", "Members"], ["address_family", "Family", "compact"], ["exclude_members", "Excluded"], ["review", "Review", "notes"]],
     services: [["name", "Name"], ["protocol", "Protocol", "compact"], ["port", "Port", "compact"], ["source_port", "Source Port", "compact"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
     service_groups: [["name", "Name"], ["members", "Members"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
-    policies: [["policy_id", "ID", "compact"], ["name", "Name"], ["source_interfaces", "From"], ["destination_interfaces", "To"], ["source_addresses", "Source"], ["destination_addresses", "Destination"], ["services", "Service"], ["schedule", "Schedule"], ["action", "Action", "compact"], ["nat", "NAT", "compact"], ["review", "Review", "notes"]],
+    policies: [["policy_id", "ID", "compact"], ["name", "Name"], ["source_interfaces", "From"], ["destination_interfaces", "To"], ["source_addresses", "Source"], ["source_addresses_ipv6", "Source IPv6"], ["destination_addresses", "Destination"], ["destination_addresses_ipv6", "Destination IPv6"], ["services", "Service"], ["schedule", "Schedule"], ["action", "Action", "compact"], ["nat", "NAT", "compact"], ["review", "Review", "notes"]],
     nat: [["policy_id", "Policy ID", "compact"], ["policy_name", "Policy"], ["translation_type", "Type", "compact"], ["translated_addresses", "Address", "address"], ["egress_interfaces", "Egress"], ["review", "Review", "notes"]],
     routes: [["route_id", "ID", "compact"], ["destination", "Destination", "address"], ["gateway", "Gateway", "address"], ["device", "Device"], ["distance", "Distance", "compact"], ["status", "Status", "compact"], ["review", "Review", "notes"]],
     vpn: [["kind", "Type", "compact"], ["name", "Name"], ["attachment", "Interface / Phase 1"], ["peer", "Gateway / Selectors", "address"], ["crypto", "IKE / Proposal"], ["topology", "Topology"], ["review", "Review", "notes"]],
@@ -590,6 +590,13 @@ let currentRenderedArtifactId = null;
     if (reportScopeSummary) {
       const scopes = summary.scopes || summary.vdoms || [];
       reportScopeSummary.textContent = scopes.length ? `Scopes: ${scopes.map((scope) => typeof scope === "string" ? scope : scope.name || scope.vsys || JSON.stringify(scope)).join(", ")}` : "No scope data found.";
+    }
+    if (reportScopeFilter) {
+      const scopes = summary.scopes || summary.vdoms || [];
+      const selected = reportScopeFilter.value;
+      const options = [...new Set(scopes.map((scope) => typeof scope === "string" ? scope : scope.name || scope.vsys).filter(Boolean))];
+      reportScopeFilter.replaceChildren(new Option("All scopes", ""), ...options.map((scope) => new Option(scope, scope)));
+      reportScopeFilter.value = options.includes(selected) ? selected : "";
     }
     const overview = activeReportSection === "overview";
     reportOverview?.classList.toggle("hidden", !overview);

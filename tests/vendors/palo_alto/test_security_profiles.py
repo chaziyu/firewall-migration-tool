@@ -54,3 +54,20 @@ def test_vulnerability_missing_and_empty_nested_sections_preserve_source_presenc
     assert empty.rules == []
     assert empty.exceptions == []
     assert {"rules", "exceptions"} <= empty.explicit_fields
+
+
+def test_selected_threat_exception_time_attribute_and_exempt_ip_are_extracted():
+    config = build_panos_config("""<config><shared><profiles><vulnerability><entry name='vulnerability-main'>
+      <threat-exception><entry name='allow-known'><action><alert/></action>
+        <time-attribute><interval>60</interval><threshold>10</threshold><track-by>source-and-destination</track-by><future-time>keep-time</future-time></time-attribute>
+        <exempt-ip><member>192.0.2.10</member></exempt-ip><future-exception>keep-exception</future-exception>
+      </entry></threat-exception>
+    </entry></vulnerability></profiles></shared></config>""")
+    profile, = config.vulnerability_profiles
+    exception, = profile.exceptions
+    assert (exception.action, exception.time_interval, exception.time_threshold, exception.time_track_by) == ("alert", "60", "10", "source-and-destination")
+    assert exception.exempt_ips == ["192.0.2.10"]
+    assert {"time_interval", "time_threshold", "time_track_by", "exempt_ips"} <= exception.explicit_fields
+    assert "time_attribute" not in exception.explicit_fields
+    assert exception.raw_extra["time-attribute"]["future-time"] == "keep-time"
+    assert exception.raw_extra["future-exception"] == "keep-exception"

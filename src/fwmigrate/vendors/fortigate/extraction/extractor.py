@@ -12,6 +12,11 @@ from .interfaces import extract_interfaces
 from .ip_pools import extract_ip_pools
 from .ips import extract_ips
 from .policies import extract_policies
+from .protocol_options import extract_protocol_options
+from .security_policy import extract_security_policies
+from .session_helper import extract_session_helpers
+from .selected_sections import extract_selected_sections
+from .shapers import extract_per_ip_shapers
 from .profiles_group import extract_profile_groups
 from .result import ExtractionResult
 from .schedules import extract_schedules
@@ -59,6 +64,11 @@ def extract_fortigate_config(
 
     # Policies.
     extract_policies(index, source)
+    extract_security_policies(index, source)
+    extract_protocol_options(index, source)
+    extract_per_ip_shapers(index, source)
+    extract_session_helpers(index, source)
+    extract_selected_sections(index, source)
 
     # Routing / VPN / SD-WAN.
     extract_routes(index, source)

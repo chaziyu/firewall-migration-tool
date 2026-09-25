@@ -5,14 +5,14 @@ from .zone import CiscoTrafficZone
 from .address import CiscoNetworkObject, CiscoNetworkGroupMember, CiscoNetworkGroup
 from .groups import CiscoNamedGroupMember, CiscoNamedGroup
 from .service import CiscoNetworkServiceObject, CiscoPortSpec, CiscoServicePort, CiscoServiceGroupMember, CiscoServiceObject, CiscoServiceGroup
-from .acl import CiscoACLEndpoint, CiscoACLBinding, CiscoAccessRule
+from .acl import CiscoACLEndpoint, CiscoACLBinding, CiscoAccessRule, CiscoACLRemark
 from .nat import CiscoNATRule
 from .schedule import CiscoTimeRangeClause, CiscoTimeRange
 from .routing import CiscoStaticRoute, CiscoTrack, CiscoSLAMonitor, CiscoRouteMapRule, CiscoRouteMap, CiscoPolicyRoutePathMonitor
 from .identity import CiscoAAARecord, CiscoAAAServerGroup, CiscoAAAServerHost, CiscoLocalUser, CiscoAAAAuthenticationRule, CiscoAAAAuthorizationRule, CiscoAAAAccountingRule, CiscoCommandPrivilege
-from .vpn import CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecTransformSet, CiscoVPNAddressPool, CiscoCryptoMap, CiscoTunnelGroup, CiscoGroupPolicy, CiscoTrustpointRecord, CiscoWebVPNConfig, CiscoVPNAddressAssignment
+from .vpn import CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecTransformSet, CiscoIPsecProfile, CiscoVPNAddressPool, CiscoCryptoMap, CiscoTunnelGroup, CiscoGroupPolicy, CiscoTrustpointRecord, CiscoWebVPNConfig, CiscoVPNAddressAssignment
 from .mpf import CiscoInspectionPolicySection, CiscoTCPMapSetting, CiscoClassMapMatch, CiscoClassMap, CiscoInspectAction, CiscoMPFConnectionAction, CiscoMPFPoliceAction, CiscoPolicyMapClass, CiscoPolicyMap, CiscoTCPMap, CiscoServicePolicy, CiscoIPSAction
-from .dhcp import CiscoDHCPOption, CiscoDHCPServer, CiscoDHCPRelayServer, CiscoDHCPReservation, CiscoDHCPRelay
+from .dhcp import CiscoDHCPOption, CiscoDHCPGlobalSettings, CiscoDHCPServer, CiscoDHCPRelayServer, CiscoDHCPReservation, CiscoDHCPRelay
 from .management import CiscoHTTPServerConfig, CiscoDNSServerGroup, CiscoDNSSettings, CiscoConnectionControl, CiscoManagementSetting, CiscoSystemSettings, CiscoNTPServer, CiscoManagementAccessRule, CiscoICMPManagementRule, CiscoSNMPSetting, CiscoLoggingSetting, CiscoEnableCredential
 from .failover import CiscoFailoverSetting, CiscoFailoverGroup, CiscoFailoverInterfaceIP, CiscoFailoverMACAddress, CiscoFailoverConfig
 from .context import CiscoAllocatedInterface, CiscoMultiContextSystem, CiscoASAContext
@@ -37,6 +37,7 @@ __all__ = [
     'CiscoACLEndpoint',
     'CiscoACLBinding',
     'CiscoAccessRule',
+    'CiscoACLRemark',
     'CiscoNATRule',
     'CiscoStaticRoute',
     'CiscoTrack',
@@ -51,6 +52,7 @@ __all__ = [
     'CiscoIKEPolicy',
     'CiscoIKEv2Proposal',
     'CiscoIPsecTransformSet',
+    'CiscoIPsecProfile',
     'CiscoVPNAddressPool',
     'CiscoCryptoMap',
     'CiscoTunnelGroup',
@@ -83,6 +85,7 @@ __all__ = [
     'CiscoIPSAction',
     'CiscoDHCPOption',
     'CiscoDHCPServer',
+    'CiscoDHCPGlobalSettings',
     'CiscoDHCPRelayServer',
     'CiscoDHCPReservation',
     'CiscoDHCPRelay',

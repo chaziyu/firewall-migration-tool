@@ -15,8 +15,8 @@ class CPAddress(CheckPointSourceObject):
     mask_length4: int | None = None
     subnet6: str | None = None
     mask_length6: int | None = None
-    start_ip: str | None = None
-    end_ip: str | None = None
+    ipv4_address_first: str | None = Field(default=None, alias="ipv4-address-first")
+    ipv4_address_last: str | None = Field(default=None, alias="ipv4-address-last")
     fqdn: str | None = None
 
 

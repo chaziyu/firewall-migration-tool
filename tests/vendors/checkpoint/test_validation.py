@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fwmigrate.vendors.checkpoint.derived import CheckPointDerivedViews, build_checkpoint_derived_views
 from fwmigrate.vendors.checkpoint.model.address import CPHost
-from fwmigrate.vendors.checkpoint.model.gaia import CPGaiaDHCPServer, CPGaiaStaticRoute
+from fwmigrate.vendors.checkpoint.model.gaia import CPVTI, CPGaiaDHCPServer, CPGaiaStaticRoute
 from fwmigrate.vendors.checkpoint.model.gateway import CPGateway, CPGatewayInterface
 from fwmigrate.vendors.checkpoint.model.policy import CPAccessLayer, CPAccessRule, CPNATRule, CPPolicyPackage
 from fwmigrate.vendors.checkpoint.model.source import CheckPointConfig
@@ -43,6 +43,37 @@ def test_validation_index_queries_stable_issue_metadata():
     assert index.issues_for_uid("h1") == (issue,)
     assert index.issues_for_reference("h1") == (issue,)
     assert index.issues_for_category("duplicate") == (issue,)
+
+
+def test_nat_rule_order_is_unique_within_package_scope():
+    from fwmigrate.vendors.checkpoint.model.policy import CPNATRule
+    from fwmigrate.vendors.checkpoint.validation.validator import _validate_nat
+    config = CheckPointConfig(nat_rules=[
+        CPNATRule(uid="n1", name="n1", package="P1", order=1),
+        CPNATRule(uid="n2", name="n2", package="P2", order=1),
+    ])
+    assert not any(item.code == "nat_order_malformed" for item in _validate_nat(config, CheckPointDerivedViews()))
+    config.nat_rules.append(CPNATRule(uid="n3", name="n3", package="P1", order=1))
+    assert any(item.code == "nat_order_malformed" for item in _validate_nat(config, CheckPointDerivedViews()))
+
+
+def test_shared_access_layer_is_valid_package_reuse_and_missing_layer_still_fails():
+    layer = CPAccessLayer(uid="layer", name="Shared")
+    shared = CheckPointConfig(policy_packages=[
+        CPPolicyPackage(uid="p1", name="Package A", access_layers=["layer"]),
+        CPPolicyPackage(uid="p2", name="Package B", access_layers=["layer"]),
+    ], access_layers=[layer])
+    before = shared.model_dump()
+    derived = build_checkpoint_derived_views(shared)
+    issues = validate_checkpoint_config(shared, derived).issues
+    assert len(derived.policy_structure.package_layers) == 2
+    assert all(relation.layer is layer for relation in derived.policy_structure.package_layers)
+    assert "policy_duplicate_ownership" not in {issue.code for issue in issues}
+    assert shared.model_dump() == before
+
+    missing = CheckPointConfig(policy_packages=[CPPolicyPackage(uid="p3", name="Package C", access_layers=["absent"])])
+    missing_derived = build_checkpoint_derived_views(missing)
+    assert "package_layer_missing" in {issue.code for issue in validate_checkpoint_config(missing, missing_derived).issues}
 
 
 def test_secret_finding_never_includes_material():
@@ -94,3 +125,44 @@ def test_collection_and_dhcp_findings_preserve_operation_context():
     collection_issue = next(issue for issue in result.issues if issue.code == "collection_incomplete")
     assert collection_issue.package == "Package A" and collection_issue.layer == "Layer A"
     assert any(issue.code == "gaia_dhcp_malformed" for issue in result.issues)
+
+
+def test_collection_findings_deduplicate_only_when_full_source_scope_matches():
+    def finding(command, package=None, layer=None):
+        return CheckPointCollectionDiagnostic(
+            command=command, source_plane="management", domain="Domain A", package=package,
+            layer=layer, status=CollectionStatus.PERMISSION_DENIED, complete=False,
+        )
+
+    diagnostics = (finding("show-hosts"), finding("show-networks"),
+                   finding("show-access-rulebase", "Package A", "Layer X"),
+                   finding("show-access-rulebase", "Package B", "Layer Y"),
+                   finding("show-hosts"),)
+    issues = validate_checkpoint_config(CheckPointConfig(), CheckPointDerivedViews(), collection=diagnostics).issues
+    collection = [issue for issue in issues if issue.code == "collection_incomplete"]
+
+    assert len(collection) == 4
+    assert {(issue.command, issue.package, issue.layer) for issue in collection} == {
+        ("show-hosts", None, None), ("show-networks", None, None),
+        ("show-access-rulebase", "Package A", "Layer X"),
+        ("show-access-rulebase", "Package B", "Layer Y"),
+    }
+
+
+def test_vti_validation_checks_tunnel_constraints_and_unknown_owner():
+    config = CheckPointConfig(vtis=[
+        CPVTI(uid="good1", gateway="g", tunnel_id=1, tunnel_type="numbered", local_address="192.0.2.1",
+              remote_address="192.0.2.2", peer="gateway"),
+        CPVTI(uid="good99", gateway="g", tunnel_id=99, tunnel_type="unnumbered", peer="gateway", local_device="eth0"),
+        CPVTI(uid="bad0", tunnel_id=0, tunnel_type="numbered", remote_address="192.0.2.2"),
+        CPVTI(uid="bad100", tunnel_id=100, tunnel_type="bogus"),
+        CPVTI(uid="orphan", tunnel_id=2, tunnel_type="numbered", local_address="192.0.2.1",
+              remote_address="192.0.2.2", peer="gateway"),
+    ], gateways=[CPGateway(uid="g", name="gateway")])
+    before = config.model_dump()
+    issues = validate_checkpoint_config(config, build_checkpoint_derived_views(config)).issues
+    malformed = [issue for issue in issues if issue.code == "gaia_vti_malformed"]
+
+    assert len(malformed) == 5
+    assert sum(issue.code == "vti_gateway_unresolved" for issue in issues) == 3
+    assert config.model_dump() == before

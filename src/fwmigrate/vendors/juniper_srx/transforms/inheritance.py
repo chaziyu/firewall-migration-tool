@@ -4,18 +4,14 @@ from copy import deepcopy
 
 from ..extraction import is_sensitive_key, sanitize_tokens
 from ..group_resolver import resolve_group_commands
+from ..path_semantics import scalar_identity
 from ..tokenizer import JunosActivationState
 
 
-_GROUP_ERRORS = {
+_GROUP_FAILURES = {
     "GROUP_NOT_FOUND", "GROUP_CYCLE", "GROUP_RECURSION_DEPTH_EXCEEDED",
-    "GROUP_HIERARCHY_INCOMPATIBLE", "GROUP_EXCLUDED", "GROUP_INACTIVE",
+    "GROUP_HIERARCHY_INCOMPATIBLE",
 }
-_SCALAR_FIELDS = {"description", "action", "class", "hostname", "host-name", "mtu", "routing-instance",
-                  "instance-type", "scheduler-name", "bind-interface", "proposal-set", "ike-policy",
-                  "ipsec-policy", "version", "protocol"}
-
-
 def _safe_candidate(candidate):
     result = dict(candidate)
     provenance = dict(result.get("provenance") or {})
@@ -45,9 +41,6 @@ def build_inheritance_view(source_commands=()) -> dict:
     resolved = resolve_group_commands(commands)
     activation = JunosActivationState()
     activation.apply(deepcopy(tuple(source_commands)))
-    local_paths = {tuple(command.tokens[1:-1]) for command in source_commands
-                   if command.operation.value == "set" and "groups" not in command.tokens[1:]
-                   and len(command.tokens) > 3 and command.tokens[-2].lower() in _SCALAR_FIELDS}
     inherited_winners = {}
     statements = []
     issues = []
@@ -60,16 +53,23 @@ def build_inheritance_view(source_commands=()) -> dict:
             return f"{prefix} {path[1]}"
         return "root"
 
+    local_paths = set()
+    for command in source_commands:
+        if command.operation.value == "set" and "groups" not in command.tokens[1:]:
+            identity = scalar_identity(tuple(command.tokens[1:]))
+            if identity:
+                local_paths.add((scope_for(command, command.tokens[1:]), *identity))
+
     for command in resolved:
         path = tuple(sanitize_tokens(list(command.target_path or command.tokens[1:])))
         scope = scope_for(command, path)
         if command.synthetic:
             active = not activation.is_inactive(path)
-            scalar = len(path) > 1 and path[-2].lower() in _SCALAR_FIELDS
-            overridden = scalar and path[:-1] in local_paths
-            winner_key = (scope, path[:-1])
+            identity = scalar_identity(path)
+            overridden = identity is not None and (scope, *identity) in local_paths
+            winner_key = (scope, *(identity or (path,)))
             status = "INACTIVE" if not active else "SHADOWED" if overridden else "EFFECTIVE"
-            if active and scalar and not overridden:
+            if active and identity and not overridden:
                 previous = inherited_winners.get(winner_key)
                 if previous is not None:
                     statements[previous]["status"] = "SHADOWED"
@@ -86,7 +86,7 @@ def build_inheritance_view(source_commands=()) -> dict:
                 "status": status,
                 "active": active,
             })
-        if command.group_resolution in _GROUP_ERRORS:
+        if command.group_resolution in _GROUP_FAILURES:
             target_path = tuple(sanitize_tokens(list(command.target_path or ())))
             issue = {"status": command.group_resolution,
                      "context": scope_for(command, target_path or command.tokens[1:]),
@@ -104,4 +104,14 @@ def build_inheritance_view(source_commands=()) -> dict:
                            "source_order": command.source_order or command.line_number,
                            "status": "EFFECTIVE" if active else "INACTIVE", "active": active})
     candidates = tuple(_safe_candidate(candidate) for command in resolved for candidate in command.candidate_records)
-    return {"effective_statements": tuple(statements), "candidates": candidates, "issues": tuple(issues)}
+    inactive_hierarchies = []
+    for inactive_path in activation.inactive_paths:
+        path = tuple(sanitize_tokens(inactive_path))
+        scope = "root"
+        if len(path) > 1 and path[0].lower() in {"logical-systems", "tenants"}:
+            kind = "logical-system" if path[0].lower() == "logical-systems" else "tenant"
+            scope = f"{kind} {path[1]}"
+            path = path[2:]
+        inactive_hierarchies.append({"context": scope, "path": path})
+    return {"effective_statements": tuple(statements), "candidates": candidates,
+            "issues": tuple(issues), "inactive_hierarchies": tuple(inactive_hierarchies)}

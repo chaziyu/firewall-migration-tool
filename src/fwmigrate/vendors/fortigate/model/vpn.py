@@ -69,6 +69,9 @@ class FGIPsecPhase2(BaseModel):
     # Lifetime
     keylifeseconds: int | None = None
     keylifekbs: int | None = None
+    protocol: int | None = None
+    src_port: int | None = None
+    dst_port: int | None = None
 
     # Source selector
     src_addr_type: str | None = None
@@ -101,3 +104,11 @@ class FGIPsecPhase2(BaseModel):
 
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGIPsecPolicyPhase2(FGIPsecPhase2):
+    """Policy-based Phase 2; its Phase 1 belongs to the policy namespace."""
+
+
+class FGIPsecPolicyPhase1(FGIPsecPhase1):
+    """Policy-based Phase 1 gateway; excluded from interface topology."""

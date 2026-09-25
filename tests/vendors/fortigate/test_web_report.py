@@ -77,10 +77,14 @@ class WebReportTest(unittest.TestCase):
         )
 
     def test_summary_and_explicit_source_fields(self):
+        self.assertEqual("fortigate", self.report["vendor"])
         summary = self.report["summary"]
         self.assertEqual(8, summary["top_level_sections"])
         self.assertEqual(2, summary["objects"]["interfaces"])
         self.assertEqual(["root"], summary["vdoms"])
+        self.assertEqual(summary["vdoms"], summary["scopes"])
+        self.assertIsInstance(summary["objects"], dict)
+        self.assertIn("severity_counts", summary["validation"])
 
         interface = next(
             row
@@ -116,6 +120,44 @@ class WebReportTest(unittest.TestCase):
         phase2 = self.report["sections"]["vpn_phase2"][0]
         self.assertEqual("192.0.2.0-192.0.2.255", phase2["source_range"])
         self.assertEqual("10.0.0.0-10.0.0.255", phase2["destination_range"])
+
+    def test_policy_report_keeps_ipv4_and_ipv6_addresses_separate(self):
+        self.config.policies.extend(
+            [
+                FGPolicy(
+                    policy_id=2,
+                    srcaddr=["SRC-V4"],
+                    srcaddr6=["SRC-V6"],
+                    dstaddr=["DST-V4"],
+                    dstaddr6=["DST-V6"],
+                    srcaddr6_negate="enable",
+                    dstaddr6_negate="disable",
+                ),
+                FGPolicy(
+                    policy_id=3,
+                    srcaddr6=["ONLY-SRC-V6"],
+                    dstaddr6=["ONLY-DST-V6"],
+                ),
+            ]
+        )
+        derived = build_derived_views(self.config)
+        report = build_web_report(
+            self.config,
+            derived,
+            validate_config(self.config, derived=derived),
+            top_level_sections=8,
+        )
+        by_id = {row["policy_id"]: row for row in report["sections"]["policies"]}
+        self.assertEqual(["SRC-V4"], by_id[2]["source_addresses"])
+        self.assertEqual(["SRC-V6"], by_id[2]["source_addresses_ipv6"])
+        self.assertEqual(["DST-V4"], by_id[2]["destination_addresses"])
+        self.assertEqual(["DST-V6"], by_id[2]["destination_addresses_ipv6"])
+        self.assertEqual("enable", by_id[2]["source_address_negate_ipv6"])
+        self.assertEqual("disable", by_id[2]["destination_address_negate_ipv6"])
+        self.assertEqual([], by_id[3]["source_addresses"])
+        self.assertEqual(["ONLY-SRC-V6"], by_id[3]["source_addresses_ipv6"])
+        self.assertEqual([], by_id[3]["destination_addresses"])
+        self.assertEqual(["ONLY-DST-V6"], by_id[3]["destination_addresses_ipv6"])
 
     def test_validation_and_broken_references_are_serialized(self):
         broken = self.report["sections"]["unresolved_references"]

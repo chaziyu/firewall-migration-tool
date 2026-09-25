@@ -27,6 +27,7 @@ _SENSITIVE_EXACT_KEYS = frozenset({
     "key2",
     "key3",
     "key_string",
+    "keytab",
     "encryption_key",
     "authentication_key",
     "shared_secret",

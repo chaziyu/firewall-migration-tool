@@ -86,29 +86,30 @@ def build_reference_index(config: PANOSConfig) -> ReferenceIndex:
 
 
 def _resolve(index: ReferenceIndex, owner, field: str, name: str, families: tuple[str, ...], *, owner_family: str, source_only: bool = False) -> PANReferenceResolution:
+    owner_path = getattr(owner, "source_path", None)
     if name in {"any", "application-default"}:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="PAN-OS special value", owner_family=owner_family)
+        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="PAN-OS special value", owner_family=owner_family, owner_source_path=owner_path)
     if source_only:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="typed source coverage is not authoritative", owner_family=owner_family)
+        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="typed source coverage is not authoritative", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "address" and _is_address_literal(name):
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS address literal", owner_family=owner_family)
+        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS address literal", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "address" and name in _PREDEFINED_IP_EDLS:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS predefined IP external dynamic list", owner_family=owner_family)
+        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS predefined IP external dynamic list", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "address" and name in _PREDEFINED_REGIONS:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS predefined country region", owner_family=owner_family)
+        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS predefined country region", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "service" and name in _PREDEFINED_SERVICES:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "service", owner.scope, resolution_reason="PAN-OS predefined service", owner_family=owner_family)
+        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "service", owner.scope, resolution_reason="PAN-OS predefined service", owner_family=owner_family, owner_source_path=owner_path)
     candidates = tuple(candidate for family in families for candidate in index.candidates(family, name, owner.scope))
     if len(candidates) == 1:
         target = candidates[0]
-        return PANReferenceResolution("RESOLVED", owner.name, field, name, target.family, owner.scope, target.scope, target.source_path, "one visible candidate", owner_family)
+        return PANReferenceResolution("RESOLVED", owner.name, field, name, target.family, owner.scope, target.scope, target.source_path, "one visible candidate", owner_family, owner_path)
     if not candidates:
         source_candidates = tuple(candidate for family in families for candidate in index.source_candidates(family, name, owner.scope))
         if source_candidates:
             return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope,
-                                          resolution_reason="EXTRACTION_INCOMPLETE: visible source object lacks typed extraction", owner_family=owner_family)
-        return PANReferenceResolution("UNRESOLVED", owner.name, field, name, families[0], owner.scope, resolution_reason="no visible typed source object", owner_family=owner_family)
-    return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, families[0], owner.scope, resolution_reason="multiple visible candidates; precedence is not explicitly extracted", owner_family=owner_family)
+                                          resolution_reason="EXTRACTION_INCOMPLETE: visible source object lacks typed extraction", owner_family=owner_family, owner_source_path=owner_path)
+        return PANReferenceResolution("UNRESOLVED", owner.name, field, name, families[0], owner.scope, resolution_reason="no visible typed source object", owner_family=owner_family, owner_source_path=owner_path)
+    return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, families[0], owner.scope, resolution_reason="multiple visible candidates; precedence is not explicitly extracted", owner_family=owner_family, owner_source_path=owner_path)
 
 
 def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None) -> tuple[tuple[PANReferenceResolution, ...], tuple[PANShadowedObject, ...]]:
@@ -117,6 +118,9 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
     for group in config.address_groups:
         for name in group.static_members or ():
             result.append(_resolve(index, group, "static_members", name, ("address", "address-group"), owner_family="address-group"))
+    for address in config.addresses:
+        for name in address.tags or ():
+            result.append(_resolve(index, address, "tags", name, ("tag",), owner_family="address"))
     for group in config.service_groups:
         for name in group.members or ():
             result.append(_resolve(index, group, "members", name, ("service", "service-group"), owner_family="service-group"))
@@ -134,6 +138,17 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
         for field, names, families in (("from_zones", rule.from_zones, ("zone",)), ("to_zones", rule.to_zones, ("zone",)), ("source", rule.source, ("address", "address-group")), ("destination", rule.destination, ("address", "address-group")), ("service", (rule.service,) if rule.service else (), ("service", "service-group"))):
             for name in names or ():
                 result.append(_resolve(index, rule, field, name, families, owner_family="nat"))
+        for branch, field in ((rule.source_translation, "source_translation"), (rule.destination_translation, "destination_translation"), (rule.dynamic_destination_translation, "dynamic_destination_translation")):
+            for attr in ("translated_address", "translated_addresses"):
+                names = getattr(branch, attr, None) if branch else None
+                for name in (names if isinstance(names, (list, tuple)) else (names,) if names else ()):
+                    result.append(_resolve(index, rule, f"{field}.{attr}", name, ("address", "address-group"), owner_family="nat"))
+    for owner in (*config.interfaces, *config.interface_units):
+        if owner.sdwan_interface_profile:
+            result.append(_resolve(index, owner, "sdwan_interface_profile", owner.sdwan_interface_profile, ("sdwan-interface-profile",), owner_family="interface"))
+    for zone in config.zones:
+        if zone.zone_protection_profile:
+            result.append(_resolve(index, zone, "zone_protection_profile", zone.zone_protection_profile, ("zone-protection-profile",), owner_family="zone", source_only=True))
     for group in config.security_profile_groups:
         for name in group.vulnerability or ():
             result.append(_resolve(index, group, "vulnerability", name, ("vulnerability-profile",), owner_family="security-profile-group"))

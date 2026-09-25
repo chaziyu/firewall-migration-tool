@@ -52,3 +52,64 @@ def test_identity_admin_unknown_source_is_retained_separately():
     config = build_panos_config("<config><shared><administrators><entry name='admin'><future-setting>retain-me</future-setting></entry></administrators></shared></config>")
     assert config.source_inventory
     assert config.administrators[0].raw_extra["future-setting"] == "retain-me"
+
+
+def test_selected_identity_roots_group_mapping_names_and_phash_redaction():
+    config = build_panos_config("""<config><shared>
+      <mgt-config><users><entry name='ops'><permissions><role-based><deviceadmin>yes</deviceadmin></role-based></permissions><password>ADMIN-SECRET</password></entry></users></mgt-config>
+      <local-user-database><user><entry name='alice'><phash>HASH-SECRET</phash></entry></user>
+        <user-group><entry name='admins'><user><member>alice</member></user></entry></user-group></local-user-database>
+      <group-mapping><entry name='ldap'><use-ldap-for-serialno-check>yes</use-ldap-for-serialno-check>
+        <group-object><member>objectClass</member></group-object><group-member><member>member</member></group-member><group-name><member>cn</member></group-name>
+        <user-object><member>person</member></user-object><user-name><member>uid</member></user-name><user-email><member>mail</member></user-email><group-email><member>groupMail</member></group-email>
+        <alternate-user-name-1>uid</alternate-user-name-1><alternate-user-name-2>mail</alternate-user-name-2><alternate-user-name-3>cn</alternate-user-name-3>
+        <container-object><member>organizationalUnit</member></container-object><last-modify-attr>modifyTimestamp</last-modify-attr><group-include-list><member>CN=NetOps</member></group-include-list>
+      </entry></group-mapping>
+    </shared></config>""")
+    admin, = config.administrators
+    user, = config.local_users
+    group, = config.local_user_groups
+    mapping, = config.group_mappings
+    assert (admin.role_type, admin.built_in_role, admin.password_configured) == ("built-in", "deviceadmin", True)
+    assert user.password_configured is True and "HASH-SECRET" not in config.model_dump_json()
+    assert group.members == ["alice"]
+    assert mapping.ldap_serial_number_check == "yes"
+    assert mapping.group_object_attributes == ["objectClass"]
+    assert mapping.group_member_attributes == ["member"]
+    assert mapping.group_name_attributes == ["cn"]
+    assert mapping.user_object_attributes == ["person"]
+    assert mapping.user_name_attributes == ["uid"]
+    assert mapping.user_email_attributes == ["mail"]
+    assert mapping.group_email_attributes == ["groupMail"]
+    assert mapping.alternate_username_1 == "uid" and mapping.alternate_username_3 == "cn"
+    assert mapping.container_object_attributes == ["organizationalUnit"]
+    assert mapping.last_modify_attribute == "modifyTimestamp"
+    assert mapping.group_include_list == ["CN=NetOps"]
+    assert "ADMIN-SECRET" not in config.model_dump_json()
+
+
+def test_admin_custom_role_subtree_is_preserved_without_guessing_profile_leaf():
+    config = build_panos_config("""<config><shared><mgt-config><users><entry name='ops'>
+      <permissions><role-based><custom><role-profile>ops-profile</role-profile></custom></role-based></permissions>
+    </entry></users></mgt-config></shared></config>""")
+    admin, = config.administrators
+    assert admin.role_type == "custom"
+    assert admin.custom_admin_role is None
+    assert admin.raw_extra["permissions"]["role-based"]["custom"]["role-profile"] == "ops-profile"
+
+
+def test_selected_admin_role_nested_channel_permissions_keep_order_and_values():
+    config = build_panos_config("""<config><shared><admin-role><entry name='ops'><role><device>
+      <webui><policies><security>read-only</security></policies></webui>
+      <xmlapi><objects><addresses>enable</addresses></objects></xmlapi>
+      <restapi><network><interfaces>disable</interfaces></network></restapi>
+      <cli><config>read-only</config></cli>
+    </device></role></entry></admin-role></shared></config>""")
+    role, = config.admin_roles
+    assert role.role_scope == "device"
+    assert [(item.channel, item.permission_path, item.setting, item.value) for item in role.permissions] == [
+        ("webui", "policies", "security", "read-only"),
+        ("xmlapi", "objects", "addresses", "enable"),
+        ("restapi", "network", "interfaces", "disable"),
+        ("cli", None, "config", "read-only"),
+    ]

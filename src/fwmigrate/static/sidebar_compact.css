@@ -12,23 +12,6 @@
     padding-top: 0;
   }
 
-  .sidebar-note {
-    padding: 18px 16px 17px;
-  }
-
-  .sidebar-note > .icon {
-    margin-bottom: 13px;
-  }
-
-  .sidebar-note p {
-    margin-top: 8px;
-    line-height: 1.6;
-  }
-
-  .vendor-dots {
-    margin-top: 15px;
-  }
-
   .sidebar-link {
     padding: 16px 7px;
   }
@@ -53,26 +36,6 @@
 
   .sidebar-bottom {
     margin-top: auto;
-  }
-
-  .sidebar-note {
-    padding: 16px 15px;
-  }
-
-  .sidebar-note > .icon {
-    margin-bottom: 10px;
-  }
-
-  .sidebar-note strong {
-    font-size: 17px;
-  }
-
-  .sidebar-note p {
-    line-height: 1.5;
-  }
-
-  .vendor-dots {
-    margin-top: 12px;
   }
 
   .sidebar-link {

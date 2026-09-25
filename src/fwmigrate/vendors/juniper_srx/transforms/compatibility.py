@@ -1,9 +1,10 @@
 """Temporary report projections retained for existing Juniper consumers."""
 
 from .interface_topology import build_interface_topology
+from .policies import build_policy_relationships
 
 
-def build_compatibility_views(config):
+def build_compatibility_views(config, effective_lookup=None):
     views = {key: [] for key in ("interface_topology", "zone_memberships", "routing_instances", "address_books",
                                   "applications", "policies", "nat_rule_sets", "vpn_relationships", "dhcp",
                                   "access_profiles", "firewall_users", "apbr", "remote_access")}
@@ -20,9 +21,9 @@ def build_compatibility_views(config):
                                       for name, book in context.address_books.items())
         views["applications"].extend({"context": scope, "name": name, "terms": list(getattr(item, "terms", []))}
                                      for name, item in context.applications.items())
-        views["policies"].extend({"context": scope, "name": item.name, "order": index,
-                                  "from_zones": list(item.from_zones), "to_zones": list(item.to_zones)}
-                                 for index, item in enumerate([*context.policies, *context.global_policies]))
+        policy_view = build_policy_relationships(context, scope, effective_lookup)
+        views["policies"].extend(row for group in policy_view["zone_policy_sets"] for row in group["policies"])
+        views["policies"].extend(policy_view["global_policies"])
         for kind, sets in (("source", context.nat.source_rule_sets), ("destination", context.nat.destination_rule_sets),
                            ("static", context.nat.static_rule_sets)):
             views["nat_rule_sets"].extend({"context": scope, "type": kind, "name": name,
@@ -38,6 +39,10 @@ def build_compatibility_views(config):
             views["dhcp"].extend({"context": scope, "kind": "local-server", "name": group.name,
                                   "routing_instance": group.routing_instance, "family": group.family,
                                   "interface": interface} for interface in group.interfaces or [None])
+        for group in context.dhcp.relay_groups.values():
+            views["dhcp"].append({"context": scope, "kind": "relay-group", "name": group.name,
+                                  "routing_instance": group.routing_instance,
+                                  "interfaces": list(group.interfaces), "server_groups": list(group.server_groups)})
         for pool in context.dhcp.address_assignment_pools.values():
             for family_name, family in pool.families.items():
                 views["dhcp"].append({"context": scope, "kind": "address-assignment-pool", "name": pool.name,

@@ -39,6 +39,18 @@ class CiscoIPsecTransformSet(CiscoSourceRecord):
     review_reasons: List[str] = Field(default_factory=list)
 
 
+class CiscoIPsecProfile(CiscoSourceRecord):
+    extraction_status: str = "EXTRACTED"
+    requires_manual_review: bool = False
+    ikev1_transform_sets: List[str] = Field(default_factory=list)
+    ikev2_ipsec_proposals: List[str] = Field(default_factory=list)
+    pfs: Optional[str] = None
+    sa_lifetime_seconds: Optional[int] = None
+    sa_lifetime_kilobytes: Optional[int] = None
+    trustpoint: Optional[str] = None
+    responder_only: Optional[bool] = None
+
+
 class CiscoVPNAddressPool(CiscoSourceRecord):
     start: Optional[str] = None
     end: Optional[str] = None

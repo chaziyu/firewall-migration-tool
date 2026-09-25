@@ -39,6 +39,7 @@ class CiscoAccessRule(CiscoSourceModel):
     action: Optional[str] = None
     protocol: Optional[str] = None
     protocol_object: Optional[str] = None
+    protocol_reference_type: Optional[str] = None
     source_endpoint: Optional[CiscoACLEndpoint] = None
     source_port: Optional[CiscoPortSpec] = None
     destination_endpoint: Optional[CiscoACLEndpoint] = None
@@ -66,3 +67,13 @@ class CiscoAccessRule(CiscoSourceModel):
     requires_manual_review: bool = False
     review_reasons: List[str] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CiscoACLRemark(CiscoSourceModel):
+    name: str
+    acl_name: str
+    source_context: Optional[str] = None
+    sequence: Optional[int] = None
+    source_order: Optional[int] = None
+    remark: str = ""
+    raw_line: str = ""

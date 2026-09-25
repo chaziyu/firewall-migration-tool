@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 from typing import Any, Dict, List, Mapping, Sequence
+from fwmigrate.extraction.sanitize import sanitize_raw_text
 
 
 _SENSITIVE_KEYWORDS = {
@@ -59,6 +60,7 @@ _SENSITIVE_KEY_SET = {
 }
 
 _SENSITIVE_SUB_KEYS = {
+    "ascii",
     "ascii-text",
     "hexadecimal",
     "text",
@@ -155,6 +157,13 @@ def _is_in_identifier_list_context(tokens: Sequence[str], idx: int) -> bool:
     return False
 
 
+def _is_ntp_key_id(tokens: Sequence[str], idx: int) -> bool:
+    lowered = [token.lower() for token in tokens]
+    return (idx + 1 < len(tokens) and lowered[:3] == ["set", "system", "ntp"]
+            and "server" in lowered and idx > lowered.index("server") + 1
+            and lowered[idx] == "key")
+
+
 def sanitize_tokens(tokens: Sequence[str]) -> List[str]:
     """
     Sanitize token list by redacting sensitive values following sensitive keyword tokens.
@@ -165,6 +174,7 @@ def sanitize_tokens(tokens: Sequence[str]) -> List[str]:
     redact_next = False
     skip_sub_keyword = False
     in_secret_bracket_list = False
+    lowered_tokens = [token.lower() for token in tokens]
 
     for i, token in enumerate(tokens):
         token_lower = token.lower()
@@ -202,6 +212,15 @@ def sanitize_tokens(tokens: Sequence[str]) -> List[str]:
         if _is_in_identifier_list_context(tokens, i):
             continue
 
+        if _is_ntp_key_id(tokens, i):
+            continue
+
+        if token_lower == "authentication-key" and lowered_tokens[:3] == ["set", "system", "ntp"]:
+            continue
+        if token_lower == "value" and "authentication-key" in lowered_tokens and lowered_tokens[:3] == ["set", "system", "ntp"]:
+            redact_next = True
+            continue
+
         if token_lower in _SENSITIVE_KEYWORDS:
             redact_next = True
             skip_sub_keyword = False
@@ -221,6 +240,33 @@ def sanitize_junos_command(tokens: Sequence[str]) -> str:
         else:
             parts.append(t)
     return " ".join(parts)
+
+
+def sanitize_junos_source_text(content: str) -> str:
+    """Sanitize Junos display-set text while preserving NTP key IDs."""
+    lines = []
+    for line in content.splitlines():
+        try:
+            tokens = shlex.split(line, comments=True)
+        except ValueError:
+            lines.append(sanitize_raw_text(line))
+            continue
+        if not tokens:
+            lines.append(sanitize_raw_text(line))
+            continue
+        safe_key = None
+        lowered = [token.lower() for token in tokens]
+        if len(tokens) >= 7 and lowered[:3] == ["set", "system", "ntp"] and "server" in lowered and "key" in lowered:
+            key_index = lowered.index("key", lowered.index("server") + 2)
+            if key_index + 1 < len(tokens):
+                safe_key = tokens[key_index + 1]
+                tokens[key_index] = "__JUNOS_NTP_KEY__"
+                tokens[key_index + 1] = "__JUNOS_NTP_KEY_ID__"
+        sanitized = sanitize_junos_command(tokens)
+        if safe_key is not None:
+            sanitized = sanitized.replace("__JUNOS_NTP_KEY__ __JUNOS_NTP_KEY_ID__", f"key {safe_key}")
+        lines.append(sanitized)
+    return "\n".join(lines)
 
 
 def is_sensitive_key(key: str) -> bool:

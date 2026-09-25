@@ -19,4 +19,5 @@ def test_gaia_route_does_not_infer_fields_not_present_in_source():
     assert route.address_family == "ipv4"
     assert route.ipv4_destination == "10.0.0.0/8"
     assert route.ipv6_destination is None
-    assert route.next_hop == "192.0.2.254"
+    assert route.next_hops[0].next_hop_type == "gateway"
+    assert route.next_hops[0].gateway == "192.0.2.254"

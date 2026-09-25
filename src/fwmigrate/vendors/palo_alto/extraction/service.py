@@ -14,7 +14,10 @@ def _override(element: ET.Element) -> PANServiceOverride | None:
         return None
     source = next(iter(node), node)
     extra, explicit = typed_fields(source, {"timeout", "halfclose-timeout", "timewait-timeout"}, {"halfclose-timeout": "halfclose_timeout", "timewait-timeout": "timewait_timeout"})
-    return PANServiceOverride(timeout=value(source, "timeout"), halfclose_timeout=value(source, "halfclose-timeout"), timewait_timeout=value(source, "timewait-timeout"), raw_extra=extra, explicit_fields=explicit)
+    enabled = source.tag if source is not node and source.tag in {"yes", "no"} else None
+    if enabled is not None:
+        explicit.add("enabled")
+    return PANServiceOverride(enabled=enabled, timeout=value(source, "timeout"), halfclose_timeout=value(source, "halfclose-timeout"), timewait_timeout=value(source, "timewait-timeout"), raw_extra=extra, explicit_fields=explicit)
 
 
 def _protocol(element: ET.Element | None, name: str) -> PANServiceProtocol | None:
