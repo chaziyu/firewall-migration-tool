@@ -4,6 +4,7 @@ from dataclasses import replace
 from ipaddress import ip_interface
 
 from .decisions import PANDecisionMode, PANDecisionReviewState, PANMigrationDecisionSet, make_decision_key
+from .interface_candidates import viable_candidate
 from ...vendors.palo_alto.source_model import pan_scope_identity
 
 
@@ -86,15 +87,20 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
         if key not in existing or (vdom, name) in mapped:
             continue
         address = _addresses(item.ip)
-        candidates = [(target_item, topo) for target_item, topo in scoped
-                      if address and _compatible(item, target_item)
-                      and address & _addresses(target_item.ipv4_addresses)
-                      and (item.vlanid is None or str(item.vlanid) == str(getattr(target_item, "tag", None)))]
+        candidates = []
+        for target_item, topo in scoped:
+            if not address or not _compatible(item, target_item):
+                continue
+            valid, strong, supporting, _ = viable_candidate(item, target_item, topo)
+            if valid:
+                candidates.append((target_item, topo, strong, supporting))
         if len(candidates) == 1:
-            target_item, _ = candidates[0]
+            target_item, _, strong, supporting = candidates[0]
+            exact = address & _addresses(target_item.ipv4_addresses)
             put(vdom, "interface", name, "target_interface", target_item.name,
-                f"Target XML: unique matching interface address ({', '.join(sorted(address & _addresses(target_item.ipv4_addresses)))})",
-                "TARGET_INTERFACE_ADDRESS", ', '.join(sorted(address & _addresses(target_item.ipv4_addresses))), target_item.name)
+                f"Target XML: unique interface candidate ({'; '.join((*strong, *supporting))})",
+                "TARGET_INTERFACE_ADDRESS" if exact else "TARGET_INTERFACE_EVIDENCE",
+                ', '.join(sorted(exact)) if exact else '; '.join((*strong, *supporting)), target_item.name)
             mapped[(vdom, name)] = target_item.name
         elif len(candidates) > 1:
             warnings[key] = "Several target interfaces share the source address; choose one manually."
@@ -105,14 +111,17 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
         parent = mapped.get((vdom, item.interface))
         if not parent:
             continue
-        candidates = [target_item for target_item, _ in scoped
-                      if getattr(target_item, "parent", None) == parent
-                      and str(getattr(target_item, "tag", None)) == str(item.vlanid)]
+        candidates = []
+        for target_item, topo in scoped:
+            valid, strong, supporting, _ = viable_candidate(item, target_item, topo, parent)
+            if valid and str(getattr(target_item, "tag", None)) == str(item.vlanid):
+                candidates.append((target_item, strong, supporting))
         if len(candidates) == 1:
-            put(vdom, "interface", name, "target_interface", candidates[0].name,
-                f"Target XML: VLAN {item.vlanid} under mapped parent {parent}",
-                "TARGET_VLAN_PARENT", str(item.vlanid), candidates[0].name)
-            mapped[(vdom, name)] = candidates[0].name
+            target_item, strong, supporting = candidates[0]
+            put(vdom, "interface", name, "target_interface", target_item.name,
+                f"Target XML: unique VLAN candidate ({'; '.join((*strong, *supporting))})",
+                "TARGET_VLAN_PARENT", '; '.join((*strong, *supporting)), target_item.name)
+            mapped[(vdom, name)] = target_item.name
 
     assignments = {}
     for (vdom, name), target_name in mapped.items():

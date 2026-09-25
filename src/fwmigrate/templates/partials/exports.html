@@ -23,7 +23,7 @@
         <button type="button" class="btn btn-secondary btn-sm" id="decision-clear-selection">Clear selection</button>
         <span id="decision-selected-count" aria-live="polite">Selected: 0</span>
         <button type="button" class="btn btn-primary btn-sm" id="decision-confirm-selected">Confirm selected</button>
-        <button type="button" class="btn btn-secondary btn-sm" id="decision-confirm-suggestions">Confirm all suggestions</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="decision-confirm-suggestions">Confirm all mapping suggestions</button>
       </div>
       <details class="mapping-more-actions">
         <summary>Bulk edit, import &amp; export</summary>
@@ -45,6 +45,14 @@
     <p id="mapping-evidence-summary" aria-live="polite"></p>
     <div id="migration-mapping-fields" role="region" aria-label="Migration decisions" tabindex="0"></div>
     <details id="optional-mappings" class="hidden"><summary>Show optional / unreferenced inventory</summary><ul id="optional-mapping-list"></ul></details>
+    <section id="migration-recommendations" class="migration-recommendations" aria-labelledby="recommendations-heading">
+      <div class="section-heading"><h3 id="recommendations-heading">Migration recommendations</h3></div>
+      <p class="card-desc">Read-only pair-specific design recommendations. They never confirm mappings or become planner input.</p>
+      <div class="mapping-toolbar-row">
+        <label>Show <select id="recommendation-filter"><option value="all">All</option><option value="DHCP">DHCP</option><option value="VPN">VPN</option><option value="Users/Admin">Users/Admin</option><option value="Security">Security</option><option value="SD-WAN">SD-WAN</option><option value="SSL VPN">SSL VPN</option><option value="External Resource">External Resource</option><option value="needs-decision">Needs decision</option></select></label>
+      </div>
+      <div id="migration-recommendation-fields" role="region" aria-label="Migration recommendations" tabindex="0"></div>
+    </section>
   </section>
   <section class="card output-card hidden" id="migration-build" aria-labelledby="bundle-heading">
     <div class="card-header">

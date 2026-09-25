@@ -893,6 +893,9 @@ select {
 .report-sticky-header { position: sticky; top: 0; z-index: 5; margin: -21px -24px 18px; padding: 21px 24px 0; background: var(--surface); }
 .report-sticky-header .card-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .report-sticky-header .section-heading { min-width: 0; }
+.excel-actions { display: flex; align-items: center; gap: 8px; }
+.excel-profile-control { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+.excel-profile-control select { width: 94px; min-height: 36px; padding: 7px 8px; }
 .report-stat { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--canvas); }
 .report-stat-button { width: 100%; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .report-stat-button:hover,
@@ -2263,6 +2266,9 @@ select {
 .export-steps p { max-width: 50rem; color: var(--muted-color, #667085); }
 .build-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 #migration-plan > section { margin-top: 18px; }
+.migration-recommendations { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.recommendation-table { min-width: 1100px; }
+.recommendation-table td { vertical-align: top; }
 #migration-plan-summary { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--canvas); white-space: pre-line; }
 #migration-plan-filter { min-height: 39px; padding: 8px 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); }
 #migration-plan .export-steps { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
@@ -2272,14 +2278,19 @@ select {
   #migration-mapping-fields { max-height: min(60vh, 30rem); overflow: auto; }
   .decision-table, .decision-table tbody, .decision-table tr, .decision-table td { display: block; min-width: 0; width: 100%; }
   .migration-plan-table, .migration-plan-table tbody, .migration-plan-table tr, .migration-plan-table td { display: block; min-width: 0; width: 100%; }
+  .recommendation-table, .recommendation-table tbody, .recommendation-table tr, .recommendation-table td { display: block; min-width: 0; width: 100%; }
   .decision-table thead { display: none; }
   .migration-plan-table thead { display: none; }
+  .recommendation-table thead { display: none; }
   .decision-table tr { padding: .65rem; margin: .65rem 0; border: 1px solid var(--border-color, #ddd); border-radius: .5rem; }
   .migration-plan-table tr { padding: .65rem; margin: .65rem 0; border: 1px solid var(--border-color, #ddd); border-radius: .5rem; }
+  .recommendation-table tr { padding: .65rem; margin: .65rem 0; border: 1px solid var(--border-color, #ddd); border-radius: .5rem; }
   .decision-table td { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: .5rem; padding: .35rem 0; border: 0; overflow-wrap: anywhere; }
   .migration-plan-table td { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: .5rem; padding: .35rem 0; border: 0; overflow-wrap: anywhere; }
+  .recommendation-table td { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: .5rem; padding: .35rem 0; border: 0; overflow-wrap: anywhere; }
   .decision-table td::before { content: attr(data-label); font-weight: 600; }
   .migration-plan-table td::before { content: attr(data-label); font-weight: 600; }
+  .recommendation-table td::before { content: attr(data-label); font-weight: 600; }
   .decision-table td:first-child { display: flex; }
   .decision-table td:first-child::before { content: "Select"; }
 }

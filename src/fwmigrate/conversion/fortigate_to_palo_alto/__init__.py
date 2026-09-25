@@ -28,6 +28,12 @@ from .decisions import (
 from .planner import FortiGateToPaloAltoPlanner
 from .target_validation import PANTargetFinding, validate_against_target
 from .support_guidance import PANSupportGuidance, build_support_guidance
+from .recommendations import (
+    PANMigrationRecommendation,
+    PANRecommendationConfidence,
+    PANRecommendationMethod,
+)
+from .recommendation_engine import build_recommendations
 
 __all__ = [
     "FortiGateToPaloAltoPlanner",
@@ -58,4 +64,8 @@ __all__ = [
     "validate_against_target",
     "PANSupportGuidance",
     "build_support_guidance",
+    "PANMigrationRecommendation",
+    "PANRecommendationConfidence",
+    "PANRecommendationMethod",
+    "build_recommendations",
 ]

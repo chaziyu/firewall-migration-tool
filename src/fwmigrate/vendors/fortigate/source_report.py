@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from fwmigrate.source_reporting import ExcelExportProfile
+
 from .config import ExtractionConfig
 from .derived import DerivedViews, build_derived_views
 from .extraction.extractor import extract_fortigate_config
@@ -62,6 +64,7 @@ class FortiGateSourceReporter:
         self,
         analysis: FortiGateSourceResult,
         output: Any,
+        profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
         **options: Any,
     ) -> Any:
         from .export import export_excel
@@ -71,6 +74,7 @@ class FortiGateSourceReporter:
             derived=analysis.derived,
             validation=analysis.validation,
             output=output,
+            profile=profile,
             source_name=options.get("source_name"),
         )
 

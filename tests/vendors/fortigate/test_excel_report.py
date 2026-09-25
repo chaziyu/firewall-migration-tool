@@ -9,11 +9,17 @@ from openpyxl.utils import get_column_letter
 from fwmigrate.vendors.fortigate.config import ExtractionConfig
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export import export_excel
+from fwmigrate.vendors.fortigate.export.excel import (
+    _additional_source_settings,
+    _lookup_source_header,
+    _normalized_source_values,
+)
 from fwmigrate.vendors.fortigate.export.excel_schema import SHEET_HEADERS, SHEET_ORDER
 from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
 from fwmigrate.vendors.fortigate.security.extraction import sanitize_source_attributes, sanitize_source_value
 from fwmigrate.vendors.fortigate.validation.validator import validate_config
+from fwmigrate.source_reporting import ExcelExportProfile
 
 
 _SAMPLE_CONFIG = r"""
@@ -185,7 +191,11 @@ end
 
 
 class ExcelReportTest(unittest.TestCase):
-    def _workbook(self, config_text: str = _SAMPLE_CONFIG):
+    def _workbook(
+        self,
+        config_text: str = _SAMPLE_CONFIG,
+        profile: ExcelExportProfile = ExcelExportProfile.FULL,
+    ):
         extracted = extract_fortigate_config(
             parse_fortigate_config(config_text),
             config=ExtractionConfig(),
@@ -199,9 +209,72 @@ class ExcelReportTest(unittest.TestCase):
             validation=validation,
             output=output,
             source_name="sample.conf",
+            profile=profile,
         )
         output.seek(0)
         return load_workbook(output, data_only=False)
+
+    def test_fast_inventory_and_sheet_selection(self):
+        full = self._workbook(profile=ExcelExportProfile.FULL)
+        fast = self._workbook(profile=ExcelExportProfile.FAST)
+
+        full_inventory = full["FortiGate Source Inventory"]
+        fast_inventory = fast["FortiGate Source Inventory"]
+        full_values = list(full_inventory.iter_rows(min_row=4, values_only=True))
+        fast_values = list(fast_inventory.iter_rows(min_row=4, values_only=True))
+        headers = list(SHEET_HEADERS["FortiGate Source Inventory"])
+        object_col = headers.index("Object")
+        status_col = headers.index("Extraction Status")
+
+        assert any(row[object_col] == "port2" for row in full_values)
+        assert not any(row[object_col] == "port2" for row in fast_values)
+        assert any(row[status_col] != "TYPED" for row in fast_values)
+        assert len(fast_values) < len(full_values)
+        assert "NTP Servers" not in fast.sheetnames
+        assert {"Summary", "Review Required", "FortiGate Source Inventory", "Extraction Coverage"} <= set(fast.sheetnames)
+
+        summary = fast["Summary"]
+        links = [
+            cell.hyperlink.target
+            for row in summary.iter_rows()
+            for cell in row
+            if cell.hyperlink
+        ]
+        assert all(target.split("'!")[0].lstrip("#'") in fast.sheetnames for target in links)
+
+    def test_fast_preserves_values_and_uses_low_style_table_writer(self):
+        full = self._workbook(profile=ExcelExportProfile.FULL)
+        fast = self._workbook(profile=ExcelExportProfile.FAST)
+
+        for sheet_name in ("Addresses", "Interfaces", "Extraction Coverage"):
+            if sheet_name not in fast.sheetnames:
+                continue
+            assert list(full[sheet_name].iter_rows(min_row=3, values_only=True)) == list(
+                fast[sheet_name].iter_rows(min_row=3, values_only=True)
+            )
+            assert fast[sheet_name]["A1"].has_style
+            assert fast[sheet_name].freeze_panes == full[sheet_name].freeze_panes
+            assert fast[sheet_name].auto_filter.ref == full[sheet_name].auto_filter.ref
+
+    def test_data_only_is_streaming_data_without_empty_or_presentation_sheets(self):
+        fast = self._workbook(profile=ExcelExportProfile.FAST)
+        data_only = self._workbook(profile=ExcelExportProfile.DATA_ONLY)
+
+        assert "Summary" in data_only.sheetnames
+        assert "Addresses" in data_only.sheetnames
+        assert "NTP Servers" not in data_only.sheetnames
+        assert data_only["Addresses"].merged_cells.ranges == set()
+        assert data_only["Addresses"].freeze_panes is None
+        assert data_only["Addresses"].auto_filter.ref is None
+        assert not any(
+            cell.hyperlink
+            for sheet in data_only.worksheets
+            for row in sheet.iter_rows()
+            for cell in row
+        )
+        assert list(data_only["Addresses"].iter_rows(values_only=True)) == list(
+            fast["Addresses"].iter_rows(min_row=3, values_only=True)
+        )
 
     @staticmethod
     def _rows(sheet):
@@ -371,6 +444,34 @@ end
         settings = str(row[headers.index("Additional Settings")])
 
         self.assertLess(settings.index("future_z"), settings.index("future_a"))
+
+    def test_source_header_aliases_normalize_case_and_separators(self):
+        values = {
+            "ALLOWACCESS": "ping",
+            "auto-negotiate": "hyphen",
+            "auto_negotiate": "underscore",
+            "future-key": "preserve",
+        }
+        normalized = _normalized_source_values(values)
+
+        self.assertEqual(
+            ("ping", "ALLOWACCESS"),
+            _lookup_source_header("Management Access", values, normalized),
+        )
+        self.assertEqual(
+            ("underscore", "auto_negotiate"),
+            _lookup_source_header("Auto Negotiate", values, normalized),
+        )
+        self.assertEqual(
+            ["auto-negotiate", "future-key"],
+            list(
+                _additional_source_settings(
+                    values,
+                    {"Management Access": "ping", "Auto Negotiate": "underscore"},
+                    ("Management Access", "Auto Negotiate"),
+                )
+            ),
+        )
 
     def test_formula_like_source_text_is_exported_as_literal(self):
         workbook = self._workbook('''config firewall address

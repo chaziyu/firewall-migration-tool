@@ -4,9 +4,19 @@
       <div class="section-heading">
         <h2 id="report-heading"><span class="step-num">02</span>Configuration report</h2>
       </div>
-      <button type="button" id="btn-extract-excel" class="btn btn-primary" disabled>
-        {{ icon('download') }}<span>Download Excel</span>
-      </button>
+      <div class="excel-actions">
+        <label class="excel-profile-control" for="excel-profile">
+          <span>Profile</span>
+          <select id="excel-profile" aria-label="Excel export profile">
+            <option value="fast" selected>FAST</option>
+            <option value="full">FULL</option>
+            <option value="data_only">DATA ONLY</option>
+          </select>
+        </label>
+        <button type="button" id="btn-extract-excel" class="btn btn-primary" disabled>
+          {{ icon('download') }}<span>Download Excel</span>
+        </button>
+      </div>
     </div>
     <nav class="report-tabs" aria-label="Report sections">
       {% for key, label in (

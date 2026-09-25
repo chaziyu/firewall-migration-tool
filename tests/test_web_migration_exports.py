@@ -260,6 +260,8 @@ def test_migration_workflow_uses_planning_terminology():
     assert 'id="decision-set-selected"' in html and 'id="decision-use-suggestion"' in html
     assert 'id="migration-plan-items"' in html and 'id="migration-plan-filter"' in html
     assert 'id="migration-command-preview"' in html and 'id="migration-copy-commands"' in html
+    assert 'id="migration-recommendation-fields"' in html
+    assert "Confirm all mapping suggestions" in html
     assert html.index('id="migration-mapping"') < html.index('id="migration-build"') < html.index('id="migration-plan"')
     assert 'class="card output-card hidden" id="migration-build"' in html
     assert 'class="export-steps hidden" id="migration-export"' in html
@@ -268,6 +270,8 @@ def test_migration_workflow_uses_planning_terminology():
     assert "Configuration Report" in html
     assert "Planned PAN-OS configuration" in html
     assert "Live migration" in html
+
+
     assert "FIREWALL OPERATIONS" not in html
     assert "START HERE" not in html
     assert 'id="source-card-description"' not in html
@@ -298,3 +302,19 @@ def test_migration_workflow_uses_planning_terminology():
     assert "Convert config" not in html
     assert "Convert configuration" not in html
     assert "Target configuration" not in html
+
+
+def test_migration_recommendations_are_review_only_and_reported():
+    client = create_app({"TESTING": True}).test_client()
+    fixture = Path(__file__).parent / "fixtures" / "fortigate" / "identity_authentication_full.conf"
+    preview = client.post("/api/preview", data={
+        "file": (io.BytesIO(fixture.read_bytes()), fixture.name),
+    }, content_type="multipart/form-data").get_json()["preview_id"]
+
+    requirements = client.post("/api/migration/requirements", json={"preview_id": preview}).get_json()
+    assert requirements["recommendations"]
+    assert any(item["family"] == "Users/Admin" for item in requirements["recommendations"])
+    assert all("review_state" not in item and "planner_value" not in item for item in requirements["recommendations"])
+
+    plan = client.post("/api/migrate", json={"preview_id": preview, "mapping": {}}).get_json()
+    assert plan["recommendations"] == plan["report"]["review"]["recommendations"]
