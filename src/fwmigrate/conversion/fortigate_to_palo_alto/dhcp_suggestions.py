@@ -4,11 +4,13 @@ from .recommendations import (
     PANMigrationRecommendation,
     PANRecommendationConfidence,
     PANRecommendationMethod,
+    PANRecommendationReadiness,
     decision_key_if_present,
     decision_value,
+    candidate_names,
     recommendation_key,
+    scoped_target_candidates,
     source_facts,
-    target_names,
 )
 
 
@@ -24,7 +26,7 @@ def build_dhcp_recommendations(source, derived, decisions, target=None, target_d
             blockers.append("Target interface mapping required")
         if getattr(server, "exclude_ranges", ()):
             blockers.append("FortiGate exclude-range behavior requires manual target review")
-        candidates = target_names(target, "dhcp_servers", target_device)
+        candidates = scoped_target_candidates(target, "dhcp_servers", "dhcp-server", name, vdom, decisions, target_device)
         evidence = source_facts(server, ("interface", "default_gateway", "netmask", "lease_time", "dns_server1", "dns_server2"))
         evidence += tuple(
             f"IP pool = {pool.start_ip}-{pool.end_ip}"
@@ -43,7 +45,13 @@ def build_dhcp_recommendations(source, derived, decisions, target=None, target_d
             summary=f"Map the FortiGate interface-scoped DHCP server to PAN-OS network dhcp interface{f' {mapped}' if mapped else ''} server.",
             method=PANRecommendationMethod.TARGET_EVIDENCE if candidates else PANRecommendationMethod.DETERMINISTIC,
             confidence=PANRecommendationConfidence.HIGH if server.interface else PANRecommendationConfidence.MEDIUM,
-            evidence=evidence, candidate_target_objects=candidates,
+            evidence=evidence, candidate_target_objects=candidate_names(candidates), target_candidates=candidates,
             required_decision_keys=(decision_key,) if decision_key else (), blockers=tuple(blockers),
+            readiness=(
+                PANRecommendationReadiness.MANUAL_DESIGN if server.exclude_ranges
+                else PANRecommendationReadiness.REQUIRES_DECISION if server.interface and not mapped
+                else PANRecommendationReadiness.INCOMPLETE_EVIDENCE if not server.interface
+                else PANRecommendationReadiness.SUGGEST
+            ),
         ))
     return tuple(result)
