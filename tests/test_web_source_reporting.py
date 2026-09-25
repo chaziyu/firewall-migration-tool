@@ -1,6 +1,7 @@
 import io
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 
@@ -96,6 +97,25 @@ def test_source_preview_and_excel_use_opaque_cached_asa_analysis():
     sheets = load_workbook(io.BytesIO(workbook.data), read_only=True).sheetnames
     assert "Interfaces" in sheets
     assert "web-secret" not in workbook.data.decode("latin1", errors="ignore")
+
+
+def test_fast_excel_uses_cached_analysis_without_deepcopy():
+    client = create_app({"TESTING": True}).test_client()
+    preview = client.post(
+        "/api/preview",
+        data={"source_vendor": "fortigate", "file": (io.BytesIO(FORTIGATE_SOURCE.encode()), "fortigate.conf")},
+        content_type="multipart/form-data",
+    )
+    preview_id = preview.get_json()["preview_id"]
+
+    with patch("fwmigrate.web._clone_preview", side_effect=AssertionError("FAST must reuse cached analysis")):
+        workbook = client.post(
+            "/api/extract/excel",
+            data={"source_vendor": "fortigate", "preview_id": preview_id},
+            content_type="multipart/form-data",
+        )
+
+    assert workbook.status_code == 200
 
 
 def test_source_excel_rejects_missing_input_and_unknown_vendor():

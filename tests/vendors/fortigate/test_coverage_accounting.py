@@ -151,7 +151,7 @@ end
         self.assertEqual(0, row[headers.index("Raw Extra Entries")])
         self.assertEqual(0, row[headers.index("Source-only Records")])
 
-    def test_fast_inventory_keeps_evidence_but_omits_fully_typed_duplicates(self):
+    def test_fast_omits_traceability_appendices_and_redirects_unsupported_evidence(self):
         source = '''
 config system interface
     edit "port1"
@@ -170,19 +170,14 @@ end
         _, full = self._report(source)
         _, fast = self._report(source, ExcelExportProfile.FAST)
 
-        headers = list(SHEET_HEADERS["FortiGate Source Inventory"])
-        object_col = headers.index("Object")
-        status_col = headers.index("Extraction Status")
-        full_rows = list(full["FortiGate Source Inventory"].iter_rows(min_row=4, values_only=True))
-        fast_inventory = fast["FortiGate Source Inventory"]
-        fast_rows = list(fast_inventory.iter_rows(min_row=4, values_only=True))
+        assert "FortiGate Source Inventory" in full.sheetnames
+        assert "Extraction Coverage" in full.sheetnames
+        assert "FortiGate Source Inventory" not in fast.sheetnames
+        assert "Extraction Coverage" not in fast.sheetnames
 
-        assert any(row[object_col] == "port2" for row in full_rows)
-        assert not any(row[object_col] == "port2" for row in fast_rows)
-        assert {"TYPED_WITH_RAW_EXTRA", "SOURCE_ONLY"} <= {
-            row[status_col] for row in fast_rows
-        }
-        assert str(fast_inventory["A2"].value).startswith(f"{len(fast_rows)} selected source row(s).")
+        headers, rows = self._rows(fast["Unsupported"])
+        source_only = next(row for row in rows if row[headers.index("Section")] == "firewall unsupported-section")
+        assert source_only[headers.index("Raw Capture Location")] == "Full Excel export / sanitized source evidence"
 
 
 

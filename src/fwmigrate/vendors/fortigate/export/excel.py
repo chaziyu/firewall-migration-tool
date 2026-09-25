@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Iterable, Iterator, Mapping, Sequence
 
 from openpyxl import Workbook
+from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -88,14 +89,8 @@ _SOURCE_INVENTORY_WIDTHS = {
     "Raw Extra Entries": 18,
 }
 
-_FAST_REQUIRED_SHEETS = frozenset(
-    {
-        "Summary",
-        "Review Required",
-        "FortiGate Source Inventory",
-        "Extraction Coverage",
-    }
-)
+_FAST_REQUIRED_SHEETS = frozenset({"Review Required"})
+_FAST_EXCLUDED_SHEETS = frozenset({"FortiGate Source Inventory", "Extraction Coverage"})
 
 
 def export_excel(
@@ -154,40 +149,54 @@ class _ExcelContext:
         self.profile = profile
         self.source_name = source_name or ""
         self.source_by_path: dict[str, list[SourceObjectRecord]] = defaultdict(list)
-        self.source_by_vdom: dict[str, list[SourceObjectRecord]] = defaultdict(list)
         self.source_by_identity: dict[tuple[str, str, str | None], list[SourceObjectRecord]] = defaultdict(list)
         self.nested_source_by_parent: dict[tuple[str, str, str | None], list[SourceObjectRecord]] = defaultdict(list)
+        vdoms: set[str] = set()
+        ipv6_explicit = False
 
         for record in extracted.source_objects:
             self.source_by_path[record.source_path].append(record)
-            self.source_by_vdom[record.vdom].append(record)
+            vdoms.add(record.vdom)
             self.source_by_identity[(record.vdom, record.source_path, record.object_name)].append(record)
             if record.source_path.startswith("system interface "):
                 parent = record.parent_objects[0] if record.parent_objects else None
                 self.nested_source_by_parent[(record.vdom, "system interface", parent)].append(record)
+            ipv6_explicit = ipv6_explicit or any(
+                "ipv6" in _normalize_key(key) or "ip6" in _normalize_key(key)
+                for key in record.values
+            )
 
         self.source_paths = frozenset(self.source_by_path)
-        self.vdoms = frozenset(self.source_by_vdom)
+        self.vdoms = frozenset(vdoms)
         self.registered_sections = frozenset(registered_sections())
-        self.typed_source_inventory = build_typed_source_inventory(self.config)
-        self.typed_source_identity_index = build_typed_source_identity_index(self.typed_source_inventory)
+        self._typed_source_inventory = None
+        self._typed_source_identity_index = None
         self.source_only_counts = {
             path: len(records)
             for path, records in self.source_by_path.items()
             if not supports_path(path)
         }
-        self.ipv6_explicit = any(
-            "ipv6" in _normalize_key(key) or "ip6" in _normalize_key(key)
-            for record in extracted.source_objects
-            for key in record.values
-        )
-        self.source_inventory_row_count = _source_inventory_row_count(self)
+        self.ipv6_explicit = ipv6_explicit
 
         self.validation_index = ValidationIssueIndex(validation)
         self._issues_cache: dict[
             tuple[str, tuple[str, ...], tuple[str, ...]],
             tuple[ValidationIssue, ...],
         ] = {}
+
+    @property
+    def typed_source_inventory(self):
+        if self._typed_source_inventory is None:
+            self._typed_source_inventory = build_typed_source_inventory(self.config)
+        return self._typed_source_inventory
+
+    @property
+    def typed_source_identity_index(self):
+        if self._typed_source_identity_index is None:
+            self._typed_source_identity_index = build_typed_source_identity_index(
+                self.typed_source_inventory
+            )
+        return self._typed_source_identity_index
 
     def issues_for(
         self,
@@ -257,42 +266,28 @@ def _build_workbook(context: _ExcelContext) -> Workbook:
 
 
 def _build_fast_workbook(context: _ExcelContext) -> Workbook:
-    workbook = Workbook()
-    workbook.remove(workbook.active)
-
-    rows_by_sheet: dict[str, Iterator[Any]] = {}
-    order = ["Summary"]
+    workbook = Workbook(write_only=True)
+    _write_fast_summary(workbook, context)
     no_rows = object()
 
     for sheet_name in SHEET_ORDER:
-        if sheet_name == "Summary":
+        if sheet_name == "Summary" or sheet_name in _FAST_EXCLUDED_SHEETS:
             continue
 
-        rows: Iterator[Any]
-        if sheet_name == "FortiGate Source Inventory":
-            rows = iter(_iter_fortigate_source_inventory_rows(context))
-        else:
-            headers = SHEET_HEADERS[sheet_name]
-            rows = iter(_rows_for_sheet(sheet_name, context, headers))
+        headers = SHEET_HEADERS[sheet_name]
+        rows = iter(_rows_for_sheet(sheet_name, context, headers))
 
         first = next(rows, no_rows)
         if first is no_rows and sheet_name not in _FAST_REQUIRED_SHEETS:
             continue
 
-        rows_by_sheet[sheet_name] = (
-            iter(()) if first is no_rows else chain((first,), rows)
+        _write_table_sheet_fast(
+            workbook,
+            sheet_name,
+            headers,
+            () if first is no_rows else chain((first,), rows),
+            context=context,
         )
-        order.append(sheet_name)
-
-    _build_summary(workbook, context, order)
-    for sheet_name in order[1:]:
-        rows = rows_by_sheet[sheet_name]
-        if sheet_name == "FortiGate Source Inventory":
-            _write_source_inventory_sheet(workbook, context, rows=rows)
-            continue
-
-        headers = list(SHEET_HEADERS[sheet_name])
-        _write_table_sheet(workbook, sheet_name, headers, rows, context=context)
 
     return workbook
 
@@ -355,6 +350,104 @@ def _summary_values(context: _ExcelContext) -> Iterator[tuple[Any, ...]]:
     yield from ((label, count) for label, count, _ in _inventory_counts(context))
     yield ("Migration Indicators", None)
     yield from _migration_indicators(context)
+
+def _fast_cell(
+    sheet,
+    value: Any,
+    *,
+    font: Font | None = None,
+    fill: PatternFill | None = None,
+    alignment: Alignment | None = None,
+) -> WriteOnlyCell:
+    cell = WriteOnlyCell(sheet, value)
+    if font is not None:
+        cell.font = font
+    if fill is not None:
+        cell.fill = fill
+    if alignment is not None:
+        cell.alignment = alignment
+    return cell
+
+
+def _write_fast_summary(workbook: Workbook, context: _ExcelContext) -> None:
+    sheet = workbook.create_sheet("Summary")
+    sheet.freeze_panes = "A5"
+    sheet.sheet_view.showGridLines = False
+    for column, width in (("A", 42), ("B", 52), ("C", 20), ("D", 4), ("E", 38), ("F", 18)):
+        sheet.column_dimensions[column].width = width
+
+    width = 6
+    band = lambda value, end: [
+        _fast_cell(sheet, value, font=_TITLE_FONT if end == 6 else _WHITE_FONT, fill=_TITLE_FILL if end == 6 else _HEADER_FILL),
+        *[_fast_cell(sheet, None, fill=_TITLE_FILL if end == 6 else _HEADER_FILL) for _ in range(end - 1)],
+        *([None] * (width - end)),
+    ]
+    sheet.append([
+        *band("FortiGate Configuration Report", 6),
+    ])
+    sheet.append([None] * width)
+    metadata = [
+        ("Source File", context.source_name),
+        ("Hostname", _hostname(context)),
+        ("FortiOS Version", context.extracted.source_metadata.fortios_version),
+        ("VDOMs", "\n".join(_vdoms(context))),
+        ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
+        ("Validation Errors", len(context.validation.errors)),
+        ("Validation Warnings", len(context.validation.warnings)),
+        (
+            "Export Profile",
+            "FAST export omits command-level Source Inventory and Extraction Coverage. "
+            "Use FULL export for complete source traceability.",
+        ),
+    ]
+    counts = _inventory_counts(context)
+    navigation = [
+        target
+        for _, count, target in counts
+        if count and target not in _FAST_EXCLUDED_SHEETS
+    ]
+    nav_index = 0
+
+    def append_row(values: list[Any], *, navigation_header: bool = False) -> None:
+        nonlocal nav_index
+        values.extend([None] * (width - len(values)))
+        if navigation_header:
+            values[4] = _fast_cell(sheet, "Workbook navigation", font=_WHITE_FONT, fill=_HEADER_FILL)
+        elif nav_index < len(navigation):
+            target = navigation[nav_index]
+            nav_index += 1
+            cell = _fast_cell(sheet, target, font=_LINK_FONT)
+            cell.hyperlink = f"#'{target}'!A1"
+            values[4] = cell
+        sheet.append(values)
+
+    for index, (label, value) in enumerate(metadata):
+        row = [
+            _fast_cell(sheet, label, font=Font(bold=True, color="41504C")),
+            _excel_safe(value),
+            None,
+            None,
+        ]
+        append_row(row, navigation_header=index == 0)
+
+    sheet.append(band("Inventory", 3))
+    for label, count, target in counts:
+        row = [label, count]
+        if count and target not in _FAST_EXCLUDED_SHEETS:
+            cell = _fast_cell(sheet, "Open sheet", font=_LINK_FONT)
+            cell.hyperlink = f"#'{target}'!A1"
+            row.append(cell)
+        else:
+            row.append(None)
+        append_row(row)
+
+    sheet.append(band("Migration Indicators", 3))
+    for label, value in _migration_indicators(context):
+        append_row([label, _excel_safe(value)])
+
+    while nav_index < len(navigation):
+        append_row([])
+
 
 def _rows_for_sheet(
     sheet_name: str,
@@ -614,50 +707,38 @@ def _write_table_sheet_fast(
     *,
     context: _ExcelContext,
 ) -> None:
+    del context
     sheet = workbook.create_sheet(sheet_name)
-    sheet.sheet_view.showGridLines = False
-    sheet.sheet_view.zoomScale = 90
-
     max_col = max(len(headers), 1)
     hidden_headers = set(HIDDEN_COLUMNS_BY_DEFAULT.get(sheet_name, ()))
-    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
-    sheet.cell(1, 1, sheet_name)
-    sheet.cell(1, 1).fill = _TITLE_FILL
-    sheet.cell(1, 1).font = _TITLE_FONT
-    sheet.row_dimensions[1].height = 24
-
-    if max_col > 2:
-        sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max_col - 1)
-    note = sheet.cell(2, 1)
-    note.font = _MUTED_FONT
-    note.alignment = Alignment(wrap_text=True, vertical="top")
-
-    for column, header in enumerate(headers, start=1):
-        cell = sheet.cell(3, column, header)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
-
-    row_count = 0
-    for index, row in enumerate(rows, start=4):
-        row_count += 1
-        outline = row.get("__outline_level__")
-        if isinstance(outline, int) and outline > 0:
-            sheet.row_dimensions[index].outlineLevel = min(outline, 7)
-        sheet.append([_excel_safe(row.get(header)) for header in headers])
-
-    note.value = _sheet_note(sheet_name, row_count, context.profile)
-    if row_count:
-        sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
-
     sheet.freeze_panes = _freeze_pane(sheet_name, headers)
-    _apply_widths(sheet, headers)
+    _apply_widths(sheet, headers, wide=True)
     for column, header in enumerate(headers, start=1):
         if header in hidden_headers:
             sheet.column_dimensions[get_column_letter(column)].hidden = True
-    _add_back_link(sheet)
+    sheet.append([
+        _fast_cell(sheet, sheet_name, font=_TITLE_FONT, fill=_TITLE_FILL),
+        *([None] * (max_col - 1)),
+    ])
+    sheet.append([
+        _fast_cell(
+            sheet,
+            "FAST lightweight export; values preserve explicit source data and analysis columns.",
+            font=_MUTED_FONT,
+            alignment=Alignment(wrap_text=True, vertical="top"),
+        ),
+        *([None] * (max_col - 1)),
+    ])
+    sheet.append([_fast_cell(sheet, header, font=_HEADER_FONT, fill=_HEADER_FILL) for header in headers])
 
-    if sheet_name == "Review Required":
-        _apply_review_colors(sheet, headers, row_count, fast=True)
+    row_count = 0
+    for row in rows:
+        row_count += 1
+        sheet.append([_excel_safe(row.get(header)) for header in headers])
+
+    if row_count:
+        sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
+
 
 
 def _write_source_inventory_sheet(
@@ -742,7 +823,7 @@ def _apply_review_colors(
             sheet.cell(row, column).fill = fill
 
 
-def _apply_widths(sheet, headers: Sequence[str]) -> None:
+def _apply_widths(sheet, headers: Sequence[str], *, wide: bool = False) -> None:
     for index, header in enumerate(headers, start=1):
         normalized = header.lower()
 
@@ -758,6 +839,8 @@ def _apply_widths(sheet, headers: Sequence[str]) -> None:
             width = 14
         else:
             width = 18
+        if wide:
+            width += 10
 
         sheet.column_dimensions[get_column_letter(index)].width = width
 
@@ -2462,7 +2545,11 @@ def _unsupported_rows(context: _ExcelContext, headers: Sequence[str]) -> list[di
                 if path in context.registered_sections
                 else "Explicit source is preserved generically, with no primitive registration or dedicated FortiGate model."
             ),
-            "Raw Capture Location": "FortiGate Source Inventory",
+            "Raw Capture Location": (
+                "Full Excel export / sanitized source evidence"
+                if context.profile is ExcelExportProfile.FAST
+                else "FortiGate Source Inventory"
+            ),
         }
         for path, count in sorted(context.source_only_counts.items())
     ]
@@ -2501,18 +2588,6 @@ def _iter_fortigate_source_inventory_rows(
                 _excel_safe(status),
                 len(raw_extra) if typed else None,
             )
-
-
-def _source_inventory_row_count(context: _ExcelContext) -> int:
-    return sum(
-        max(1, len(record.commands))
-        for record in context.extracted.source_objects
-        if context.profile not in {ExcelExportProfile.FAST, ExcelExportProfile.DATA_ONLY}
-        or extraction_status(
-            supports_path(record.source_path),
-            find_typed_source_object(context.typed_source_identity_index, record),
-        ) != "TYPED"
-    )
 
 
 def _coverage_rows(

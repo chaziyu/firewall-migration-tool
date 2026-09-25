@@ -774,7 +774,11 @@ def create_app(test_config=None):
                 else None
             )
             if preview_entry is not None:
-                analysis = _clone_preview(preview_entry)
+                analysis = (
+                    preview_entry.analysis
+                    if profile is ExcelExportProfile.FAST
+                    else _clone_preview(preview_entry)
+                )
             else:
                 if raw_content is None:
                     return jsonify({'error': 'A configuration file or valid preview_id is required for Excel extraction'}), 400
