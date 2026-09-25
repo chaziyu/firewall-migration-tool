@@ -17,6 +17,25 @@ def build_mapping_requirements(config, derived):
         item["reasons"] = list(dict.fromkeys([*item["reasons"], reason]))
         item["_affected"].setdefault(reason, set()).add(consumer)
 
+    migration_relevant_sections = (
+        "addresses", "address_groups", "services", "service_groups", "service_categories",
+        "recurring_schedules", "one_time_schedules", "schedule_groups", "dhcp_servers",
+        "local_users", "user_groups", "ipsec_phase1", "ipsec_phase2",
+        "ipsec_policy_phase1", "ipsec_policy_phase2", "sdwans", "ssl_vpn_settings",
+        "ssl_vpn_realms", "ssl_vpn_clients", "ssl_vpn_user_bookmarks",
+        "ssl_vpn_user_group_bookmarks", "ssl_vpn_portals", "ips_sensors", "profile_groups",
+        "administrators", "admin_profiles", "external_resources", "zones", "vips", "vip_groups",
+        "vips6", "vip_groups6", "ip_pools", "ip_pools6",
+    )
+    required_vdoms = {
+        getattr(item, "vdom", None) or "root"
+        for section in migration_relevant_sections
+        for item in getattr(config, section, ())
+    }
+    required_vdoms.update(getattr(item, "vdom", None) or "root" for item in getattr(config, "policies", ()))
+    required_vdoms.update(getattr(item, "vdom", None) or "root" for item in getattr(config, "static_routes", ()))
+
+
     for policy_index, policy in enumerate(getattr(config, "policies", ())):
         vdom = policy.vdom or "root"
         identity = policy.policy_id if policy.policy_id is not None else policy.name or policy_index
@@ -49,7 +68,38 @@ def build_mapping_requirements(config, derived):
                     need(vdom, name, "interface", "source_nat", consumer, "target_zone")
                 need(vdom, nat.egress_interfaces[0], "interface", "source_nat", consumer, "target_interface")
 
-    vdoms = sorted({vdom for vdom, _, _ in required} | {getattr(item, "vdom", None) or "root" for item in getattr(config, "static_routes", ())} | {getattr(item, "vdom", None) or "root" for item in getattr(config, "policies", ())} or {"root"})
+    for server in getattr(config, "dhcp_servers", ()):
+        if server.interface:
+            vdom = server.vdom or "root"
+            identity = server.id if server.id is not None else server.interface
+            need(vdom, server.interface, "interface", "dhcp_server", ("dhcp_server", vdom, identity), "target_interface")
+
+    for phase1 in getattr(config, "ipsec_phase1", ()):
+        if phase1.interface:
+            vdom = phase1.vdom or "root"
+            need(vdom, phase1.interface, "interface", "ipsec_phase1", ("ipsec_phase1", vdom, phase1.name), "target_interface")
+
+    for sdwan in getattr(config, "sdwans", ()):
+        vdom = sdwan.vdom or "root"
+        for index, member in enumerate(sdwan.members):
+            if member.interface:
+                identity = member.seq_num if member.seq_num is not None else member.interface or index
+                need(vdom, member.interface, "interface", "sdwan_member", ("sdwan_member", vdom, identity), "target_interface")
+
+    for settings_index, settings in enumerate(getattr(config, "ssl_vpn_settings", ())):
+        vdom = settings.vdom or "root"
+        for name in settings.source_interface:
+            need(vdom, name, "interface", "ssl_vpn", ("ssl_vpn_settings", vdom, settings_index), "target_interface")
+        for rule_index, rule in enumerate(settings.authentication_rules):
+            identity = rule.id if rule.id is not None else rule_index
+            for name in rule.source_interface:
+                need(vdom, name, "interface", "ssl_vpn", ("ssl_vpn_authentication_rule", vdom, identity), "target_interface")
+    for client in getattr(config, "ssl_vpn_clients", ()):
+        if client.interface:
+            vdom = client.vdom or "root"
+            need(vdom, client.interface, "interface", "ssl_vpn", ("ssl_vpn_client", vdom, client.name), "target_interface")
+
+    vdoms = sorted(required_vdoms | {vdom for vdom, _, _ in required} or {"root"})
     interfaces = []
     for _, value in sorted(required.items()):
         item = {key: val for key, val in value.items() if key != "_affected"}
