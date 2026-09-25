@@ -15,6 +15,7 @@
       <div class="mapping-toolbar-row">
         <label>Show <select id="mapping-filter"><option value="all">All decisions</option><option value="zones">Zones</option><option value="interfaces">Interfaces</option><option value="route-nat">Route/NAT impact</option></select></label>
         <label>VDOM <select id="mapping-vdom-filter"><option value="all">All VDOMs</option></select></label>
+        <label>Evidence <select id="mapping-evidence-filter"><option value="all">All evidence</option><option value="target">Target-backed</option><option value="source">Source-only</option><option value="conflict">Conflicts</option><option value="required">Required</option><option value="confirmed">Confirmed</option></select></label>
         <label class="mapping-checkbox"><input type="checkbox" id="decision-pending-only"> Show pending only</label>
       </div>
       <div class="mapping-toolbar-row">
@@ -41,6 +42,7 @@
       </details>
     </div>
     <p id="mapping-completion" aria-live="polite"></p>
+    <p id="mapping-evidence-summary" aria-live="polite"></p>
     <div id="migration-mapping-fields" role="region" aria-label="Migration decisions" tabindex="0"></div>
     <details id="optional-mappings" class="hidden"><summary>Show optional / unreferenced inventory</summary><ul id="optional-mapping-list"></ul></details>
   </section>

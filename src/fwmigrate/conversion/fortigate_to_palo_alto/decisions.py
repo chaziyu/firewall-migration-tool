@@ -37,6 +37,10 @@ class PANMigrationDecision:
     reason: str = ""
     affected_count: int = 0
     affected_by: dict[str, int] | None = None
+    evidence_source: str | None = None
+    evidence_type: str | None = None
+    evidence_value: Any = None
+    target_object: str | None = None
 
     def __post_init__(self) -> None:
         if not all(isinstance(value, str) and value for value in (self.source_vdom, self.source_kind, self.source_name, self.target_field)):
@@ -57,6 +61,12 @@ class PANMigrationDecision:
             for category, count in self.affected_by.items()
         ):
             raise ValueError("affected_by must contain non-negative integer counts")
+        if self.evidence_source is not None and self.evidence_source not in {"SOURCE", "TARGET", "ENGINEER"}:
+            raise ValueError("evidence_source must be SOURCE, TARGET, ENGINEER, or null")
+        if self.evidence_type is not None and not isinstance(self.evidence_type, str):
+            raise ValueError("evidence_type must be a string or null")
+        if self.target_object is not None and not isinstance(self.target_object, str):
+            raise ValueError("target_object must be a string or null")
 
     @property
     def key(self) -> str:
@@ -133,12 +143,15 @@ def build_decision_set(config, derived, requirements, previous=None) -> PANMigra
             zones_by_vdom.setdefault(zone.vdom or "root", []).append(zone.name)
     decisions = []
 
-    def add(vdom, kind, name, field, *, suggestion=None, mode=PANDecisionMode.REQUIRED, reason="", impact=None):
+    def add(vdom, kind, name, field, *, suggestion=None, mode=PANDecisionMode.REQUIRED, reason="", impact=None,
+            evidence_source=None, evidence_type=None, evidence_value=None, target_object=None):
         decision = PANMigrationDecision(
             source_vdom=vdom, source_kind=kind, source_name=name, target_field=field,
             suggested_value=suggestion, value=suggestion if mode == PANDecisionMode.AUTO else None,
             mode=mode, reason=reason, affected_count=(impact or {}).get("affected_count", 0),
             affected_by=(impact or {}).get("affected_by", {}),
+            evidence_source=evidence_source, evidence_type=evidence_type,
+            evidence_value=evidence_value, target_object=target_object,
         )
         old = previous_by_key.get(decision.key)
         if old and old.review_state == PANDecisionReviewState.CONFIRMED:
@@ -155,9 +168,11 @@ def build_decision_set(config, derived, requirements, previous=None) -> PANMigra
         for field in fields:
             suggestion, mode = None, PANDecisionMode.REQUIRED
             reason = "explicit target mapping required"
+            evidence_source = evidence_type = evidence_value = None
             if field == "target_zone" and kind == "zone":
                 suggestion, mode = name, PANDecisionMode.SUGGESTED
                 reason = "same-name FortiGate zone suggestion"
+                evidence_source, evidence_type, evidence_value = "SOURCE", "SOURCE_ZONE_NAME", name
             elif field == "target_zone" and kind == "interface":
                 memberships = sorted(set(zones_by_vdom.get(vdom, ())) & {
                     zone.name for zone in getattr(config, "zones", ())
@@ -166,6 +181,8 @@ def build_decision_set(config, derived, requirements, previous=None) -> PANMigra
                 if len(memberships) == 1:
                     suggestion, mode = memberships[0], PANDecisionMode.SUGGESTED
                     reason = "interface belongs to one explicit FortiGate zone"
+                    evidence_source, evidence_type, evidence_value = "SOURCE", "SOURCE_ZONE_MEMBERSHIP", memberships[0]
             impact = item
-            add(vdom, kind, name, field, suggestion=suggestion, mode=mode, reason=reason, impact=impact)
+            add(vdom, kind, name, field, suggestion=suggestion, mode=mode, reason=reason, impact=impact,
+                evidence_source=evidence_source, evidence_type=evidence_type, evidence_value=evidence_value)
     return PANMigrationDecisionSet(tuple(sorted(decisions, key=lambda item: item.key)))

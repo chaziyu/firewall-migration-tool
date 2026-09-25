@@ -2234,6 +2234,12 @@ select {
 .mapping-table th { position: sticky; top: 0; z-index: 1; color: var(--text-heading); background: var(--canvas); white-space: nowrap; }
 .mapping-table input:not([type="checkbox"]) { width: 100%; min-width: 8rem; }
 .decision-mode-badge, .decision-review-badge, .plan-status-badge { display: inline-block; padding: .15rem .45rem; border-radius: 999px; font-size: .75rem; font-weight: 700; white-space: nowrap; }
+.decision-evidence-badge { display: inline-block; padding: .15rem .45rem; border: 1px solid var(--line); border-radius: 999px; font-size: .75rem; font-weight: 700; white-space: nowrap; }
+.evidence-source { color: var(--text-muted); }
+.evidence-target { color: var(--color-primary); background: var(--color-primary-subtle); }
+.evidence-engineer { color: #17643e; background: #dff4e8; }
+.evidence-conflict { color: #8a3b15; background: #ffe3d5; }
+.decision-focus td { background: color-mix(in srgb, var(--color-primary) 24%, var(--surface)) !important; }
 .mode-auto, .review-confirmed, .status-supported { color: #17643e; background: #dff4e8; }
 .mode-suggested, .review-pending, .status-partial { color: #78520a; background: #fff0c2; }
 .mode-required, .status-manual_review { color: #8a3b15; background: #ffe3d5; }
@@ -2250,6 +2256,7 @@ select {
 .plan-issues ul { margin: .5rem 0 0; padding-left: 1.1rem; overflow-wrap: anywhere; }
 .plan-renderable { color: #17643e; font-weight: 600; }
 .plan-not-renderable { color: #8a3b15; font-weight: 600; }
+.guidance-review { margin-top: .35rem; }
 .export-steps { display: grid; gap: .5rem; align-content: start; }
 .export-steps .btn { justify-self: start; }
 .export-steps h3, .export-steps p { margin: 0; }

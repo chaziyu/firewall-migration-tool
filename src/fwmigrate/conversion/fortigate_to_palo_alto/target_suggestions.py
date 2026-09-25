@@ -16,6 +16,18 @@ def target_devices(target):
     return sorted({_device(item) for item in (*target.config.interfaces, *target.config.interface_units) if _device(item)})
 
 
+def target_device_metadata(target):
+    result = []
+    for device in target_devices(target):
+        interfaces = [item for item in target.config.interfaces if _device(item) == device]
+        units = [item for item in target.config.interface_units if _device(item) == device]
+        zones = [item for item in target.config.zones if _device(item) == device]
+        vsys = {item.scope.vsys for item in (*interfaces, *units, *zones) if item.scope and item.scope.vsys}
+        result.append({"id": device, "name": device, "interfaces": len(interfaces),
+                       "interface_units": len(units), "zones": len(zones), "vsys": len(vsys)})
+    return result
+
+
 def _addresses(value):
     if not value:
         return set()
@@ -37,8 +49,10 @@ def _compatible(source, target):
     kind = (source.type or "").lower()
     if source.vlanid is not None or kind == "vlan":
         return getattr(target, "tag", None) is not None
-    if kind in {"aggregate", "redundant"}:
+    if kind == "aggregate":
         return family == "aggregate-ethernet"
+    if kind == "redundant":
+        return False
     if kind == "tunnel":
         return family == "tunnel"
     if kind == "loopback":
@@ -57,10 +71,10 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
     proposed = {}
     warnings = {}
 
-    def put(vdom, kind, name, field, value, reason):
+    def put(vdom, kind, name, field, value, reason, evidence_type, evidence_value=None, target_object=None):
         key = make_decision_key(vdom, kind, name, field)
         if key in existing and value:
-            proposed[key] = (value, reason)
+            proposed[key] = (value, reason, evidence_type, evidence_value, target_object)
 
     mapped = {}
     for decision in decisions.decisions:
@@ -79,7 +93,8 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
         if len(candidates) == 1:
             target_item, _ = candidates[0]
             put(vdom, "interface", name, "target_interface", target_item.name,
-                f"Target XML: unique matching interface address ({', '.join(sorted(address & _addresses(target_item.ipv4_addresses)))})")
+                f"Target XML: unique matching interface address ({', '.join(sorted(address & _addresses(target_item.ipv4_addresses)))})",
+                "TARGET_INTERFACE_ADDRESS", ', '.join(sorted(address & _addresses(target_item.ipv4_addresses))), target_item.name)
             mapped[(vdom, name)] = target_item.name
         elif len(candidates) > 1:
             warnings[key] = "Several target interfaces share the source address; choose one manually."
@@ -95,7 +110,8 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
                       and str(getattr(target_item, "tag", None)) == str(item.vlanid)]
         if len(candidates) == 1:
             put(vdom, "interface", name, "target_interface", candidates[0].name,
-                f"Target XML: VLAN {item.vlanid} under mapped parent {parent}")
+                f"Target XML: VLAN {item.vlanid} under mapped parent {parent}",
+                "TARGET_VLAN_PARENT", str(item.vlanid), candidates[0].name)
             mapped[(vdom, name)] = candidates[0].name
 
     assignments = {}
@@ -119,7 +135,8 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
                 warnings[key] = f"Source zone suggestion {old.suggested_value} differs from target assignment {zone}."
             else:
                 put(vdom, "interface", name, "target_zone", zone,
-                    f"Target XML: {target_name} is explicitly assigned to zone {zone}")
+                    f"Target XML: {target_name} is explicitly assigned to zone {zone}",
+                    "TARGET_ZONE_ASSIGNMENT", zone, target_name)
 
     for zone in source.zones:
         vdom = zone.vdom or "root"
@@ -132,10 +149,12 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
         if members and len(members) == len(zone.members or ()) and len(target_zones) == 1:
             value = next(iter(target_zones))
             put(vdom, "zone", zone.name, "target_zone", value,
-                f"Target XML: all mapped members belong to zone {value}")
-        elif any(item.name == zone.name and _device(item) == device for item in target.config.zones):
+                f"Target XML: all mapped members belong to zone {value}",
+                "TARGET_ZONE_ASSIGNMENT", value, zone.name)
+        elif len([item for item in target.config.zones if item.name == zone.name and _device(item) == device]) == 1:
             put(vdom, "zone", zone.name, "target_zone", zone.name,
-                f"Target XML: same-name zone {zone.name} exists")
+                f"Target XML: same-name zone {zone.name} exists",
+                "TARGET_ZONE_ASSIGNMENT", zone.name, zone.name)
 
     for vdom, entries in assignments.items():
         for field, attribute in (("vsys", "imported_vsys"), ("virtual_router", "virtual_routers")):
@@ -145,16 +164,20 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
                 if old and old.review_state == PANDecisionReviewState.CONFIRMED and old.value != values[0]:
                     warnings[old.key] = f"Confirmed {field} {old.value} differs from target assignment {values[0]}."
                 put(vdom, "vdom", vdom, field, values[0],
-                    f"Target XML: all matched interfaces use {field} {values[0]}")
+                    f"Target XML: all matched interfaces use {field} {values[0]}",
+                    "TARGET_VSYS_ASSIGNMENT" if field == "vsys" else "TARGET_VIRTUAL_ROUTER_ASSIGNMENT",
+                    values[0], values[0])
 
     updated = []
     for decision in decisions.decisions:
         if decision.review_state == PANDecisionReviewState.CONFIRMED:
             updated.append(decision)
         elif decision.key in proposed:
-            value, reason = proposed[decision.key]
+            value, reason, evidence_type, evidence_value, target_object = proposed[decision.key]
             updated.append(replace(decision, mode=PANDecisionMode.SUGGESTED,
-                                   suggested_value=value, reason=reason))
+                                   suggested_value=value, reason=reason, evidence_source="TARGET",
+                                   evidence_type=evidence_type, evidence_value=evidence_value,
+                                   target_object=target_object))
         else:
             updated.append(decision)
     return PANMigrationDecisionSet(tuple(updated)), warnings
