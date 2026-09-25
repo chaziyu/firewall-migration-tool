@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
-from fwmigrate.conversion.fortigate_to_palo_alto import PANMigrationDecision, PANMigrationDecisionSet
+from fwmigrate.conversion.fortigate_to_palo_alto import (
+    PANDecisionReviewState, PANMigrationDecision, PANMigrationDecisionSet,
+)
 from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import suggest_from_target
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.source import FGConfig
@@ -51,3 +53,26 @@ def test_equally_valid_target_candidates_stay_pending_with_warning():
     updated, warnings = suggest_from_target(source, PANMigrationDecisionSet((decision,)), target, "dev")
     assert updated.decisions[0].suggested_value is None
     assert decision.key in warnings
+
+
+def test_confirmed_vsys_limits_interface_candidates_to_imported_vsys():
+    scope = PANScope(kind="device", name="dev", device_name="dev")
+    identity = pan_scope_identity(scope)
+    source = FGConfig(interfaces=[FGInterface(name="lan", ip="10.0.0.1/24")])
+    target_items = [
+        SimpleNamespace(name=name, interface_family="ethernet", ipv4_addresses=["10.0.0.1/24"],
+                        scope=scope, tag=None, parent=None)
+        for name in ("ethernet1/1", "ethernet1/2")
+    ]
+    target = SimpleNamespace(
+        config=SimpleNamespace(interfaces=target_items, interface_units=[], zones=[]),
+        derived=SimpleNamespace(interface_topology=[
+            PANInterfaceTopologyEntry("ethernet1/1", identity, imported_vsys=("vsys1",)),
+            PANInterfaceTopologyEntry("ethernet1/2", identity, imported_vsys=("vsys2",)),
+        ]),
+    )
+    vsys = PANMigrationDecision("root", "vdom", "root", "vsys", value="vsys2",
+                                review_state=PANDecisionReviewState.CONFIRMED)
+    interface = PANMigrationDecision("root", "interface", "lan", "target_interface")
+    updated, _ = suggest_from_target(source, PANMigrationDecisionSet((vsys, interface)), target, "dev")
+    assert updated.decisions[1].suggested_value == "ethernet1/2"
