@@ -294,64 +294,6 @@ strong {
 }
 .sidebar-bottom {
   margin-top: auto;
-  padding-top: 68px;
-}
-.sidebar-note {
-  position: relative;
-  padding: 21px 17px 20px;
-  overflow: hidden;
-  border: 1px solid #3a483a;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #2c3f32, #21332a);
-}
-.sidebar-note::after {
-  content: "";
-  position: absolute;
-  width: 160px;
-  height: 160px;
-  border: 1px solid #8f9d5120;
-  border-radius: 50%;
-  right: -72px;
-  top: -90px;
-  box-shadow:
-    0 0 0 23px #8f9d5109,
-    0 0 0 47px #8f9d5107;
-  pointer-events: none;
-}
-.sidebar-note > .icon {
-  color: #b0ba89;
-  margin-bottom: 17px;
-}
-.sidebar-note strong {
-  display: block;
-  font: 500 18px/1.35 var(--font-display);
-  color: #e9eddf;
-  letter-spacing: -0.4px;
-}
-.sidebar-note p {
-  font-size: 11px;
-  line-height: 1.7;
-  margin-top: 10px;
-  color: #acbba9;
-}
-.vendor-dots {
-  display: flex;
-  margin-top: 19px;
-}
-.vendor-dots span {
-  display: grid;
-  place-items: center;
-  width: 27px;
-  height: 27px;
-  border: 1px solid #54644b;
-  background: #33452f;
-  color: #d5dcc6;
-  border-radius: 50%;
-  font: 500 9px var(--font-display);
-  margin-left: -3px;
-}
-.vendor-dots span:first-child {
-  margin-left: 0;
 }
 .sidebar-link {
   width: 100%;
@@ -2007,7 +1949,6 @@ select {
   }
   .workspace-switch,
   .nav-label,
-  .sidebar-note,
   .sidebar-status {
     display: none;
   }
