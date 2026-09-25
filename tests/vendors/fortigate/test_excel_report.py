@@ -467,13 +467,8 @@ end
         self.assertEqual("10.1.0.0-10.1.0.255", phase2[phase2_headers.index("Source Range")])
 
 
-    def test_typed_sheets_and_phase2_lifetimes_are_exported(self):
+    def test_phase2_lifetimes_and_dhcp_ranges_are_exported(self):
         source = _SAMPLE_CONFIG + r'''
-config firewall service category
-    edit "Applications"
-        set comment "application services"
-    next
-end
 config vpn ipsec phase2-interface
     edit "P2-LIFETIME"
         set phase1name "VPN-HQ"
@@ -496,30 +491,6 @@ config system dhcp server
         end
     next
 end
-config vpn ssl web host-check-software
-    edit "endpoint-av"
-        set type av
-        set os-type windows
-        set version "1.2"
-        set guid "host-check-guid"
-        config check-item-list
-            edit 1
-                set action require
-                set type file
-                set target "C:\\Program Files\\agent.exe"
-                set md5s "abc123"
-                set version "1.0"
-            next
-            edit 2
-                set action deny
-                set type registry
-                set target "HKLM\\Software\\Agent"
-                set md5s "def456"
-                set version "2.0"
-            next
-        end
-    next
-end
 '''
         workbook = self._workbook(source)
 
@@ -533,11 +504,6 @@ end
         self.assertEqual(500, row[headers.index("Source Port")])
         self.assertEqual(4500, row[headers.index("Destination Port")])
 
-        headers, rows = self._rows(workbook["Service Categories"])
-        category = next(row for row in rows if row[headers.index("Name")] == "Applications")
-        self.assertEqual("application services", category[headers.index("Description")])
-        self.assertEqual("root", category[headers.index("VDOM")])
-
         headers, rows = self._rows(workbook["DHCP Exclude Ranges"])
         excluded = next(row for row in rows if row[headers.index("Range ID")] == 10)
         self.assertEqual((1, "port1", "192.0.2.100", "192.0.2.110", 600, "root"), tuple(
@@ -545,30 +511,9 @@ end
             for column in ("Server ID", "Interface", "Start IP", "End IP", "Lease Time", "VDOM")
         ))
 
-        headers, rows = self._rows(workbook["SSL VPN Host Checks"])
-        software = next(row for row in rows if row[headers.index("Name")] == "endpoint-av")
-        self.assertEqual(2, software[headers.index("Check Item Count")])
-        self.assertEqual("root", software[headers.index("VDOM")])
-
-        headers, rows = self._rows(workbook["SSL VPN Host Check Items"])
-        self.assertEqual(2, len(rows))
-        by_id = {row[headers.index("ID")]: row for row in rows}
-        self.assertEqual("endpoint-av", by_id[1][headers.index("Host Check")])
-        self.assertEqual("endpoint-av", by_id[2][headers.index("Host Check")])
-        for item_id, action, kind, target, md5, version in (
-            (1, "require", "file", r"C:\Program Files\agent.exe", "abc123", "1.0"),
-            (2, "deny", "registry", r"HKLM\Software\Agent", "def456", "2.0"),
-        ):
-            row = by_id[item_id]
-            self.assertEqual((action, kind, target, md5, version, "root"), tuple(
-                row[headers.index(column)]
-                for column in ("Action", "Type", "Target", "MD5s", "Version", "VDOM")
-            ))
-
-        for sheet in ("Service Categories", "DHCP Exclude Ranges", "SSL VPN Host Checks", "SSL VPN Host Check Items"):
-            self.assertIn(sheet, SHEET_ORDER)
-            self.assertIn(sheet, SHEET_HEADERS)
-            self.assertIn(sheet, workbook.sheetnames)
+        self.assertIn("DHCP Exclude Ranges", SHEET_ORDER)
+        self.assertIn("DHCP Exclude Ranges", SHEET_HEADERS)
+        self.assertIn("DHCP Exclude Ranges", workbook.sheetnames)
 
     def test_vpn_phase1_ike_fields_are_exported_without_defaults_or_secrets(self):
         source = r'''
@@ -789,7 +734,7 @@ config firewall service custom
 end
 ''')
 
-        for sheet_name in ("System Settings", "DNS Settings", "NTP Settings"):
+        for sheet_name in ("DNS Settings", "NTP Settings"):
             headers, rows = self._rows(workbook[sheet_name])
             self.assertTrue(rows, sheet_name)
             self.assertTrue(all(row[headers.index("Analysis Status")] == "EXTRACTED" for row in rows), sheet_name)

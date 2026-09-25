@@ -50,7 +50,6 @@ _BORDER = Border(bottom=_THIN)
 
 
 _SOURCE_PATHS_BY_SHEET: dict[str, tuple[str, ...]] = {
-    "System Settings": ("system global", "system settings"),
     "DNS Settings": ("system dns",),
 }
 
@@ -226,15 +225,12 @@ def _rows_for_sheet(
         "Addresses": _address_rows,
         "Wildcard FQDN": _wildcard_fqdn_rows,
         "Address Groups": _address_group_rows,
-        "Service Categories": _service_category_rows,
         "Services": _service_rows,
         "Service Groups": _service_group_rows,
         "Schedules": _schedule_rows,
         "Schedule Groups": _schedule_group_rows,
         "Policies": _policy_rows,
         "Security Policies": _security_policy_rows,
-        "Protocol Options": _protocol_options_rows,
-        "Per-IP Shapers": _per_ip_shaper_rows,
         "IP Pools": _ip_pool_rows,
         "Virtual IPs": _vip_rows,
         "VIP Real Servers": _vip_real_server_rows,
@@ -261,27 +257,11 @@ def _rows_for_sheet(
         "SSL VPN Bookmarks": _ssl_bookmark_rows,
         "SSL VPN Portals": _ssl_portal_rows,
         "SSL VPN Authentication Rules": _ssl_auth_rule_rows,
-        "SSL VPN Host Checks": _ssl_host_check_rows,
-        "SSL VPN Host Check Items": _ssl_host_check_item_rows,
         "NTP Settings": _ntp_setting_rows,
         "NTP Servers": _ntp_server_rows,
-        "Session Helpers": _session_helper_rows,
-        "Router Settings": lambda c, h: _model_rows(c, c.config.router_settings, h, {"Hostname": "hostname", "Show Filter": "show_filter", "VDOM": "vdom"}),
-        "IPS Settings": lambda c, h: _model_rows(c, c.config.ips_settings, h, {"IPS Packet Quota": "ips_packet_quota", "Packet Log History": "packet_log_history", "VDOM": "vdom"}),
-        "NAC Policies": lambda c, h: _model_rows(c, c.config.nac_policies, h, {"Name": "name", "Category": "category", "Description": "description", "MAC": "mac", "Host": "host", "OS": "os", "Family": "family", "Hardware Vendor": "hw_vendor", "Hardware Version": "hw_version", "Severity": "severity", "Firewall Address": "firewall_address", "User Group": "user_group", "Status": "status", "VDOM": "vdom"}),
-        "Kerberos Keytabs": lambda c, h: _model_rows(c, c.config.kerberos_keytabs, h, {"Name": "name", "Principal": "principal", "LDAP Servers": "ldap_server", "PAC Data": "pac_data", "Keytab Configured": lambda x: "Yes" if x.keytab_configured else "No", "VDOM": "vdom"}),
-        "KMIP Servers": lambda c, h: _model_rows(c, c.config.kmip_servers, h, {"Name": "name", "Interface": "interface", "Interface Selection": "interface_select_method", "Password Configured": lambda x: "Yes" if x.password_configured else "No", "Server Identity Check": "server_identity_check", "Username": "username", "Source IP": "source_ip", "Minimum TLS Protocol": "ssl_min_proto_version", "Server List": lambda x: [i.model_dump(exclude={"raw_extra", "explicit_fields"}) for i in x.server_list], "VDOM": "vdom"}),
-        "SDN Proxies": lambda c, h: _model_rows(c, c.config.sdn_proxies, h, {"Name": "name", "Server": "server", "Server Port": "server_port", "Type": "type", "Username": "username", "Password Configured": lambda x: "Yes" if x.password_configured else "No", "VDOM": "vdom"}),
-        "IPv6 Address Templates": lambda c, h: _model_rows(c, c.config.address6_templates, h, {"Name": "name", "IPv6 Prefix": "ip6", "Fabric Object": "fabric_object", "Segment Count": "subnet_segment_count", "Segments": lambda x: [i.model_dump(exclude={"raw_extra", "explicit_fields"}) for i in x.segments], "VDOM": "vdom"}),
-        "On-Demand Sniffers": lambda c, h: _model_rows(c, c.config.on_demand_sniffers, h, {"Name": "name", "Advanced Filter": "advanced_filter", "Hosts": "hosts", "Interface": "interface", "Maximum Packet Count": "max_packet_count", "Include Non-IP Packets": "non_ip_packet", "Ports": "ports", "Protocols": "protocols", "VDOM": "vdom"}),
-        "Affinity Interrupts": lambda c, h: _model_rows(c, c.config.affinity_interrupts, h, {"ID": "id", "Interrupt": "interrupt", "CPU Mask": "affinity_cpumask", "Default CPU Mask": "default_affinity_cpumask"}),
-        "Serial Ports": lambda c, h: _model_rows(c, c.config.serial_ports, h, {"Name": "name", "Read Only": lambda x: "Yes"}),
-        "Firewall Regions": lambda c, h: _model_rows(c, c.config.firewall_regions, h, {"ID": "id", "Name": "name", "Cities": "city", "Read Only": lambda x: "Yes"}),
-        "Vendor MACs": lambda c, h: _model_rows(c, c.config.vendor_macs, h, {"ID": "id", "Name": "name", "MAC Count": "mac_number", "Obsolete": "obsolete", "Read Only": lambda x: "Yes"}),
         "Local Users": _local_user_rows,
         "User Groups": _user_group_rows,
         "User Group Matches": _user_group_match_rows,
-        "User Group Guests": _user_group_guest_rows,
         "Administrators": _administrator_rows,
         "Admin Profiles": _admin_profile_rows,
         "Admin Profile Permissions": _admin_permission_rows,
@@ -607,21 +587,7 @@ def _inventory_counts(context: _ExcelContext) -> list[tuple[str, int, str]]:
         ("Services", len(context.derived.services.services), "Services"),
         ("Service Groups", len(context.derived.services.groups), "Service Groups"),
         ("Policies", len(config.policies), "Policies"),
-        ("Session Helpers", len(config.session_helpers), "Session Helpers"),
-        ("Router Settings", len(config.router_settings), "Router Settings"),
-        ("IPS Settings", len(config.ips_settings), "IPS Settings"),
-        ("NAC Policies", len(config.nac_policies), "NAC Policies"),
-        ("Kerberos Keytabs", len(config.kerberos_keytabs), "Kerberos Keytabs"),
-        ("KMIP Servers", len(config.kmip_servers), "KMIP Servers"),
-        ("SDN Proxies", len(config.sdn_proxies), "SDN Proxies"),
-        ("IPv6 Address Templates", len(config.address6_templates), "IPv6 Address Templates"),
-        ("On-Demand Sniffers", len(config.on_demand_sniffers), "On-Demand Sniffers"),
-        ("Affinity Interrupts", len(config.affinity_interrupts), "Affinity Interrupts"),
-        ("Serial Ports", len(config.serial_ports), "Serial Ports"),
-        ("Firewall Regions", len(config.firewall_regions), "Firewall Regions"),
         ("Security Policies", len(config.security_policies), "Security Policies"),
-        ("Protocol Options", len(config.protocol_options), "Protocol Options"),
-        ("Per-IP Shapers", len(config.per_ip_shapers), "Per-IP Shapers"),
         ("NAT Rules", len(context.derived.nat), "NAT Rules"),
         ("IP Pools", len(config.ip_pools) + len(config.ip_pools6), "IP Pools"),
         ("Virtual IPs", len(config.vips) + len(config.vips6), "Virtual IPs"),
@@ -644,8 +610,6 @@ def _inventory_counts(context: _ExcelContext) -> list[tuple[str, int, str]]:
         ("Review Required", len(context.validation.issues), "Review Required"),
         ("Source-only Sections", len(source_only), "Unsupported"),
     ]
-    if config.vendor_macs:
-        counts.append(("Vendor MACs", len(config.vendor_macs), "Vendor MACs"))
     return counts
 
 
@@ -1014,22 +978,6 @@ def _address_group_tag_rows(context: _ExcelContext, headers: Sequence[str]) -> l
     return rows
 
 
-def _service_category_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
-    for item in context.config.service_categories:
-        row = {
-            "Name": item.name,
-            "Description": item.comment,
-            "VDOM": item.vdom,
-            "Source Explicit Fields": sorted(item.explicit_fields),
-            "Additional Settings": _additional_settings(item, (item.name, item.comment, item.vdom)),
-        }
-        _add_analysis_status(row, context, vdom=item.vdom, names=(item.name,), domains=("service_category",))
-        _overlay_raw(row, item.raw_extra, headers)
-        rows.append(row)
-    return rows
-
-
 def _service_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     source = {(item.vdom, item.name): item for item in context.config.services}
     for item in context.derived.services.services:
@@ -1143,28 +1091,6 @@ def _security_policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Ite
         context, context.config.security_policies, headers,
         {"Policy ID": "policy_id", "Action": "action", "Application Categories": "app_category", "VDOM": "vdom"},
         domains=("security_policy",),
-    )
-
-
-def _protocol_options_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
-    return _model_rows(
-        context, context.config.protocol_options, headers,
-        {"Name": "name", "Comment": "comment", "VDOM": "vdom"},
-        domains=("protocol_options",),
-    )
-
-
-def _per_ip_shaper_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
-    return _model_rows(
-        context, context.config.per_ip_shapers, headers,
-        {
-            "Name": "name", "Maximum Bandwidth": "max_bandwidth", "Bandwidth Unit": "bandwidth_unit",
-            "Maximum Sessions": "max_concurrent_session", "Maximum TCP Sessions": "max_concurrent_tcp_session",
-            "Maximum UDP Sessions": "max_concurrent_udp_session", "DiffServ Forward": "diffserv_forward",
-            "DiffServ Reverse": "diffserv_reverse", "Forward DiffServ Code": "diffservcode_forward",
-            "Reverse DiffServ Code": "diffservcode_rev", "VDOM": "vdom",
-        },
-        domains=("per_ip_shaper",),
     )
 
 
@@ -1938,44 +1864,6 @@ def _ssl_auth_rule_rows(context: _ExcelContext, headers: Sequence[str]) -> list[
     return rows
 
 
-def _ssl_host_check_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    return _model_rows(
-        context,
-        context.config.ssl_vpn_host_check_software,
-        headers,
-        {
-            "Name": "name",
-            "Type": "type",
-            "OS Type": "os_type",
-            "Version": "version",
-            "GUID": "guid",
-            "Check Item Count": lambda item: len(item.check_items),
-            "VDOM": "vdom",
-        },
-        domains=('ssl_vpn_portal',),
-    )
-def _ssl_host_check_item_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
-    for software in context.config.ssl_vpn_host_check_software:
-        for item in software.check_items:
-            row = {
-                "Host Check": software.name,
-                "ID": item.id,
-                "Action": item.action,
-                "Type": item.type,
-                "Target": item.target,
-                "MD5s": item.md5s,
-                "Version": item.version,
-                "VDOM": software.vdom,
-                "Source Explicit Fields": sorted(item.explicit_fields),
-                "Additional Settings": _additional_settings(item, (item.id, item.action, item.type, item.target, item.md5s, item.version)),
-            }
-            _overlay_raw(row, item.raw_extra, headers)
-            _add_analysis_status(row, context, vdom=software.vdom, names=(software.name, item.id), domains=("ssl_vpn_portal",))
-            rows.append(row)
-    return rows
-
-
 def _local_user_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
     return _model_rows(
         context,
@@ -2041,30 +1929,6 @@ def _user_group_match_rows(context: _ExcelContext, headers: Sequence[str]) -> li
             }
             _overlay_raw(row, item.raw_extra, headers)
             _add_analysis_status(row, context, vdom=group.vdom, names=(group.name, item.id))
-            rows.append(row)
-    return rows
-
-
-def _user_group_guest_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
-    for group in context.config.user_groups:
-        for item in group.guests:
-            row = {
-                "User Group": group.name,
-                "Guest ID": item.id,
-                "Name": item.name,
-                "User ID": item.user_id,
-                "Email": item.email,
-                "Mobile Phone": item.mobile_phone,
-                "Expiration": item.expiration,
-                "Sponsor": item.sponsor,
-                "Comment": item.comment,
-                "Password Configured": item.password_configured,
-                "VDOM": group.vdom,
-                "Additional Settings": _additional_settings(item),
-            }
-            _overlay_raw(row, item.raw_extra, headers)
-            _add_analysis_status(row, context, vdom=group.vdom, names=(group.name, item.id, item.name))
             rows.append(row)
     return rows
 
@@ -2615,14 +2479,6 @@ def _ntp_setting_rows(
             rows.append(row)
 
     return rows
-
-
-def _session_helper_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
-    return _model_rows(
-        context, context.config.session_helpers, headers,
-        {"ID": "id", "Name": "name", "Port": "port", "Protocol": "protocol", "VDOM": "vdom"},
-        domains=("session_helper",),
-    )
 
 
 def _ntp_server_rows(

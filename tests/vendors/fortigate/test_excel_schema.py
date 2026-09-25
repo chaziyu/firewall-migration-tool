@@ -210,6 +210,12 @@ end
         workbook = self._workbook()
         self.assertEqual(list(SHEET_ORDER), workbook.sheetnames)
         removed = {
+            "System Settings", "Session Helpers", "Router Settings", "IPS Settings",
+            "Service Categories", "Protocol Options", "Per-IP Shapers",
+            "SSL VPN Host Checks", "SSL VPN Host Check Items", "User Group Guests",
+            "NAC Policies", "Kerberos Keytabs", "KMIP Servers", "SDN Proxies",
+            "IPv6 Address Templates", "On-Demand Sniffers", "Affinity Interrupts",
+            "Serial Ports", "Firewall Regions", "Vendor MACs",
             "Address Group Tags", "Local-In Policies",
             "Multicast Policies", "Policy Routes", "Routing Protocol Settings",
             "Session TTL Settings", "Session TTL Overrides", "SD-WAN SLAs", "SD-WAN Duplication",
@@ -219,7 +225,14 @@ end
             "Identity Server Endpoints", "Extraction Evidence", "Firewall Policy Source Settings",
             "Interface Source Settings", "Interface Nested Configuration",
         }
+        self.assertTrue(removed.isdisjoint(SHEET_ORDER))
+        self.assertTrue(removed.isdisjoint(SHEET_HEADERS))
         self.assertTrue(removed.isdisjoint(workbook.sheetnames))
+        summary = workbook["Summary"]
+        navigation = {summary.cell(row, 5).value for row in range(4, summary.max_row + 1)}
+        inventory = {summary.cell(row, 1).value for row in range(12, summary.max_row + 1)}
+        self.assertTrue(removed.isdisjoint(navigation))
+        self.assertTrue(removed.isdisjoint(inventory))
         self.assertIn("FortiGate Source Inventory", workbook.sheetnames)
         self.assertNotIn("Source Inventory", workbook.sheetnames)
         self.assertNotIn("FortiGate Source Configuration", workbook.sheetnames)
@@ -257,8 +270,7 @@ end
             self.assertTrue(row[review.index("Field")])
     def test_removed_legacy_target_columns(self):
         workbook = self._workbook()
-        system_headers, _ = self._rows(workbook["System Settings"])
-        self.assertNotIn("Management IPv4 Address", system_headers)
+        self.assertNotIn("System Settings", workbook.sheetnames)
         policy_headers, _ = self._rows(workbook["Policies"])
         self.assertNotIn("Source Address (Original)", policy_headers)
         pool_headers, _ = self._rows(workbook["IP Pools"])
