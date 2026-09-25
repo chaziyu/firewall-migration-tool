@@ -52,8 +52,13 @@ def test_zone_validation_checks_members_count_levels_and_single_zone_ownership()
 def test_zone_validation_uses_interface_zone_member_relationships():
     source = "zone EDGE\n"
     for index in range(9):
-        source += (f"interface Ethernet0/{index}\n nameif edge{index}\n security-level {100 if index < 8 else 90}\n"
-                   f" {'management-only\n' if index == 8 else ''} zone-member EDGE\n")
+        management_only = "management-only\n" if index == 8 else ""
+        source += (
+            f"interface Ethernet0/{index}\n"
+            f" nameif edge{index}\n"
+            f" security-level {100 if index < 8 else 90}\n"
+            f" {management_only} zone-member EDGE\n"
+        )
     result = extract_cisco_asa_source(source)
     messages = [issue.message for issue in result.validation.issues if issue.category == "zone"]
     assert "Traffic zone exceeds the eight-interface limit" in messages
