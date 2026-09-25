@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from copy import deepcopy
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from itertools import chain
 from pathlib import Path
+from time import perf_counter
 from typing import Any, BinaryIO, Iterable, Iterator, Mapping, Sequence
 
 from openpyxl import Workbook
@@ -14,6 +16,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from fwmigrate.source_reporting import ExcelExportProfile
+from fwmigrate.source_reporting.metrics import ExcelExportMetrics
 
 from ..config import ExtractionConfig
 from ..derived import DerivedViews, build_derived_views
@@ -74,6 +77,22 @@ _SOURCE_HEADER_ALIASES: dict[str, tuple[str, ...]] = {
     "Auto Negotiate": ("auto-negotiate", "auto_negotiate"),
 }
 
+
+def _normalize_key(value: Any) -> str:
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+
+_NORMALIZED_SOURCE_HEADER_CANDIDATES = {
+    header: tuple(dict.fromkeys(
+        _normalize_key(candidate)
+        for candidate in (*_SOURCE_HEADER_ALIASES.get(header, ()), header)
+    ))
+    for header in {
+        *_SOURCE_HEADER_ALIASES,
+        *(header for headers in SHEET_HEADERS.values() for header in headers),
+    }
+}
+
 _SOURCE_INVENTORY_WIDTHS = {
     "Domain": 24,
     "VDOM": 14,
@@ -92,6 +111,73 @@ _SOURCE_INVENTORY_WIDTHS = {
 _FAST_REQUIRED_SHEETS = frozenset({"Review Required"})
 _FAST_EXCLUDED_SHEETS = frozenset({"FortiGate Source Inventory", "Extraction Coverage"})
 
+_VISIBLE_MODEL_FIELDS_BY_SHEET: dict[str, frozenset[str]] = {
+    "Interface Secondary IPs": frozenset({"id", "ip", "allowaccess", "ha_priority"}),
+    "Zones": frozenset({"name", "members", "description", "intrazone", "vdom"}),
+    "Policies": frozenset({
+        "policy_id", "name", "srcintf", "dstintf", "srcaddr", "dstaddr",
+        "srcaddr6", "dstaddr6", "srcaddr_negate", "dstaddr_negate",
+        "srcaddr6_negate", "dstaddr6_negate", "service", "service_negate",
+        "schedule", "groups", "users", "action", "vpntunnel", "nat",
+        "utm_status", "profile_group", "profile_protocol_options",
+        "per_ip_shaper", "av_profile", "ips_sensor", "application_list",
+        "webfilter_profile", "dnsfilter_profile", "ssl_ssh_profile",
+        "logtraffic", "comments", "status", "vdom",
+    }),
+    "VIP Real Servers": frozenset({"id", "ip", "address", "port", "status", "weight", "monitor"}),
+    "VPN Tunnels": frozenset({
+        "name", "interface", "remote_gw", "remotegw_ddns", "type", "ike_version", "mode",
+        "authmethod", "authmethod_remote", "proposal", "dhgrp", "keylife", "nattraversal",
+        "dpd", "dpd_retrycount", "dpd_retryinterval", "local_gw", "localid", "localid_type",
+        "peerid", "certificate", "comments", "vdom",
+    }),
+    "VPN Phase 2": frozenset({
+        "name", "phase1name", "proposal", "pfs", "dhgrp", "keylifeseconds", "keylifekbs",
+        "src_subnet", "dst_subnet", "src_start_ip", "src_end_ip", "dst_start_ip", "dst_end_ip",
+        "src_subnet6", "dst_subnet6", "src_start_ip6", "src_end_ip6", "dst_start_ip6",
+        "dst_end_ip6", "protocol", "src_port", "dst_port", "auto_negotiate", "comments", "vdom",
+    }),
+    "Policy IPsec Phase 2": frozenset({
+        "name", "phase1name", "proposal", "pfs", "dhgrp", "keylifeseconds", "keylifekbs",
+        "src_subnet", "dst_subnet", "src_start_ip", "src_end_ip", "dst_start_ip", "dst_end_ip",
+        "src_subnet6", "dst_subnet6", "src_start_ip6", "src_end_ip6", "dst_start_ip6",
+        "dst_end_ip6", "protocol", "src_port", "dst_port", "auto_negotiate", "comments", "vdom",
+    }),
+    "DHCP Reservations": frozenset({"id", "ip", "mac", "description", "action", "type"}),
+    "DHCP IP Ranges": frozenset({"id", "start_ip", "end_ip", "lease_time"}),
+    "DHCP Exclude Ranges": frozenset({"id", "start_ip", "end_ip", "lease_time"}),
+    "SD-WAN": frozenset({"status", "load_balance_mode", "vdom"}),
+    "SD-WAN Zones": frozenset({"name", "vdom"}),
+    "SD-WAN Members": frozenset({
+        "seq_num", "interface", "zone", "gateway", "source", "cost", "weight", "priority", "status",
+    }),
+    "SD-WAN Health Checks": frozenset({
+        "name", "server", "members", "protocol", "interval", "failtime", "recoverytime",
+    }),
+    "SD-WAN Rules": frozenset({
+        "id", "name", "status", "mode", "src", "dst", "priority_members", "health_check", "priority_zone",
+    }),
+    "SSL VPN Bookmark Owners": frozenset({"owner_name", "custom_lang", "vdom"}),
+    "SSL VPN Bookmarks": frozenset({
+        "name", "apptype", "url", "host", "port", "domain", "folder", "description", "logon_user",
+        "logon_password_configured", "sso_password_configured", "form_data",
+    }),
+    "SSL VPN Authentication Rules": frozenset({
+        "id", "auth", "cipher", "client_cert", "realm", "source_interface", "source_address",
+        "source_address_negate", "users", "user_peer", "groups", "portal",
+    }),
+    "User Group Matches": frozenset({"id", "server_name", "group_name"}),
+    "IPS Sensor Entries": frozenset({
+        "id", "rule", "cve", "application", "os", "protocol", "severity", "location",
+        "default_action", "default_status", "action", "status", "log", "log_packet",
+        "log_attack_context", "rate_count", "rate_duration", "rate_mode", "rate_track",
+        "quarantine", "quarantine_expiry", "quarantine_log", "vuln_type", "last_modified",
+    }),
+    "IPS Exempt IPs": frozenset({"id", "src_ip", "dst_ip"}),
+    "Schedules": frozenset({"name", "days", "start", "end", "start_utc", "end_utc", "expiration_days", "vdom"}),
+    "Schedule Groups": frozenset({"name", "members", "vdom"}),
+}
+
 
 def export_excel(
     *,
@@ -102,6 +188,7 @@ def export_excel(
     derived: DerivedViews | None = None,
     profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
     source_name: str | None = None,
+    metrics: ExcelExportMetrics | None = None,
 ) -> None:
     """Write the FortiGate configuration report."""
 
@@ -110,6 +197,8 @@ def export_excel(
     profile = ExcelExportProfile(profile)
     derived = derived or build_derived_views(extracted.config)
 
+    excel_started = perf_counter()
+    context_started = perf_counter()
     context = _ExcelContext(
         extracted=extracted,
         derived=derived,
@@ -117,19 +206,29 @@ def export_excel(
         profile=profile,
         source_name=source_name,
     )
+    if metrics is not None and profile is ExcelExportProfile.FAST:
+        metrics.add_stage("excel_context", (perf_counter() - context_started) * 1000)
 
+    build_started = perf_counter()
     workbook = (
         _build_data_only_workbook(context)
         if profile is ExcelExportProfile.DATA_ONLY
-        else _build_workbook(context)
+        else _build_workbook(context, metrics=metrics if profile is ExcelExportProfile.FAST else None)
     )
+    if metrics is not None and profile is ExcelExportProfile.FAST:
+        metrics.add_stage("workbook_build", (perf_counter() - build_started) * 1000)
     if isinstance(output, (str, Path)):
         path = Path(output)
         path.parent.mkdir(parents=True, exist_ok=True)
-        workbook.save(path)
-        return
+        save_target = path
+    else:
+        save_target = output
 
-    workbook.save(output)
+    save_started = perf_counter()
+    workbook.save(save_target)
+    if metrics is not None and profile is ExcelExportProfile.FAST:
+        metrics.add_stage("workbook_save", (perf_counter() - save_started) * 1000)
+        metrics.add_stage("excel_total", (perf_counter() - excel_started) * 1000)
 
 
 class _ExcelContext:
@@ -183,6 +282,8 @@ class _ExcelContext:
             tuple[str, tuple[str, ...], tuple[str, ...]],
             tuple[ValidationIssue, ...],
         ] = {}
+        self._interface_safe_source_cache: dict[tuple[str, str], dict[str, Any]] = {}
+        self._interface_source_key_cache: dict[tuple[str, str], frozenset[str]] = {}
 
     @property
     def typed_source_inventory(self):
@@ -238,9 +339,13 @@ class _ExcelContext:
         return result
 
 
-def _build_workbook(context: _ExcelContext) -> Workbook:
+def _build_workbook(
+    context: _ExcelContext,
+    *,
+    metrics: ExcelExportMetrics | None = None,
+) -> Workbook:
     if context.profile is ExcelExportProfile.FAST:
-        return _build_fast_workbook(context)
+        return _build_fast_workbook(context, metrics=metrics)
 
     workbook = Workbook()
     workbook.remove(workbook.active)
@@ -265,10 +370,22 @@ def _build_workbook(context: _ExcelContext) -> Workbook:
     return workbook
 
 
-def _build_fast_workbook(context: _ExcelContext) -> Workbook:
+def _build_fast_workbook(
+    context: _ExcelContext,
+    *,
+    metrics: ExcelExportMetrics | None = None,
+) -> Workbook:
     workbook = Workbook(write_only=True)
+    summary_started = perf_counter()
     _write_fast_summary(workbook, context)
+    if metrics is not None:
+        metrics.add_stage("fast_summary", (perf_counter() - summary_started) * 1000)
     no_rows = object()
+    other_sheet_total = 0.0
+    measured_sheets: set[str] = set()
+    measured_names = {
+        "Addresses", "Policies", "Interfaces", "NAT Rules", "Routes", "VPN Tunnels"
+    }
 
     for sheet_name in SHEET_ORDER:
         if sheet_name == "Summary" or sheet_name in _FAST_EXCLUDED_SHEETS:
@@ -281,13 +398,26 @@ def _build_fast_workbook(context: _ExcelContext) -> Workbook:
         if first is no_rows and sheet_name not in _FAST_REQUIRED_SHEETS:
             continue
 
-        _write_table_sheet_fast(
+        sheet_started = perf_counter()
+        row_count = _write_table_sheet_fast(
             workbook,
             sheet_name,
             headers,
             () if first is no_rows else chain((first,), rows),
             context=context,
         )
+        sheet_elapsed = (perf_counter() - sheet_started) * 1000
+        if metrics is not None:
+            metrics.add_sheet(sheet_name, row_count, len(headers), sheet_elapsed)
+            measured_sheets.add(sheet_name)
+        if sheet_name not in measured_names:
+            other_sheet_total += sheet_elapsed
+
+    if metrics is not None:
+        for sheet_name in ("Addresses", "Policies", "Interfaces", "NAT Rules", "Routes", "VPN Tunnels"):
+            if sheet_name not in measured_sheets:
+                metrics.add_sheet(sheet_name, 0, len(SHEET_HEADERS[sheet_name]), 0.0)
+        metrics.add_stage("other_sheet_total", other_sheet_total)
 
     return workbook
 
@@ -717,7 +847,7 @@ def _write_table_sheet_fast(
     rows: Iterable[Mapping[str, Any]],
     *,
     context: _ExcelContext,
-) -> None:
+) -> int:
     del context
     sheet = workbook.create_sheet(sheet_name)
     max_col = max(len(headers), 1)
@@ -749,6 +879,7 @@ def _write_table_sheet_fast(
 
     if row_count:
         sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
+    return row_count
 
 
 
@@ -982,9 +1113,7 @@ def _vdoms(context: _ExcelContext) -> list[str]:
     return sorted(values)
 
 
-def _review_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-
+def _review_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for issue in context.validation.issues:
         row = {
             "Severity": issue.severity.value,
@@ -995,12 +1124,10 @@ def _review_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[st
             "Issue / Review Reason": issue.message,
             "Source Sheet": _sheet_for_domain(issue.domain),
         }
-        rows.append(row)
-
-    return rows
+        yield row
 
 
-def _interface_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+def _interface_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     topology = {(item.vdom, item.name): item for item in context.derived.topology.interfaces}
     interfaces = {(item.vdom, item.name): item for item in context.config.interfaces}
     aggregate_members: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
@@ -1032,11 +1159,10 @@ def _interface_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict
     for zone in context.config.zones:
         for member in zone.members:
             zones_by_interface[(zone.vdom, member)].append(zone.name)
-    rows: list[dict[str, Any]] = []
     visited: set[tuple[str, str]] = set()
     emitted_vpns: set[tuple[str, str]] = set()
 
-    def emit_vpn(vpn_top: Any, prefix: str = "") -> None:
+    def emit_vpn(vpn_top: Any, prefix: str = "") -> Iterator[dict[str, Any]]:
         vpn_key = (vpn_top.vdom, vpn_top.name)
         if vpn_key in emitted_vpns:
             return
@@ -1064,10 +1190,12 @@ def _interface_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict
             domains=("ipsec_phase1", "vpn_topology"),
             extra_reasons=vpn_top.issues,
         )
-        _overlay_raw(row, vpn.raw_extra, headers)
-        rows.append(row)
+        _overlay_safe_raw(row, row["Additional Settings"], headers)
+        yield row
 
-    def emit_interface(key: tuple[str, str], prefix: str = "", child_indent: str = "") -> None:
+    def emit_interface(
+        key: tuple[str, str], prefix: str = "", child_indent: str = ""
+    ) -> Iterator[dict[str, Any]]:
         if key in visited:
             return
         visited.add(key)
@@ -1111,14 +1239,13 @@ def _interface_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict
         )
 
         row["Secondary IPv4 Addresses"] = [secondary.ip for secondary in interface.secondary_ips if secondary.ip]
-        _overlay_raw(row, source_values, headers)
-        _overlay_raw(row, interface.raw_extra, headers)
+        _overlay_safe_raw(row, source_values, headers)
         row["Additional Settings"] = _additional_source_settings(
             source_values,
             row,
             headers,
         )
-        rows.append(row)
+        yield row
 
         child_keys = tuple(aggregate_members.get(key, ())) + tuple(children.get(key, ()))
         child_keys = tuple(sorted((item for item in dict.fromkeys(child_keys) if item in interfaces), key=rank))
@@ -1128,21 +1255,23 @@ def _interface_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict
         for child_key in child_keys:
             child_number += 1
             last = child_number == children_count
-            emit_interface(child_key, child_indent + ("└─ " if last else "├─ "), child_indent + ("   " if last else "│  "))
+            yield from emit_interface(
+                child_key,
+                child_indent + ("└─ " if last else "├─ "),
+                child_indent + ("   " if last else "│  "),
+            )
         for vpn_top in vpn_children:
             child_number += 1
             last = child_number == children_count
-            emit_vpn(vpn_top, child_indent + ("└─ " if last else "├─ "))
+            yield from emit_vpn(vpn_top, child_indent + ("└─ " if last else "├─ "))
 
     for key in roots:
-        emit_interface(key)
+        yield from emit_interface(key)
     for key in sorted(interfaces, key=rank):
-        emit_interface(key)
+        yield from emit_interface(key)
     for vpn_top in context.derived.topology.vpns:
         if (vpn_top.vdom, vpn_top.name) not in emitted_vpns:
-            emit_vpn(vpn_top)
-
-    return rows
+            yield from emit_vpn(vpn_top)
 
 
 def _interface_rank(topology: Any, interface: Any) -> tuple[int, str]:
@@ -1159,8 +1288,7 @@ def _topology_symbol(kind: str | None) -> str:
     return {"aggregate": "◆", "physical": "●", "vlan": "▣", "logical": "◇", "tunnel": "◇", "vpn": "◈"}.get(kind, "◇")
 
 
-def _interface_secondary_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _interface_secondary_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for interface in context.config.interfaces:
         for item in interface.secondary_ips:
             row = {
@@ -1169,7 +1297,7 @@ def _interface_secondary_rows(context: _ExcelContext, headers: Sequence[str]) ->
                 "IP / Prefix": item.ip,
                 "Management Access": item.allowaccess,
                 "HA Priority": item.ha_priority,
-                "Additional Settings": _additional_settings(item),
+                "Additional Settings": _additional_settings(item, sheet_name="Interface Secondary IPs"),
             }
             _add_analysis_status(
                 row,
@@ -1177,13 +1305,11 @@ def _interface_secondary_rows(context: _ExcelContext, headers: Sequence[str]) ->
                 vdom=interface.vdom,
                 names=(interface.name, item.id),
             )
-            _overlay_raw(row, item.raw_extra, headers)
-            rows.append(row)
-    return rows
+            _overlay_safe_raw(row, row["Additional Settings"], headers)
+            yield row
 
 
-def _zone_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _zone_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for item in context.config.zones:
         row = {
             "Name": item.name,
@@ -1191,12 +1317,11 @@ def _zone_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str,
             "Description": item.description,
             "Intrazone": item.intrazone,
             "VDOM": item.vdom,
-            "Additional Settings": _additional_settings(item),
+            "Additional Settings": _additional_settings(item, sheet_name="Zones"),
         }
         _add_analysis_status(row, context, vdom=item.vdom, names=(item.name,), domains=('zone',))
-        _overlay_raw(row, item.raw_extra, headers)
-        rows.append(row)
-    return rows
+        _overlay_safe_raw(row, row["Additional Settings"], headers)
+        yield row
 
 
 def _address_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
@@ -1227,12 +1352,11 @@ def _address_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[di
             names=(item.name,),
             domains=("address6",) if item.address_family == "ipv6" else ("address",),
         )
-        _overlay_raw(row, item.raw_extra, headers)
+        _overlay_safe_raw(row, row["Additional Settings"], headers)
         yield row
 
 
-def _wildcard_fqdn_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _wildcard_fqdn_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for item in context.config.wildcard_fqdns:
         row = {
             "Name": item.name,
@@ -1242,12 +1366,10 @@ def _wildcard_fqdn_rows(context: _ExcelContext, headers: Sequence[str]) -> list[
             "Additional Settings": sanitize_source_attributes(item.raw_extra),
         }
         _add_analysis_status(row, context, vdom=item.vdom, names=(item.name,), domains=('wildcard_fqdn',))
-        rows.append(row)
-    return rows
+        yield row
 
 
-def _address_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _address_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for item in context.config.address_groups:
         row = {
             "Name": item.name,
@@ -1271,9 +1393,8 @@ def _address_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[
             if item.address_family == "ipv6"
             else ("address_group",),
         )
-        _overlay_raw(row, item.raw_extra, headers)
-        rows.append(row)
-    return rows
+        _overlay_safe_raw(row, row["Additional Settings"], headers)
+        yield row
 
 
 def _address_group_tag_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -1324,9 +1445,8 @@ def _service_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[di
         yield row
 
 
-def _service_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+def _service_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     source = {(item.vdom, item.name): item for item in context.config.service_groups}
-    rows = []
     for item in context.derived.services.groups:
         source_item = source.get((item.vdom, item.name))
         row = {
@@ -1339,8 +1459,7 @@ def _service_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[
         _add_analysis_status(row, context, vdom=item.vdom, names=(item.name,), domains=('service_group', 'service'))
         if source_item is not None:
             _overlay_raw(row, source_item.raw_extra, headers)
-        rows.append(row)
-    return rows
+        yield row
 
 
 def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
@@ -1390,7 +1509,10 @@ def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dic
             "IP Pool Name": list(nat_item.pool_names) if nat_item else [],
             "VDOM": item.vdom,
             "Source Explicit Fields": sorted(item.explicit_fields),
-            "Additional Settings": _additional_settings(item),
+            "Additional Settings": _additional_settings(
+                item,
+                represented_fields=_VISIBLE_MODEL_FIELDS_BY_SHEET["Policies"],
+            ),
         }
         _add_analysis_status(
             row,
@@ -1399,7 +1521,7 @@ def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dic
             names=(item.name, item.policy_id),
             domains=('policy', 'nat'),
         )
-        _overlay_raw(row, item.raw_extra, headers)
+        _overlay_safe_raw(row, row["Additional Settings"], headers)
         yield row
 
 
@@ -1488,8 +1610,7 @@ def _vip_rows(
 def _vip_real_server_rows(
     context: _ExcelContext,
     headers: Sequence[str],
-) -> list[dict[str, Any]]:
-    rows = []
+) -> Iterator[dict[str, Any]]:
 
     for vip in context.config.vips:
         for item in vip.realservers:
@@ -1503,7 +1624,7 @@ def _vip_real_server_rows(
                 "Weight": item.weight,
                 "Monitors": item.monitor,
                 "VDOM": vip.vdom,
-                "Additional Settings": _additional_settings(item),
+                "Additional Settings": _additional_settings(item, sheet_name="VIP Real Servers"),
             }
             _add_analysis_status(
                 row,
@@ -1512,14 +1633,8 @@ def _vip_real_server_rows(
                 names=(vip.name, item.id),
                 domains=('vip',),
             )
-            _overlay_raw(
-                row,
-                item.raw_extra,
-                headers,
-            )
-            rows.append(row)
-
-    return rows
+            _overlay_safe_raw(row, row["Additional Settings"], headers)
+            yield row
 
 
 def _vip_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -1644,13 +1759,11 @@ def _route_rows(
 def _vpn_phase1_rows(
     context: _ExcelContext,
     headers: Sequence[str],
-) -> list[dict[str, Any]]:
+) -> Iterator[dict[str, Any]]:
     topology = {
         (item.vdom, item.name): item
         for item in context.derived.topology.vpns
     }
-
-    rows: list[dict[str, Any]] = []
 
     for item in context.config.ipsec_phase1:
         top = topology.get(
@@ -1708,7 +1821,7 @@ def _vpn_phase1_rows(
             "Source Explicit Fields": sorted(
                 item.explicit_fields
             ),
-            "Additional Settings": _additional_settings(item),
+            "Additional Settings": _additional_settings(item, sheet_name="VPN Tunnels"),
         }
 
         _add_analysis_status(
@@ -1724,15 +1837,9 @@ def _vpn_phase1_rows(
             ),
         )
 
-        _overlay_raw(
-            row,
-            item.raw_extra,
-            headers,
-        )
+        _overlay_safe_raw(row, row["Additional Settings"], headers)
 
-        rows.append(row)
-
-    return rows
+        yield row
 
 
 def _policy_vpn_phase1_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
@@ -1773,13 +1880,11 @@ def _policy_vpn_phase1_rows(context: _ExcelContext, headers: Sequence[str]) -> I
 def _vpn_phase2_rows(
     context: _ExcelContext,
     headers: Sequence[str],
-) -> list[dict[str, Any]]:
+) -> Iterator[dict[str, Any]]:
     normalized = {
         (item.vpn_type, item.vdom, item.name): item
         for item in context.derived.vpn.phase2
     }
-
-    rows: list[dict[str, Any]] = []
 
     for item in context.config.ipsec_phase2:
         norm = normalized.get(
@@ -1815,7 +1920,7 @@ def _vpn_phase2_rows(
             "Source Explicit Fields": sorted(
                 item.explicit_fields
             ),
-            "Additional Settings": _additional_settings(item),
+            "Additional Settings": _additional_settings(item, sheet_name="VPN Phase 2"),
         }
 
         _add_analysis_status(
@@ -1826,15 +1931,9 @@ def _vpn_phase2_rows(
             domains=("vpn_phase2",),
         )
 
-        _overlay_raw(
-            row,
-            item.raw_extra,
-            headers,
-        )
+        _overlay_safe_raw(row, row["Additional Settings"], headers)
 
-        rows.append(row)
-
-    return rows
+        yield row
 
 
 def _policy_vpn_phase2_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -1852,10 +1951,10 @@ def _policy_vpn_phase2_rows(context: _ExcelContext, headers: Sequence[str]) -> l
             "Protocol": item.protocol, "Source Port": item.src_port, "Destination Port": item.dst_port,
             "Auto Negotiate": item.auto_negotiate, "Comments": item.comments, "VDOM": item.vdom,
             "Source Explicit Fields": sorted(item.explicit_fields),
-            "Additional Settings": _additional_settings(item),
+            "Additional Settings": _additional_settings(item, sheet_name="Policy IPsec Phase 2"),
         }
         _add_analysis_status(row, context, vdom=item.vdom, names=(item.name,), domains=("ipsec_policy_phase2",))
-        _overlay_raw(row, item.raw_extra, headers)
+        _overlay_safe_raw(row, row["Additional Settings"], headers)
         rows.append(row)
     return rows
 
@@ -1889,16 +1988,15 @@ def _dhcp_server_rows(
         },
         domains=('dhcp_server',),
     )
-def _dhcp_ip_range_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+def _dhcp_ip_range_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     return _dhcp_child_rows(context, headers, "ip_ranges")
 
 
-def _dhcp_exclude_range_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+def _dhcp_exclude_range_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     return _dhcp_child_rows(context, headers, "exclude_ranges")
 
 
-def _dhcp_reservation_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _dhcp_reservation_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for server in context.config.dhcp_servers:
         for item in server.reserved_addresses:
             row = {
@@ -1913,20 +2011,18 @@ def _dhcp_reservation_rows(context: _ExcelContext, headers: Sequence[str]) -> li
                 "VDOM": server.vdom,
                 "Extraction Status": "EXTRACTED",
                 "Source Explicit Fields": sorted(item.explicit_fields),
-                "Additional Settings": _additional_settings(item),
+                "Additional Settings": _additional_settings(item, sheet_name="DHCP Reservations"),
             }
-            _overlay_raw(row, item.raw_extra, headers)
+            _overlay_safe_raw(row, row["Additional Settings"], headers)
             _add_analysis_status(row, context, vdom=server.vdom, names=(server.id, item.id), domains=('dhcp_server',))
-            rows.append(row)
-    return rows
+            yield row
 
 
 def _dhcp_child_rows(
     context: _ExcelContext,
     headers: Sequence[str],
     attribute: str,
-) -> list[dict[str, Any]]:
-    rows = []
+) -> Iterator[dict[str, Any]]:
     for server in context.config.dhcp_servers:
         for item in getattr(server, attribute):
             row = {
@@ -1941,49 +2037,46 @@ def _dhcp_child_rows(
                 "Extraction Status": "EXTRACTED",
                 "Manual Review": "No",
                 "Source Explicit Fields": sorted(item.explicit_fields),
-                "Additional Settings": _additional_settings(item),
+                "Additional Settings": _additional_settings(
+                    item,
+                    sheet_name="DHCP IP Ranges" if attribute == "ip_ranges" else "DHCP Exclude Ranges",
+                ),
             }
-            _overlay_raw(row, item.raw_extra, headers)
+            _overlay_safe_raw(row, row["Additional Settings"], headers)
             _add_analysis_status(row, context, vdom=server.vdom, names=(server.id, item.id), domains=('dhcp_server',))
-            rows.append(row)
-    return rows
+            yield row
 
 
-def _sdwan_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _sdwan_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for item in context.config.sdwans:
         row = {
             "Status": item.status,
             "Load Balance Mode": item.load_balance_mode,
             "Extraction Status": "EXTRACTED",
             "Manual Review": "No",
-            "Additional Settings": _additional_settings(item),
+            "Additional Settings": _additional_settings(item, sheet_name="SD-WAN"),
             "VDOM": item.vdom,
         }
-        _overlay_raw(row, item.raw_extra, headers)
+        _overlay_safe_raw(row, row["Additional Settings"], headers)
         _add_analysis_status(row, context, vdom=item.vdom, names=(item.vdom,))
-        rows.append(row)
-    return rows
+        yield row
 
 
-def _sdwan_zone_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _sdwan_zone_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for sdwan in context.config.sdwans:
         for item in sdwan.zones:
             row = {
                 "Zone Name": item.name,
-                "Additional Settings": _additional_settings(item),
+                "Additional Settings": _additional_settings(item, sheet_name="SD-WAN Zones"),
                 "VDOM": sdwan.vdom,
             }
-            _overlay_raw(row, item.raw_extra, headers)
+            _overlay_safe_raw(row, row["Additional Settings"], headers)
             _add_analysis_status(row, context, vdom=sdwan.vdom, names=(item.name,))
-            rows.append(row)
-    return rows
+            yield row
 
 
-def _sdwan_member_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+def _sdwan_member_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     topology = {(item.vdom, item.name): item for item in context.derived.topology.interfaces}
-    rows = []
     for sdwan in context.config.sdwans:
         for item in sdwan.members:
             top = topology.get((sdwan.vdom, item.interface or ""))
@@ -1997,20 +2090,18 @@ def _sdwan_member_rows(context: _ExcelContext, headers: Sequence[str]) -> list[d
                 "Weight": item.weight,
                 "Priority": item.priority,
                 "Status": item.status,
-                "Additional Settings": _additional_settings(item),
+                "Additional Settings": _additional_settings(item, sheet_name="SD-WAN Members"),
                 "VDOM": sdwan.vdom,
                 "Physical Interfaces": list(top.physical_interfaces) if top else [],
                 "Aggregate": top.aggregate if top else None,
                 "Source Explicit Fields": sorted(item.explicit_fields),
             }
-            _overlay_raw(row, item.raw_extra, headers)
+            _overlay_safe_raw(row, row["Additional Settings"], headers)
             _add_analysis_status(row, context, vdom=sdwan.vdom, names=(item.interface, item.seq_num), domains=('sdwan_member',))
-            rows.append(row)
-    return rows
+            yield row
 
 
-def _sdwan_health_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _sdwan_health_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for sdwan in context.config.sdwans:
         for item in sdwan.health_checks:
             row = {
@@ -2021,17 +2112,15 @@ def _sdwan_health_rows(context: _ExcelContext, headers: Sequence[str]) -> list[d
                 "Interval": item.interval,
                 "Fail Time": item.failtime,
                 "Recovery Time": item.recoverytime,
-                "Additional Settings": _additional_settings(item),
+                "Additional Settings": _additional_settings(item, sheet_name="SD-WAN Health Checks"),
                 "VDOM": sdwan.vdom,
             }
-            _overlay_raw(row, item.raw_extra, headers)
+            _overlay_safe_raw(row, row["Additional Settings"], headers)
             _add_analysis_status(row, context, vdom=sdwan.vdom, names=(item.name,))
-            rows.append(row)
-    return rows
+            yield row
 
 
-def _sdwan_rule_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _sdwan_rule_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for sdwan in context.config.sdwans:
         for item in sdwan.services:
             row = {
@@ -2044,13 +2133,12 @@ def _sdwan_rule_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dic
                 "Priority Members": item.priority_members,
                 "Health Checks": item.health_check,
                 "Priority Zones": item.priority_zone,
-                "Additional Settings": _additional_settings(item),
+                "Additional Settings": _additional_settings(item, sheet_name="SD-WAN Rules"),
                 "VDOM": sdwan.vdom,
             }
-            _overlay_raw(row, item.raw_extra, headers)
+            _overlay_safe_raw(row, row["Additional Settings"], headers)
             _add_analysis_status(row, context, vdom=sdwan.vdom, names=(item.id, item.name))
-            rows.append(row)
-    return rows
+            yield row
 
 
 def _ssl_settings_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -2106,20 +2194,17 @@ def _ssl_client_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator
     }, domains=("ssl_vpn_client",))
 
 
-def _ssl_bookmark_owner_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _ssl_bookmark_owner_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for owner_type, owners in (("User", context.config.ssl_vpn_user_bookmarks), ("Group", context.config.ssl_vpn_user_group_bookmarks)):
         for owner in owners:
             row = {"Owner Type": owner_type, "Owner Name": owner.owner_name,
                    "Custom Language": owner.custom_lang, "Bookmark Count": len(owner.bookmarks), "VDOM": owner.vdom,
-                   "Additional Settings": _additional_settings(owner)}
+                   "Additional Settings": _additional_settings(owner, sheet_name="SSL VPN Bookmark Owners")}
             _add_analysis_status(row, context, vdom=owner.vdom, names=(owner.owner_name,))
-            rows.append(row)
-    return rows
+            yield row
 
 
-def _ssl_bookmark_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _ssl_bookmark_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for owner_type, owners in (("User", context.config.ssl_vpn_user_bookmarks), ("Group", context.config.ssl_vpn_user_group_bookmarks)):
         for owner in owners:
             for item in owner.bookmarks:
@@ -2130,11 +2215,11 @@ def _ssl_bookmark_rows(context: _ExcelContext, headers: Sequence[str]) -> list[d
                        "Logon Password Configured": "Yes" if item.logon_password_configured else "No",
                        "SSO Password Configured": "Yes" if item.sso_password_configured else "No",
                        "Form Data": [{"name": value.name, "value": value.value} for value in item.form_data],
-                       "VDOM": owner.vdom, "Additional Settings": _additional_settings(item)}
-                _overlay_raw(row, item.raw_extra, headers)
+                       "VDOM": owner.vdom,
+                       "Additional Settings": _additional_settings(item, sheet_name="SSL VPN Bookmarks")}
+                _overlay_safe_raw(row, row["Additional Settings"], headers)
                 _add_analysis_status(row, context, vdom=owner.vdom, names=(owner.owner_name, item.name))
-                rows.append(row)
-    return rows
+                yield row
 def _ssl_portal_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
     return _model_rows(
         context,
@@ -2154,8 +2239,7 @@ def _ssl_portal_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dic
         },
         domains=('ssl_vpn_portal',),
     )
-def _ssl_auth_rule_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _ssl_auth_rule_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for settings in context.config.ssl_vpn_settings:
         for item in settings.authentication_rules:
             row = {
@@ -2173,12 +2257,11 @@ def _ssl_auth_rule_rows(context: _ExcelContext, headers: Sequence[str]) -> list[
                 "Portal": item.portal,
                 "Extraction Status": "EXTRACTED",
                 "Manual Review": "No",
-                "Additional Settings": _additional_settings(item),
+                "Additional Settings": _additional_settings(item, sheet_name="SSL VPN Authentication Rules"),
             }
-            _overlay_raw(row, item.raw_extra, headers)
+            _overlay_safe_raw(row, row["Additional Settings"], headers)
             _add_analysis_status(row, context, vdom=settings.vdom, names=(item.id, item.portal))
-            rows.append(row)
-    return rows
+            yield row
 
 
 def _local_user_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -2232,8 +2315,7 @@ def _user_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dic
         },
         domains=('user_group',),
     )
-def _user_group_match_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _user_group_match_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for group in context.config.user_groups:
         for item in group.matches:
             row = {
@@ -2242,12 +2324,11 @@ def _user_group_match_rows(context: _ExcelContext, headers: Sequence[str]) -> li
                 "Server Name": item.server_name,
                 "Group Name": item.group_name,
                 "VDOM": group.vdom,
-                "Additional Settings": _additional_settings(item),
+                "Additional Settings": _additional_settings(item, sheet_name="User Group Matches"),
             }
-            _overlay_raw(row, item.raw_extra, headers)
+            _overlay_safe_raw(row, row["Additional Settings"], headers)
             _add_analysis_status(row, context, vdom=group.vdom, names=(group.name, item.id))
-            rows.append(row)
-    return rows
+            yield row
 
 
 def _administrator_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -2289,8 +2370,7 @@ def _admin_profile_rows(context: _ExcelContext, headers: Sequence[str]) -> list[
         },
         domains=('admin_profile',), issue_vdom='root',
     )
-def _admin_permission_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _admin_permission_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for profile in context.config.admin_profiles:
         for kind, permission in (
             ("Firewall", profile.firewall_permission),
@@ -2305,24 +2385,25 @@ def _admin_permission_rows(context: _ExcelContext, headers: Sequence[str]) -> li
             for setting, value in values.items():
                 if value in (None, "", [], {}):
                     continue
-                rows.append(
-                    {
-                        "Profile": profile.name,
-                        "Permission Group": kind,
-                        "Setting": setting,
-                        "Value": value,
-                        "Extraction Status": "EXTRACTED",
-                        "Additional Settings": _additional_settings(permission),
-                    }
-                )
+                row = {
+                    "Profile": profile.name,
+                    "Permission Group": kind,
+                    "Setting": setting,
+                    "Value": value,
+                    "Extraction Status": "EXTRACTED",
+                    "Additional Settings": _additional_settings(
+                        permission,
+                        represented_fields=values.keys(),
+                    ),
+                }
                 _add_analysis_status(
-                    rows[-1],
+                    row,
                     context,
                     vdom="root",
                     names=(profile.name, setting),
                     domains=('admin_profile',),
                 )
-    return rows
+                yield row
 
 
 def _ips_sensor_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -2345,8 +2426,7 @@ def _ips_sensor_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dic
 def _ips_entry_rows(
     context: _ExcelContext,
     headers: Sequence[str],
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
+) -> Iterator[dict[str, Any]]:
 
     for sensor in context.config.ips_sensors:
         for item in sensor.entries:
@@ -2377,23 +2457,16 @@ def _ips_entry_rows(
                 "Vulnerability Types": item.vuln_type,
                 "Last Modified Filter": item.last_modified,
                 "VDOM": sensor.vdom,
-                "Additional Settings": _additional_settings(item),
+                "Additional Settings": _additional_settings(item, sheet_name="IPS Sensor Entries"),
             }
 
-            _overlay_raw(
-                row,
-                item.raw_extra,
-                headers,
-            )
+            _overlay_safe_raw(row, row["Additional Settings"], headers)
             _add_analysis_status(row, context, vdom=sensor.vdom, names=(sensor.name, item.id), domains=('ips_sensor',))
 
-            rows.append(row)
-
-    return rows
+            yield row
 
 
-def _ips_exempt_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _ips_exempt_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for sensor in context.config.ips_sensors:
         for entry in sensor.entries:
             for item in entry.exempt_ips:
@@ -2404,11 +2477,10 @@ def _ips_exempt_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dic
                         "Source IP": item.src_ip,
                         "Destination IP": item.dst_ip,
                         "VDOM": sensor.vdom,
-                        "Additional Settings": _additional_settings(item),
+                        "Additional Settings": _additional_settings(item, sheet_name="IPS Exempt IPs"),
                     }
                 _add_analysis_status(row, context, vdom=sensor.vdom, names=(sensor.name, entry.id, item.id), domains=('ips_sensor',))
-                rows.append(row)
-    return rows
+                yield row
 
 
 def _security_profile_rows(
@@ -2733,8 +2805,7 @@ def _generic_source_rows(
                 yield row
 
 
-def _schedule_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _schedule_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for item, kind in (
         *((item, "one-time") for item in context.config.one_time_schedules),
         *((item, "recurring") for item in context.config.recurring_schedules),
@@ -2750,28 +2821,25 @@ def _schedule_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[
             "Expiration Days": getattr(item, "expiration_days", None),
             "VDOM": item.vdom,
             "Source Explicit Fields": sorted(item.explicit_fields),
-            "Additional Settings": _additional_settings(item),
+            "Additional Settings": _additional_settings(item, sheet_name="Schedules"),
         }
         _add_analysis_status(context=context, row=row, vdom=item.vdom, names=(item.name,))
-        _overlay_raw(row, item.raw_extra, headers)
-        rows.append(row)
-    return rows
+        _overlay_safe_raw(row, row["Additional Settings"], headers)
+        yield row
 
 
-def _schedule_group_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _schedule_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for item in context.config.schedule_groups:
         row = {
             "Name": item.name,
             "Members": item.members,
             "VDOM": item.vdom,
             "Source Explicit Fields": sorted(item.explicit_fields),
-            "Additional Settings": _additional_settings(item),
+            "Additional Settings": _additional_settings(item, sheet_name="Schedule Groups"),
         }
         _add_analysis_status(context=context, row=row, vdom=item.vdom, names=(item.name,))
-        _overlay_raw(row, item.raw_extra, headers)
-        rows.append(row)
-    return rows
+        _overlay_safe_raw(row, row["Additional Settings"], headers)
+        yield row
 
 
 def _ntp_setting_rows(
@@ -2850,12 +2918,14 @@ def _model_rows(
                     getattr(item, attribute, None)
                 )
 
-        raw_extra = _additional_settings(
-            item,
-            row.values(),
-        )
+        represented_fields = {
+            attribute
+            for header, attribute in mapping.items()
+            if header in headers and isinstance(attribute, str) and attribute
+        }
+        raw_extra = _additional_settings(item, represented_fields=represented_fields)
 
-        _overlay_raw(
+        _overlay_safe_raw(
             row,
             raw_extra,
             headers,
@@ -2891,30 +2961,39 @@ def _model_rows(
 
 def _additional_settings(
     item: Any,
-    visible_values: Iterable[Any] = (),
+    *,
+    represented_fields: Iterable[str] = (),
+    sheet_name: str | None = None,
 ) -> dict[str, Any]:
-    return _additional_settings_from_data(item, visible_values)
+    if sheet_name is not None:
+        represented_fields = _VISIBLE_MODEL_FIELDS_BY_SHEET.get(sheet_name, represented_fields)
+    return sanitize_source_attributes(
+        _build_additional_settings(item, represented_fields=represented_fields)
+    )
 
 
-def _additional_settings_from_data(
+def _build_additional_settings(
     item: Any,
-    visible_values: Iterable[Any] = (),
+    *,
+    represented_fields: Iterable[str] = (),
 ) -> dict[str, Any]:
-    visible = list(visible_values)
     settings = dict(getattr(item, "raw_extra", {}) or {})
 
     explicit_fields = set(getattr(item, "explicit_fields", ()) or ())
+    represented = frozenset(represented_fields)
     for field in type(item).model_fields:
         if field not in explicit_fields:
             continue
         if field in {"name", "vdom", "raw_extra", "explicit_fields"}:
             continue
+        if field in represented:
+            continue
         value = _serialize_nested_value(getattr(item, field, None))
-        if value in (None, "", [], {}) or value in visible:
+        if value in (None, "", [], {}):
             continue
         settings[field] = value
 
-    return sanitize_source_attributes(settings)
+    return settings
 
 
 def _serialize_nested_value(value: Any) -> Any:
@@ -2964,6 +3043,16 @@ def _overlay_raw(
     headers: Sequence[str],
 ) -> None:
     safe = sanitize_source_attributes(raw)
+    _overlay_safe_raw(row, safe, headers)
+
+
+def _overlay_safe_raw(
+    row: dict[str, Any],
+    safe_raw: Mapping[str, Any],
+    headers: Sequence[str],
+) -> None:
+    """Overlay an already-sanitized raw source mapping without sanitizing again."""
+    safe = safe_raw
     normalized_values = _normalized_source_values(safe)
 
     for header in headers:
@@ -2986,19 +3075,11 @@ def _lookup_source_header(
         else normalized_values
     )
 
-    candidates = [
-        *_SOURCE_HEADER_ALIASES.get(
-            header,
-            (),
-        ),
+    candidates = _NORMALIZED_SOURCE_HEADER_CANDIDATES.get(
         header,
-    ]
-
-    for candidate in candidates:
-        normalized = _normalize_key(
-            candidate
-        )
-
+        (_normalize_key(header),),
+    )
+    for normalized in candidates:
         if normalized not in normalized_values:
             continue
 
@@ -3018,10 +3099,6 @@ def _normalized_source_values(
         _normalize_key(key): (key, value)
         for key, value in values.items()
     }
-
-
-def _normalize_key(value: Any) -> str:
-    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
 
 
 def _enabled_text(value: Any) -> str | None:
@@ -3067,6 +3144,11 @@ def _interface_source_values(
     FGInterface remains the typed source model.
     """
 
+    cache_key = (vdom, name)
+    cached = context._interface_safe_source_cache.get(cache_key)
+    if cached is not None:
+        return deepcopy(cached)
+
     values: dict[str, Any] = {}
     records = [
         *context.source_by_identity.get((vdom, "system interface", name), ()),
@@ -3088,7 +3170,12 @@ def _interface_source_values(
             if suffix:
                 values[f"{suffix}.{key}"] = value
 
-    return sanitize_source_attributes(values)
+    safe_values = sanitize_source_attributes(values)
+    context._interface_safe_source_cache[cache_key] = deepcopy(safe_values)
+    context._interface_source_key_cache[cache_key] = frozenset(
+        _normalize_key(key) for key in safe_values
+    )
+    return deepcopy(safe_values)
 
 
 def _source_secret_configured(
@@ -3103,20 +3190,9 @@ def _source_secret_configured(
         for key in keys
     }
 
-    records = [
-        *context.source_by_identity.get((vdom, "system interface", name), ()),
-        *context.nested_source_by_parent.get((vdom, "system interface", name), ()),
-    ]
-    for record in records:
-        present = {
-            _normalize_key(key)
-            for key in record.values
-        }
-
-        if present & wanted:
-            return "Yes"
-
-    return None
+    _interface_source_values(context, vdom=vdom, name=name)
+    present = context._interface_source_key_cache.get((vdom, name), frozenset())
+    return "Yes" if present & wanted else None
 
 
 def _additional_source_settings(
@@ -3202,6 +3278,17 @@ def _safe_command_value(
 
 
 def _excel_safe(value: Any) -> Any:
+    if value is None:
+        return None
+    if type(value) is str:
+        if value.startswith(("=", "+", "-", "@")):
+            return "'" + value
+        return value
+    if type(value) is bool:
+        return "Yes" if value else "No"
+    if type(value) is int or type(value) is float:
+        return value
+
     value = _plain_value(value)
 
     if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):

@@ -12,7 +12,11 @@ from fwmigrate.source_reporting.excel_utils import (
     safe_source_cell,
     set_column_widths,
 )
-from fwmigrate.source_reporting.metrics import SourceReportMetrics, SourceReportStageMetric
+from fwmigrate.source_reporting.metrics import (
+    ExcelExportMetrics,
+    SourceReportMetrics,
+    SourceReportStageMetric,
+)
 from fwmigrate.source_reporting.options import (
     ExcelExportProfile,
     ExcelExportUnavailableError,
@@ -31,6 +35,7 @@ __all__ = [
     "SourceReporter",
     "SourceReportMetrics",
     "SourceReportStageMetric",
+    "ExcelExportMetrics",
     "ExcelExportProfile",
     "ExcelExportUnavailableError",
     "XLSX_MIMETYPE",

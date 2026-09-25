@@ -47,6 +47,7 @@ from fwmigrate.source_reporting import (
     ExcelExportUnavailableError,
     ExcelExportProfile,
     SourceReportMetrics,
+    ExcelExportMetrics,
     XLSX_MIMETYPE,
     source_reporters,
 )
@@ -797,10 +798,20 @@ def create_app(test_config=None):
             workbook = io.BytesIO()
             export_started = perf_counter()
             source_name = os.path.basename(uploaded_file.filename) if uploaded_file is not None and uploaded_file.filename else (preview_entry.source_name if preview_entry else None)
-            reporter.export_excel(analysis, workbook, profile=profile, source_name=source_name)
+            export_metrics = (
+                ExcelExportMetrics()
+                if metrics is not None and profile is ExcelExportProfile.FAST and source_vendor == 'fortigate'
+                else None
+            )
+            export_options = {'profile': profile, 'source_name': source_name}
+            if export_metrics is not None:
+                export_options['metrics'] = export_metrics
+            reporter.export_excel(analysis, workbook, **export_options)
             export_elapsed = perf_counter() - export_started
             if metrics is not None:
-                metrics.add('workbook construction', export_elapsed * 1000)
+                metrics.add('excel export call', export_elapsed * 1000)
+                if export_metrics is not None:
+                    metrics.details['excel_export'] = export_metrics.as_dict()
             workbook.seek(0)
             response = send_file(
                 workbook,
