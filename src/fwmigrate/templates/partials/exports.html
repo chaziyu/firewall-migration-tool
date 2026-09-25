@@ -3,22 +3,33 @@
     <div class="card-header"><div class="section-heading"><h2 id="mapping-heading"><span class="step-num">02</span>Migration review</h2></div>
       <p class="card-desc">Review backend suggestions and confirm the FortiGate mappings required by PAN-OS.</p></div>
     <div class="mapping-toolbar">
-      <label>Show <select id="mapping-filter"><option value="all">All decisions</option><option value="zones">Zones</option><option value="interfaces">Interfaces</option><option value="route-nat">Route/NAT impact</option></select></label>
-      <label>VDOM <select id="mapping-vdom-filter"><option value="all">All VDOMs</option></select></label>
-      <label><input type="checkbox" id="decision-pending-only"> Show pending only</label>
-      <button type="button" id="decision-select-visible">Select all visible</button>
-      <button type="button" id="decision-clear-selection">Clear selection</button>
-      <span id="decision-selected-count" aria-live="polite">Selected: 0</span>
-      <button type="button" id="decision-confirm-selected">Confirm selected</button>
-      <button type="button" id="decision-confirm-suggestions">Confirm all suggestions</button>
-      <input type="text" id="decision-bulk-value" placeholder="Final value for selected" aria-label="Final value for selected decisions">
-      <button type="button" id="decision-set-selected">Set selected value</button>
-      <button type="button" id="decision-use-suggestion">Use suggestion</button>
-      <button type="button" id="decision-clear-selected">Clear selected values</button>
-      <button type="button" id="mapping-template">Download mapping template</button>
-      <label>Import YAML <input type="file" id="mapping-import" accept=".yaml,.yml,text/yaml"></label>
-      <label>Import decisions <input type="file" id="decision-import" accept=".json,application/json"></label>
-      <button type="button" id="decision-export">Download decisions</button>
+      <div class="mapping-toolbar-row">
+        <label>Show <select id="mapping-filter"><option value="all">All decisions</option><option value="zones">Zones</option><option value="interfaces">Interfaces</option><option value="route-nat">Route/NAT impact</option></select></label>
+        <label>VDOM <select id="mapping-vdom-filter"><option value="all">All VDOMs</option></select></label>
+        <label class="mapping-checkbox"><input type="checkbox" id="decision-pending-only"> Show pending only</label>
+      </div>
+      <div class="mapping-toolbar-row">
+        <button type="button" class="btn btn-secondary btn-sm" id="decision-select-visible">Select all visible</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="decision-clear-selection">Clear selection</button>
+        <span id="decision-selected-count" aria-live="polite">Selected: 0</span>
+        <button type="button" class="btn btn-primary btn-sm" id="decision-confirm-selected">Confirm selected</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="decision-confirm-suggestions">Confirm all suggestions</button>
+      </div>
+      <details class="mapping-more-actions">
+        <summary>Bulk edit, import &amp; export</summary>
+        <div class="mapping-toolbar-row">
+          <input type="text" id="decision-bulk-value" placeholder="Final value for selected" aria-label="Final value for selected decisions">
+          <button type="button" class="btn btn-secondary btn-sm" id="decision-set-selected">Set selected value</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="decision-use-suggestion">Use suggestion</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="decision-clear-selected">Clear selected values</button>
+        </div>
+        <div class="mapping-toolbar-row">
+          <button type="button" class="btn btn-secondary btn-sm" id="mapping-template">Download mapping template</button>
+          <label>Import YAML <input type="file" id="mapping-import" accept=".yaml,.yml,text/yaml"></label>
+          <label>Import decisions <input type="file" id="decision-import" accept=".json,application/json"></label>
+          <button type="button" class="btn btn-secondary btn-sm" id="decision-export">Download decisions</button>
+        </div>
+      </details>
     </div>
     <p id="mapping-completion" aria-live="polite"></p>
     <div id="migration-mapping-fields"></div>

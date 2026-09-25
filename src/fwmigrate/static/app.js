@@ -1193,13 +1193,15 @@ let currentPlanItems = [];
       const stats = data.stats || data.summary || {};
       const objects = stats.objects || stats;
       const severityCounts = stats.validation?.severity_counts || {};
+      const errorCount = count(severityCounts.error);
+      const warningCount = count(severityCounts.warning);
       if (statTotalRules) statTotalRules.textContent = count(objects.policies);
       if (statTotalObjects)
         statTotalObjects.textContent =
           ["addresses", "address_groups", "services", "service_groups"]
             .reduce((total, key) => total + count(objects[key]), 0);
-      if (statErrors) statErrors.textContent = count(severityCounts.error);
-      if (statWarnings) statWarnings.textContent = count(severityCounts.warning);
+      if (statErrors) statErrors.textContent = errorCount;
+      if (statWarnings) statWarnings.textContent = warningCount;
       currentPolicies = Array.isArray(data.policies) ? data.policies : [];
       currentReport = data;
       reportPage = 1;
@@ -1212,7 +1214,9 @@ let currentPlanItems = [];
       );
       setPreviewStatus(
         itemCount
-          ? "Parsed successfully."
+          ? (errorCount || warningCount
+              ? `Parsed · ${errorCount} errors · ${warningCount} warnings`
+              : "Parsed successfully.")
           : "No supported objects were found. Review the source file and extraction warnings in the Excel workbook.",
         itemCount ? "ready" : "empty",
       );
@@ -1222,7 +1226,6 @@ let currentPlanItems = [];
       sourceReady = false;
       sourceFailed = true;
       setPreviewStatus(err.message, "error");
-      showError(`Configuration preview failed: ${err.message}`);
     } finally {
       if (requestRevision === sourceRevision) {
         previewController = null;
