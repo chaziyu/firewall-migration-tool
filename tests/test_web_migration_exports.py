@@ -202,6 +202,14 @@ def test_migration_workflow_uses_planning_terminology():
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "Plan migration" in html
+    assert "Migration review" in html
+    assert 'id="mapping-filter"' in html and 'id="decision-pending-only"' in html
+    assert 'id="decision-select-visible"' in html and 'id="decision-clear-selection"' in html
+    assert 'id="decision-set-selected"' in html and 'id="decision-use-suggestion"' in html
+    assert 'id="migration-plan-items"' in html and 'id="migration-plan-filter"' in html
+    assert 'id="migration-command-preview"' in html and 'id="migration-copy-commands"' in html
+    assert "Download .set" in html and "Download bundle" in html
+    assert "Plan migration is under development." not in html
     assert "Configuration Report" in html
     assert "Planned PAN-OS configuration" in html
     assert "Live migration" in html

@@ -176,6 +176,18 @@ def evaluate_edit(
     )
 
 
+def evaluate_edit_sequence(
+    section_path: str,
+    edits: Iterable[EditNode],
+) -> CommandEvaluation:
+    """Evaluate repeated edits to one keyed source object in source order."""
+
+    return _evaluate_section_commands(
+        section_path,
+        (command for edit in edits for command in edit.commands),
+    )
+
+
 def evaluate_config(
     section_path: str,
     config: ConfigNode,
