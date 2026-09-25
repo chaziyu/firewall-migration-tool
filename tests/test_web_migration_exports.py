@@ -6,10 +6,20 @@ from tests.fixture_paths import CISCO_ASA_FIXTURE
 from pathlib import Path
 
 MIGRATION_FIXTURE = Path(__file__).parent / "fixtures" / "fortigate" / "palo_alto_mvp.conf"
+PANOS_TARGET_FIXTURE = Path(__file__).parent / "fixtures" / "palo_alto" / "integrated_firewall.xml"
 
 
 def _preview(client):
     response = client.post("/api/preview", data={"file": (io.BytesIO(MIGRATION_FIXTURE.read_bytes()), MIGRATION_FIXTURE.name)}, content_type="multipart/form-data")
+    assert response.status_code == 200
+    return response.get_json()["preview_id"]
+
+
+def _target_preview(client):
+    response = client.post("/api/preview", data={
+        "source_vendor": "palo_alto",
+        "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes()), PANOS_TARGET_FIXTURE.name),
+    }, content_type="multipart/form-data")
     assert response.status_code == 200
     return response.get_json()["preview_id"]
 
@@ -36,6 +46,37 @@ def test_mapping_yaml_import_preserves_vdom_scopes():
     response = client.post("/api/migration/mapping/import", json={"yaml": "vdoms:\n  root:\n    vsys: vsys1\ninterfaces:\n  root:\n    port1:\n      target_zone: trust\n  blue:\n    port1:\n      target_zone: dmz\n"})
     assert response.status_code == 200
     assert response.get_json()["mapping"]["interfaces"]["blue"]["port1"]["target_zone"] == "dmz"
+
+
+def test_target_preview_adds_pending_evidence_based_suggestions():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    target_preview = _target_preview(client)
+    response = client.post("/api/migration/requirements", json={
+        "preview_id": source_preview,
+        "target_preview_id": target_preview,
+    })
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["target_devices"] == ["integrated-fw"]
+    decisions = {(item["source_name"], item["target_field"]): item for item in payload["decisions"]["decisions"]}
+    lan = decisions[("lan", "target_interface")]
+    assert lan["suggested_value"] == "ethernet1/1"
+    assert lan["mode"] == "SUGGESTED"
+    assert lan["review_state"] == "PENDING"
+    assert decisions[("root", "vsys")]["suggested_value"] == "vsys1"
+    assert decisions[("root", "virtual_router")]["suggested_value"] == "vr-main"
+
+
+def test_target_preview_rejects_wrong_vendor_preview():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    response = client.post("/api/migration/requirements", json={
+        "preview_id": source_preview,
+        "target_preview_id": source_preview,
+    })
+    assert response.status_code == 400
+    assert "PAN-OS target" in response.get_json()["error"]
 
 
 def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources():

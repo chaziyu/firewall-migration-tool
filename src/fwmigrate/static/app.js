@@ -11,6 +11,10 @@ let currentPlanItems = [];
   let currentDecisionSet = { decisions: [] };
   let currentDecisionDocument = null;
   let currentPreviewId = null;
+  let currentTargetPreviewId = null;
+  let selectedTargetDevice = "";
+  let targetRevision = 0;
+  let targetWarnings = {};
   let selectedSourceVendor = "fortigate";
   let selectedTargetVendor = "palo_alto";
   let offlineTargetVendor = "palo_alto";
@@ -390,6 +394,11 @@ let currentPlanItems = [];
   const selectedFilename = document.getElementById("selected-filename");
   const selectedFilesize = document.getElementById("selected-filesize");
   const btnRemoveFile = document.getElementById("btn-remove-file");
+  const targetConfigFile = document.getElementById("target-config-file");
+  const targetConfigRemove = document.getElementById("target-config-remove");
+  const targetConfigStatus = document.getElementById("target-config-status");
+  const targetDeviceGroup = document.getElementById("target-device-group");
+  const targetDeviceSelect = document.getElementById("target-device-select");
 
   // Optimizer Panel Stats
   const optimizerPanel = document.getElementById("optimizer-panel");
@@ -997,6 +1006,7 @@ let currentPlanItems = [];
     selectedTargetVendor = targetVendorSelect.value || "palo_alto";
     targetVendorSelect.addEventListener("change", (e) => {
       selectedTargetVendor = e.target.value;
+      if (selectedTargetVendor !== "palo_alto") clearTargetEvidence();
       invalidateMigrationPlan();
       const targetName =
         targetVendorSelect.options[targetVendorSelect.selectedIndex]?.text ||
@@ -1279,6 +1289,10 @@ let currentPlanItems = [];
     }
     const payload = { preview_id: previewId };
     if (previousDocument) payload.decision_document = previousDocument;
+    if (currentTargetPreviewId) {
+      payload.target_preview_id = currentTargetPreviewId;
+      if (selectedTargetDevice) payload.target_device = selectedTargetDevice;
+    }
     const response = await fetch("/api/migration/requirements", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
     });
@@ -1286,6 +1300,21 @@ let currentPlanItems = [];
     if (previewId !== currentPreviewId) return;
     currentDecisionSet = result.decisions;
     currentDecisionDocument = result.decision_document;
+    targetWarnings = result.target_warnings || {};
+    if (targetDeviceSelect) {
+      const devices = result.target_devices || [];
+      targetDeviceSelect.replaceChildren(new Option("Select a device", ""), ...devices.map(name => new Option(name, name)));
+      selectedTargetDevice = result.target_device || "";
+      targetDeviceSelect.value = selectedTargetDevice;
+      targetDeviceGroup?.classList.toggle("hidden", devices.length < 2);
+      if (currentTargetPreviewId && targetConfigStatus) {
+        targetConfigStatus.textContent = devices.length > 1 && !selectedTargetDevice
+          ? "Select the target device to enable target-backed suggestions."
+          : devices.length === 0
+            ? "No device-scoped PAN-OS interfaces found. Source-only suggestions remain available."
+            : `Target evidence loaded for ${selectedTargetDevice}. Review suggestions before confirming.`;
+      }
+    }
     const optionalPanel = document.getElementById("optional-mappings");
     const optionalList = document.getElementById("optional-mapping-list");
     if (optionalPanel && optionalList) {
@@ -1304,6 +1333,52 @@ let currentPlanItems = [];
   function currentDecisionPayload() {
     return { ...(currentDecisionDocument || {}), decisions: currentDecisionSet.decisions };
   }
+
+  function clearTargetEvidence() {
+    targetRevision += 1;
+    currentTargetPreviewId = null;
+    selectedTargetDevice = "";
+    targetWarnings = {};
+    if (targetConfigFile) targetConfigFile.value = "";
+    targetConfigRemove?.classList.add("hidden");
+    targetDeviceGroup?.classList.add("hidden");
+    if (targetConfigStatus) targetConfigStatus.textContent = "Upload target XML for evidence-based suggestions. Source-only suggestions remain available.";
+    invalidateMigrationPlan();
+  }
+
+  targetConfigFile?.addEventListener("change", async () => {
+    const file = targetConfigFile.files?.[0];
+    if (!file) return;
+    const previous = currentDecisionPayload();
+    clearTargetEvidence();
+    const revision = targetRevision;
+    if (targetConfigStatus) targetConfigStatus.textContent = "Reading target PAN-OS XML…";
+    try {
+      const body = new FormData();
+      body.append("source_vendor", "palo_alto");
+      body.append("file", file);
+      const response = await fetch("/api/preview", { method: "POST", body });
+      const result = await readJson(response, "Could not read target PAN-OS XML");
+      if (revision !== targetRevision) return;
+      currentTargetPreviewId = result.preview_id;
+      targetConfigRemove?.classList.remove("hidden");
+      await loadMigrationReview(currentPreviewId, previous);
+      invalidateMigrationPlan();
+    } catch (error) {
+      if (revision === targetRevision && targetConfigStatus) targetConfigStatus.textContent = error.message;
+    }
+  });
+  targetConfigRemove?.addEventListener("click", async () => {
+    const previous = currentDecisionPayload();
+    clearTargetEvidence();
+    if (currentPreviewId) await loadMigrationReview(currentPreviewId, previous);
+  });
+  targetDeviceSelect?.addEventListener("change", async () => {
+    const previous = currentDecisionPayload();
+    selectedTargetDevice = targetDeviceSelect.value;
+    invalidateMigrationPlan();
+    await loadMigrationReview(currentPreviewId, previous);
+  });
 
   function decisionIsResolved(decision) {
     return decision.mode === "AUTO" || decision.review_state === "CONFIRMED";
@@ -1455,7 +1530,7 @@ let currentPlanItems = [];
         details.append(summary, list); affectedCell.append(details);
       }
       row.append(affectedCell);
-      addText(decision.reason, labels[8]);
+      addText([decision.reason, targetWarnings[decision.key]].filter(Boolean).join(" · "), labels[8]);
       body.append(row);
     }
     table.append(body); container.replaceChildren(table);
@@ -1677,7 +1752,7 @@ let currentPlanItems = [];
       try {
       const resp = await fetch("/api/migrate", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ preview_id: currentPreviewId, source_vendor: selectedSourceVendor, target_vendor: selectedTargetVendor, decision_document: currentDecisionPayload() }),
+          body: JSON.stringify({ preview_id: currentPreviewId, source_vendor: selectedSourceVendor, target_vendor: selectedTargetVendor, decision_document: currentDecisionPayload(), target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice }),
         });
         const artifact = await readJson(resp, "Migration planning failed");
         if (requestRevision !== migrationPlanRevision) return;
@@ -1692,7 +1767,8 @@ let currentPlanItems = [];
         if (summary) {
           const status = artifact.plan_status === "READY" ? "Migration artifact ready." : artifact.plan_status === "PARTIAL" ? "Partial commands are ready." : "Target mappings required.";
           const blockers = new Set(artifact.blocking_reasons || []);
-          summary.textContent = `${status}\n${counts.SUPPORTED || 0} supported · ${counts.renderable || 0} renderable · ${counts.MANUAL_REVIEW || 0} manual review · ${counts.UNSUPPORTED || 0} unsupported · ${artifact.commands} commands${blockers.size ? `\n${blockers.size} blocking issue${blockers.size === 1 ? "" : "s"}. Review the results below.` : ""}`;
+          const targetIssueCount = Object.keys(artifact.target_warnings || {}).length;
+          summary.textContent = `${status}\n${counts.SUPPORTED || 0} supported · ${counts.renderable || 0} renderable · ${counts.MANUAL_REVIEW || 0} manual review · ${counts.UNSUPPORTED || 0} unsupported · ${artifact.commands} commands${blockers.size ? `\n${blockers.size} blocking issue${blockers.size === 1 ? "" : "s"}. Review the results below.` : ""}${targetIssueCount ? `\n${targetIssueCount} target mapping warning${targetIssueCount === 1 ? "" : "s"}. Review the decisions above.` : ""}`;
         }
         const previewElement = document.getElementById("migration-command-preview");
         const reviewSummary = document.getElementById("migration-command-summary");

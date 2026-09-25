@@ -2208,6 +2208,11 @@ select {
     scroll-behavior: auto !important;
   }
 }
+.target-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--canvas); }
+.target-evidence label { font-size: 12px; font-weight: 600; }
+.target-evidence input[type="file"] { max-width: 18rem; font-size: 12px; }
+.target-evidence p { flex-basis: 100%; margin: 0; color: var(--text-muted); font-size: 12px; }
+.target-evidence select { min-height: 36px; margin-left: .4rem; }
 .mapping-toolbar { display: grid; gap: .75rem; margin: 1rem 0; }
 .mapping-toolbar-row { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; }
 .mapping-toolbar label { display: grid; gap: .25rem; font-size: 11px; font-weight: 600; }

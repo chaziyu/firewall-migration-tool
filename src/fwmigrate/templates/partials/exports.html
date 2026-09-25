@@ -2,6 +2,15 @@
   <section class="card hidden" id="migration-mapping" aria-labelledby="mapping-heading">
     <div class="card-header"><div class="section-heading"><h2 id="mapping-heading"><span class="step-num">02</span>Migration review</h2></div>
       <p class="card-desc">Review backend suggestions and confirm the FortiGate mappings required by PAN-OS.</p></div>
+    <div class="target-evidence">
+      <label for="target-config-file">Optional target PAN-OS XML</label>
+      <input type="file" id="target-config-file" accept=".xml,application/xml,text/xml" aria-describedby="target-config-status">
+      <button type="button" class="btn btn-secondary btn-sm hidden" id="target-config-remove">Remove target</button>
+      <label for="target-device-select" id="target-device-group" class="hidden">Target device
+        <select id="target-device-select"></select>
+      </label>
+      <p id="target-config-status" role="status" aria-live="polite">Upload target XML for evidence-based suggestions. Source-only suggestions remain available.</p>
+    </div>
     <div class="mapping-toolbar">
       <div class="mapping-toolbar-row">
         <label>Show <select id="mapping-filter"><option value="all">All decisions</option><option value="zones">Zones</option><option value="interfaces">Interfaces</option><option value="route-nat">Route/NAT impact</option></select></label>
