@@ -26,6 +26,8 @@ from .decisions import (
     make_decision_key,
 )
 from .planner import FortiGateToPaloAltoPlanner
+from .target_validation import PANTargetFinding, validate_against_target
+from .support_guidance import PANSupportGuidance, build_support_guidance
 
 __all__ = [
     "FortiGateToPaloAltoPlanner",
@@ -52,4 +54,8 @@ __all__ = [
     "VDOMMapping",
     "build_decision_set",
     "make_decision_key",
+    "PANTargetFinding",
+    "validate_against_target",
+    "PANSupportGuidance",
+    "build_support_guidance",
 ]

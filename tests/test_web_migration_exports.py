@@ -59,11 +59,15 @@ def test_target_preview_adds_pending_evidence_based_suggestions():
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["target_devices"] == ["integrated-fw"]
+    assert payload["target_device_metadata"][0]["name"] == "integrated-fw"
+    assert payload["target_evidence"]["vendor"] == "palo_alto"
     decisions = {(item["source_name"], item["target_field"]): item for item in payload["decisions"]["decisions"]}
     lan = decisions[("lan", "target_interface")]
     assert lan["suggested_value"] == "ethernet1/1"
     assert lan["mode"] == "SUGGESTED"
     assert lan["review_state"] == "PENDING"
+    assert lan["evidence_source"] == "TARGET"
+    assert lan["evidence_type"] == "TARGET_INTERFACE_ADDRESS"
     assert decisions[("root", "vsys")]["suggested_value"] == "vsys1"
     assert decisions[("root", "virtual_router")]["suggested_value"] == "vr-main"
 
@@ -147,6 +151,13 @@ def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources
     assert mismatch.status_code == 400
     assert "different source" in mismatch.get_json()["error"]
 
+    legacy = json.loads(json.dumps(saved))
+    legacy["format_version"] = 1
+    accepted = client.post("/api/migration/decisions/import", json={
+        "preview_id": preview_id, "document": legacy,
+    })
+    assert accepted.status_code == 200
+
 
 def test_plan_reports_missing_mappings_and_blocks_empty_bundle():
     client = create_app({"TESTING": True}).test_client()
@@ -183,7 +194,7 @@ def test_complete_mappings_create_zip_for_same_plan_artifact():
         report = json.loads(archive.read("migration_report.json"))
         decisions = json.loads(archive.read("migration_decisions.json"))
         assert report["commands"] == plan["commands"]
-        assert decisions["format_version"] == 1
+        assert decisions["format_version"] == 2
         assert decisions["source_vendor"] == "fortigate"
         root_vsys = next(item for item in decisions["decisions"] if item["source_kind"] == "vdom" and item["target_field"] == "vsys")
         assert root_vsys["value"] == "vsys1"

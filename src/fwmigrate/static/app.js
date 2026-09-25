@@ -15,6 +15,9 @@ let currentPlanItems = [];
   let selectedTargetDevice = "";
   let targetRevision = 0;
   let targetWarnings = {};
+  let targetFindings = [];
+  let supportGuidance = [];
+  let targetEvidence = null;
   let selectedSourceVendor = "fortigate";
   let selectedTargetVendor = "palo_alto";
   let offlineTargetVendor = "palo_alto";
@@ -1301,9 +1304,16 @@ let currentPlanItems = [];
     currentDecisionSet = result.decisions;
     currentDecisionDocument = result.decision_document;
     targetWarnings = result.target_warnings || {};
+    targetFindings = result.target_findings || [];
+    targetEvidence = result.target_evidence || null;
     if (targetDeviceSelect) {
       const devices = result.target_devices || [];
-      targetDeviceSelect.replaceChildren(new Option("Select a device", ""), ...devices.map(name => new Option(name, name)));
+      const metadata = Object.fromEntries((result.target_device_metadata || []).map(item => [item.id, item]));
+      targetDeviceSelect.replaceChildren(new Option("Select a device", ""), ...devices.map(name => {
+        const item = metadata[name];
+        const label = item ? `${item.name} · ${item.interfaces} interfaces · ${item.vsys} VSYS` : name;
+        return new Option(label, name);
+      }));
       selectedTargetDevice = result.target_device || "";
       targetDeviceSelect.value = selectedTargetDevice;
       targetDeviceGroup?.classList.toggle("hidden", devices.length < 2);
@@ -1339,6 +1349,8 @@ let currentPlanItems = [];
     currentTargetPreviewId = null;
     selectedTargetDevice = "";
     targetWarnings = {};
+    targetFindings = [];
+    targetEvidence = null;
     if (targetConfigFile) targetConfigFile.value = "";
     targetConfigRemove?.classList.add("hidden");
     targetDeviceGroup?.classList.add("hidden");
@@ -1466,7 +1478,7 @@ let currentPlanItems = [];
     const container = document.getElementById("migration-mapping-fields");
     if (!container) return;
     const table = document.createElement("table"); table.className = "mapping-table decision-table";
-    const labels = ["Select", "Source", "Decision", "Mode", "Suggested", "Final Value", "Review", "Affected", "Reason"];
+    const labels = ["Select", "Source", "Decision", "Mode", "Evidence", "Suggested", "Final Value", "Review", "Affected", "Reason"];
     const thead = document.createElement("thead"), head = document.createElement("tr");
     labels.forEach(label => { const th = document.createElement("th"); th.textContent = label; head.append(th); });
     thead.append(head); table.append(thead);
@@ -1477,6 +1489,9 @@ let currentPlanItems = [];
       row.dataset.vdom = decision.source_vdom; row.dataset.field = decision.target_field; row.dataset.state = decisionIsResolved(decision) ? "CONFIRMED" : decision.review_state;
       row.dataset.mode = decision.mode;
       row.dataset.affectedBy = Object.keys(decision.affected_by || {}).join(",");
+      const conflict = targetFindings.some(item => item.decision_key === decision.key);
+      const evidence = conflict ? "CONFLICT" : decision.review_state === "CONFIRMED" ? "ENGINEER" : decision.evidence_source || "SOURCE";
+      row.dataset.evidence = evidence;
       const mode = decision.mode, unsupported = mode === "UNSUPPORTED";
       row.classList.add(mode === "SUGGESTED" && decision.review_state === "PENDING" ? "decision-suggested" :
         mode === "REQUIRED" && decision.review_state === "PENDING" ? "decision-required" :
@@ -1493,12 +1508,15 @@ let currentPlanItems = [];
       const modeCell = document.createElement("td"); modeCell.dataset.label = labels[3];
       const modeBadge = document.createElement("span"); modeBadge.className = `decision-mode-badge mode-${decision.mode.toLowerCase()}`; modeBadge.textContent = decision.mode;
       modeCell.append(modeBadge); row.append(modeCell);
-      addText(decision.suggested_value, labels[4]);
-      const finalCell = document.createElement("td"); finalCell.dataset.label = labels[5];
+      const evidenceCell = document.createElement("td"); evidenceCell.dataset.label = labels[4];
+      const evidenceBadge = document.createElement("span"); evidenceBadge.className = `decision-evidence-badge evidence-${evidence.toLowerCase()}`; evidenceBadge.textContent = evidence;
+      evidenceCell.append(evidenceBadge); row.append(evidenceCell);
+      addText(decision.suggested_value, labels[5]);
+      const finalCell = document.createElement("td"); finalCell.dataset.label = labels[6];
       const input = document.createElement("input"); input.type = "text"; input.className = "decision-value";
       input.value = decisionDisplayValue(decision);
       input.disabled = unsupported; input.setAttribute("aria-label", `${decision.target_field} for ${decision.source_name} in ${decision.source_vdom}`);
-      const stateCell = document.createElement("td"); stateCell.dataset.label = labels[6];
+      const stateCell = document.createElement("td"); stateCell.dataset.label = labels[7];
       const reviewBadge = document.createElement("span");
       reviewBadge.className = `decision-review-badge review-${decisionIsResolved(decision) ? "confirmed" : "pending"}`;
       reviewBadge.textContent = decisionIsResolved(decision) ? "CONFIRMED" : "PENDING";
@@ -1514,7 +1532,7 @@ let currentPlanItems = [];
         invalidateMigrationPlan(); updateMappingCompletion();
       });
       finalCell.append(input); row.append(finalCell, stateCell);
-      const affectedCell = document.createElement("td"); affectedCell.dataset.label = labels[7];
+      const affectedCell = document.createElement("td"); affectedCell.dataset.label = labels[8];
       const affectedCount = document.createElement("strong"); affectedCount.textContent = String(decision.affected_count || 0);
       affectedCell.append(affectedCount);
       const affectedBy = Object.entries(decision.affected_by || {}).filter(([, count]) => count > 0);
@@ -1530,7 +1548,7 @@ let currentPlanItems = [];
         details.append(summary, list); affectedCell.append(details);
       }
       row.append(affectedCell);
-      addText([decision.reason, targetWarnings[decision.key]].filter(Boolean).join(" · "), labels[8]);
+      addText([decision.reason, targetWarnings[decision.key]].filter(Boolean).join(" · "), labels[9]);
       body.append(row);
     }
     table.append(body); container.replaceChildren(table);
@@ -1541,6 +1559,7 @@ let currentPlanItems = [];
       vdomFilter.value = selectedVdom;
     }
     applyDecisionFilters();
+    updateEvidenceSummary();
     updateSelectedDecisionCount();
   }
 
@@ -1548,13 +1567,29 @@ let currentPlanItems = [];
     const filter = document.getElementById("mapping-filter")?.value || "all";
     const vdom = document.getElementById("mapping-vdom-filter")?.value || "all";
     const pendingOnly = document.getElementById("decision-pending-only")?.checked;
+    const evidenceFilter = document.getElementById("mapping-evidence-filter")?.value || "all";
     document.querySelectorAll(".decision-table tbody tr").forEach(row => {
       const routeNat = row.dataset.affectedBy.split(",").some(item => ["static_route", "source_nat"].includes(item));
       row.hidden = (vdom !== "all" && row.dataset.vdom !== vdom) || (pendingOnly && row.dataset.state !== "PENDING") ||
         (filter === "zones" && row.dataset.kind !== "zone") || (filter === "interfaces" && row.dataset.kind !== "interface") ||
-        (filter === "route-nat" && !routeNat);
+        (filter === "route-nat" && !routeNat) ||
+        (evidenceFilter === "target" && row.dataset.evidence !== "TARGET") ||
+        (evidenceFilter === "source" && row.dataset.evidence !== "SOURCE") ||
+        (evidenceFilter === "conflict" && row.dataset.evidence !== "CONFLICT") ||
+        (evidenceFilter === "required" && row.dataset.mode !== "REQUIRED") ||
+        (evidenceFilter === "confirmed" && row.dataset.state !== "CONFIRMED");
     });
     updateSelectedDecisionCount();
+  }
+
+  function updateEvidenceSummary() {
+    const summary = document.getElementById("mapping-evidence-summary");
+    if (!summary) return;
+    const decisions = currentDecisionSet.decisions;
+    const count = predicate => decisions.filter(predicate).length;
+    summary.textContent = targetEvidence
+      ? `Target: ${targetEvidence.device || "not selected"} · ${count(item => item.evidence_source === "TARGET")} target-backed · ${count(item => !item.evidence_source || item.evidence_source === "SOURCE")} source-only · ${targetFindings.length} conflicts · ${count(item => item.mode === "REQUIRED" && item.review_state !== "CONFIRMED")} required · ${count(item => item.review_state === "CONFIRMED")} confirmed`
+      : `Target evidence: not provided · ${count(item => !item.evidence_source || item.evidence_source === "SOURCE")} source-only suggestions are active.`;
   }
 
   function updateSelectedDecisionCount() {
@@ -1573,6 +1608,7 @@ let currentPlanItems = [];
   document.getElementById("mapping-filter")?.addEventListener("change", applyDecisionFilters);
   document.getElementById("mapping-vdom-filter")?.addEventListener("change", applyDecisionFilters);
   document.getElementById("decision-pending-only")?.addEventListener("change", applyDecisionFilters);
+  document.getElementById("mapping-evidence-filter")?.addEventListener("change", applyDecisionFilters);
 
   function selectedDecisions() {
     const keys = new Set([...document.querySelectorAll(".decision-select:checked")].map(input => input.closest("tr").dataset.key));
@@ -1699,7 +1735,7 @@ let currentPlanItems = [];
       return String(item.status || "").toLowerCase() === filter;
     });
     const table = document.createElement("table"); table.className = "mapping-table migration-plan-table";
-    const labels = ["Source", "Type", "Target", "Status", "Renderable", "Warnings / blockers"];
+    const labels = ["Source", "Type", "Target", "Status", "Renderable", "Resolution", "Next action", "Warnings / blockers"];
     const head = document.createElement("tr");
     labels.forEach(label => { const cell = document.createElement("th"); cell.textContent = label; head.append(cell); });
     const thead = document.createElement("thead"); thead.append(head); table.append(thead);
@@ -1707,6 +1743,7 @@ let currentPlanItems = [];
     for (const planItem of visible) {
       const row = document.createElement("tr");
       const warnings = [...new Set([...(planItem.warnings || []), ...(planItem.render_blockers || [])])];
+      const guidance = supportGuidance.find(item => item.source_vdom === planItem.source_vdom && item.source_name === planItem.source_name);
       const values = [
         [planItem.source_vdom, planItem.source_name].filter(Boolean).join(" · "),
         planItem.source_kind,
@@ -1716,7 +1753,17 @@ let currentPlanItems = [];
       const status = document.createElement("td"); status.dataset.label = labels[3];
       const badge = document.createElement("span"); badge.className = `plan-status-badge status-${String(planItem.status || "unknown").toLowerCase()}`; badge.textContent = String(planItem.status || "UNKNOWN").toLowerCase().replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase()); status.append(badge); row.append(status);
       const renderable = document.createElement("td"); renderable.dataset.label = labels[4]; renderable.textContent = planItem.renderable ? "Yes" : "No"; renderable.className = planItem.renderable ? "plan-renderable" : "plan-not-renderable"; row.append(renderable);
-      const issues = document.createElement("td"); issues.dataset.label = labels[5];
+      const resolution = document.createElement("td"); resolution.dataset.label = labels[5];
+      if (guidance) {
+        resolution.textContent = `${guidance.resolution_type.replaceAll("_", " ")}: ${guidance.title}`;
+        if (guidance.decision_key) {
+          const review = document.createElement("button"); review.type = "button"; review.className = "btn btn-secondary btn-sm guidance-review"; review.textContent = "Review decision";
+          review.dataset.reviewDecision = guidance.decision_key; resolution.append(document.createElement("br"), review);
+        }
+      } else resolution.textContent = "—";
+      row.append(resolution);
+      const nextAction = document.createElement("td"); nextAction.dataset.label = labels[6]; nextAction.textContent = guidance?.next_action || "—"; row.append(nextAction);
+      const issues = document.createElement("td"); issues.dataset.label = labels[7];
       if (warnings.length) {
         const details = document.createElement("details"); details.className = "plan-issues";
         const summary = document.createElement("summary"); summary.textContent = `${warnings.length} issue${warnings.length === 1 ? "" : "s"}`;
@@ -1730,6 +1777,21 @@ let currentPlanItems = [];
     table.append(body);
     const empty = document.createElement("p"); empty.textContent = visible.length ? "" : "No plan items match this filter.";
     container.replaceChildren(table, empty);
+    container.querySelectorAll("[data-review-decision]").forEach(button => button.addEventListener("click", () => focusDecision(button.dataset.reviewDecision)));
+  }
+
+  function focusDecision(key) {
+    document.getElementById("migration-mapping")?.classList.remove("hidden");
+    const evidenceFilter = document.getElementById("mapping-evidence-filter");
+    if (evidenceFilter) evidenceFilter.value = "all";
+    applyDecisionFilters();
+    const row = document.querySelector(`.decision-table tr[data-key='${CSS.escape(key)}']`);
+    if (!row) return;
+    row.hidden = false;
+    row.scrollIntoView({ block: "center" });
+    row.classList.add("decision-focus");
+    row.querySelector(".decision-value")?.focus();
+    setTimeout(() => row.classList.remove("decision-focus"), 1400);
   }
 
   document.getElementById("migration-plan-filter")?.addEventListener("change", () => {
@@ -1758,6 +1820,9 @@ let currentPlanItems = [];
         if (requestRevision !== migrationPlanRevision) return;
         currentRenderedArtifactId = artifact.artifact_id;
         currentPlanItems = artifact.report?.items || [];
+        targetFindings = artifact.target_findings || [];
+        supportGuidance = artifact.support_guidance || artifact.report?.review?.support_guidance || [];
+        targetEvidence = artifact.target_evidence || artifact.report?.target_evidence || targetEvidence;
         const planFilter = document.getElementById("migration-plan-filter");
         planFilter.value = currentPlanItems.some(item => item.status !== "SUPPORTED" || !item.renderable || item.warnings?.length || item.render_blockers?.length) ? "attention" : "all";
         renderMigrationPlanItems(currentPlanItems);
@@ -1767,8 +1832,9 @@ let currentPlanItems = [];
         if (summary) {
           const status = artifact.plan_status === "READY" ? "Migration artifact ready." : artifact.plan_status === "PARTIAL" ? "Partial commands are ready." : "Target mappings required.";
           const blockers = new Set(artifact.blocking_reasons || []);
-          const targetIssueCount = Object.keys(artifact.target_warnings || {}).length;
-          summary.textContent = `${status}\n${counts.SUPPORTED || 0} supported · ${counts.renderable || 0} renderable · ${counts.MANUAL_REVIEW || 0} manual review · ${counts.UNSUPPORTED || 0} unsupported · ${artifact.commands} commands${blockers.size ? `\n${blockers.size} blocking issue${blockers.size === 1 ? "" : "s"}. Review the results below.` : ""}${targetIssueCount ? `\n${targetIssueCount} target mapping warning${targetIssueCount === 1 ? "" : "s"}. Review the decisions above.` : ""}`;
+          const targetIssueCount = (artifact.target_findings || []).length;
+          const guidanceCount = (artifact.support_guidance || []).length;
+          summary.textContent = `${status}\n${counts.SUPPORTED || 0} supported · ${counts.renderable || 0} renderable · ${counts.MANUAL_REVIEW || 0} manual review · ${counts.UNSUPPORTED || 0} unsupported · ${artifact.commands} commands${blockers.size ? `\n${blockers.size} blocking issue${blockers.size === 1 ? "" : "s"}. Review the results below.` : ""}${targetIssueCount ? `\n${targetIssueCount} target conflict${targetIssueCount === 1 ? "" : "s"}.` : ""}${guidanceCount ? `\n${guidanceCount} support guidance item${guidanceCount === 1 ? "" : "s"}.` : ""}`;
         }
         const previewElement = document.getElementById("migration-command-preview");
         const reviewSummary = document.getElementById("migration-command-summary");

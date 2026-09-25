@@ -43,7 +43,10 @@ def test_requirements_generate_scoped_suggestions_without_defaults():
 
     assert by_identity[("zone", "trust", "target_zone")].suggested_value == "trust"
     assert by_identity[("zone", "trust", "target_zone")].mode == PANDecisionMode.SUGGESTED
+    assert by_identity[("zone", "trust", "target_zone")].evidence_source == "SOURCE"
+    assert by_identity[("zone", "trust", "target_zone")].evidence_type == "SOURCE_ZONE_NAME"
     assert by_identity[("interface", "port1", "target_zone")].suggested_value == "trust"
+    assert by_identity[("interface", "port1", "target_zone")].evidence_source == "SOURCE"
     assert by_identity[("interface", "port1", "target_interface")].mode == PANDecisionMode.REQUIRED
     assert by_identity[("vdom", "root", "vsys")].suggested_value is None
     assert by_identity[("vdom", "root", "virtual_router")].suggested_value is None

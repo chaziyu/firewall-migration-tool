@@ -55,3 +55,23 @@ def test_preview_and_download_block_empty_migration_artifact():
 
     assert client.post("/api/migration/command-preview", json=payload).status_code == 422
     assert client.post("/api/migration/download", json=payload).status_code == 422
+
+
+def test_artifact_report_contains_safe_target_review_provenance():
+    client = create_app({"TESTING": True}).test_client()
+    preview = client.post("/api/preview", data={
+        "file": (io.BytesIO(FIXTURE.read_bytes()), FIXTURE.name),
+    }, content_type="multipart/form-data").get_json()["preview_id"]
+    target = client.post("/api/preview", data={
+        "source_vendor": "palo_alto",
+        "file": (io.BytesIO((Path(__file__).parent / "fixtures" / "palo_alto" / "integrated_firewall.xml").read_bytes()), "target.xml"),
+    }, content_type="multipart/form-data").get_json()["preview_id"]
+    result = client.post("/api/migrate", json={
+        "preview_id": preview, "mapping": MAPPING,
+        "target_preview_id": target, "target_device": "integrated-fw",
+    }).get_json()
+    report = result["report"]
+    assert report["target_evidence"]["vendor"] == "palo_alto"
+    assert report["target_evidence"]["device"] == "integrated-fw"
+    assert "target_findings" in report["review"]
+    assert "support_guidance" in report["review"]
