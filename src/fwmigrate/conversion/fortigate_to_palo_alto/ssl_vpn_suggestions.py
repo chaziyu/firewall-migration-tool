@@ -3,17 +3,19 @@ from __future__ import annotations
 from .recommendations import (
     PANMigrationRecommendation, PANRecommendationConfidence, PANRecommendationMethod,
     PANRecommendationReadiness, decision_key_if_present, decision_value, recommendation_key,
-    source_facts, target_names, unique,
+    candidate_names, scoped_target_candidates, source_facts, unique,
 )
 
 
 def build_ssl_vpn_recommendations(source, derived, decisions, target=None, target_device=None):
     result = []
-    portals = target_names(target, "globalprotect_portals", target_device)
-    gateways = target_names(target, "globalprotect_gateways", target_device)
     for index, settings in enumerate(getattr(source, "ssl_vpn_settings", ())):
         name = f"settings-{settings.vdom or 'root'}-{index}"
         vdom = settings.vdom or "root"
+        candidates = (
+            *scoped_target_candidates(target, "globalprotect_portals", "globalprotect-portal", name, vdom, decisions, target_device),
+            *scoped_target_candidates(target, "globalprotect_gateways", "globalprotect-gateway", name, vdom, decisions, target_device),
+        )
         source_interfaces = unique((
             *settings.source_interface,
             *(interface for rule in settings.authentication_rules for interface in rule.source_interface),
@@ -35,16 +37,18 @@ def build_ssl_vpn_recommendations(source, derived, decisions, target=None, targe
         result.append(PANMigrationRecommendation(
             recommendation_key(vdom, "ssl_vpn_settings", name, "PAN_GLOBALPROTECT"), "SSL VPN", vdom, "ssl_vpn_settings", name,
             "PAN_GLOBALPROTECT", "SSL VPN architecture", "Design a GlobalProtect portal and gateway; FortiGate SSL VPN is not a direct object-for-object conversion.",
-            PANRecommendationMethod.TARGET_EVIDENCE if portals or gateways else PANRecommendationMethod.DETERMINISTIC,
+            PANRecommendationMethod.TARGET_EVIDENCE if candidates else PANRecommendationMethod.DETERMINISTIC,
             PANRecommendationConfidence.LOW, evidence,
-            tuple(dict.fromkeys((*portals, *gateways))), tuple(dict.fromkeys(decision_keys)), tuple(dict.fromkeys(blockers)), (),
-            PANRecommendationReadiness.MANUAL_DESIGN))
+            candidate_names(candidates), tuple(dict.fromkeys(decision_keys)), tuple(dict.fromkeys(blockers)), (),
+            PANRecommendationReadiness.MANUAL_DESIGN, target_candidates=candidates))
     for portal in getattr(source, "ssl_vpn_portals", ()):
+        vdom = portal.vdom or "root"
+        candidates = scoped_target_candidates(target, "globalprotect_portals", "globalprotect-portal", portal.name, vdom, decisions, target_device)
         result.append(PANMigrationRecommendation(
-            recommendation_key(portal.vdom or "root", "ssl_vpn_portal", portal.name, "PAN_GLOBALPROTECT_PORTAL"), "SSL VPN", portal.vdom or "root", "ssl_vpn_portal", portal.name,
+            recommendation_key(vdom, "ssl_vpn_portal", portal.name, "PAN_GLOBALPROTECT_PORTAL"), "SSL VPN", vdom, "ssl_vpn_portal", portal.name,
             "PAN_GLOBALPROTECT_PORTAL", f"GlobalProtect portal for {portal.name}", "Reuse a same-name target portal only as evidence; confirm the portal, gateway, tunnel, zone, pool, DNS, and authentication design.",
-            PANRecommendationMethod.TARGET_EVIDENCE if portal.name in portals else PANRecommendationMethod.DETERMINISTIC,
+            PANRecommendationMethod.TARGET_EVIDENCE if candidates else PANRecommendationMethod.DETERMINISTIC,
             PANRecommendationConfidence.LOW, source_facts(portal, ("tunnel_mode", "ip_pools", "split_tunneling", "split_tunneling_routing_address", "web_mode")),
-            portals, (), ("GlobalProtect gateway required", "Target tunnel interface and zone required", "Authentication/user-group design required"), (),
-            PANRecommendationReadiness.MANUAL_DESIGN))
+            candidate_names(candidates), (), ("GlobalProtect gateway required", "Target tunnel interface and zone required", "Authentication/user-group design required"), (),
+            PANRecommendationReadiness.MANUAL_DESIGN, target_candidates=candidates))
     return tuple(result)

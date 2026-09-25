@@ -8,6 +8,7 @@ import json
 from typing import Any, Iterable
 
 from .decisions import PANDecisionReviewState, PANMigrationDecisionSet, make_decision_key
+from .target_candidates import PANTargetCandidate, build_target_candidates, target_vsys_value
 
 
 class PANRecommendationMethod(str, Enum):
@@ -49,6 +50,7 @@ class PANMigrationRecommendation:
     blockers: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
     readiness: PANRecommendationReadiness | None = None
+    target_candidates: tuple[PANTargetCandidate, ...] = ()
 
     def __post_init__(self) -> None:
         if self.readiness is not None and not isinstance(self.readiness, PANRecommendationReadiness):
@@ -75,6 +77,7 @@ class PANMigrationRecommendation:
             "readiness": self.readiness.value,
             "evidence": list(self.evidence),
             "candidate_target_objects": list(self.candidate_target_objects),
+            "target_candidates": [item.to_dict() for item in self.target_candidates],
             "required_decision_keys": list(self.required_decision_keys),
             "blockers": list(self.blockers),
             "warnings": list(self.warnings),
@@ -121,6 +124,19 @@ def target_objects(target: Any, attribute: str, device: str | None = None) -> tu
 
 def target_names(target: Any, attribute: str, device: str | None = None) -> tuple[str, ...]:
     return tuple(sorted({str(item.name) for item in target_objects(target, attribute, device) if getattr(item, "name", None)}))
+
+
+def scoped_target_candidates(target: Any, attribute: str, family: str, source_name: str,
+                             source_vdom: str, decisions: PANMigrationDecisionSet | None,
+                             device: str | None, comparator=None, source_object=None) -> tuple[PANTargetCandidate, ...]:
+    return build_target_candidates(
+        target, attribute, family, source_name, device, target_vsys_value(decisions, source_vdom),
+        comparator=comparator, source_object=source_object,
+    )
+
+
+def candidate_names(candidates: Iterable[PANTargetCandidate]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(candidate.name for candidate in candidates))
 
 
 def decision_key_if_present(decisions: PANMigrationDecisionSet | None, vdom: str, kind: str, name: str, field: str) -> str | None:
