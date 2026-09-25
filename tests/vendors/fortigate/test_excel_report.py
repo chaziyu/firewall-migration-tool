@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
+from enum import Enum
 import io
 import unittest
 
@@ -12,15 +14,22 @@ from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export import export_excel
 from fwmigrate.vendors.fortigate.export.excel import (
     _additional_source_settings,
+    _additional_settings,
+    _ExcelContext,
+    _excel_safe,
+    _interface_source_values,
     _lookup_source_header,
     _normalized_source_values,
+    _overlay_safe_raw,
 )
 from fwmigrate.vendors.fortigate.export.excel_schema import SHEET_HEADERS, SHEET_ORDER
 from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
 from fwmigrate.vendors.fortigate.security.extraction import sanitize_source_attributes, sanitize_source_value
 from fwmigrate.vendors.fortigate.validation.validator import validate_config
+from fwmigrate.vendors.fortigate.model.policy import FGPolicy
 from fwmigrate.source_reporting import ExcelExportProfile
+from fwmigrate.source_reporting import ExcelExportMetrics
 
 
 _SAMPLE_CONFIG = r"""
@@ -245,12 +254,14 @@ class ExcelReportTest(unittest.TestCase):
         full = self._workbook(profile=ExcelExportProfile.FULL)
         fast = self._workbook(profile=ExcelExportProfile.FAST)
 
-        for sheet_name in ("Addresses", "Interfaces", "Policies", "NAT Rules", "Routes", "VPN Tunnels"):
-            if sheet_name not in fast.sheetnames:
-                continue
+        common_sheets = (set(full.sheetnames) & set(fast.sheetnames)) - {"Summary", "Unsupported"}
+        styled_sheets = {"Addresses", "Interfaces", "Policies", "NAT Rules", "Routes", "VPN Tunnels"}
+        for sheet_name in common_sheets:
             assert list(full[sheet_name].iter_rows(min_row=3, values_only=True)) == list(
                 fast[sheet_name].iter_rows(min_row=3, values_only=True)
-            )
+            ), sheet_name
+            if sheet_name not in styled_sheets:
+                continue
             assert fast[sheet_name]["A1"].has_style
             assert fast[sheet_name].auto_filter.ref == full[sheet_name].auto_filter.ref
             assert not fast[sheet_name].merged_cells.ranges
@@ -282,6 +293,54 @@ class ExcelReportTest(unittest.TestCase):
                 profile=profile,
             )
         assert (extracted.config, extracted.source_objects, derived, validation) == before
+
+    def test_fast_export_metrics_are_value_free_and_split_build_from_save(self):
+        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG), config=ExtractionConfig())
+        derived = build_derived_views(extracted.config)
+        validation = validate_config(extracted.config, derived=derived)
+        without_metrics = io.BytesIO()
+        with_metrics = io.BytesIO()
+        export_kwargs = {
+            "extracted": extracted,
+            "derived": derived,
+            "validation": validation,
+            "profile": ExcelExportProfile.FAST,
+            "source_name": "sample.conf",
+        }
+        export_excel(**export_kwargs, output=without_metrics)
+        metrics = ExcelExportMetrics()
+        export_excel(**export_kwargs, output=with_metrics, metrics=metrics)
+        without_metrics.seek(0)
+        with_metrics.seek(0)
+        plain_book = load_workbook(without_metrics, data_only=False, read_only=True)
+        measured_book = load_workbook(with_metrics, data_only=False, read_only=True)
+        self.assertEqual(plain_book.sheetnames, measured_book.sheetnames)
+        for sheet_name in plain_book.sheetnames:
+            plain_values = list(plain_book[sheet_name].iter_rows(values_only=True))
+            measured_values = list(measured_book[sheet_name].iter_rows(values_only=True))
+            if sheet_name == "Summary":
+                for rows in (plain_values, measured_values):
+                    for index, row in enumerate(rows):
+                        if row and row[0] == "Generated UTC":
+                            rows[index] = (row[0], None, *row[2:])
+            self.assertEqual(plain_values, measured_values, sheet_name)
+
+        self.assertIn("workbook_build", metrics.stages)
+        self.assertIn("workbook_save", metrics.stages)
+        self.assertIn("excel_context", metrics.stages)
+        self.assertIn("fast_summary", metrics.stages)
+        self.assertIn("other_sheet_total", metrics.stages)
+        self.assertIn("excel_total", metrics.stages)
+        by_name = {sheet["sheet_name"]: sheet for sheet in metrics.sheets}
+        for name in ("Addresses", "Policies", "Interfaces", "NAT Rules", "Routes", "VPN Tunnels"):
+            self.assertIn(name, by_name)
+            self.assertEqual(
+                set(by_name[name]),
+                {"sheet_name", "row_count", "column_count", "duration_ms"},
+            )
+        diagnostics = repr(metrics.as_dict())
+        for source_value in ("FG-TEST", "wan-dhcp", "source-user", "do-not-export-this-secret"):
+            self.assertNotIn(source_value, diagnostics)
 
     def test_data_only_is_streaming_data_without_empty_or_presentation_sheets(self):
         fast = self._workbook(profile=ExcelExportProfile.FAST)
@@ -460,6 +519,15 @@ end
                 if cell.value is not None
             ]
             self.assertTrue(any(marker in value for value in values), name)
+        policy_headers, policy_rows = self._rows(first["Policies"])
+        policy_row = next(
+            row for row in policy_rows
+            if row[policy_headers.index("Policy Name")] == "deterministic-policy"
+        )
+        settings = str(policy_row[policy_headers.index("Additional Settings")])
+        self.assertIn("custom_policy_option = policy-marker", settings)
+        for visible_field in ("srcintf", "dstintf", "srcaddr", "dstaddr", "service", "action"):
+            self.assertNotIn(f"{visible_field} =", settings)
 
     def test_additional_settings_preserve_unknown_source_order(self):
         workbook = self._workbook('''config firewall policy
@@ -475,6 +543,96 @@ end
         settings = str(row[headers.index("Additional Settings")])
 
         self.assertLess(settings.index("future_z"), settings.index("future_a"))
+
+    def test_policy_additional_settings_use_field_coverage_not_value_equality(self):
+        from fwmigrate.vendors.fortigate.export.excel import _VISIBLE_MODEL_FIELDS_BY_SHEET
+
+        policy = FGPolicy(
+            policy_id=101,
+            name="covered-policy",
+            action="accept",
+            nat64="accept",
+            explicit_fields={"policy_id", "name", "action", "nat64"},
+            raw_extra={"custom-policy-option": "keep", "future-option": "unknown"},
+        )
+        settings = _additional_settings(
+            policy,
+            represented_fields=_VISIBLE_MODEL_FIELDS_BY_SHEET["Policies"],
+        )
+
+        self.assertNotIn("policy_id", settings)
+        self.assertNotIn("name", settings)
+        self.assertNotIn("action", settings)
+        self.assertEqual("accept", settings["nat64"])
+        self.assertEqual("keep", settings["custom_policy_option"])
+        self.assertEqual("unknown", settings["future_option"])
+        self.assertEqual(
+            ["custom_policy_option", "future_option", "nat64"],
+            list(settings),
+        )
+
+    def test_excel_safe_scalar_and_nested_values(self):
+        class Choice(Enum):
+            VALUE = "plain"
+
+        @dataclass
+        class Entry:
+            name: str
+            enabled: bool
+
+        self.assertIsNone(_excel_safe(None))
+        self.assertEqual("plain", _excel_safe("plain"))
+        for value in ("=1+1", "+cmd", "-cmd", "@cmd"):
+            self.assertEqual("'" + value, _excel_safe(value))
+        self.assertEqual("Yes", _excel_safe(True))
+        self.assertEqual("No", _excel_safe(False))
+        self.assertEqual(7, _excel_safe(7))
+        self.assertEqual(1.5, _excel_safe(1.5))
+        self.assertEqual("plain", _excel_safe(Choice.VALUE))
+        self.assertEqual("name = edge\nenabled = Yes", _excel_safe(Entry("edge", True)))
+        self.assertEqual("key = value", _excel_safe({"key": "value"}))
+        self.assertEqual("a\nb", _excel_safe(["a", "b"]))
+        self.assertEqual("a\nb", _excel_safe(("a", "b")))
+        self.assertEqual({"a", "b"}, set(_excel_safe({"a", "b"}).splitlines()))
+        self.assertEqual(
+            "nested = child = value",
+            _excel_safe({"nested": {"child": "value"}}),
+        )
+
+    def test_interface_source_cache_is_safe_and_returns_defensive_copies(self):
+        source = _SAMPLE_CONFIG.replace(
+            'set pppoe-username "source-user"',
+            'set pppoe-username "source-user"\n        set pppoe-password "raw-interface-secret"',
+        )
+        extracted = extract_fortigate_config(parse_fortigate_config(source), config=ExtractionConfig())
+        derived = build_derived_views(extracted.config)
+        validation = validate_config(extracted.config, derived=derived)
+        context = _ExcelContext(
+            extracted=extracted,
+            derived=derived,
+            validation=validation,
+            profile=ExcelExportProfile.FAST,
+            source_name="sample.conf",
+        )
+
+        first = _interface_source_values(context, vdom="root", name="wan-pppoe")
+        first["pppoe_password"] = "caller mutation"
+        second = _interface_source_values(context, vdom="root", name="wan-pppoe")
+
+        self.assertEqual("[REDACTED]", second["pppoe_password"])
+        self.assertNotIn("raw-interface-secret", repr(context._interface_safe_source_cache))
+        self.assertTrue(context._interface_source_key_cache[("root", "wan-pppoe")])
+
+    def test_overlay_safe_raw_does_not_sanitize_again(self):
+        from unittest.mock import patch
+
+        row = {}
+        with patch(
+            "fwmigrate.vendors.fortigate.export.excel.sanitize_source_attributes",
+            side_effect=AssertionError("already-safe source was sanitized again"),
+        ):
+            _overlay_safe_raw(row, {"description": "safe"}, ("Description",))
+        self.assertEqual("safe", row["Description"])
 
     def test_source_header_aliases_normalize_case_and_separators(self):
         values = {
@@ -492,6 +650,11 @@ end
         self.assertEqual(
             ("underscore", "auto_negotiate"),
             _lookup_source_header("Auto Negotiate", values, normalized),
+        )
+        conflicting = {"comment": "fallback", "description": "preferred"}
+        self.assertEqual(
+            ("preferred", "description"),
+            _lookup_source_header("Description", conflicting),
         )
         self.assertEqual(
             ["auto-negotiate", "future-key"],
@@ -1234,4 +1397,3 @@ end
 
 if __name__ == "__main__":
     unittest.main()
-

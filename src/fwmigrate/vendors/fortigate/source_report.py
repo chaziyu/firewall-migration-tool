@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
-from fwmigrate.source_reporting import ExcelExportProfile, SourceReportMetrics
+from fwmigrate.source_reporting import (
+    ExcelExportMetrics,
+    ExcelExportProfile,
+    SourceReportMetrics,
+)
 
 from .config import ExtractionConfig
 from .derived import DerivedViews, build_derived_views
@@ -95,6 +99,7 @@ class FortiGateSourceReporter:
         analysis: FortiGateSourceResult,
         output: Any,
         profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
+        metrics: ExcelExportMetrics | None = None,
         **options: Any,
     ) -> Any:
         from .export import export_excel
@@ -106,6 +111,7 @@ class FortiGateSourceReporter:
             output=output,
             profile=profile,
             source_name=options.get("source_name"),
+            metrics=metrics,
         )
 
 
