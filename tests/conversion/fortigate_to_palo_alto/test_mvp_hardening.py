@@ -30,7 +30,7 @@ def test_structured_plan_renders_scoped_policy_and_nat_commands_in_order():
             members=("web-svc",)),),
         schedules=(PlannedSchedule(source_object_type="schedule", source_name="business-hours",
             target_vsys="vsys1", target_name="business-hours", status=PANMigrationStatus.SUPPORTED,
-            schedule_type="weekly", weekly=(("monday", "08:00", "17:00"),)),
+            schedule_type="recurring", weekly=(("monday", "08:00", "17:00"),)),
                     PlannedSchedule(source_object_type="schedule", source_name="holiday",
             target_vsys="vsys1", target_name="holiday", status=PANMigrationStatus.SUPPORTED,
             schedule_type="one-time", non_recurring=(("2026/12/25@00:00", "2026/12/26@00:00"),))),
