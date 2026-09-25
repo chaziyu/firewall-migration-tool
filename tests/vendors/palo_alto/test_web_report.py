@@ -69,3 +69,13 @@ def test_preview_includes_logical_router_routes_with_ownership():
         ("vr-route", "virtual-router", "vr", None), ("lr-route", "logical-router", "lr", "production")
     }
     assert preview["summary"]["objects"]["routes"] == preview["summary"]["routes"] == 2
+
+
+def test_preview_serializes_interface_topology_rows():
+    source = """<config><devices><entry name='fw'><network><interface>
+      <ethernet><entry name='ethernet1/1'><layer3><aggregate-group>ae1</aggregate-group></layer3></entry></ethernet>
+      <aggregate-ethernet><entry name='ae1'><layer3/></entry></aggregate-ethernet>
+    </interface></network></entry></devices></config>"""
+    preview = PaloAltoSourceReporter().build_preview(PaloAltoSourceReporter().analyze_source(source))
+    rows = preview["sections"]["interface_topology"]
+    assert any(row["name"] == "ethernet1/1" and row["aggregate"] == "ae1" for row in rows)

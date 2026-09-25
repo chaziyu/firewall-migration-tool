@@ -10,7 +10,7 @@ import time
 import json
 import zipfile
 import yaml
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from copy import deepcopy
 from dataclasses import dataclass
 from time import perf_counter
@@ -19,7 +19,15 @@ from flask import Flask, render_template, request, send_file, jsonify
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
 from fwmigrate.conversion import migration_planners
-from fwmigrate.conversion.fortigate_to_palo_alto import PANMigrationOptions
+from fwmigrate.conversion.fortigate_to_palo_alto import (
+    PANDecisionMode,
+    PANDecisionReviewState,
+    PANMigrationDecision,
+    PANMigrationDecisionSet,
+    PANMigrationOptions,
+    build_decision_set,
+    make_decision_key,
+)
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
@@ -40,6 +48,65 @@ from fwmigrate.source_reporting import (
 )
 from fwmigrate.source_reporting.web_report import normalize_web_report
 _LOGGER = logging.getLogger(__name__)
+_DECISION_FORMAT_VERSION = 1
+
+
+def _decision_document(source_digest, decision_set):
+    return {
+        "format_version": _DECISION_FORMAT_VERSION,
+        "source_vendor": "fortigate",
+        "target_vendor": "palo_alto",
+        "source_digest": source_digest,
+        "decisions": [item.to_dict() for item in decision_set.decisions],
+    }
+
+
+def _load_decision_document(document, source_digest):
+    if not isinstance(document, dict) or document.get("format_version") != _DECISION_FORMAT_VERSION:
+        raise ValueError("Unsupported migration decision document")
+    if document.get("source_vendor") != "fortigate" or document.get("target_vendor") != "palo_alto":
+        raise ValueError("Migration decision document must be fortigate -> palo_alto")
+    if document.get("source_digest") != source_digest:
+        raise ValueError("Migration decisions belong to a different source configuration")
+    return PANMigrationDecisionSet.from_dict({"decisions": document.get("decisions")})
+
+
+def _options_mapping(options):
+    return {
+        "vdoms": {name: {key: value for key, value in asdict(item).items() if value is not None}
+                   for name, item in options.vdoms.items()},
+        "interfaces": {vdom: {name: {key: value for key, value in asdict(item).items() if value is not None}
+                              for name, item in mappings.items()}
+                       for vdom, mappings in options.interfaces.items()},
+    }
+
+
+def _confirm_mapping_decisions(decision_set, options, config):
+    decisions = {item.key: item for item in decision_set.decisions}
+    zone_names = {(item.vdom or "root", item.name) for item in getattr(config, "zones", ())}
+
+    def confirm(vdom, kind, name, field, value):
+        if value is None:
+            return
+        key = make_decision_key(vdom, kind, name, field)
+        old = decisions.get(key)
+        if old is None:
+            old = PANMigrationDecision(vdom, kind, name, field, mode=PANDecisionMode.REQUIRED)
+        decisions[key] = replace(old, value=value, review_state=PANDecisionReviewState.CONFIRMED)
+
+    for vdom, mapping in options.vdoms.items():
+        for field, value in asdict(mapping).items():
+            confirm(vdom, "vdom", vdom, field, value)
+    for vdom, mappings in options.interfaces.items():
+        for name, mapping in mappings.items():
+            for field, value in asdict(mapping).items():
+                kinds = ({"interface"} if field == "target_interface" else
+                         {kind for kind in ("interface", "zone") if make_decision_key(vdom, kind, name, field) in decisions})
+                if not kinds:
+                    kinds = {"zone" if (vdom, name) in zone_names and field == "target_zone" else "interface"}
+                for kind in kinds:
+                    confirm(vdom, kind, name, field, value)
+    return PANMigrationDecisionSet(tuple(sorted(decisions.values(), key=lambda item: item.key)))
 @dataclass(frozen=True)
 class _PreviewCacheEntry:
     preview_id: str
@@ -340,7 +407,12 @@ def create_app(test_config=None):
                 entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
             analysis = _clone_preview(entry)
             requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
-            return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': requirements})
+            prior = payload.get('decision_document')
+            previous = _load_decision_document(prior, entry.source_digest) if prior is not None else None
+            decision_set = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
+            return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': requirements,
+                            'decisions': decision_set.to_dict(),
+                            'decision_document': _decision_document(entry.source_digest, decision_set)})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception as exc:
@@ -358,6 +430,42 @@ def create_app(test_config=None):
         except Exception as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
+    @app.route('/api/migration/decisions/export', methods=['POST'])
+    def export_migration_decisions():
+        payload = request.get_json(silent=True) or {}
+        entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+        if entry is None:
+            return jsonify({'success': False, 'error': 'A valid preview_id is required'}), 400
+        try:
+            serialized = payload.get('decision_document', payload.get('decisions'))
+            if serialized is None:
+                analysis = _clone_preview(entry)
+                requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
+                decision_set = build_decision_set(analysis.extracted.config, analysis.derived, requirements)
+            elif isinstance(serialized, dict) and 'format_version' in serialized:
+                decision_set = _load_decision_document(serialized, entry.source_digest)
+            else:
+                decision_set = PANMigrationDecisionSet.from_dict(
+                    serialized if isinstance(serialized, dict) else {'decisions': serialized}
+                )
+            document = _decision_document(entry.source_digest, decision_set)
+            return jsonify({'success': True, 'document': document})
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
+    @app.route('/api/migration/decisions/import', methods=['POST'])
+    def import_migration_decisions():
+        payload = request.get_json(silent=True) or {}
+        entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+        if entry is None:
+            return jsonify({'success': False, 'error': 'A valid preview_id is required'}), 400
+        try:
+            decision_set = _load_decision_document(payload.get('document'), entry.source_digest)
+            return jsonify({'success': True, 'decision_document': _decision_document(entry.source_digest, decision_set),
+                            'decisions': decision_set.to_dict(), 'mapping': _options_mapping(decision_set.to_options())})
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
     @app.route('/api/migrate', methods=['POST'])
     def migrate():
         """Plan the supported FortiGate to Palo Alto configuration."""
@@ -370,8 +478,6 @@ def create_app(test_config=None):
             return jsonify({'success': False, 'error': 'Only fortigate -> palo_alto is supported'}), 400
         uploaded = request.files.get('file')
         try:
-            mapping_value = payload.get('mapping', '{}')
-            mapping = json.loads(mapping_value) if isinstance(mapping_value, str) else mapping_value
             preview_id = payload.get('preview_id')
             entry = _lookup_preview(preview_id, 'fortigate') if preview_id else None
             if uploaded is not None and uploaded.filename:
@@ -382,14 +488,36 @@ def create_app(test_config=None):
                 analysis = _clone_preview(entry)
             else:
                 return jsonify({'success': False, 'error': 'A valid preview_id or configuration file is required'}), 400
+            serialized = payload.get('decision_document', payload.get('decisions', payload.get('decision_set')))
+            if serialized is not None:
+                if isinstance(serialized, dict) and 'format_version' in serialized:
+                    decision_set = _load_decision_document(serialized, entry.source_digest)
+                else:
+                    decision_set = PANMigrationDecisionSet.from_dict(
+                        serialized if isinstance(serialized, dict) else {'decisions': serialized}
+                    )
+                options = decision_set.to_options()
+                mapping = _options_mapping(options)
+                decision_document = _decision_document(entry.source_digest, decision_set)
+            else:
+                mapping_value = payload.get('mapping', '{}')
+                mapping = json.loads(mapping_value) if isinstance(mapping_value, str) else mapping_value
+                if not isinstance(mapping, dict):
+                    raise ValueError('Mapping must contain an object')
+                options = PANMigrationOptions(**mapping)
+                requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
+                decision_set = build_decision_set(analysis.extracted.config, analysis.derived, requirements)
+                decision_set = _confirm_mapping_decisions(decision_set, options, analysis.extracted.config)
+                decision_document = _decision_document(entry.source_digest, decision_set)
+                mapping = _options_mapping(options)
             plan = migration_planners.get(source_vendor, target_vendor).plan(
-                analysis.extracted.config, analysis.derived, options=PANMigrationOptions(**mapping)
+                analysis.extracted.config, analysis.derived, options=options
             )
             validation = validate_plan(plan)
             rendered = PANSetRenderer().render(plan, validation)
             artifact_id = uuid.uuid4().hex
             rendered_artifacts[artifact_id] = rendered
-            artifact_sources[artifact_id] = (analysis, mapping, entry.source_name)
+            artifact_sources[artifact_id] = (analysis, mapping, decision_document, entry.source_name)
             counts = rendered.report['counts']
             mapping_codes = {'missing_vsys_mapping', 'missing_target_vsys', 'missing_virtual_router', 'missing_route_interface'}
             missing = [issue for issue in rendered.report['issue_summary'] if issue['code'] in mapping_codes or 'missing target' in issue['message'].lower() or 'missing palo alto vsys mapping' in issue['message'].lower()]
@@ -420,7 +548,7 @@ def create_app(test_config=None):
         source = artifact_sources.get(artifact_id)
         if source is None:
             return jsonify({'success': False, 'error': 'The migration source has expired'}), 400
-        analysis, mapping, source_name = source
+        analysis, mapping, decision_document, source_name = source
         bundle = io.BytesIO()
         workbook = io.BytesIO()
         try:
@@ -428,12 +556,53 @@ def create_app(test_config=None):
             with zipfile.ZipFile(bundle, 'w', zipfile.ZIP_DEFLATED) as archive:
                 archive.writestr('palo_alto_config.set', '\n'.join(rendered.commands) + '\n')
                 archive.writestr('migration_report.json', json.dumps(rendered.report, indent=2))
+                archive.writestr('migration_decisions.json', json.dumps(decision_document, indent=2))
                 archive.writestr('target_mapping.yaml', yaml.safe_dump(mapping, sort_keys=False))
                 archive.writestr('source_inventory.xlsx', workbook.getvalue())
             bundle.seek(0)
             return send_file(bundle, mimetype='application/zip', as_attachment=True, download_name='migration_fortigate_to_palo_alto.zip')
         except Exception as exc:
             return jsonify({'success': False, 'error': str(exc)}), 500
+
+    @app.route('/api/migration/command-preview', methods=['POST'])
+    def migration_command_preview():
+        payload = request.get_json(silent=True) or {}
+        artifact_id = payload.get('artifact_id')
+        rendered = rendered_artifacts.get(artifact_id)
+        if rendered is None:
+            return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
+        if not rendered.commands:
+            return jsonify({'success': False, 'error': 'No PAN-OS commands are currently renderable. Complete the required target mappings first.'}), 422
+        source = artifact_sources.get(artifact_id)
+        if source is None:
+            return jsonify({'success': False, 'error': 'The migration source has expired'}), 400
+        _, _, decision_document, _ = source
+        decisions = decision_document['decisions']
+        return jsonify({
+            'success': True,
+            'commands': list(rendered.commands),
+            'command_text': '\n'.join(rendered.commands) + '\n',
+            'command_count': len(rendered.commands),
+            'command_sha256': rendered.report['command_sha256'],
+            'review_summary': {
+                'pending': sum(item['review_state'] == 'PENDING' and item['mode'] not in {'AUTO', 'UNSUPPORTED'} for item in decisions),
+                'manual': rendered.report['counts'].get('MANUAL_REVIEW', 0),
+                'unsupported': rendered.report['counts'].get('UNSUPPORTED', 0),
+            },
+        })
+
+    @app.route('/api/migration/download', methods=['POST'])
+    def migration_download():
+        payload = request.get_json(silent=True) or {}
+        rendered = rendered_artifacts.get(payload.get('artifact_id'))
+        if rendered is None:
+            return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
+        if not rendered.commands:
+            return jsonify({'success': False, 'error': 'No PAN-OS commands are currently renderable. Complete the required target mappings first.'}), 422
+        return send_file(
+            io.BytesIO(('\n'.join(rendered.commands) + '\n').encode('utf-8')),
+            mimetype='text/plain', as_attachment=True, download_name='palo_alto_config.set',
+        )
 
     def _deployment_options(payload):
         try:

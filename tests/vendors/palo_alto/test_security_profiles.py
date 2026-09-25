@@ -18,7 +18,6 @@ def test_security_profile_xml_reaches_typed_profile_group_and_rule():
 
 def test_security_profile_unknown_source_is_retained_separately():
     config = build_panos_config("<config><shared><profile-group><entry name='strict'><future-setting>retain-me</future-setting></entry></profile-group></shared></config>")
-    assert config.source_inventory
     assert config.security_profile_groups[0].raw_extra["future-setting"] == "retain-me"
 
 

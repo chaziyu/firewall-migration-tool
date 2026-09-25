@@ -8,7 +8,8 @@ from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 
 
 def _text(value: Any) -> Any:
-    return str(value) if isinstance(value, (list, tuple, dict)) else value
+    value = str(value) if isinstance(value, (list, tuple, dict)) else value
+    return "'" + value if isinstance(value, str) and value.startswith(("=", "+", "-", "@")) else value
 
 
 def _refs(values: Any) -> Any:

@@ -1,4 +1,6 @@
-from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter
+from fwmigrate.vendors.palo_alto.native import build_derived_views
+from fwmigrate.vendors.palo_alto.source_builder import build_panos_config
+from fwmigrate.vendors.palo_alto.source_model import pan_scope_identity
 
 
 def test_interfaces_preserve_parent_aggregate_and_tunnel_relationships():
@@ -7,6 +9,12 @@ def test_interfaces_preserve_parent_aggregate_and_tunnel_relationships():
       <aggregate-ethernet><entry name='ae1'><layer3/></entry></aggregate-ethernet><tunnel><units><entry name='tunnel.1'/></units></tunnel>
       <ipsec><entry name='vpn'><tunnel-interface>tunnel.1</tunnel-interface></entry></ipsec>
     </interface></network></entry></devices></config>"""
-    rows = PaloAltoSourceReporter().build_preview(PaloAltoSourceReporter().analyze_source(source))["sections"]["interface_topology"]
-    assert any(row["parent"] == "ethernet1/1" for row in rows)
-    assert any(row["aggregate"] == "ae1" for row in rows)
+    config = build_panos_config(source)
+    topology = build_derived_views(config).interface_topology
+    by_interface = {item.interface: item for item in topology}
+    scope = config.interfaces[0].scope
+    assert by_interface["ethernet1/1.10"].parent == "ethernet1/1"
+    assert by_interface["ethernet1/1.10"].scope == by_interface["ethernet1/1"].scope
+    assert by_interface["ethernet1/1"].aggregate == "ae1"
+    assert by_interface["tunnel.1"].attached_tunnels == ("vpn",)
+    assert scope is not None and by_interface["ethernet1/1"].scope == pan_scope_identity(scope)

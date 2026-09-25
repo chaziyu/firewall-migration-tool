@@ -46,15 +46,15 @@ def test_traversal_follows_package_layers_and_inline_rules_without_reordering_so
 
 def test_shared_inline_layer_is_reused_in_source():
     root = CPAccessLayer(uid="root", name="Root", package_uid="pkg")
-    shared = CPAccessLayer(uid="shared", name="Shared")
-    package = CPPolicyPackage(uid="pkg", name="Package", access_layers=["root"])
+    shared = CPAccessLayer(uid="shared", name="Shared", parent_rule_uid="collector-context")
+    packages = [CPPolicyPackage(uid=uid, name=uid, access_layers=["root"]) for uid in ("pkg", "pkg-2")]
     parents = [
         CPAccessRule(uid="parent-1", layer_uid="root", inline_layer="shared"),
         CPAccessRule(uid="parent-2", layer_uid="root", inline_layer="shared"),
     ]
     child = CPAccessRule(uid="child", layer_uid="shared")
     config = CheckPointConfig(
-        policy_packages=[package], access_layers=[root, shared], access_rules=[*parents, child],
+        policy_packages=packages, access_layers=[root, shared], access_rules=[*parents, child],
     )
     before = config.model_dump()
 
@@ -63,6 +63,12 @@ def test_shared_inline_layer_is_reused_in_source():
     assert derived.references.by_uid["shared"] is shared
     assert sum(item is shared for item in config.access_layers) == 1
     assert sum(item is child for item in config.access_rules) == 1
+    assert len(derived.policy_structure.package_layers) == 2
+    assert all(item.layer is root for item in derived.policy_structure.package_layers)
+    assert len(derived.policy_structure.inline_layers) == 2
+    assert all(item.inline_layer is shared for item in derived.policy_structure.inline_layers)
+    assert shared not in [item.layer for item in derived.policy_structure.package_layers]
+    assert shared.parent_rule_uid == "collector-context"
     assert config.model_dump() == before
 
 

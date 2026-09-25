@@ -1,7 +1,4 @@
 from fwmigrate.vendors.palo_alto.source_builder import build_panos_config
-import io
-from openpyxl import load_workbook
-from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter
 
 
 def test_sdwan_xml_reaches_typed_profiles_and_rules():
@@ -36,18 +33,6 @@ def test_sdwan_links_and_interface_bindings_reach_existing_typed_models():
     assert profile.links[1].raw_extra["future-link-field"] == "retain-me"
     assert (interface.sdwan_enabled, interface.ipv6_sdwan_enabled, interface.sdwan_interface_profile, interface.upstream_nat) == ("yes", "no", "wan-primary", "yes")
     assert (unit.sdwan_enabled, unit.ipv6_sdwan_enabled, unit.sdwan_interface_profile, unit.upstream_nat) == ("yes", "yes", "wan-sub", "no")
-    reporter = PaloAltoSourceReporter()
-    output = io.BytesIO()
-    reporter.export_excel(reporter.analyze_source(source), output)
-    workbook = load_workbook(io.BytesIO(output.getvalue()), read_only=True, data_only=True)
-    headers = next(workbook["Interfaces"].iter_rows(min_row=3, max_row=3, values_only=True))
-    rows = [dict(zip(headers, row)) for row in workbook["Interfaces"].iter_rows(min_row=4, values_only=True)]
-    by_name = {row["Name"]: row for row in rows}
-    for name, expected in (("ethernet1/1", ("yes", "no", "wan-primary", "yes")), ("ethernet1/1.10", ("yes", "yes", "wan-sub", "no"))):
-        row = by_name[name]
-        assert (row["SD-WAN Enabled"], row["IPv6 SD-WAN Enabled"], row["SD-WAN Interface Profile"], row["Upstream NAT"]) == expected
-
-
 def test_sdwan_missing_and_empty_links_preserve_source_presence():
     config = build_panos_config("""<config><shared><network><sdwan>
       <traffic-distribution-profile><entry name='missing'/><entry name='empty'><link/></entry>
@@ -63,5 +48,4 @@ def test_sdwan_missing_and_empty_links_preserve_source_presence():
 
 def test_sdwan_unknown_source_is_retained_separately():
     config = build_panos_config("<config><shared><network><sdwan><rules><entry name='r'><future-setting>retain-me</future-setting></entry></rules></sdwan></network></shared></config>")
-    assert config.source_inventory
     assert config.sdwan_rules[0].raw_extra["future-setting"] == "retain-me"

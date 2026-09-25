@@ -15,7 +15,11 @@ from fwmigrate.vendors.checkpoint.validation import CheckPointValidationIndex, v
 def test_unknown_commands_and_permission_failures_are_validation_evidence():
     source = (Path(__file__).parents[2] / "fixtures" / "checkpoint" / "partial_collection.json").read_text()
     result = extract_checkpoint_source(source)
-    assert result.validation.issues
+    assert {(item.code, item.category, item.command) for item in result.validation.issues} == {
+        ("selected_area_unsupported", "unsupported", "show-vpn-communities"),
+        ("collection_incomplete", "collection", "show-certificates"),
+        ("collection_incomplete", "collection", "show-nat-rulebase"),
+    }
 
 
 def test_validation_is_scoped_and_does_not_mutate_source_or_derived():
@@ -46,15 +50,14 @@ def test_validation_index_queries_stable_issue_metadata():
 
 
 def test_nat_rule_order_is_unique_within_package_scope():
-    from fwmigrate.vendors.checkpoint.model.policy import CPNATRule
-    from fwmigrate.vendors.checkpoint.validation.validator import _validate_nat
     config = CheckPointConfig(nat_rules=[
         CPNATRule(uid="n1", name="n1", package="P1", order=1),
         CPNATRule(uid="n2", name="n2", package="P2", order=1),
     ])
-    assert not any(item.code == "nat_order_malformed" for item in _validate_nat(config, CheckPointDerivedViews()))
+    assert not any(item.code == "nat_order_malformed" for item in validate_checkpoint_config(config, build_checkpoint_derived_views(config)).issues)
     config.nat_rules.append(CPNATRule(uid="n3", name="n3", package="P1", order=1))
-    assert any(item.code == "nat_order_malformed" for item in _validate_nat(config, CheckPointDerivedViews()))
+    issue = next(item for item in validate_checkpoint_config(config, build_checkpoint_derived_views(config)).issues if item.code == "nat_order_malformed")
+    assert (issue.category, issue.field, issue.package) == ("nat", "order", "P1")
 
 
 def test_shared_access_layer_is_valid_package_reuse_and_missing_layer_still_fails():

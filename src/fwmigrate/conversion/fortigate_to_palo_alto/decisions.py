@@ -38,6 +38,26 @@ class PANMigrationDecision:
     affected_count: int = 0
     affected_by: dict[str, int] | None = None
 
+    def __post_init__(self) -> None:
+        if not all(isinstance(value, str) and value for value in (self.source_vdom, self.source_kind, self.source_name, self.target_field)):
+            raise ValueError("decision identity fields must be non-empty strings")
+        allowed = {"vdom": {"vsys", "virtual_router"}, "interface": {"target_interface", "target_zone"}, "zone": {"target_zone"}}
+        if self.source_kind not in allowed or self.target_field not in allowed[self.source_kind]:
+            raise ValueError("decision source kind and target field are incompatible")
+        if self.suggested_value is not None and not isinstance(self.suggested_value, str):
+            raise ValueError("suggested_value must be a string or null")
+        if self.value is not None and not isinstance(self.value, str):
+            raise ValueError("value must be a string or null")
+        if not isinstance(self.mode, PANDecisionMode) or not isinstance(self.review_state, PANDecisionReviewState):
+            raise ValueError("decision mode or review state is invalid")
+        if not isinstance(self.affected_count, int) or self.affected_count < 0:
+            raise ValueError("affected_count must be a non-negative integer")
+        if self.affected_by is not None and any(
+            not isinstance(category, str) or not isinstance(count, int) or count < 0
+            for category, count in self.affected_by.items()
+        ):
+            raise ValueError("affected_by must contain non-negative integer counts")
+
     @property
     def key(self) -> str:
         return make_decision_key(self.source_vdom, self.source_kind, self.source_name, self.target_field)
@@ -55,11 +75,16 @@ class PANMigrationDecision:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "PANMigrationDecision":
+        if not isinstance(value, dict):
+            raise ValueError("each decision must be an object")
         data = {key: item for key, item in value.items() if key != "key"}
         data["mode"] = PANDecisionMode(data.get("mode", PANDecisionMode.REQUIRED))
         data["review_state"] = PANDecisionReviewState(data.get("review_state", PANDecisionReviewState.PENDING))
         data["affected_by"] = dict(data.get("affected_by") or {})
-        return cls(**data)
+        decision = cls(**data)
+        if value.get("key", decision.key) != decision.key:
+            raise ValueError("decision key does not match its identity")
+        return decision
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +100,8 @@ class PANMigrationDecisionSet:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "PANMigrationDecisionSet":
+        if not isinstance(value, dict) or not isinstance(value.get("decisions", ()), list):
+            raise ValueError("decisions must be an array")
         return cls(tuple(PANMigrationDecision.from_dict(item) for item in value.get("decisions", ())))
 
     def to_options(self) -> PANMigrationOptions:

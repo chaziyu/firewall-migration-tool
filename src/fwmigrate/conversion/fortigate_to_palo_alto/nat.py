@@ -6,10 +6,15 @@ from .models import PANMigrationStatus, PlannedNATRule
 
 
 def plan_nat(source: Any, derived: Any, options: Any):
-    policies = {item.policy_id: item for item in getattr(source, "policies", ())}
+    policies = {(item.vdom or "root", item.policy_id): item for item in getattr(source, "policies", ())}
     result = []
     for item in getattr(derived, "nat", ()):
-        policy = policies.get(item.policy_id)
+        vdom = item.vdom or "root"
+        policy = policies.get((vdom, item.policy_id))
+        egress_mapping = (
+            getattr(options, "interfaces", {}).get(vdom, {}).get(item.egress_interfaces[0])
+            if len(item.egress_interfaces) == 1 else None
+        )
         warnings = list(item.issues)
         translated = item.translated_addresses[0] if len(item.translated_addresses) == 1 else None
         if len(item.translated_addresses) != 1:
@@ -37,7 +42,7 @@ def plan_nat(source: Any, derived: Any, options: Any):
             source_addresses=tuple(policy.srcaddr if policy else ()),
             destination_addresses=tuple(policy.dstaddr if policy else ()),
             service=(policy.service[0] if policy and policy.service else None),
-            to_interface=(item.egress_interfaces[0] if item.egress_interfaces else None),
+            to_interface=getattr(egress_mapping, "target_interface", None),
         ))
     for vip in getattr(source, "vips", ()):
         ext = vip.extip or (vip.extaddr[0] if len(vip.extaddr) == 1 else None)

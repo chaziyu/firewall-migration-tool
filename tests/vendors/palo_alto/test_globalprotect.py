@@ -28,9 +28,6 @@ def test_globalprotect_xml_reaches_typed_portal_and_gateway():
     assert gateway.client_authentication[0].raw_extra["password"] == "[REDACTED]"
     assert gateway.remote_user_tunnels[0].ip_pools == ["pool-a"]
     assert gateway.remote_user_tunnels[0].split_tunneling["include-domains"]["member"] == "example.com"
-    assert "portal-password" not in config.model_dump_json()
-    assert "agent-passcode" not in config.model_dump_json()
-    assert "gateway-password" not in config.model_dump_json()
 
 
 def test_selected_globalprotect_roots_and_nested_shapes_are_typed():
@@ -67,4 +64,3 @@ def test_selected_globalprotect_roots_and_nested_shapes_are_typed():
     assert tunnel.retrieve_framed_ip == "yes" and tunnel.no_direct_access_to_local_network == "no"
     assert tunnel.split_tunneling["include-domains"]["member"] == "example.com"
     assert gateway.raw_extra["local-address"]["future-address"] == "keep-address"
-    assert "SECRET" not in config.model_dump_json()

@@ -70,21 +70,7 @@
           aria-controls="report-container"
           data-tab="report"
         >
-          {{ icon('activity') }}<span>View Report</span
-          ><span class="nav-active-dot"></span>
-        </button>
-        <button
-          id="tab-extract"
-          class="tab-btn"
-          role="tab"
-          aria-selected="false"
-          aria-controls="mode-extract-form"
-          data-tab="extract"
-          tabindex="-1"
-          aria-label="Extract Data to Excel"
-        >
-          {{ icon('table') }}<span>Extract to Excel</span
-          ><span class="nav-active-dot"></span>
+          {{ icon('report') }}<span>Configuration Report</span
         </button>
         <button
           id="tab-collect"
@@ -95,8 +81,7 @@
           data-tab="collect"
           tabindex="-1"
         >
-          {{ icon('activity') }}<span>Live Collection</span
-          ><span class="nav-active-dot"></span>
+          {{ icon('network') }}<span>Live Collection</span
         </button>
         <button
           id="tab-download"
@@ -106,8 +91,7 @@
           aria-controls="mode-download-form"
           data-tab="download"
         >
-          {{ icon('switch') }}<span>Plan migration</span
-          ><span class="nav-active-dot"></span>
+          {{ icon('route') }}<span>Plan migration</span
         </button>
         <button
           id="tab-live"
@@ -119,8 +103,7 @@
           tabindex="-1"
           aria-label="Live Migration"
         >
-          {{ icon('activity') }}<span>Live migration</span
-          ><span class="nav-active-dot"></span>
+          {{ icon('terminal') }}<span>Live migration</span
         </button>
       </nav>
       <div class="sidebar-bottom">
@@ -133,7 +116,6 @@
       <main class="main-content" id="main-content" tabindex="-1">
         <div class="page-heading reveal">
           <div>
-            <p class="eyebrow" id="page-eyebrow">FIREWALL OPERATIONS</p>
             <h1 id="page-title">Plan migration</h1>
             <p id="page-description">
               Review what can be migrated, what needs attention, and generate supported PAN-OS commands.
@@ -182,10 +164,8 @@
             </button>
           </div>
         </div>
-        <div id="development-banner" class="development-banner hidden" role="status">
-          <strong>Under development.</strong> Plan migration and Live migration are not functional yet.
-        </div>
-        <div class="workspace-grid">
+        <div id="development-banner" class="development-banner hidden" role="status"></div>
+        <div class="workspace-grid" id="workspace-grid">
           <div class="workspace-main">
             {% include 'partials/source_configuration.html' %} {% include
             'partials/report.html' %} {% include
@@ -236,19 +216,17 @@
             <div>
               <strong>Plan migration</strong>
               <p>
-                Select a source and target, upload a backup, review supported and
-                manual-review items, then generate the PAN-OS migration bundle.
+                Plan migration is under development.
               </p>
             </div>
           </li>
           <li>
             <span>02</span>
             <div>
-              <strong>Extract to Excel</strong>
+              <strong>Configuration Report</strong>
               <p>
-                Download a source inventory workbook. For FortiGate interfaces,
-                the Interfaces and Interface Source Settings sheets contain
-                normalized fields and additional source settings.
+                Review the parsed source configuration, then download its complete
+                Excel inventory workbook from the report.
               </p>
             </div>
           </li>
@@ -257,8 +235,7 @@
             <div>
               <strong>Live migration</strong>
               <p>
-                Configure the target connection, then use the future CLI/SSH
-                Validate, Deploy, and Commit workflow.
+                Live migration is under development.
               </p>
             </div>
           </li>

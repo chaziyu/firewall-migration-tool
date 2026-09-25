@@ -51,3 +51,21 @@ def test_source_nat_item_with_transform_issue_is_not_renderable():
 
     assert item.status is PANMigrationStatus.MANUAL_REVIEW
     assert item.source_translation is None
+
+
+def test_source_nat_to_interface_uses_confirmed_target_interface_mapping():
+    source = FGConfig(policies=[FGPolicy(policy_id=1, name="nat", nat="enable", dstintf=["wan"])])
+    derived = SimpleNamespace(nat=(NormalizedSourceNAT(
+        vdom="root", policy_id=1, policy_name="nat", translation_type="interface",
+        pool_names=(), translated_addresses=(), egress_interfaces=("wan",), issues=(),
+    ),))
+    options = PANMigrationOptions(interfaces={"root": {"wan": {
+        "target_interface": "ethernet1/2", "target_zone": "untrust",
+    }}})
+
+    from fwmigrate.conversion.fortigate_to_palo_alto.nat import plan_nat
+    item = plan_nat(source, derived, options)[0]
+    unmapped = plan_nat(source, derived, PANMigrationOptions())[0]
+
+    assert item.to_interface == "ethernet1/2"
+    assert unmapped.to_interface is None

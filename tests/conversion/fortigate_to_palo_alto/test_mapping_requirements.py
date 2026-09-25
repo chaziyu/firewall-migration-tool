@@ -1,3 +1,4 @@
+from fwmigrate.conversion.fortigate_to_palo_alto.decisions import build_decision_set
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.policy import FGPolicy
@@ -52,3 +53,21 @@ def test_same_interface_name_impact_stays_scoped_to_each_vdom():
     items = {(item["source_vdom"], item["source_name"]): item for item in build_mapping_requirements(config, object())["interfaces"]}
     assert items[("root", "port1")]["affected_by"] == {"security_policy": 1}
     assert items[("blue", "port1")]["affected_by"] == {"security_policy": 1}
+
+
+def test_same_name_interface_and_zone_keep_compatible_decision_fields():
+    config = FGConfig(
+        policies=[FGPolicy(vdom="root", srcintf=["port1"])],
+        zones=[FGZone(vdom="root", name="port1", members=["member1"])],
+        static_routes=[FGStaticRoute(vdom="root", device="port1")],
+    )
+    requirements = build_mapping_requirements(config, object())
+    items = requirements["interfaces"]
+    same_name = {(item["kind"], tuple(item["requires"])) for item in items if item["source_name"] == "port1"}
+
+    assert same_name == {
+        ("zone", ("target_zone",)),
+        ("interface", ("target_interface", "target_zone")),
+    }
+    decisions = build_decision_set(config, object(), requirements)
+    assert all(not (item.source_kind == "zone" and item.target_field == "target_interface") for item in decisions.decisions)

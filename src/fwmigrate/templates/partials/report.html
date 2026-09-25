@@ -1,20 +1,23 @@
 <section class="card report-shell hidden" id="report-container" aria-labelledby="report-heading">
-  <div class="card-header">
-    <div class="section-heading">
-      <h2 id="report-heading"><span class="step-num">02</span>Configuration report</h2>
-      <span class="section-meta" id="report-filename"></span>
+  <div class="report-sticky-header">
+    <div class="card-header">
+      <div class="section-heading">
+        <h2 id="report-heading"><span class="step-num">02</span>Configuration report</h2>
+      </div>
+      <button type="button" id="btn-extract-excel" class="btn btn-primary" disabled>
+        {{ icon('download') }}<span>Download Excel</span>
+      </button>
     </div>
+    <nav class="report-tabs" aria-label="Report sections">
+      {% for key, label in (
+        ('overview', 'Overview'), ('interfaces', 'Interfaces'), ('objects', 'Objects'),
+        ('policies', 'Policies'), ('nat', 'NAT'), ('routes', 'Routes'),
+        ('vpn', 'VPN'), ('validation', 'Validation')
+      ) %}
+        <button type="button" class="report-tab{% if loop.first %} active{% endif %}" data-report-section="{{ key }}">{{ label }}</button>
+      {% endfor %}
+    </nav>
   </div>
-
-  <nav class="report-tabs" aria-label="Report sections">
-    {% for key, label in (
-      ('overview', 'Overview'), ('interfaces', 'Interfaces'), ('objects', 'Objects'),
-      ('policies', 'Policies'), ('nat', 'NAT'), ('routes', 'Routes'),
-      ('vpn', 'VPN'), ('validation', 'Validation')
-    ) %}
-      <button type="button" class="report-tab{% if loop.first %} active{% endif %}" data-report-section="{{ key }}">{{ label }}</button>
-    {% endfor %}
-  </nav>
 
   <div id="report-overview" class="report-overview">
     <div class="report-summary" id="report-summary"></div>
@@ -22,6 +25,16 @@
   </div>
 
   <div id="report-data" class="hidden">
+    <section id="validation-groups-panel" class="validation-groups-panel hidden" aria-labelledby="validation-groups-heading">
+      <h3 id="validation-groups-heading">Issue groups</h3>
+      <p>Select an issue group to filter the findings below.</p>
+      <div id="validation-summary" class="validation-summary" role="group" aria-labelledby="validation-groups-heading"></div>
+    </section>
+    <h3 id="validation-details-heading" class="validation-details-heading hidden">Validation details</h3>
+    <div id="validation-active-filter" class="validation-active-filter hidden" role="status" aria-live="polite">
+      <span id="validation-active-filter-label"></span>
+      <button id="validation-filter-clear" type="button" class="btn btn-secondary btn-sm">Clear</button>
+    </div>
     <div class="report-object-tabs hidden" id="report-object-tabs">
       {% for key, label in (('addresses', 'Addresses'), ('address_groups', 'Address Groups'), ('services', 'Services'), ('service_groups', 'Service Groups')) %}
         <button type="button" class="report-object-tab{% if loop.first %} active{% endif %}" data-object-section="{{ key }}">{{ label }}</button>
@@ -46,9 +59,16 @@
       </table>
     </div>
     <p class="report-empty hidden" id="report-empty" role="status">No matching rows.</p>
+    <div class="report-pager hidden" id="report-pager" aria-label="Report pages">
+      <button type="button" id="report-page-previous" class="btn btn-secondary btn-sm">Previous</button>
+      <span id="report-page-status" role="status" aria-live="polite"></span>
+      <button type="button" id="report-page-next" class="btn btn-secondary btn-sm">Next</button>
+    </div>
   </div>
-  <aside id="report-detail-panel" class="report-detail-panel hidden" aria-labelledby="report-detail-title" aria-live="polite">
-    <div class="report-detail-header"><h3 id="report-detail-title"></h3><button id="report-detail-close" type="button" aria-label="Close row details">Close</button></div>
-    <div id="report-detail-body" class="report-detail-body"></div>
-  </aside>
 </section>
+<div id="report-detail-modal" class="report-detail-modal hidden">
+  <section class="report-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="report-detail-title">
+    <div class="report-detail-header"><h3 id="report-detail-title"></h3><button id="report-detail-close" type="button" aria-label="Close row details">×</button></div>
+    <div id="report-detail-body" class="report-detail-body"></div>
+  </section>
+</div>

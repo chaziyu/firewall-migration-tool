@@ -1,18 +1,24 @@
 from dataclasses import FrozenInstanceError
-from io import BytesIO
-
 import pytest
-from openpyxl import load_workbook
-
 from fwmigrate.vendors.checkpoint.derived import build_checkpoint_derived_views
-from fwmigrate.vendors.checkpoint.export.excel import export_checkpoint_excel
 from fwmigrate.vendors.checkpoint.model.address import CPAddressRange, CPHost, CPNetwork
 from fwmigrate.vendors.checkpoint.model.gateway import CPGateway
 from fwmigrate.vendors.checkpoint.model.policy import CPAutoNATRule, CPNATRule
 from fwmigrate.vendors.checkpoint.model.source import CheckPointConfig
-from fwmigrate.vendors.checkpoint.source_report import extract_checkpoint_source
-from fwmigrate.vendors.checkpoint.web_report import build_checkpoint_preview
+from fwmigrate.vendors.checkpoint.extraction import extract_checkpoint_config
+from fwmigrate.vendors.checkpoint.models import CheckPointExportBundle
 
+
+def test_automatic_nat_stays_on_the_owner_object():
+    result = extract_checkpoint_config(CheckPointExportBundle.model_validate({"responses": [{
+        "command": "show-hosts",
+        "data": {"objects": [{"type": "host", "name": "Web", "nat-settings": {"auto-rule": True}}]},
+    }]}))
+
+    host = result.config.hosts[0]
+    assert type(host) is CPHost
+    assert host.nat_settings == {"auto-rule": True}
+    assert not result.config.nat_rules
 
 def test_manual_nat_keeps_source_references_order_and_resolved_metadata():
     source = CPHost(uid="src", name="inside")
@@ -49,7 +55,6 @@ def test_manual_nat_keeps_source_references_order_and_resolved_metadata():
     with pytest.raises(FrozenInstanceError):
         view.rule_order = 8
 
-
 def test_automatic_nat_settings_are_traceable_and_unknown_when_incomplete():
     host = CPHost(uid="host", name="Web", nat_settings={"auto-rule": True})
     config = CheckPointConfig(hosts=[host])
@@ -65,7 +70,6 @@ def test_automatic_nat_settings_are_traceable_and_unknown_when_incomplete():
     assert "not explicit" in result.nat.issues[0].message
     assert config.model_dump() == before
     assert view.owner_kind == "CPHost"
-
 
 @pytest.mark.parametrize("owner", [
     CPHost(uid="host", name="host-auto", nat_settings={"auto-rule": True, "method": "static", "ipv4-address": "192.0.2.10"}),
@@ -89,7 +93,6 @@ def test_automatic_nat_is_derived_from_host_network_and_range_owners(owner):
     assert not hasattr(config, "ip_pools")
     assert not hasattr(config, "vips")
 
-
 @pytest.mark.parametrize("settings, expected_issue", [
     ({"auto-rule": True, "method": "hide"}, "address"),
     ({"auto-rule": True, "ipv4-address": "192.0.2.40"}, "method"),
@@ -109,7 +112,6 @@ def test_partial_automatic_nat_preserves_known_values_and_reports_unknown(settin
     assert any(expected_issue in issue.message.lower() for issue in view.issues)
     assert config.model_dump() == before
 
-
 def test_nat_unresolved_references_are_attached_to_view_and_result():
     rule = CPNATRule(uid="rule", name="manual", original_source=["missing"])
     result = build_checkpoint_derived_views(CheckPointConfig(nat_rules=[rule]))
@@ -121,7 +123,6 @@ def test_nat_unresolved_references_are_attached_to_view_and_result():
     assert issue.relationship_status == "missing"
     assert issue in result.nat.issues
 
-
 def test_manual_nat_preserves_multiple_install_targets():
     rule = CPNATRule(uid="rule", name="manual", install_on=["gw-a", "gw-b"])
     config = CheckPointConfig(gateways=[CPGateway(name="gw-a"), CPGateway(name="gw-b")], nat_rules=[rule])
@@ -130,22 +131,3 @@ def test_manual_nat_preserves_multiple_install_targets():
 
     assert [item.resolved_name for item in view.install_on] == ["gw-a", "gw-b"]
     assert not view.issues
-
-
-def test_nat_transform_is_exposed_in_preview_and_excel():
-    result = extract_checkpoint_source(
-        '{"responses":[{"command":"show-hosts","data":{"objects":[{"type":"host","uid":"h","name":"Web","nat-settings":{"auto-rule":true}}]}}]}'
-    )
-
-    assert result.config.hosts[0].nat_settings == {"auto-rule": True}
-    preview = build_checkpoint_preview(result)
-    assert preview["derived"]["nat"][0]["source_kind"] == "automatic_object_settings"
-
-    output = BytesIO()
-    export_checkpoint_excel(result, output)
-    output.seek(0)
-    sheet = load_workbook(output, read_only=True)["NAT Migration Views"]
-    headers = next(sheet.iter_rows(values_only=True))
-    row = next(sheet.iter_rows(min_row=2, values_only=True))
-    assert row[headers.index("Source Kind")] == "automatic_object_settings"
-    assert row[headers.index("Resolved Translation")] in (None, "")

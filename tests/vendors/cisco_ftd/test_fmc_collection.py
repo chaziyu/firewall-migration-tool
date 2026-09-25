@@ -101,3 +101,65 @@ def test_fmc_detail_failure_marks_family_partial_and_does_not_claim_success():
         target, "networkaddresses", parts)
     assert target["networkaddresses"] == [{"id": "net-1", "name": "inside", "type": "Network"}]
     assert parts[0].status == "PARTIAL" and not parts[0].complete
+
+
+def test_fmc_pages_follow_paging_next_until_total_is_collected():
+    calls = []
+
+    class Session:
+        def get(self, url, **kwargs):
+            calls.append(url)
+            if "offset=1" in url:
+                return Response({"items": [{"id": "second"}], "paging": {"total": 2}})
+            return Response({"items": [{"id": "first"}], "paging": {
+                "total": 2, "next": {"href": "/api/items?offset=1"}}})
+
+    items, complete = CiscoFTDCollector()._pages(Session(), "https://fmc:443", "/api/items")
+    assert [item["id"] for item in items] == ["first", "second"]
+    assert complete and len(calls) == 2
+
+
+def test_fmc_pages_mark_incomplete_when_total_exceeds_collected_items():
+    class Session:
+        def get(self, url, **kwargs):
+            return Response({"items": [{"id": "first"}], "paging": {"total": 2}})
+
+    items, complete = CiscoFTDCollector()._pages(Session(), "https://fmc:443", "/api/items")
+    assert items == [{"id": "first"}]
+    assert not complete
+
+
+def test_fmc_pages_reject_cross_host_pagination_url():
+    class Session:
+        def get(self, url, **kwargs):
+            return Response({"items": [{"id": "first"}], "paging": {
+                "total": 2, "next": {"href": "https://evil.example/api/items?page=2"}}})
+
+    items, complete = CiscoFTDCollector()._pages(Session(), "https://fmc:443", "/api/items")
+    assert items == [{"id": "first"}]
+    assert not complete
+
+
+def test_fmc_auth_credentials_and_access_token_never_enter_collected_source():
+    sentinels = ("user-secret", "password-secret", "token-secret")
+
+    class Session:
+        headers = {}
+        verify = None
+
+        def post(self, url, **kwargs):
+            assert kwargs["auth"] == sentinels[:2]
+            return Response(headers={"X-auth-access-token": sentinels[2],
+                                     "DOMAINS": '[{"uuid":"d1","name":"Global"}]'})
+
+        def get(self, url, **kwargs):
+            return Response({"items": [], "paging": {"total": 0}})
+
+        def close(self):
+            pass
+
+    collector = CiscoFTDCollector(session_factory=Session)
+    source = collector.collect(collector.validate_options({"host": "fmc", "username": sentinels[0],
+        "password": sentinels[1]}))
+    evidence = json.dumps((source.source_text, source.metadata, source.parts, source.warnings), default=str)
+    assert all(secret not in evidence for secret in sentinels)
