@@ -4,6 +4,7 @@ from .recommendations import (
     PANMigrationRecommendation,
     PANRecommendationConfidence,
     PANRecommendationMethod,
+    PANRecommendationReadiness,
     decision_key_if_present,
     decision_value,
     recommendation_key,
@@ -45,5 +46,11 @@ def build_dhcp_recommendations(source, derived, decisions, target=None, target_d
             confidence=PANRecommendationConfidence.HIGH if server.interface else PANRecommendationConfidence.MEDIUM,
             evidence=evidence, candidate_target_objects=candidates,
             required_decision_keys=(decision_key,) if decision_key else (), blockers=tuple(blockers),
+            readiness=(
+                PANRecommendationReadiness.MANUAL_DESIGN if server.exclude_ranges
+                else PANRecommendationReadiness.REQUIRES_DECISION if server.interface and not mapped
+                else PANRecommendationReadiness.INCOMPLETE_EVIDENCE if not server.interface
+                else PANRecommendationReadiness.SUGGEST
+            ),
         ))
     return tuple(result)
