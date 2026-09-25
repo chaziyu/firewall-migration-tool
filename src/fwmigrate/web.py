@@ -30,6 +30,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
+from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import suggest_from_target, target_devices
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
 from fwmigrate.collection import CollectionStatus, source_collectors
@@ -215,6 +216,21 @@ def _lookup_preview(
 
 def _clone_preview(entry: _PreviewCacheEntry):
     return deepcopy(entry.analysis)
+
+
+def _target_evidence(payload):
+    preview_id = payload.get('target_preview_id')
+    if not preview_id:
+        return None, None, []
+    entry = _lookup_preview(preview_id, 'palo_alto')
+    if entry is None:
+        raise ValueError('A valid PAN-OS target preview_id is required')
+    analysis = _clone_preview(entry)
+    devices = target_devices(analysis)
+    selected = payload.get('target_device') or (devices[0] if len(devices) == 1 else None)
+    if selected and selected not in devices:
+        raise ValueError('Selected target device is not in the uploaded PAN-OS configuration')
+    return analysis, selected, devices
 
 
 def _parse_bool(value, default=False):
@@ -410,9 +426,17 @@ def create_app(test_config=None):
             prior = payload.get('decision_document')
             previous = _load_decision_document(prior, entry.source_digest) if prior is not None else None
             decision_set = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
+            target, target_device, devices = _target_evidence(payload)
+            target_warnings = {}
+            if target and target_device:
+                decision_set, target_warnings = suggest_from_target(
+                    analysis.extracted.config, decision_set, target, target_device
+                )
             return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': requirements,
                             'decisions': decision_set.to_dict(),
-                            'decision_document': _decision_document(entry.source_digest, decision_set)})
+                            'decision_document': _decision_document(entry.source_digest, decision_set),
+                            'target_devices': devices, 'target_device': target_device,
+                            'target_warnings': target_warnings})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception as exc:
@@ -510,6 +534,10 @@ def create_app(test_config=None):
                 decision_set = _confirm_mapping_decisions(decision_set, options, analysis.extracted.config)
                 decision_document = _decision_document(entry.source_digest, decision_set)
                 mapping = _options_mapping(options)
+            target, target_device, devices = _target_evidence(payload)
+            target_warnings = {}
+            if target and target_device:
+                _, target_warnings = suggest_from_target(analysis.extracted.config, decision_set, target, target_device)
             plan = migration_planners.get(source_vendor, target_vendor).plan(
                 analysis.extracted.config, analysis.derived, options=options
             )
@@ -530,6 +558,7 @@ def create_app(test_config=None):
                 'counts': {**counts, 'renderable': sum(item['renderable'] for item in rendered.report['items'])},
                 'missing_mappings': missing,
                 'blocking_reasons': [issue['message'] for issue in missing],
+                'target_warnings': target_warnings,
                 'report': rendered.report,
                 'validation': {'issue_summary': rendered.report['issue_summary']},
             })
