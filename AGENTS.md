@@ -1,10 +1,14 @@
 # AGENTS.md
 
-This repository uses **vendor-native firewall extraction and reporting**.
+This repository uses **vendor-native extraction/reporting** plus **pair-specific migration planning**.
+
+## Pipelines
+
+Source reporting:
 
 ```text
 Vendor Source
-→ Parser / Source Adapter
+→ Parser / Adapter
 → VendorConfig
 → Relationships / Transforms
 → DerivedViews
@@ -12,24 +16,47 @@ Vendor Source
 → Preview / Excel
 ```
 
-Cross-vendor conversion is not implemented yet.
+Collection:
 
-For vendor-specific command and configuration coverage, use the matching selected reference in `documentation/official-cli-references-selected version/`:
+```text
+Device / Manager
+→ Collector
+→ Sanitized Vendor Source
+→ Source Reporting
+```
 
-- FortiGate: `FortiGate Selected CLI References.md`
-- Cisco ASA: `Cisco_ASA_Selected_Configuration_References.md`
-- Cisco FTD: `Cisco_FTD_Selected_Configuration_References.md`
-- Juniper SRX: `Juniper_Selected_CLI_References.md`
-- Check Point R81: `Check_Point_R81_Selected_CLI_and_Management_API_References.md`
-- PAN-OS: `Palo_Alto_Selected_CLI_References.md`
+Migration:
 
-Use these files to check the selected extraction coverage for that vendor. They do not make vendor defaults explicit source configuration.
+```text
+VendorConfig
+→ DerivedViews
+→ Pair-specific Requirements
+→ Engineer Decisions
+→ MigrationPlan
+→ Validation
+→ Renderer
+```
 
-## Core invariants
+Current migration pair:
 
-### 1. Preserve source truth
+```text
+FortiGate → Palo Alto PAN-OS
+```
 
-`VendorConfig` represents **explicit source state**.
+Deployment:
+
+```text
+RenderedMigration
+→ Candidate Push
+→ Candidate Validation
+→ Explicit Commit
+```
+
+Do not introduce a vendor-neutral firewall IR.
+
+## Core rules
+
+`VendorConfig` represents **explicit source state only**.
 
 A missing field means:
 
@@ -37,10 +64,10 @@ A missing field means:
 not explicitly configured
 ```
 
-Do not silently interpret missing values as:
+Never silently treat absence as:
 
 ```text
-vendor default
+default
 false
 disabled
 empty
@@ -55,13 +82,11 @@ Keep distinct:
 explicit source
 derived value
 effective/default value
-unknown value
-unsupported/source-only value
+operational value
+unknown / unsupported value
 ```
 
-Only expose `Effective ...` fields when current vendor logic actually calculates them.
-
-When uncertain:
+When unclear:
 
 ```text
 preserve source
@@ -70,45 +95,40 @@ preserve source
 → do not guess
 ```
 
-### 2. Respect layer boundaries
+## Responsibility boundaries
 
 ```text
 Tokenizer / Scanner   syntax only
-Parser / Adapter      explicit source structure
-Command Evaluator     vendor command semantics
-VendorConfig          authoritative source state
+Parser / Adapter      source structure only
+Command Evaluator     command semantics
+VendorConfig          explicit source state
 Relationships         references / bindings / topology
 Transforms            vendor semantics / derivation
 DerivedViews          read-only derived state
-Validation            detect and report only
+Validation            detect/report only
 Preview / Excel       presentation only
+Collection            acquisition only
+Conversion            pair-specific planning only
+Deployment            reviewed artifact execution only
 ```
 
-Do not move semantics into parsers, validation, web, or Excel for convenience.
+Do not move semantics into parsers, validation, web code, or Excel for convenience.
 
-### 3. Never mutate source downstream
+After extraction, do not mutate `VendorConfig`.
 
-After extraction, treat `VendorConfig` as read-only.
-
-Relationships, transforms, validation, preview, and Excel must not:
+Do not silently:
 
 ```text
 fill defaults
 repair references
-insert inferred objects
-rename objects
-rewrite values
-delete unsupported data
-silently fix configuration
+insert inferred source objects
+rewrite source values
+delete unsupported evidence
 ```
 
-Derived information belongs in relationships, transforms, or `DerivedViews`.
+## Source preservation
 
-Existing violations are technical debt, not patterns to copy.
-
-### 4. Preserve unsupported data
-
-Keep useful unsupported or partially understood source evidence through existing mechanisms such as:
+Preserve useful unsupported data through existing mechanisms such as:
 
 ```text
 raw_extra
@@ -120,151 +140,210 @@ source appendix sheets
 collection evidence
 ```
 
-Do not add fake source-model fields only to satisfy reports.
+Do not add source-model fields only to satisfy Excel or migration output.
 
 ## Shared code
 
-Shared `source_reporting/` and web code may know:
+Shared infrastructure may handle:
 
 ```text
-vendor ID
-display name
-supported extensions
-analyze_source()
-build_preview()
-export_excel()
+vendor registration
+source-report dispatch
+collection contracts
+migration planner contracts
+web orchestration
 ```
 
-Vendor results are otherwise opaque.
+Vendor semantic models remain vendor-owned.
 
-Do not create shared firewall semantic models.
-
-Excel is presentation only and must not drive source-model design.
-
-## Vendor-specific rules
-
-**FortiGate**
-- Use `fortigate-extract` as the responsibility-boundary reference.
-- Prefer `FortiGate Selected CLI References.md`.
-- Do not copy FortiGate syntax/models into other vendors.
-
-**Cisco ASA**
-- Preserve command, ACL and NAT ordering, modes, contexts, `nameif`, and explicit `no`.
-- Resolve relationships outside parsing.
-
-**Cisco FTD**
-- Keep FMC, FDM, and CLI/device evidence distinct.
-- CLI evidence must not manufacture FMC/FDM-managed policy.
-- Preserve source-plane provenance and completeness.
-
-**Juniper SRX**
-- Preserve hierarchy, logical systems, groups, inheritance, routing-instance scope, and provenance.
-- Calculate effective state without rewriting source state.
-
-**Check Point**
-- Preserve UID, domain, package, layer, gateway/cluster scope, and collection completeness.
-- Failed/incomplete collection does not mean empty configuration.
-
-**PAN-OS**
-- Current source input is XML.
-- Do not assume CLI `set` support.
-- Preserve VSYS/shared/device-group/device scope.
-
-## Terminology
-
-Prefer source-oriented terms:
+Do not create shared semantic models for:
 
 ```text
-EXTRACTED
-PARTIAL
-SOURCE_ONLY
-UNSUPPORTED
-UNKNOWN
-PARSE_ERROR
-collection incomplete
+addresses
+services
+policies
+NAT
+interfaces
+zones
+routes
+VPNs
 ```
 
-Avoid migration-era terms such as `NORMALIZED`, `migration safe`, or `target compatible` in source-reporting code.
+Source reporting must not depend on conversion.
 
-## Conversion
+## Vendor rules
 
-`src/fwmigrate/conversion/` is a reserved future boundary:
+Use the matching reference under:
 
 ```text
-VendorSourceConfig
-→ VendorDerivedViews
-→ pair-specific converter
-→ TargetVendorConfig
-→ target validation
-→ target renderer
+documentation/official-cli-references-selected version/
 ```
 
-Do not implement conversion unless explicitly requested.
+Use official vendor documentation as semantic authority.
 
-Do not reintroduce:
+### FortiGate
+Preserve VDOMs, nested config, `set/append/unset`, ordering, topology, and `raw_extra`.
+
+```text
+Tokenizer
+→ Parser
+→ Command Evaluator
+→ FGConfig
+→ Relationships / Transforms
+→ DerivedViews
+→ Validation
+→ Excel
+```
+
+Do not move FortiGate semantics into the parser.
+
+### Cisco ASA
+Preserve command/ACL/NAT order, contexts, bindings, `nameif`, inactive state, and explicit `no`.
+
+### Cisco FTD
+Keep FMC, FDM, and CLI/device evidence distinct. Preserve UUIDs, domains, ownership, overrides, ordering, and completeness.
+
+### Juniper SRX
+Preserve hierarchy, logical systems, routing instances, groups, inheritance, address-book scope, and inactive state.
+
+### Check Point
+Keep Management API and Gaia distinct. Preserve UID, domain, package, layer, section, inline-layer, gateway/cluster scope, and completeness.
+
+### PAN-OS
+Current source input is XML. Preserve VSYS/shared/device-group/device scope and rule order. Do not assume source `set` input support.
+
+## Migration planning
+
+`src/fwmigrate/conversion/` contains directional pair-specific planners.
+
+Current pair:
+
+```text
+fortigate → palo_alto
+```
+
+Do not introduce:
 
 ```text
 vendor-neutral IR
-shared firewall object model
-generic migration framework
-shared cross-vendor mappings
-target generators
+shared source/target firewall model
+generic migration schema
+generic cross-vendor mappings
+TargetVendorConfig abstraction
 Terraform
 SQLite / .fgreport
-target concepts in source models
 ```
 
-Source reporting must not depend on `conversion/`.
+Unimplemented pairs must fail closed.
+
+## Migration decisions
+
+Target-specific information that cannot be derived safely requires an explicit decision.
+
+Modes:
+
+```text
+AUTO
+SUGGESTED
+REQUIRED
+UNSUPPORTED
+```
+
+Review states:
+
+```text
+PENDING
+CONFIRMED
+```
+
+Only `AUTO` or `CONFIRMED` decisions may become planner input.
+
+A suggestion is not confirmation.
+
+Do not guess target:
+
+```text
+VSYS
+virtual router
+interface
+zone
+ownership
+```
+
+Decision identity must preserve source scope such as VDOM.
+
+## Rendering and deployment
+
+Render only supported, validation-approved items.
+
+Command preview, download, bundle, and deployment must use the same `RenderedMigration`.
+
+Preserve:
+
+```text
+artifact identity
+command count
+command SHA-256
+```
+
+Deployment accepts reviewed rendered artifacts, not arbitrary command lists.
+
+Default behavior:
+
+```text
+push candidate
+→ validate candidate
+→ no automatic commit
+```
+
+Commit must remain explicit.
+
+## Collection
+
+Collection is acquisition only.
+
+Collectors may connect, read, sanitize, and report completeness.
+
+States:
+
+```text
+SUCCESS
+PARTIAL
+FAILED
+```
+
+Never treat failed/unsupported collection parts as empty configuration.
+
+Snapshots are sanitized source envelopes, not semantic models.
 
 ## Secrets
 
-Never export, preview, log, or preserve actual secrets in reportable evidence:
+Never export, preview, log, or persist actual:
 
 ```text
 passwords
+password hashes
 PSKs
 private keys
 API keys
 tokens
-credentials
-sensitive SNMP communities
+shared secrets
+sensitive credentials
 ```
 
-Safe metadata is allowed:
+Safe metadata such as `Password Configured = Yes` is allowed.
 
-```text
-Password Configured = Yes
-PSK Configured = Yes
-Credential Present = Yes
-```
-
-Apply redaction to source evidence, raw/unsupported data, validation, preview, Excel, and logs.
-
-## Documentation
-
-Use official vendor documentation as the primary semantic reference.
-
-Prefer project-curated reference files for supported extraction coverage.
-
-Documentation defaults are not explicit source configuration.
-
-If behavior remains unclear:
-
-```text
-preserve source
-→ mark unknown / unsupported
-→ do not guess
-```
+Apply redaction everywhere, including raw evidence, collection, reports, migration, deployment, and logs.
 
 ## Before editing
 
-Inspect first:
+Inspect:
 
 ```text
 current branch
 actual paths
-actual models
-actual symbols
+models
+symbols
 callers
 tests
 current pipeline
@@ -274,61 +353,67 @@ Then:
 
 ```text
 make the smallest coherent change
+preserve existing architecture
+reuse existing logic
 avoid unrelated refactoring
 do not guess APIs
 prefer package-relative imports
 ```
 
-Do not reorganize the repository unless required by the task.
+Current repository code and tests are authoritative.
 
 ## Testing
 
-Test the real path:
+Test the affected real path.
+
+Source:
 
 ```text
 source
-→ parser / adapter
 → VendorConfig
 → DerivedViews
 → validation
 → preview / Excel
 ```
 
-Protect against regressions in:
+Migration:
 
 ```text
-nested/scoped configuration
-unknown/unsupported fields
-references
-interface topology
-policy/NAT ordering
-provenance
-collection completeness
-secret redaction
-preview
-Excel
+FortiGate
+→ FGConfig / DerivedViews
+→ decisions
+→ MigrationPlan
+→ validation
+→ RenderedMigration
 ```
 
-Architecture tests should enforce:
+Deployment:
 
 ```text
-VendorConfig is not mutated downstream
-source_reporting has no firewall semantic model
-vendor Excel consumes only vendor state
-vendors do not depend on conversion/
-web treats vendor results as opaque
-secrets never reach preview or Excel
+RenderedMigration
+→ candidate
+→ validation
+→ explicit commit
 ```
 
-Do not claim CI passes unless the current workflow actually ran successfully.
+Protect regressions in scope, ordering, references, topology, unsupported data, completeness, mapping decisions, artifact integrity, secret redaction, preview, Excel, migration bundle, and deployment.
+
+Run applicable:
+
+```text
+python -m compileall -q src tests
+python -m pytest -q
+```
+
+Do not claim tests or CI passed unless they actually ran.
 
 ## Priority
 
 ```text
 correctness
 → source preservation
-→ clear semantics
+→ explicit semantics
 → traceability
+→ safety
 → maintainability
-→ convenience
 ```
