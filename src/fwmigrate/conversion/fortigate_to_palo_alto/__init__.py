@@ -17,6 +17,14 @@ from .models import (
     PlannedZone,
 )
 from .options import InterfaceMapping, PANMigrationOptions, VDOMMapping
+from .decisions import (
+    PANDecisionMode,
+    PANDecisionReviewState,
+    PANMigrationDecision,
+    PANMigrationDecisionSet,
+    build_decision_set,
+    make_decision_key,
+)
 from .planner import FortiGateToPaloAltoPlanner
 
 __all__ = [
@@ -25,6 +33,10 @@ __all__ = [
     "MigrationIssue",
     "MigrationSourceRef",
     "PANMigrationOptions",
+    "PANDecisionMode",
+    "PANDecisionReviewState",
+    "PANMigrationDecision",
+    "PANMigrationDecisionSet",
     "PANMigrationPlan",
     "PANMigrationStatus",
     "PlannedAddress",
@@ -38,4 +50,6 @@ __all__ = [
     "PlannedStaticRoute",
     "PlannedZone",
     "VDOMMapping",
+    "build_decision_set",
+    "make_decision_key",
 ]
