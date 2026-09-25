@@ -737,6 +737,10 @@ let currentPlanItems = [];
       btnExtractExcel.disabled =
         !hasInput || !sourceReady || busyButtons.has(btnExtractExcel);
     optimizerPanel?.classList.toggle("hidden", activeMode === "report" || !sourceReady);
+    document.getElementById("migration-build")?.classList.toggle("hidden", !hasInput);
+    document.getElementById("migration-mapping")?.classList.toggle(
+      "hidden", !sourceReady || !migrationPairSupported || !currentDecisionSet.decisions.length,
+    );
     const reviewedArtifact = Boolean(currentRenderedArtifactId && currentArtifactCommandCount);
     if (btnPushCandidate && !busyButtons.has(btnPushCandidate))
       btnPushCandidate.disabled = !sourceReady || !reviewedArtifact;
@@ -748,8 +752,13 @@ let currentPlanItems = [];
       "#mode-download-form .export-hint",
     );
     if (exportHint) {
+      const pendingRequired = currentDecisionSet.decisions.filter(
+        (item) => item.mode === "REQUIRED" && item.review_state !== "CONFIRMED",
+      ).length;
       const hintCopy = sourceReady && migrationPairSupported
-        ? "Ready to build the migration plan."
+        ? pendingRequired
+          ? `${pendingRequired} required decisions pending. Build a partial plan or finish the mappings.`
+          : "Ready to build the migration plan."
         : sourceReady
           ? "This source and target pair is not supported for migration planning."
         : sourceFailed
@@ -1288,7 +1297,7 @@ let currentPlanItems = [];
       optionalPanel.classList.toggle("hidden", !(result.requirements.optional || []).length);
     }
     renderDecisionTable();
-    panel?.classList.remove("hidden");
+    panel?.classList.toggle("hidden", !sourceReady || selectedTargetVendor !== "palo_alto");
     updateMappingCompletion();
   }
 
@@ -1622,7 +1631,7 @@ let currentPlanItems = [];
     const body = document.createElement("tbody");
     for (const planItem of visible) {
       const row = document.createElement("tr");
-      const warnings = [].concat(planItem.warnings || [], planItem.render_blockers || []);
+      const warnings = [...new Set([...(planItem.warnings || []), ...(planItem.render_blockers || [])])];
       const values = [
         [planItem.source_vdom, planItem.source_name].filter(Boolean).join(" · "),
         planItem.source_kind,
@@ -1630,9 +1639,17 @@ let currentPlanItems = [];
       ];
       values.forEach((value, index) => { const cell = document.createElement("td"); cell.dataset.label = labels[index]; cell.textContent = value || "—"; row.append(cell); });
       const status = document.createElement("td"); status.dataset.label = labels[3];
-      const badge = document.createElement("span"); badge.className = `plan-status-badge status-${String(planItem.status || "unknown").toLowerCase()}`; badge.textContent = planItem.status || "UNKNOWN"; status.append(badge); row.append(status);
+      const badge = document.createElement("span"); badge.className = `plan-status-badge status-${String(planItem.status || "unknown").toLowerCase()}`; badge.textContent = String(planItem.status || "UNKNOWN").toLowerCase().replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase()); status.append(badge); row.append(status);
       const renderable = document.createElement("td"); renderable.dataset.label = labels[4]; renderable.textContent = planItem.renderable ? "Yes" : "No"; renderable.className = planItem.renderable ? "plan-renderable" : "plan-not-renderable"; row.append(renderable);
-      const issues = document.createElement("td"); issues.dataset.label = labels[5]; issues.textContent = warnings.length ? warnings.join(" · ") : "—"; row.append(issues);
+      const issues = document.createElement("td"); issues.dataset.label = labels[5];
+      if (warnings.length) {
+        const details = document.createElement("details"); details.className = "plan-issues";
+        const summary = document.createElement("summary"); summary.textContent = `${warnings.length} issue${warnings.length === 1 ? "" : "s"}`;
+        const list = document.createElement("ul");
+        warnings.forEach(warning => { const item = document.createElement("li"); item.textContent = warning; list.append(item); });
+        details.append(summary, list); issues.append(details);
+      } else issues.textContent = "—";
+      row.append(issues);
       body.append(row);
     }
     table.append(body);
@@ -1672,7 +1689,11 @@ let currentPlanItems = [];
         document.getElementById("migration-plan")?.classList.remove("hidden");
         const counts = artifact.counts || {};
         const summary = document.getElementById("migration-plan-summary");
-        if (summary) summary.textContent = `${artifact.plan_status === "READY" ? "Migration artifact ready." : artifact.plan_status === "PARTIAL" ? "Plan created. Partial commands are ready." : "Plan created. Target mappings required."} ${counts.SUPPORTED || 0} supported, ${counts.renderable || 0} renderable, ${counts.MANUAL_REVIEW || 0} manual review, ${counts.UNSUPPORTED || 0} unsupported, ${artifact.commands} commands. ${(artifact.blocking_reasons || []).join("; ")}`;
+        if (summary) {
+          const status = artifact.plan_status === "READY" ? "Migration artifact ready." : artifact.plan_status === "PARTIAL" ? "Partial commands are ready." : "Target mappings required.";
+          const blockers = new Set(artifact.blocking_reasons || []);
+          summary.textContent = `${status}\n${counts.SUPPORTED || 0} supported · ${counts.renderable || 0} renderable · ${counts.MANUAL_REVIEW || 0} manual review · ${counts.UNSUPPORTED || 0} unsupported · ${artifact.commands} commands${blockers.size ? `\n${blockers.size} blocking issue${blockers.size === 1 ? "" : "s"}. Review the results below.` : ""}`;
+        }
         const previewElement = document.getElementById("migration-command-preview");
         const reviewSummary = document.getElementById("migration-command-summary");
         if (artifact.commands) {
@@ -1691,12 +1712,14 @@ let currentPlanItems = [];
         syncWorkspace();
         btnDownloadBundle?.classList.toggle("hidden", artifact.commands === 0);
         btnDownloadSet?.classList.toggle("hidden", artifact.commands === 0);
+        document.getElementById("migration-export")?.classList.toggle("hidden", artifact.commands === 0);
         if (btnDownloadBundle) {
           btnDownloadBundle.disabled = artifact.commands === 0;
           const label = btnDownloadBundle.querySelector("span:last-child");
           if (label) label.textContent = "Download bundle";
         }
         if (btnDownloadSet) btnDownloadSet.disabled = artifact.commands === 0;
+        if (activeMode === "download") document.getElementById("migration-plan")?.scrollIntoView({ block: "start" });
         logToTerminal(`[PLAN] ${artifact.plan_status}: ${artifact.commands} commands ready.`, artifact.commands ? "term-success" : "term-error");
       } catch (err) {
         showError(err.message);

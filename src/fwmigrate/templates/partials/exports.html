@@ -32,67 +32,21 @@
       </details>
     </div>
     <p id="mapping-completion" aria-live="polite"></p>
-    <div id="migration-mapping-fields"></div>
+    <div id="migration-mapping-fields" role="region" aria-label="Migration decisions" tabindex="0"></div>
     <details id="optional-mappings" class="hidden"><summary>Show optional / unreferenced inventory</summary><ul id="optional-mapping-list"></ul></details>
   </section>
-  <section class="card hidden" id="migration-plan" aria-live="polite">
-    <div class="card-header"><div class="section-heading"><h2><span class="step-num">03</span>Migration plan</h2></div></div>
-    <div id="migration-plan-summary"></div>
-    <section aria-labelledby="migration-results-heading">
-      <h3 id="migration-results-heading">Review plan results</h3>
-      <label>Show results <select id="migration-plan-filter">
-        <option value="attention">Needs attention</option><option value="all">All</option><option value="supported">Supported</option>
-        <option value="manual_review">Manual review</option><option value="partial">Partial</option><option value="unsupported">Unsupported</option><option value="not_renderable">Not renderable</option>
-      </select></label>
-      <div id="migration-plan-items"></div>
-    </section>
-    <section aria-labelledby="migration-commands-heading">
-      <h3 id="migration-commands-heading">Review generated commands</h3>
-      <p id="migration-command-summary" aria-live="polite"></p>
-      <button type="button" id="migration-copy-commands" disabled>Copy commands</button>
-      <pre id="migration-command-preview" class="migration-command-preview" aria-label="Read-only PAN-OS command preview"></pre>
-    </section>
-  </section>
-  <section class="card output-card reveal" aria-labelledby="bundle-heading">
+  <section class="card output-card hidden" id="migration-build" aria-labelledby="bundle-heading">
     <div class="card-header">
       <div class="section-heading">
         <h2 id="bundle-heading">
-          <span class="step-num">04</span>Build migration plan
+          <span class="step-num">03</span>Build migration plan
         </h2>
-        <span class="format-badge">.ZIP</span>
       </div>
-      <p class="card-desc">
-        Review plan results and generated commands, then export the reviewed artifact.
-      </p>
+      <p class="card-desc">Build with the current decisions. Review any remaining gaps in the results.</p>
     </div>
-    <div class="bundle-features-grid">
-      <div class="feature-item">
-        <div class="feature-icon">{{ icon('code') }}</div>
-        <div class="feature-info">
-          <strong>Planned PAN-OS configuration</strong
-          ><span id="feature-card-pan-desc"
-            >Generated commands for the supported portion of the migration.</span
-          >
-        </div>
-        {{ icon('check', 'feature-check') }}
-      </div>
-      <div class="feature-item">
-        <div class="feature-icon">{{ icon('file') }}</div>
-        <div class="feature-info">
-          <strong>Migration notes & inventory</strong
-          ><span id="feature-card-audit-desc"
-            >Review migration warnings and a source Excel workbook.</span
-          >
-        </div>
-        {{ icon('check', 'feature-check') }}
-      </div>
-    </div>
-    <div class="export-footer">
+    <div class="build-actions">
       <span class="export-hint">{{ icon('info') }}Add a source to get started.</span>
-      <div class="export-steps">
-        <h3>Build migration plan</h3>
-        <p>Review mappings, confirm required decisions, then inspect the plan results and generated commands.</p>
-        <button
+      <button
         type="button"
         id="btn-generate-bundle"
         class="btn btn-primary"
@@ -100,17 +54,34 @@
       >
         {{ icon('activity') }}<span>Build migration plan</span>
       </button>
-      </div>
-      <div class="export-steps">
-        <h3>Export reviewed artifact</h3>
-        <p>Bundle contents: palo_alto_config.set, migration_report.json, migration_decisions.json, target_mapping.yaml, source_inventory.xlsx.</p>
+    </div>
+  </section>
+  <section class="card hidden" id="migration-plan" aria-live="polite">
+    <div class="card-header"><div class="section-heading"><h2><span class="step-num">04</span>Review migration plan</h2></div></div>
+    <div id="migration-plan-summary"></div>
+    <section aria-labelledby="migration-results-heading">
+      <h3 id="migration-results-heading">Plan results</h3>
+      <label>Show results <select id="migration-plan-filter">
+        <option value="attention">Needs attention</option><option value="all">All</option><option value="supported">Supported</option>
+        <option value="manual_review">Manual review</option><option value="partial">Partial</option><option value="unsupported">Unsupported</option><option value="not_renderable">Not renderable</option>
+      </select></label>
+      <div id="migration-plan-items"></div>
+    </section>
+    <section aria-labelledby="migration-commands-heading">
+      <h3 id="migration-commands-heading">Generated commands</h3>
+      <p id="migration-command-summary" aria-live="polite"></p>
+      <button type="button" id="migration-copy-commands" class="btn btn-secondary btn-sm" disabled>Copy commands</button>
+      <pre id="migration-command-preview" class="migration-command-preview" aria-label="Read-only PAN-OS command preview"></pre>
+    </section>
+    <div class="export-steps hidden" id="migration-export">
+      <h3>Export reviewed artifact</h3>
+      <p>Planned PAN-OS configuration and review files: palo_alto_config.set, migration_report.json, migration_decisions.json, target_mapping.yaml, source_inventory.xlsx.</p>
       <button type="button" id="btn-download-bundle" class="btn btn-primary hidden" disabled>
         {{ icon('download') }}<span>Download bundle</span>
       </button>
       <button type="button" id="btn-download-set" class="btn btn-secondary hidden" disabled>
         {{ icon('download') }}<span>Download .set</span>
       </button>
-      </div>
     </div>
   </section>
 </div>

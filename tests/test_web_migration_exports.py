@@ -208,6 +208,9 @@ def test_migration_workflow_uses_planning_terminology():
     assert 'id="decision-set-selected"' in html and 'id="decision-use-suggestion"' in html
     assert 'id="migration-plan-items"' in html and 'id="migration-plan-filter"' in html
     assert 'id="migration-command-preview"' in html and 'id="migration-copy-commands"' in html
+    assert html.index('id="migration-mapping"') < html.index('id="migration-build"') < html.index('id="migration-plan"')
+    assert 'class="card output-card hidden" id="migration-build"' in html
+    assert 'class="export-steps hidden" id="migration-export"' in html
     assert "Download .set" in html and "Download bundle" in html
     assert "Plan migration is under development." not in html
     assert "Configuration Report" in html

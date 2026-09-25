@@ -2,30 +2,62 @@
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)
 
-Vendor-native firewall configuration extraction, validation, preview, and Excel reporting for Python 3.10+.
+Vendor-native firewall configuration extraction, validation, reporting, live collection, and pair-specific migration planning for Python 3.10+.
 
 > **Project status**
 >
-> This branch focuses on **source extraction and reporting**.
+> Source extraction and reporting are implemented across multiple firewall vendors.
 >
-> FortiGate to Palo Alto migration planning is available for a supported subset of configuration. Other conversion pairs are not implemented.
+> FortiGate → Palo Alto PAN-OS migration planning is implemented for a supported subset of configuration, including reviewed target mappings, PAN-OS `set` command generation, migration artifacts, and optional candidate deployment.
+>
+> Other migration pairs are not implemented.
 
 Website: https://firewall-migration-tool.onrender.com/
 
 ## Overview
 
-Firewall Migration Tool analyzes firewall configuration sources while preserving vendor-specific source semantics.
+Firewall Migration Tool analyzes firewall configuration while preserving vendor-specific source semantics.
 
-The current source-reporting pipeline is:
+Source reporting:
 
 ```text
 Vendor Source
-→ Vendor Parser / Source Adapter
-→ Vendor Source Config
+→ Parser / Source Adapter
+→ VendorConfig
 → Relationships / Transforms
-→ Vendor DerivedViews
+→ DerivedViews
 → Validation
 → Web Preview / Excel
+```
+
+Live collection:
+
+```text
+Device / Manager
+→ Collector
+→ Sanitized Vendor Source
+→ Source Reporting
+```
+
+Migration planning:
+
+```text
+VendorConfig
+→ DerivedViews
+→ Pair-specific Requirements
+→ Engineer Decisions / Mappings
+→ Pair-specific MigrationPlan
+→ Validation
+→ Deterministic Target Renderer
+```
+
+Deployment:
+
+```text
+RenderedMigration
+→ Candidate Push
+→ Candidate Validation
+→ Explicit Commit
 ```
 
 The architecture prioritizes:
@@ -33,20 +65,19 @@ The architecture prioritizes:
 ```text
 correctness
 → source preservation
-→ clear semantics
+→ explicit semantics
 → traceability
+→ safety
 → maintainability
 ```
 
-Source configuration is not forced through a vendor-neutral firewall model for reporting.
+Source reporting does not force vendor configuration through a vendor-neutral firewall model.
 
-A missing source-model field means that the value was **not explicitly configured in the authoritative source**. Vendor defaults are not silently inserted into source models.
+A missing source-model field means that the value was **not explicitly configured in the authoritative source**. Vendor defaults are not silently inserted.
 
-Unsupported or partially understood configuration is preserved where practical rather than silently discarded.
+Unsupported or partially understood source configuration is preserved where practical rather than silently discarded.
 
 ## Current Capabilities
-
-The current branch supports:
 
 - Vendor-native firewall configuration extraction.
 - Source inventory and unsupported-source accounting.
@@ -56,9 +87,13 @@ The current branch supports:
 - Web-based source configuration preview.
 - Vendor-specific Excel reporting.
 - Secret sanitization for reportable source evidence.
-- Multiple source formats where supported by the vendor implementation.
-
-FortiGate to Palo Alto migration can generate PAN-OS `set` commands for supported items. The plan reports partial, manual-review, and unsupported items separately.
+- Live source collection for supported vendors.
+- Sanitized collection snapshots.
+- FortiGate → Palo Alto migration planning.
+- Explicit migration mapping and decision review.
+- PAN-OS `set` command generation.
+- Migration reports and downloadable migration bundles.
+- Optional PAN-OS candidate deployment and validation.
 
 ## Supported Source Vendors
 
@@ -66,9 +101,9 @@ FortiGate to Palo Alto migration can generate PAN-OS `set` commands for supporte
 |---|---|---|---|
 | Fortinet FortiGate | `fortigate` | `.conf`, `.cfg`, `.txt` | FortiGate CLI configuration |
 | Cisco ASA | `cisco_asa` | `.cfg`, `.txt`, `.conf` | ASA command-oriented configuration |
-| Cisco Firepower Threat Defense | `cisco_ftd` | `.cfg`, `.txt`, `.conf`, `.json` | FMC/FDM bundles and FTD CLI/text evidence |
+| Cisco Firepower Threat Defense | `cisco_ftd` | `.cfg`, `.txt`, `.conf`, `.json` | FMC/FDM bundles and FTD CLI/device evidence |
 | Juniper SRX / Junos | `juniper_srx` | `.set`, `.txt`, `.conf` | Junos configuration sources |
-| Check Point R80/R81 | `checkpoint` | `.json`, `.txt`, `.cfg` | Management export/API-style data and Gaia CLI sources |
+| Check Point R80/R81 | `checkpoint` | `.json`, `.txt`, `.cfg` | Management/API-style data and Gaia CLI sources |
 | Palo Alto Networks PAN-OS / Panorama | `palo_alto` | `.xml` | XML configuration only |
 
 ### Cisco FTD
@@ -83,33 +118,26 @@ FTD CLI / device evidence
 
 These inputs are not treated as equivalent.
 
-CLI-only extraction does not manufacture FMC/FDM-managed policy data that is not present in the authoritative input.
-
-Examples include:
-
-```text
-Access Control Policy rules
-managed NAT policy
-managed objects
-other FMC/FDM-only policy state
-```
+CLI-only extraction does not manufacture FMC/FDM-managed state that is absent from the authoritative input.
 
 ### PAN-OS
 
 PAN-OS source reporting currently accepts XML configuration.
 
-PAN-OS CLI `set` format is not currently supported.
+PAN-OS CLI `set` format is not currently supported as source input.
+
+PAN-OS `set` commands are used as migration output for the implemented FortiGate → Palo Alto migration pair.
 
 ### Check Point
 
-Check Point reporting keeps source scope information distinct where available, including:
+Check Point reporting preserves source scope where available, including:
 
 ```text
 Management API
 domain
 package
 layer
-gateway
+gateway / cluster
 Gaia / gateway CLI
 ```
 
@@ -117,12 +145,11 @@ Failed or incomplete collection evidence is not interpreted as an empty configur
 
 ## Installation
 
-Clone the repository and switch to the refactor branch:
+Clone the repository:
 
 ```bash
 git clone https://github.com/chaziyu/firewall-migration-tool.git
 cd firewall-migration-tool
-git switch codex/refactor
 ```
 
 Create a virtual environment:
@@ -190,70 +217,178 @@ Equivalent module invocation:
 python -m fwmigrate.main serve --port 5000
 ```
 
-The web application currently supports the source-reporting workflow:
+The source-reporting workflow is:
 
 ```text
 upload source configuration
 → select source vendor
 → parse and analyze
-→ review source preview and validation
+→ review preview and validation
 → export vendor-native Excel report
 ```
 
-For FortiGate input, the web application also supports migration planning, a downloadable command bundle, and optional candidate deployment.
+For FortiGate input, the web application additionally supports:
 
-Live collection for ASA, Juniper SRX, FMC, and Check Point uses the optional `collection` extra. SSH collection verifies device host keys against the operating system's known hosts; add the device key before connecting. FMC and Check Point HTTPS certificate verification is enabled by default. A successful collection downloads a secret-sanitized snapshot that can be uploaded later for preview and Excel export.
+```text
+analyze source
+→ plan migration
+→ review target mappings
+→ confirm decisions
+→ review migration plan
+→ generate PAN-OS commands
+→ download migration artifacts
+→ optionally push candidate configuration
+```
+
+## Live Collection
+
+Live collection is available for supported vendors including ASA, Juniper SRX, FMC, and Check Point.
+
+Install collection dependencies:
 
 ```bash
 python -m pip install -e ".[collection]"
 ```
 
-### Plan a FortiGate to Palo Alto Migration
+Collectors acquire vendor-native source data and record collection completeness.
 
-```bash
-fwmigrate migrate --input fortigate.conf --output output --format set
+Collection states are:
+
+```text
+SUCCESS
+PARTIAL
+FAILED
 ```
 
-Use `--zone-map mapping.yaml` to supply target VSYS, virtual-router, and interface mappings when needed. The command writes PAN-OS `set` commands and a migration report for the supported portion of the source configuration. Review the report and generated commands before deployment.
+Partial or failed collection is not interpreted as an empty configuration.
 
-SSH candidate deployment uses the optional dependency group:
+SSH collection verifies device host keys against the operating system's known-hosts configuration.
+
+FMC and Check Point HTTPS certificate verification is enabled by default.
+
+Successful collection can produce a secret-sanitized snapshot for later preview and Excel reporting.
+
+Collection snapshots are acquisition envelopes, not normalized firewall models.
+
+## FortiGate → Palo Alto Migration
+
+The currently implemented migration pair is:
+
+```text
+FortiGate
+→ Palo Alto PAN-OS
+```
+
+Plan a migration from the CLI:
+
+```bash
+fwmigrate migrate \
+  --input fortigate.conf \
+  --output output \
+  --format set
+```
+
+Use `--zone-map mapping.yaml` when target VSYS, virtual-router, interface, or zone mappings are required.
+
+Migration planning is directional and pair-specific:
+
+```text
+FortiGate source
+→ FGConfig / DerivedViews
+→ Mapping Requirements
+→ Engineer Decisions
+→ PANMigrationPlan
+→ Plan Validation
+→ PAN-OS Set Renderer
+```
+
+A `MigrationPlan` is not a complete target firewall configuration.
+
+The migration report keeps supported, partial, manual-review, blocked, and unsupported items visible rather than silently dropping them.
+
+Target-specific information that cannot be derived safely requires an explicit mapping or decision.
+
+Suggestions are not treated as confirmed engineer decisions.
+
+Unimplemented migration pairs fail closed.
+
+## Migration Artifacts
+
+Rendering is deterministic for a given reviewed migration plan.
+
+The following surfaces must use the same rendered migration artifact:
+
+```text
+command preview
+.set download
+migration bundle
+deployment
+```
+
+The migration report records artifact integrity information including:
+
+```text
+command count
+command SHA-256
+```
+
+CLI deployment verifies that the supplied `.set` file matches its adjacent `migration_report.json` before sending commands to the target firewall.
+
+This provides the intended flow:
+
+```text
+one reviewed plan
+→ one RenderedMigration
+→ one command digest
+→ preview / download / bundle / deployment
+```
+
+## Candidate Deployment
+
+PAN-OS SSH deployment uses the optional deployment dependency:
 
 ```bash
 python -m pip install -e ".[deployment]"
 ```
 
-## Conversion Status
+Deploy a generated `.set` file:
 
-The implemented conversion pair is FortiGate to Palo Alto. It plans supported source items and renders PAN-OS `set` commands. It does not produce a complete target configuration; partial, manual-review, and unsupported items remain in the migration report.
-
-Conversion uses a directional, pair-specific pipeline:
-
-```text
-VendorSourceConfig
-→ VendorDerivedViews
-→ pair-specific migration planner
-→ pair-specific MigrationPlan
-→ plan validation
-→ target command renderer
+```bash
+fwmigrate deploy \
+  output/palo_alto_config.set \
+  --host <firewall-host> \
+  --username <username>
 ```
 
-The conversion boundary is located at:
+The password is prompted securely.
 
-[`src/fwmigrate/conversion/`](src/fwmigrate/conversion/)
+Default deployment behavior is:
 
-See:
+```text
+verify migration artifact
+→ connect
+→ push candidate commands
+→ validate candidate
+→ stop
+```
 
-[`src/fwmigrate/conversion/README.md`](src/fwmigrate/conversion/README.md)
+Deployment does **not** automatically commit.
 
-No other conversion pair is currently implemented.
+Commit is an explicit separate operation:
 
-The source-reporting architecture does not use a vendor-neutral migration IR.
+```bash
+fwmigrate commit \
+  --host <firewall-host> \
+  --username <username>
+```
+
+Review generated commands and migration findings before deployment.
 
 ## Architecture
 
-Each vendor owns its source semantics and reporting pipeline.
+Each vendor owns its source semantics.
 
-Shared infrastructure handles orchestration and presentation contracts without requiring vendors to expose a common firewall data model.
+Shared infrastructure handles orchestration and contracts without requiring vendors to expose a common firewall object model.
 
 ```text
 Tokenizer / Scanner
@@ -263,32 +398,41 @@ Parser / Source Adapter
     vendor structure and explicit source data
 
 Command Evaluator
-    source command semantics
+    vendor command semantics where applicable
 
-Vendor Source Config
-    explicit vendor source state
+VendorConfig
+    authoritative explicit source state
 
 Relationships
     references, memberships, bindings and topology
 
 Transforms
-    vendor-specific semantic normalization and genuine derived values
+    vendor-specific semantics and genuine derivation
 
 DerivedViews
-    read-only derived representation
+    read-only derived state
 
 Validation
     detect and report only
 
 Web Preview / Excel
     presentation only
+
+Collection
+    vendor-native acquisition only
+
+Conversion
+    pair-specific migration planning and rendering
+
+Deployment
+    reviewed rendered-artifact execution
 ```
 
 Validation and derived processing must not silently mutate or repair source configuration.
 
 Shared source-reporting code treats vendor analysis results as opaque.
 
-It does not require every vendor to expose a common representation for:
+It does not require a common semantic representation for:
 
 ```text
 addresses
@@ -301,13 +445,15 @@ routes
 VPNs
 ```
 
-For detailed architecture and development rules, see:
+There is no vendor-neutral migration IR.
+
+Detailed architecture and development rules are defined in:
 
 [`AGENTS.md`](AGENTS.md)
 
-## Source Value Semantics
+## Source Semantics
 
-The extraction pipeline keeps these concepts distinct:
+The source pipeline keeps these concepts distinct:
 
 ```text
 explicit source value
@@ -330,9 +476,16 @@ any
 vendor default
 ```
 
-Only explicitly configured source values belong in authoritative source state.
+Effective values are exposed only when vendor-specific logic actually calculates them.
 
-Effective values should only be exposed when vendor-specific logic actually calculates them.
+When behavior is unclear:
+
+```text
+preserve source
+→ classify as unknown / unsupported / source-only
+→ report the limitation
+→ do not guess
+```
 
 ## Source Preservation
 
@@ -345,26 +498,19 @@ raw_extra
 unsupported commands
 source attributes
 source metadata
-source inventory
-additional settings
+Source Inventory
+Additional Settings
 source appendix sheets
 collection evidence
 ```
 
-When behavior is unclear, the preferred handling is:
-
-```text
-preserve source
-→ classify as unknown / unsupported / source-only
-→ report the limitation
-→ do not guess
-```
+Excel and migration output must not drive source-model design.
 
 ## Validation
 
 Validation detects and reports problems.
 
-Validation does not silently repair source configuration.
+It does not silently repair source configuration.
 
 Examples include:
 
@@ -381,15 +527,7 @@ collection incompleteness
 derived transformation issues
 ```
 
-Validation output should distinguish between:
-
-```text
-source configuration issue
-unsupported extraction
-unknown interpretation
-derived-view limitation
-collection/input limitation
-```
+Validation should distinguish source problems from extraction, interpretation, derivation, or collection limitations.
 
 ## Excel Reporting
 
@@ -397,7 +535,7 @@ Excel is a presentation layer.
 
 Each vendor owns its Excel schema and exporter.
 
-Vendor Excel reports may contain:
+Reports may contain:
 
 ```text
 explicit source fields
@@ -409,9 +547,7 @@ additional settings
 source appendix information
 ```
 
-Excel reporting should not drive source-model design.
-
-The reporting layer should not introduce:
+Excel reporting should not introduce:
 
 ```text
 vendor-neutral IR fields
@@ -421,20 +557,21 @@ redundant normalized duplicates
 unsupported inferred values
 ```
 
-## Security and Sensitive Configuration
+## Security
 
 Firewall configurations may contain sensitive authentication material.
 
-The reporting pipeline must not expose actual secrets such as:
+The application must not expose actual:
 
 ```text
 passwords
+password hashes
 pre-shared keys
 private keys
 API keys
 tokens
-authentication credentials
-secret strings
+credentials
+shared secrets
 sensitive SNMP community values
 ```
 
@@ -444,33 +581,43 @@ Safe metadata may be reported instead:
 Password Configured = Yes
 PSK Configured = Yes
 Credential Present = Yes
+Private Key Present = Yes
 ```
 
-Secret handling applies to:
+Secret handling applies across:
 
 ```text
 source extraction
+raw / unsupported evidence
 source inventory
-unsupported/raw evidence
-validation messages
+live collection
+collection snapshots
+validation
 web preview
 Excel
+migration decisions
+migration reports
+rendered artifacts
+deployment responses and errors
 logs
 ```
 
-Configuration files and generated reports should still be treated as sensitive operational data.
+Configuration files, generated reports, and migration artifacts should still be treated as sensitive operational data.
 
 ## Project Structure
 
-Key areas of the current architecture:
+Key areas:
 
 ```text
 src/fwmigrate/
+├── collection/
+│   └── Vendor-native live source acquisition
+│
 ├── extraction/
 │   └── Shared extraction evidence and accounting utilities
 │
 ├── source_reporting/
-│   └── Shared source-report dispatch and presentation utilities
+│   └── Source-report orchestration and presentation contracts
 │
 ├── vendors/
 │   └── Vendor-owned extraction and reporting implementations
@@ -478,8 +625,12 @@ src/fwmigrate/
 ├── conversion/
 │   └── Pair-specific migration planning and rendering
 │
+├── deployment/
+│   └── Reviewed target artifact deployment
+│
 ├── web.py
-│   └── Shared web host and source-report dispatch
+├── web_live.py
+│   └── Web application orchestration
 │
 └── main.py
     └── CLI entry point
@@ -500,35 +651,30 @@ preview serialization
 Excel export
 ```
 
+Pair-specific target semantics belong in the corresponding conversion package, not in source models.
+
 ## Development
 
-The `codex/refactor` branch is focused on **source architecture stabilization**.
+Before changing behavior, inspect the current code, models, symbols, callers, tests, and pipeline.
 
-The intended source-reporting direction is:
+Prefer the smallest coherent change.
 
-```text
-source
-→ VendorConfig
-→ relationships / transforms
-→ VendorDerivedViews
-→ validation
-→ preview / Excel
-```
-
-Development should preserve vendor-native source semantics and avoid recreating the previous shared migration architecture.
-
-Do not reintroduce for source reporting:
+Do not reintroduce:
 
 ```text
 vendor-neutral source IR
 common firewall object hierarchy
-generic migration schema used for Excel
-cross-vendor normalized policy model
+generic cross-vendor migration schema
 target-vendor concepts inside source models
-shared semantic Excel exporter
+shared semantic Excel models
+generic migration mapping framework
 ```
 
-The `conversion/` boundary remains separate from source extraction and reporting.
+Source reporting must remain independent of conversion.
+
+Migration must remain directional and pair-specific.
+
+Validation must detect and report rather than silently repair source state.
 
 ## Testing
 
@@ -550,49 +696,85 @@ Run the test suite:
 python -m pytest -q
 ```
 
-The source-reporting path should be tested end-to-end:
+Source-reporting path:
 
 ```text
 source
-→ parser / source adapter
+→ parser / adapter
 → VendorConfig
 → DerivedViews
 → validation
 → web preview / Excel
 ```
 
+Collection path:
+
+```text
+collector
+→ sanitized source
+→ source-reporting pipeline
+```
+
+Migration path:
+
+```text
+FortiGate
+→ FGConfig / DerivedViews
+→ requirements
+→ decisions
+→ MigrationPlan
+→ validation
+→ RenderedMigration
+```
+
+Deployment path:
+
+```text
+RenderedMigration
+→ candidate push
+→ candidate validation
+→ explicit commit
+```
+
 Important regression areas include:
 
 ```text
 nested configuration
-contexts
-domains
-VSYS
-logical systems
-unknown fields
-unsupported fields
+contexts / domains / VDOM / VSYS / logical systems
+unknown and unsupported fields
 reference resolution
 interface topology
 policy ordering
 NAT ordering
 source provenance
 collection completeness
-Excel compatibility
-secret redaction
+snapshot sanitization
+decision scope
+mapping confirmation
+source-digest mismatch
+partial migration
+render blockers
+command count / SHA-256 consistency
+preview / download / bundle consistency
+deployment artifact verification
+explicit commit separation
+credential and secret redaction
 web preview
+Excel compatibility
 Excel download
 ```
 
-Cross-vendor conversion tests should remain separate from source extraction tests.
+Source-reporting, collection, conversion, and deployment tests should remain separated according to their architectural boundaries.
 
 ## Documentation
 
 Repository architecture and implementation guidance:
 
 - [`AGENTS.md`](AGENTS.md) — architecture rules and development constraints.
-- [`src/fwmigrate/conversion/README.md`](src/fwmigrate/conversion/README.md) — pair-specific conversion architecture.
+- [`src/fwmigrate/conversion/README.md`](src/fwmigrate/conversion/README.md) — pair-specific migration architecture.
+- `documentation/official-cli-references-selected version/` — selected official vendor configuration references.
 
-Official vendor documentation should be used as the primary semantic reference when implementing or validating vendor behavior.
+Official vendor documentation is the primary semantic reference when implementing or validating vendor behavior.
 
 When implementation behavior is uncertain:
 

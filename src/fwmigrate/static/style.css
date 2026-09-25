@@ -1977,15 +1977,17 @@ select {
     flex-direction: row;
     margin-top: 22px;
     gap: 6px;
+    overflow-x: auto;
   }
   .tab-btn {
     width: auto;
-    flex: 1;
+    flex: none;
     justify-content: center;
     gap: 7px;
     min-height: 39px;
     padding: 8px;
     font-size: 10px;
+    white-space: nowrap;
   }
   .tab-btn > .icon {
     width: 15px;
@@ -2222,6 +2224,7 @@ select {
 .mapping-more-actions[open] .mapping-toolbar-row { margin-top: .75rem; }
 #migration-mapping-fields { max-height: 38rem; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .mapping-table { width: 100%; min-width: 1100px; border-collapse: collapse; font-size: 12px; }
+.migration-plan-table { min-width: 900px; }
 .mapping-table th, .mapping-table td { padding: .7rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
 .mapping-table th { position: sticky; top: 0; z-index: 1; color: var(--text-heading); background: var(--canvas); white-space: nowrap; }
 .mapping-table input:not([type="checkbox"]) { width: 100%; min-width: 8rem; }
@@ -2238,15 +2241,23 @@ select {
 .affected-details summary { cursor: pointer; }
 .affected-details ul { margin: .35rem 0 0; padding-left: 1.1rem; }
 #migration-plan-items { max-height: 38rem; overflow: auto; }
+.plan-issues summary { color: var(--color-primary); cursor: pointer; }
+.plan-issues ul { margin: .5rem 0 0; padding-left: 1.1rem; overflow-wrap: anywhere; }
 .plan-renderable { color: #17643e; font-weight: 600; }
 .plan-not-renderable { color: #8a3b15; font-weight: 600; }
 .export-steps { display: grid; gap: .5rem; align-content: start; }
+.export-steps .btn { justify-self: start; }
 .export-steps h3, .export-steps p { margin: 0; }
 .export-steps p { max-width: 50rem; color: var(--muted-color, #667085); }
+.build-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+#migration-plan > section { margin-top: 18px; }
+#migration-plan-summary { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--canvas); white-space: pre-line; }
+#migration-plan-filter { min-height: 39px; padding: 8px 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); }
+#migration-plan .export-steps { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 #live-artifact-summary { padding: .75rem; border: 1px solid var(--border-color, #ddd); border-radius: .5rem; }
 .migration-command-preview { max-height: 28rem; overflow: auto; padding: 1rem; white-space: pre; background: var(--surface-muted, #f5f6f8); border: 1px solid var(--border-color, #ddd); border-radius: .5rem; }
 @media (max-width: 720px) {
-  #migration-mapping-fields { max-height: none; overflow: visible; }
+  #migration-mapping-fields { max-height: min(60vh, 30rem); overflow: auto; }
   .decision-table, .decision-table tbody, .decision-table tr, .decision-table td { display: block; min-width: 0; width: 100%; }
   .migration-plan-table, .migration-plan-table tbody, .migration-plan-table tr, .migration-plan-table td { display: block; min-width: 0; width: 100%; }
   .decision-table thead { display: none; }
