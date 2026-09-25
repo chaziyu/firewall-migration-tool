@@ -1,17 +1,20 @@
 <div id="mode-download-form" role="tabpanel" aria-labelledby="tab-download">
   <section class="card hidden" id="migration-mapping" aria-labelledby="mapping-heading">
-    <div class="card-header"><div class="section-heading"><h2 id="mapping-heading"><span class="step-num">02</span>Target mappings</h2></div>
-      <p class="card-desc">Map each FortiGate scope and interface explicitly to PAN-OS.</p></div>
+    <div class="card-header"><div class="section-heading"><h2 id="mapping-heading"><span class="step-num">02</span>Migration review</h2></div>
+      <p class="card-desc">Review backend suggestions and confirm the FortiGate mappings required by PAN-OS.</p></div>
     <div class="mapping-toolbar">
       <label>Show <select id="mapping-filter"><option value="all">All decisions</option><option value="zones">Zones</option><option value="interfaces">Interfaces</option><option value="route-nat">Route/NAT impact</option></select></label>
       <label>VDOM <select id="mapping-vdom-filter"><option value="all">All VDOMs</option></select></label>
       <label><input type="checkbox" id="decision-pending-only"> Show pending only</label>
+      <button type="button" id="decision-select-visible">Select all visible</button>
+      <button type="button" id="decision-clear-selection">Clear selection</button>
+      <span id="decision-selected-count" aria-live="polite">Selected: 0</span>
       <button type="button" id="decision-confirm-selected">Confirm selected</button>
       <button type="button" id="decision-confirm-suggestions">Confirm all suggestions</button>
       <input type="text" id="decision-bulk-value" placeholder="Final value for selected" aria-label="Final value for selected decisions">
       <button type="button" id="decision-set-selected">Set selected value</button>
-      <button type="button" id="decision-use-source-name">Use source name</button>
-      <button type="button" id="decision-clear-selected">Clear selected</button>
+      <button type="button" id="decision-use-suggestion">Use suggestion</button>
+      <button type="button" id="decision-clear-selected">Clear selected values</button>
       <button type="button" id="mapping-template">Download mapping template</button>
       <label>Import YAML <input type="file" id="mapping-import" accept=".yaml,.yml,text/yaml"></label>
       <label>Import decisions <input type="file" id="decision-import" accept=".json,application/json"></label>
@@ -24,20 +27,31 @@
   <section class="card hidden" id="migration-plan" aria-live="polite">
     <div class="card-header"><div class="section-heading"><h2><span class="step-num">03</span>Migration plan</h2></div></div>
     <div id="migration-plan-summary"></div>
-    <h3>Command preview</h3>
-    <p id="migration-command-summary" aria-live="polite"></p>
-    <pre id="migration-command-preview" class="migration-command-preview" aria-label="Read-only PAN-OS command preview"></pre>
+    <section aria-labelledby="migration-results-heading">
+      <h3 id="migration-results-heading">Review plan results</h3>
+      <label>Show results <select id="migration-plan-filter">
+        <option value="attention">Needs attention</option><option value="all">All</option><option value="supported">Supported</option>
+        <option value="manual_review">Manual review</option><option value="partial">Partial</option><option value="unsupported">Unsupported</option><option value="not_renderable">Not renderable</option>
+      </select></label>
+      <div id="migration-plan-items"></div>
+    </section>
+    <section aria-labelledby="migration-commands-heading">
+      <h3 id="migration-commands-heading">Review generated commands</h3>
+      <p id="migration-command-summary" aria-live="polite"></p>
+      <button type="button" id="migration-copy-commands" disabled>Copy commands</button>
+      <pre id="migration-command-preview" class="migration-command-preview" aria-label="Read-only PAN-OS command preview"></pre>
+    </section>
   </section>
   <section class="card output-card reveal" aria-labelledby="bundle-heading">
     <div class="card-header">
       <div class="section-heading">
         <h2 id="bundle-heading">
-          <span class="step-num">04</span>Download migration bundle
+          <span class="step-num">04</span>Build migration plan
         </h2>
         <span class="format-badge">.ZIP</span>
       </div>
       <p class="card-desc">
-        Everything you need to review and take the next step.
+        Review plan results and generated commands, then export the reviewed artifact.
       </p>
     </div>
     <div class="bundle-features-grid">
@@ -63,9 +77,11 @@
       </div>
     </div>
     <div class="export-footer">
-      <span class="export-hint"
-        >{{ icon('info') }}Add a source to get started.</span
-      ><button
+      <span class="export-hint">{{ icon('info') }}Add a source to get started.</span>
+      <div class="export-steps">
+        <h3>Build migration plan</h3>
+        <p>Review mappings, confirm required decisions, then inspect the plan results and generated commands.</p>
+        <button
         type="button"
         id="btn-generate-bundle"
         class="btn btn-primary"
@@ -73,12 +89,17 @@
       >
         {{ icon('activity') }}<span>Build migration plan</span>
       </button>
+      </div>
+      <div class="export-steps">
+        <h3>Export reviewed artifact</h3>
+        <p>Bundle contents: palo_alto_config.set, migration_report.json, migration_decisions.json, target_mapping.yaml, source_inventory.xlsx.</p>
       <button type="button" id="btn-download-bundle" class="btn btn-primary hidden" disabled>
         {{ icon('download') }}<span>Download bundle</span>
       </button>
       <button type="button" id="btn-download-set" class="btn btn-secondary hidden" disabled>
         {{ icon('download') }}<span>Download .set</span>
       </button>
+      </div>
     </div>
   </section>
 </div>

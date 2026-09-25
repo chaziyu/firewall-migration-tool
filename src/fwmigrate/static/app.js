@@ -4,6 +4,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
 let currentFile = null;
 let currentRenderedArtifactId = null;
+let currentArtifactCommandCount = 0;
+let currentArtifactSha256 = null;
+let migrationPlanRevision = 0;
+let currentPlanItems = [];
   let currentDecisionSet = { decisions: [] };
   let currentDecisionDocument = null;
   let currentPreviewId = null;
@@ -723,19 +727,23 @@ let currentRenderedArtifactId = null;
   }
 
   function syncWorkspace() {
-    const hasFile = Boolean(currentFile);
-    const hasInput = hasFile || Boolean(currentPreviewId);
+    const hasInput = Boolean(currentFile || currentPreviewId);
     const migrationPairSupported = selectedSourceVendor === "fortigate" && selectedTargetVendor === "palo_alto";
     tabReport?.classList.toggle("hidden", !vendorCapabilities[selectedSourceVendor]?.web_report);
     if (btnGenerateBundle)
       btnGenerateBundle.disabled =
-        !hasFile || !sourceReady || !migrationPairSupported || busyButtons.has(btnGenerateBundle);
+        !currentPreviewId || !sourceReady || !migrationPairSupported || busyButtons.has(btnGenerateBundle);
     if (btnExtractExcel)
       btnExtractExcel.disabled =
         !hasInput || !sourceReady || busyButtons.has(btnExtractExcel);
     optimizerPanel?.classList.toggle("hidden", activeMode === "report" || !sourceReady);
+    const reviewedArtifact = Boolean(currentRenderedArtifactId && currentArtifactCommandCount);
     if (btnPushCandidate && !busyButtons.has(btnPushCandidate))
-      btnPushCandidate.disabled = !hasFile || !sourceReady;
+      btnPushCandidate.disabled = !sourceReady || !reviewedArtifact;
+    const liveArtifactSummary = document.getElementById("live-artifact-summary");
+    if (liveArtifactSummary) liveArtifactSummary.textContent = reviewedArtifact
+      ? `Current reviewed artifact · ${currentArtifactCommandCount} commands · SHA-256 ${currentArtifactSha256 || "unavailable"}`
+      : "No current reviewed artifact. Build and review a migration plan first.";
     const exportHint = document.querySelector(
       "#mode-download-form .export-hint",
     );
@@ -795,9 +803,10 @@ let currentRenderedArtifactId = null;
     sourceReady = false;
     sourceFailed = false;
     currentPreviewId = null;
-    currentRenderedArtifactId = null;
     currentDecisionSet = { decisions: [] };
     currentDecisionDocument = null;
+    invalidateMigrationPlan();
+    currentPlanItems = [];
     document.getElementById("migration-mapping")?.classList.add("hidden");
     document.getElementById("migration-plan")?.classList.add("hidden");
     btnDownloadBundle?.classList.add("hidden");
@@ -877,11 +886,9 @@ let currentRenderedArtifactId = null;
     document.getElementById("ingest-file-container")?.classList.toggle("hidden", mode === "collect");
     liveContainer?.classList.toggle("hidden", mode !== "collect");
     if (mode === "collect") renderCollectionFields();
-    const underDevelopment = ["download", "live"].includes(mode);
+    const underDevelopment = mode === "live";
     developmentBanner?.classList.toggle("hidden", !underDevelopment);
-    if (underDevelopment) developmentBanner.textContent = mode === "download"
-      ? "Plan migration is under development."
-      : "Live migration is under development.";
+    if (underDevelopment) developmentBanner.textContent = "Live migration is under development.";
     document.getElementById("workspace-grid")?.classList.toggle("hidden", underDevelopment);
     reportContainer?.classList.toggle("hidden", mode !== "report" || (!currentReport && !currentPreviewId));
     if (targetVendorGroup)
@@ -1181,29 +1188,8 @@ let currentRenderedArtifactId = null;
       const data = await readJson(resp, "Could not read this configuration");
       if (requestRevision !== sourceRevision) return;
       currentPreviewId = data.preview_id || null;
-      if (selectedSourceVendor === "fortigate" && currentPreviewId) {
-        const response = await fetch("/api/migration/requirements", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ preview_id: currentPreviewId }),
-        });
-        const result = await readJson(response, "Could not load target mapping requirements");
-        if (requestRevision !== sourceRevision) return;
-        currentDecisionSet = result.decisions;
-        currentDecisionDocument = result.decision_document;
-        const container = document.getElementById("migration-mapping-fields");
-        const panel = document.getElementById("migration-mapping");
-        if (container && panel) {
-          const optionalPanel = document.getElementById("optional-mappings");
-          const optionalList = document.getElementById("optional-mapping-list");
-          if (optionalPanel && optionalList) {
-            optionalList.replaceChildren(...(result.requirements.optional || []).map(item => { const li = document.createElement("li"); li.textContent = `${item.source_vdom} · ${item.kind} · ${item.source_name}`; return li; }));
-            optionalPanel.classList.toggle("hidden", !(result.requirements.optional || []).length);
-          }
-          renderDecisionTable();
-          panel.classList.remove("hidden");
-          updateMappingCompletion();
-        }
-      }
+      await loadMigrationReview(currentPreviewId);
+      if (requestRevision !== sourceRevision) return;
       const stats = data.stats || data.summary || {};
       const objects = stats.objects || stats;
       const severityCounts = stats.validation?.severity_counts || {};
@@ -1249,7 +1235,10 @@ let currentRenderedArtifactId = null;
   // 8. Mode A: Export Target Migration Bundle (.zip)
   // =========================================================================
   function invalidateMigrationPlan() {
+    migrationPlanRevision += 1;
     currentRenderedArtifactId = null;
+    currentArtifactCommandCount = 0;
+    currentArtifactSha256 = null;
     candidatePushed = false;
     candidateValidated = false;
     btnDownloadBundle?.classList.add("hidden");
@@ -1259,6 +1248,57 @@ let currentRenderedArtifactId = null;
     document.getElementById("migration-plan")?.classList.add("hidden");
     if (btnValidateCandidate) btnValidateCandidate.disabled = true;
     if (btnCommitCandidate) btnCommitCandidate.disabled = true;
+    const commandPreview = document.getElementById("migration-command-preview");
+    const commandSummary = document.getElementById("migration-command-summary");
+    const copyCommands = document.getElementById("migration-copy-commands");
+    if (commandPreview) commandPreview.textContent = "";
+    if (commandSummary) commandSummary.textContent = "";
+    if (copyCommands) copyCommands.disabled = true;
+    syncWorkspace();
+  }
+
+  async function loadMigrationReview(previewId = currentPreviewId, previousDocument = null) {
+    const panel = document.getElementById("migration-mapping");
+    if (selectedSourceVendor !== "fortigate" || !previewId) {
+      currentDecisionSet = { decisions: [] };
+      currentDecisionDocument = null;
+      panel?.classList.add("hidden");
+      return;
+    }
+    const payload = { preview_id: previewId };
+    if (previousDocument) payload.decision_document = previousDocument;
+    const response = await fetch("/api/migration/requirements", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    const result = await readJson(response, "Could not load target mapping requirements");
+    if (previewId !== currentPreviewId) return;
+    currentDecisionSet = result.decisions;
+    currentDecisionDocument = result.decision_document;
+    const optionalPanel = document.getElementById("optional-mappings");
+    const optionalList = document.getElementById("optional-mapping-list");
+    if (optionalPanel && optionalList) {
+      optionalList.replaceChildren(...(result.requirements.optional || []).map(item => {
+        const li = document.createElement("li");
+        li.textContent = `${item.source_vdom} · ${item.kind} · ${item.source_name}`;
+        return li;
+      }));
+      optionalPanel.classList.toggle("hidden", !(result.requirements.optional || []).length);
+    }
+    renderDecisionTable();
+    panel?.classList.remove("hidden");
+    updateMappingCompletion();
+  }
+
+  function currentDecisionPayload() {
+    return { ...(currentDecisionDocument || {}), decisions: currentDecisionSet.decisions };
+  }
+
+  function decisionIsResolved(decision) {
+    return decision.mode === "AUTO" || decision.review_state === "CONFIRMED";
+  }
+
+  function decisionDisplayValue(decision) {
+    return decision.value ?? (decision.mode === "SUGGESTED" && decision.review_state === "PENDING" ? decision.suggested_value : "") ?? "";
   }
 
   function switchIngestMode(mode) {
@@ -1285,14 +1325,16 @@ let currentRenderedArtifactId = null;
     return { vendor: selectedSourceVendor, connection };
   }
 
-  function applyCollectionPreview(data) {
+  async function applyCollectionPreview(data) {
     currentPreviewId = data.preview_id;
-    sourceReady = true;
+    sourceReady = false;
     currentReport = data.preview?.sections ? data.preview : null;
     reportPage = 1;
     activeValidationGroup = "";
     if (currentReport) renderReport();
-    currentRenderedArtifactId = null;
+    invalidateMigrationPlan();
+    await loadMigrationReview(currentPreviewId);
+    sourceReady = true;
     const summary = data.preview?.summary || {};
     for (const [element, value] of [[statTotalRules, summary.rules], [statTotalObjects, summary.objects], [statErrors, summary.errors], [statWarnings, summary.warnings]]) {
       if (element) element.textContent = typeof value === "number" ? value : 0;
@@ -1310,7 +1352,7 @@ let currentRenderedArtifactId = null;
       selectedSourceVendor = data.vendor_id;
       sourceVendorSelect.value = data.vendor_id;
       currentFile = null;
-      applyCollectionPreview(data);
+      await applyCollectionPreview(data);
       setPreviewStatus("Snapshot imported. Preview and Excel are ready.");
     } catch (error) { setPreviewStatus(error.message, "error"); }
   }
@@ -1323,7 +1365,7 @@ let currentRenderedArtifactId = null;
       const data = await readJson(response, "Collection failed");
       if (path.endsWith("/test")) status.textContent = "✓ Connected";
       else {
-        applyCollectionPreview(data);
+        await applyCollectionPreview(data);
         status.textContent = `Configuration collected (${data.collection.status}). ${data.collection.warnings?.length || 0} warnings. Snapshot download ready.`;
         const filename = `firewall_snapshot_${selectedSourceVendor}_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
         await downloadBlob(new Blob([JSON.stringify(data.snapshot)], { type: "application/json" }), filename);
@@ -1337,7 +1379,7 @@ let currentRenderedArtifactId = null;
     const container = document.getElementById("migration-mapping-fields");
     if (!container) return;
     const table = document.createElement("table"); table.className = "mapping-table decision-table";
-    const labels = ["Select", "Source", "Decision", "Suggested", "Final Value", "State", "Affected", "Reason"];
+    const labels = ["Select", "Source", "Decision", "Mode", "Suggested", "Final Value", "Review", "Affected", "Reason"];
     const thead = document.createElement("thead"), head = document.createElement("tr");
     labels.forEach(label => { const th = document.createElement("th"); th.textContent = label; head.append(th); });
     thead.append(head); table.append(thead);
@@ -1345,7 +1387,7 @@ let currentRenderedArtifactId = null;
     for (const decision of currentDecisionSet.decisions) {
       const row = document.createElement("tr");
       row.dataset.key = decision.key; row.dataset.kind = decision.source_kind;
-      row.dataset.vdom = decision.source_vdom; row.dataset.field = decision.target_field; row.dataset.state = decision.mode === "AUTO" ? "CONFIRMED" : decision.review_state;
+      row.dataset.vdom = decision.source_vdom; row.dataset.field = decision.target_field; row.dataset.state = decisionIsResolved(decision) ? "CONFIRMED" : decision.review_state;
       row.dataset.mode = decision.mode;
       row.dataset.affectedBy = Object.keys(decision.affected_by || {}).join(",");
       const mode = decision.mode, unsupported = mode === "UNSUPPORTED";
@@ -1354,31 +1396,54 @@ let currentRenderedArtifactId = null;
         mode === "UNSUPPORTED" ? "decision-unsupported" : "decision-resolved");
       const selectCell = document.createElement("td"); selectCell.dataset.label = labels[0];
       const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.className = "decision-select";
+      checkbox.disabled = unsupported;
       checkbox.setAttribute("aria-label", `Select ${decision.source_name} ${decision.target_field} in ${decision.source_vdom}`);
+      checkbox.addEventListener("change", updateSelectedDecisionCount);
       selectCell.append(checkbox); row.append(selectCell);
       const addText = (value, label) => { const cell = document.createElement("td"); cell.dataset.label = label; cell.textContent = value || "—"; row.append(cell); return cell; };
       addText(`${decision.source_vdom} · ${decision.source_kind} · ${decision.source_name}`, labels[1]);
       addText(decision.target_field, labels[2]);
-      addText(decision.suggested_value, labels[3]);
-      const finalCell = document.createElement("td"); finalCell.dataset.label = labels[4];
+      const modeCell = document.createElement("td"); modeCell.dataset.label = labels[3];
+      const modeBadge = document.createElement("span"); modeBadge.className = `decision-mode-badge mode-${decision.mode.toLowerCase()}`; modeBadge.textContent = decision.mode;
+      modeCell.append(modeBadge); row.append(modeCell);
+      addText(decision.suggested_value, labels[4]);
+      const finalCell = document.createElement("td"); finalCell.dataset.label = labels[5];
       const input = document.createElement("input"); input.type = "text"; input.className = "decision-value";
-      input.value = decision.value || "";
+      input.value = decisionDisplayValue(decision);
       input.disabled = unsupported; input.setAttribute("aria-label", `${decision.target_field} for ${decision.source_name} in ${decision.source_vdom}`);
-      const stateCell = document.createElement("td"); stateCell.dataset.label = labels[5];
-      stateCell.textContent = decision.mode === "AUTO" ? "AUTO · CONFIRMED" : decision.review_state;
+      const stateCell = document.createElement("td"); stateCell.dataset.label = labels[6];
+      const reviewBadge = document.createElement("span");
+      reviewBadge.className = `decision-review-badge review-${decisionIsResolved(decision) ? "confirmed" : "pending"}`;
+      reviewBadge.textContent = decisionIsResolved(decision) ? "CONFIRMED" : "PENDING";
+      stateCell.append(reviewBadge);
       input.addEventListener("input", () => {
         decision.value = input.value.trim() || null;
         if (decision.mode === "AUTO") decision.mode = "REQUIRED";
         decision.review_state = "PENDING";
         row.dataset.mode = decision.mode; row.dataset.state = decision.review_state;
-        stateCell.textContent = "PENDING";
+        reviewBadge.className = "decision-review-badge review-pending";
+        reviewBadge.textContent = "PENDING";
         row.className = "decision-required";
         invalidateMigrationPlan(); updateMappingCompletion();
       });
       finalCell.append(input); row.append(finalCell, stateCell);
-      const affected = Object.entries(decision.affected_by || {}).map(([name, count]) => `${name.replaceAll("_", " ")} ${count}`).join(" · ");
-      addText(`${decision.affected_count || 0}${affected ? ` · ${affected}` : ""}`, labels[6]);
-      addText(decision.reason, labels[7]);
+      const affectedCell = document.createElement("td"); affectedCell.dataset.label = labels[7];
+      const affectedCount = document.createElement("strong"); affectedCount.textContent = String(decision.affected_count || 0);
+      affectedCell.append(affectedCount);
+      const affectedBy = Object.entries(decision.affected_by || {}).filter(([, count]) => count > 0);
+      if (affectedBy.length) {
+        const details = document.createElement("details"); details.className = "affected-details";
+        const summary = document.createElement("summary"); summary.textContent = "Show affected objects";
+        const list = document.createElement("ul");
+        for (const [name, count] of affectedBy) {
+          const item = document.createElement("li");
+          item.textContent = `${name.replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase())}: ${count}`;
+          list.append(item);
+        }
+        details.append(summary, list); affectedCell.append(details);
+      }
+      row.append(affectedCell);
+      addText(decision.reason, labels[8]);
       body.append(row);
     }
     table.append(body); container.replaceChildren(table);
@@ -1389,6 +1454,7 @@ let currentRenderedArtifactId = null;
       vdomFilter.value = selectedVdom;
     }
     applyDecisionFilters();
+    updateSelectedDecisionCount();
   }
 
   function applyDecisionFilters() {
@@ -1401,6 +1467,13 @@ let currentRenderedArtifactId = null;
         (filter === "zones" && row.dataset.kind !== "zone") || (filter === "interfaces" && row.dataset.kind !== "interface") ||
         (filter === "route-nat" && !routeNat);
     });
+    updateSelectedDecisionCount();
+  }
+
+  function updateSelectedDecisionCount() {
+    const selectedCount = document.querySelectorAll(".decision-select:checked").length;
+    const status = document.getElementById("decision-selected-count");
+    if (status) status.textContent = `Selected: ${selectedCount}`;
   }
 
   function updateMappingCompletion() {
@@ -1418,6 +1491,14 @@ let currentRenderedArtifactId = null;
     const keys = new Set([...document.querySelectorAll(".decision-select:checked")].map(input => input.closest("tr").dataset.key));
     return currentDecisionSet.decisions.filter(item => keys.has(item.key) && item.mode !== "UNSUPPORTED");
   }
+  document.getElementById("decision-select-visible")?.addEventListener("click", () => {
+    document.querySelectorAll(".decision-table tbody tr:not([hidden]) .decision-select:not(:disabled)").forEach(input => { input.checked = true; });
+    updateSelectedDecisionCount();
+  });
+  document.getElementById("decision-clear-selection")?.addEventListener("click", () => {
+    document.querySelectorAll(".decision-select:checked").forEach(input => { input.checked = false; });
+    updateSelectedDecisionCount();
+  });
   function saveDecisionValues(decisions) {
     for (const decision of decisions) {
       decision.mode = decision.mode === "AUTO" ? "REQUIRED" : decision.mode;
@@ -1429,7 +1510,7 @@ let currentRenderedArtifactId = null;
     const selected = selectedDecisions();
     for (const decision of selected) {
       const input = [...document.querySelectorAll(".decision-value")].find(node => node.closest("tr").dataset.key === decision.key);
-      decision.value = input?.value.trim() || decision.suggested_value || null;
+      decision.value = input ? input.value.trim() || null : decision.suggested_value || null;
     }
     saveDecisionValues(selected.filter(item => item.value));
   });
@@ -1439,13 +1520,23 @@ let currentRenderedArtifactId = null;
   });
   document.getElementById("decision-set-selected")?.addEventListener("click", () => {
     const value = document.getElementById("decision-bulk-value")?.value.trim(); if (!value) return;
-    const selected = selectedDecisions(); selected.forEach(item => { item.value = value; }); saveDecisionValues(selected);
+    const selected = selectedDecisions();
+    if (new Set(selected.map(item => item.target_field)).size > 1) {
+      showToast("error", "Mixed target fields", "Select rows with one target field before setting a shared value.");
+      return;
+    }
+    selected.forEach(item => { item.value = value; }); saveDecisionValues(selected);
   });
-  document.getElementById("decision-use-source-name")?.addEventListener("click", () => {
-    const selected = selectedDecisions(); selected.forEach(item => { item.value = item.source_name; }); saveDecisionValues(selected);
+  document.getElementById("decision-use-suggestion")?.addEventListener("click", () => {
+    const selected = selectedDecisions().filter(item => item.suggested_value);
+    selected.forEach(item => { item.value = item.suggested_value; }); saveDecisionValues(selected);
   });
   document.getElementById("decision-clear-selected")?.addEventListener("click", () => {
-    for (const decision of selectedDecisions()) { decision.value = null; decision.review_state = "PENDING"; }
+    for (const decision of selectedDecisions()) {
+      decision.value = null;
+      if (decision.mode === "AUTO") decision.mode = "REQUIRED";
+      decision.review_state = "PENDING";
+    }
     invalidateMigrationPlan(); renderDecisionTable(); updateMappingCompletion();
   });
 
@@ -1467,73 +1558,134 @@ let currentRenderedArtifactId = null;
     try {
       const response = await fetch("/api/migration/mapping/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ yaml: await file.text() }) });
       const imported = await readJson(response, "Could not import mapping YAML");
+      let matched = 0, ignored = 0;
       for (const [vdom, values] of Object.entries(imported.mapping.vdoms || {})) for (const [field, value] of Object.entries(values)) {
-        upsertConfirmedDecision(vdom, "vdom", vdom, field, value);
+        if (value != null && upsertConfirmedDecision(vdom, "vdom", vdom, field, value)) matched++; else ignored++;
       }
       for (const [vdom, entries] of Object.entries(imported.mapping.interfaces || {})) for (const [name, values] of Object.entries(entries)) for (const [field, value] of Object.entries(values)) {
         const kinds = field === "target_interface" ? ["interface"] : ["interface", "zone"].filter(kind => currentDecisionSet.decisions.some(item => item.source_vdom === vdom && item.source_kind === kind && item.source_name === name && item.target_field === field));
-        for (const kind of kinds.length ? kinds : ["interface"]) upsertConfirmedDecision(vdom, kind, name, field, value);
+        if (value == null) { ignored++; continue; }
+        const updated = kinds.filter(kind => upsertConfirmedDecision(vdom, kind, name, field, value));
+        if (updated.length) matched++; else ignored++;
       }
-      currentDecisionDocument.decisions = currentDecisionSet.decisions;
+      currentDecisionDocument = currentDecisionPayload();
       invalidateMigrationPlan(); renderDecisionTable(); updateMappingCompletion();
+      showToast("info", "YAML mapping imported", `${matched} known decisions updated; ${ignored} unmatched or empty entries ignored.`);
     } catch (error) { showError(error.message); }
     event.target.value = "";
   });
 
   function upsertConfirmedDecision(vdom, kind, name, field, value) {
-    let decision = currentDecisionSet.decisions.find(item => item.source_vdom === vdom && item.source_kind === kind && item.source_name === name && item.target_field === field);
-    if (!decision) {
-      decision = { key: JSON.stringify([vdom, kind, name, field]), source_vdom: vdom, source_kind: kind, source_name: name, target_field: field, suggested_value: null, value: null, mode: "REQUIRED", review_state: "PENDING", reason: "Imported explicit mapping", affected_count: 0, affected_by: {} };
-      currentDecisionSet.decisions.push(decision);
-    }
+    const decision = currentDecisionSet.decisions.find(item => item.source_vdom === vdom && item.source_kind === kind && item.source_name === name && item.target_field === field);
+    if (!decision || decision.mode === "UNSUPPORTED") return false;
     decision.value = value; decision.review_state = "CONFIRMED";
+    return true;
   }
 
   document.getElementById("decision-import")?.addEventListener("change", async event => {
     const file = event.target.files?.[0]; if (!file || !currentPreviewId) return;
     try {
-      const response = await fetch("/api/migration/decisions/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preview_id: currentPreviewId, document: JSON.parse(await file.text()) }) });
-      const imported = await readJson(response, "Could not import migration decisions");
-      currentDecisionSet = imported.decisions; currentDecisionDocument = imported.decision_document;
-      invalidateMigrationPlan(); renderDecisionTable(); updateMappingCompletion();
+      const document = JSON.parse(await file.text());
+      invalidateMigrationPlan();
+      await loadMigrationReview(currentPreviewId, document);
     } catch (error) { showError(error.message); }
     event.target.value = "";
   });
   document.getElementById("decision-export")?.addEventListener("click", async () => {
     try {
-      const response = await fetch("/api/migration/decisions/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preview_id: currentPreviewId, decision_document: { ...currentDecisionDocument, decisions: currentDecisionSet.decisions } }) });
+      const response = await fetch("/api/migration/decisions/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload() }) });
       const result = await readJson(response, "Could not export migration decisions");
       currentDecisionDocument = result.document;
       await downloadBlob(new Blob([JSON.stringify(result.document, null, 2)], { type: "application/json" }), "migration_decisions.json");
     } catch (error) { showError(error.message); }
   });
 
+  function renderMigrationPlanItems(items) {
+    const container = document.getElementById("migration-plan-items");
+    if (!container) return;
+    const filter = document.getElementById("migration-plan-filter")?.value || "attention";
+    const attention = item => item.status !== "SUPPORTED" || !item.renderable || item.warnings?.length || item.render_blockers?.length;
+    const visible = items.filter(item => {
+      if (filter === "all") return true;
+      if (filter === "attention") return attention(item);
+      if (filter === "not_renderable") return !item.renderable;
+      return String(item.status || "").toLowerCase() === filter;
+    });
+    const table = document.createElement("table"); table.className = "mapping-table migration-plan-table";
+    const labels = ["Source", "Type", "Target", "Status", "Renderable", "Warnings / blockers"];
+    const head = document.createElement("tr");
+    labels.forEach(label => { const cell = document.createElement("th"); cell.textContent = label; head.append(cell); });
+    const thead = document.createElement("thead"); thead.append(head); table.append(thead);
+    const body = document.createElement("tbody");
+    for (const planItem of visible) {
+      const row = document.createElement("tr");
+      const warnings = [].concat(planItem.warnings || [], planItem.render_blockers || []);
+      const values = [
+        [planItem.source_vdom, planItem.source_name].filter(Boolean).join(" · "),
+        planItem.source_kind,
+        [planItem.target_vsys, planItem.target_name].filter(Boolean).join(" · "),
+      ];
+      values.forEach((value, index) => { const cell = document.createElement("td"); cell.dataset.label = labels[index]; cell.textContent = value || "—"; row.append(cell); });
+      const status = document.createElement("td"); status.dataset.label = labels[3];
+      const badge = document.createElement("span"); badge.className = `plan-status-badge status-${String(planItem.status || "unknown").toLowerCase()}`; badge.textContent = planItem.status || "UNKNOWN"; status.append(badge); row.append(status);
+      const renderable = document.createElement("td"); renderable.dataset.label = labels[4]; renderable.textContent = planItem.renderable ? "Yes" : "No"; renderable.className = planItem.renderable ? "plan-renderable" : "plan-not-renderable"; row.append(renderable);
+      const issues = document.createElement("td"); issues.dataset.label = labels[5]; issues.textContent = warnings.length ? warnings.join(" · ") : "—"; row.append(issues);
+      body.append(row);
+    }
+    table.append(body);
+    const empty = document.createElement("p"); empty.textContent = visible.length ? "" : "No plan items match this filter.";
+    container.replaceChildren(table, empty);
+  }
+
+  document.getElementById("migration-plan-filter")?.addEventListener("change", () => {
+    renderMigrationPlanItems(currentPlanItems);
+  });
+  document.getElementById("migration-copy-commands")?.addEventListener("click", async () => {
+    const text = document.getElementById("migration-command-preview")?.textContent || "";
+    if (!text || !navigator.clipboard?.writeText) return;
+    try { await navigator.clipboard.writeText(text); showToast("success", "Copied", "Migration commands copied."); }
+    catch { showToast("error", "Could not copy", "Select the command text and copy it using your keyboard."); }
+  });
+
   if (btnGenerateBundle) {
     btnGenerateBundle.addEventListener("click", async () => {
-      if (!currentFile || !currentPreviewId) return;
+      if (!currentPreviewId || !sourceReady) return;
+      invalidateMigrationPlan();
+      const requestRevision = migrationPlanRevision;
       setBusy(btnGenerateBundle, true);
       hideError();
       try {
-        const resp = await fetch("/api/migrate", {
+      const resp = await fetch("/api/migrate", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ preview_id: currentPreviewId, source_vendor: selectedSourceVendor, target_vendor: selectedTargetVendor, decision_document: { ...currentDecisionDocument, decisions: currentDecisionSet.decisions } }),
+          body: JSON.stringify({ preview_id: currentPreviewId, source_vendor: selectedSourceVendor, target_vendor: selectedTargetVendor, decision_document: currentDecisionPayload() }),
         });
         const artifact = await readJson(resp, "Migration planning failed");
+        if (requestRevision !== migrationPlanRevision) return;
         currentRenderedArtifactId = artifact.artifact_id;
+        currentPlanItems = artifact.report?.items || [];
+        const planFilter = document.getElementById("migration-plan-filter");
+        planFilter.value = currentPlanItems.some(item => item.status !== "SUPPORTED" || !item.renderable || item.warnings?.length || item.render_blockers?.length) ? "attention" : "all";
+        renderMigrationPlanItems(currentPlanItems);
         document.getElementById("migration-plan")?.classList.remove("hidden");
         const counts = artifact.counts || {};
         const summary = document.getElementById("migration-plan-summary");
-        if (summary) summary.textContent = `${artifact.plan_status === "READY" ? "Migration artifact ready." : artifact.plan_status === "PARTIAL" ? "Plan created. Partial commands are ready." : "Plan created. Target mappings required."} ${counts.SUPPORTED || 0} supported, ${counts.renderable || 0} renderable, ${counts.MANUAL_REVIEW || 0} manual review, ${counts.UNSUPPORTED || 0} unsupported, ${artifact.commands} commands. ${artifact.blocking_reasons.join("; ")}`;
+        if (summary) summary.textContent = `${artifact.plan_status === "READY" ? "Migration artifact ready." : artifact.plan_status === "PARTIAL" ? "Plan created. Partial commands are ready." : "Plan created. Target mappings required."} ${counts.SUPPORTED || 0} supported, ${counts.renderable || 0} renderable, ${counts.MANUAL_REVIEW || 0} manual review, ${counts.UNSUPPORTED || 0} unsupported, ${artifact.commands} commands. ${(artifact.blocking_reasons || []).join("; ")}`;
         const previewElement = document.getElementById("migration-command-preview");
         const reviewSummary = document.getElementById("migration-command-summary");
         if (artifact.commands) {
           const preview = await readJson(await fetch("/api/migration/command-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ artifact_id: currentRenderedArtifactId }) }), "Could not load command preview");
+          if (requestRevision !== migrationPlanRevision) return;
+          currentArtifactCommandCount = preview.command_count;
+          currentArtifactSha256 = preview.command_sha256;
           if (previewElement) previewElement.textContent = preview.command_text;
-          if (reviewSummary) reviewSummary.textContent = `Pending decisions ${preview.review_summary.pending} · Manual review ${preview.review_summary.manual} · Unsupported ${preview.review_summary.unsupported} · ${preview.command_count} commands · SHA-256 ${preview.command_sha256}`;
+          if (reviewSummary) reviewSummary.textContent = `Reviewed artifact · ${preview.command_count} commands · SHA-256 ${preview.command_sha256}. Pending decisions ${preview.review_summary.pending} · Manual review ${preview.review_summary.manual} · Unsupported ${preview.review_summary.unsupported}.`;
+          const copyCommands = document.getElementById("migration-copy-commands");
+          if (copyCommands) copyCommands.disabled = false;
         } else {
           if (previewElement) previewElement.textContent = "No renderable commands. Complete required decisions to build a command preview.";
           if (reviewSummary) reviewSummary.textContent = `Pending decisions ${currentDecisionSet.decisions.filter(item => item.review_state === "PENDING").length} · Manual review ${counts.MANUAL_REVIEW || 0} · Unsupported ${counts.UNSUPPORTED || 0}`;
         }
+        syncWorkspace();
         btnDownloadBundle?.classList.toggle("hidden", artifact.commands === 0);
         btnDownloadSet?.classList.toggle("hidden", artifact.commands === 0);
         if (btnDownloadBundle) {
@@ -1687,7 +1839,7 @@ let currentRenderedArtifactId = null;
   }
 
   btnPushCandidate?.addEventListener("click", async () => {
-    if (!currentFile || !sourceReady) return;
+    if (!sourceReady || !currentRenderedArtifactId || !currentArtifactCommandCount) return;
     btnPushCandidate.disabled = true;
     try {
       if (!currentRenderedArtifactId) throw new Error("Generate a migration plan first.");
@@ -1706,7 +1858,7 @@ let currentRenderedArtifactId = null;
       logToTerminal(`[ERROR] Candidate push failed: ${err.message}`, "term-error");
       showError(err.message);
     } finally {
-      btnPushCandidate.disabled = !sourceReady;
+      syncWorkspace();
     }
   });
 

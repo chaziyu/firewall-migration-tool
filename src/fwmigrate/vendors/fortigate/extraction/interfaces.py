@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Protocol
 
 from ..model.interface import (
@@ -7,12 +8,11 @@ from ..model.interface import (
     FGInterfaceSecondaryIP,
 )
 from ..nodes import (
-    ConfigNode,
+    EditNode,
 )
 
 from .common import (
-    evaluate_edit,
-    get_child_config,
+    evaluate_edit_sequence,
     iter_section_edits,
     source_model_kwargs,
 )
@@ -33,36 +33,34 @@ def extract_interfaces(
 
     section_path = "system interface"
 
-    for source in iter_section_edits(
-        tree,
-        section_path,
-    ):
-        evaluation = evaluate_edit(
+    grouped: dict[tuple[str, str], list[EditNode]] = {}
+    for source in iter_section_edits(tree, section_path):
+        grouped.setdefault((source.vdom, source.edit.name), []).append(source.edit)
+
+    for (vdom, name), edits in grouped.items():
+        evaluation = evaluate_edit_sequence(
             section_path,
-            source.edit,
+            edits,
         )
 
         attributes = source_model_kwargs(
             evaluation,
             model_type=FGInterface,
-            name=source.edit.name,
-            vdom=source.vdom,
+            name=name,
+            vdom=vdom,
             field_map={
                 "member": "members",
             },
         )
 
-        secondary_config = get_child_config(
-            source.edit,
-            "secondaryip",
-        )
-
         attributes["secondary_ips"] = (
             _extract_secondary_ips(
-                secondary_config,
+                child_edit
+                for edit in edits
+                for child in edit.children
+                if child.name == "secondaryip"
+                for child_edit in child.edits
             )
-            if secondary_config is not None
-            else []
         )
 
         config.interfaces.append(
@@ -71,16 +69,19 @@ def extract_interfaces(
 
 
 def _extract_secondary_ips(
-    section: ConfigNode,
+    edits: Iterable[EditNode],
 ) -> list[FGInterfaceSecondaryIP]:
     result: list[FGInterfaceSecondaryIP] = []
 
     section_path = "system interface secondaryip"
+    grouped: dict[str, list[EditNode]] = {}
+    for edit in edits:
+        grouped.setdefault(edit.name, []).append(edit)
 
-    for edit in section.edits:
-        evaluation = evaluate_edit(
+    for name, matching_edits in grouped.items():
+        evaluation = evaluate_edit_sequence(
             section_path,
-            edit,
+            matching_edits,
         )
 
         attributes = source_model_kwargs(
@@ -89,11 +90,11 @@ def _extract_secondary_ips(
         )
 
         try:
-            attributes["id"] = int(edit.name)
+            attributes["id"] = int(name)
         except ValueError:
             attributes["id"] = None
             attributes["raw_extra"]["unparsed_id"] = (
-                edit.name
+                name
             )
 
         result.append(

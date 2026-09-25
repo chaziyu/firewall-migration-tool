@@ -26,6 +26,52 @@ end
 '''
 
 class InterfaceTopologyTest(unittest.TestCase):
+    def test_repeated_interface_edits_evaluate_as_one_source_object(self):
+        extracted = extract_fortigate_config(
+            parse_fortigate_config('''config system interface
+    edit "INFUAT-BIBDUAT"
+        set type tunnel
+        set snmp-index 34
+        set interface "wan1"
+        config secondaryip
+            edit 1
+                set ip 192.0.2.1 255.255.255.0
+                set ha-priority 20
+            next
+        end
+    next
+    edit "INFUAT-BIBDUAT"
+        set snmp-index 11
+        config secondaryip
+            edit 1
+                set ha-priority 30
+            next
+        end
+    next
+end
+'''),
+            config=ExtractionConfig(),
+        )
+
+        self.assertEqual(len(extracted.config.interfaces), 1)
+        interface = extracted.config.interfaces[0]
+        self.assertEqual(interface.name, "INFUAT-BIBDUAT")
+        self.assertEqual(interface.type, "tunnel")
+        self.assertEqual(interface.interface, "wan1")
+        self.assertEqual(interface.raw_extra["snmp-index"], 11)
+        self.assertEqual(len(interface.secondary_ips), 1)
+        self.assertEqual(interface.secondary_ips[0].ip, "192.0.2.1 255.255.255.0")
+        self.assertEqual(interface.secondary_ips[0].ha_priority, 30)
+
+        validation = validate_config(
+            extracted.config,
+            derived=build_derived_views(extracted.config),
+        )
+        self.assertFalse(any(
+            issue.domain == "interface" and "Multiple explicit objects" in issue.message
+            for issue in validation.issues
+        ))
+
     def test_standalone_logical_interfaces_do_not_report_missing_parents(self):
         config = FGConfig(
             interfaces=[

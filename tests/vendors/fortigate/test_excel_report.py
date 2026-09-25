@@ -256,6 +256,28 @@ end
         self.assertNotIn("webproxy", review_text)
         self.assertIn("missing-custom-profile", review_text)
 
+    def test_repeated_interface_edit_exports_one_extracted_interface(self):
+        workbook = self._workbook('''config system interface
+    edit "INFUAT-BIBDUAT"
+        set type tunnel
+        set snmp-index 34
+        set interface "wan1"
+    next
+    edit "INFUAT-BIBDUAT"
+        set snmp-index 11
+    next
+end
+''')
+
+        headers, rows = self._rows(workbook["Interfaces"])
+        interfaces = [row for row in rows if str(row[headers.index("Name")]).endswith("INFUAT-BIBDUAT")]
+        self.assertEqual(len(interfaces), 1)
+        self.assertNotIn("Multiple explicit objects", str(interfaces[0][headers.index("Review Reasons")]))
+
+        _, review_rows = self._rows(workbook["Review Required"])
+        interface_reviews = [row for row in review_rows if "INFUAT-BIBDUAT" in str(row)]
+        self.assertFalse(any("Multiple explicit objects" in str(row) for row in interface_reviews))
+
     def test_additional_settings_are_stable_across_repeated_exports(self):
         source = _SAMPLE_CONFIG + r'''
 config firewall policy
