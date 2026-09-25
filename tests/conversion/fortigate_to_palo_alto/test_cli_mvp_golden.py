@@ -17,7 +17,11 @@ def test_fortigate_mvp_pipeline_matches_exact_set_golden():
     plan = FortiGateToPaloAltoPlanner().plan(analysis.extracted.config, analysis.derived, options)
     validation = validate_plan(plan)
 
-    assert not validation.has_errors, [issue.message for issue in validation.issues]
+    assert any(
+        issue.code == "missing_nat_zone" and issue.source.source_name == "web-vip"
+        for issue in validation.issues
+    )
+    assert ("nat_rule", "vsys1", "web-vip") not in validation.renderable_item_keys
     commands = PANSetRenderer().render(plan, validation).commands
     expected = tuple((FIXTURES / "palo_alto_mvp_expected.set").read_text().splitlines())
     assert commands == expected

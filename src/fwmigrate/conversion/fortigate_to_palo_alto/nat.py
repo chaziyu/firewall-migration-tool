@@ -21,12 +21,26 @@ def plan_nat(source: Any, derived: Any, options: Any):
             warnings.append("NAT translation is not deterministic")
         if item.egress_interfaces and len(item.egress_interfaces) != 1:
             warnings.append("NAT has multiple possible egress interfaces")
+        if policy is None:
+            warnings.append("source NAT policy could not be resolved")
+        elif len(policy.service) == 0:
+            warnings.append("source NAT policy has no explicit service match")
+        elif len(policy.service) > 1:
+            warnings.append("source NAT policy has multiple services; service-group semantics are not verified")
+        if policy is not None:
+            for field, names in (("source", policy.srcintf), ("destination", item.egress_interfaces)):
+                if not names or len(_policy_zones(policy, names, options)) != len(names):
+                    warnings.append(f"NAT {field} zone mapping is incomplete")
+            if len(policy.srcaddr) == 0 or len(policy.dstaddr) == 0:
+                warnings.append("source NAT policy is missing explicit address match")
+        if item.egress_interfaces and (egress_mapping is None or not getattr(egress_mapping, "target_interface", None)):
+            warnings.append("missing mapped target interface for NAT egress")
         source_translation_type = None
         translated_addresses = ()
         source_interface_address = False
         if translated and item.translation_type == "ip_pool":
             source_translation_type, translated_addresses = "dynamic-ip-and-port", (translated,)
-        elif not warnings and item.translation_type == "interface":
+        elif item.translation_type == "interface":
             source_translation_type, source_interface_address = "dynamic-ip-and-port", True
         if not source_translation_type:
             warnings.append("unsafe source NAT was not rendered")
@@ -41,7 +55,7 @@ def plan_nat(source: Any, derived: Any, options: Any):
             to_zones=_policy_zones(policy, item.egress_interfaces, options),
             source_addresses=tuple(policy.srcaddr if policy else ()),
             destination_addresses=tuple(policy.dstaddr if policy else ()),
-            service=(policy.service[0] if policy and policy.service else None),
+            service=(policy.service[0] if policy and len(policy.service) == 1 else None),
             to_interface=getattr(egress_mapping, "target_interface", None),
         ))
     for vip in getattr(source, "vips", ()):
@@ -52,13 +66,17 @@ def plan_nat(source: Any, derived: Any, options: Any):
             warnings.append("VIP requires one external and one mapped address")
         if vip.realservers or vip.ldb_method or vip.service or getattr(vip, "type", None) not in (None, "static-nat"):
             warnings.append("VIP type or load-balancing/service semantics are unsupported")
+        if getattr(vip, "portforward", None) not in (None, "disable", "no", "0") or any(
+            getattr(vip, field, None) for field in ("protocol", "extport", "mappedport")
+        ):
+            warnings.append("VIP port-forwarding semantics are unsupported")
         result.append(PlannedNATRule(
             source_vdom=vip.vdom, source_kind="vip", source_object_type="nat_rule", source_name=vip.name,
             target_vsys=getattr(getattr(options, "vdoms", {}).get(vip.vdom), "vsys", None), target_name=vip.name,
             status=PANMigrationStatus.SUPPORTED if not warnings else PANMigrationStatus.MANUAL_REVIEW,
             warnings=tuple(warnings), destination_translated_address=(mapped if mapped and not warnings else None),
             destination_addresses=((ext,) if ext else ()),
-            service=(vip.service[0] if vip.service else None),
+            service=None,
         ))
     return tuple(result)
 
