@@ -73,16 +73,10 @@ class PANSetRenderer:
         commands.extend(_serialize(path[1:]) for _, paths in items for path in paths)
         return commands
 
-    def render_files(self, plan: PANMigrationPlan, output: str | Path) -> RenderedMigration:
-        validation = validate_plan(plan)
-        rendered = self.render(plan, validation)
-        self.write_files(rendered, output)
-        return rendered
-
     def write_files(self, rendered: RenderedMigration, output: str | Path) -> None:
         output = Path(output)
         output.mkdir(parents=True, exist_ok=True)
-        (output / "palo_alto_config.set").write_text("\n".join(rendered.commands) + "\n", encoding="utf-8")
+        (output / "palo_alto_config.set").write_text("\n".join(rendered.commands), encoding="utf-8")
         (output / "migration_report.json").write_text(json.dumps(rendered.report, indent=2), encoding="utf-8")
 
 def _serialize(path):
@@ -109,24 +103,38 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
         if item.status is PANMigrationStatus.SUPPORTED else PANRenderDisposition.BLOCK)
     disposition_counts = {status.value: sum(disposition(item) is status
                                              for item in items) for status in PANRenderDisposition}
-    renderable = sum(disposition(item) is not PANRenderDisposition.BLOCK and _key(item) in validation.renderable_item_keys
-                     for item in items) if validation else 0
-    return {"summary": {"counts": counts, "renderable": renderable, "render_dispositions": disposition_counts,
+    command_renderable = sum(disposition(item) is PANRenderDisposition.CREATE and
+                              (validation is None or _key(item) in validation.renderable_item_keys)
+                              for item in items)
+    satisfied = sum(disposition(item) is PANRenderDisposition.REUSE or
+                    disposition(item) is PANRenderDisposition.CREATE and
+                    (validation is None or _key(item) in validation.renderable_item_keys)
+                    for item in items)
+    return {"summary": {"counts": counts, "renderable": command_renderable,
+                        "render_dispositions": disposition_counts, "satisfied": satisfied,
+                        "command_renderable": command_renderable,
                         "commands": len(commands), "command_sha256": digest},
             "counts": counts, "command_sha256": digest,
             "commands": len(commands), "render_dispositions": disposition_counts,
+            "satisfied": satisfied, "command_renderable": command_renderable,
             "issue_summary": list(issue_counts.values()),
-            "items": [{"source_vdom": item.source_vdom, "source_kind": item.source_kind, "source_name": item.source_name,
+            "items": [{"item_key": item_key(item), "source_vdom": item.source_vdom, "source_kind": item.source_kind, "source_name": item.source_name,
                         "source_policy_id": item.source_policy_id, "source_object_type": item.source_object_type,
                         "target_vsys": item.target_vsys, "target_name": item.target_name,
                         "status": item.status.value, "warnings": list(item.warnings),
                         "decision_keys": list(decision_keys.get(item_key(item), ())),
                         "render_disposition": disposition(item).value,
-                        "renderable": (disposition(item) is not PANRenderDisposition.BLOCK
+                        "satisfied": (disposition(item) is PANRenderDisposition.REUSE or
+                                      disposition(item) is PANRenderDisposition.CREATE and item.status is PANMigrationStatus.SUPPORTED
+                                      and (validation is None or _key(item) in validation.renderable_item_keys)),
+                        "command_renderable": (disposition(item) is PANRenderDisposition.CREATE
+                                               and item.status is PANMigrationStatus.SUPPORTED
+                                               and (validation is None or _key(item) in validation.renderable_item_keys)),
+                        "renderable": (disposition(item) is PANRenderDisposition.CREATE
                                        and item.status is PANMigrationStatus.SUPPORTED
                                        and (validation is None or _key(item) in validation.renderable_item_keys)),
                         "render_blockers": [*item.warnings, *render_blockers.get(item_key(item), ()), *(issue.code for issue in (validation.issues if validation else ()) if issue.source.source_name == item.source_name and issue.source.source_vdom == item.source_vdom)],
-                        "rendered": disposition(item) is PANRenderDisposition.CREATE and item.status is PANMigrationStatus.SUPPORTED and (validation is None or _key(item) in validation.renderable_item_keys),
+                        "rendered": bool((item_commands or {}).get(_key(item))),
                         "commands": list((item_commands or {}).get(_key(item), ())) } for item in items]}
 
 

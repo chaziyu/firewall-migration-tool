@@ -47,8 +47,10 @@ from fwmigrate.conversion.fortigate_to_palo_alto.target_intent import apply_targ
 from fwmigrate.conversion.fortigate_to_palo_alto.target_object_reuse import (
     classify_target_object_reuse,
 )
+from fwmigrate.conversion.fortigate_to_palo_alto.artifact_status import classify_artifact_status
+from fwmigrate.conversion.fortigate_to_palo_alto.plan_dependencies import build_plan_dependency_index, item_key
 from fwmigrate.conversion.fortigate_to_palo_alto.target_plan_validation import (
-    assess_target_plan, decision_keys_for_item, item_key, validate_target_plan,
+    assess_target_plan, validate_target_plan,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.support_guidance import build_support_guidance
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
@@ -856,15 +858,16 @@ def create_app(test_config=None):
                 analysis.extracted.config, analysis.derived, options=options
             )
             target_object_reuse = classify_target_object_reuse(plan, target, target_device)
-            target_plan_findings = validate_target_plan(plan, target_object_reuse, target_findings, decision_set)
-            dispositions, render_blockers = assess_target_plan(plan, target_object_reuse, target_findings, decision_set)
+            dependencies = build_plan_dependency_index(plan, decision_set)
+            target_plan_findings = validate_target_plan(plan, target_object_reuse, target_findings,
+                                                        decision_set, dependencies)
+            dispositions, render_blockers = assess_target_plan(plan, target_object_reuse, target_findings,
+                                                                decision_set, dependencies)
             validation = validate_plan(plan)
             support_guidance = build_support_guidance(plan, validation, decision_set, target_findings)
-            decision_keys = {item_key(item): decision_keys_for_item(item, decision_set)
-                             for item in (*plan.addresses, *plan.address_groups, *plan.services, *plan.service_groups,
-                                          *plan.schedules, *plan.zones, *plan.static_routes, *plan.security_rules, *plan.nat_rules)}
             rendered = PANSetRenderer().render(plan, validation, dispositions=dispositions,
-                                               render_blockers=render_blockers, decision_keys=decision_keys)
+                                               render_blockers=render_blockers,
+                                               decision_keys=dependencies.decision_keys_by_item)
             safe_target_evidence = target_context.metadata if target_context else None
             rendered = replace(rendered, report={**rendered.report,
                 'source': {'vendor': 'fortigate', 'digest': entry.source_digest},
@@ -879,28 +882,44 @@ def create_app(test_config=None):
                     'support_guidance': [item.to_dict() for item in support_guidance],
                     'recommendations': [item.to_dict() for item in recommendations],
                 }})
+            counts = rendered.report['counts']
+            render_counts = rendered.report['render_dispositions']
+            mapping_codes = {'missing_vsys_mapping', 'missing_target_vsys', 'missing_virtual_router', 'missing_route_interface'}
+            missing = [issue for issue in rendered.report['issue_summary'] if issue['code'] in mapping_codes or 'missing target' in issue['message'].lower() or 'missing palo alto vsys mapping' in issue['message'].lower()]
+            plan_status = classify_artifact_status(rendered, pending_mapping_issues=missing).value
+            rendered = replace(rendered, report={**rendered.report, 'plan_status': plan_status})
             artifact_id = uuid.uuid4().hex
             rendered_artifacts[artifact_id] = rendered
             artifact_sources[artifact_id] = (analysis, mapping,
                                              _decision_document(entry.source_digest, decision_set, safe_target_evidence),
                                              entry.source_name)
-            counts = rendered.report['counts']
-            render_counts = rendered.report['render_dispositions']
-            mapping_codes = {'missing_vsys_mapping', 'missing_target_vsys', 'missing_virtual_router', 'missing_route_interface'}
-            missing = [issue for issue in rendered.report['issue_summary'] if issue['code'] in mapping_codes or 'missing target' in issue['message'].lower() or 'missing palo alto vsys mapping' in issue['message'].lower()]
-            plan_status = ('NEEDS_MAPPING' if not rendered.commands and not render_counts.get('REUSE', 0)
-                           else 'READY' if not missing and not render_counts.get('BLOCK', 0)
-                           and not counts.get('PARTIAL', 0) and not counts.get('MANUAL_REVIEW', 0)
-                           and not counts.get('UNSUPPORTED', 0) else 'PARTIAL')
+            issue_messages = {item['code']: item['message'] for item in rendered.report['issue_summary']}
+            reasons = []
+            for item in rendered.report['items']:
+                if item['render_disposition'] != 'BLOCK' and item['command_renderable']:
+                    continue
+                for code in item['render_blockers']:
+                    reasons.append({'code': code, 'message': issue_messages.get(code, code.replace('_', ' ').capitalize()),
+                                    'source_vdom': item['source_vdom'], 'source_kind': item['source_kind'],
+                                    'source_name': item['source_name'], 'target_name': item['target_name']})
+            reasons.extend({'code': finding.code, 'message': finding.message, 'source_vdom': finding.source_vdom,
+                            'source_kind': finding.source_kind, 'source_name': finding.source_name,
+                            'target_name': finding.target_name} for finding in target_plan_findings)
+            blocking_reasons = list({(item['code'], item['source_vdom'], item['source_kind'], item['source_name'], item['target_name']): item
+                                     for item in reasons}.values())
+            render_summary = {'create': render_counts.get('CREATE', 0), 'reuse': render_counts.get('REUSE', 0),
+                              'blocked': render_counts.get('BLOCK', 0), 'satisfied': rendered.report['satisfied'],
+                              'command_renderable': rendered.report['command_renderable']}
             return jsonify({
                 'success': True,
                 'artifact_id': artifact_id,
                 'plan_status': plan_status,
                 'commands': len(rendered.commands),
-                'counts': {**counts, 'renderable': sum(item['renderable'] for item in rendered.report['items'])},
+                'counts': {**counts, 'renderable': rendered.report['command_renderable']},
                 'render_dispositions': render_counts,
+                'render_summary': render_summary,
                 'missing_mappings': missing,
-                'blocking_reasons': [issue['message'] for issue in missing],
+                'blocking_reasons': blocking_reasons,
                 'target_warnings': target_warnings,
                 'target_findings': [item.to_dict() for item in target_findings],
                 'target_plan_findings': [item.to_dict() for item in target_plan_findings],
@@ -924,7 +943,7 @@ def create_app(test_config=None):
         rendered = rendered_artifacts.get(artifact_id)
         if rendered is None:
             return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
-        if not rendered.commands:
+        if not rendered.commands and rendered.report.get('plan_status') != 'READY_NO_CHANGES':
             return jsonify({'success': False, 'error': 'No PAN-OS commands are currently renderable. Complete the required target mappings first.'}), 422
         source = artifact_sources.get(artifact_id)
         if source is None:
@@ -935,7 +954,7 @@ def create_app(test_config=None):
         try:
             source_reporters.get('fortigate').export_excel(analysis, workbook, source_name=source_name)
             with zipfile.ZipFile(bundle, 'w', zipfile.ZIP_DEFLATED) as archive:
-                archive.writestr('palo_alto_config.set', '\n'.join(rendered.commands) + '\n')
+                archive.writestr('palo_alto_config.set', '\n'.join(rendered.commands))
                 archive.writestr('migration_report.json', json.dumps(rendered.report, indent=2))
                 archive.writestr('migration_decisions.json', json.dumps(decision_document, indent=2))
                 archive.writestr('target_mapping.yaml', yaml.safe_dump(mapping, sort_keys=False))
@@ -952,7 +971,7 @@ def create_app(test_config=None):
         rendered = rendered_artifacts.get(artifact_id)
         if rendered is None:
             return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
-        if not rendered.commands:
+        if not rendered.commands and rendered.report.get('plan_status') != 'READY_NO_CHANGES':
             return jsonify({'success': False, 'error': 'No PAN-OS commands are currently renderable. Complete the required target mappings first.'}), 422
         source = artifact_sources.get(artifact_id)
         if source is None:
@@ -962,9 +981,10 @@ def create_app(test_config=None):
         return jsonify({
             'success': True,
             'commands': list(rendered.commands),
-            'command_text': '\n'.join(rendered.commands) + '\n',
+            'command_text': '\n'.join(rendered.commands),
             'command_count': len(rendered.commands),
             'command_sha256': rendered.report['command_sha256'],
+            'no_changes_required': not rendered.commands,
             'review_summary': {
                 'pending': sum(item['review_state'] == 'PENDING' and item['mode'] not in {'AUTO', 'UNSUPPORTED'} for item in decisions),
                 'manual': rendered.report['counts'].get('MANUAL_REVIEW', 0),
@@ -978,10 +998,10 @@ def create_app(test_config=None):
         rendered = rendered_artifacts.get(payload.get('artifact_id'))
         if rendered is None:
             return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
-        if not rendered.commands:
+        if not rendered.commands and rendered.report.get('plan_status') != 'READY_NO_CHANGES':
             return jsonify({'success': False, 'error': 'No PAN-OS commands are currently renderable. Complete the required target mappings first.'}), 422
         return send_file(
-            io.BytesIO(('\n'.join(rendered.commands) + '\n').encode('utf-8')),
+            io.BytesIO('\n'.join(rendered.commands).encode('utf-8')),
             mimetype='text/plain', as_attachment=True, download_name='palo_alto_config.set',
         )
 

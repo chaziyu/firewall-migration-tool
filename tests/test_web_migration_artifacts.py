@@ -5,6 +5,8 @@ import zipfile
 from pathlib import Path
 
 from fwmigrate.web import create_app
+import fwmigrate.web as web
+from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationPlan, PANMigrationStatus, PlannedAddress
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "fortigate" / "palo_alto_mvp.conf"
@@ -58,6 +60,42 @@ def test_preview_and_download_block_empty_migration_artifact():
 
     assert client.post("/api/migration/command-preview", json=payload).status_code == 422
     assert client.post("/api/migration/download", json=payload).status_code == 422
+
+
+def test_all_reuse_migration_is_ready_with_an_empty_artifact(monkeypatch):
+    class Planner:
+        def plan(self, *_args, **_kwargs):
+            return PANMigrationPlan(addresses=(PlannedAddress(source_vdom="root", source_kind="address",
+                source_object_type="address", source_name="already-there", target_vsys="vsys1",
+                target_name="already-there", status=PANMigrationStatus.SUPPORTED,
+                address_type="ip-netmask", value="192.0.2.1/32"),))
+
+    monkeypatch.setattr(web.migration_planners, "get", lambda *_args: Planner())
+    monkeypatch.setattr(web, "classify_target_object_reuse", lambda plan, *_args: ({
+            "status": "EXACT_MATCH", "family": "address", "source_vdom": "root",
+            "source_kind": "address", "target_vsys": "vsys1",
+            "source_name": "already-there", "target_name": "already-there",
+        },))
+    client = create_app({"TESTING": True}).test_client()
+    preview = client.post("/api/preview", data={
+        "file": (io.BytesIO(FIXTURE.read_bytes()), FIXTURE.name),
+    }, content_type="multipart/form-data").get_json()
+    result = client.post("/api/migrate", json={"preview_id": preview["preview_id"], "mapping": MAPPING}).get_json()
+    payload = {"artifact_id": result["artifact_id"]}
+    command_preview = client.post("/api/migration/command-preview", json=payload)
+    download = client.post("/api/migration/download", json=payload)
+    bundle = client.post("/api/migration/bundle", json=payload)
+
+    assert result["plan_status"] == "READY_NO_CHANGES"
+    assert result["render_summary"] == {"create": 0, "reuse": 1, "blocked": 0, "satisfied": 1, "command_renderable": 0}
+    assert command_preview.status_code == download.status_code == bundle.status_code == 200
+    preview_data = command_preview.get_json()
+    assert preview_data["commands"] == [] and preview_data["command_text"] == ""
+    assert preview_data["command_count"] == 0 and preview_data["no_changes_required"] is True
+    assert preview_data["command_sha256"] == hashlib.sha256(b"").hexdigest()
+    assert download.data == b""
+    with zipfile.ZipFile(io.BytesIO(bundle.data)) as archive:
+        assert archive.read("palo_alto_config.set") == b""
 
 
 def test_artifact_report_contains_safe_target_review_provenance():

@@ -114,7 +114,9 @@ def test_structured_plan_renders_scoped_policy_and_nat_commands_in_order():
 
 def test_validation_blocks_manual_review_from_rendered_artifact(tmp_path):
     plan = PANMigrationPlan(addresses=(PlannedAddress(source_name="review", status=PANMigrationStatus.MANUAL_REVIEW),))
-    rendered = PANSetRenderer().render_files(plan, tmp_path)
+    renderer = PANSetRenderer()
+    rendered = renderer.render(plan, validate_plan(plan))
+    renderer.write_files(rendered, tmp_path)
     assert rendered.commands == ()
     assert (tmp_path / "migration_report.json").exists()
     assert not (tmp_path / "conversion_report.json").exists()

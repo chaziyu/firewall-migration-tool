@@ -59,6 +59,13 @@ def test_successful_candidate_push_and_validation_without_default_commit(monkeyp
     assert connection.disconnected
 
 
+def test_zero_command_artifact_is_rejected_before_connecting(monkeypatch):
+    fake_netmiko(monkeypatch, lambda **kwargs: (_ for _ in ()).throw(AssertionError("must not connect")))
+    result = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret")).deploy(rendered())
+    assert not result.connected
+    assert result.failure_message == "The rendered migration has no commands to deploy"
+
+
 def test_connection_failure_is_safe(monkeypatch):
     fake_netmiko(monkeypatch, lambda **kwargs: (_ for _ in ()).throw(RuntimeError("bad secret")))
 
