@@ -26,6 +26,7 @@ let migrationPlanRevision = 0;
   let targetRevision = 0;
   let targetWarnings = {};
   let targetFindings = [];
+  let targetPlanFindings = [];
   let decisionEvidence = {};
   let evidenceSummary = {};
   let supportGuidance = [];
@@ -1392,6 +1393,7 @@ let migrationPlanRevision = 0;
     selectedTargetDevice = "";
     targetWarnings = {};
     targetFindings = [];
+    targetPlanFindings = [];
     decisionEvidence = {};
     decisionContext = {};
     decisionCandidates = {};
@@ -2149,22 +2151,23 @@ let migrationPlanRevision = 0;
     const container = document.getElementById("migration-plan-items");
     if (!container) return;
     const filter = document.getElementById("migration-plan-filter")?.value || "attention";
-    const attention = item => item.status !== "SUPPORTED" || !item.renderable || item.warnings?.length || item.render_blockers?.length;
+    const attention = item => item.status !== "SUPPORTED" || !item.satisfied || item.warnings?.length || item.render_blockers?.length || targetPlanFindings.some(finding => finding.affected_item_keys?.includes(item.item_key));
     const visible = items.filter(item => {
       if (filter === "all") return true;
       if (filter === "attention") return attention(item);
-      if (filter === "not_renderable") return !item.renderable;
+      if (filter === "not_renderable") return !item.satisfied;
       return String(item.status || "").toLowerCase() === filter;
     });
     const table = document.createElement("table"); table.className = "mapping-table migration-plan-table";
-    const labels = ["Source", "Type", "Target", "Status", "Renderable", "Action", "Resolution", "Next action", "Warnings / blockers"];
+    const labels = ["Source", "Type", "Target", "Status", "Satisfied", "Action", "Commands", "Resolution", "Next action", "Warnings / blockers"];
     const head = document.createElement("tr");
     labels.forEach(label => { const cell = document.createElement("th"); cell.textContent = label; head.append(cell); });
     const thead = document.createElement("thead"); thead.append(head); table.append(thead);
     const body = document.createElement("tbody");
     for (const planItem of visible) {
       const row = document.createElement("tr");
-      const warnings = [...new Set([...(planItem.warnings || []), ...(planItem.render_blockers || [])])];
+      const targetReasons = targetPlanFindings.filter(finding => finding.affected_item_keys?.includes(planItem.item_key)).map(finding => finding.message);
+      const warnings = [...new Set([...(planItem.warnings || []), ...(planItem.render_blockers || []), ...targetReasons])];
       const guidance = supportGuidance.find(item => item.source_vdom === planItem.source_vdom && item.source_name === planItem.source_name);
       const values = [
         [planItem.source_vdom, planItem.source_name].filter(Boolean).join(" · "),
@@ -2174,11 +2177,13 @@ let migrationPlanRevision = 0;
       values.forEach((value, index) => { const cell = document.createElement("td"); cell.dataset.label = labels[index]; cell.textContent = value || "—"; row.append(cell); });
       const status = document.createElement("td"); status.dataset.label = labels[3];
       const badge = document.createElement("span"); badge.className = `plan-status-badge status-${String(planItem.status || "unknown").toLowerCase()}`; badge.textContent = String(planItem.status || "UNKNOWN").toLowerCase().replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase()); status.append(badge); row.append(status);
-      const renderable = document.createElement("td"); renderable.dataset.label = labels[4]; renderable.textContent = planItem.renderable ? "Yes" : "No"; renderable.className = planItem.renderable ? "plan-renderable" : "plan-not-renderable"; row.append(renderable);
+      const satisfied = document.createElement("td"); satisfied.dataset.label = labels[4]; satisfied.textContent = planItem.satisfied ? "Yes" : "No"; satisfied.className = planItem.satisfied ? "plan-renderable" : "plan-not-renderable"; row.append(satisfied);
       const disposition = document.createElement("td"); disposition.dataset.label = labels[5];
-      disposition.textContent = ({ CREATE: "Will create", REUSE: "Will reuse existing target object", BLOCK: "Blocked by target conflict" })[planItem.render_disposition] || "Needs manual review";
+      disposition.textContent = ({ CREATE: "Will create", REUSE: "Reuse existing target object", BLOCK: "Blocked" })[planItem.render_disposition] || "Needs manual review";
       row.append(disposition);
-      const resolution = document.createElement("td"); resolution.dataset.label = labels[6];
+      const commands = document.createElement("td"); commands.dataset.label = labels[6];
+      commands.textContent = planItem.render_disposition === "REUSE" ? "None required" : planItem.rendered ? `${(planItem.commands || []).length} commands` : "—"; row.append(commands);
+      const resolution = document.createElement("td"); resolution.dataset.label = labels[7];
       if (guidance) {
         resolution.textContent = `${guidance.resolution_type.replaceAll("_", " ")}: ${guidance.title}`;
         if (guidance.decision_key) {
@@ -2187,8 +2192,8 @@ let migrationPlanRevision = 0;
         }
       } else resolution.textContent = "—";
       row.append(resolution);
-      const nextAction = document.createElement("td"); nextAction.dataset.label = labels[7]; nextAction.textContent = guidance?.next_action || "—"; row.append(nextAction);
-      const issues = document.createElement("td"); issues.dataset.label = labels[8];
+      const nextAction = document.createElement("td"); nextAction.dataset.label = labels[8]; nextAction.textContent = guidance?.next_action || "—"; row.append(nextAction);
+      const issues = document.createElement("td"); issues.dataset.label = labels[9];
       if (warnings.length) {
         const details = document.createElement("details"); details.className = "plan-issues";
         const summary = document.createElement("summary"); summary.textContent = `${warnings.length} issue${warnings.length === 1 ? "" : "s"}`;
@@ -2253,27 +2258,33 @@ let migrationPlanRevision = 0;
         currentPlanItems = artifact.report?.items || [];
         currentRecommendations = artifact.recommendations || artifact.report?.review?.recommendations || currentRecommendations;
         targetFindings = artifact.target_findings || [];
+        targetPlanFindings = artifact.target_plan_findings || [];
         decisionEvidence = artifact.decision_evidence || {};
         evidenceSummary = artifact.evidence_summary || {};
         supportGuidance = artifact.support_guidance || artifact.report?.review?.support_guidance || [];
         targetEvidence = artifact.target_evidence || artifact.report?.target_evidence || targetEvidence;
         const planFilter = document.getElementById("migration-plan-filter");
-        planFilter.value = currentPlanItems.some(item => item.status !== "SUPPORTED" || !item.renderable || item.warnings?.length || item.render_blockers?.length) ? "attention" : "all";
+        planFilter.value = currentPlanItems.some(item => item.status !== "SUPPORTED" || !item.satisfied || item.warnings?.length || item.render_blockers?.length) ? "attention" : "all";
         renderMigrationPlanItems(currentPlanItems);
         renderRecommendations();
         document.getElementById("migration-plan")?.classList.remove("hidden");
         const counts = artifact.counts || {};
         const summary = document.getElementById("migration-plan-summary");
         if (summary) {
-          const status = artifact.plan_status === "READY" ? "Migration artifact ready." : artifact.plan_status === "PARTIAL" ? "Partial commands are ready." : "Target mappings required.";
+          const status = artifact.plan_status === "READY_NO_CHANGES"
+            ? "No PAN-OS configuration changes are required. All supported planned objects are already satisfied by the selected target."
+            : artifact.plan_status === "READY" ? "Migration artifact ready."
+              : artifact.plan_status === "PARTIAL" ? (artifact.commands ? "Partial commands are ready." : "The migration plan has blockers.") : "Target mappings required.";
           const blockers = new Set(artifact.blocking_reasons || []);
           const targetIssueCount = (artifact.target_findings || []).length;
           const guidanceCount = (artifact.support_guidance || []).length;
-          summary.textContent = `${status}\n${counts.SUPPORTED || 0} supported · ${counts.renderable || 0} renderable · ${counts.MANUAL_REVIEW || 0} manual review · ${counts.UNSUPPORTED || 0} unsupported · ${artifact.commands} commands${blockers.size ? `\n${blockers.size} blocking issue${blockers.size === 1 ? "" : "s"}. Review the results below.` : ""}${targetIssueCount ? `\n${targetIssueCount} target conflict${targetIssueCount === 1 ? "" : "s"}.` : ""}${guidanceCount ? `\n${guidanceCount} support guidance item${guidanceCount === 1 ? "" : "s"}.` : ""}`;
+          const render = artifact.render_summary || {};
+          summary.textContent = `${status}\n${render.create || 0} will be created · ${render.reuse || 0} existing target objects reused · ${render.blocked || 0} blocked · ${artifact.commands} commands${blockers.size ? `\n${blockers.size} blocking issue${blockers.size === 1 ? "" : "s"}. Review the results below.` : ""}${targetIssueCount ? `\n${targetIssueCount} target conflict${targetIssueCount === 1 ? "" : "s"}.` : ""}${guidanceCount ? `\n${guidanceCount} support guidance item${guidanceCount === 1 ? "" : "s"}.` : ""}`;
+          summary.textContent += `\nSource status: ${counts.SUPPORTED || 0} supported · ${counts.PARTIAL || 0} partial · ${counts.MANUAL_REVIEW || 0} manual review · ${counts.UNSUPPORTED || 0} unsupported`;
         }
         const previewElement = document.getElementById("migration-command-preview");
         const reviewSummary = document.getElementById("migration-command-summary");
-        if (artifact.commands) {
+        if (artifact.commands || artifact.plan_status === "READY_NO_CHANGES") {
           const preview = await readJson(await fetch("/api/migration/command-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ artifact_id: currentRenderedArtifactId }) }), "Could not load command preview");
           if (requestRevision !== migrationPlanRevision) return;
           currentArtifactCommandCount = preview.command_count;
@@ -2281,23 +2292,24 @@ let migrationPlanRevision = 0;
           if (previewElement) previewElement.textContent = preview.command_text;
           if (reviewSummary) reviewSummary.textContent = `Reviewed artifact · ${preview.command_count} commands · SHA-256 ${preview.command_sha256}. Pending decisions ${preview.review_summary.pending} · Manual review ${preview.review_summary.manual} · Unsupported ${preview.review_summary.unsupported}.`;
           const copyCommands = document.getElementById("migration-copy-commands");
-          if (copyCommands) copyCommands.disabled = false;
+          if (copyCommands) copyCommands.disabled = preview.command_count === 0;
         } else {
           if (previewElement) previewElement.textContent = "No renderable commands. Complete required decisions to build a command preview.";
           if (reviewSummary) reviewSummary.textContent = `Pending decisions ${currentDecisionSet.decisions.filter(item => item.review_state === "PENDING").length} · Manual review ${counts.MANUAL_REVIEW || 0} · Unsupported ${counts.UNSUPPORTED || 0}`;
         }
         syncWorkspace();
-        btnDownloadBundle?.classList.toggle("hidden", artifact.commands === 0);
-        btnDownloadSet?.classList.toggle("hidden", artifact.commands === 0);
-        document.getElementById("migration-export")?.classList.toggle("hidden", artifact.commands === 0);
+        const noChanges = artifact.plan_status === "READY_NO_CHANGES";
+        btnDownloadBundle?.classList.toggle("hidden", !artifact.commands && !noChanges);
+        btnDownloadSet?.classList.toggle("hidden", noChanges || artifact.commands === 0);
+        document.getElementById("migration-export")?.classList.toggle("hidden", !artifact.commands && !noChanges);
         if (btnDownloadBundle) {
-          btnDownloadBundle.disabled = artifact.commands === 0;
+          btnDownloadBundle.disabled = !artifact.commands && !noChanges;
           const label = btnDownloadBundle.querySelector("span:last-child");
           if (label) label.textContent = "Download bundle";
         }
         if (btnDownloadSet) btnDownloadSet.disabled = artifact.commands === 0;
         if (activeMode === "download") document.getElementById("migration-plan")?.scrollIntoView({ block: "start" });
-        logToTerminal(`[PLAN] ${artifact.plan_status}: ${artifact.commands} commands ready.`, artifact.commands ? "term-success" : "term-error");
+        logToTerminal(`[PLAN] ${artifact.plan_status}: ${artifact.commands} commands ready.`, artifact.commands || noChanges ? "term-success" : "term-error");
       } catch (err) {
         showError(err.message);
         logToTerminal(`[ERROR] Migration planning failed: ${err.message}`, "term-error");

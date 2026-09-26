@@ -14,23 +14,35 @@ def _address(source, target):
              "ip-wildcard": "ip_wildcard", "fqdn": "fqdn"}.get(source.address_type)
     if field is None:
         return (), ("source address form is unsupported for exact comparison",), ()
-    contradictions = [f"target {name} is also configured"
-                      for name in {"ip_netmask", "ip_range", "ip_wildcard", "fqdn"} - {field}
-                      if name in _fields(target) and getattr(target, name, None) is not None]
-    if field not in _fields(target):
-        return (), (f"target {field} is not explicit",), tuple(contradictions)
-    if getattr(target, field, None) != source.value:
+    forms = {"ip_netmask", "ip_range", "ip_wildcard", "fqdn"}
+    configured = {name for name in forms if name in _fields(target) and getattr(target, name, None) is not None}
+    supporting = ["target has unknown address semantics"] if target.raw_extra else []
+    contradictions = [f"target {name} is also configured" for name in configured - {field}]
+    if field not in configured:
+        supporting.append(f"target {field} is not explicitly configured")
+    if len(configured) != 1:
+        supporting.append("target address does not have exactly one explicit address form")
+    if field in configured and getattr(target, field, None) != source.value:
         contradictions.append(f"target {field} differs")
-    return ((f"same explicit {field}",), (), tuple(contradictions)) if not contradictions else ((), (), tuple(contradictions))
+    strong = (f"same explicit {field}",) if field in configured and not contradictions else ()
+    return strong, tuple(supporting), tuple(contradictions)
 
 
 def _members(source, target):
     field = "members" if source.source_object_type == "service_group" else "static_members"
-    if field not in _fields(target):
-        return (), (f"target {field} is not explicit",), ()
-    if set(getattr(target, field) or ()) == set(source.members):
-        return ("same explicit members",), (), ()
-    return (), (), ("target members differ",)
+    supporting = []
+    if target.raw_extra:
+        supporting.append("target has unknown group semantics")
+    if source.source_object_type == "address_group" and (
+        "dynamic_filter" in _fields(target) or target.dynamic_filter is not None
+    ):
+        supporting.append("target has dynamic address-group semantics")
+    if field not in _fields(target) or getattr(target, field, None) is None:
+        supporting.append(f"target {field} is not explicit")
+        return (), tuple(supporting), ()
+    if set(getattr(target, field) or ()) != set(source.members):
+        return (), tuple(supporting), ("target members differ",)
+    return (("same explicit members",), tuple(supporting), ())
 
 
 def _service(source, target):
@@ -38,12 +50,18 @@ def _service(source, target):
     if expected_protocol not in _fields(target):
         return (), (f"target {expected_protocol} protocol is not explicit",), ()
     strong, supporting, contradictions = [], [], []
+    if target.raw_extra:
+        supporting.append("target has unknown service semantics")
     for other in {"tcp", "udp"} - {expected_protocol}:
         if getattr(target, other, None) is not None:
             contradictions.append(f"target has explicit {other} service semantics")
     protocol = getattr(target, expected_protocol, None)
     if protocol is None:
         return (), (f"target {expected_protocol} service is absent",), tuple(contradictions)
+    if protocol.raw_extra:
+        supporting.append(f"target {expected_protocol} has unknown protocol semantics")
+    if protocol.override is not None:
+        supporting.append(f"target contains explicit {expected_protocol} override semantics")
     for field, value in (("port", source.destination_port), ("source_port", source.source_port)):
         if field not in _fields(protocol):
             supporting.append(f"target {expected_protocol} {field} is not explicit")
@@ -55,31 +73,49 @@ def _service(source, target):
 
 
 def _schedule(source, target):
+    supporting = []
+    root_fields = _fields(target)
+    if target.raw_extra:
+        supporting.append("target has unknown schedule semantics")
     if source.schedule_type == "one-time":
-        if "non_recurring" not in _fields(target):
-            return (), ("target non_recurring is not explicit",), ()
-        if list(target.non_recurring or ()) == [f"{start}-{end}" for start, end in source.non_recurring]:
-            return ("same explicit non-recurring schedule",), (), ()
-        return (), (), ("target non-recurring schedule differs",)
+        if "non_recurring" not in root_fields or target.non_recurring is None:
+            supporting.append("target non-recurring schedule is not explicit")
+        if "recurring" in root_fields or target.recurring is not None:
+            supporting.append("target also has recurring schedule semantics")
+        if target.non_recurring is not None and list(target.non_recurring) != [f"{start}-{end}" for start, end in source.non_recurring]:
+            return (), tuple(supporting), ("target non-recurring schedule differs",)
+        if "non_recurring" not in root_fields or target.non_recurring is None:
+            return (), tuple(supporting), ()
+        return ("same explicit non-recurring schedule",), tuple(supporting), ()
     if source.schedule_type != "recurring" or target.recurring is None:
         return (), ("target recurring schedule is absent",), ()
     recurring = target.recurring
     explicit = _fields(recurring)
+    if recurring.raw_extra:
+        supporting.append("target recurring schedule has unknown semantics")
     if source.weekly:
         expected = {}
         for day, start, end in source.weekly:
             expected.setdefault(day, []).append(f"{start}-{end}")
-        if "weekly" not in explicit:
-            return (), ("target weekly schedule is not explicit",), ()
-        if recurring.weekly == expected and "daily" not in explicit:
-            return ("same explicit weekly schedule",), (), ()
-        return (), (), ("target weekly schedule differs",)
+        if "weekly" not in explicit or recurring.weekly is None:
+            supporting.append("target weekly schedule is not explicit")
+        if "daily" in explicit or "non_recurring" in root_fields or target.non_recurring is not None:
+            supporting.append("target also has daily or one-time schedule semantics")
+        if recurring.weekly is not None and recurring.weekly != expected:
+            return (), tuple(supporting), ("target weekly schedule differs",)
+        if "weekly" not in explicit or recurring.weekly is None:
+            return (), tuple(supporting), ()
+        return ("same explicit weekly schedule",), tuple(supporting), ()
     expected_daily = [f"{start}-{end}" for start, end in source.daily]
-    if "daily" not in explicit:
-        return (), ("target daily schedule is not explicit",), ()
-    if recurring.daily == expected_daily and "weekly" not in explicit:
-        return ("same explicit daily schedule",), (), ()
-    return (), (), ("target daily schedule differs",)
+    if "daily" not in explicit or recurring.daily is None:
+        supporting.append("target daily schedule is not explicit")
+    if "weekly" in explicit or "non_recurring" in root_fields or target.non_recurring is not None:
+        supporting.append("target also has weekly or one-time schedule semantics")
+    if recurring.daily is not None and recurring.daily != expected_daily:
+        return (), tuple(supporting), ("target daily schedule differs",)
+    if "daily" not in explicit or recurring.daily is None:
+        return (), tuple(supporting), ()
+    return ("same explicit daily schedule",), tuple(supporting), ()
 
 
 def _classify(target, family, attribute, item, device, compare):
@@ -90,18 +126,20 @@ def _classify(target, family, attribute, item, device, compare):
                                          comparator=compare, source_object=item)
     if not candidates:
         return {"status": "NO_MATCH", "family": family, "source_name": item.source_name,
-                "source_vdom": item.source_vdom or "root", "target_name": name}
+                "source_vdom": item.source_vdom or "root", "source_kind": item.source_kind,
+                "target_vsys": item.target_vsys, "target_name": name}
     candidate = candidates[0]
     if len(candidates) > 1 or candidate.match_class == PANTargetCandidateMatchClass.AMBIGUOUS:
         status = "AMBIGUOUS"
     elif candidate.contradictions:
         status = "NAME_CONFLICT"
-    elif candidate.strong_evidence and not candidate.supporting_evidence:
+    elif candidate.strong_evidence and not candidate.supporting_evidence and not candidate.contradictions:
         status = "EXACT_MATCH"
     else:
         status = "AMBIGUOUS"
     return {"status": status, "family": family, "source_name": item.source_name,
-            "source_vdom": item.source_vdom or "root", "target_name": candidate.name,
+            "source_vdom": item.source_vdom or "root", "source_kind": item.source_kind,
+            "target_vsys": item.target_vsys, "target_name": candidate.name,
             "target_scope": candidate.scope_identity,
             "evidence": list(candidate.strong_evidence + candidate.supporting_evidence + candidate.contradictions)}
 
@@ -130,7 +168,7 @@ def _route_collisions(planned, target, device):
             status = "AMBIGUOUS" if len(existing) > 1 or same or not differs else "NAME_CONFLICT"
             result.append({"status": status,
                 "family": "static_route", "source_name": route.source_name, "source_vdom": route.source_vdom or "root",
-                "target_name": existing[0].name})
+                "source_kind": route.source_kind, "target_vsys": route.target_vsys, "target_name": existing[0].name})
     return result
 
 
@@ -155,7 +193,7 @@ def _rule_collisions(planned, target, device, family, attribute, fields):
             differs = False
         result.append({"status": "AMBIGUOUS" if len(matches) > 1 or not differs else "NAME_CONFLICT",
             "family": family, "source_name": rule.source_name, "source_vdom": rule.source_vdom or "root",
-            "target_name": matches[0].name})
+            "source_kind": rule.source_kind, "target_vsys": rule.target_vsys, "target_name": matches[0].name})
     return result
 
 

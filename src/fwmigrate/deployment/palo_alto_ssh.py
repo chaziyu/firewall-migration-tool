@@ -34,6 +34,8 @@ class PANSSHDeployer:
     def push_candidate(self, rendered: RenderedMigration):
         if not isinstance(rendered, RenderedMigration):
             raise TypeError("deployment requires a RenderedMigration")
+        if not rendered.commands:
+            return PANDeploymentResult(True, failure_message="The rendered migration has no commands to deploy")
         results = []
         try:
             self.connection.config_mode()
@@ -74,6 +76,8 @@ class PANSSHDeployer:
     def deploy(self, rendered: RenderedMigration):
         if not isinstance(rendered, RenderedMigration):
             raise TypeError("deployment requires a RenderedMigration")
+        if not rendered.commands:
+            return PANDeploymentResult(False, failure_message="The rendered migration has no commands to deploy")
         try:
             self.connect()
         except Exception as exc:

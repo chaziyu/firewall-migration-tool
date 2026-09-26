@@ -334,7 +334,7 @@ def test_plan_reports_missing_mappings_and_blocks_empty_bundle():
     requirements = client.post("/api/migration/requirements", json={"preview_id": preview_id}).get_json()["requirements"]
     assert {item["source_vdom"] for item in requirements["vdoms"]} == {"root"}
     plan = client.post("/api/migrate", json={"preview_id": preview_id, "mapping": {}}).get_json()
-    assert plan["plan_status"] == "NEEDS_MAPPING"
+    assert plan["plan_status"] == "PARTIAL"
     assert plan["commands"] == 0
     assert plan["missing_mappings"]
     bundle = client.post("/api/migration/bundle", json={"artifact_id": plan["artifact_id"]})
