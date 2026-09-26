@@ -24,16 +24,18 @@ def _eligible_candidates(candidates):
 
 def build_ai_review_context(*, source_digest, target_digest, target_device, decisions, review_workflow,
                             review_context, decision_candidates, auto_decisions, target_findings,
-                            operation, prompt_version, max_bytes=16000, max_groups=20):
+                            operation, prompt_version, max_bytes=16000, max_groups=20, cursor=0):
     decision_by_key = {item.key: item for item in decisions.decisions}
     findings = {item.decision_key: item for item in target_findings}
     groups = []
     decision_refs = {}
     ai_candidates = {}
+    insufficient_evidence = 0
     for group in review_workflow.get("review_groups", ()):
         if group.get("queue") == "COMPLETE" or (operation == "questions" and group.get("queue") == "READY_TO_CONFIRM"):
             continue
         rows = []
+        unresolved_count = 0
         for item in group.get("decisions", ()):
             decision = decision_by_key.get(item.get("key"))
             auto_status = getattr(auto_decisions.get(item.get("key"), {}).get("status"), "value",
@@ -43,7 +45,14 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
                 continue
             if auto_status in {"VERIFIED", "DERIVED"}:
                 continue
+            unresolved_count += 1
             eligible = _eligible_candidates(decision_candidates.get(decision.key, ()))
+            if operation == "analysis" and eligible:
+                safe_values = set(sanitize_ai_context({"values": [item["value"] for item in eligible]},
+                    max_bytes=max_bytes)["values"])
+                eligible = [item for item in eligible if item["value"] in safe_values]
+            if not eligible and operation == "analysis":
+                continue
             decision_ref = f"decision_{len(decision_refs) + 1}"
             decision_refs[decision_ref] = decision.key
             eligible = eligible[:8]
@@ -74,6 +83,11 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
                 "target_finding": str(getattr(findings.get(decision.key), "code", "")) or None,
                 "auto_status": str(auto_status),
             })
+        if operation == "analysis":
+            if not rows:
+                if unresolved_count:
+                    insufficient_evidence += 1
+                continue
         if rows:
             groups.append({
                 "source_vdom": group.get("source_vdom", ""),
@@ -88,7 +102,10 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
     priority = {"vdom": 0, "interface": 1, "zone": 2}
     groups.sort(key=lambda group: (-group["affected_count"], priority.get(group["source_kind"], 3),
                                    group["source_vdom"].casefold(), group["source_name"].casefold()))
-    groups = groups[:max_groups]
+    if operation == "analysis":
+        groups = groups[cursor:cursor + max_groups]
+    else:
+        groups = groups[:max_groups]
     selected_keys = {item["key"] for group in groups for item in group["decisions"]}
     base = {
         "source_digest": source_digest,
@@ -102,6 +119,9 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
                                     ensure_ascii=False).encode("utf-8")) > max_bytes:
         groups.pop()
         base["groups"] = groups
+    if operation == "analysis" and not groups and cursor < total_groups:
+        from fwmigrate.ai.errors import AIInvalidResponseError
+        raise AIInvalidResponseError("A candidate-backed review group exceeds the AI context limit")
     selected_keys = {item["key"] for group in groups for item in group["decisions"]}
     safe = sanitize_ai_context(base, max_bytes=max_bytes)
     safe_allowed_values = {}
@@ -115,14 +135,25 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
             decision["candidates"] = [candidate for candidate in decision["candidates"]
                                        if candidate["value"] in decision["allowed_values"]]
             safe_allowed_values[decision["key"]] = tuple(decision["allowed_values"])
-    decision_state = [{"key": item.key, "mode": item.mode.value, "review_state": item.review_state.value,
-                       "value": item.value, "suggested_value": item.suggested_value,
-                       "evidence_type": item.evidence_type, "evidence_value": item.evidence_value}
-                      for item in decisions.decisions]
-    state_identity = {"context": safe, "decision_state": decision_state,
-                      "candidates": decision_candidates}
-    digest = hashlib.sha256(json.dumps(state_identity, sort_keys=True, separators=(",", ":"),
-                                       ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
-    return {"context": safe, "context_digest": digest, "allowed_values": safe_allowed_values,
+    state_identity = {"source_digest": source_digest, "target_digest": target_digest,
+        "target_device": target_device,
+        "decisions": [{field: getattr(item, field, None) for field in (
+            "source_vdom", "source_kind", "source_name", "target_field", "suggested_value", "value",
+            "mode", "review_state", "reason", "affected_count", "affected_by", "evidence_source",
+            "evidence_type", "evidence_value", "target_object")}
+            for item in decisions.decisions],
+        "review_workflow": review_workflow, "review_context": review_context,
+        "decision_candidates": decision_candidates, "auto_decisions": auto_decisions,
+        "target_findings": target_findings}
+    state_digest = hashlib.sha256(json.dumps(state_identity, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+    context_digest = hashlib.sha256(json.dumps(safe, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False).encode("utf-8")).hexdigest()
+    analyzed_groups = len(groups)
+    next_cursor = cursor + analyzed_groups if operation == "analysis" else None
+    return {"context": safe, "context_digest": context_digest, "state_digest": state_digest,
+            "allowed_values": safe_allowed_values,
             "decision_refs": {key: value for key, value in decision_refs.items() if key in selected_keys},
-            "total_groups": total_groups, "analyzed_groups": len(groups)}
+            "total_groups": total_groups, "candidate_backed_groups": total_groups,
+            "insufficient_evidence": insufficient_evidence, "analyzed_groups": analyzed_groups,
+            "next_cursor": next_cursor if next_cursor is not None and next_cursor < total_groups else None}

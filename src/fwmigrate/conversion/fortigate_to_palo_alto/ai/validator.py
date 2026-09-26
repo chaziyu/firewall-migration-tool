@@ -9,53 +9,125 @@ def _text(value, name):
     return value.strip()
 
 
-def validate_architecture_output(output, *, groups, allowed_values, max_questions=8):
-    if not isinstance(output, dict) or not isinstance(output.get("questions"), list):
-        raise AIInvalidResponseError("AI response has invalid questions")
+def validate_analysis_output(output, *, groups, allowed_values, max_results=8):
+    """Validate advisory results against closed candidates and their exact evidence."""
+    from .models import PANAIAssistKind
+
+    if not isinstance(output, dict) or not isinstance(output.get("results"), list):
+        raise AIInvalidResponseError("AI response has invalid analysis results")
     key_to_group = {item["key"]: group for group in groups for item in group["decisions"]}
-    questions = output["questions"]
-    if len(questions) > max_questions:
-        raise AIInvalidResponseError("AI returned too many questions")
+    candidate_evidence = {}
+    for group in groups:
+        for decision in group["decisions"]:
+            candidate_evidence[decision["key"]] = {
+                item["value"]: set(item.get("evidence", ())) for item in decision.get("candidates", ())
+            }
+    results = output["results"]
+    if len(results) > max_results:
+        raise AIInvalidResponseError("AI returned too many analysis results")
     validated = []
-    for question in questions:
-        if not isinstance(question, dict):
-            raise AIInvalidResponseError("AI response has an invalid question")
-        keys = question.get("decision_keys")
-        if (not isinstance(keys, list) or not keys or len(set(keys)) != len(keys)
+    for item in results:
+        if not isinstance(item, dict):
+            raise AIInvalidResponseError("AI response has an invalid analysis result")
+        try:
+            kind = PANAIAssistKind(item.get("kind"))
+        except (TypeError, ValueError) as exc:
+            raise AIInvalidResponseError("AI response has an unsupported result kind") from exc
+        keys = item.get("decision_keys")
+        if (not isinstance(keys, list) or not keys or len(keys) > 8
+                or any(not isinstance(key, str) for key in keys)
+                or len(set(keys)) != len(keys)
                 or any(key not in key_to_group for key in keys)):
-            raise AIInvalidResponseError("AI question references an unknown decision")
-        identities = {(key_to_group[key]["source_vdom"], key_to_group[key]["source_kind"], key_to_group[key]["source_name"]) for key in keys}
+            raise AIInvalidResponseError("AI result references an unknown decision")
+        identities = {(key_to_group[key]["source_vdom"], key_to_group[key]["source_kind"], key_to_group[key]["source_name"])
+                      for key in keys}
         if len(identities) != 1:
-            raise AIInvalidResponseError("AI question combines unrelated review groups")
-        choices = question.get("choices")
-        if not isinstance(choices, list) or len(choices) > 8:
-            raise AIInvalidResponseError("AI question has invalid choices")
+            raise AIInvalidResponseError("AI result combines unrelated review groups")
+        assignments = item.get("assignments")
+        choices = item.get("choices")
+        comparisons = item.get("comparisons")
+        if not isinstance(assignments, list) or not isinstance(choices, list) or len(choices) > 8:
+            raise AIInvalidResponseError("AI result has invalid assignments or choices")
+        checked_assignments = _validate_assignments(assignments, keys, allowed_values)
         checked_choices = []
         for choice in choices:
-            if not isinstance(choice, dict) or not isinstance(choice.get("assignments"), list):
-                raise AIInvalidResponseError("AI question has an invalid choice")
-            assignments = choice["assignments"]
-            assigned = set()
-            for assignment in assignments:
-                if not isinstance(assignment, dict):
-                    raise AIInvalidResponseError("AI choice has an invalid assignment")
-                key, value = assignment.get("decision_key"), assignment.get("value")
-                if key not in keys or key in assigned or not isinstance(value, str) or value not in allowed_values.get(key, ()):
-                    raise AIInvalidResponseError("AI choice contains an unsupported target value")
-                assigned.add(key)
-            if not assignments:
+            if not isinstance(choice, dict):
+                raise AIInvalidResponseError("AI result has an invalid choice")
+            choice_assignments = _validate_assignments(choice.get("assignments"), keys, allowed_values)
+            if not choice_assignments:
                 raise AIInvalidResponseError("AI choice must assign a supplied candidate")
             checked_choices.append({"label": _text(choice.get("label"), "choice label"),
-                                    "assignments": assignments})
+                                    "assignments": choice_assignments})
+        evidence = _strings(item.get("evidence"), "evidence")
+        checked_comparisons = []
+        if not isinstance(comparisons, list):
+            raise AIInvalidResponseError("AI result has invalid comparisons")
+        if kind is PANAIAssistKind.MAPPING_RECOMMENDATION:
+            if not checked_assignments or checked_choices or comparisons:
+                raise AIInvalidResponseError("AI mapping recommendation must contain exactly one assignment set")
+            assignment_evidence = [candidate_evidence[item["decision_key"]].get(item["value"], set())
+                                   for item in checked_assignments]
+            valid_evidence = set().union(*assignment_evidence)
+            if (not evidence or not set(evidence).issubset(valid_evidence)
+                    or any(not facts.intersection(evidence) for facts in assignment_evidence)):
+                raise AIInvalidResponseError("AI recommendation contains unsupported evidence")
+            choices_for_proposal = [{"label": item["summary"], "assignments": checked_assignments}]
+        elif kind is PANAIAssistKind.CANDIDATE_COMPARISON:
+            if assignments or choices or evidence or not comparisons or len(comparisons) > 32:
+                raise AIInvalidResponseError("AI comparison contains invalid decision data")
+            seen_candidates = set()
+            for comparison in comparisons:
+                if not isinstance(comparison, dict):
+                    raise AIInvalidResponseError("AI comparison contains an invalid candidate")
+                value = comparison.get("candidate_value")
+                if not isinstance(value, str):
+                    raise AIInvalidResponseError("AI comparison references an unknown candidate")
+                if value in seen_candidates:
+                    raise AIInvalidResponseError("AI comparison repeats a candidate")
+                seen_candidates.add(value)
+                expected = set().union(*(candidate_evidence[key].get(value, set()) for key in keys))
+                if not any(value in candidate_evidence[key] for key in keys):
+                    raise AIInvalidResponseError("AI comparison references an unknown candidate")
+                facts = _strings(comparison.get("evidence"), "comparison evidence")
+                if not set(facts).issubset(expected):
+                    raise AIInvalidResponseError("AI comparison invented candidate evidence")
+                checked_comparisons.append({"candidate_value": value, "evidence": facts,
+                    "limitations": _strings(comparison.get("limitations"), "comparison limitations")})
+            choices_for_proposal = []
+        else:
+            if assignments or comparisons or evidence:
+                raise AIInvalidResponseError("AI question contains a recommendation")
+            choices_for_proposal = checked_choices
         validated.append({
-            "title": _text(question.get("title"), "title"), "summary": _text(question.get("summary"), "summary"),
-            "question": _text(question.get("question"), "question"), "decision_keys": keys,
-            "choices": checked_choices,
-            "rationale": _strings(question.get("rationale"), "rationale"),
-            "missing_information": _strings(question.get("missing_information"), "missing information"),
-            "limitations": _strings(question.get("limitations"), "limitations"),
+            "kind": kind.value,
+            "title": _text(item.get("title"), "title"),
+            "summary": _text(item.get("summary"), "summary"),
+            "question": _text(item.get("question"), "question") if kind is PANAIAssistKind.ARCHITECTURE_QUESTION else None,
+            "decision_keys": keys, "choices": choices_for_proposal,
+            "evidence": evidence,
+            "rationale": _strings(item.get("rationale"), "rationale"),
+            "missing_information": _strings(item.get("missing_information"), "missing information"),
+            "limitations": _strings(item.get("limitations"), "limitations"),
+            "comparisons": checked_comparisons,
         })
     return validated
+
+
+def _validate_assignments(assignments, keys, allowed_values):
+    if not isinstance(assignments, list) or len(assignments) > 8:
+        raise AIInvalidResponseError("AI result has invalid assignments")
+    checked = []
+    assigned = set()
+    for assignment in assignments:
+        if not isinstance(assignment, dict):
+            raise AIInvalidResponseError("AI result has an invalid assignment")
+        key, value = assignment.get("decision_key"), assignment.get("value")
+        if (not isinstance(key, str) or key not in keys or key in assigned or not isinstance(value, str)
+                or value not in allowed_values.get(key, ())):
+            raise AIInvalidResponseError("AI result contains an unsupported target value")
+        assigned.add(key)
+        checked.append({"decision_key": key, "value": value})
+    return checked
 
 
 def _strings(value, name):
