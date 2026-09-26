@@ -216,6 +216,8 @@ end
             "NAC Policies", "Kerberos Keytabs", "KMIP Servers", "SDN Proxies",
             "IPv6 Address Templates", "On-Demand Sniffers", "Affinity Interrupts",
             "Serial Ports", "Firewall Regions", "Vendor MACs",
+            "Schedules", "Schedule Groups",
+            "SSL VPN Bookmark Owners", "SSL VPN Bookmarks",
             "Address Group Tags", "Local-In Policies",
             "Multicast Policies", "Policy Routes", "Routing Protocol Settings",
             "Session TTL Settings", "Session TTL Overrides", "SD-WAN SLAs", "SD-WAN Duplication",

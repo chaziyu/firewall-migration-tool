@@ -34,7 +34,6 @@ from ..section_registry import registered_sections
 from ..validation.index import ValidationIssueIndex
 from ..validation.models import ValidationIssue, ValidationResult
 from .excel_schema import (
-    DERIVED_COLUMNS_BY_SHEET,
     HIDDEN_COLUMNS_BY_DEFAULT,
     SHEET_HEADERS,
     SHEET_ORDER,
@@ -43,18 +42,37 @@ from .excel_schema import (
 
 _TITLE_FILL = PatternFill("solid", fgColor="17324D")
 _HEADER_FILL = PatternFill("solid", fgColor="0F766E")
-_DERIVED_FILL = PatternFill("solid", fgColor="D7F0EC")
 _REVIEW_FILL = PatternFill("solid", fgColor="FEF3C7")
 _ERROR_FILL = PatternFill("solid", fgColor="FEE2E2")
-_ALT_FILL = PatternFill("solid", fgColor="F8FAFC")
 _WHITE_FONT = Font(color="FFFFFF", bold=True)
 _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
 _HEADER_FONT = Font(color="FFFFFF", bold=True, size=10)
 _MUTED_FONT = Font(color="667085", italic=True, size=9)
 _LINK_FONT = Font(color="0563C1", underline="single")
-_CELL_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
 _THIN = Side(style="thin", color="D9E2DF")
 _BORDER = Border(bottom=_THIN)
+
+_COLUMN_WIDTHS_BY_HEADER = {
+    "Name": 28,
+    "Description": 40,
+    "Comments": 40,
+    "VDOM": 18,
+    "VDOMs": 28,
+    "Interface": 24,
+    "Interfaces": 32,
+    "Members": 40,
+    "Source Addresses": 36,
+    "Destination Addresses": 36,
+    "Services": 36,
+    "Analysis Status": 20,
+    "Review Reasons": 45,
+    "Additional Settings": 50,
+}
+_COLUMN_WIDTH_OVERRIDES_BY_SHEET = {
+    "Administrators": {"IPv4 Trusted Hosts": 36, "VDOMs": 28},
+    "Policies": {"Source Interface": 32, "Destination Interface": 32},
+}
+_DEFAULT_COLUMN_WIDTH = 22
 
 
 _SOURCE_PATHS_BY_SHEET: dict[str, tuple[str, ...]] = {
@@ -157,11 +175,6 @@ _VISIBLE_MODEL_FIELDS_BY_SHEET: dict[str, frozenset[str]] = {
     "SD-WAN Rules": frozenset({
         "id", "name", "status", "mode", "src", "dst", "priority_members", "health_check", "priority_zone",
     }),
-    "SSL VPN Bookmark Owners": frozenset({"owner_name", "custom_lang", "vdom"}),
-    "SSL VPN Bookmarks": frozenset({
-        "name", "apptype", "url", "host", "port", "domain", "folder", "description", "logon_user",
-        "logon_password_configured", "sso_password_configured", "form_data",
-    }),
     "SSL VPN Authentication Rules": frozenset({
         "id", "auth", "cipher", "client_cert", "realm", "source_interface", "source_address",
         "source_address_negate", "users", "user_peer", "groups", "portal",
@@ -174,8 +187,6 @@ _VISIBLE_MODEL_FIELDS_BY_SHEET: dict[str, frozenset[str]] = {
         "quarantine", "quarantine_expiry", "quarantine_log", "vuln_type", "last_modified",
     }),
     "IPS Exempt IPs": frozenset({"id", "src_ip", "dst_ip"}),
-    "Schedules": frozenset({"name", "days", "start", "end", "start_utc", "end_utc", "expiration_days", "vdom"}),
-    "Schedule Groups": frozenset({"name", "members", "vdom"}),
 }
 
 
@@ -210,10 +221,9 @@ def export_excel(
         metrics.add_stage("excel_context", (perf_counter() - context_started) * 1000)
 
     build_started = perf_counter()
-    workbook = (
-        _build_data_only_workbook(context)
-        if profile is ExcelExportProfile.DATA_ONLY
-        else _build_workbook(context, metrics=metrics if profile is ExcelExportProfile.FAST else None)
+    workbook = _build_workbook(
+        context,
+        metrics=metrics if profile is ExcelExportProfile.FAST else None,
     )
     if metrics is not None and profile is ExcelExportProfile.FAST:
         metrics.add_stage("workbook_build", (perf_counter() - build_started) * 1000)
@@ -422,76 +432,6 @@ def _build_fast_workbook(
     return workbook
 
 
-_NO_DATA = object()
-
-
-def _build_data_only_workbook(context: _ExcelContext) -> Workbook:
-    workbook = Workbook(write_only=True)
-
-    for sheet_name in SHEET_ORDER:
-        if sheet_name == "Summary":
-            rows = iter(
-                tuple(_excel_safe(value) for value in row)
-                for row in _summary_values(context)
-            )
-            first = next(rows, _NO_DATA)
-            if first is _NO_DATA:
-                continue
-            values = chain((first,), rows)
-        else:
-            data_rows = iter(_data_only_data_rows(sheet_name, context))
-            first_data = next(data_rows, _NO_DATA)
-            if first_data is _NO_DATA:
-                continue
-            values = chain(
-                (tuple(SHEET_HEADERS[sheet_name]), first_data),
-                data_rows,
-            )
-
-        sheet = workbook.create_sheet(sheet_name)
-        sheet.sheet_view.showGridLines = True
-        if sheet_name == "Summary":
-            sheet.column_dimensions["A"].width = 42
-            sheet.column_dimensions["B"].width = 52
-        elif sheet_name == "FortiGate Source Inventory":
-            for column, header in enumerate(SHEET_HEADERS[sheet_name], start=1):
-                sheet.column_dimensions[get_column_letter(column)].width = (
-                    _SOURCE_INVENTORY_WIDTHS[header] + 10
-                )
-        else:
-            _apply_widths(sheet, SHEET_HEADERS[sheet_name], wide=True)
-        for row in values:
-            sheet.append(row)
-
-    return workbook
-
-
-def _data_only_data_rows(
-    sheet_name: str,
-    context: _ExcelContext,
-) -> Iterator[tuple[Any, ...]]:
-    if sheet_name == "FortiGate Source Inventory":
-        yield from _iter_fortigate_source_inventory_rows(context)
-        return
-
-    headers = SHEET_HEADERS[sheet_name]
-    for row in _rows_for_sheet(sheet_name, context, headers):
-        yield tuple(_excel_safe(row.get(header)) for header in headers)
-
-
-def _summary_values(context: _ExcelContext) -> Iterator[tuple[Any, ...]]:
-    yield ("Field", "Value")
-    yield ("Source File", context.source_name)
-    yield ("Hostname", _hostname(context))
-    yield ("FortiOS Version", context.extracted.source_metadata.fortios_version)
-    yield ("VDOMs", "\n".join(_vdoms(context)))
-    yield ("Validation Errors", len(context.validation.errors))
-    yield ("Validation Warnings", len(context.validation.warnings))
-    yield ("Inventory", None)
-    yield from ((label, count) for label, count, _ in _inventory_counts(context))
-    yield ("Migration Indicators", None)
-    yield from _migration_indicators(context)
-
 def _fast_cell(
     sheet,
     value: Any,
@@ -605,8 +545,6 @@ def _rows_for_sheet(
         "Address Groups": _address_group_rows,
         "Services": _service_rows,
         "Service Groups": _service_group_rows,
-        "Schedules": _schedule_rows,
-        "Schedule Groups": _schedule_group_rows,
         "Policies": _policy_rows,
         "Security Policies": _security_policy_rows,
         "IP Pools": _ip_pool_rows,
@@ -631,8 +569,6 @@ def _rows_for_sheet(
         "SSL VPN Settings": _ssl_settings_rows,
         "SSL VPN Realms": _ssl_realm_rows,
         "SSL VPN Clients": _ssl_client_rows,
-        "SSL VPN Bookmark Owners": _ssl_bookmark_owner_rows,
-        "SSL VPN Bookmarks": _ssl_bookmark_rows,
         "SSL VPN Portals": _ssl_portal_rows,
         "SSL VPN Authentication Rules": _ssl_auth_rule_rows,
         "NTP Settings": _ntp_setting_rows,
@@ -764,11 +700,10 @@ def _write_table_sheet(
         return
 
     sheet = workbook.create_sheet(sheet_name)
-    sheet.sheet_view.showGridLines = False
+    sheet.sheet_view.showGridLines = True
     sheet.sheet_view.zoomScale = 90
 
     max_col = max(len(headers), 1)
-    derived_headers = set(DERIVED_COLUMNS_BY_SHEET.get(sheet_name, ()))
     hidden_headers = set(HIDDEN_COLUMNS_BY_DEFAULT.get(sheet_name, ()))
     sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
     sheet.cell(1, 1, sheet_name)
@@ -796,33 +731,18 @@ def _write_table_sheet(
         cell.alignment = Alignment(wrap_text=True, vertical="center")
         cell.border = _BORDER
 
+    _apply_widths(sheet, headers, sheet_name=sheet_name)
+    for column, header in enumerate(headers, start=1):
+        if header in hidden_headers:
+            sheet.column_dimensions[get_column_letter(column)].hidden = True
 
     row_count = 0
-    for index, row in enumerate(rows, start=4):
+    for row in rows:
         row_count += 1
-        review_fill = (
-            _ERROR_FILL
-            if row.get("__error__")
-            else _REVIEW_FILL
-            if row.get("__review__")
-            else None
-        )
-        alternate_fill = _ALT_FILL if index % 2 == 1 else None
+        sheet.append([_excel_safe(row.get(header)) for header in headers])
         outline = row.get("__outline_level__")
         if isinstance(outline, int) and outline > 0:
-            sheet.row_dimensions[index].outlineLevel = min(outline, 7)
-
-        for column, header in enumerate(headers, start=1):
-            value = _excel_safe(row.get(header))
-            cell = sheet.cell(index, column, value)
-            cell.alignment = _CELL_ALIGNMENT
-            fill = (
-                review_fill
-                or (_DERIVED_FILL if header in derived_headers else None)
-                or alternate_fill
-            )
-            if fill is not None:
-                cell.fill = fill
+            sheet.row_dimensions[row_count + 3].outlineLevel = min(outline, 7)
 
     note.value = _sheet_note(sheet_name, row_count)
 
@@ -830,10 +750,6 @@ def _write_table_sheet(
         sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
 
     sheet.freeze_panes = _freeze_pane(sheet_name, headers)
-    _apply_widths(sheet, headers)
-    for column, header in enumerate(headers, start=1):
-        if header in hidden_headers:
-            sheet.column_dimensions[get_column_letter(column)].hidden = True
     _add_back_link(sheet)
 
     if sheet_name == "Review Required":
@@ -892,7 +808,7 @@ def _write_source_inventory_sheet(
     sheet_name = "FortiGate Source Inventory"
     headers = SHEET_HEADERS[sheet_name]
     sheet = workbook.create_sheet(sheet_name)
-    sheet.sheet_view.showGridLines = False
+    sheet.sheet_view.showGridLines = True
     sheet.sheet_view.zoomScale = 90
 
     max_col = len(headers)
@@ -915,6 +831,9 @@ def _write_source_inventory_sheet(
         cell.alignment = Alignment(wrap_text=True, vertical="center")
         cell.border = _BORDER
 
+    for column, header in enumerate(headers, start=1):
+        sheet.column_dimensions[get_column_letter(column)].width = _SOURCE_INVENTORY_WIDTHS[header]
+
     row_count = 0
     source_rows = rows if rows is not None else _iter_fortigate_source_inventory_rows(context)
     for values in source_rows:
@@ -925,8 +844,6 @@ def _write_source_inventory_sheet(
 
     sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
     sheet.freeze_panes = "A4"
-    for column, header in enumerate(headers, start=1):
-        sheet.column_dimensions[get_column_letter(column)].width = _SOURCE_INVENTORY_WIDTHS[header]
     _add_back_link(sheet)
 
 
@@ -965,22 +882,34 @@ def _apply_review_colors(
             sheet.cell(row, column).fill = fill
 
 
-def _apply_widths(sheet, headers: Sequence[str], *, wide: bool = False) -> None:
+def _apply_widths(
+    sheet,
+    headers: Sequence[str],
+    *,
+    sheet_name: str | None = None,
+    wide: bool = False,
+) -> None:
     for index, header in enumerate(headers, start=1):
-        normalized = header.lower()
-
-        if any(token in normalized for token in ("additional settings", "review reason", "raw capture", "notes")):
-            width = 36
-        elif any(token in normalized for token in ("description", "comment", "source path", "setting", "value")):
-            width = 28
-        elif any(token in normalized for token in ("members", "addresses", "interfaces", "services", "profiles", "references")):
-            width = 26
-        elif any(token in normalized for token in ("name", "object", "category", "status", "type")):
-            width = 20
-        elif "id" in normalized or "port" in normalized or "vlan" in normalized:
-            width = 14
+        if sheet_name is not None:
+            width = (
+                _COLUMN_WIDTH_OVERRIDES_BY_SHEET.get(sheet_name, {}).get(header)
+                or _COLUMN_WIDTHS_BY_HEADER.get(header)
+                or _DEFAULT_COLUMN_WIDTH
+            )
         else:
-            width = 18
+            normalized = header.lower()
+            if any(token in normalized for token in ("additional settings", "review reason", "raw capture", "notes")):
+                width = 36
+            elif any(token in normalized for token in ("description", "comment", "source path", "setting", "value")):
+                width = 28
+            elif any(token in normalized for token in ("members", "addresses", "interfaces", "services", "profiles", "references")):
+                width = 26
+            elif any(token in normalized for token in ("name", "object", "category", "status", "type")):
+                width = 20
+            elif "id" in normalized or "port" in normalized or "vlan" in normalized:
+                width = 14
+            else:
+                width = 18
         if wide:
             width += 10
 
@@ -1050,8 +979,6 @@ def _inventory_counts(context: _ExcelContext) -> list[tuple[str, int, str]]:
         ("SSL VPN Portals", len(config.ssl_vpn_portals), "SSL VPN Portals"),
         ("SSL VPN Realms", len(config.ssl_vpn_realms), "SSL VPN Realms"),
         ("SSL VPN Clients", len(config.ssl_vpn_clients), "SSL VPN Clients"),
-        ("SSL VPN Bookmark Owners", len(config.ssl_vpn_user_bookmarks) + len(config.ssl_vpn_user_group_bookmarks), "SSL VPN Bookmark Owners"),
-        ("SSL VPN Bookmarks", sum(len(owner.bookmarks) for owner in config.ssl_vpn_user_bookmarks + config.ssl_vpn_user_group_bookmarks), "SSL VPN Bookmarks"),
         ("Administrators", len(config.administrators), "Administrators"),
         ("IPS Sensors", len(config.ips_sensors), "IPS Sensors"),
         ("External Resources", len(config.external_resources), "External Resources"),
@@ -2194,32 +2121,6 @@ def _ssl_client_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator
     }, domains=("ssl_vpn_client",))
 
 
-def _ssl_bookmark_owner_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
-    for owner_type, owners in (("User", context.config.ssl_vpn_user_bookmarks), ("Group", context.config.ssl_vpn_user_group_bookmarks)):
-        for owner in owners:
-            row = {"Owner Type": owner_type, "Owner Name": owner.owner_name,
-                   "Custom Language": owner.custom_lang, "Bookmark Count": len(owner.bookmarks), "VDOM": owner.vdom,
-                   "Additional Settings": _additional_settings(owner, sheet_name="SSL VPN Bookmark Owners")}
-            _add_analysis_status(row, context, vdom=owner.vdom, names=(owner.owner_name,))
-            yield row
-
-
-def _ssl_bookmark_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
-    for owner_type, owners in (("User", context.config.ssl_vpn_user_bookmarks), ("Group", context.config.ssl_vpn_user_group_bookmarks)):
-        for owner in owners:
-            for item in owner.bookmarks:
-                row = {"Owner Type": owner_type, "Owner Name": owner.owner_name, "Bookmark": item.name,
-                       "Application Type": item.apptype, "URL": item.url, "Host": item.host,
-                       "Port": item.port, "Domain": item.domain, "Folder": item.folder,
-                       "Description": item.description, "Logon User": item.logon_user,
-                       "Logon Password Configured": "Yes" if item.logon_password_configured else "No",
-                       "SSO Password Configured": "Yes" if item.sso_password_configured else "No",
-                       "Form Data": [{"name": value.name, "value": value.value} for value in item.form_data],
-                       "VDOM": owner.vdom,
-                       "Additional Settings": _additional_settings(item, sheet_name="SSL VPN Bookmarks")}
-                _overlay_safe_raw(row, row["Additional Settings"], headers)
-                _add_analysis_status(row, context, vdom=owner.vdom, names=(owner.owner_name, item.name))
-                yield row
 def _ssl_portal_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
     return _model_rows(
         context,
@@ -2645,7 +2546,7 @@ def _iter_fortigate_source_inventory_rows(
         typed = find_typed_source_object(context.typed_source_identity_index, record)
         raw_extra = getattr(typed.model, "raw_extra", {}) if typed else {}
         status = extraction_status(supports_path(record.source_path), typed)
-        if context.profile in {ExcelExportProfile.FAST, ExcelExportProfile.DATA_ONLY} and status == "TYPED":
+        if context.profile is ExcelExportProfile.FAST and status == "TYPED":
             continue
         registration = "REGISTERED" if record.source_path in context.registered_sections else "GENERIC"
         base = (
@@ -2803,43 +2704,6 @@ def _generic_source_rows(
                 )
 
                 yield row
-
-
-def _schedule_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
-    for item, kind in (
-        *((item, "one-time") for item in context.config.one_time_schedules),
-        *((item, "recurring") for item in context.config.recurring_schedules),
-    ):
-        row = {
-            "Name": item.name,
-            "Type": kind,
-            "Days": getattr(item, "days", []),
-            "Start": item.start,
-            "End": item.end,
-            "Start UTC": getattr(item, "start_utc", None),
-            "End UTC": getattr(item, "end_utc", None),
-            "Expiration Days": getattr(item, "expiration_days", None),
-            "VDOM": item.vdom,
-            "Source Explicit Fields": sorted(item.explicit_fields),
-            "Additional Settings": _additional_settings(item, sheet_name="Schedules"),
-        }
-        _add_analysis_status(context=context, row=row, vdom=item.vdom, names=(item.name,))
-        _overlay_safe_raw(row, row["Additional Settings"], headers)
-        yield row
-
-
-def _schedule_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
-    for item in context.config.schedule_groups:
-        row = {
-            "Name": item.name,
-            "Members": item.members,
-            "VDOM": item.vdom,
-            "Source Explicit Fields": sorted(item.explicit_fields),
-            "Additional Settings": _additional_settings(item, sheet_name="Schedule Groups"),
-        }
-        _add_analysis_status(context=context, row=row, vdom=item.vdom, names=(item.name,))
-        _overlay_safe_raw(row, row["Additional Settings"], headers)
-        yield row
 
 
 def _ntp_setting_rows(

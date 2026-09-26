@@ -240,6 +240,8 @@ end
         review, review_rows = self._rows(workbook["Review Required"])
         review_row = next(row for row in review_rows if row[review.index("Category")] == "nat")
         self.assertEqual(reason, review_row[review.index("Issue / Review Reason")])
+        severity_column = review.index("Severity") + 1
+        self.assertEqual("solid", workbook["Review Required"].cell(4, severity_column).fill.fill_type)
     def test_any_nat_warning_reaches_nat_and_review_sheets(self):
         source = r'''
 config firewall policy

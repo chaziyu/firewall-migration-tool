@@ -230,6 +230,8 @@ class ExcelReportTest(unittest.TestCase):
 
         assert {"FortiGate Source Inventory", "Extraction Coverage"} <= set(full.sheetnames)
         assert {"FortiGate Source Inventory", "Extraction Coverage"}.isdisjoint(fast.sheetnames)
+        for workbook in (full, fast):
+            assert {"SSL VPN Bookmark Owners", "SSL VPN Bookmarks"}.isdisjoint(workbook.sheetnames)
         assert "NTP Servers" not in fast.sheetnames
         assert {"Summary", "Review Required"} <= set(fast.sheetnames)
 
@@ -265,10 +267,53 @@ class ExcelReportTest(unittest.TestCase):
             assert fast[sheet_name]["A1"].has_style
             assert fast[sheet_name].auto_filter.ref == full[sheet_name].auto_filter.ref
             assert not fast[sheet_name].merged_cells.ranges
-            for column in range(1, fast[sheet_name].max_column + 1):
-                fast_width = fast[sheet_name].column_dimensions[get_column_letter(column)].width
-                full_width = full[sheet_name].column_dimensions[get_column_letter(column)].width
-                assert fast_width > full_width
+        assert fast["Addresses"].column_dimensions["A"].width == 30
+
+    def test_full_keeps_styled_headers_and_plain_data_rows(self):
+        workbook = self._workbook(_SAMPLE_CONFIG)
+        sheet = workbook["Addresses"]
+
+        assert sheet.sheet_view.showGridLines is True
+        assert sheet["A1"].fill.fill_type == "solid"
+        assert sheet["A1"].font.bold and sheet["A1"].font.color.rgb.endswith("FFFFFF")
+        assert sheet["A3"].fill.fill_type == "solid"
+        assert sheet["A3"].font.bold
+        assert sheet["A3"].border.bottom.style == "thin"
+        assert all(not cell.has_style for cell in sheet[4])
+        assert workbook["FortiGate Source Inventory"].sheet_view.showGridLines is True
+        assert all(not cell.has_style for cell in workbook["FortiGate Source Inventory"][4])
+        assert "Extraction Coverage" in workbook.sheetnames
+
+    def test_full_column_widths_are_schema_based_and_hide_technical_columns(self):
+        short = self._workbook('''config firewall address
+    edit a
+        set subnet 192.0.2.1 255.255.255.255
+    next
+end
+''')
+        long = self._workbook('''config firewall address
+    edit "a very long address object name which should not resize columns"
+        set subnet 192.0.2.1 255.255.255.255
+        set comment "a very long description which should not resize columns"
+    next
+end
+''')
+
+        for sheet_name in ("Administrators", "Policies", "Addresses"):
+            first, second = short[sheet_name], long[sheet_name]
+            headers = [first.cell(3, col).value for col in range(1, first.max_column + 1)]
+            assert [first.column_dimensions[get_column_letter(col)].width for col in range(1, first.max_column + 1)] == [
+                second.column_dimensions[get_column_letter(col)].width for col in range(1, second.max_column + 1)
+            ]
+            if "Additional Settings" in headers:
+                column = headers.index("Additional Settings") + 1
+                assert first.column_dimensions[get_column_letter(column)].hidden is True
+
+        assert short["Addresses"].column_dimensions["A"].width == 28
+        policy_headers = [short["Policies"].cell(3, col).value for col in range(1, short["Policies"].max_column + 1)]
+        for name in ("Source Interface", "Destination Interface"):
+            column = policy_headers.index(name) + 1
+            assert short["Policies"].column_dimensions[get_column_letter(column)].width == 32
 
     def test_fast_does_not_build_typed_source_inventory(self):
         from unittest.mock import patch
@@ -284,14 +329,13 @@ class ExcelReportTest(unittest.TestCase):
         derived = build_derived_views(extracted.config)
         validation = validate_config(extracted.config, derived=derived)
         before = deepcopy((extracted.config, extracted.source_objects, derived, validation))
-        for profile in (ExcelExportProfile.FAST, ExcelExportProfile.DATA_ONLY):
-            export_excel(
-                extracted=extracted,
-                derived=derived,
-                validation=validation,
-                output=io.BytesIO(),
-                profile=profile,
-            )
+        export_excel(
+            extracted=extracted,
+            derived=derived,
+            validation=validation,
+            output=io.BytesIO(),
+            profile=ExcelExportProfile.FAST,
+        )
         assert (extracted.config, extracted.source_objects, derived, validation) == before
 
     def test_fast_export_metrics_are_value_free_and_split_build_from_save(self):
@@ -341,30 +385,6 @@ class ExcelReportTest(unittest.TestCase):
         diagnostics = repr(metrics.as_dict())
         for source_value in ("FG-TEST", "wan-dhcp", "source-user", "do-not-export-this-secret"):
             self.assertNotIn(source_value, diagnostics)
-
-    def test_data_only_is_streaming_data_without_empty_or_presentation_sheets(self):
-        fast = self._workbook(profile=ExcelExportProfile.FAST)
-        data_only = self._workbook(profile=ExcelExportProfile.DATA_ONLY)
-
-        assert "Summary" in data_only.sheetnames
-        assert "Addresses" in data_only.sheetnames
-        assert "NTP Servers" not in data_only.sheetnames
-        assert data_only["Addresses"].merged_cells.ranges == set()
-        assert data_only["Addresses"].freeze_panes is None
-        assert data_only["Addresses"].auto_filter.ref is None
-        assert data_only["Addresses"].sheet_view.showGridLines is True
-        assert data_only["Addresses"].column_dimensions["A"].width > 13
-        assert data_only["Summary"].column_dimensions["A"].width == 42
-        assert data_only["Summary"].column_dimensions["B"].width == 52
-        assert not any(
-            cell.hyperlink
-            for sheet in data_only.worksheets
-            for row in sheet.iter_rows()
-            for cell in row
-        )
-        assert list(data_only["Addresses"].iter_rows(values_only=True)) == list(
-            fast["Addresses"].iter_rows(min_row=3, values_only=True)
-        )
 
     @staticmethod
     def _rows(sheet):
@@ -717,27 +737,15 @@ end
             row = next(row for row in rows if row[headers.index(identity_header)] == identity)
             self.assertEqual("ipv6", row[headers.index("Address Family")], sheet_name)
 
-    def test_ssl_vpn_source_flags_and_nested_bookmarks_reach_workbook(self):
+    def test_ssl_vpn_client_secret_presence_reaches_workbook(self):
         workbook = self._workbook('''config vpn ssl client
     edit remote
         set psk client-secret
     next
 end
-config vpn ssl web user-bookmark
-    edit alice
-        config bookmarks
-            edit app
-                set apptype rdp
-                set logon-password bookmark-secret
-            next
-        end
-    next
-end
 ''')
         clients, client_rows = self._rows(workbook["SSL VPN Clients"])
         self.assertEqual("Yes", client_rows[0][clients.index("PSK Configured")])
-        bookmarks = list(workbook["SSL VPN Bookmarks"].iter_rows(min_row=4, values_only=True))
-        self.assertEqual("User", bookmarks[0][0])
 
     def test_policy_based_ipsec_rows_keep_their_source_family(self):
         workbook = self._workbook('''config vpn ipsec phase1
