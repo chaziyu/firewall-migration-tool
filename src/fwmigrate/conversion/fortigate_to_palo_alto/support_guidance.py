@@ -85,7 +85,7 @@ def _warning_guidance(item, warning, decisions):
         ("inspection settings", "INSPECTION_UNSUPPORTED", "Manual target design", "Define equivalent PAN-OS security profiles and attach them explicitly."),
         ("unsupported service protocol", "SERVICE_UNSUPPORTED", "Converter feature", "Use a supported service protocol/port or create the target service manually."),
         ("unsupported source or dynamic routing", "ROUTE_SEMANTICS_UNSUPPORTED", "Converter feature", "Redesign the route using supported static-route semantics."),
-        ("vip type or load-balancing", "VIP_SEMANTICS_UNSUPPORTED", "Manual target design", "Resolve the target NAT/load-balancing design manually."),
+        ("vip load-balancing", "VIP_SEMANTICS_UNSUPPORTED", "Manual target design", "Resolve the target NAT/load-balancing design manually."),
         ("vip requires", "VIP_MAPPING_REQUIRED", "MISSING_MAPPING", "Confirm one external and one mapped address for the VIP."),
     )
     for needle, code, resolution, action in feature_map:

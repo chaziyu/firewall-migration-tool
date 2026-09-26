@@ -31,8 +31,11 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
-from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import suggest_from_target, target_devices, target_device_metadata
+from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import (
+    discover_target_candidates, suggest_from_target, target_devices, target_device_metadata,
+)
 from fwmigrate.conversion.fortigate_to_palo_alto.target_validation import validate_against_target
+from fwmigrate.conversion.fortigate_to_palo_alto.review_context import build_review_context
 from fwmigrate.conversion.fortigate_to_palo_alto.support_guidance import build_support_guidance
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
@@ -69,6 +72,30 @@ def _decision_document(source_digest, decision_set, target_evidence=None):
     return document
 
 
+def _decision_evidence(decision_set, target_findings):
+    conflicts = {item.decision_key for item in target_findings}
+    return {
+        item.key: (
+            "CONFLICT" if item.key in conflicts else
+            "ENGINEER" if item.review_state is PANDecisionReviewState.CONFIRMED else
+            item.evidence_source or "SOURCE"
+        )
+        for item in decision_set.decisions
+    }
+
+
+def _evidence_summary(decision_set, evidence):
+    values = [evidence[item.key] for item in decision_set.decisions]
+    return {
+        "target_backed": values.count("TARGET"),
+        "source_only": values.count("SOURCE"),
+        "conflicts": values.count("CONFLICT"),
+        "required": sum(item.mode == PANDecisionMode.REQUIRED and item.review_state != PANDecisionReviewState.CONFIRMED
+                         for item in decision_set.decisions),
+        "confirmed": sum(item.review_state == PANDecisionReviewState.CONFIRMED for item in decision_set.decisions),
+    }
+
+
 def _load_decision_document(document, source_digest):
     if not isinstance(document, dict) or document.get("format_version") not in {1, _DECISION_FORMAT_VERSION}:
         raise ValueError("Unsupported migration decision document")
@@ -77,6 +104,16 @@ def _load_decision_document(document, source_digest):
     if document.get("source_digest") != source_digest:
         raise ValueError("Migration decisions belong to a different source configuration")
     return PANMigrationDecisionSet.from_dict({"decisions": document.get("decisions")})
+
+
+def _target_evidence_changed(document, target_context):
+    previous = document.get("target_evidence") if isinstance(document, dict) else None
+    return bool(
+        isinstance(previous, dict)
+        and previous.get("config_digest")
+        and target_context
+        and previous["config_digest"] != target_context.source_digest
+    )
 
 
 def _options_mapping(options):
@@ -447,15 +484,21 @@ def create_app(test_config=None):
             previous = _load_decision_document(prior, entry.source_digest) if prior is not None else None
             decision_set = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
             target_context = _target_evidence(payload)
+            target_evidence_changed = _target_evidence_changed(prior, target_context)
             target = target_context.analysis if target_context else None
             target_device = target_context.selected_device if target_context else None
             devices = list(target_context.devices) if target_context else []
             target_warnings = {}
+            decision_candidates = {}
             if target and target_device:
+                decision_candidates = discover_target_candidates(
+                    analysis.extracted.config, decision_set, target, target_device
+                )
                 decision_set, target_warnings = suggest_from_target(
                     analysis.extracted.config, decision_set, target, target_device
                 )
             target_findings = validate_against_target(analysis.extracted.config, decision_set, target, target_device)
+            decision_evidence = _decision_evidence(decision_set, target_findings)
             recommendations = build_recommendations(
                 analysis.extracted.config, analysis.derived, decision_set, target, target_device
             )
@@ -465,9 +508,20 @@ def create_app(test_config=None):
                                                                      target_context.metadata if target_context else None),
                             'target_devices': devices, 'target_device': target_device,
                             'target_device_metadata': target_device_metadata(target) if target else [],
+                            'decision_context': build_review_context(
+                                analysis.extracted.config, decision_set,
+                                candidates=decision_candidates,
+                                target_available=target is not None,
+                                target_selected=bool(target_device),
+                                target_device_count=len(devices),
+                            ),
+                            'decision_candidates': decision_candidates,
                             'target_warnings': target_warnings,
                             'target_findings': [item.to_dict() for item in target_findings],
+                            'decision_evidence': decision_evidence,
+                            'evidence_summary': _evidence_summary(decision_set, decision_evidence),
                             'target_evidence': target_context.metadata if target_context else None,
+                            'target_evidence_changed': target_evidence_changed,
                             'recommendations': [item.to_dict() for item in recommendations]})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
@@ -569,12 +623,14 @@ def create_app(test_config=None):
                 decision_document = _decision_document(entry.source_digest, decision_set)
                 mapping = _options_mapping(options)
             target_context = _target_evidence(payload)
+            target_evidence_changed = _target_evidence_changed(serialized, target_context)
             target = target_context.analysis if target_context else None
             target_device = target_context.selected_device if target_context else None
             target_warnings = {}
             if target and target_device:
                 decision_set, target_warnings = suggest_from_target(analysis.extracted.config, decision_set, target, target_device)
             target_findings = validate_against_target(analysis.extracted.config, decision_set, target, target_device)
+            decision_evidence = _decision_evidence(decision_set, target_findings)
             recommendations = build_recommendations(
                 analysis.extracted.config, analysis.derived, decision_set, target, target_device
             )
@@ -589,7 +645,10 @@ def create_app(test_config=None):
                 'source': {'vendor': 'fortigate', 'digest': entry.source_digest},
                 'target_evidence': safe_target_evidence,
                 'review': {
+                    'target_evidence_changed': target_evidence_changed,
                     'target_findings': [item.to_dict() for item in target_findings],
+                    'decision_evidence': decision_evidence,
+                    'evidence_summary': _evidence_summary(decision_set, decision_evidence),
                     'support_guidance': [item.to_dict() for item in support_guidance],
                     'recommendations': [item.to_dict() for item in recommendations],
                 }})
@@ -612,9 +671,12 @@ def create_app(test_config=None):
                 'blocking_reasons': [issue['message'] for issue in missing],
                 'target_warnings': target_warnings,
                 'target_findings': [item.to_dict() for item in target_findings],
+                'decision_evidence': decision_evidence,
+                'evidence_summary': _evidence_summary(decision_set, decision_evidence),
                 'support_guidance': [item.to_dict() for item in support_guidance],
                 'recommendations': [item.to_dict() for item in recommendations],
                 'target_evidence': safe_target_evidence,
+                'target_evidence_changed': target_evidence_changed,
                 'report': rendered.report,
                 'validation': {'issue_summary': rendered.report['issue_summary']},
             })

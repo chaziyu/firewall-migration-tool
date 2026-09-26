@@ -2,13 +2,38 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from difflib import SequenceMatcher
+from enum import Enum
 from ipaddress import ip_interface
 import re
 
 
 def normalized_name(value) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
+
+
+class PANInterfaceCandidateClass(str, Enum):
+    STRONG = "STRONG"
+    POSSIBLE = "POSSIBLE"
+    EXCLUDED = "EXCLUDED"
+
+
+@dataclass(frozen=True, slots=True)
+class PANInterfaceCandidate:
+    value: str
+    target_scope: str | None
+    candidate_class: PANInterfaceCandidateClass
+    strong_evidence: tuple[str, ...] = ()
+    supporting_evidence: tuple[str, ...] = ()
+    contradicting_evidence: tuple[str, ...] = ()
+
+    def to_dict(self):
+        return {"value": self.value, "target_scope": self.target_scope,
+                "class": self.candidate_class.value,
+                "strong_evidence": list(self.strong_evidence),
+                "supporting_evidence": list(self.supporting_evidence),
+                "contradicting_evidence": list(self.contradicting_evidence)}
 
 
 def _interfaces(value):
@@ -89,8 +114,9 @@ def candidate_evidence(source, target, topology=None, mapped_parent=None):
 
     if source_ips & target_ips:
         strong.append("exact IP/prefix")
-    elif "same IPv4 subnet" in supporting and vlan is not None and mapped_parent and _parent(target, topology) == mapped_parent:
-        strong.append("same subnet + VLAN + confirmed parent")
+    elif vlan is not None and str(vlan) == str(getattr(target, "tag", None)) and mapped_parent and _parent(target, topology) == mapped_parent:
+        strong.append("same subnet + VLAN + confirmed parent" if "same IPv4 subnet" in supporting
+                      else f"VLAN {vlan} + confirmed parent {mapped_parent}")
     return tuple(dict.fromkeys(strong)), tuple(dict.fromkeys(supporting)), tuple(dict.fromkeys(contradicting))
 
 
