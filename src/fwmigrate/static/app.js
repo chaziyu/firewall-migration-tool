@@ -2564,7 +2564,7 @@ let migrationPlanNeedsRebuild = false;
           const status = artifact.plan_status === "READY_NO_CHANGES"
             ? "No PAN-OS configuration changes are required. All supported planned objects are already satisfied by the selected target."
             : artifact.plan_status === "READY" ? "Migration artifact ready."
-              : artifact.plan_status === "PARTIAL" ? (artifact.commands ? "Partial commands are ready." : "The migration plan has blockers.") : "Target mappings required.";
+              : artifact.plan_status === "PARTIAL" ? (artifact.commands ? "Partial commands are ready." : "The migration plan has blockers. No commands are ready.") : "Target mappings required.";
           const blockers = new Set(artifact.blocking_reasons || []);
           const targetIssueCount = (artifact.target_findings || []).length;
           const guidanceCount = (artifact.support_guidance || []).length;
