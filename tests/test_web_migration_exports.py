@@ -1,7 +1,8 @@
 import io
 import json
 import zipfile
-from fwmigrate.web import create_app
+from types import SimpleNamespace
+from fwmigrate.web import _deployment_validation_feedback, create_app
 from tests.fixture_paths import CISCO_ASA_FIXTURE
 from pathlib import Path
 
@@ -81,6 +82,79 @@ def test_target_preview_adds_pending_evidence_based_suggestions():
     assert lan_group["queue"] in {"READY_TO_CONFIRM", "CHOOSE_CANDIDATE", "NEEDS_INPUT"}
     assert decisions[("root", "vsys")]["suggested_value"] == "vsys1"
     assert decisions[("root", "virtual_router")]["suggested_value"] == "vr-main"
+
+
+def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview, target_preview = _preview(client), _target_preview(client)
+    requirements = client.post("/api/migration/requirements", json={
+        "preview_id": source_preview, "target_preview_id": target_preview,
+    }).get_json()
+    imported = client.post("/api/migration/target-intent/import", json={
+        "preview_id": source_preview, "decision_document": requirements["decision_document"],
+        "yaml": "interfaces:\n  lan: ethernet1/1\n",
+    })
+    assert imported.status_code == 200
+    imported_document = imported.get_json()["decision_document"]
+    lan = next(item for item in imported_document["decisions"]
+               if item["source_kind"] == "interface" and item["source_name"] == "lan"
+               and item["target_field"] == "target_interface")
+    assert lan["review_state"] == "CONFIRMED" and lan["value"] == "ethernet1/1"
+    exported = client.post("/api/migration/target-intent/export", json={
+        "preview_id": source_preview, "decision_document": imported_document,
+    })
+    assert exported.status_code == 200
+    assert "lan: ethernet1/1" in exported.get_json()["yaml"]
+
+    safe_keys = [key for key, item in requirements["auto_decisions"].items()
+                 if item["status"] in {"VERIFIED", "DERIVED"}]
+    assert safe_keys
+    approved = client.post("/api/migration/decisions/approve", json={
+        "preview_id": source_preview, "decision_document": requirements["decision_document"],
+        "decision_keys": safe_keys, "target_preview_id": target_preview,
+    })
+    assert approved.status_code == 200
+    assert approved.get_json()["approved_count"] == len(safe_keys)
+    approved_items = {item["key"]: item for item in approved.get_json()["decisions"]["decisions"]}
+    assert all(approved_items[key]["review_state"] == "CONFIRMED" for key in safe_keys)
+
+    manual_key = next(key for key, item in requirements["auto_decisions"].items()
+                      if item["status"] == "MANUAL")
+    rejected = client.post("/api/migration/decisions/approve", json={
+        "preview_id": source_preview, "decision_document": requirements["decision_document"],
+        "decision_keys": [manual_key], "target_preview_id": target_preview,
+    })
+    assert rejected.status_code == 400
+
+
+def test_fixed_point_automation_requires_opt_in_policies_and_records_engineer_provenance():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview, target_preview = _preview(client), _target_preview(client)
+    requirements = client.post("/api/migration/requirements", json={
+        "preview_id": source_preview, "target_preview_id": target_preview,
+    }).get_json()
+    request = {"preview_id": source_preview, "target_preview_id": target_preview,
+               "decision_document": requirements["decision_document"]}
+
+    disabled = client.post("/api/migration/automation/run", json=request)
+    assert disabled.status_code == 200
+    assert disabled.get_json()["audit"] == []
+    assert not any(item["review_state"] == "CONFIRMED"
+                   for item in disabled.get_json()["decisions"]["decisions"])
+
+    enabled = client.post("/api/migration/automation/run", json={**request, "enabled_policies": [
+        "AUTO_APPLY_VERIFIED", "AUTO_APPLY_DERIVED",
+    ]})
+    assert enabled.status_code == 200
+    payload = enabled.get_json()
+    assert payload["stable"] is True
+    assert payload["audit"]
+    confirmed = [item for item in payload["decisions"]["decisions"] if item["review_state"] == "CONFIRMED"]
+    assert confirmed
+    assert all(item["evidence_source"] == "ENGINEER"
+               and item["evidence_type"] == "ENGINEER_AUTOMATION_POLICY" for item in confirmed)
+    rejected = client.post("/api/migration/automation/run", json={**request, "enabled_policies": ["AUTO_APPLY_CANDIDATE"]})
+    assert rejected.status_code == 400
 
 
 def test_source_only_requirements_show_facts_and_next_action_without_candidates():
@@ -326,6 +400,18 @@ def test_deploy_rejects_empty_rendered_artifact_before_credentials():
     response = client.post("/api/deploy", json={"artifact_id": plan["artifact_id"]})
     assert response.status_code == 400
     assert "no renderable commands" in response.get_json()["error"]
+
+
+def test_candidate_validation_failure_maps_to_rendered_migration_item_when_unique():
+    rendered = SimpleNamespace(report={"items": [{"source_vdom": "root", "source_kind": "service",
+        "source_name": "web-https", "target_name": "web-https", "commands": [
+            "set vsys vsys1 service web-https protocol tcp port 443"]}]})
+    document = {"decisions": [{"source_vdom": "root", "source_name": "web-https", "key": "decision-1"}]}
+    validation = SimpleNamespace(status="FAILED", response="validation error: service web-https is invalid")
+    feedback = _deployment_validation_feedback(rendered, document, validation)
+    assert feedback["mapping_status"] == "MAPPED"
+    assert feedback["migration_items"][0]["decision_keys"] == ["decision-1"]
+    assert feedback["migration_items"][0]["generated_commands"][0].endswith("port 443")
 
 
 def test_terraform_endpoints_are_removed():

@@ -2146,6 +2146,8 @@ select {
 .review-queues button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text-heading); }
 .review-queues button span { margin-left: .35rem; font-weight: 700; }
 .review-work-card { display: grid; gap: .8rem; margin: .8rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); }
+.automation-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem 1rem; margin: .75rem 0; padding: .75rem; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.automation-controls h3, .automation-controls p { flex-basis: 100%; margin: 0; }
 .review-work-heading { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .15rem .75rem; }
 .review-work-heading h3, .review-work-heading p { margin: 0; }
 .review-work-heading p { color: var(--text-muted); font-size: .85rem; }
@@ -2158,6 +2160,9 @@ select {
 .review-work-candidate details summary, .review-work-impact details summary { cursor: pointer; color: var(--text-muted); }
 .review-work-notes { margin: .25rem 0; color: var(--warning); }
 .review-work-impact { display: grid; gap: .35rem; color: var(--text-muted); font-size: .9rem; }
+.target-intent { margin: .75rem 0 1rem; }
+.target-intent h3 { margin-bottom: .35rem; }
+.architecture-question { border-color: var(--accent); }
 .advanced-decision-view { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: .8rem; }
 .advanced-decision-view > summary { cursor: pointer; font-weight: 600; }
 @media (max-width: 640px) { .review-work-candidate { grid-template-columns: 1fr auto; } .review-work-candidate details { grid-column: 1 / -1; } }

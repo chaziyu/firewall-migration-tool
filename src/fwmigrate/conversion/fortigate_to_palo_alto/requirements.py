@@ -99,6 +99,20 @@ def build_mapping_requirements(config, derived):
             vdom = client.vdom or "root"
             need(vdom, client.interface, "interface", "ssl_vpn", ("ssl_vpn_client", vdom, client.name), "target_interface")
 
+    source_interfaces = {(item.vdom or "root", item.name): item for item in getattr(config, "interfaces", ()) if item.name}
+    expanded_parents = set()
+    while True:
+        children = [(vdom, name) for vdom, name, kind in required if kind == "interface"
+                    and (vdom, name) not in expanded_parents]
+        if not children:
+            break
+        for vdom, name in children:
+            expanded_parents.add((vdom, name))
+            item = source_interfaces.get((vdom, name))
+            if item and item.interface:
+                need(vdom, item.interface, "interface", "interface_parent",
+                     ("interface_parent", vdom, name), "target_interface")
+
     vdoms = sorted(required_vdoms | {vdom for vdom, _, _ in required} or {"root"})
     interfaces = []
     for _, value in sorted(required.items()):

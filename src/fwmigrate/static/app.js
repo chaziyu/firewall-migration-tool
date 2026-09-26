@@ -14,7 +14,11 @@ let migrationPlanRevision = 0;
   let decisionContext = {};
   let decisionCandidates = {};
   let reviewSummary = {};
+  let automationRunSummary = null;
   let reviewGroups = [];
+  let autoDecisionResults = {};
+  let architectureQuestions = [];
+  let ruleSuggestions = [];
   let activeReviewQueue = "READY_TO_CONFIRM";
   let currentPreviewId = null;
   let currentTargetPreviewId = null;
@@ -1302,6 +1306,8 @@ let migrationPlanRevision = 0;
       decisionCandidates = {};
       reviewSummary = {};
       reviewGroups = [];
+      autoDecisionResults = {};
+      architectureQuestions = [];
       panel?.classList.add("hidden");
       return;
     }
@@ -1322,6 +1328,9 @@ let migrationPlanRevision = 0;
     decisionCandidates = result.decision_candidates || {};
     reviewSummary = result.review_summary || {};
     reviewGroups = result.review_groups || [];
+    autoDecisionResults = result.auto_decisions || {};
+    architectureQuestions = result.architecture_questions || [];
+    ruleSuggestions = result.rule_suggestions || [];
     targetWarnings = result.target_warnings || {};
     targetFindings = result.target_findings || [];
     decisionEvidence = result.decision_evidence || {};
@@ -1371,11 +1380,13 @@ let migrationPlanRevision = 0;
   async function refreshMigrationReviewFromCurrentDecisions() {
     if (!currentPreviewId) return;
     const previous = currentDecisionPayload();
+    automationRunSummary = null;
     invalidateMigrationPlan();
     await loadMigrationReview(currentPreviewId, previous);
   }
 
   function clearTargetEvidence() {
+    automationRunSummary = null;
     targetRevision += 1;
     currentTargetPreviewId = null;
     selectedTargetDevice = "";
@@ -1441,20 +1452,33 @@ let migrationPlanRevision = 0;
     const container = document.getElementById("migration-review-groups");
     if (!summaryNode || !container) return;
     const summaryItems = [
-      ["auto_resolved", "Resolved automatically"], ["ready_to_confirm", "Suggestions ready"],
-      ["choose_candidate", "Choices needed"], ["needs_input", "Manual decisions"],
-      ["conflicts", "Conflicts"], ["confirmed", "Confirmed"],
+      ["verified", "Verified"], ["derived", "Derived"],
+      ["choose_candidate", "Choices"], ["needs_input", "Manual"], ["conflicts", "Conflicts"],
     ];
+    const safeCount = status => Object.values(autoDecisionResults).filter(item => item.status === status).length;
+    const safeKeys = Object.entries(autoDecisionResults).filter(([, item]) => ["VERIFIED", "DERIVED"].includes(item.status)).map(([key]) => key);
+    reviewSummary.verified = safeCount("VERIFIED");
+    reviewSummary.derived = safeCount("DERIVED");
+    const approveSafe = document.getElementById("decision-approve-safe");
+    if (approveSafe) {
+      approveSafe.textContent = `Approve ${safeKeys.length} verified / derived mappings`;
+      approveSafe.disabled = safeKeys.length === 0;
+    }
     summaryNode.replaceChildren(...summaryItems.map(([key, label]) => {
       const card = document.createElement("div"); card.className = "review-summary-card";
       const count = document.createElement("strong"); count.textContent = String(reviewSummary[key] || 0);
       const text = document.createElement("span"); text.textContent = label;
       card.append(count, text); return card;
     }));
+    const automationResult = document.getElementById("automation-result");
+    if (automationResult && automationRunSummary) {
+      automationResult.textContent = `Automation result · ${automationRunSummary.resolved} resolved by enabled rules · ${reviewSummary.verified} verified against target · ${reviewSummary.choose_candidate || 0} choices required · ${reviewSummary.needs_input || 0} manual design items · ${reviewSummary.conflicts || 0} conflicts`;
+    }
     const tabCounts = {
       READY_TO_CONFIRM: reviewGroups.filter(group => group.queue === "READY_TO_CONFIRM").length,
       CHOOSE_CANDIDATE: reviewGroups.filter(group => group.queue === "CHOOSE_CANDIDATE").length,
-      NEEDS_INPUT: reviewGroups.filter(group => ["NEEDS_INPUT", "CONFLICT"].includes(group.queue)).length,
+      NEEDS_INPUT: reviewGroups.filter(group => group.queue === "NEEDS_INPUT").length,
+      CONFLICT: reviewGroups.filter(group => group.queue === "CONFLICT").length,
       COMPLETE: reviewGroups.filter(group => group.queue === "COMPLETE").length,
     };
     document.querySelectorAll("[data-review-queue]").forEach(tab => {
@@ -1462,12 +1486,10 @@ let migrationPlanRevision = 0;
       tab.setAttribute("aria-selected", String(queue === activeReviewQueue));
       const count = tab.querySelector("span"); if (count) count.textContent = String(tabCounts[queue] || 0);
     });
-    let visible = reviewGroups.filter(group => activeReviewQueue === "NEEDS_INPUT"
-      ? ["NEEDS_INPUT", "CONFLICT"].includes(group.queue) : group.queue === activeReviewQueue);
+    let visible = reviewGroups.filter(group => group.queue === activeReviewQueue);
     if (!visible.length) {
-      const fallback = ["READY_TO_CONFIRM", "CHOOSE_CANDIDATE", "NEEDS_INPUT", "COMPLETE"]
-        .find(queue => reviewGroups.some(group => queue === "NEEDS_INPUT"
-          ? ["NEEDS_INPUT", "CONFLICT"].includes(group.queue) : group.queue === queue));
+      const fallback = ["READY_TO_CONFIRM", "CHOOSE_CANDIDATE", "NEEDS_INPUT", "CONFLICT", "COMPLETE"]
+        .find(queue => reviewGroups.some(group => group.queue === queue));
       if (fallback) {
         activeReviewQueue = fallback;
         return renderMigrationReviewWorkflow();
@@ -1478,6 +1500,59 @@ let migrationPlanRevision = 0;
       container.replaceChildren(empty); return;
     }
     const fragment = document.createDocumentFragment();
+    for (const question of architectureQuestions) {
+      const card = document.createElement("article"); card.className = "review-work-card architecture-question";
+      const title = document.createElement("h3");
+      title.textContent = question.type === "AGGREGATE_MAPPING" ? `Which PAN aggregate replaces ${question.source_name}?`
+        : question.type === "VDOM_CONTEXT" ? `Where should ${question.source_name} VDOM live?`
+          : `Which PAN zone replaces ${question.source_name}?`;
+      card.append(title);
+      if (question.type === "AGGREGATE_MAPPING") {
+        const affected = document.createElement("p"); affected.textContent = `Will re-evaluate ${question.affected_count} VLAN mappings when you confirm this parent.`;
+        card.append(affected);
+      }
+      const choices = question.type === "VDOM_CONTEXT"
+        ? question.fields.flatMap(field => field.suggested_value ? [{ key: field.key, value: `${field.target_field === "vsys" ? "VSYS" : "VR"}: ${field.suggested_value}`, target: field.suggested_value }] : [])
+        : (question.candidates || []).map(value => ({ key: question.decision_key, value: question.type === "ZONE_MAPPING" ? value : `Use ${value}`, target: value }));
+      for (const option of choices) {
+        const button = document.createElement("button"); button.type = "button"; button.className = "btn btn-secondary btn-sm";
+        button.textContent = option.value.startsWith("VSYS:") || option.value.startsWith("VR:") || question.type === "ZONE_MAPPING" ? option.value : `Use ${option.value}`;
+        button.addEventListener("click", () => {
+          const input = document.querySelector(`.review-work-value[data-decision-key="${CSS.escape(option.key)}"]`);
+          const decision = currentDecisionSet.decisions.find(item => item.key === option.key);
+          if (input && decision) { input.value = option.target; decision.value = option.target; decision.review_state = "PENDING"; invalidateMigrationPlan(); }
+        });
+        card.append(button);
+      }
+      fragment.append(card);
+    }
+    for (const suggestion of ruleSuggestions) {
+      const card = document.createElement("article"); card.className = "review-work-card architecture-question";
+      const title = document.createElement("h3");
+      title.textContent = `Apply ${suggestion.target_zone} to ${suggestion.affected.length} other interfaces in ${suggestion.source_zone}?`;
+      const facts = document.createElement("p");
+      facts.textContent = `Based on ${suggestion.confirmed_count} engineer-confirmed mappings for explicit zone members.`;
+      const review = document.createElement("details");
+      const summary = document.createElement("summary"); summary.textContent = "Review affected mappings";
+      const list = document.createElement("ul");
+      suggestion.affected.forEach(name => { const item = document.createElement("li"); item.textContent = name; list.append(item); });
+      review.append(summary, list);
+      const apply = document.createElement("button"); apply.type = "button"; apply.className = "btn btn-secondary";
+      apply.textContent = `Apply to ${suggestion.affected.length} mappings`;
+      apply.addEventListener("click", async () => {
+        apply.disabled = true;
+        try {
+          const response = await fetch("/api/migration/rules/apply", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(),
+              rule_type: suggestion.rule_type, source_vdom: suggestion.source_vdom,
+              source_zone: suggestion.source_zone, value: suggestion.target_zone, apply_to: suggestion.apply_to }) });
+          const result = await readJson(response, "Could not apply repeated engineer pattern");
+          await loadMigrationReview(currentPreviewId, result.decision_document);
+          invalidateMigrationPlan();
+        } catch (error) { showError(error.message); apply.disabled = false; }
+      });
+      card.append(title, facts, review, apply); fragment.append(card);
+    }
     const decisionByKey = new Map(currentDecisionSet.decisions.map(item => [item.key, item]));
     const labels = { target_interface: "Target interface", target_zone: "Target zone", vsys: "Target VSYS", virtual_router: "Target virtual router" };
     const statusLabels = { READY_TO_CONFIRM: "Suggestion ready", CHOOSE_CANDIDATE: "Choose a match", NEEDS_INPUT: "Manual decision", CONFLICT: "Conflict", COMPLETE: "Complete" };
@@ -1605,6 +1680,66 @@ let migrationPlanRevision = 0;
     activeReviewQueue = tab.dataset.reviewQueue; renderMigrationReviewWorkflow();
   }));
 
+  document.getElementById("automation-run")?.addEventListener("click", async event => {
+    if (!currentPreviewId) return;
+    const button = event.currentTarget;
+    const enabledPolicies = [
+      document.getElementById("automation-verified")?.checked && "AUTO_APPLY_VERIFIED",
+      document.getElementById("automation-derived")?.checked && "AUTO_APPLY_DERIVED",
+    ].filter(Boolean);
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/migration/automation/run", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(),
+          enabled_policies: enabledPolicies,
+          ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}) }) });
+      const result = await readJson(response, "Could not run deterministic automation");
+      automationRunSummary = { resolved: (result.audit || []).length };
+      if (!enabledPolicies.length) automationRunSummary.resolved = 0;
+      await loadMigrationReview(currentPreviewId, result.decision_document);
+      invalidateMigrationPlan();
+    } catch (error) { showError(`Could not run deterministic automation: ${error.message}`); }
+    finally { button.disabled = false; }
+  });
+
+  document.getElementById("decision-approve-safe")?.addEventListener("click", async () => {
+    const decisionKeys = Object.entries(autoDecisionResults).filter(([, item]) => ["VERIFIED", "DERIVED"].includes(item.status)).map(([key]) => key);
+    if (!decisionKeys.length) return;
+    try {
+      const response = await fetch("/api/migration/decisions/approve", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(), decision_keys: decisionKeys,
+          ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}) }) });
+      const result = await readJson(response, "Could not approve verified mappings");
+      await loadMigrationReview(currentPreviewId, result.decision_document);
+      invalidateMigrationPlan();
+    } catch (error) { showError(`Could not approve mappings: ${error.message}`); }
+  });
+
+  document.getElementById("target-intent-import")?.addEventListener("change", async event => {
+    const file = event.target.files?.[0]; if (!file || !currentPreviewId) return;
+    try {
+      const yaml = await file.text();
+      const response = await fetch("/api/migration/target-intent/import", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(), yaml,
+          ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}) }) });
+      const result = await readJson(response, "Could not import target intent");
+      await loadMigrationReview(currentPreviewId, result.decision_document);
+      invalidateMigrationPlan();
+    } catch (error) { showError(`Could not import target intent: ${error.message}`); }
+    finally { event.target.value = ""; }
+  });
+
+  document.getElementById("target-intent-export")?.addEventListener("click", async () => {
+    if (!currentPreviewId) return;
+    try {
+      const response = await fetch("/api/migration/target-intent/export", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload() }) });
+      const result = await readJson(response, "Could not export target intent");
+      const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([result.yaml], { type: "text/yaml" }));
+      link.download = "target_intent.yaml"; link.click(); URL.revokeObjectURL(link.href);
+    } catch (error) { showError(`Could not export target intent: ${error.message}`); }
+  });
+
   function switchIngestMode(mode) {
     if (!["file", "snapshot"].includes(mode)) return;
     ingestMode = mode;
@@ -1632,6 +1767,7 @@ let migrationPlanRevision = 0;
   async function applyCollectionPreview(data) {
     currentPreviewId = data.preview_id;
     sourceReady = false;
+    automationRunSummary = null;
     currentReport = data.preview?.sections ? data.preview : null;
     reportPage = 1;
     activeValidationGroup = "";

@@ -3,7 +3,9 @@
 from collections import Counter
 
 from .decisions import PANDecisionMode, PANDecisionReviewState
-from .decision_propagation import dependent_decision_keys, zone_member_decision_keys
+from .decision_propagation import (
+    dependent_decision_keys, repeated_zone_action_suggestions, zone_member_decision_keys,
+)
 
 
 def _queue(decision, candidates, evidence):
@@ -75,6 +77,40 @@ def build_review_workflow(config, decisions, *, candidates, context, decision_ev
         group.pop("queues")
         result.append(group)
     result.sort(key=group_order)
+    architecture_questions = []
+    interfaces = {(item.vdom or "root", item.name): item for item in getattr(config, "interfaces", ())}
+    for group in result:
+        pending = [item for item in group["decisions"] if item["mode"] != "UNSUPPORTED"
+                   and item["review_state"] != PANDecisionReviewState.CONFIRMED]
+        if group["source_kind"] == "vdom" and pending:
+            architecture_questions.append({"type": "VDOM_CONTEXT", "source_vdom": group["source_vdom"],
+                "source_name": group["source_name"], "fields": [
+                    {"key": item["key"], "target_field": item["target_field"],
+                     "suggested_value": item.get("suggested_value")} for item in pending]})
+        elif group["source_kind"] == "zone" and pending:
+            decision = next((item for item in pending if item["target_field"] == "target_zone"), None)
+            if decision:
+                choices = list(dict.fromkeys([decision.get("suggested_value"), *[
+                    item.get("value") for item in (candidates or {}).get(decision["key"], ())]]))
+                architecture_questions.append({"type": "ZONE_MAPPING", "source_vdom": group["source_vdom"],
+                    "source_name": group["source_name"], "decision_key": decision["key"],
+                    "candidates": [item for item in choices if item]})
+        source = interfaces.get((group["source_vdom"], group["source_name"]))
+        if group["source_kind"] != "interface" or source is None or (source.type or "").casefold() != "aggregate":
+            continue
+        key = next((item["key"] for item in group["decisions"] if item["target_field"] == "target_interface"), None)
+        options = (candidates or {}).get(key, ())
+        matches = [item for item in options if item.get("class") == "STRONG"]
+        children = [item for item in getattr(config, "interfaces", ())
+                    if (item.vdom or "root") == group["source_vdom"] and item.interface == source.name
+                    and item.vlanid is not None]
+        parent_pending = any(item["key"] == key and item["review_state"] != PANDecisionReviewState.CONFIRMED
+                             for item in group["decisions"])
+        if key and parent_pending and matches and children:
+            architecture_questions.append({"type": "AGGREGATE_MAPPING", "source_vdom": group["source_vdom"],
+                "source_name": source.name, "decision_key": key,
+                "candidates": [item["value"] for item in matches], "affected_count": len(children),
+                "affected": [item.name for item in children]})
     summary = {
         "auto_resolved": sum(item.mode == PANDecisionMode.AUTO for item in decisions.decisions),
         "ready_to_confirm": queues["READY_TO_CONFIRM"],
@@ -83,4 +119,6 @@ def build_review_workflow(config, decisions, *, candidates, context, decision_ev
         "conflicts": queues["CONFLICT"],
         "confirmed": sum(item.review_state == PANDecisionReviewState.CONFIRMED for item in decisions.decisions),
     }
-    return {"review_summary": summary, "review_groups": result}
+    return {"review_summary": summary, "review_groups": result,
+            "architecture_questions": architecture_questions,
+            "rule_suggestions": repeated_zone_action_suggestions(config, decisions)}
