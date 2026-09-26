@@ -36,6 +36,8 @@ from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.target_validation import validate_against_target
 from fwmigrate.conversion.fortigate_to_palo_alto.review_context import build_review_context
+from fwmigrate.conversion.fortigate_to_palo_alto.review_workflow import build_review_workflow
+from fwmigrate.conversion.fortigate_to_palo_alto.decision_propagation import apply_zone_to_members
 from fwmigrate.conversion.fortigate_to_palo_alto.support_guidance import build_support_guidance
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
@@ -499,6 +501,18 @@ def create_app(test_config=None):
                 )
             target_findings = validate_against_target(analysis.extracted.config, decision_set, target, target_device)
             decision_evidence = _decision_evidence(decision_set, target_findings)
+            review_context = build_review_context(
+                analysis.extracted.config, decision_set,
+                candidates=decision_candidates,
+                target_available=target is not None,
+                target_selected=bool(target_device),
+                target_device_count=len(devices),
+            )
+            review_workflow = build_review_workflow(
+                analysis.extracted.config, decision_set,
+                candidates=decision_candidates, context=review_context,
+                decision_evidence=decision_evidence, target_warnings=target_warnings,
+            )
             recommendations = build_recommendations(
                 analysis.extracted.config, analysis.derived, decision_set, target, target_device
             )
@@ -508,14 +522,9 @@ def create_app(test_config=None):
                                                                      target_context.metadata if target_context else None),
                             'target_devices': devices, 'target_device': target_device,
                             'target_device_metadata': target_device_metadata(target) if target else [],
-                            'decision_context': build_review_context(
-                                analysis.extracted.config, decision_set,
-                                candidates=decision_candidates,
-                                target_available=target is not None,
-                                target_selected=bool(target_device),
-                                target_device_count=len(devices),
-                            ),
+                            'decision_context': review_context,
                             'decision_candidates': decision_candidates,
+                            **review_workflow,
                             'target_warnings': target_warnings,
                             'target_findings': [item.to_dict() for item in target_findings],
                             'decision_evidence': decision_evidence,
@@ -523,6 +532,33 @@ def create_app(test_config=None):
                             'target_evidence': target_context.metadata if target_context else None,
                             'target_evidence_changed': target_evidence_changed,
                             'recommendations': [item.to_dict() for item in recommendations]})
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        except Exception as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 500
+
+    @app.route('/api/migration/rules/apply', methods=['POST'])
+    def apply_migration_rule():
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError('A JSON object is required')
+            if payload.get('rule_type') != 'APPLY_ZONE_TO_MEMBERS':
+                raise ValueError('Unsupported migration rule')
+            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+            if entry is None:
+                raise ValueError('A valid FortiGate preview_id is required')
+            document = payload.get('decision_document')
+            previous = _load_decision_document(document, entry.source_digest)
+            analysis = _clone_preview(entry)
+            decisions = apply_zone_to_members(
+                analysis.extracted.config, previous,
+                source_key=payload.get('source_key'), value=payload.get('value'),
+                apply_to=payload.get('apply_to'),
+            )
+            return jsonify({'success': True, 'applied_count': len(payload['apply_to']),
+                            'decision_document': _decision_document(
+                                entry.source_digest, decisions, document.get('target_evidence'))})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception as exc:

@@ -11,6 +11,18 @@
       </label>
       <p id="target-config-status" role="status" aria-live="polite">Upload target XML for evidence-based suggestions. Source-only suggestions remain available.</p>
     </div>
+    <section class="review-workflow" aria-label="Migration review queues">
+      <div id="review-summary" class="review-summary" aria-live="polite"></div>
+      <div class="review-queues" role="tablist" aria-label="Migration review work queues">
+        <button type="button" role="tab" data-review-queue="READY_TO_CONFIRM" aria-selected="true">Review suggestions <span></span></button>
+        <button type="button" role="tab" data-review-queue="CHOOSE_CANDIDATE" aria-selected="false">Choose matches <span></span></button>
+        <button type="button" role="tab" data-review-queue="NEEDS_INPUT" aria-selected="false">Manual decisions <span></span></button>
+        <button type="button" role="tab" data-review-queue="COMPLETE" aria-selected="false">Completed <span></span></button>
+      </div>
+      <div id="migration-review-groups" aria-live="polite"></div>
+    </section>
+    <details id="advanced-decision-view" class="advanced-decision-view">
+      <summary>Advanced decision view</summary>
     <div class="mapping-toolbar">
       <div class="mapping-toolbar-row">
         <label>Show <select id="mapping-filter"><option value="all">All decisions</option><option value="zones">Zones</option><option value="interfaces">Interfaces</option><option value="route-nat">Route/NAT impact</option></select></label>
@@ -45,14 +57,7 @@
     <p id="mapping-evidence-summary" aria-live="polite"></p>
     <div id="migration-mapping-fields" role="region" aria-label="Migration decisions" tabindex="0"></div>
     <details id="optional-mappings" class="hidden"><summary>Show optional / unreferenced inventory</summary><ul id="optional-mapping-list"></ul></details>
-    <section id="migration-recommendations" class="migration-recommendations" aria-labelledby="recommendations-heading">
-      <div class="section-heading"><h3 id="recommendations-heading">Migration recommendations</h3></div>
-      <p class="card-desc">Read-only pair-specific design recommendations. They never confirm mappings or become planner input.</p>
-      <div class="mapping-toolbar-row">
-        <label>Show <select id="recommendation-filter"><option value="all">All</option><option value="DHCP">DHCP</option><option value="VPN">VPN</option><option value="Users/Admin">Users/Admin</option><option value="Security">Security</option><option value="SD-WAN">SD-WAN</option><option value="SSL VPN">SSL VPN</option><option value="External Resource">External Resource</option><option value="needs-decision">Needs decision</option></select></label>
-      </div>
-      <div id="migration-recommendation-fields" role="region" aria-label="Migration recommendations" tabindex="0"></div>
-    </section>
+    </details>
   </section>
   <section class="card output-card hidden" id="migration-build" aria-labelledby="bundle-heading">
     <div class="card-header">
@@ -85,6 +90,14 @@
         <option value="manual_review">Manual review</option><option value="partial">Partial</option><option value="unsupported">Unsupported</option><option value="not_renderable">Not renderable</option>
       </select></label>
       <div id="migration-plan-items"></div>
+    </section>
+    <section id="migration-recommendations" class="migration-recommendations" aria-labelledby="recommendations-heading">
+      <div class="section-heading"><h3 id="recommendations-heading">Manual design and recommendations</h3></div>
+      <p class="card-desc">Read-only pair-specific design recommendations. They never confirm mappings or become planner input.</p>
+      <div class="mapping-toolbar-row">
+        <label>Show <select id="recommendation-filter"><option value="all">All</option><option value="DHCP">DHCP</option><option value="VPN">VPN</option><option value="Users/Admin">Users/Admin</option><option value="Security">Security</option><option value="SD-WAN">SD-WAN</option><option value="SSL VPN">SSL VPN</option><option value="External Resource">External Resource</option><option value="needs-decision">Needs decision</option></select></label>
+      </div>
+      <div id="migration-recommendation-fields" role="region" aria-label="Migration recommendations" tabindex="0"></div>
     </section>
     <section aria-labelledby="migration-commands-heading">
       <h3 id="migration-commands-heading">Generated commands</h3>

@@ -2137,6 +2137,30 @@ select {
 .decision-source-details dt { text-transform: capitalize; }
 .decision-source-details dd { margin: 0; }
 .decision-candidate { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .4rem 0; }
+.review-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .65rem; margin: 1rem 0; }
+.review-summary-card { display: grid; gap: .2rem; padding: .8rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); }
+.review-summary-card strong { font-size: 1.35rem; color: var(--text-heading); }
+.review-summary-card span { color: var(--text-muted); font-size: .85rem; }
+.review-queues { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; border-bottom: 1px solid var(--line); }
+.review-queues button { padding: .65rem .8rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); cursor: pointer; }
+.review-queues button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text-heading); }
+.review-queues button span { margin-left: .35rem; font-weight: 700; }
+.review-work-card { display: grid; gap: .8rem; margin: .8rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); }
+.review-work-heading { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .15rem .75rem; }
+.review-work-heading h3, .review-work-heading p { margin: 0; }
+.review-work-heading p { color: var(--text-muted); font-size: .85rem; }
+.review-work-badge { grid-column: 2; grid-row: 1 / span 2; padding: .25rem .55rem; border-radius: 1rem; background: var(--canvas); color: var(--text-muted); font-size: .8rem; }
+.review-work-field { display: grid; gap: .35rem; }
+.review-work-value { width: 100%; min-height: 40px; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--canvas); color: var(--text-main); }
+.review-work-suggestion, .review-work-impact p { margin: .2rem 0; color: var(--text-muted); font-size: .9rem; }
+.review-work-candidates { display: grid; gap: .4rem; }
+.review-work-candidate { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: .6rem; padding: .55rem; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.review-work-candidate details summary, .review-work-impact details summary { cursor: pointer; color: var(--text-muted); }
+.review-work-notes { margin: .25rem 0; color: var(--warning); }
+.review-work-impact { display: grid; gap: .35rem; color: var(--text-muted); font-size: .9rem; }
+.advanced-decision-view { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: .8rem; }
+.advanced-decision-view > summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 640px) { .review-work-candidate { grid-template-columns: 1fr auto; } .review-work-candidate details { grid-column: 1 / -1; } }
 #migration-plan-items { max-height: 38rem; overflow: auto; }
 .plan-issues summary { color: var(--color-primary); cursor: pointer; }
 .plan-issues ul { margin: .5rem 0 0; padding-left: 1.1rem; overflow-wrap: anywhere; }
