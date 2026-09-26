@@ -1,0 +1,14 @@
+llama.cpp
+Copyright (c) 2023-2026 The ggml authors
+MIT License: https://github.com/ggml-org/llama.cpp/blob/b11200/LICENSE
+Runtime build: b11200, Windows x64 CPU
+
+Qwen3-1.7B Q4_K_M
+Copyright (c) Alibaba Cloud
+Apache License 2.0: https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF
+Pinned model revision: daeb8e2d528a760970442092f6bf1e55c3b659eb
+The model is downloaded separately and is not bundled with the application.
+
+LLVM OpenMP runtime
+The Windows CPU distribution includes libomp.dll. Its license is provided in
+LICENSE-LLVM-OpenMP when the pinned runtime is prepared.

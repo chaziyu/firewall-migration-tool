@@ -1,8 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 datas = [('src/fwmigrate/templates', 'fwmigrate/templates'), ('src/fwmigrate/static', 'fwmigrate/static')]
 binaries = []
+runtime_dir = Path('src/fwmigrate/ai_runtime/windows-x64')
+runtime_server = runtime_dir / 'llama-server.exe'
+if not runtime_server.is_file():
+    raise SystemExit('Run python scripts/prepare_ai_runtime.py before building the desktop application')
+binaries += [(str(path), 'fwmigrate/ai_runtime/windows-x64')
+             for path in runtime_dir.iterdir() if path.suffix.casefold() in {'.exe', '.dll'}]
+datas += [(str(path), 'fwmigrate/ai_runtime/windows-x64')
+          for path in runtime_dir.iterdir() if path.name in {'runtime-manifest.json', 'THIRD-PARTY-NOTICES.txt'}
+          or path.name.startswith('LICENSE')]
 hiddenimports = ['clr', 'clr_loader', 'pythonnet']
 tmp_ret = collect_all('fwmigrate')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]

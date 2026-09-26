@@ -3,6 +3,9 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
+from fwmigrate.ai.errors import AIProviderError, AIRateLimitError, AITimeoutError
 from fwmigrate.ai.provider import AIStructuredResult
 from fwmigrate.web import create_app
 
@@ -50,7 +53,7 @@ class FakeProvider:
 
 
 def test_ai_disabled_isolated_from_deterministic_review(monkeypatch):
-    monkeypatch.delenv("AI_ASSIST_ENABLED", raising=False)
+    monkeypatch.setenv("AI_ASSIST_ENABLED", "false")
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     client = create_app({"TESTING": True}).test_client()
     status = client.get("/api/migration/ai/status")
@@ -60,6 +63,34 @@ def test_ai_disabled_isolated_from_deterministic_review(monkeypatch):
     disabled = client.post("/api/migration/ai/questions", json={"preview_id": preview_id,
         "source_facts": {"injected": True}, "decision_candidates": {"fake": ["invented"]}})
     assert disabled.status_code == 503
+
+
+def test_local_ai_status_is_safe_and_exposes_install_size(monkeypatch, tmp_path):
+    from fwmigrate.ai import local_model
+    from fwmigrate.ai.manifests import LOCAL_MODEL
+
+    monkeypatch.delenv("AI_ASSIST_ENABLED", raising=False)
+    monkeypatch.setattr(local_model, "local_ai_data_dir", lambda: tmp_path / "app-data")
+    result = create_app({"TESTING": True}).test_client().get("/api/migration/ai/status").get_json()
+    assert result["provider"] == "local"
+    assert result["available"] is False
+    assert result["local"]["download_bytes"] == LOCAL_MODEL.size_bytes
+    assert not ({"api_key", "pid", "base_url", "path"} & result["local"].keys())
+
+
+@pytest.mark.parametrize("error,status", [(AIRateLimitError, 429), (AITimeoutError, 504), (AIProviderError, 502)])
+def test_ai_provider_error_status_is_preserved(monkeypatch, error, status):
+    monkeypatch.setenv("AI_ASSIST_ENABLED", "true")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+
+    class FailingProvider:
+        def generate_structured(self, **kwargs):
+            raise error("provider failure")
+
+    client = create_app({"TESTING": True, "AI_PROVIDER_INSTANCE": FailingProvider()}).test_client()
+    preview_id = _preview(client, FIXTURE)
+    response = client.post("/api/migration/ai/questions", json={"preview_id": preview_id})
+    assert response.status_code == status
 
 
 def test_questions_rebuild_context_and_confirmation_records_engineer_provenance(monkeypatch):

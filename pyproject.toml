@@ -21,8 +21,10 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "requests>=2.28",
     "tomli>=2.0; python_version < '3.11'",
 ]
+
 reports = [
     "openpyxl>=3.1.0",
 ]
@@ -36,6 +38,9 @@ collection = [
 ai = [
     "requests>=2.28",
 ]
+
+[tool.pytest.ini_options]
+markers = ["local_ai: requires the verified local model and llama.cpp runtime"]
 
 [project.scripts]
 fwmigrate = "fwmigrate.main:cli"
