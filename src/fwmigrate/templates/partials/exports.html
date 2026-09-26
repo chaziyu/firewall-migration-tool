@@ -30,6 +30,9 @@
       <section class="automation-controls" id="migration-ai-review" aria-labelledby="migration-ai-heading">
         <h3 id="migration-ai-heading">AI-assisted review</h3>
         <p id="migration-ai-status" role="status" aria-live="polite">Checking AI assistance availability…</p>
+        <p id="migration-ai-local-details" class="muted">Local processing. <a href="https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF" target="_blank" rel="noopener">Qwen3-1.7B Q4_K_M (Apache-2.0)</a>; <a href="https://github.com/ggml-org/llama.cpp/blob/b11200/LICENSE" target="_blank" rel="noopener">llama.cpp runtime (MIT)</a>.</p>
+        <button type="button" class="btn btn-secondary btn-sm hidden" id="migration-ai-install">Download local model (1.28 GB)</button>
+        <button type="button" class="btn btn-secondary btn-sm hidden" id="migration-ai-remove">Remove local model</button>
         <button type="button" class="btn btn-secondary btn-sm" id="migration-ai-generate" disabled>Generate questions</button>
         <div id="migration-ai-results" aria-live="polite"></div>
       </section>

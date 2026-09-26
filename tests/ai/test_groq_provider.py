@@ -22,7 +22,9 @@ class Session:
 def test_ai_is_disabled_by_default_and_key_is_not_a_setting(monkeypatch):
     monkeypatch.delenv("AI_ASSIST_ENABLED", raising=False)
     settings = get_ai_settings()
-    assert settings.enabled is False
+    assert settings.enabled is True
+    assert settings.provider == "local"
+    assert settings.local_model == "qwen3-1.7b-q4_k_m"
     assert "api_key" not in settings.__dataclass_fields__
 
 
@@ -41,7 +43,7 @@ def test_groq_sends_strict_schema_with_timeout_and_extracts_usage():
     assert (result.data, result.input_tokens, result.output_tokens) == ({"ok": True}, 12, 4)
 
 
-@pytest.mark.parametrize("status,error", [(429, AIRateLimitError), (500, AIProviderError)])
+@pytest.mark.parametrize("status,error", [(429, AIRateLimitError), (504, AITimeoutError), (500, AIProviderError)])
 def test_groq_normalizes_http_errors(status, error):
     response = Response({}); response.status_code = status
     with pytest.raises(error) as caught:

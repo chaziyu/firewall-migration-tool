@@ -1320,7 +1320,35 @@ let migrationPlanRevision = 0;
       const response = await fetch("/api/migration/ai/status");
       const result = await readJson(response, "AI status unavailable");
       aiAssistAvailable = Boolean(result.available);
-      if (!result.available) {
+      const local = result.local;
+      const install = document.getElementById("migration-ai-install");
+      const remove = document.getElementById("migration-ai-remove");
+      document.getElementById("migration-ai-local-details")?.classList.toggle("hidden", result.provider !== "local");
+      if (result.provider === "local" && !local?.runtime_available) {
+        status.textContent = "The pinned local AI runtime is not installed for this platform.";
+        install?.classList.add("hidden");
+        remove?.classList.add("hidden");
+      } else if (local?.state === "DOWNLOADING" || local?.state === "VERIFYING") {
+        const amount = `${(local.downloaded_bytes / 1e9).toFixed(2)} GB / ${(local.download_bytes / 1e9).toFixed(2)} GB`;
+        status.textContent = `${local.state === "VERIFYING" ? "Verifying" : "Downloading"} Local AI model · ${amount}`;
+        install?.classList.add("hidden");
+        remove?.classList.add("hidden");
+        setTimeout(refreshAIAssistStatus, 1000);
+      } else if (result.provider === "local" && local?.state === "FAILED" && local?.installed) {
+        status.textContent = "Local AI runtime failed. Try generating questions again.";
+        install?.classList.add("hidden");
+        remove?.classList.remove("hidden");
+      } else if (result.provider === "local" && local?.installed) {
+        status.textContent = "Local AI is ready. Review evidence stays on this computer.";
+        install?.classList.add("hidden");
+        remove?.classList.remove("hidden");
+      } else if (result.provider === "local") {
+        status.textContent = local?.state === "RUNTIME_REQUIRED"
+          ? "The pinned local AI runtime is not installed for this platform."
+          : "Enable local AI by downloading the model once. Deterministic review remains available.";
+        install?.classList.toggle("hidden", !local?.runtime_available);
+        remove?.classList.add("hidden");
+      } else if (!result.available) {
         status.textContent = "AI-assisted review is not configured.";
       } else {
         status.textContent = "AI can organize unresolved mappings using sanitized review evidence.";
@@ -1334,6 +1362,34 @@ let migrationPlanRevision = 0;
       document.querySelectorAll("[data-ai-explain]").forEach(button => { button.disabled = true; });
     }
   }
+
+  document.getElementById("migration-ai-install")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/ai/local/install", { method: "POST" });
+      await readJson(response, "Could not install the local AI model");
+      await refreshAIAssistStatus();
+    } catch (error) {
+      document.getElementById("migration-ai-status").textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  document.getElementById("migration-ai-remove")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/ai/local/remove", { method: "POST" });
+      await readJson(response, "Could not remove the local AI model");
+      await refreshAIAssistStatus();
+    } catch (error) {
+      document.getElementById("migration-ai-status").textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   function renderAIAssistProposals() {
     const container = document.getElementById("migration-ai-results");
@@ -1380,7 +1436,11 @@ let migrationPlanRevision = 0;
       const details = document.createElement("details");
       const summary = document.createElement("summary"); summary.textContent = "Why this question?";
       const list = document.createElement("ul");
-      for (const fact of [...(proposal.rationale || []), ...(proposal.missing_information || []).map(item => `Missing: ${item}`), ...(proposal.limitations || [])]) {
+      for (const fact of [
+        ...(proposal.rationale || []).map(item => `AI rationale: ${item}`),
+        ...(proposal.missing_information || []).map(item => `Missing: ${item}`),
+        ...(proposal.limitations || []).map(item => `AI limitation: ${item}`),
+      ]) {
         const row = document.createElement("li"); row.textContent = fact; list.append(row);
       }
       details.append(summary, list); card.append(details);

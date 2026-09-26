@@ -1,0 +1,9 @@
+{
+  "version": "b11200",
+  "platform": "windows",
+  "architecture": "x86_64",
+  "archive_sha256": "b958c2f249b59335048a57993802b292faeffaee55555b71e59616d6c2c399ca",
+  "model_id": "qwen3-1.7b-q4_k_m",
+  "model_revision": "daeb8e2d528a760970442092f6bf1e55c3b659eb",
+  "model_sha256": "d2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5"
+}

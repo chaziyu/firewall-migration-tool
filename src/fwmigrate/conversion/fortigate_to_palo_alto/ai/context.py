@@ -9,6 +9,19 @@ _SOURCE_FIELDS = ("source_type", "source_role", "source_parent", "source_vlan", 
 _CANDIDATE_EVIDENCE = ("strong_evidence", "supporting_evidence", "contradictions")
 
 
+def _eligible_candidates(candidates):
+    candidates = [item for item in candidates if isinstance(item, dict)
+                  and isinstance(item.get("value"), str) and item["value"]
+                  and str(item.get("match_class", item.get("class", ""))).upper() != "AMBIGUOUS"]
+    scopes = {}
+    for item in candidates:
+        scope = item.get("scope_identity", item.get("target_scope"))
+        if scope is not None:
+            scopes.setdefault(item["value"], set()).add(scope)
+    ambiguous = {value for value, identities in scopes.items() if len(identities) > 1}
+    return [item for item in candidates if item["value"] not in ambiguous]
+
+
 def build_ai_review_context(*, source_digest, target_digest, target_device, decisions, review_workflow,
                             review_context, decision_candidates, auto_decisions, target_findings,
                             operation, prompt_version, max_bytes=16000, max_groups=20):
@@ -16,8 +29,9 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
     findings = {item.decision_key: item for item in target_findings}
     groups = []
     decision_refs = {}
+    ai_candidates = {}
     for group in review_workflow.get("review_groups", ()):
-        if group.get("queue") in {"COMPLETE"}:
+        if group.get("queue") == "COMPLETE" or (operation == "questions" and group.get("queue") == "READY_TO_CONFIRM"):
             continue
         rows = []
         for item in group.get("decisions", ()):
@@ -29,19 +43,15 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
                 continue
             if auto_status in {"VERIFIED", "DERIVED"}:
                 continue
+            eligible = _eligible_candidates(decision_candidates.get(decision.key, ()))
             decision_ref = f"decision_{len(decision_refs) + 1}"
             decision_refs[decision_ref] = decision.key
-            values = []
-            for candidate in decision_candidates.get(decision.key, ())[:8]:
-                value = candidate.get("value")
-                if isinstance(value, str) and value:
-                    values.append(value)
-            values = list(dict.fromkeys(values))
+            eligible = eligible[:8]
+            ai_candidates[decision.key] = eligible
+            values = list(dict.fromkeys(item["value"] for item in eligible))
             candidates = []
-            for candidate in decision_candidates.get(decision.key, ())[:8]:
-                value = candidate.get("value")
-                if value not in values:
-                    continue
+            for candidate in eligible:
+                value = candidate["value"]
                 evidence = []
                 for field in _CANDIDATE_EVIDENCE:
                     facts = candidate.get(field, ())
@@ -100,8 +110,7 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
             # Sanitization may replace an address-like target name. Such a value
             # is descriptive only and must not become a selectable assignment.
             original_key = decision_refs[decision["key"]]
-            raw_values = {candidate.get("value") for candidate in decision_candidates.get(original_key, ())
-                          if isinstance(candidate, dict)}
+            raw_values = {candidate["value"] for candidate in ai_candidates[original_key]}
             decision["allowed_values"] = [value for value in decision["allowed_values"] if value in raw_values]
             decision["candidates"] = [candidate for candidate in decision["candidates"]
                                        if candidate["value"] in decision["allowed_values"]]

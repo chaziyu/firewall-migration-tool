@@ -42,3 +42,7 @@ def run_desktop(port: int = 5000):
         print(f"pywebview is not installed. Opening in default browser at {url}")
         webbrowser.open(url)
         app.run(host='127.0.0.1', port=port, debug=False)
+    finally:
+        manager = app.extensions.get('local_ai_runtime_manager')
+        if manager is not None:
+            manager.stop()

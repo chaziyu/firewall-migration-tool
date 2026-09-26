@@ -50,6 +50,8 @@ class GroqProvider:
         status = response.status_code
         if status == 429:
             raise AIRateLimitError("AI provider rate limit reached")
+        if status == 504:
+            raise AITimeoutError("AI provider request timed out")
         if status < 200 or status >= 300:
             _LOGGER.info("AI provider failure provider=groq model=%s status_class=%s duration_ms=%d",
                          self.settings.model, status // 100, int((time.perf_counter() - started) * 1000))
