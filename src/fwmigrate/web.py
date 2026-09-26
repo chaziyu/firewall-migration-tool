@@ -58,6 +58,11 @@ from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
 from fwmigrate.collection import CollectionStatus, source_collectors
 from fwmigrate.collection.builtin import register_builtin_collectors
 from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot, MAX_BYTES
+from fwmigrate.ai.config import get_ai_settings
+from fwmigrate.ai.errors import AIError
+from fwmigrate.conversion.fortigate_to_palo_alto.ai import (
+    explain_review_group, generate_architecture_questions, proposal_cache,
+)
 
 register_builtin_source_reporters()
 register_builtin_migration_planners()
@@ -333,6 +338,57 @@ def _target_evidence(payload):
     return _TargetEvidenceContext(analysis, entry.source_digest, tuple(devices), selected)
 
 
+def _build_migration_review_state(entry, payload):
+    """Build the deterministic migration review from a cached source preview."""
+    analysis = _clone_preview(entry)
+    requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
+    prior = payload.get('decision_document')
+    previous = _load_decision_document(prior, entry.source_digest) if prior is not None else None
+    decisions = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
+    target_context = _target_evidence(payload)
+    target = target_context.analysis if target_context else None
+    device = target_context.selected_device if target_context else None
+    candidates = discover_target_candidates(analysis.extracted.config, decisions, target, device) if target and device else {}
+    target_warnings = {}
+    if target and device:
+        decisions, target_warnings = suggest_from_target(analysis.extracted.config, decisions, target, device)
+    findings = validate_against_target(analysis.extracted.config, decisions, target, device)
+    auto = _auto_review_results(analysis.extracted.config, analysis.derived, decisions, target, device)
+    evidence = _decision_evidence(decisions, findings)
+    context = build_review_context(analysis.extracted.config, decisions, candidates=candidates,
+        target_available=target is not None, target_selected=bool(device),
+        target_device_count=len(target_context.devices) if target_context else 0)
+    workflow = build_review_workflow(analysis.extracted.config, decisions, candidates=candidates,
+        context=context, decision_evidence=evidence, target_warnings=target_warnings)
+    recommendations = build_recommendations(analysis.extracted.config, analysis.derived, decisions, target, device)
+    return {
+        'analysis': analysis,
+        'requirements': requirements,
+        'target_context': target_context,
+        'source_digest': entry.source_digest,
+        'target_digest': target_context.source_digest if target_context else None,
+        'target_device': device,
+        'decisions': decisions,
+        'decision_candidates': candidates,
+        'review_workflow': workflow,
+        'review_context': context,
+        'auto_decisions': auto,
+        'target_findings': findings,
+        'decision_evidence': evidence,
+        'target_warnings': target_warnings,
+        'recommendations': recommendations,
+        'target_evidence_changed': _target_evidence_changed(prior, target_context),
+    }
+
+
+def _build_ai_review_state(payload):
+    """Rebuild AI inputs from server-held previews and the current decision document."""
+    entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+    if entry is None:
+        raise ValueError('A valid FortiGate preview_id is required')
+    return _build_migration_review_state(entry, payload)
+
+
 def _parse_bool(value, default=False):
     if value is None:
         return default
@@ -522,65 +578,181 @@ def create_app(test_config=None):
                 raw = uploaded.read()
                 analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
                 entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
-            analysis = _clone_preview(entry)
-            requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
-            prior = payload.get('decision_document')
-            previous = _load_decision_document(prior, entry.source_digest) if prior is not None else None
-            decision_set = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
-            target_context = _target_evidence(payload)
-            target_evidence_changed = _target_evidence_changed(prior, target_context)
+            state = _build_migration_review_state(entry, payload)
+            target_context = state['target_context']
             target = target_context.analysis if target_context else None
-            target_device = target_context.selected_device if target_context else None
-            devices = list(target_context.devices) if target_context else []
-            target_warnings = {}
-            decision_candidates = {}
-            if target and target_device:
-                decision_candidates = discover_target_candidates(
-                    analysis.extracted.config, decision_set, target, target_device
-                )
-                decision_set, target_warnings = suggest_from_target(
-                    analysis.extracted.config, decision_set, target, target_device
-                )
-            target_findings = validate_against_target(analysis.extracted.config, decision_set, target, target_device)
-            auto_decisions = _auto_review_results(analysis.extracted.config, analysis.derived, decision_set,
-                                                   target, target_device)
-            decision_evidence = _decision_evidence(decision_set, target_findings)
-            review_context = build_review_context(
-                analysis.extracted.config, decision_set,
-                candidates=decision_candidates,
-                target_available=target is not None,
-                target_selected=bool(target_device),
-                target_device_count=len(devices),
-            )
-            review_workflow = build_review_workflow(
-                analysis.extracted.config, decision_set,
-                candidates=decision_candidates, context=review_context,
-                decision_evidence=decision_evidence, target_warnings=target_warnings,
-            )
-            recommendations = build_recommendations(
-                analysis.extracted.config, analysis.derived, decision_set, target, target_device
-            )
-            return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': requirements,
-                            'decisions': decision_set.to_dict(),
-                            'decision_document': _decision_document(entry.source_digest, decision_set,
+            decisions = state['decisions']
+            return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': state['requirements'],
+                            'decisions': decisions.to_dict(),
+                            'decision_document': _decision_document(entry.source_digest, decisions,
                                                                      target_context.metadata if target_context else None),
-                            'target_devices': devices, 'target_device': target_device,
+                            'target_devices': list(target_context.devices) if target_context else [],
+                            'target_device': state['target_device'],
                             'target_device_metadata': target_device_metadata(target) if target else [],
-                            'decision_context': review_context,
-                            'decision_candidates': decision_candidates,
-                            **review_workflow,
-                            'target_warnings': target_warnings,
-                            'target_findings': [item.to_dict() for item in target_findings],
-                            'decision_evidence': decision_evidence,
-                            'auto_decisions': auto_decisions,
-                            'evidence_summary': _evidence_summary(decision_set, decision_evidence),
+                            'decision_context': state['review_context'],
+                            'decision_candidates': state['decision_candidates'],
+                            **state['review_workflow'],
+                            'target_warnings': state['target_warnings'],
+                            'target_findings': [item.to_dict() for item in state['target_findings']],
+                            'decision_evidence': state['decision_evidence'],
+                            'auto_decisions': state['auto_decisions'],
+                            'evidence_summary': _evidence_summary(decisions, state['decision_evidence']),
                             'target_evidence': target_context.metadata if target_context else None,
-                            'target_evidence_changed': target_evidence_changed,
-                            'recommendations': [item.to_dict() for item in recommendations]})
+                            'target_evidence_changed': state['target_evidence_changed'],
+                            'recommendations': [item.to_dict() for item in state['recommendations']]})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception as exc:
             return jsonify({'success': False, 'error': str(exc)}), 500
+
+    def ai_runtime():
+        try:
+            settings = get_ai_settings()
+        except ValueError:
+            return None, None, False
+        if not settings.enabled:
+            return settings, None, False
+        api_key = os.environ.get('GROQ_API_KEY', '').strip()
+        if not api_key:
+            return settings, None, False
+        provider = app.config.get('AI_PROVIDER_INSTANCE')
+        if provider is None:
+            try:
+                from fwmigrate.ai.groq import GroqProvider
+            except ImportError:
+                return settings, None, False
+            provider = GroqProvider(settings, api_key=api_key)
+        return settings, provider, True
+
+    def ai_review_payload(payload):
+        settings, provider, available = ai_runtime()
+        if not settings or not settings.enabled or not available:
+            return None, (jsonify({'success': False, 'error': 'AI assistance is not configured.'}), 503)
+        try:
+            state = _build_ai_review_state(payload)
+            return (settings, provider, state), None
+        except (ValueError, KeyError, TypeError) as exc:
+            return None, (jsonify({'success': False, 'error': str(exc)}), 400)
+
+    @app.route('/api/migration/ai/status', methods=['GET'])
+    def migration_ai_status():
+        settings, _, available = ai_runtime()
+        if not settings:
+            return jsonify({'enabled': False, 'available': False})
+        result = {'enabled': settings.enabled, 'available': bool(settings.enabled and available)}
+        if settings.enabled:
+            result.update(provider=settings.provider, model=settings.model)
+        return jsonify(result)
+
+    @app.route('/api/migration/ai/questions', methods=['POST'])
+    def migration_ai_questions():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({'success': False, 'error': 'A JSON request is required.'}), 400
+        prepared, error = ai_review_payload(payload)
+        if error:
+            return error
+        settings, provider, state = prepared
+        try:
+            built, proposals = generate_architecture_questions(ai_provider=provider, settings=settings,
+                state=state, cache=proposal_cache)
+            return jsonify({'success': True, 'proposals': [item.to_dict() for item in proposals],
+                'analyzed_groups': built['analyzed_groups'], 'total_groups': built['total_groups']})
+        except AIError:
+            _LOGGER.warning('AI architecture question generation failed provider=%s model=%s',
+                            settings.provider, settings.model)
+            return jsonify({'success': False, 'error': 'AI assistance is temporarily unavailable. Deterministic migration review is unchanged.'}), 502
+        except Exception:
+            _LOGGER.error('AI architecture question operation failed provider=%s model=%s',
+                          settings.provider, settings.model)
+            return jsonify({'success': False, 'error': 'AI assistance is temporarily unavailable. Deterministic migration review is unchanged.'}), 502
+
+    @app.route('/api/migration/ai/explain', methods=['POST'])
+    def migration_ai_explain():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({'success': False, 'error': 'A JSON request is required.'}), 400
+        identity = tuple(payload.get(key) for key in ('source_vdom', 'source_kind', 'source_name'))
+        if any(not isinstance(value, str) or not value for value in identity):
+            return jsonify({'success': False, 'error': 'A review group identity is required.'}), 400
+        prepared, error = ai_review_payload(payload)
+        if error:
+            return error
+        settings, provider, state = prepared
+        try:
+            _, proposal = explain_review_group(ai_provider=provider, settings=settings, state=state,
+                group_identity=identity, cache=proposal_cache)
+            return jsonify({'success': True, 'proposal': proposal.to_dict()})
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        except AIError:
+            _LOGGER.warning('AI candidate explanation failed provider=%s model=%s',
+                            settings.provider, settings.model)
+            return jsonify({'success': False, 'error': 'AI assistance is temporarily unavailable. Deterministic migration review is unchanged.'}), 502
+        except Exception:
+            _LOGGER.error('AI candidate explanation operation failed provider=%s model=%s',
+                          settings.provider, settings.model)
+            return jsonify({'success': False, 'error': 'AI assistance is temporarily unavailable. Deterministic migration review is unchanged.'}), 502
+
+    @app.route('/api/migration/ai/confirm', methods=['POST'])
+    def confirm_migration_ai_proposal():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({'success': False, 'error': 'A JSON request is required.'}), 400
+        settings, _, available = ai_runtime()
+        if not settings or not settings.enabled or not available:
+            return jsonify({'success': False, 'error': 'AI assistance is not configured.'}), 503
+        proposal = proposal_cache.get(payload.get('proposal_id'))
+        if proposal is None or proposal.kind.value != 'ARCHITECTURE_QUESTION':
+            return jsonify({'success': False, 'error': 'AI proposal is stale; regenerate AI review.'}), 409
+        choice_index = payload.get('choice_index')
+        if not isinstance(choice_index, int) or isinstance(choice_index, bool) or not 0 <= choice_index < len(proposal.choices):
+            return jsonify({'success': False, 'error': 'A valid proposal choice is required.'}), 400
+        try:
+            state = _build_ai_review_state(payload)
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        from fwmigrate.conversion.fortigate_to_palo_alto.ai.context import build_ai_review_context
+        from fwmigrate.conversion.fortigate_to_palo_alto.ai.prompts import FG_PAN_AI_PROMPT_VERSION
+        try:
+            current = build_ai_review_context(source_digest=state['source_digest'], target_digest=state['target_digest'],
+                target_device=state['target_device'], decisions=state['decisions'],
+                review_workflow=state['review_workflow'], review_context=state['review_context'],
+                decision_candidates=state['decision_candidates'], auto_decisions=state['auto_decisions'],
+                target_findings=state['target_findings'], operation='questions',
+                prompt_version=FG_PAN_AI_PROMPT_VERSION, max_bytes=get_ai_settings().max_context_bytes,
+                max_groups=get_ai_settings().max_review_groups)
+        except AIError:
+            return jsonify({'success': False, 'error': 'AI proposal is stale; regenerate AI review.'}), 409
+        if current['context_digest'] != proposal.context_digest:
+            return jsonify({'success': False, 'error': 'AI proposal is stale; regenerate AI review.'}), 409
+        choice = proposal.choices[choice_index]
+        by_key = {item.key: item for item in state['decisions'].decisions}
+        assignments = choice.assignments
+        if not assignments or len({item.decision_key for item in assignments}) != len(assignments):
+            return jsonify({'success': False, 'error': 'AI proposal contains an invalid choice.'}), 409
+        updated = []
+        for assignment in assignments:
+            decision = by_key.get(assignment.decision_key)
+            candidates = state['decision_candidates'].get(assignment.decision_key, ())
+            allowed = {candidate.get('value') for candidate in candidates if isinstance(candidate, dict)}
+            if (assignment.decision_key not in proposal.decision_keys or decision is None
+                    or decision.review_state != PANDecisionReviewState.PENDING
+                    or decision.mode in {PANDecisionMode.AUTO, PANDecisionMode.UNSUPPORTED}
+                    or assignment.value not in allowed):
+                return jsonify({'success': False, 'error': 'AI proposal is stale; regenerate AI review.'}), 409
+            updated.append(replace(decision, value=assignment.value,
+                review_state=PANDecisionReviewState.CONFIRMED, evidence_source='ENGINEER',
+                evidence_type='ENGINEER_ACCEPTED_AI_SUGGESTION', evidence_value={
+                    'proposal_id': proposal.proposal_id, 'context_digest': proposal.context_digest,
+                    'provider': proposal.provider, 'model': proposal.model,
+                    'prompt_version': proposal.prompt_version,
+                }, target_object=assignment.value))
+        by_key.update((item.key, item) for item in updated)
+        decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
+        return jsonify({'success': True, 'confirmed_count': len(updated), 'decisions': decisions.to_dict(),
+            'decision_document': _decision_document(state['source_digest'], decisions,
+                _target_evidence(payload).metadata if payload.get('target_preview_id') else None)})
 
     @app.route('/api/migration/decisions/approve', methods=['POST'])
     def approve_migration_decisions():
