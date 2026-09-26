@@ -2,14 +2,14 @@
   <section class="card hidden" id="migration-mapping" aria-labelledby="mapping-heading">
     <div class="card-header"><div class="section-heading"><h2 id="mapping-heading"><span class="step-num">02</span>Migration review</h2></div>
       <p class="card-desc">Set target intent, approve safe mappings, then resolve choices and design gaps.</p></div>
-    <section class="target-intent" aria-labelledby="target-intent-heading">
-      <h3 id="target-intent-heading">1. Target intent</h3>
-      <p class="card-desc">Map VDOMs, interfaces, and zones in compact YAML. Imported values become confirmed decisions.</p>
+    <details class="target-intent">
+      <summary>Optional: import or export target intent YAML</summary>
+      <p class="card-desc">Imported values become confirmed decisions.</p>
       <div class="mapping-toolbar-row">
         <label>Import target intent YAML <input type="file" id="target-intent-import" accept=".yaml,.yml,text/yaml"></label>
         <button type="button" class="btn btn-secondary btn-sm" id="target-intent-export">Export target intent</button>
       </div>
-    </section>
+    </details>
     <div class="target-evidence">
       <label for="target-config-file">Optional target PAN-OS XML</label>
       <input type="file" id="target-config-file" accept=".xml,application/xml,text/xml" aria-describedby="target-config-status">
@@ -28,7 +28,10 @@
         <button type="button" role="tab" data-review-queue="CONFLICT" aria-selected="false">Conflicts <span></span></button>
         <button type="button" role="tab" data-review-queue="COMPLETE" aria-selected="false">Completed <span></span></button>
       </div>
-      <button type="button" class="btn btn-primary" id="decision-approve-safe">Approve verified / derived mappings</button>
+      <div class="review-actions">
+        <button type="button" class="btn btn-primary" id="decision-approve-safe">Approve verified / derived mappings</button>
+        <a class="btn btn-secondary" href="#migration-build" id="migration-build-link">Go to build plan</a>
+      </div>
       <div id="migration-review-groups" aria-live="polite"></div>
       <details class="optional-review-tools">
         <summary>Optional review tools</summary>
@@ -107,6 +110,7 @@
       >
         {{ icon('activity') }}<span>Build migration plan</span>
       </button>
+      <span id="migration-build-status" role="status" aria-live="polite"></span>
     </div>
   </section>
   <section class="card hidden" id="migration-plan" aria-live="polite">

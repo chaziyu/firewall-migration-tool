@@ -2145,6 +2145,10 @@ select {
 .review-queues button { padding: .65rem .8rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); cursor: pointer; }
 .review-queues button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text-heading); }
 .review-queues button span { margin-left: .35rem; font-weight: 700; }
+.review-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+.migration-pair-support { margin: .5rem 0; color: var(--text-muted); font-size: .9rem; }
+.target-intent > summary { cursor: pointer; font-weight: 600; }
+.review-show-more { margin: .5rem 0 1rem; }
 .review-work-card { display: grid; gap: .8rem; margin: .8rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); }
 .automation-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem 1rem; margin: .75rem 0; padding: .75rem; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .automation-controls h3, .automation-controls p { flex-basis: 100%; margin: 0; }

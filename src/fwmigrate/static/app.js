@@ -28,6 +28,7 @@ let migrationPlanNeedsRebuild = false;
   let aiReviewReady = false;
   let ruleSuggestions = [];
   let activeReviewQueue = "READY_TO_CONFIRM";
+  let reviewVisibleLimit = 12;
   let currentPreviewId = null;
   let currentTargetPreviewId = null;
   let selectedTargetDevice = "";
@@ -763,6 +764,7 @@ let migrationPlanNeedsRebuild = false;
   function syncWorkspace() {
     const hasInput = Boolean(currentFile || currentPreviewId);
     const migrationPairSupported = selectedSourceVendor === "fortigate" && selectedTargetVendor === "palo_alto";
+    document.getElementById("migration-pair-support")?.classList.toggle("hidden", activeMode !== "download");
     tabReport?.classList.toggle("hidden", !vendorCapabilities[selectedSourceVendor]?.web_report);
     if (btnGenerateBundle)
       btnGenerateBundle.disabled =
@@ -1715,11 +1717,12 @@ let migrationPlanNeedsRebuild = false;
     if (approveSafe) {
       approveSafe.textContent = `Approve ${safeKeys.length} verified / derived mappings`;
       approveSafe.disabled = safeKeys.length === 0;
+      approveSafe.classList.toggle("hidden", safeKeys.length === 0);
     }
     summaryNode.replaceChildren(...summaryItems.map(([key, label]) => {
       const card = document.createElement("div"); card.className = "review-summary-card";
       const count = document.createElement("strong"); count.textContent = String(reviewSummary[key] || 0);
-      const text = document.createElement("span"); text.textContent = label;
+      const text = document.createElement("span"); text.textContent = `${label} decisions`;
       card.append(count, text); return card;
     }));
     const automationResult = document.getElementById("automation-result");
@@ -1736,50 +1739,15 @@ let migrationPlanNeedsRebuild = false;
     document.querySelectorAll("[data-review-queue]").forEach(tab => {
       const queue = tab.dataset.reviewQueue;
       tab.setAttribute("aria-selected", String(queue === activeReviewQueue));
-      const count = tab.querySelector("span"); if (count) count.textContent = String(tabCounts[queue] || 0);
+      const count = tab.querySelector("span"); if (count) count.textContent = `${tabCounts[queue] || 0} groups`;
     });
-    let visible = reviewGroups.filter(group => group.queue === activeReviewQueue);
-    if (!visible.length) {
+    const queueGroups = reviewGroups.filter(group => group.queue === activeReviewQueue);
+    if (!queueGroups.length) {
       const empty = document.createElement("p"); empty.textContent = reviewGroups.length ? "Nothing in this queue." : "No migration decisions are required.";
       container.replaceChildren(empty); return;
     }
+    const visible = queueGroups.slice(0, reviewVisibleLimit);
     const fragment = document.createDocumentFragment();
-    for (const question of architectureQuestions) {
-      const card = document.createElement("article"); card.className = "review-work-card architecture-question";
-      const title = document.createElement("h3");
-      title.textContent = question.type === "AGGREGATE_MAPPING" ? `Which PAN aggregate replaces ${question.source_name}?`
-        : question.type === "VDOM_CONTEXT" ? `Where should ${question.source_name} VDOM live?`
-          : `Which PAN zone replaces ${question.source_name}?`;
-      card.append(title);
-      if (question.type === "AGGREGATE_MAPPING") {
-        const affected = document.createElement("p"); affected.textContent = `Will re-evaluate ${question.affected_count} VLAN mappings when you confirm this parent.`;
-        card.append(affected);
-      }
-      const pendingNotice = document.createElement("p");
-      pendingNotice.className = "review-work-suggestion";
-      pendingNotice.textContent = "Edited mapping · Confirm to save and refresh the review queues.";
-      pendingNotice.hidden = true;
-      card.append(pendingNotice);
-      const choices = question.type === "VDOM_CONTEXT"
-        ? question.fields.flatMap(field => field.suggested_value ? [{ key: field.key, value: `${field.target_field === "vsys" ? "VSYS" : "VR"}: ${field.suggested_value}`, target: field.suggested_value }] : [])
-        : (question.candidates || []).map(value => ({ key: question.decision_key, value: question.type === "ZONE_MAPPING" ? value : `Use ${value}`, target: value }));
-      for (const option of choices) {
-        const button = document.createElement("button"); button.type = "button"; button.className = "btn btn-secondary btn-sm";
-        button.textContent = option.value.startsWith("VSYS:") || option.value.startsWith("VR:") || question.type === "ZONE_MAPPING" ? option.value : `Use ${option.value}`;
-        button.addEventListener("click", () => {
-          const input = document.querySelector(`.review-work-value[data-decision-key="${CSS.escape(option.key)}"]`);
-          const decision = currentDecisionSet.decisions.find(item => item.key === option.key);
-          if (input && decision) {
-            input.value = option.target; decision.value = option.target;
-            if (decision.mode === "AUTO") decision.mode = "REQUIRED";
-            decision.review_state = "PENDING"; pendingNotice.hidden = false;
-            updateMappingCompletion(); invalidateMigrationPlan();
-          }
-        });
-        card.append(button);
-      }
-      fragment.append(card);
-    }
     for (const suggestion of ruleSuggestions) {
       const card = document.createElement("article"); card.className = "review-work-card architecture-question";
       const title = document.createElement("h3");
@@ -1810,6 +1778,7 @@ let migrationPlanNeedsRebuild = false;
     const decisionByKey = new Map(currentDecisionSet.decisions.map(item => [item.key, item]));
     const labels = { target_interface: "Target interface", target_zone: "Target zone", vsys: "Target VSYS", virtual_router: "Target virtual router" };
     const statusLabels = { READY_TO_CONFIRM: "Suggestion ready", CHOOSE_CANDIDATE: "Choose a match", NEEDS_INPUT: "Manual decision", CONFLICT: "Conflict", COMPLETE: "Complete" };
+    const questionKind = { VDOM_CONTEXT: "vdom", ZONE_MAPPING: "zone", AGGREGATE_MAPPING: "interface" };
     for (const group of visible) {
       const card = document.createElement("article"); card.className = `review-work-card queue-${group.queue.toLowerCase()}`;
       const heading = document.createElement("div"); heading.className = "review-work-heading";
@@ -1820,6 +1789,30 @@ let migrationPlanNeedsRebuild = false;
         .filter(Boolean).join(" · ");
       const badge = document.createElement("span"); badge.className = "review-work-badge"; badge.textContent = statusLabels[group.queue] || "Review";
       heading.append(title, subtitle, badge); card.append(heading);
+      for (const question of architectureQuestions.filter(item => item.source_vdom === group.source_vdom && item.source_name === group.source_name && questionKind[item.type] === group.source_kind)) {
+        const prompt = document.createElement("p"); prompt.className = "review-work-suggestion";
+        prompt.textContent = question.type === "AGGREGATE_MAPPING" ? `Architecture question: Which PAN aggregate replaces this interface? ${question.affected_count} VLAN mappings will be re-evaluated.`
+          : question.type === "VDOM_CONTEXT" ? "Architecture question: Choose the target VSYS and virtual router for this VDOM."
+            : "Architecture question: Choose the PAN zone for this source zone.";
+        card.append(prompt);
+        const choices = question.type === "VDOM_CONTEXT"
+          ? question.fields.flatMap(field => field.suggested_value ? [{ key: field.key, value: `${field.target_field === "vsys" ? "VSYS" : "VR"}: ${field.suggested_value}`, target: field.suggested_value }] : [])
+          : (question.candidates || []).map(value => ({ key: question.decision_key, value: question.type === "ZONE_MAPPING" ? value : `Use ${value}`, target: value }));
+        for (const option of choices) {
+          const button = document.createElement("button"); button.type = "button"; button.className = "btn btn-secondary btn-sm";
+          button.textContent = option.value.startsWith("VSYS:") || option.value.startsWith("VR:") || question.type === "ZONE_MAPPING" ? option.value : `Use ${option.value}`;
+          button.addEventListener("click", () => {
+            const input = [...card.querySelectorAll(".review-work-value")].find(node => node.dataset.decisionKey === option.key);
+            const decision = decisionByKey.get(option.key);
+            if (input && decision) {
+              input.value = option.target; decision.value = option.target;
+              if (decision.mode === "AUTO") decision.mode = "REQUIRED";
+              decision.review_state = "PENDING"; updateMappingCompletion(); invalidateMigrationPlan();
+            }
+          });
+          card.append(button);
+        }
+      }
       for (const view of group.decisions) {
         const decision = decisionByKey.get(view.key) || view;
         if (decision.mode === "UNSUPPORTED") continue;
@@ -1955,11 +1948,17 @@ let migrationPlanNeedsRebuild = false;
       }
       fragment.append(card);
     }
+    if (visible.length < queueGroups.length) {
+      const more = document.createElement("button"); more.type = "button"; more.className = "btn btn-secondary review-show-more";
+      more.textContent = `Show more (${queueGroups.length - visible.length} groups remaining)`;
+      more.addEventListener("click", () => { reviewVisibleLimit += 12; renderMigrationReviewWorkflow(); });
+      fragment.append(more);
+    }
     container.replaceChildren(fragment);
   }
 
   document.querySelectorAll("[data-review-queue]").forEach(tab => tab.addEventListener("click", () => {
-    activeReviewQueue = tab.dataset.reviewQueue; renderMigrationReviewWorkflow();
+    activeReviewQueue = tab.dataset.reviewQueue; reviewVisibleLimit = 12; renderMigrationReviewWorkflow();
   }));
 
   document.getElementById("automation-run")?.addEventListener("click", async event => {
@@ -2535,6 +2534,7 @@ let migrationPlanNeedsRebuild = false;
       invalidateMigrationPlan(true);
       const requestRevision = migrationPlanRevision;
       setBusy(btnGenerateBundle, true);
+      document.getElementById("migration-build-status").textContent = "Building migration plan…";
       hideError();
       try {
       const resp = await fetch("/api/migrate", {
@@ -2564,13 +2564,13 @@ let migrationPlanNeedsRebuild = false;
           const status = artifact.plan_status === "READY_NO_CHANGES"
             ? "No PAN-OS configuration changes are required. All supported planned objects are already satisfied by the selected target."
             : artifact.plan_status === "READY" ? "Migration artifact ready."
-              : artifact.plan_status === "PARTIAL" ? (artifact.commands ? "Partial commands are ready." : "The migration plan has blockers. No commands are ready.") : "Target mappings required.";
+              : artifact.plan_status === "PARTIAL" ? (artifact.commands ? "Partial plan: commands are ready, with blockers remaining." : "Partial plan: blockers remain and no commands are ready.")
+                : artifact.plan_status === "NEEDS_MAPPING" ? `${(artifact.missing_mappings || []).length} required target mappings remain. Review decisions before building a complete plan.` : "Migration plan status unavailable.";
           const blockers = new Set(artifact.blocking_reasons || []);
           const targetIssueCount = (artifact.target_findings || []).length;
           const guidanceCount = (artifact.support_guidance || []).length;
           const render = artifact.render_summary || {};
-          summary.textContent = `${render.create || 0} will be created · ${render.reuse || 0} existing target objects reused · ${render.blocked || 0} blocked · ${artifact.commands} commands\n${status}${blockers.size ? `\n${blockers.size} blocking issue${blockers.size === 1 ? "" : "s"}. Review the results below.` : ""}${targetIssueCount ? `\n${targetIssueCount} target conflict${targetIssueCount === 1 ? "" : "s"}.` : ""}${guidanceCount ? `\n${guidanceCount} support guidance item${guidanceCount === 1 ? "" : "s"}.` : ""}`;
-          summary.textContent += `\nSource status: ${counts.SUPPORTED || 0} supported · ${counts.PARTIAL || 0} partial · ${counts.MANUAL_REVIEW || 0} manual review · ${counts.UNSUPPORTED || 0} unsupported`;
+          summary.textContent = `Plan status: ${artifact.plan_status}\n${render.create || 0} to create · ${render.reuse || 0} existing objects to reuse · ${render.blocked || 0} blocked · ${artifact.commands} commands\n${status}${blockers.size ? `\n${blockers.size} blocking issue${blockers.size === 1 ? "" : "s"}. Review the results below.` : ""}${targetIssueCount ? `\n${targetIssueCount} target conflict${targetIssueCount === 1 ? "" : "s"}.` : ""}${guidanceCount ? `\n${guidanceCount} support guidance item${guidanceCount === 1 ? "" : "s"}.` : ""}\nSource status: ${counts.SUPPORTED || 0} supported · ${counts.PARTIAL || 0} partial · ${counts.MANUAL_REVIEW || 0} manual review · ${counts.UNSUPPORTED || 0} unsupported`;
         }
         const previewElement = document.getElementById("migration-command-preview");
         const reviewSummary = document.getElementById("migration-command-summary");
@@ -2604,6 +2604,7 @@ let migrationPlanNeedsRebuild = false;
         showError(err.message);
         logToTerminal(`[ERROR] Migration planning failed: ${err.message}`, "term-error");
       } finally {
+        document.getElementById("migration-build-status").textContent = "";
         setBusy(btnGenerateBundle, false);
       }
     });

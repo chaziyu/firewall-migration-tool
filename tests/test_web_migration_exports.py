@@ -441,6 +441,10 @@ def test_migration_workflow_uses_planning_terminology():
     assert 'id="decision-select-visible"' in html and 'id="decision-clear-selection"' in html
     assert 'id="decision-set-selected"' in html and 'id="decision-use-suggestion"' in html
     assert 'id="migration-plan-items"' in html and 'id="migration-plan-filter"' in html
+    assert 'id="migration-pair-support"' in html and "target XML and intent YAML are optional" in html
+    assert "Optional: import or export target intent YAML" in html
+    assert 'id="migration-build-link"' in html and "Go to build plan" in html
+    assert 'id="migration-build-status"' in html
     assert 'id="migration-command-preview"' in html and 'id="migration-copy-commands"' in html
     assert 'id="migration-recommendation-fields"' in html
     assert "Optional review tools" in html
