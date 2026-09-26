@@ -6,9 +6,9 @@ import uuid
 from fwmigrate.ai.errors import AIInvalidResponseError
 from .context import build_ai_review_context
 from .models import PANAIAssistKind, proposal_from_output
-from .prompts import (ARCHITECTURE_PROMPT, ARCHITECTURE_SCHEMA, EXPLANATION_PROMPT,
+from .prompts import (ANALYSIS_PROMPT, ANALYSIS_SCHEMA, EXPLANATION_PROMPT,
                       EXPLANATION_SCHEMA, FG_PAN_AI_PROMPT_VERSION)
-from .validator import validate_architecture_output, validate_explanation_output
+from .validator import validate_analysis_output, validate_explanation_output
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,35 +17,36 @@ def _cache_key(provider, model, operation, digest, prompt_version):
     return (provider, model, operation, digest, prompt_version)
 
 
-def generate_architecture_questions(*, ai_provider, settings, state, cache):
-    built = _build_context(state, "questions", settings)
+def analyze_review_groups(*, ai_provider, settings, state, cache, cursor=0):
+    built = _build_context(state, "analysis", settings, cursor=cursor)
     if not built["context"]["groups"]:
         return built, ()
-    key = _cache_key(settings.provider, settings.model, "questions", built["context_digest"], FG_PAN_AI_PROMPT_VERSION)
+    key = _cache_key(settings.provider, settings.model, "analysis", built["context_digest"], FG_PAN_AI_PROMPT_VERSION)
     cached = cache.get_many(key)
     if cached:
         return built, cached
-    data = ai_provider.generate_structured(system_prompt=ARCHITECTURE_PROMPT, payload=built["context"],
-                                           schema_name="fg_pan_architecture_questions", schema=ARCHITECTURE_SCHEMA)
-    questions = validate_architecture_output(data.data, groups=built["context"]["groups"],
-                                              allowed_values=built["allowed_values"],
-                                              max_questions=settings.max_questions)
+    data = ai_provider.generate_structured(system_prompt=ANALYSIS_PROMPT, payload=built["context"],
+        schema_name="fg_pan_review_analysis", schema=ANALYSIS_SCHEMA)
+    results = validate_analysis_output(data.data, groups=built["context"]["groups"],
+        allowed_values=built["allowed_values"], max_results=settings.max_questions)
     refs = built["decision_refs"]
     proposals = []
-    for question in questions:
+    for result in results:
+        safe_keys = list(result["decision_keys"])
         affected = max((next(group["affected_count"] for group in built["context"]["groups"]
                              if key in {decision["key"] for decision in group["decisions"]})
-                        for key in question["decision_keys"]), default=0)
-        question["decision_keys"] = [refs[key] for key in question["decision_keys"]]
-        for choice in question["choices"]:
+                        for key in safe_keys), default=0)
+        result["decision_keys"] = [refs[key] for key in safe_keys]
+        for choice in result["choices"]:
             for assignment in choice["assignments"]:
                 assignment["decision_key"] = refs[assignment["decision_key"]]
-        proposal = proposal_from_output(output=question, kind=PANAIAssistKind.ARCHITECTURE_QUESTION,
+        proposal = proposal_from_output(output=result, kind=PANAIAssistKind(result["kind"]),
             proposal_id=uuid.uuid4().hex, context_digest=built["context_digest"], provider=data.provider,
-            model=data.model, prompt_version=FG_PAN_AI_PROMPT_VERSION, affected_count=affected)
+            model=data.model, prompt_version=FG_PAN_AI_PROMPT_VERSION, affected_count=affected,
+            state_digest=built["state_digest"], comparisons=result["comparisons"])
         proposals.append(proposal)
     cache.put_many(key, proposals)
-    _log_operation("questions", data, built)
+    _log_operation("analysis", data, built)
     return built, tuple(proposals)
 
 
@@ -75,6 +76,7 @@ def explain_review_group(*, ai_provider, settings, state, group_identity, cache)
     proposal = proposal_from_output(output=output, kind=PANAIAssistKind.CANDIDATE_COMPARISON,
         proposal_id=uuid.uuid4().hex, context_digest=digest, provider=result.provider, model=result.model,
         prompt_version=FG_PAN_AI_PROMPT_VERSION, affected_count=group["affected_count"],
+        state_digest=built["state_digest"],
         comparisons=output["comparisons"])
     from dataclasses import replace
     proposal = replace(proposal, decision_keys=tuple(built["decision_refs"][item["key"]]
@@ -84,14 +86,15 @@ def explain_review_group(*, ai_provider, settings, state, group_identity, cache)
     return built, proposal
 
 
-def _build_context(state, operation, settings):
+def _build_context(state, operation, settings, cursor=0):
     state = {key: state[key] for key in (
         "source_digest", "target_digest", "target_device", "decisions", "review_workflow",
         "review_context", "decision_candidates", "auto_decisions", "target_findings",
     )}
     state["operation"] = operation
     state["prompt_version"] = FG_PAN_AI_PROMPT_VERSION
-    return build_ai_review_context(max_bytes=settings.max_context_bytes, max_groups=settings.max_review_groups, **state)
+    return build_ai_review_context(max_bytes=settings.max_context_bytes, max_groups=settings.max_review_groups,
+                                   cursor=cursor, **state)
 
 
 def _log_operation(operation, result, built):

@@ -41,15 +41,17 @@ class FakeProvider:
                 "missing_information": [], "limitations": []}, "groq", "test-model", "request-test", 10, 5)
         selected = next((decision for group in payload["groups"] for decision in group["decisions"]
                          if decision["allowed_values"]), None)
-        questions = []
+        results = []
         if selected:
             value = selected["allowed_values"][0]
-            questions.append({"title": "Review mapping", "summary": "Review the known candidate.",
-                "question": "Which supplied target should be used?", "decision_keys": [selected["key"]],
-                "choices": [{"label": value, "assignments": [{"decision_key": selected["key"], "value": value}]}],
+            evidence = selected["candidates"][0]["evidence"]
+            results.append({"kind": "MAPPING_RECOMMENDATION", "title": "Review mapping",
+                "summary": "Review the known candidate.", "question": "", "decision_keys": [selected["key"]],
+                "assignments": [{"decision_key": selected["key"], "value": value}], "evidence": evidence,
+                "choices": [], "comparisons": [],
                 "rationale": ["The deterministic engine supplied this candidate."],
                 "missing_information": [], "limitations": []})
-        return AIStructuredResult({"questions": questions}, "groq", "test-model", "request-test", 10, 5)
+        return AIStructuredResult({"results": results}, "groq", "test-model", "request-test", 10, 5)
 
 
 def test_ai_disabled_isolated_from_deterministic_review(monkeypatch):
@@ -60,7 +62,7 @@ def test_ai_disabled_isolated_from_deterministic_review(monkeypatch):
     assert status.get_json() == {"enabled": False, "available": False}
     preview_id = _preview(client, FIXTURE)
     assert client.post("/api/migration/requirements", json={"preview_id": preview_id}).status_code == 200
-    disabled = client.post("/api/migration/ai/questions", json={"preview_id": preview_id,
+    disabled = client.post("/api/migration/ai/analyze", json={"preview_id": preview_id,
         "source_facts": {"injected": True}, "decision_candidates": {"fake": ["invented"]}})
     assert disabled.status_code == 503
 
@@ -89,11 +91,13 @@ def test_ai_provider_error_status_is_preserved(monkeypatch, error, status):
 
     client = create_app({"TESTING": True, "AI_PROVIDER_INSTANCE": FailingProvider()}).test_client()
     preview_id = _preview(client, FIXTURE)
-    response = client.post("/api/migration/ai/questions", json={"preview_id": preview_id})
+    target_id = _preview(client, TARGET, "palo_alto")
+    response = client.post("/api/migration/ai/analyze", json={"preview_id": preview_id,
+        "target_preview_id": target_id})
     assert response.status_code == status
 
 
-def test_questions_rebuild_context_and_confirmation_records_engineer_provenance(monkeypatch):
+def test_analysis_rebuilds_context_and_confirmation_records_engineer_provenance(monkeypatch):
     monkeypatch.setenv("AI_ASSIST_ENABLED", "true")
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
     provider = FakeProvider()
@@ -105,7 +109,7 @@ def test_questions_rebuild_context_and_confirmation_records_engineer_provenance(
     deterministic = client.post("/api/migration/requirements", json=payload).get_json()
     request_body = payload | {"decision_document": deterministic["decision_document"],
                                "source_facts": {"injected": "not trusted"}}
-    response = client.post("/api/migration/ai/questions", json=request_body)
+    response = client.post("/api/migration/ai/analyze", json=request_body)
     assert response.status_code == 200
     assert "source_facts" not in provider.payload
     assert "injected" not in str(provider.payload)
@@ -124,6 +128,23 @@ def test_questions_rebuild_context_and_confirmation_records_engineer_provenance(
     assert confirmed[0]["evidence_value"]["proposal_id"] == proposal["proposal_id"]
 
 
+def test_analysis_skips_ai_when_review_has_no_candidate_values(monkeypatch):
+    monkeypatch.setenv("AI_ASSIST_ENABLED", "true")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+
+    class MustNotRun:
+        def generate_structured(self, **kwargs):
+            raise AssertionError("AI must not receive no-candidate design work")
+
+    client = create_app({"TESTING": True, "AI_PROVIDER_INSTANCE": MustNotRun()}).test_client()
+    preview_id = _preview(client, FIXTURE)
+    response = client.post("/api/migration/ai/analyze", json={"preview_id": preview_id})
+    assert response.status_code == 200
+    assert response.get_json()["candidate_backed_groups"] == 0
+    assert response.get_json()["insufficient_evidence"] > 0
+    assert response.get_json()["proposals"] == []
+
+
 def test_confirmation_rejects_stale_proposal(monkeypatch):
     monkeypatch.setenv("AI_ASSIST_ENABLED", "true")
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
@@ -134,7 +155,7 @@ def test_confirmation_rejects_stale_proposal(monkeypatch):
     payload = {"preview_id": preview_id, "target_preview_id": target_id}
     decisions = client.post("/api/migration/requirements", json=payload).get_json()
     request_body = payload | {"decision_document": decisions["decision_document"]}
-    proposals = client.post("/api/migration/ai/questions", json=request_body).get_json()["proposals"]
+    proposals = client.post("/api/migration/ai/analyze", json=request_body).get_json()["proposals"]
     changed_target_id = _preview_target_with_changed_bytes(client)
     stale = client.post("/api/migration/ai/confirm", json=request_body | {
         "target_preview_id": changed_target_id, "proposal_id": proposals[0]["proposal_id"], "choice_index": 0,
@@ -162,4 +183,9 @@ def test_candidate_explanation_uses_server_group_without_changing_decisions(monk
     assert response.status_code == 200
     assert "browser-injected" not in json.dumps(provider.payload)
     assert response.get_json()["proposal"]["kind"] == "CANDIDATE_COMPARISON"
+    rejected = client.post("/api/migration/ai/confirm", json=payload | {
+        "decision_document": requirements["decision_document"],
+        "proposal_id": response.get_json()["proposal"]["proposal_id"], "choice_index": 0,
+    })
+    assert rejected.status_code == 409
     assert requirements["decisions"] == client.post("/api/migration/requirements", json=payload).get_json()["decisions"]

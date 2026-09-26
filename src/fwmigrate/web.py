@@ -62,7 +62,7 @@ from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot, MAX_BYT
 from fwmigrate.ai.config import get_ai_settings
 from fwmigrate.ai.errors import AIError
 from fwmigrate.conversion.fortigate_to_palo_alto.ai import (
-    explain_review_group, generate_architecture_questions, proposal_cache,
+    analyze_review_groups, explain_review_group, proposal_cache,
 )
 
 register_builtin_source_reporters()
@@ -693,26 +693,30 @@ def create_app(test_config=None):
         except (ValueError, RuntimeError):
             return jsonify({'success': False, 'error': 'The local AI model could not be removed while it is in use.'}), 409
 
-    @app.route('/api/migration/ai/questions', methods=['POST'])
-    def migration_ai_questions():
+    @app.route('/api/migration/ai/analyze', methods=['POST'])
+    def migration_ai_analyze():
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             return jsonify({'success': False, 'error': 'A JSON request is required.'}), 400
+        cursor = payload.get('cursor', 0)
+        if not isinstance(cursor, int) or isinstance(cursor, bool) or cursor < 0:
+            return jsonify({'success': False, 'error': 'cursor must be a non-negative integer.'}), 400
         prepared, error = ai_review_payload(payload)
         if error:
             return error
         settings, provider, state = prepared
         try:
-            built, proposals = generate_architecture_questions(ai_provider=provider, settings=settings,
-                state=state, cache=proposal_cache)
+            built, proposals = analyze_review_groups(ai_provider=provider, settings=settings,
+                state=state, cache=proposal_cache, cursor=cursor)
             return jsonify({'success': True, 'proposals': [item.to_dict() for item in proposals],
-                'analyzed_groups': built['analyzed_groups'], 'total_groups': built['total_groups']})
+                'analyzed_groups': built['analyzed_groups'], 'candidate_backed_groups': built['candidate_backed_groups'],
+                'next_cursor': built['next_cursor'], 'insufficient_evidence': built['insufficient_evidence']})
         except AIError as exc:
-            _LOGGER.warning('AI architecture question generation failed provider=%s model=%s',
+            _LOGGER.warning('AI review analysis failed provider=%s model=%s',
                             settings.provider, settings.model)
             return ai_error_response(exc)
         except Exception:
-            _LOGGER.error('AI architecture question operation failed provider=%s model=%s',
+            _LOGGER.error('AI review analysis operation failed provider=%s model=%s',
                           settings.provider, settings.model)
             return jsonify({'success': False, 'error': 'AI assistance is temporarily unavailable. Deterministic migration review is unchanged.'}), 502
 
@@ -752,7 +756,7 @@ def create_app(test_config=None):
         if not settings or not settings.enabled or not available:
             return jsonify({'success': False, 'error': 'AI assistance is not configured.'}), 503
         proposal = proposal_cache.get(payload.get('proposal_id'))
-        if proposal is None or proposal.kind.value != 'ARCHITECTURE_QUESTION':
+        if proposal is None or proposal.kind.value not in {'MAPPING_RECOMMENDATION', 'ARCHITECTURE_QUESTION'}:
             return jsonify({'success': False, 'error': 'AI proposal is stale; regenerate AI review.'}), 409
         choice_index = payload.get('choice_index')
         if not isinstance(choice_index, int) or isinstance(choice_index, bool) or not 0 <= choice_index < len(proposal.choices):
@@ -768,15 +772,17 @@ def create_app(test_config=None):
                 target_device=state['target_device'], decisions=state['decisions'],
                 review_workflow=state['review_workflow'], review_context=state['review_context'],
                 decision_candidates=state['decision_candidates'], auto_decisions=state['auto_decisions'],
-                target_findings=state['target_findings'], operation='questions',
+                target_findings=state['target_findings'], operation='analysis',
                 prompt_version=FG_PAN_AI_PROMPT_VERSION, max_bytes=get_ai_settings().max_context_bytes,
                 max_groups=get_ai_settings().max_review_groups)
         except AIError:
             return jsonify({'success': False, 'error': 'AI proposal is stale; regenerate AI review.'}), 409
-        if current['context_digest'] != proposal.context_digest:
+        if current['state_digest'] != proposal.state_digest:
             return jsonify({'success': False, 'error': 'AI proposal is stale; regenerate AI review.'}), 409
         choice = proposal.choices[choice_index]
         by_key = {item.key: item for item in state['decisions'].decisions}
+        from fwmigrate.conversion.fortigate_to_palo_alto.ai.context import _eligible_candidates
+        from fwmigrate.conversion.fortigate_to_palo_alto.ai.sanitizer import sanitize_ai_context
         assignments = choice.assignments
         if not assignments or len({item.decision_key for item in assignments}) != len(assignments):
             return jsonify({'success': False, 'error': 'AI proposal contains an invalid choice.'}), 409
@@ -784,7 +790,10 @@ def create_app(test_config=None):
         for assignment in assignments:
             decision = by_key.get(assignment.decision_key)
             candidates = state['decision_candidates'].get(assignment.decision_key, ())
-            allowed = {candidate.get('value') for candidate in candidates if isinstance(candidate, dict)}
+            eligible = _eligible_candidates(candidates)[:8]
+            safe = sanitize_ai_context({'values': [item['value'] for item in eligible]},
+                max_bytes=get_ai_settings().max_context_bytes)['values']
+            allowed = set(safe)
             if (assignment.decision_key not in proposal.decision_keys or decision is None
                     or decision.review_state != PANDecisionReviewState.PENDING
                     or decision.mode in {PANDecisionMode.AUTO, PANDecisionMode.UNSUPPORTED}

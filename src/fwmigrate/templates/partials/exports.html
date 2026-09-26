@@ -20,22 +20,6 @@
       <p id="target-config-status" role="status" aria-live="polite">Upload target XML for evidence-based suggestions. Source-only suggestions remain available.</p>
     </div>
     <section class="review-workflow" aria-label="Migration review queues">
-      <section class="automation-controls" aria-labelledby="automation-heading">
-        <h3 id="automation-heading">Deterministic automation</h3>
-        <label><input type="checkbox" id="automation-verified"> Automatically apply VERIFIED mappings</label>
-        <label><input type="checkbox" id="automation-derived"> Automatically apply DERIVED mappings</label>
-        <button type="button" class="btn btn-secondary btn-sm" id="automation-run">Run until stable</button>
-        <p id="automation-result" role="status" aria-live="polite">Both policies are off until you enable them.</p>
-      </section>
-      <section class="automation-controls" id="migration-ai-review" aria-labelledby="migration-ai-heading">
-        <h3 id="migration-ai-heading">AI-assisted review</h3>
-        <p id="migration-ai-status" role="status" aria-live="polite">Checking AI assistance availability…</p>
-        <p id="migration-ai-local-details" class="muted">Local processing. <a href="https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF" target="_blank" rel="noopener">Qwen3-1.7B Q4_K_M (Apache-2.0)</a>; <a href="https://github.com/ggml-org/llama.cpp/blob/b11200/LICENSE" target="_blank" rel="noopener">llama.cpp runtime (MIT)</a>.</p>
-        <button type="button" class="btn btn-secondary btn-sm hidden" id="migration-ai-install">Download local model (1.28 GB)</button>
-        <button type="button" class="btn btn-secondary btn-sm hidden" id="migration-ai-remove">Remove local model</button>
-        <button type="button" class="btn btn-secondary btn-sm" id="migration-ai-generate" disabled>Generate questions</button>
-        <div id="migration-ai-results" aria-live="polite"></div>
-      </section>
       <div id="review-summary" class="review-summary" aria-live="polite"></div>
       <div class="review-queues" role="tablist" aria-label="Migration review work queues">
         <button type="button" role="tab" data-review-queue="READY_TO_CONFIRM" aria-selected="true">Ready to approve <span></span></button>
@@ -46,6 +30,25 @@
       </div>
       <button type="button" class="btn btn-primary" id="decision-approve-safe">Approve verified / derived mappings</button>
       <div id="migration-review-groups" aria-live="polite"></div>
+      <details class="optional-review-tools">
+        <summary>Optional review tools</summary>
+        <section class="automation-controls" aria-labelledby="automation-heading">
+          <h3 id="automation-heading">Deterministic automation</h3>
+          <label><input type="checkbox" id="automation-verified"> Automatically apply VERIFIED mappings</label>
+          <label><input type="checkbox" id="automation-derived"> Automatically apply DERIVED mappings</label>
+          <button type="button" class="btn btn-secondary btn-sm" id="automation-run">Run until stable</button>
+          <p id="automation-result" role="status" aria-live="polite">Both policies are off until you enable them.</p>
+        </section>
+        <section class="automation-controls" id="migration-ai-review" aria-labelledby="migration-ai-heading">
+          <h3 id="migration-ai-heading">AI-assisted review</h3>
+          <p id="migration-ai-status" role="status" aria-live="polite">Checking AI assistance availability…</p>
+          <p id="migration-ai-local-details" class="muted">Local processing. <a href="https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF" target="_blank" rel="noopener">Qwen3-1.7B Q4_K_M (Apache-2.0)</a>; <a href="https://github.com/ggml-org/llama.cpp/blob/b11200/LICENSE" target="_blank" rel="noopener">llama.cpp runtime (MIT)</a>.</p>
+          <button type="button" class="btn btn-secondary btn-sm hidden" id="migration-ai-install">Download local model (1.28 GB)</button>
+          <button type="button" class="btn btn-secondary btn-sm hidden" id="migration-ai-remove">Remove local model</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="migration-ai-refresh" disabled>Refresh AI analysis</button>
+          <div id="migration-ai-results" aria-live="polite"></div>
+        </section>
+      </details>
     </section>
     <details id="advanced-decision-view" class="advanced-decision-view">
       <summary>Advanced decision view</summary>
