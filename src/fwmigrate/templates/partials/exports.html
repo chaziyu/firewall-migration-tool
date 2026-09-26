@@ -1,7 +1,15 @@
 <div id="mode-download-form" role="tabpanel" aria-labelledby="tab-download">
   <section class="card hidden" id="migration-mapping" aria-labelledby="mapping-heading">
     <div class="card-header"><div class="section-heading"><h2 id="mapping-heading"><span class="step-num">02</span>Migration review</h2></div>
-      <p class="card-desc">Review backend suggestions and confirm the FortiGate mappings required by PAN-OS.</p></div>
+      <p class="card-desc">Set target intent, approve safe mappings, then resolve choices and design gaps.</p></div>
+    <section class="target-intent" aria-labelledby="target-intent-heading">
+      <h3 id="target-intent-heading">1. Target intent</h3>
+      <p class="card-desc">Map VDOMs, interfaces, and zones in compact YAML. Imported values become confirmed decisions.</p>
+      <div class="mapping-toolbar-row">
+        <label>Import target intent YAML <input type="file" id="target-intent-import" accept=".yaml,.yml,text/yaml"></label>
+        <button type="button" class="btn btn-secondary btn-sm" id="target-intent-export">Export target intent</button>
+      </div>
+    </section>
     <div class="target-evidence">
       <label for="target-config-file">Optional target PAN-OS XML</label>
       <input type="file" id="target-config-file" accept=".xml,application/xml,text/xml" aria-describedby="target-config-status">
@@ -12,13 +20,22 @@
       <p id="target-config-status" role="status" aria-live="polite">Upload target XML for evidence-based suggestions. Source-only suggestions remain available.</p>
     </div>
     <section class="review-workflow" aria-label="Migration review queues">
+      <section class="automation-controls" aria-labelledby="automation-heading">
+        <h3 id="automation-heading">Deterministic automation</h3>
+        <label><input type="checkbox" id="automation-verified"> Automatically apply VERIFIED mappings</label>
+        <label><input type="checkbox" id="automation-derived"> Automatically apply DERIVED mappings</label>
+        <button type="button" class="btn btn-secondary btn-sm" id="automation-run">Run until stable</button>
+        <p id="automation-result" role="status" aria-live="polite">Both policies are off until you enable them.</p>
+      </section>
       <div id="review-summary" class="review-summary" aria-live="polite"></div>
       <div class="review-queues" role="tablist" aria-label="Migration review work queues">
-        <button type="button" role="tab" data-review-queue="READY_TO_CONFIRM" aria-selected="true">Review suggestions <span></span></button>
-        <button type="button" role="tab" data-review-queue="CHOOSE_CANDIDATE" aria-selected="false">Choose matches <span></span></button>
-        <button type="button" role="tab" data-review-queue="NEEDS_INPUT" aria-selected="false">Manual decisions <span></span></button>
+        <button type="button" role="tab" data-review-queue="READY_TO_CONFIRM" aria-selected="true">Ready to approve <span></span></button>
+        <button type="button" role="tab" data-review-queue="CHOOSE_CANDIDATE" aria-selected="false">Choose match <span></span></button>
+        <button type="button" role="tab" data-review-queue="NEEDS_INPUT" aria-selected="false">Needs design <span></span></button>
+        <button type="button" role="tab" data-review-queue="CONFLICT" aria-selected="false">Conflicts <span></span></button>
         <button type="button" role="tab" data-review-queue="COMPLETE" aria-selected="false">Completed <span></span></button>
       </div>
+      <button type="button" class="btn btn-primary" id="decision-approve-safe">Approve verified / derived mappings</button>
       <div id="migration-review-groups" aria-live="polite"></div>
     </section>
     <details id="advanced-decision-view" class="advanced-decision-view">
@@ -47,7 +64,7 @@
         </div>
         <div class="mapping-toolbar-row">
           <button type="button" class="btn btn-secondary btn-sm" id="mapping-template">Download mapping template</button>
-          <label>Import YAML <input type="file" id="mapping-import" accept=".yaml,.yml,text/yaml"></label>
+          <label>Import mapping YAML <input type="file" id="mapping-import" accept=".yaml,.yml,text/yaml"></label>
           <label>Import decisions <input type="file" id="decision-import" accept=".json,application/json"></label>
           <button type="button" class="btn btn-secondary btn-sm" id="decision-export">Download decisions</button>
         </div>

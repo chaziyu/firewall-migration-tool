@@ -40,13 +40,18 @@ class PANSetRenderer:
         vsys_items = [(item, path(item)) for name, path in scopes for item in getattr(plan, name)
                       if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed]
         vsys_commands = []
+        item_commands = {}
         for vsys in dict.fromkeys(item.target_vsys for item, _ in vsys_items if item.target_vsys is not None):
-            vsys_commands.extend(self._render_vsys_scope(vsys, [(item, paths) for item, paths in vsys_items if item.target_vsys == vsys]))
+            scoped_items = [(item, paths) for item, paths in vsys_items if item.target_vsys == vsys]
+            vsys_commands.extend(self._render_vsys_scope(vsys, scoped_items))
+            item_commands.update({_key(item): [_serialize(path[1:]) for path in paths]
+                                  for item, paths in scoped_items})
         routes = [(item, cli_paths.static_route(item)) for item in plan.static_routes
                   if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed]
+        item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in routes})
         commands.extend(vsys_commands)
         commands.extend(self._render_device_scope(routes, reset_vsys=bool(vsys_commands)))
-        return RenderedMigration(tuple(commands), _report(plan, commands, validation))
+        return RenderedMigration(tuple(commands), _report(plan, commands, validation, item_commands))
 
     def _render_vsys_scope(self, vsys, items):
         return [f"set system setting target-vsys {_v(vsys)}", *(
@@ -80,7 +85,7 @@ def _key(item):
     return (item.source_object_type, item.target_vsys, item.target_name or item.source_name)
 
 
-def _report(plan, commands, validation):
+def _report(plan, commands, validation, item_commands=None):
     items = list(_items(plan))
     command_text = "\n".join(commands)
     issue_counts = {}
@@ -98,7 +103,8 @@ def _report(plan, commands, validation):
                         "status": item.status.value, "warnings": list(item.warnings),
                         "renderable": item.status is PANMigrationStatus.SUPPORTED and (validation is None or _key(item) in validation.renderable_item_keys),
                         "render_blockers": [*item.warnings, *(issue.code for issue in (validation.issues if validation else ()) if issue.source.source_name == item.source_name and issue.source.source_vdom == item.source_vdom)],
-                        "rendered": item.status is PANMigrationStatus.SUPPORTED and (validation is None or _key(item) in validation.renderable_item_keys)} for item in items]}
+                        "rendered": item.status is PANMigrationStatus.SUPPORTED and (validation is None or _key(item) in validation.renderable_item_keys),
+                        "commands": list((item_commands or {}).get(_key(item), ())) } for item in items]}
 
 
 def _items(plan):

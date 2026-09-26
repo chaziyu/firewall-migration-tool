@@ -27,3 +27,16 @@ def test_review_workflow_groups_decisions_classifies_queues_and_orders_vdom_firs
         "auto_resolved": 1, "ready_to_confirm": 2, "choose_candidate": 1,
         "needs_input": 1, "conflicts": 0, "confirmed": 0,
     }
+
+
+def test_review_workflow_groups_parent_choice_with_affected_vlan_children():
+    config = FGConfig(interfaces=[FGInterface(name="agg1", type="aggregate"),
+        FGInterface(name="vlan100", type="vlan", interface="agg1", vlanid=100),
+        FGInterface(name="vlan200", type="vlan", interface="agg1", vlanid=200)])
+    decision = PANMigrationDecision("root", "interface", "agg1", "target_interface")
+    workflow = build_review_workflow(config, PANMigrationDecisionSet((decision,)),
+        candidates={decision.key: [{"value": "ae1", "class": "STRONG"}]},
+        context={}, decision_evidence={}, target_warnings={})
+    assert workflow["architecture_questions"] == [{"type": "AGGREGATE_MAPPING", "source_vdom": "root",
+        "source_name": "agg1", "decision_key": decision.key, "candidates": ["ae1"],
+        "affected_count": 2, "affected": ["vlan100", "vlan200"]}]

@@ -37,7 +37,16 @@ from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import (
 from fwmigrate.conversion.fortigate_to_palo_alto.target_validation import validate_against_target
 from fwmigrate.conversion.fortigate_to_palo_alto.review_context import build_review_context
 from fwmigrate.conversion.fortigate_to_palo_alto.review_workflow import build_review_workflow
-from fwmigrate.conversion.fortigate_to_palo_alto.decision_propagation import apply_zone_to_members
+from fwmigrate.conversion.fortigate_to_palo_alto.decision_propagation import (
+    MigrationRuleType, apply_repeated_zone_action, apply_zone_to_members,
+    rule_affected_decision_keys,
+)
+from fwmigrate.conversion.fortigate_to_palo_alto.auto_decisions import classify_auto_decisions
+from fwmigrate.conversion.fortigate_to_palo_alto.automation import AutomationPolicy, run_automation_until_stable
+from fwmigrate.conversion.fortigate_to_palo_alto.target_intent import apply_target_intent, export_target_intent
+from fwmigrate.conversion.fortigate_to_palo_alto.target_object_reuse import (
+    classify_target_object_reuse, mark_target_name_collisions,
+)
 from fwmigrate.conversion.fortigate_to_palo_alto.support_guidance import build_support_guidance
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
@@ -74,6 +83,27 @@ def _decision_document(source_digest, decision_set, target_evidence=None):
     return document
 
 
+def _deployment_validation_feedback(rendered, decision_document, validation):
+    if getattr(validation, 'status', None) != 'FAILED':
+        return None
+    response = str(getattr(validation, 'response', '') or '')
+    decisions = decision_document.get('decisions', ()) if isinstance(decision_document, dict) else ()
+    items = rendered.report.get('items', ())
+    matches = [item for item in items if item.get('target_name') and
+               re.search(rf'(?<![A-Za-z0-9_.-]){re.escape(item["target_name"])}(?![A-Za-z0-9_.-])', response, re.I)]
+    candidates = []
+    for item in matches:
+        item_decisions = [decision.get('key') for decision in decisions
+                          if decision.get('source_vdom') == item.get('source_vdom')
+                          and decision.get('source_name') == item.get('source_name')]
+        candidates.append({**{key: item.get(key) for key in
+            ('source_vdom', 'source_kind', 'source_name', 'target_name')},
+            'decision_keys': item_decisions, 'generated_commands': list(item.get('commands', ()))})
+    return {'status': 'FAILED', 'message': response,
+            'mapping_status': 'MAPPED' if len(candidates) == 1 else 'AMBIGUOUS' if candidates else 'UNMAPPED',
+            'migration_items': candidates}
+
+
 def _decision_evidence(decision_set, target_findings):
     conflicts = {item.decision_key for item in target_findings}
     return {
@@ -84,6 +114,14 @@ def _decision_evidence(decision_set, target_findings):
         )
         for item in decision_set.decisions
     }
+
+
+def _auto_review_results(config, derived, decisions, target, device):
+    results = classify_auto_decisions(config, derived, decisions, target, device)
+    for finding in validate_against_target(config, decisions, target, device):
+        result = results.setdefault(finding.decision_key, {})
+        result.update(status="CONFLICT", reason=finding.message)
+    return results
 
 
 def _evidence_summary(decision_set, evidence):
@@ -489,6 +527,8 @@ def create_app(test_config=None):
             target_evidence_changed = _target_evidence_changed(prior, target_context)
             target = target_context.analysis if target_context else None
             target_device = target_context.selected_device if target_context else None
+            target_object_reuse = classify_target_object_reuse(
+                analysis.extracted.config, analysis.derived, decision_set, target, target_device)
             devices = list(target_context.devices) if target_context else []
             target_warnings = {}
             decision_candidates = {}
@@ -500,6 +540,8 @@ def create_app(test_config=None):
                     analysis.extracted.config, decision_set, target, target_device
                 )
             target_findings = validate_against_target(analysis.extracted.config, decision_set, target, target_device)
+            auto_decisions = _auto_review_results(analysis.extracted.config, analysis.derived, decision_set,
+                                                   target, target_device)
             decision_evidence = _decision_evidence(decision_set, target_findings)
             review_context = build_review_context(
                 analysis.extracted.config, decision_set,
@@ -527,7 +569,9 @@ def create_app(test_config=None):
                             **review_workflow,
                             'target_warnings': target_warnings,
                             'target_findings': [item.to_dict() for item in target_findings],
+                            'target_object_reuse': list(target_object_reuse),
                             'decision_evidence': decision_evidence,
+                            'auto_decisions': auto_decisions,
                             'evidence_summary': _evidence_summary(decision_set, decision_evidence),
                             'target_evidence': target_context.metadata if target_context else None,
                             'target_evidence_changed': target_evidence_changed,
@@ -537,28 +581,167 @@ def create_app(test_config=None):
         except Exception as exc:
             return jsonify({'success': False, 'error': str(exc)}), 500
 
+    @app.route('/api/migration/decisions/approve', methods=['POST'])
+    def approve_migration_decisions():
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict) or not isinstance(payload.get('decision_keys'), list) or not payload['decision_keys']:
+                raise ValueError('decision_keys must be a non-empty array')
+            if any(not isinstance(key, str) for key in payload['decision_keys']) or len(set(payload['decision_keys'])) != len(payload['decision_keys']):
+                raise ValueError('decision_keys must contain unique strings')
+            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+            if entry is None:
+                raise ValueError('A valid FortiGate preview_id is required')
+            previous = _load_decision_document(payload.get('decision_document'), entry.source_digest)
+            analysis = _clone_preview(entry)
+            target_context = _target_evidence(payload)
+            target = target_context.analysis if target_context else None
+            device = target_context.selected_device if target_context else None
+            results = _auto_review_results(analysis.extracted.config, analysis.derived, previous, target, device)
+            by_key = {item.key: item for item in previous.decisions}
+            for key in payload['decision_keys']:
+                result = results.get(key)
+                if result is None or result.get('status') not in {'VERIFIED', 'DERIVED'} or not result.get('value'):
+                    raise ValueError(f'Decision {key!r} is no longer VERIFIED or DERIVED')
+            for key in payload['decision_keys']:
+                by_key[key] = replace(by_key[key], value=results[key]['value'],
+                    review_state=PANDecisionReviewState.CONFIRMED, evidence_source='ENGINEER',
+                    evidence_type='APPROVED_AUTO_REVIEW', evidence_value=results[key]['status'],
+                    target_object=results[key]['value'])
+            decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
+            return jsonify({'success': True, 'approved_count': len(payload['decision_keys']),
+                'decisions': decisions.to_dict(), 'decision_document': _decision_document(entry.source_digest, decisions,
+                    target_context.metadata if target_context else None)})
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
+    @app.route('/api/migration/automation/run', methods=['POST'])
+    def run_migration_automation():
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError('A JSON object is required')
+            enabled = payload.get('enabled_policies', [])
+            if not isinstance(enabled, list) or any(not isinstance(item, str) for item in enabled):
+                raise ValueError('enabled_policies must be an array of policy names')
+            enabled = tuple(AutomationPolicy(item) for item in enabled)
+            if len(set(enabled)) != len(enabled):
+                raise ValueError('enabled_policies must contain unique policy names')
+            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+            if entry is None:
+                raise ValueError('A valid FortiGate preview_id is required')
+            document = payload.get('decision_document')
+            decisions = _load_decision_document(document, entry.source_digest)
+            analysis = _clone_preview(entry)
+            target_context = _target_evidence(payload)
+            result = run_automation_until_stable(
+                analysis.extracted.config, analysis.derived, decisions,
+                target_context.analysis if target_context else None,
+                target_context.selected_device if target_context else None,
+                enabled_policies=enabled,
+            )
+            return jsonify({'success': True, 'decisions': result.decisions.to_dict(),
+                'decision_document': _decision_document(entry.source_digest, result.decisions,
+                    target_context.metadata if target_context else None),
+                'audit': list(result.audit), 'iterations': result.iterations, 'stable': result.stable})
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
+    @app.route('/api/migration/target-intent/import', methods=['POST'])
+    def import_target_intent():
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError('A JSON object is required')
+            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+            if entry is None:
+                raise ValueError('A valid FortiGate preview_id is required')
+            document = payload.get('decision_document')
+            previous = _load_decision_document(document, entry.source_digest) if document else None
+            analysis = _clone_preview(entry)
+            requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
+            decisions = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
+            decisions = apply_target_intent(analysis.extracted.config, decisions, payload.get('intent', payload.get('yaml', {})))
+            target_context = _target_evidence(payload)
+            target = target_context.analysis if target_context else None
+            device = target_context.selected_device if target_context else None
+            automation = run_automation_until_stable(analysis.extracted.config, analysis.derived, decisions,
+                target, device, enabled_policies=payload.get('enabled_policies', ()))
+            decisions = automation.decisions
+            auto = _auto_review_results(analysis.extracted.config, analysis.derived, decisions, target, device)
+            return jsonify({'success': True, 'decisions': decisions.to_dict(),
+                'decision_document': _decision_document(entry.source_digest, decisions,
+                    target_context.metadata if target_context else None), 'auto_decisions': auto,
+                'target_intent': export_target_intent(decisions), 'automation_audit': list(automation.audit),
+                'automation_stable': automation.stable})
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
+    @app.route('/api/migration/target-intent/export', methods=['POST'])
+    def export_target_intent_document():
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError('A JSON object is required')
+            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+            if entry is None:
+                raise ValueError('A valid FortiGate preview_id is required')
+            decisions = _load_decision_document(payload.get('decision_document'), entry.source_digest)
+            return jsonify({'success': True, 'yaml': export_target_intent(decisions)})
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
     @app.route('/api/migration/rules/apply', methods=['POST'])
     def apply_migration_rule():
         payload = request.get_json(silent=True)
         try:
             if not isinstance(payload, dict):
                 raise ValueError('A JSON object is required')
-            if payload.get('rule_type') != 'APPLY_ZONE_TO_MEMBERS':
-                raise ValueError('Unsupported migration rule')
+            if payload.get('rule_type') == 'REPEATED_ZONE_ACTION':
+                entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+                if entry is None:
+                    raise ValueError('A valid FortiGate preview_id is required')
+                document = payload.get('decision_document')
+                previous = _load_decision_document(document, entry.source_digest)
+                analysis = _clone_preview(entry)
+                decisions = apply_repeated_zone_action(analysis.extracted.config, previous,
+                    source_vdom=payload.get('source_vdom'), source_zone=payload.get('source_zone'),
+                    value=payload.get('value'), apply_to=payload.get('apply_to'))
+                return jsonify({'success': True, 'applied_count': len(payload['apply_to']),
+                    'decision_document': _decision_document(entry.source_digest, decisions,
+                        document.get('target_evidence'))})
+            try:
+                raw_rule_type = payload.get('rule_type')
+                rule_type = MigrationRuleType.ZONE_TO_MEMBERS if raw_rule_type == 'APPLY_ZONE_TO_MEMBERS' else MigrationRuleType(raw_rule_type)
+            except ValueError as exc:
+                raise ValueError('Unsupported migration rule') from exc
             entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
             if entry is None:
                 raise ValueError('A valid FortiGate preview_id is required')
             document = payload.get('decision_document')
             previous = _load_decision_document(document, entry.source_digest)
             analysis = _clone_preview(entry)
-            decisions = apply_zone_to_members(
-                analysis.extracted.config, previous,
-                source_key=payload.get('source_key'), value=payload.get('value'),
-                apply_to=payload.get('apply_to'),
-            )
-            return jsonify({'success': True, 'applied_count': len(payload['apply_to']),
-                            'decision_document': _decision_document(
-                                entry.source_digest, decisions, document.get('target_evidence'))})
+            affected = rule_affected_decision_keys(analysis.extracted.config, previous, rule_type,
+                                                   payload.get('source_key'))
+            apply_to = payload.get('apply_to')
+            if not isinstance(apply_to, list) or not apply_to or any(not isinstance(key, str) for key in apply_to):
+                raise ValueError('apply_to must be a non-empty array of decision keys')
+            if len(set(apply_to)) != len(apply_to) or not set(apply_to) <= set(affected):
+                raise ValueError('apply_to contains a decision outside the current server-validated rule scope')
+            if rule_type == MigrationRuleType.ZONE_TO_MEMBERS:
+                decisions = apply_zone_to_members(analysis.extracted.config, previous,
+                    source_key=payload.get('source_key'), value=payload.get('value'), apply_to=apply_to)
+                return jsonify({'success': True, 'applied_count': len(apply_to),
+                    'decision_document': _decision_document(entry.source_digest, decisions,
+                        document.get('target_evidence'))})
+            target_context = _target_evidence(payload)
+            results = classify_auto_decisions(analysis.extracted.config, analysis.derived, previous,
+                target_context.analysis if target_context else None,
+                target_context.selected_device if target_context else None)
+            return jsonify({'success': True, 're_evaluated_count': len(apply_to),
+                'auto_decisions': {key: results.get(key, {'status': 'MANUAL'}) for key in apply_to},
+                'decision_document': _decision_document(entry.source_digest, previous,
+                    target_context.metadata if target_context else document.get('target_evidence'))})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception as exc:
@@ -670,9 +853,12 @@ def create_app(test_config=None):
             recommendations = build_recommendations(
                 analysis.extracted.config, analysis.derived, decision_set, target, target_device
             )
+            target_object_reuse = classify_target_object_reuse(
+                analysis.extracted.config, analysis.derived, decision_set, target, target_device)
             plan = migration_planners.get(source_vendor, target_vendor).plan(
                 analysis.extracted.config, analysis.derived, options=options
             )
+            plan = mark_target_name_collisions(plan, target_object_reuse, target_findings)
             validation = validate_plan(plan)
             support_guidance = build_support_guidance(plan, validation, decision_set, target_findings)
             rendered = PANSetRenderer().render(plan, validation)
@@ -683,6 +869,7 @@ def create_app(test_config=None):
                 'review': {
                     'target_evidence_changed': target_evidence_changed,
                     'target_findings': [item.to_dict() for item in target_findings],
+                    'target_object_reuse': list(target_object_reuse),
                     'decision_evidence': decision_evidence,
                     'evidence_summary': _evidence_summary(decision_set, decision_evidence),
                     'support_guidance': [item.to_dict() for item in support_guidance],
@@ -707,6 +894,7 @@ def create_app(test_config=None):
                 'blocking_reasons': [issue['message'] for issue in missing],
                 'target_warnings': target_warnings,
                 'target_findings': [item.to_dict() for item in target_findings],
+                'target_object_reuse': list(target_object_reuse),
                 'decision_evidence': decision_evidence,
                 'evidence_summary': _evidence_summary(decision_set, decision_evidence),
                 'support_guidance': [item.to_dict() for item in support_guidance],
@@ -795,7 +983,7 @@ def create_app(test_config=None):
             options = PANDeploymentOptions(
                 host=host.strip(), username=username.strip(),
                 password=password, port=int(payload.get('port', 22)),
-                validate=False,
+                validate=_parse_bool(payload.get('validate'), default=True),
             )
         except (KeyError, TypeError, ValueError):
             raise ValueError('Host, SSH username, and password are required; port must be numeric')
@@ -815,8 +1003,13 @@ def create_app(test_config=None):
                 raise ValueError('The migration artifact contains no renderable commands')
             options = _deployment_options(payload)
             result = PANSSHDeployer(options).deploy(rendered)
-            return jsonify({'success': result.failure_message is None and result.failed_command_index is None,
-                            'result': asdict(result)}), (200 if result.failure_message is None and result.failed_command_index is None else 502)
+            source = artifact_sources.get(artifact_id)
+            decision_document = source[2] if source else None
+            validation_feedback = _deployment_validation_feedback(rendered, decision_document, result.validation)
+            succeeded = (result.failure_message is None and result.failed_command_index is None
+                         and result.validation.status != 'FAILED' and result.commit.status != 'FAILED')
+            return jsonify({'success': succeeded, 'result': asdict(result),
+                            'validation_feedback': validation_feedback}), (200 if succeeded else 502)
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
