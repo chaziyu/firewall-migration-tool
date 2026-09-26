@@ -443,6 +443,10 @@ def test_migration_workflow_uses_planning_terminology():
     assert 'id="migration-plan-items"' in html and 'id="migration-plan-filter"' in html
     assert 'id="migration-command-preview"' in html and 'id="migration-copy-commands"' in html
     assert 'id="migration-recommendation-fields"' in html
+    assert "Optional review tools" in html
+    assert html.index('id="review-summary"') < html.index('id="migration-review-groups"') < html.index("Optional review tools")
+    assert 'id="automation-run"' in html and 'id="migration-ai-review"' in html
+    assert 'id="migration-ai-refresh"' in html
     assert "Confirm all mapping suggestions" in html
     assert html.index('id="migration-mapping"') < html.index('id="migration-build"') < html.index('id="migration-plan"')
     assert 'class="card output-card hidden" id="migration-build"' in html
