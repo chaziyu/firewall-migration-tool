@@ -27,6 +27,12 @@
         <button type="button" class="btn btn-secondary btn-sm" id="automation-run">Run until stable</button>
         <p id="automation-result" role="status" aria-live="polite">Both policies are off until you enable them.</p>
       </section>
+      <section class="automation-controls" id="migration-ai-review" aria-labelledby="migration-ai-heading">
+        <h3 id="migration-ai-heading">AI-assisted review</h3>
+        <p id="migration-ai-status" role="status" aria-live="polite">Checking AI assistance availability…</p>
+        <button type="button" class="btn btn-secondary btn-sm" id="migration-ai-generate" disabled>Generate questions</button>
+        <div id="migration-ai-results" aria-live="polite"></div>
+      </section>
       <div id="review-summary" class="review-summary" aria-live="polite"></div>
       <div class="review-queues" role="tablist" aria-label="Migration review work queues">
         <button type="button" role="tab" data-review-queue="READY_TO_CONFIRM" aria-selected="true">Ready to approve <span></span></button>

@@ -18,6 +18,9 @@ let migrationPlanRevision = 0;
   let reviewGroups = [];
   let autoDecisionResults = {};
   let architectureQuestions = [];
+  let aiAssistAvailable = false;
+  let aiProposals = [];
+  let aiExplanation = null;
   let ruleSuggestions = [];
   let activeReviewQueue = "READY_TO_CONFIRM";
   let currentPreviewId = null;
@@ -1276,6 +1279,7 @@ let migrationPlanRevision = 0;
   // 8. Mode A: Export Target Migration Bundle (.zip)
   // =========================================================================
   function invalidateMigrationPlan() {
+    markAIAssistStale();
     migrationPlanRevision += 1;
     currentRenderedArtifactId = null;
     currentArtifactCommandCount = 0;
@@ -1298,7 +1302,133 @@ let migrationPlanRevision = 0;
     syncWorkspace();
   }
 
+  function markAIAssistStale() {
+    if (!aiProposals.length && !aiExplanation) return;
+    aiProposals = [];
+    aiExplanation = null;
+    const status = document.getElementById("migration-ai-status");
+    if (status) status.textContent = "Review state changed. Regenerate AI assistance.";
+    const results = document.getElementById("migration-ai-results");
+    results?.replaceChildren();
+  }
+
+  async function refreshAIAssistStatus() {
+    const panel = document.getElementById("migration-ai-review");
+    if (!panel) return;
+    const status = document.getElementById("migration-ai-status");
+    try {
+      const response = await fetch("/api/migration/ai/status");
+      const result = await readJson(response, "AI status unavailable");
+      aiAssistAvailable = Boolean(result.available);
+      if (!result.available) {
+        status.textContent = "AI-assisted review is not configured.";
+      } else {
+        status.textContent = "AI can organize unresolved mappings using sanitized review evidence.";
+      }
+      document.getElementById("migration-ai-generate").disabled = !aiAssistAvailable;
+      document.querySelectorAll("[data-ai-explain]").forEach(button => { button.disabled = !aiAssistAvailable; });
+    } catch (_) {
+      aiAssistAvailable = false;
+      status.textContent = "AI-assisted review is not configured.";
+      document.getElementById("migration-ai-generate").disabled = true;
+      document.querySelectorAll("[data-ai-explain]").forEach(button => { button.disabled = true; });
+    }
+  }
+
+  function renderAIAssistProposals() {
+    const container = document.getElementById("migration-ai-results");
+    if (!container) return;
+    container.replaceChildren();
+    for (const proposal of aiProposals) {
+      const card = document.createElement("article"); card.className = "review-work-card";
+      const title = document.createElement("h4"); title.textContent = proposal.title;
+      const question = document.createElement("p"); question.textContent = proposal.question || proposal.summary;
+      card.append(title, question);
+      for (const choice of proposal.choices || []) {
+        const button = document.createElement("button"); button.type = "button"; button.className = "btn btn-secondary btn-sm";
+        button.textContent = `Confirm ${choice.label}`;
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          try {
+            const response = await fetch("/api/migration/ai/confirm", { method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(),
+                proposal_id: proposal.proposal_id, choice_index: proposal.choices.indexOf(choice),
+                ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}) }) });
+            const result = await readJson(response, "Could not confirm AI-assisted choice");
+            aiProposals = []; aiExplanation = null;
+            await loadMigrationReview(currentPreviewId, result.decision_document);
+            invalidateMigrationPlan();
+          } catch (error) {
+            if (error.message.includes("stale")) markAIAssistStale();
+            else document.getElementById("migration-ai-status").textContent = "AI assistance is temporarily unavailable. Deterministic migration review is unchanged.";
+            button.disabled = false;
+          }
+        });
+        card.append(button);
+      }
+      const manual = document.createElement("button"); manual.type = "button"; manual.className = "btn btn-secondary btn-sm";
+      manual.textContent = "Decide manually";
+      manual.addEventListener("click", () => {
+        const editor = document.getElementById("advanced-decision-view");
+        if (editor) editor.open = true;
+        const key = proposal.decision_keys?.[0];
+        const input = key ? document.querySelector(`.decision-value[data-decision-key="${CSS.escape(key)}"], .review-work-value[data-decision-key="${CSS.escape(key)}"]`) : null;
+        (input || editor)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        input?.focus();
+      });
+      card.append(manual);
+      const details = document.createElement("details");
+      const summary = document.createElement("summary"); summary.textContent = "Why this question?";
+      const list = document.createElement("ul");
+      for (const fact of [...(proposal.rationale || []), ...(proposal.missing_information || []).map(item => `Missing: ${item}`), ...(proposal.limitations || [])]) {
+        const row = document.createElement("li"); row.textContent = fact; list.append(row);
+      }
+      details.append(summary, list); card.append(details);
+      if (proposal.affected_count) {
+        const impact = document.createElement("p"); impact.textContent = `Affected: ${proposal.affected_count}`; card.append(impact);
+      }
+      const advisory = document.createElement("p"); advisory.textContent = "AI-assisted suggestion. Nothing changes until you confirm.";
+      card.append(advisory); container.append(card);
+    }
+    if (aiExplanation) {
+      const card = document.createElement("article"); card.className = "review-work-card";
+      const heading = document.createElement("h4"); heading.textContent = "AI-assisted comparison"; card.append(heading);
+      const title = document.createElement("p"); title.textContent = aiExplanation.summary; card.append(title);
+      for (const item of aiExplanation.comparisons || []) {
+        const row = document.createElement("section");
+        const name = document.createElement("strong"); name.textContent = item.candidate_value; row.append(name);
+        const list = document.createElement("ul");
+        for (const fact of [...item.evidence, ...item.limitations]) { const li = document.createElement("li"); li.textContent = fact; list.append(li); }
+        row.append(list); card.append(row);
+      }
+      const note = document.createElement("p"); note.textContent = "This explanation does not change the mapping."; card.append(note);
+      container.append(card);
+    }
+  }
+
+  document.getElementById("migration-ai-generate")?.addEventListener("click", async event => {
+    const button = event.currentTarget; button.disabled = true;
+    const status = document.getElementById("migration-ai-status");
+    try {
+      const response = await fetch("/api/migration/ai/questions", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(),
+          ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}) }) });
+      const result = await readJson(response, "AI assistance is temporarily unavailable");
+      aiProposals = result.proposals || []; aiExplanation = null;
+      status.textContent = result.total_groups > result.analyzed_groups
+        ? `Analyzed ${result.analyzed_groups} of ${result.total_groups} unresolved groups.` : "Review AI-assisted questions below.";
+      renderAIAssistProposals();
+    } catch (_) {
+      status.textContent = "AI assistance is temporarily unavailable. Deterministic migration review is unchanged.";
+    } finally { button.disabled = !aiAssistAvailable; }
+  });
+  document.addEventListener("input", event => {
+    if (event.target.matches?.(".decision-value, .review-work-value")) markAIAssistStale();
+  });
+  refreshAIAssistStatus();
+
   async function loadMigrationReview(previewId = currentPreviewId, previousDocument = null) {
+    markAIAssistStale();
     const panel = document.getElementById("migration-mapping");
     if (selectedSourceVendor !== "fortigate" || !previewId) {
       currentDecisionSet = { decisions: [] };
@@ -1643,6 +1773,26 @@ let migrationPlanRevision = 0;
         facts.append(list); summary.append(facts);
       }
       card.append(summary);
+      if (group.queue === "CHOOSE_CANDIDATE" && Object.keys(group.candidates || {}).length) {
+        const explain = document.createElement("button"); explain.type = "button"; explain.className = "btn btn-secondary btn-sm";
+        explain.dataset.aiExplain = "true"; explain.disabled = !aiAssistAvailable;
+        explain.textContent = "Explain candidates with AI";
+        explain.addEventListener("click", async () => {
+          explain.disabled = true;
+          try {
+            const response = await fetch("/api/migration/ai/explain", { method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(),
+                source_vdom: group.source_vdom, source_kind: group.source_kind, source_name: group.source_name,
+                ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}) }) });
+            const result = await readJson(response, "AI assistance is temporarily unavailable");
+            aiExplanation = result.proposal; aiProposals = [];
+            renderAIAssistProposals();
+          } catch (_) {
+            document.getElementById("migration-ai-status").textContent = "AI assistance is temporarily unavailable. Deterministic migration review is unchanged.";
+          } finally { explain.disabled = false; }
+        });
+        card.append(explain);
+      }
       if (group.actions?.length) for (const action of group.actions) {
         const apply = document.createElement("button"); apply.type = "button"; apply.className = "btn btn-secondary";
         apply.textContent = `Apply to ${action.apply_to.length} member decisions`;
