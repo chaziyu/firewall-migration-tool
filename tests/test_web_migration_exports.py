@@ -404,9 +404,10 @@ def test_deploy_rejects_empty_rendered_artifact_before_credentials():
 
 def test_candidate_validation_failure_maps_to_rendered_migration_item_when_unique():
     rendered = SimpleNamespace(report={"items": [{"source_vdom": "root", "source_kind": "service",
-        "source_name": "web-https", "target_name": "web-https", "commands": [
+        "source_name": "web-https", "target_name": "web-https", "decision_keys": ["decision-1"], "commands": [
             "set vsys vsys1 service web-https protocol tcp port 443"]}]})
-    document = {"decisions": [{"source_vdom": "root", "source_name": "web-https", "key": "decision-1"}]}
+    document = {"decisions": [{"source_vdom": "root", "source_name": "web-https", "key": "decision-1"},
+                              {"source_vdom": "root", "source_name": "web-https", "key": "wrong-kind-decision"}]}
     validation = SimpleNamespace(status="FAILED", response="validation error: service web-https is invalid")
     feedback = _deployment_validation_feedback(rendered, document, validation)
     assert feedback["mapping_status"] == "MAPPED"

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import cli_paths
 from .models import PANMigrationPlan, PANMigrationStatus
+from .target_plan_validation import PANRenderDisposition, item_key
 from .validation import MigrationValidationResult, validate_plan
 
 
@@ -25,20 +26,26 @@ def _v(value):
 
 
 class PANSetRenderer:
-    def render(self, plan: PANMigrationPlan, validation: MigrationValidationResult | None = None, **options) -> RenderedMigration:
-        del options
+    def render(self, plan: PANMigrationPlan, validation: MigrationValidationResult | None = None, *,
+               dispositions=None, render_blockers=None, decision_keys=None) -> RenderedMigration:
         actual_validation = validate_plan(plan)
         if validation is not None and validation != actual_validation:
             raise ValueError("validation result does not match this migration plan")
         validation = actual_validation
         allowed = validation.renderable_item_keys
+        dispositions = dispositions or {}
+        render_blockers = render_blockers or {}
+        decision_keys = decision_keys or {}
+        disposition = lambda item: dispositions.get(item_key(item), PANRenderDisposition.CREATE
+            if item.status is PANMigrationStatus.SUPPORTED else PANRenderDisposition.BLOCK)
+        can_create = lambda item: disposition(item) is PANRenderDisposition.CREATE
         commands = []
         scopes = (("addresses", cli_paths.address), ("address_groups", cli_paths.address_group),
                   ("services", cli_paths.service), ("service_groups", cli_paths.service_group),
                   ("schedules", cli_paths.schedule), ("zones", cli_paths.zone),
                   ("nat_rules", cli_paths.nat_rule), ("security_rules", cli_paths.security_rule))
         vsys_items = [(item, path(item)) for name, path in scopes for item in getattr(plan, name)
-                      if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed]
+                      if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
         vsys_commands = []
         item_commands = {}
         for vsys in dict.fromkeys(item.target_vsys for item, _ in vsys_items if item.target_vsys is not None):
@@ -47,11 +54,12 @@ class PANSetRenderer:
             item_commands.update({_key(item): [_serialize(path[1:]) for path in paths]
                                   for item, paths in scoped_items})
         routes = [(item, cli_paths.static_route(item)) for item in plan.static_routes
-                  if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed]
+                  if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in routes})
         commands.extend(vsys_commands)
         commands.extend(self._render_device_scope(routes, reset_vsys=bool(vsys_commands)))
-        return RenderedMigration(tuple(commands), _report(plan, commands, validation, item_commands))
+        return RenderedMigration(tuple(commands), _report(plan, commands, validation, item_commands,
+                                                          dispositions, render_blockers, decision_keys))
 
     def _render_vsys_scope(self, vsys, items):
         return [f"set system setting target-vsys {_v(vsys)}", *(
@@ -85,7 +93,7 @@ def _key(item):
     return (item.source_object_type, item.target_vsys, item.target_name or item.source_name)
 
 
-def _report(plan, commands, validation, item_commands=None):
+def _report(plan, commands, validation, item_commands=None, dispositions=None, render_blockers=None, decision_keys=None):
     items = list(_items(plan))
     command_text = "\n".join(commands)
     issue_counts = {}
@@ -94,16 +102,31 @@ def _report(plan, commands, validation, item_commands=None):
         entry["count"] += 1
     counts = {status.value: sum(item.status is status for item in items) for status in PANMigrationStatus}
     digest = hashlib.sha256(command_text.encode("utf-8")).hexdigest()
-    renderable = sum(_key(item) in validation.renderable_item_keys for item in items) if validation else 0
-    return {"summary": {"counts": counts, "renderable": renderable, "commands": len(commands), "command_sha256": digest},
+    dispositions = dispositions or {}
+    render_blockers = render_blockers or {}
+    decision_keys = decision_keys or {}
+    disposition = lambda item: dispositions.get(item_key(item), PANRenderDisposition.CREATE
+        if item.status is PANMigrationStatus.SUPPORTED else PANRenderDisposition.BLOCK)
+    disposition_counts = {status.value: sum(disposition(item) is status
+                                             for item in items) for status in PANRenderDisposition}
+    renderable = sum(disposition(item) is not PANRenderDisposition.BLOCK and _key(item) in validation.renderable_item_keys
+                     for item in items) if validation else 0
+    return {"summary": {"counts": counts, "renderable": renderable, "render_dispositions": disposition_counts,
+                        "commands": len(commands), "command_sha256": digest},
             "counts": counts, "command_sha256": digest,
-            "commands": len(commands), "issue_summary": list(issue_counts.values()),
+            "commands": len(commands), "render_dispositions": disposition_counts,
+            "issue_summary": list(issue_counts.values()),
             "items": [{"source_vdom": item.source_vdom, "source_kind": item.source_kind, "source_name": item.source_name,
-                        "source_policy_id": item.source_policy_id, "target_vsys": item.target_vsys, "target_name": item.target_name,
+                        "source_policy_id": item.source_policy_id, "source_object_type": item.source_object_type,
+                        "target_vsys": item.target_vsys, "target_name": item.target_name,
                         "status": item.status.value, "warnings": list(item.warnings),
-                        "renderable": item.status is PANMigrationStatus.SUPPORTED and (validation is None or _key(item) in validation.renderable_item_keys),
-                        "render_blockers": [*item.warnings, *(issue.code for issue in (validation.issues if validation else ()) if issue.source.source_name == item.source_name and issue.source.source_vdom == item.source_vdom)],
-                        "rendered": item.status is PANMigrationStatus.SUPPORTED and (validation is None or _key(item) in validation.renderable_item_keys),
+                        "decision_keys": list(decision_keys.get(item_key(item), ())),
+                        "render_disposition": disposition(item).value,
+                        "renderable": (disposition(item) is not PANRenderDisposition.BLOCK
+                                       and item.status is PANMigrationStatus.SUPPORTED
+                                       and (validation is None or _key(item) in validation.renderable_item_keys)),
+                        "render_blockers": [*item.warnings, *render_blockers.get(item_key(item), ()), *(issue.code for issue in (validation.issues if validation else ()) if issue.source.source_name == item.source_name and issue.source.source_vdom == item.source_vdom)],
+                        "rendered": disposition(item) is PANRenderDisposition.CREATE and item.status is PANMigrationStatus.SUPPORTED and (validation is None or _key(item) in validation.renderable_item_keys),
                         "commands": list((item_commands or {}).get(_key(item), ())) } for item in items]}
 
 

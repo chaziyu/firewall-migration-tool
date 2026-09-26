@@ -2157,7 +2157,7 @@ let migrationPlanRevision = 0;
       return String(item.status || "").toLowerCase() === filter;
     });
     const table = document.createElement("table"); table.className = "mapping-table migration-plan-table";
-    const labels = ["Source", "Type", "Target", "Status", "Renderable", "Resolution", "Next action", "Warnings / blockers"];
+    const labels = ["Source", "Type", "Target", "Status", "Renderable", "Action", "Resolution", "Next action", "Warnings / blockers"];
     const head = document.createElement("tr");
     labels.forEach(label => { const cell = document.createElement("th"); cell.textContent = label; head.append(cell); });
     const thead = document.createElement("thead"); thead.append(head); table.append(thead);
@@ -2175,7 +2175,10 @@ let migrationPlanRevision = 0;
       const status = document.createElement("td"); status.dataset.label = labels[3];
       const badge = document.createElement("span"); badge.className = `plan-status-badge status-${String(planItem.status || "unknown").toLowerCase()}`; badge.textContent = String(planItem.status || "UNKNOWN").toLowerCase().replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase()); status.append(badge); row.append(status);
       const renderable = document.createElement("td"); renderable.dataset.label = labels[4]; renderable.textContent = planItem.renderable ? "Yes" : "No"; renderable.className = planItem.renderable ? "plan-renderable" : "plan-not-renderable"; row.append(renderable);
-      const resolution = document.createElement("td"); resolution.dataset.label = labels[5];
+      const disposition = document.createElement("td"); disposition.dataset.label = labels[5];
+      disposition.textContent = ({ CREATE: "Will create", REUSE: "Will reuse existing target object", BLOCK: "Blocked by target conflict" })[planItem.render_disposition] || "Needs manual review";
+      row.append(disposition);
+      const resolution = document.createElement("td"); resolution.dataset.label = labels[6];
       if (guidance) {
         resolution.textContent = `${guidance.resolution_type.replaceAll("_", " ")}: ${guidance.title}`;
         if (guidance.decision_key) {
@@ -2184,8 +2187,8 @@ let migrationPlanRevision = 0;
         }
       } else resolution.textContent = "—";
       row.append(resolution);
-      const nextAction = document.createElement("td"); nextAction.dataset.label = labels[6]; nextAction.textContent = guidance?.next_action || "—"; row.append(nextAction);
-      const issues = document.createElement("td"); issues.dataset.label = labels[7];
+      const nextAction = document.createElement("td"); nextAction.dataset.label = labels[7]; nextAction.textContent = guidance?.next_action || "—"; row.append(nextAction);
+      const issues = document.createElement("td"); issues.dataset.label = labels[8];
       if (warnings.length) {
         const details = document.createElement("details"); details.className = "plan-issues";
         const summary = document.createElement("summary"); summary.textContent = `${warnings.length} issue${warnings.length === 1 ? "" : "s"}`;
