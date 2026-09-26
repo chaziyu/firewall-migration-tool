@@ -1298,7 +1298,7 @@ def create_app(test_config=None):
             try:
                 profile = ExcelExportProfile(profile_value)
             except (TypeError, ValueError):
-                return jsonify({'error': 'excel_profile must be one of: fast, full, data_only'}), 400
+                return jsonify({'error': 'excel_profile must be one of: fast, full'}), 400
             reporter = source_reporters.get(source_vendor)
             source_vendor = reporter.vendor_id
 
@@ -1320,7 +1320,7 @@ def create_app(test_config=None):
             if preview_entry is not None:
                 analysis = (
                     preview_entry.analysis
-                    if profile in (ExcelExportProfile.FAST, ExcelExportProfile.DATA_ONLY)
+                    if profile is ExcelExportProfile.FAST
                     else _clone_preview(preview_entry)
                 )
             else:

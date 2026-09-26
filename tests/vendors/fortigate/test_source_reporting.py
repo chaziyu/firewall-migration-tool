@@ -104,9 +104,9 @@ def test_fortigate_reporter_passes_requested_excel_profile(monkeypatch):
         captured["profile"] = kwargs["profile"]
 
     monkeypatch.setattr("fwmigrate.vendors.fortigate.export.export_excel", fake_export_excel)
-    reporter.export_excel(analysis, io.BytesIO(), profile=ExcelExportProfile.DATA_ONLY)
+    reporter.export_excel(analysis, io.BytesIO(), profile=ExcelExportProfile.FAST)
 
-    assert captured["profile"] is ExcelExportProfile.DATA_ONLY
+    assert captured["profile"] is ExcelExportProfile.FAST
 
 
 def test_fortigate_reporter_defaults_to_full_excel_profile(monkeypatch):
@@ -123,7 +123,7 @@ def test_fortigate_reporter_defaults_to_full_excel_profile(monkeypatch):
     assert captured["profile"] is ExcelExportProfile.FULL
 
 
-def test_fortigate_excel_profiles_use_distinct_workbook_paths():
+def test_fortigate_full_and_fast_profiles_keep_their_workbook_contracts():
     reporter = source_reporters.get("fortigate")
     analysis = reporter.analyze_source(SOURCE)
 
@@ -135,9 +135,9 @@ def test_fortigate_excel_profiles_use_distinct_workbook_paths():
 
     assert workbooks[ExcelExportProfile.FULL]["Addresses"]["A1"].value == "Addresses"
     assert workbooks[ExcelExportProfile.FAST]["Addresses"]["A1"].value == "Addresses"
-    assert workbooks[ExcelExportProfile.DATA_ONLY]["Addresses"]["A1"].value == "Name"
     assert workbooks[ExcelExportProfile.FAST]["Addresses"]["A1"].has_style
-    assert not workbooks[ExcelExportProfile.DATA_ONLY]["Addresses"]["A1"].has_style
+    assert "FortiGate Source Inventory" in workbooks[ExcelExportProfile.FULL].sheetnames
+    assert "FortiGate Source Inventory" not in workbooks[ExcelExportProfile.FAST].sheetnames
 
 
 def test_shared_web_host_uses_fortigate_reporter_for_preview_and_excel():
@@ -180,7 +180,7 @@ def test_shared_web_host_uses_fortigate_reporter_for_preview_and_excel():
     assert workbook.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-def test_data_only_preview_export_reuses_cached_analysis(monkeypatch):
+def test_fast_preview_export_reuses_cached_analysis(monkeypatch):
     client = create_app({"TESTING": True}).test_client()
     preview = client.post(
         "/api/preview",
@@ -194,14 +194,24 @@ def test_data_only_preview_export_reuses_cached_analysis(monkeypatch):
 
     monkeypatch.setattr(
         "fwmigrate.web._clone_preview",
-        lambda _: (_ for _ in ()).throw(AssertionError("DATA_ONLY should reuse cached analysis")),
+        lambda _: (_ for _ in ()).throw(AssertionError("FAST should reuse cached analysis")),
     )
     workbook = client.post(
         "/api/extract/excel",
-        data={"source_vendor": "fortigate", "preview_id": preview_id, "excel_profile": "data_only"},
+        data={"source_vendor": "fortigate", "preview_id": preview_id, "excel_profile": "fast"},
     )
 
     assert workbook.status_code == 200
+
+
+def test_data_only_excel_profile_is_rejected():
+    response = create_app({"TESTING": True}).test_client().post(
+        "/api/extract/excel",
+        json={"source_vendor": "fortigate", "excel_profile": "data_only"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "excel_profile must be one of: fast, full"
 
 
 def test_fortigate_web_upload_handles_vdom_config_and_downloads_workbook():

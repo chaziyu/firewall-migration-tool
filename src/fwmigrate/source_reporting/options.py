@@ -8,7 +8,6 @@ from enum import Enum
 class ExcelExportProfile(str, Enum):
     FULL = "full"
     FAST = "fast"
-    DATA_ONLY = "data_only"
 
 
 class ExcelExportUnavailableError(RuntimeError):
