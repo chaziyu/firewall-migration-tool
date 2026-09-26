@@ -11,12 +11,16 @@ let migrationPlanRevision = 0;
   let currentRecommendations = [];
   let currentDecisionSet = { decisions: [] };
   let currentDecisionDocument = null;
+  let decisionContext = {};
+  let decisionCandidates = {};
   let currentPreviewId = null;
   let currentTargetPreviewId = null;
   let selectedTargetDevice = "";
   let targetRevision = 0;
   let targetWarnings = {};
   let targetFindings = [];
+  let decisionEvidence = {};
+  let evidenceSummary = {};
   let supportGuidance = [];
   let targetEvidence = null;
   let selectedSourceVendor = "fortigate";
@@ -828,6 +832,8 @@ let migrationPlanRevision = 0;
     currentPreviewId = null;
     currentDecisionSet = { decisions: [] };
     currentDecisionDocument = null;
+    decisionEvidence = {};
+    evidenceSummary = {};
     invalidateMigrationPlan();
     currentPlanItems = [];
     document.getElementById("migration-mapping")?.classList.add("hidden");
@@ -1289,6 +1295,8 @@ let migrationPlanRevision = 0;
     if (selectedSourceVendor !== "fortigate" || !previewId) {
       currentDecisionSet = { decisions: [] };
       currentDecisionDocument = null;
+      decisionContext = {};
+      decisionCandidates = {};
       panel?.classList.add("hidden");
       return;
     }
@@ -1305,8 +1313,12 @@ let migrationPlanRevision = 0;
     if (previewId !== currentPreviewId) return;
     currentDecisionSet = result.decisions;
     currentDecisionDocument = result.decision_document;
+    decisionContext = result.decision_context || {};
+    decisionCandidates = result.decision_candidates || {};
     targetWarnings = result.target_warnings || {};
     targetFindings = result.target_findings || [];
+    decisionEvidence = result.decision_evidence || {};
+    evidenceSummary = result.evidence_summary || {};
     targetEvidence = result.target_evidence || null;
     currentRecommendations = result.recommendations || [];
     if (targetDeviceSelect) {
@@ -1348,12 +1360,23 @@ let migrationPlanRevision = 0;
     return { ...(currentDecisionDocument || {}), decisions: currentDecisionSet.decisions };
   }
 
+  async function refreshMigrationReviewFromCurrentDecisions() {
+    if (!currentPreviewId) return;
+    const previous = currentDecisionPayload();
+    invalidateMigrationPlan();
+    await loadMigrationReview(currentPreviewId, previous);
+  }
+
   function clearTargetEvidence() {
     targetRevision += 1;
     currentTargetPreviewId = null;
     selectedTargetDevice = "";
     targetWarnings = {};
     targetFindings = [];
+    decisionEvidence = {};
+    decisionContext = {};
+    decisionCandidates = {};
+    evidenceSummary = {};
     targetEvidence = null;
     currentRecommendations = [];
     if (targetConfigFile) targetConfigFile.value = "";
@@ -1494,8 +1517,7 @@ let migrationPlanRevision = 0;
       row.dataset.vdom = decision.source_vdom; row.dataset.field = decision.target_field; row.dataset.state = decisionIsResolved(decision) ? "CONFIRMED" : decision.review_state;
       row.dataset.mode = decision.mode;
       row.dataset.affectedBy = Object.keys(decision.affected_by || {}).join(",");
-      const conflict = targetFindings.some(item => item.decision_key === decision.key);
-      const evidence = conflict ? "CONFLICT" : decision.review_state === "CONFIRMED" ? "ENGINEER" : decision.evidence_source || "SOURCE";
+      const evidence = decisionEvidence[decision.key] || "SOURCE";
       row.dataset.evidence = evidence;
       const mode = decision.mode, unsupported = mode === "UNSUPPORTED";
       row.classList.add(mode === "SUGGESTED" && decision.review_state === "PENDING" ? "decision-suggested" :
@@ -1508,7 +1530,27 @@ let migrationPlanRevision = 0;
       checkbox.addEventListener("change", updateSelectedDecisionCount);
       selectCell.append(checkbox); row.append(selectCell);
       const addText = (value, label) => { const cell = document.createElement("td"); cell.dataset.label = label; cell.textContent = value || "—"; row.append(cell); return cell; };
-      addText(`${decision.source_vdom} · ${decision.source_kind} · ${decision.source_name}`, labels[1]);
+      const sourceCell = addText(`${decision.source_vdom} · ${decision.source_kind} · ${decision.source_name}`, labels[1]);
+      const context = decisionContext[decision.key] || {};
+      const sourceFacts = Object.entries(context).filter(([name]) => name.startsWith("source_") && name !== "source_members");
+      if (Object.hasOwn(context, "source_members")) {
+        sourceFacts.push(["source_members", context.source_members.length ? context.source_members.join(", ") : "(explicitly empty)"]);
+      }
+      if (sourceFacts.length || context.next_action) {
+        const details = document.createElement("details"); details.className = "decision-source-details";
+        const summary = document.createElement("summary"); summary.textContent = "Source evidence"; details.append(summary);
+        if (sourceFacts.length) {
+          const list = document.createElement("dl");
+          for (const [name, value] of sourceFacts) {
+            const term = document.createElement("dt"); term.textContent = name.replace(/^source_/, "").replaceAll("_", " ");
+            const description = document.createElement("dd"); description.textContent = Array.isArray(value) ? value.join(", ") : String(value);
+            list.append(term, description);
+          }
+          details.append(list);
+        }
+        if (context.next_action) { const next = document.createElement("p"); next.textContent = `Next action: ${context.next_action}`; details.append(next); }
+        sourceCell.append(details);
+      }
       addText(decision.target_field, labels[2]);
       const modeCell = document.createElement("td"); modeCell.dataset.label = labels[3];
       const modeBadge = document.createElement("span"); modeBadge.className = `decision-mode-badge mode-${decision.mode.toLowerCase()}`; modeBadge.textContent = decision.mode;
@@ -1536,7 +1578,30 @@ let migrationPlanRevision = 0;
         row.className = "decision-required";
         invalidateMigrationPlan(); updateMappingCompletion();
       });
-      finalCell.append(input); row.append(finalCell, stateCell);
+      finalCell.append(input);
+      const candidates = decisionCandidates[decision.key] || [];
+      if (decision.target_field === "target_interface" && candidates.length) {
+        const details = document.createElement("details"); details.className = "decision-candidates";
+        const summary = document.createElement("summary"); summary.textContent = `Candidates (${candidates.length})`; details.append(summary);
+        for (const candidate of candidates) {
+          const item = document.createElement("div"); item.className = "decision-candidate";
+          const evidenceText = [...(candidate.strong_evidence || []), ...(candidate.supporting_evidence || [])].join(" · ");
+          const label = document.createElement("span");
+          label.textContent = `${candidate.value} · ${candidate.class}${candidate.target_scope ? ` · ${candidate.target_scope}` : ""}${evidenceText ? ` · ${evidenceText}` : ""}`;
+          const use = document.createElement("button"); use.type = "button"; use.className = "btn btn-secondary btn-sm"; use.textContent = "Use candidate"; use.disabled = unsupported;
+          use.addEventListener("click", () => {
+            input.value = candidate.value; decision.value = candidate.value;
+            if (decision.mode === "AUTO") decision.mode = "REQUIRED";
+            decision.review_state = "PENDING"; row.dataset.mode = decision.mode; row.dataset.state = "PENDING";
+            reviewBadge.className = "decision-review-badge review-pending"; reviewBadge.textContent = "PENDING";
+            row.className = decision.mode === "SUGGESTED" ? "decision-suggested" : "decision-required";
+            invalidateMigrationPlan(); updateMappingCompletion();
+          });
+          item.append(label, use); details.append(item);
+        }
+        finalCell.append(details);
+      }
+      row.append(finalCell, stateCell);
       const affectedCell = document.createElement("td"); affectedCell.dataset.label = labels[8];
       const affectedCount = document.createElement("strong"); affectedCount.textContent = String(decision.affected_count || 0);
       affectedCell.append(affectedCount);
@@ -1628,11 +1693,10 @@ let migrationPlanRevision = 0;
   function updateEvidenceSummary() {
     const summary = document.getElementById("mapping-evidence-summary");
     if (!summary) return;
-    const decisions = currentDecisionSet.decisions;
-    const count = predicate => decisions.filter(predicate).length;
+    const summaryValues = evidenceSummary;
     summary.textContent = targetEvidence
-      ? `Target: ${targetEvidence.device || "not selected"} · ${count(item => item.evidence_source === "TARGET")} target-backed · ${count(item => !item.evidence_source || item.evidence_source === "SOURCE")} source-only · ${targetFindings.length} conflicts · ${count(item => item.mode === "REQUIRED" && item.review_state !== "CONFIRMED")} required · ${count(item => item.review_state === "CONFIRMED")} confirmed`
-      : `Target evidence: not provided · ${count(item => !item.evidence_source || item.evidence_source === "SOURCE")} source-only suggestions are active.`;
+      ? `Target: ${targetEvidence.device || "not selected"} · ${summaryValues.target_backed || 0} target-backed · ${summaryValues.source_only || 0} source-only · ${summaryValues.conflicts || 0} conflicts · ${summaryValues.required || 0} required · ${summaryValues.confirmed || 0} confirmed`
+      : `Target evidence: not provided · ${summaryValues.source_only || 0} source-only suggestions are active.`;
   }
 
   function updateSelectedDecisionCount() {
@@ -1666,12 +1730,13 @@ let migrationPlanRevision = 0;
     document.querySelectorAll(".decision-select:checked").forEach(input => { input.checked = false; });
     updateSelectedDecisionCount();
   });
-  function saveDecisionValues(decisions) {
+  async function saveDecisionValues(decisions) {
     for (const decision of decisions) {
       decision.mode = decision.mode === "AUTO" ? "REQUIRED" : decision.mode;
       decision.review_state = "CONFIRMED";
     }
-    invalidateMigrationPlan(); renderDecisionTable(); updateMappingCompletion();
+    try { await refreshMigrationReviewFromCurrentDecisions(); }
+    catch (error) { showError(`Could not refresh migration review: ${error.message}`); }
   }
   document.getElementById("decision-confirm-selected")?.addEventListener("click", () => {
     const selected = selectedDecisions();
@@ -1736,7 +1801,7 @@ let migrationPlanRevision = 0;
         if (updated.length) matched++; else ignored++;
       }
       currentDecisionDocument = currentDecisionPayload();
-      invalidateMigrationPlan(); renderDecisionTable(); updateMappingCompletion();
+      await refreshMigrationReviewFromCurrentDecisions();
       showToast("info", "YAML mapping imported", `${matched} known decisions updated; ${ignored} unmatched or empty entries ignored.`);
     } catch (error) { showError(error.message); }
     event.target.value = "";
@@ -1826,6 +1891,12 @@ let migrationPlanRevision = 0;
 
   function focusDecision(key) {
     document.getElementById("migration-mapping")?.classList.remove("hidden");
+    const decisionFilter = document.getElementById("mapping-filter");
+    const vdomFilter = document.getElementById("mapping-vdom-filter");
+    const pendingOnly = document.getElementById("decision-pending-only");
+    if (decisionFilter) decisionFilter.value = "all";
+    if (vdomFilter) vdomFilter.value = "all";
+    if (pendingOnly) pendingOnly.checked = false;
     const evidenceFilter = document.getElementById("mapping-evidence-filter");
     if (evidenceFilter) evidenceFilter.value = "all";
     applyDecisionFilters();
@@ -1866,6 +1937,8 @@ let migrationPlanRevision = 0;
         currentPlanItems = artifact.report?.items || [];
         currentRecommendations = artifact.recommendations || artifact.report?.review?.recommendations || currentRecommendations;
         targetFindings = artifact.target_findings || [];
+        decisionEvidence = artifact.decision_evidence || {};
+        evidenceSummary = artifact.evidence_summary || {};
         supportGuidance = artifact.support_guidance || artifact.report?.review?.support_guidance || [];
         targetEvidence = artifact.target_evidence || artifact.report?.target_evidence || targetEvidence;
         const planFilter = document.getElementById("migration-plan-filter");

@@ -4,7 +4,12 @@ from dataclasses import replace
 from ipaddress import ip_interface
 
 from .decisions import PANDecisionMode, PANDecisionReviewState, PANMigrationDecisionSet, make_decision_key
-from .interface_candidates import viable_candidate
+from .interface_candidates import (
+    PANInterfaceCandidate,
+    PANInterfaceCandidateClass,
+    candidate_evidence,
+    viable_candidate,
+)
 from .target_candidates import target_vsys_value
 from ...vendors.palo_alto.source_model import pan_scope_identity
 
@@ -62,6 +67,40 @@ def _compatible(source, target):
     return family in {"ethernet", "aggregate-ethernet", "vlan", "loopback", "tunnel"} if not kind else family == "ethernet"
 
 
+def discover_target_candidates(source, decisions: PANMigrationDecisionSet, target, device: str):
+    """Return current target evidence, separate from the persisted decision document."""
+    records = [item for item in (*target.config.interfaces, *target.config.interface_units)
+               if item.name and _device(item) == device]
+    topology = {(item.scope, item.interface): item for item in target.derived.interface_topology}
+    scoped = [(item, topology.get((pan_scope_identity(item.scope), item.name))) for item in records]
+    by_source = {(item.vdom or "root", item.name): item for item in source.interfaces if item.name}
+    mapped = {(item.source_vdom, item.source_name): item.value for item in decisions.decisions
+              if item.source_kind == "interface" and item.target_field == "target_interface"
+              and item.review_state == PANDecisionReviewState.CONFIRMED and item.value}
+    result = {}
+    for (vdom, name), item in by_source.items():
+        key = make_decision_key(vdom, "interface", name, "target_interface")
+        parent = mapped.get((vdom, item.interface)) if item.interface else None
+        target_vsys = target_vsys_value(decisions, vdom)
+        found = []
+        for target_item, topo in scoped:
+            if not _compatible(item, target_item):
+                continue
+            if target_vsys and (topo is None or target_vsys not in topo.imported_vsys):
+                continue
+            strong, supporting, contradicting = candidate_evidence(item, target_item, topo, parent)
+            candidate_class = (PANInterfaceCandidateClass.EXCLUDED if contradicting else
+                               PANInterfaceCandidateClass.STRONG if strong else
+                               PANInterfaceCandidateClass.POSSIBLE)
+            found.append(PANInterfaceCandidate(
+                target_item.name, str(pan_scope_identity(target_item.scope)) if target_item.scope else None,
+                candidate_class, strong, supporting, contradicting))
+        found.sort(key=lambda candidate: (candidate.candidate_class != PANInterfaceCandidateClass.STRONG,
+                                          candidate.value, candidate.target_scope or ""))
+        result[key] = [candidate.to_dict() for candidate in found if candidate.candidate_class != PANInterfaceCandidateClass.EXCLUDED]
+    return result
+
+
 def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, device: str):
     """Return reviewed-only suggestions and warnings; never confirm a mapping."""
     records = [item for item in (*target.config.interfaces, *target.config.interface_units)
@@ -82,6 +121,7 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
     for decision in decisions.decisions:
         if decision.source_kind == "interface" and decision.target_field == "target_interface" and decision.review_state == PANDecisionReviewState.CONFIRMED and decision.value:
             mapped[(decision.source_vdom, decision.source_name)] = decision.value
+    confirmed_mapped = dict(mapped)
 
     for (vdom, name), item in by_source.items():
         key = make_decision_key(vdom, "interface", name, "target_interface")
@@ -89,13 +129,14 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
             continue
         address = _addresses(item.ip)
         candidates = []
+        parent = confirmed_mapped.get((vdom, item.interface)) if item.interface else None
         target_vsys = target_vsys_value(decisions, vdom)
         for target_item, topo in scoped:
-            if not address or not _compatible(item, target_item):
+            if not _compatible(item, target_item):
                 continue
             if target_vsys and (topo is None or target_vsys not in topo.imported_vsys):
                 continue
-            valid, strong, supporting, _ = viable_candidate(item, target_item, topo)
+            valid, strong, supporting, _ = viable_candidate(item, target_item, topo, parent)
             if valid:
                 candidates.append((target_item, topo, strong, supporting))
         if len(candidates) == 1:
@@ -107,12 +148,12 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
                 ', '.join(sorted(exact)) if exact else '; '.join((*strong, *supporting)), target_item.name)
             mapped[(vdom, name)] = target_item.name
         elif len(candidates) > 1:
-            warnings[key] = "Several target interfaces share the source address; choose one manually."
+            warnings[key] = "Several target interfaces match strong source evidence; choose one manually."
 
     for (vdom, name), item in by_source.items():
         if (vdom, name) in mapped or item.vlanid is None or not item.interface:
             continue
-        parent = mapped.get((vdom, item.interface))
+        parent = confirmed_mapped.get((vdom, item.interface))
         if not parent:
             continue
         candidates = []

@@ -68,8 +68,71 @@ def test_target_preview_adds_pending_evidence_based_suggestions():
     assert lan["review_state"] == "PENDING"
     assert lan["evidence_source"] == "TARGET"
     assert lan["evidence_type"] == "TARGET_INTERFACE_ADDRESS"
+    assert payload["decision_evidence"][lan["key"]] == "TARGET"
+    assert payload["evidence_summary"]["target_backed"] >= 1
+    suggested_candidate = next(item for item in payload["decision_candidates"][lan["key"]]
+                               if item["value"] == lan["suggested_value"])
+    assert suggested_candidate["class"] == "STRONG"
+    assert "source_ip" in payload["decision_context"][lan["key"]]
+    assert "decision_candidates" not in payload["decision_document"]
     assert decisions[("root", "vsys")]["suggested_value"] == "vsys1"
     assert decisions[("root", "virtual_router")]["suggested_value"] == "vr-main"
+
+
+def test_source_only_requirements_show_facts_and_next_action_without_candidates():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    payload = client.post("/api/migration/requirements", json={"preview_id": source_preview}).get_json()
+    decision = next(item for item in payload["decisions"]["decisions"]
+                    if item["source_kind"] == "interface" and item["target_field"] == "target_interface")
+    assert payload["decision_candidates"] == {}
+    context = payload["decision_context"][decision["key"]]
+    assert context["affected_count"] >= 0
+    assert context["next_action"].startswith("Upload PAN-OS target XML")
+
+
+def test_changed_target_evidence_restores_decisions_and_reports_staleness():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    first_target = _target_preview(client)
+    first = client.post("/api/migration/requirements", json={
+        "preview_id": source_preview,
+        "target_preview_id": first_target,
+    }).get_json()
+    document = first["decision_document"]
+    decision = next(item for item in document["decisions"]
+                    if item["source_kind"] == "vdom" and item["target_field"] == "vsys")
+    decision.update(value="vsys1", review_state="CONFIRMED")
+
+    second_target_response = client.post("/api/preview", data={
+        "source_vendor": "palo_alto",
+        "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes() + b"\n"), "changed-target.xml"),
+    }, content_type="multipart/form-data")
+    assert second_target_response.status_code == 200
+    second_target = second_target_response.get_json()["preview_id"]
+    second = client.post("/api/migration/requirements", json={
+        "preview_id": source_preview,
+        "target_preview_id": second_target,
+        "decision_document": document,
+    })
+    assert second.status_code == 200
+    payload = second.get_json()
+    restored = next(item for item in payload["decisions"]["decisions"]
+                    if item["source_kind"] == "vdom" and item["target_field"] == "vsys")
+    assert restored["value"] == "vsys1"
+    assert restored["review_state"] == "CONFIRMED"
+    assert payload["target_evidence_changed"] is True
+
+    migration = client.post("/api/migrate", json={
+        "preview_id": source_preview,
+        "decision_document": document,
+        "target_preview_id": second_target,
+        "target_device": "integrated-fw",
+    })
+    assert migration.status_code == 200
+    migrated = migration.get_json()
+    assert migrated["target_evidence_changed"] is True
+    assert migrated["report"]["review"]["target_evidence_changed"] is True
 
 
 def test_target_preview_rejects_wrong_vendor_preview():

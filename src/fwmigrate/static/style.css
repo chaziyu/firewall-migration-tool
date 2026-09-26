@@ -2131,6 +2131,12 @@ select {
 .affected-details { margin-top: .25rem; font-size: .85rem; }
 .affected-details summary { cursor: pointer; }
 .affected-details ul { margin: .35rem 0 0; padding-left: 1.1rem; }
+.decision-source-details, .decision-candidates { margin-top: .35rem; font-size: .85rem; }
+.decision-source-details summary, .decision-candidates summary { cursor: pointer; }
+.decision-source-details dl { display: grid; grid-template-columns: auto 1fr; gap: .2rem .5rem; margin: .4rem 0; }
+.decision-source-details dt { text-transform: capitalize; }
+.decision-source-details dd { margin: 0; }
+.decision-candidate { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .4rem 0; }
 #migration-plan-items { max-height: 38rem; overflow: auto; }
 .plan-issues summary { color: var(--color-primary); cursor: pointer; }
 .plan-issues ul { margin: .5rem 0 0; padding-left: 1.1rem; overflow-wrap: anywhere; }
