@@ -28,6 +28,8 @@ def test_preview_download_and_bundle_share_one_rendered_artifact():
         "preview_id": preview["preview_id"], "mapping": MAPPING,
     }).get_json()
     assert plan["commands"] > 0
+    assert set(plan["render_dispositions"]) == {"CREATE", "REUSE", "BLOCK"}
+    assert all(item["decision_keys"] and "render_disposition" in item for item in plan["report"]["items"])
 
     payload = {"artifact_id": plan["artifact_id"]}
     command_preview = client.post("/api/migration/command-preview", json=payload)
@@ -39,6 +41,7 @@ def test_preview_download_and_bundle_share_one_rendered_artifact():
     assert preview_data["command_count"] == plan["commands"]
     assert hashlib.sha256("\n".join(preview_data["commands"]).encode()).hexdigest() == preview_data["command_sha256"]
     assert preview_data["command_sha256"] == plan["report"]["command_sha256"]
+    assert plan["report"]["summary"]["render_dispositions"] == plan["render_dispositions"]
     assert preview_data["command_text"].encode() == download.data
     with zipfile.ZipFile(io.BytesIO(bundle_response.data)) as archive:
         assert archive.read("palo_alto_config.set") == download.data

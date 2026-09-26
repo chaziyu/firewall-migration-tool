@@ -4,17 +4,19 @@ from fwmigrate.conversion.fortigate_to_palo_alto.decisions import (
     PANDecisionReviewState, PANMigrationDecision, PANMigrationDecisionSet,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.models import (
-    PANMigrationPlan, PANMigrationStatus, PlannedAddress, PlannedNATRule,
+    PANMigrationPlan, PANMigrationStatus, PlannedAddress, PlannedNATRule, PlannedStaticRoute, PlannedSchedule,
+    PlannedZone, PlannedSecurityRule, PlannedService,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.target_object_reuse import (
-    _plan_target_nat_collisions, classify_target_object_reuse, mark_target_name_collisions,
+    classify_target_object_reuse, _schedule,
+)
+from fwmigrate.conversion.fortigate_to_palo_alto.target_plan_validation import (
+    PANRenderDisposition, assess_target_plan, item_key, validate_target_plan,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.target_validation import PANTargetFinding
-from fwmigrate.vendors.fortigate.model.address import FGAddress
-from fwmigrate.vendors.fortigate.model.route_static import FGStaticRoute
-from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.palo_alto.model.address import PANAddress
+from fwmigrate.vendors.palo_alto.model.schedule import PANSchedule, PANScheduleRecurring
 from fwmigrate.vendors.palo_alto.source_model import PANScope
 from fwmigrate.vendors.palo_alto.model.routing import PANStaticRoute, PANVirtualRouter
 from fwmigrate.vendors.palo_alto.model.nat import PANNATRule
@@ -27,42 +29,55 @@ def _target(address):
 
 
 def test_same_name_address_reuse_requires_exact_explicit_semantics():
-    source = FGConfig(addresses=[FGAddress(name="lan-net", subnet="192.0.2.0/24")])
+    plan = PANMigrationPlan(addresses=(PlannedAddress(source_vdom="root", source_kind="address",
+        source_object_type="address", source_name="lan-net", target_vsys="vsys1", target_name="lan-net",
+        status=PANMigrationStatus.SUPPORTED, address_type="ip-netmask", value="192.0.2.0/24"),))
     scope = PANScope(kind="vsys", name="vsys1", vsys="vsys1", device_name="dev")
     target_address = PANAddress(name="lan-net", source_path="/config/devices/entry/vsys/entry/address/entry",
         scope=scope, ip_netmask="192.0.2.0/24", explicit_fields={"ip_netmask"})
-    decisions = PANMigrationDecisionSet((PANMigrationDecision("root", "vdom", "root", "vsys", value="vsys1",
-        review_state=PANDecisionReviewState.CONFIRMED),))
-    reuse = classify_target_object_reuse(source, SimpleNamespace(services=None), decisions,
-        _target(target_address), "dev")
+    reuse = classify_target_object_reuse(plan, _target(target_address), "dev")
     assert reuse[0]["status"] == "EXACT_MATCH"
 
     target_address.ip_netmask = "198.51.100.0/24"
-    conflict = classify_target_object_reuse(source, SimpleNamespace(services=None), decisions,
-        _target(target_address), "dev")
+    conflict = classify_target_object_reuse(plan, _target(target_address), "dev")
     assert conflict[0]["status"] == "NAME_CONFLICT"
 
 
 def test_missing_target_explicit_field_is_not_treated_as_exact():
-    source = FGConfig(addresses=[FGAddress(name="lan-net", subnet="192.0.2.0/24")])
+    plan = PANMigrationPlan(addresses=(PlannedAddress(source_vdom="root", source_kind="address",
+        source_object_type="address", source_name="lan-net", target_vsys="vsys1", target_name="lan-net",
+        status=PANMigrationStatus.SUPPORTED, address_type="ip-netmask", value="192.0.2.0/24"),))
     scope = PANScope(kind="vsys", name="vsys1", vsys="vsys1", device_name="dev")
     target_address = PANAddress(name="lan-net", source_path="/config/devices/entry/vsys/entry/address/entry",
         scope=scope, ip_netmask="192.0.2.0/24", explicit_fields=set())
-    decisions = PANMigrationDecisionSet((PANMigrationDecision("root", "vdom", "root", "vsys", value="vsys1",
-        review_state=PANDecisionReviewState.CONFIRMED),))
-    result = classify_target_object_reuse(source, SimpleNamespace(services=None), decisions,
-        _target(target_address), "dev")
+    result = classify_target_object_reuse(plan, _target(target_address), "dev")
     assert result[0]["status"] != "EXACT_MATCH"
 
 
+def test_shared_object_is_visible_to_the_selected_vsys_for_exact_reuse():
+    plan = PANMigrationPlan(addresses=(PlannedAddress(source_vdom="root", source_object_type="address",
+        source_name="lan-net", target_vsys="vsys1", target_name="lan-net",
+        status=PANMigrationStatus.SUPPORTED, address_type="ip-netmask", value="192.0.2.0/24"),))
+    shared = PANAddress(name="lan-net", source_path="/config/shared/address/entry",
+        scope=PANScope(kind="shared", name="shared"), ip_netmask="192.0.2.0/24",
+        explicit_fields={"ip_netmask"})
+    target = SimpleNamespace(config=SimpleNamespace(addresses=[shared], scopes=[
+        PANScope(kind="vsys", name="vsys1", vsys="vsys1", device_name="dev")]),
+        derived=SimpleNamespace(reference_index=None, scope_hierarchy=None))
+    assert classify_target_object_reuse(plan, target, "dev")[0]["status"] == "EXACT_MATCH"
+
+
 def test_same_name_semantic_conflict_is_not_rendered():
-    plan = PANMigrationPlan(addresses=(PlannedAddress(source_vdom="root", source_name="lan-net",
+    plan = PANMigrationPlan(addresses=(PlannedAddress(source_vdom="root", source_object_type="address", source_name="lan-net",
         target_vsys="vsys1", target_name="lan-net", status=PANMigrationStatus.SUPPORTED,
         address_type="ip-netmask", value="192.0.2.0/24"),))
-    blocked = mark_target_name_collisions(plan, ({"family": "address", "source_vdom": "root",
-        "source_name": "lan-net", "target_name": "lan-net", "status": "NAME_CONFLICT"},))
-    assert blocked.addresses[0].status == PANMigrationStatus.MANUAL_REVIEW
-    assert PANSetRenderer().render(blocked).commands == ()
+    reuse = ({"family": "address", "source_vdom": "root",
+        "source_name": "lan-net", "target_name": "lan-net", "status": "NAME_CONFLICT"},)
+    dispositions, blockers = assess_target_plan(plan, reuse)
+    assert plan.addresses[0].status == PANMigrationStatus.SUPPORTED
+    rendered = PANSetRenderer().render(plan, dispositions=dispositions, render_blockers=blockers)
+    assert rendered.commands == ()
+    assert rendered.report["items"][0]["render_disposition"] == "BLOCK"
 
 
 def test_target_validation_error_blocks_rendering_only_in_affected_vdom():
@@ -74,15 +89,47 @@ def test_target_validation_error_blocks_rendering_only_in_affected_vdom():
             target_name="blue-net", status=PANMigrationStatus.SUPPORTED,
             address_type="ip-netmask", value="198.51.100.0/24"),
     ))
-    finding = PANTargetFinding('["root","vdom","root","vsys"]', "TARGET_VSYS_CONFLICT", "error", "missing")
-    blocked = mark_target_name_collisions(plan, (), (finding,))
-    assert blocked.addresses[0].status == PANMigrationStatus.MANUAL_REVIEW
-    assert blocked.addresses[1].status == PANMigrationStatus.SUPPORTED
+    decision = PANMigrationDecision("root", "vdom", "root", "vsys", value="vsys1",
+                                    review_state=PANDecisionReviewState.CONFIRMED)
+    finding = PANTargetFinding(decision.key, "TARGET_VSYS_CONFLICT", "error", "missing")
+    dispositions, _ = assess_target_plan(plan, (), (finding,), PANMigrationDecisionSet((decision,)))
+    assert dispositions[item_key(plan.addresses[0])] is PANRenderDisposition.BLOCK
+    assert dispositions[item_key(plan.addresses[1])] is PANRenderDisposition.CREATE
+    assert plan.addresses[0].status is plan.addresses[1].status is PANMigrationStatus.SUPPORTED
+
+
+def test_interface_conflict_blocks_its_zone_dependents_only():
+    plan = PANMigrationPlan(
+        addresses=(PlannedAddress(source_vdom="root", source_object_type="address", source_name="web-net",
+            target_vsys="vsys1", target_name="web-net", status=PANMigrationStatus.SUPPORTED,
+            address_type="ip-netmask", value="192.0.2.0/24"),),
+        services=(PlannedService(source_vdom="root", source_object_type="service", source_name="https",
+            target_vsys="vsys1", target_name="https", status=PANMigrationStatus.SUPPORTED,
+            protocol="tcp", destination_port="443"),),
+        zones=(PlannedZone(source_vdom="root", source_kind="interface", source_name="lan",
+            source_object_type="zone", target_vsys="vsys1", target_name="trust",
+            status=PANMigrationStatus.SUPPORTED, interfaces=("ethernet1/1",)),),
+        security_rules=(PlannedSecurityRule(source_vdom="root", source_kind="policy", source_name="allow-web",
+            source_object_type="security_rule", target_vsys="vsys1", target_name="allow-web",
+            status=PANMigrationStatus.SUPPORTED, from_zones=("trust",), to_zones=("trust",),
+            sources=("web-net",), destinations=("web-net",), services=("https",), action="allow"),),
+    )
+    decision = PANMigrationDecision("root", "interface", "lan", "target_interface", value="ethernet1/1",
+                                    review_state=PANDecisionReviewState.CONFIRMED)
+    finding = PANTargetFinding(decision.key, "TARGET_INTERFACE_FAMILY_MISMATCH", "error", "incompatible")
+    dispositions, _ = assess_target_plan(plan, (), (finding,), PANMigrationDecisionSet((decision,)))
+    assert dispositions[item_key(plan.zones[0])] is PANRenderDisposition.BLOCK
+    assert dispositions[item_key(plan.security_rules[0])] is PANRenderDisposition.BLOCK
+    assert dispositions[item_key(plan.addresses[0])] is PANRenderDisposition.CREATE
+    assert dispositions[item_key(plan.services[0])] is PANRenderDisposition.CREATE
+    assert validate_target_plan(plan, (), (finding,), PANMigrationDecisionSet((decision,)))[0].code == "TARGET_MAPPING_CONFLICT"
 
 
 def test_existing_route_destination_requires_exact_route_semantics_for_reuse():
-    source = FGConfig(static_routes=[FGStaticRoute(seq_num=10, vdom="root", dst="192.0.2.0/24",
-        gateway="192.0.2.1", distance=10)])
+    plan = PANMigrationPlan(static_routes=(PlannedStaticRoute(source_vdom="root", source_kind="static_route",
+        source_object_type="static_route", source_name="10", target_name="10", status=PANMigrationStatus.SUPPORTED,
+        destination="192.0.2.0/24", nexthop_type="ip-address", nexthop="192.0.2.1", admin_distance=10,
+        virtual_router="vr-main"),))
     scope = PANScope(kind="device", name="dev", device_name="dev")
     existing = PANStaticRoute(name="10", source_path="/router/vr/static-route/entry", scope=scope,
         destination="192.0.2.0/24", nexthop_type="ip-address", nexthop_ip_address="192.0.2.1",
@@ -91,15 +138,11 @@ def test_existing_route_destination_requires_exact_route_semantics_for_reuse():
         source_path="/router", scope=scope, static_routes=[existing])], interfaces=[], interface_units=[],
         zones=[], addresses=[], address_groups=[], services=[], service_groups=[], schedules=[]),
         derived=SimpleNamespace(reference_index=None, scope_hierarchy=None))
-    decisions = PANMigrationDecisionSet((
-        PANMigrationDecision("root", "vdom", "root", "vsys", value="vsys1", review_state=PANDecisionReviewState.CONFIRMED),
-        PANMigrationDecision("root", "vdom", "root", "virtual_router", value="vr-main", review_state=PANDecisionReviewState.CONFIRMED),
-    ))
-    collision = classify_target_object_reuse(source, SimpleNamespace(services=None), decisions, target, "dev")
+    collision = classify_target_object_reuse(plan, target, "dev")
     route = next(item for item in collision if item["family"] == "static_route")
-    assert route["status"] == "EXACT_MATCH"
+    assert route["status"] == "AMBIGUOUS"
     existing.nexthop_ip_address = "198.51.100.1"
-    collision = classify_target_object_reuse(source, SimpleNamespace(services=None), decisions, target, "dev")
+    collision = classify_target_object_reuse(plan, target, "dev")
     route = next(item for item in collision if item["family"] == "static_route")
     assert route["status"] == "NAME_CONFLICT"
 
@@ -113,5 +156,66 @@ def test_nat_overlap_is_reported_and_not_auto_reused():
         from_zones=["TRUST"], to_zones=["UNTRUST"], source=["lan-net"], destination=["web-net"],
         service="https", explicit_fields={"from_zones", "to_zones", "source", "destination", "service"})
     target = SimpleNamespace(config=SimpleNamespace(nat_rules=[target_rule]))
-    collision = _plan_target_nat_collisions((planned,), target, "dev")
+    collision = classify_target_object_reuse(PANMigrationPlan(nat_rules=(planned,)), target, "dev")
     assert collision[0]["status"] == "AMBIGUOUS"
+
+
+def test_daily_schedule_reuse_compares_daily_fields_and_requires_explicit_target():
+    planned = PlannedSchedule(schedule_type="recurring", daily=(("08:00", "17:00"),))
+    target = PANSchedule(name="business-hours", source_path="/schedule", recurring=PANScheduleRecurring(
+        daily=["08:00-17:00"], explicit_fields={"daily"}), explicit_fields={"recurring"})
+    assert _schedule(planned, target)[0]
+    target.recurring.explicit_fields.clear()
+    assert not _schedule(planned, target)[0]
+
+
+def test_weekly_and_non_recurring_schedule_comparisons_use_their_own_fields():
+    weekly = PlannedSchedule(schedule_type="recurring", weekly=(("monday", "09:00", "17:00"),))
+    target_weekly = PANSchedule(name="weekly", source_path="/schedule", recurring=PANScheduleRecurring(
+        weekly={"monday": ["09:00-17:00"]}, explicit_fields={"weekly"}), explicit_fields={"recurring"})
+    assert _schedule(weekly, target_weekly)[0]
+    one_time = PlannedSchedule(schedule_type="one-time", non_recurring=(("2026/09/30@08:00", "2026/09/30@17:00"),))
+    target_one_time = PANSchedule(name="one-time", source_path="/schedule",
+        non_recurring=["2026/09/30@08:00-2026/09/30@17:00"], explicit_fields={"non_recurring"})
+    assert _schedule(one_time, target_one_time)[0]
+
+
+def test_exact_object_reuse_skips_creation_command_and_keeps_plan_unchanged():
+    plan = PANMigrationPlan(addresses=(PlannedAddress(source_vdom="root", source_kind="address",
+        source_object_type="address", source_name="lan-net", target_vsys="vsys1", target_name="lan-net",
+        status=PANMigrationStatus.SUPPORTED, address_type="ip-netmask", value="192.0.2.0/24"),))
+    target_address = PANAddress(name="lan-net", source_path="/config/devices/entry/vsys/entry/address/entry",
+        scope=PANScope(kind="vsys", name="vsys1", vsys="vsys1", device_name="dev"),
+        ip_netmask="192.0.2.0/24", explicit_fields={"ip_netmask"})
+    reuse = classify_target_object_reuse(plan, _target(target_address), "dev")
+    dispositions, _ = assess_target_plan(plan, reuse)
+    rendered = PANSetRenderer().render(plan, dispositions=dispositions)
+    assert plan.addresses[0].status is PANMigrationStatus.SUPPORTED
+    assert rendered.commands == ()
+    assert rendered.report["items"][0]["render_disposition"] == "REUSE"
+
+
+def test_reused_address_remains_available_to_a_rendered_policy():
+    address = PlannedAddress(source_vdom="root", source_object_type="address", source_name="lan-net",
+        target_vsys="vsys1", target_name="lan-net", status=PANMigrationStatus.SUPPORTED,
+        address_type="ip-netmask", value="192.0.2.0/24")
+    service = PlannedService(source_vdom="root", source_object_type="service", source_name="https",
+        target_vsys="vsys1", target_name="https", status=PANMigrationStatus.SUPPORTED,
+        protocol="tcp", destination_port="443")
+    zones = tuple(PlannedZone(source_vdom="root", source_object_type="zone", source_name=name,
+        target_vsys="vsys1", target_name=name, status=PANMigrationStatus.SUPPORTED,
+        interfaces=(f"ethernet1/{index}",)) for index, name in enumerate(("trust", "untrust"), 1))
+    rule = PlannedSecurityRule(source_vdom="root", source_object_type="security_rule", source_name="allow-web",
+        target_vsys="vsys1", target_name="allow-web", status=PANMigrationStatus.SUPPORTED,
+        from_zones=("trust",), to_zones=("untrust",), sources=("lan-net",), destinations=("any",),
+        services=("https",), action="allow")
+    plan = PANMigrationPlan(addresses=(address,), services=(service,), zones=zones, security_rules=(rule,))
+    target_address = PANAddress(name="lan-net", source_path="/config/devices/entry/vsys/entry/address/entry",
+        scope=PANScope(kind="vsys", name="vsys1", vsys="vsys1", device_name="dev"),
+        ip_netmask="192.0.2.0/24", explicit_fields={"ip_netmask"})
+    reuse = classify_target_object_reuse(plan, _target(target_address), "dev")
+    dispositions, _ = assess_target_plan(plan, reuse)
+    rendered = PANSetRenderer().render(plan, dispositions=dispositions)
+    assert not any("address lan-net" in command for command in rendered.commands)
+    assert any("allow-web" in command for command in rendered.commands), rendered.commands
+    assert any("lan-net" in command and "source" in command for command in rendered.commands), rendered.commands

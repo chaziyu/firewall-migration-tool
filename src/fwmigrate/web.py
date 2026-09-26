@@ -45,7 +45,10 @@ from fwmigrate.conversion.fortigate_to_palo_alto.auto_decisions import classify_
 from fwmigrate.conversion.fortigate_to_palo_alto.automation import AutomationPolicy, run_automation_until_stable
 from fwmigrate.conversion.fortigate_to_palo_alto.target_intent import apply_target_intent, export_target_intent
 from fwmigrate.conversion.fortigate_to_palo_alto.target_object_reuse import (
-    classify_target_object_reuse, mark_target_name_collisions,
+    classify_target_object_reuse,
+)
+from fwmigrate.conversion.fortigate_to_palo_alto.target_plan_validation import (
+    assess_target_plan, decision_keys_for_item, item_key, validate_target_plan,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.support_guidance import build_support_guidance
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
@@ -92,10 +95,9 @@ def _deployment_validation_feedback(rendered, decision_document, validation):
     matches = [item for item in items if item.get('target_name') and
                re.search(rf'(?<![A-Za-z0-9_.-]){re.escape(item["target_name"])}(?![A-Za-z0-9_.-])', response, re.I)]
     candidates = []
+    known_decisions = {decision.get('key') for decision in decisions if isinstance(decision, dict)}
     for item in matches:
-        item_decisions = [decision.get('key') for decision in decisions
-                          if decision.get('source_vdom') == item.get('source_vdom')
-                          and decision.get('source_name') == item.get('source_name')]
+        item_decisions = [key for key in item.get('decision_keys', ()) if key in known_decisions]
         candidates.append({**{key: item.get(key) for key in
             ('source_vdom', 'source_kind', 'source_name', 'target_name')},
             'decision_keys': item_decisions, 'generated_commands': list(item.get('commands', ()))})
@@ -527,8 +529,6 @@ def create_app(test_config=None):
             target_evidence_changed = _target_evidence_changed(prior, target_context)
             target = target_context.analysis if target_context else None
             target_device = target_context.selected_device if target_context else None
-            target_object_reuse = classify_target_object_reuse(
-                analysis.extracted.config, analysis.derived, decision_set, target, target_device)
             devices = list(target_context.devices) if target_context else []
             target_warnings = {}
             decision_candidates = {}
@@ -569,7 +569,6 @@ def create_app(test_config=None):
                             **review_workflow,
                             'target_warnings': target_warnings,
                             'target_findings': [item.to_dict() for item in target_findings],
-                            'target_object_reuse': list(target_object_reuse),
                             'decision_evidence': decision_evidence,
                             'auto_decisions': auto_decisions,
                             'evidence_summary': _evidence_summary(decision_set, decision_evidence),
@@ -853,15 +852,19 @@ def create_app(test_config=None):
             recommendations = build_recommendations(
                 analysis.extracted.config, analysis.derived, decision_set, target, target_device
             )
-            target_object_reuse = classify_target_object_reuse(
-                analysis.extracted.config, analysis.derived, decision_set, target, target_device)
             plan = migration_planners.get(source_vendor, target_vendor).plan(
                 analysis.extracted.config, analysis.derived, options=options
             )
-            plan = mark_target_name_collisions(plan, target_object_reuse, target_findings)
+            target_object_reuse = classify_target_object_reuse(plan, target, target_device)
+            target_plan_findings = validate_target_plan(plan, target_object_reuse, target_findings, decision_set)
+            dispositions, render_blockers = assess_target_plan(plan, target_object_reuse, target_findings, decision_set)
             validation = validate_plan(plan)
             support_guidance = build_support_guidance(plan, validation, decision_set, target_findings)
-            rendered = PANSetRenderer().render(plan, validation)
+            decision_keys = {item_key(item): decision_keys_for_item(item, decision_set)
+                             for item in (*plan.addresses, *plan.address_groups, *plan.services, *plan.service_groups,
+                                          *plan.schedules, *plan.zones, *plan.static_routes, *plan.security_rules, *plan.nat_rules)}
+            rendered = PANSetRenderer().render(plan, validation, dispositions=dispositions,
+                                               render_blockers=render_blockers, decision_keys=decision_keys)
             safe_target_evidence = target_context.metadata if target_context else None
             rendered = replace(rendered, report={**rendered.report,
                 'source': {'vendor': 'fortigate', 'digest': entry.source_digest},
@@ -869,6 +872,7 @@ def create_app(test_config=None):
                 'review': {
                     'target_evidence_changed': target_evidence_changed,
                     'target_findings': [item.to_dict() for item in target_findings],
+                    'target_plan_findings': [item.to_dict() for item in target_plan_findings],
                     'target_object_reuse': list(target_object_reuse),
                     'decision_evidence': decision_evidence,
                     'evidence_summary': _evidence_summary(decision_set, decision_evidence),
@@ -881,19 +885,25 @@ def create_app(test_config=None):
                                              _decision_document(entry.source_digest, decision_set, safe_target_evidence),
                                              entry.source_name)
             counts = rendered.report['counts']
+            render_counts = rendered.report['render_dispositions']
             mapping_codes = {'missing_vsys_mapping', 'missing_target_vsys', 'missing_virtual_router', 'missing_route_interface'}
             missing = [issue for issue in rendered.report['issue_summary'] if issue['code'] in mapping_codes or 'missing target' in issue['message'].lower() or 'missing palo alto vsys mapping' in issue['message'].lower()]
-            plan_status = 'NEEDS_MAPPING' if not rendered.commands else ('READY' if not missing and not counts.get('PARTIAL', 0) and not counts.get('MANUAL_REVIEW', 0) and not counts.get('UNSUPPORTED', 0) else 'PARTIAL')
+            plan_status = ('NEEDS_MAPPING' if not rendered.commands and not render_counts.get('REUSE', 0)
+                           else 'READY' if not missing and not render_counts.get('BLOCK', 0)
+                           and not counts.get('PARTIAL', 0) and not counts.get('MANUAL_REVIEW', 0)
+                           and not counts.get('UNSUPPORTED', 0) else 'PARTIAL')
             return jsonify({
                 'success': True,
                 'artifact_id': artifact_id,
                 'plan_status': plan_status,
                 'commands': len(rendered.commands),
                 'counts': {**counts, 'renderable': sum(item['renderable'] for item in rendered.report['items'])},
+                'render_dispositions': render_counts,
                 'missing_mappings': missing,
                 'blocking_reasons': [issue['message'] for issue in missing],
                 'target_warnings': target_warnings,
                 'target_findings': [item.to_dict() for item in target_findings],
+                'target_plan_findings': [item.to_dict() for item in target_plan_findings],
                 'target_object_reuse': list(target_object_reuse),
                 'decision_evidence': decision_evidence,
                 'evidence_summary': _evidence_summary(decision_set, decision_evidence),
