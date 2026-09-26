@@ -75,6 +75,10 @@ def test_target_preview_adds_pending_evidence_based_suggestions():
     assert suggested_candidate["class"] == "STRONG"
     assert "source_ip" in payload["decision_context"][lan["key"]]
     assert "decision_candidates" not in payload["decision_document"]
+    assert set(payload["review_summary"]) == {"auto_resolved", "ready_to_confirm", "choose_candidate", "needs_input", "conflicts", "confirmed"}
+    lan_group = next(item for item in payload["review_groups"] if item["source_name"] == "lan")
+    assert {item["target_field"] for item in lan_group["decisions"]} >= {"target_interface", "target_zone"}
+    assert lan_group["queue"] in {"READY_TO_CONFIRM", "CHOOSE_CANDIDATE", "NEEDS_INPUT"}
     assert decisions[("root", "vsys")]["suggested_value"] == "vsys1"
     assert decisions[("root", "virtual_router")]["suggested_value"] == "vr-main"
 
@@ -89,6 +93,34 @@ def test_source_only_requirements_show_facts_and_next_action_without_candidates(
     context = payload["decision_context"][decision["key"]]
     assert context["affected_count"] >= 0
     assert context["next_action"].startswith("Upload PAN-OS target XML")
+
+
+def test_zone_rule_applies_only_requested_related_decisions_and_confirms_them():
+    client = create_app({"TESTING": True}).test_client()
+    preview_id = _preview(client)
+    requirements = client.post("/api/migration/requirements", json={"preview_id": preview_id}).get_json()
+    document = requirements["decision_document"]
+    zone = next(item for item in document["decisions"]
+                if item["source_kind"] == "zone" and item["source_name"] == "trust" and item["target_field"] == "target_zone")
+    zone.update(value="TRUST", review_state="CONFIRMED")
+    member = next(item for item in document["decisions"]
+                  if item["source_kind"] == "interface" and item["source_name"] == "lan" and item["target_field"] == "target_zone")
+    response = client.post("/api/migration/rules/apply", json={
+        "preview_id": preview_id, "decision_document": document,
+        "rule_type": "APPLY_ZONE_TO_MEMBERS", "source_key": zone["key"],
+        "value": "TRUST", "apply_to": [member["key"]],
+    })
+    assert response.status_code == 200
+    updated = next(item for item in response.get_json()["decision_document"]["decisions"] if item["key"] == member["key"])
+    assert updated["value"] == "TRUST" and updated["review_state"] == "CONFIRMED"
+    assert updated["evidence_type"] == "ENGINEER_ZONE_TO_MEMBERS"
+
+    unrelated = client.post("/api/migration/rules/apply", json={
+        "preview_id": preview_id, "decision_document": document,
+        "rule_type": "APPLY_ZONE_TO_MEMBERS", "source_key": zone["key"],
+        "value": "TRUST", "apply_to": ['["blue","interface","lan","target_zone"]'],
+    })
+    assert unrelated.status_code == 400
 
 
 def test_changed_target_evidence_restores_decisions_and_reports_staleness():

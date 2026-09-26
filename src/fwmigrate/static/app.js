@@ -13,6 +13,9 @@ let migrationPlanRevision = 0;
   let currentDecisionDocument = null;
   let decisionContext = {};
   let decisionCandidates = {};
+  let reviewSummary = {};
+  let reviewGroups = [];
+  let activeReviewQueue = "READY_TO_CONFIRM";
   let currentPreviewId = null;
   let currentTargetPreviewId = null;
   let selectedTargetDevice = "";
@@ -1297,6 +1300,8 @@ let migrationPlanRevision = 0;
       currentDecisionDocument = null;
       decisionContext = {};
       decisionCandidates = {};
+      reviewSummary = {};
+      reviewGroups = [];
       panel?.classList.add("hidden");
       return;
     }
@@ -1315,6 +1320,8 @@ let migrationPlanRevision = 0;
     currentDecisionDocument = result.decision_document;
     decisionContext = result.decision_context || {};
     decisionCandidates = result.decision_candidates || {};
+    reviewSummary = result.review_summary || {};
+    reviewGroups = result.review_groups || [];
     targetWarnings = result.target_warnings || {};
     targetFindings = result.target_findings || [];
     decisionEvidence = result.decision_evidence || {};
@@ -1351,6 +1358,7 @@ let migrationPlanRevision = 0;
       optionalPanel.classList.toggle("hidden", !(result.requirements.optional || []).length);
     }
     renderDecisionTable();
+    renderMigrationReviewWorkflow();
     renderRecommendations();
     panel?.classList.toggle("hidden", !sourceReady || selectedTargetVendor !== "palo_alto");
     updateMappingCompletion();
@@ -1427,6 +1435,175 @@ let migrationPlanRevision = 0;
   function decisionDisplayValue(decision) {
     return decision.value ?? (decision.mode === "SUGGESTED" && decision.review_state === "PENDING" ? decision.suggested_value : "") ?? "";
   }
+
+  function renderMigrationReviewWorkflow() {
+    const summaryNode = document.getElementById("review-summary");
+    const container = document.getElementById("migration-review-groups");
+    if (!summaryNode || !container) return;
+    const summaryItems = [
+      ["auto_resolved", "Resolved automatically"], ["ready_to_confirm", "Suggestions ready"],
+      ["choose_candidate", "Choices needed"], ["needs_input", "Manual decisions"],
+      ["conflicts", "Conflicts"], ["confirmed", "Confirmed"],
+    ];
+    summaryNode.replaceChildren(...summaryItems.map(([key, label]) => {
+      const card = document.createElement("div"); card.className = "review-summary-card";
+      const count = document.createElement("strong"); count.textContent = String(reviewSummary[key] || 0);
+      const text = document.createElement("span"); text.textContent = label;
+      card.append(count, text); return card;
+    }));
+    const tabCounts = {
+      READY_TO_CONFIRM: reviewGroups.filter(group => group.queue === "READY_TO_CONFIRM").length,
+      CHOOSE_CANDIDATE: reviewGroups.filter(group => group.queue === "CHOOSE_CANDIDATE").length,
+      NEEDS_INPUT: reviewGroups.filter(group => ["NEEDS_INPUT", "CONFLICT"].includes(group.queue)).length,
+      COMPLETE: reviewGroups.filter(group => group.queue === "COMPLETE").length,
+    };
+    document.querySelectorAll("[data-review-queue]").forEach(tab => {
+      const queue = tab.dataset.reviewQueue;
+      tab.setAttribute("aria-selected", String(queue === activeReviewQueue));
+      const count = tab.querySelector("span"); if (count) count.textContent = String(tabCounts[queue] || 0);
+    });
+    let visible = reviewGroups.filter(group => activeReviewQueue === "NEEDS_INPUT"
+      ? ["NEEDS_INPUT", "CONFLICT"].includes(group.queue) : group.queue === activeReviewQueue);
+    if (!visible.length) {
+      const fallback = ["READY_TO_CONFIRM", "CHOOSE_CANDIDATE", "NEEDS_INPUT", "COMPLETE"]
+        .find(queue => reviewGroups.some(group => queue === "NEEDS_INPUT"
+          ? ["NEEDS_INPUT", "CONFLICT"].includes(group.queue) : group.queue === queue));
+      if (fallback) {
+        activeReviewQueue = fallback;
+        return renderMigrationReviewWorkflow();
+      }
+    }
+    if (!visible.length) {
+      const empty = document.createElement("p"); empty.textContent = reviewGroups.length ? "Nothing in this queue." : "No migration decisions are required.";
+      container.replaceChildren(empty); return;
+    }
+    const fragment = document.createDocumentFragment();
+    const decisionByKey = new Map(currentDecisionSet.decisions.map(item => [item.key, item]));
+    const labels = { target_interface: "Target interface", target_zone: "Target zone", vsys: "Target VSYS", virtual_router: "Target virtual router" };
+    const statusLabels = { READY_TO_CONFIRM: "Suggestion ready", CHOOSE_CANDIDATE: "Choose a match", NEEDS_INPUT: "Manual decision", CONFLICT: "Conflict", COMPLETE: "Complete" };
+    for (const group of visible) {
+      const card = document.createElement("article"); card.className = `review-work-card queue-${group.queue.toLowerCase()}`;
+      const heading = document.createElement("div"); heading.className = "review-work-heading";
+      const title = document.createElement("h3"); title.textContent = group.source_kind === "vdom" ? `${group.source_name} VDOM` : group.source_name;
+      const subtitle = document.createElement("p");
+      const sourceType = group.source_evidence?.source_type;
+      subtitle.textContent = [group.source_vdom, group.source_kind === "interface" ? (sourceType || "Interface") : group.source_kind]
+        .filter(Boolean).join(" · ");
+      const badge = document.createElement("span"); badge.className = "review-work-badge"; badge.textContent = statusLabels[group.queue] || "Review";
+      heading.append(title, subtitle, badge); card.append(heading);
+      for (const view of group.decisions) {
+        const decision = decisionByKey.get(view.key) || view;
+        if (decision.mode === "UNSUPPORTED") continue;
+        const field = document.createElement("div"); field.className = "review-work-field";
+        const label = document.createElement("label"); label.textContent = labels[decision.target_field] || decision.target_field;
+        const input = document.createElement("input"); input.type = "text"; input.className = "review-work-value";
+        input.dataset.decisionKey = decision.key; input.value = decisionDisplayValue(decision);
+        input.placeholder = decision.suggested_value ? `Suggested: ${decision.suggested_value}` : "Enter mapping";
+        input.setAttribute("aria-label", `${labels[decision.target_field] || decision.target_field} for ${group.source_name}`);
+        input.addEventListener("input", () => {
+          decision.value = input.value.trim() || null;
+          if (decision.mode === "AUTO") decision.mode = "REQUIRED";
+          decision.review_state = "PENDING";
+          invalidateMigrationPlan();
+        });
+        field.append(label, input);
+        if (decision.suggested_value && decision.review_state !== "CONFIRMED") {
+          const suggestion = document.createElement("p"); suggestion.className = "review-work-suggestion";
+          suggestion.textContent = `Suggested: ${decision.suggested_value}`; field.append(suggestion);
+        } else if (!decision.value && decision.target_field === "target_interface") {
+          const noSuggestion = document.createElement("p"); noSuggestion.className = "review-work-suggestion";
+          noSuggestion.textContent = "No safe suggestion"; field.append(noSuggestion);
+        }
+        const candidates = group.candidates?.[decision.key] || [];
+        if (candidates.length) {
+          const matches = document.createElement("div"); matches.className = "review-work-candidates";
+          candidates.forEach(candidate => {
+            const row = document.createElement("div"); row.className = "review-work-candidate";
+            const recommended = candidate.class === "STRONG";
+            const description = document.createElement("span");
+            description.textContent = `${recommended ? "Recommended" : "Other possible match"}: ${candidate.value}`;
+            const use = document.createElement("button"); use.type = "button"; use.className = "btn btn-secondary btn-sm"; use.textContent = "Use";
+            use.addEventListener("click", () => {
+              input.value = candidate.value; decision.value = candidate.value;
+              if (decision.mode === "AUTO") decision.mode = "REQUIRED";
+              decision.review_state = "PENDING"; invalidateMigrationPlan();
+            });
+            const why = document.createElement("details");
+            const whySummary = document.createElement("summary"); whySummary.textContent = "Why?"; why.append(whySummary);
+            const evidence = document.createElement("ul");
+            for (const fact of [...(candidate.strong_evidence || []), ...(candidate.supporting_evidence || []), ...(candidate.contradicting_evidence || [])]) {
+              const entry = document.createElement("li"); entry.textContent = fact; evidence.append(entry);
+            }
+            if (candidate.target_scope) { const scope = document.createElement("li"); scope.textContent = `Target scope: ${candidate.target_scope}`; evidence.append(scope); }
+            why.append(evidence); row.append(description, use, why); matches.append(row);
+          });
+          field.append(matches);
+        }
+        const findings = targetFindings.filter(item => item.decision_key === decision.key);
+        const warningText = [targetWarnings[decision.key], ...findings.map(item => item.message)].filter(Boolean);
+        if (warningText.length) {
+          const notes = document.createElement("ul"); notes.className = "review-work-notes";
+          warningText.forEach(message => { const note = document.createElement("li"); note.textContent = message; notes.append(note); });
+          field.append(notes);
+        }
+        card.append(field);
+      }
+      const summary = document.createElement("div"); summary.className = "review-work-impact";
+      if (group.affected_count) summary.append(document.createTextNode(`${group.affected_count} affected objects`));
+      if (group.dependent_decision_count) {
+        const dependents = document.createElement("p");
+        dependents.textContent = `${group.dependent_decision_count} dependent mappings will be re-evaluated`;
+        summary.append(dependents);
+      }
+      if (group.next_action) { const next = document.createElement("p"); next.textContent = `Next action: ${group.next_action}`; summary.append(next); }
+      if (group.source_evidence && Object.keys(group.source_evidence).length) {
+        const facts = document.createElement("details"); const detailsLabel = document.createElement("summary"); detailsLabel.textContent = "Source facts"; facts.append(detailsLabel);
+        const list = document.createElement("ul");
+        Object.entries(group.source_evidence).forEach(([name, value]) => {
+          const display = Array.isArray(value) ? value.length ? value.join(", ") : "(explicitly empty)" : value;
+          const item = document.createElement("li"); item.textContent = `${name.replace(/^source_/, "").replaceAll("_", " ")}: ${display}`; list.append(item);
+        });
+        facts.append(list); summary.append(facts);
+      }
+      card.append(summary);
+      if (group.actions?.length) for (const action of group.actions) {
+        const apply = document.createElement("button"); apply.type = "button"; apply.className = "btn btn-secondary";
+        apply.textContent = `Apply to ${action.apply_to.length} member decisions`;
+        apply.addEventListener("click", async () => {
+          apply.disabled = true;
+          try {
+            const response = await fetch("/api/migration/rules/apply", { method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(),
+                rule_type: action.type, source_key: action.source_key, value: action.value, apply_to: action.apply_to }) });
+            const result = await readJson(response, "Could not apply zone mapping");
+            await loadMigrationReview(currentPreviewId, result.decision_document);
+          } catch (error) { showError(error.message); apply.disabled = false; }
+        });
+        card.append(apply);
+      }
+      const canConfirm = group.decisions.some(item => item.mode !== "UNSUPPORTED");
+      if (canConfirm) {
+        const confirm = document.createElement("button"); confirm.type = "button"; confirm.className = "btn btn-primary"; confirm.textContent = "Confirm mapping";
+        confirm.addEventListener("click", async () => {
+          const selected = group.decisions.map(item => decisionByKey.get(item.key)).filter(Boolean)
+            .filter(item => item.mode !== "UNSUPPORTED");
+          selected.forEach(item => {
+            const input = [...container.querySelectorAll("[data-decision-key]")]
+              .find(node => node.dataset.decisionKey === item.key);
+            if (input) item.value = input.value.trim() || null;
+          });
+          await saveDecisionValues(selected.filter(item => item.value));
+        });
+        card.append(confirm);
+      }
+      fragment.append(card);
+    }
+    container.replaceChildren(fragment);
+  }
+
+  document.querySelectorAll("[data-review-queue]").forEach(tab => tab.addEventListener("click", () => {
+    activeReviewQueue = tab.dataset.reviewQueue; renderMigrationReviewWorkflow();
+  }));
 
   function switchIngestMode(mode) {
     if (!["file", "snapshot"].includes(mode)) return;
