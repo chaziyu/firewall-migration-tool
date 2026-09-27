@@ -28,6 +28,14 @@ def _preview_target_with_changed_bytes(client):
     return response.get_json()["preview_id"]
 
 
+def _preview_target_with_more_changed_bytes(client):
+    raw = TARGET.read_bytes() + b"\n\n"
+    response = client.post("/api/preview", data={"source_vendor": "palo_alto",
+        "file": (io.BytesIO(raw), "changed-target.xml")}, content_type="multipart/form-data")
+    assert response.status_code == 200
+    return response.get_json()["preview_id"]
+
+
 class FakeProvider:
     def __init__(self): self.payload = None
     def generate_structured(self, *, system_prompt, payload, schema_name, schema):
@@ -51,6 +59,31 @@ class FakeProvider:
                 "choices": [], "comparisons": [],
                 "rationale": ["The deterministic engine supplied this candidate."],
                 "missing_information": [], "limitations": []})
+        return AIStructuredResult({"results": results}, "groq", "test-model", "request-test", 10, 5)
+
+
+class BulkProvider:
+    def generate_structured(self, *, payload, schema_name, **kwargs):
+        results = []
+        for group in payload["groups"]:
+            for decision in group["decisions"]:
+                candidate = next((item for item in decision["candidates"] if item["evidence"]), None)
+                if not candidate:
+                    continue
+                result = {"kind": "MAPPING_RECOMMENDATION", "title": "Use supported candidate",
+                    "summary": "The supplied evidence supports this candidate.", "question": "",
+                    "decision_keys": [decision["key"]],
+                    "assignments": [{"decision_key": decision["key"], "value": candidate["value"]}],
+                    "evidence": [candidate["evidence"][0]], "choices": [], "comparisons": [],
+                    "rationale": [], "missing_information": [], "limitations": []}
+                results.append(result)
+                if len(results) == 1:
+                    # Two separately cached proposals for one decision exercise batch de-duplication.
+                    results.append({**result, "title": "Repeated candidate proposal"})
+                if len(results) >= 8:
+                    break
+            if len(results) >= 8:
+                break
         return AIStructuredResult({"results": results}, "groq", "test-model", "request-test", 10, 5)
 
 
@@ -189,3 +222,63 @@ def test_candidate_explanation_uses_server_group_without_changing_decisions(monk
     })
     assert rejected.status_code == 409
     assert requirements["decisions"] == client.post("/api/migration/requirements", json=payload).get_json()["decisions"]
+
+
+def test_bulk_confirmation_is_atomic_and_rejects_duplicate_and_nonrecommendation_proposals(monkeypatch):
+    monkeypatch.setenv("AI_ASSIST_ENABLED", "true")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    client = create_app({"TESTING": True, "AI_PROVIDER_INSTANCE": BulkProvider()}).test_client()
+    preview_id = _preview(client, FIXTURE)
+    target_id = _preview_target_with_changed_bytes(client)
+    payload = {"preview_id": preview_id, "target_preview_id": target_id}
+    requirements = client.post("/api/migration/requirements", json=payload).get_json()
+    body = payload | {"decision_document": requirements["decision_document"]}
+    proposals = client.post("/api/migration/ai/analyze", json=body).get_json()["proposals"]
+    by_decision = {}
+    for proposal in proposals:
+        by_decision.setdefault(proposal["decision_keys"][0], []).append(proposal)
+    duplicate_pair = next(items[:2] for items in by_decision.values() if len(items) > 1)
+    distinct = [items[0] for items in by_decision.values()]
+    assert len(distinct) >= 2
+
+    duplicate = client.post("/api/migration/ai/confirm-bulk", json=body | {
+        "proposal_ids": [item["proposal_id"] for item in duplicate_pair]})
+    assert duplicate.status_code == 409
+    assert "same decision" in duplicate.get_json()["error"]
+
+    stale_key = distinct[0]["decision_keys"][0]
+    changed_document = json.loads(json.dumps(requirements["decision_document"]))
+    stale_decision = next(item for item in changed_document["decisions"] if item["key"] == stale_key)
+    stale_decision["value"] = distinct[0]["choices"][0]["assignments"][0]["value"]
+    stale_decision["review_state"] = "CONFIRMED"
+    refreshed_body = payload | {"decision_document": changed_document}
+    refreshed = client.post("/api/migration/ai/analyze", json=refreshed_body).get_json()["proposals"]
+    fresh = next(item for item in refreshed if item["decision_keys"][0] != stale_key)
+    stale_one = client.post("/api/migration/ai/confirm-bulk", json=refreshed_body | {
+        "proposal_ids": [distinct[0]["proposal_id"], fresh["proposal_id"]]})
+    assert stale_one.status_code == 409
+    assert "stale" in stale_one.get_json()["error"].lower()
+
+    stale = client.post("/api/migration/ai/confirm-bulk", json=body | {
+        "target_preview_id": _preview_target_with_more_changed_bytes(client),
+        "proposal_ids": [item["proposal_id"] for item in distinct[:2]]})
+    assert stale.status_code == 409
+    accepted = client.post("/api/migration/ai/confirm-bulk", json=body | {
+        "proposal_ids": [item["proposal_id"] for item in distinct[:2]]})
+    assert accepted.status_code == 200
+    confirmed = [item for item in accepted.get_json()["decisions"]["decisions"]
+                 if item["evidence_type"] == "ENGINEER_ACCEPTED_AI_SUGGESTION"]
+    assert len(confirmed) == 2
+
+    comparison_client = create_app({"TESTING": True, "AI_PROVIDER_INSTANCE": FakeProvider()}).test_client()
+    preview_id = _preview(comparison_client, FIXTURE)
+    target_id = _preview(comparison_client, TARGET, "palo_alto")
+    payload = {"preview_id": preview_id, "target_preview_id": target_id}
+    requirements = comparison_client.post("/api/migration/requirements", json=payload).get_json()
+    group = next(item for item in requirements["review_groups"] if item["queue"] == "CHOOSE_CANDIDATE" and item["candidates"])
+    explained = comparison_client.post("/api/migration/ai/explain", json=payload | {
+        "decision_document": requirements["decision_document"], "source_vdom": group["source_vdom"],
+        "source_kind": group["source_kind"], "source_name": group["source_name"]}).get_json()["proposal"]
+    rejected = comparison_client.post("/api/migration/ai/confirm-bulk", json=payload | {
+        "decision_document": requirements["decision_document"], "proposal_ids": [explained["proposal_id"]]})
+    assert rejected.status_code == 409

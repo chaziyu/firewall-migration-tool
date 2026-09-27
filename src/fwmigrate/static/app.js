@@ -1422,6 +1422,12 @@ let migrationPlanNeedsRebuild = false;
     container.replaceChildren();
     for (const proposal of aiProposals) {
       const card = document.createElement("article"); card.className = "review-work-card";
+      if (proposal.kind === "MAPPING_RECOMMENDATION") {
+        const label = document.createElement("label");
+        const select = document.createElement("input"); select.type = "checkbox"; select.className = "migration-ai-proposal-select";
+        select.value = proposal.proposal_id; select.addEventListener("change", updateAIBulkControls);
+        label.append(select, document.createTextNode(" Select recommendation")); card.append(label);
+      }
       const title = document.createElement("h4"); title.textContent = proposal.title;
       const question = document.createElement("p"); question.textContent = proposal.summary;
       card.append(title, question);
@@ -1495,7 +1501,51 @@ let migrationPlanNeedsRebuild = false;
       const note = document.createElement("p"); note.textContent = "This explanation does not change the mapping."; card.append(note);
       container.append(card);
     }
+    updateAIBulkControls();
   }
+
+  function updateAIBulkControls() {
+    const recommendations = aiProposals.filter(item => item.kind === "MAPPING_RECOMMENDATION");
+    const selected = document.querySelectorAll(".migration-ai-proposal-select:checked").length;
+    const selectAll = document.getElementById("migration-ai-select-all");
+    if (selectAll) selectAll.checked = recommendations.length > 0 && selected === recommendations.length;
+    const selectedButton = document.getElementById("migration-ai-accept-selected");
+    const allButton = document.getElementById("migration-ai-accept-all");
+    if (selectedButton) selectedButton.disabled = selected === 0;
+    if (allButton) {
+      allButton.disabled = recommendations.length === 0;
+      allButton.textContent = `Accept all ${recommendations.length} recommendations`;
+    }
+  }
+
+  async function acceptAIBulk(proposalIds, button) {
+    if (!proposalIds.length) return;
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/migration/ai/confirm-bulk", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(), proposal_ids: proposalIds,
+          ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}) }) });
+      const result = await readJson(response, "Could not confirm AI recommendations");
+      aiProposals = []; aiExplanation = null;
+      await loadMigrationReview(currentPreviewId, result.decision_document);
+      invalidateMigrationPlan();
+    } catch (error) {
+      if (error.message.includes("stale")) markAIAssistStale();
+      else document.getElementById("migration-ai-status").textContent = error.message;
+      button.disabled = false;
+    }
+  }
+
+  document.getElementById("migration-ai-select-all")?.addEventListener("change", event => {
+    document.querySelectorAll(".migration-ai-proposal-select").forEach(item => { item.checked = event.target.checked; });
+    updateAIBulkControls();
+  });
+  document.getElementById("migration-ai-accept-selected")?.addEventListener("click", event => {
+    acceptAIBulk([...document.querySelectorAll(".migration-ai-proposal-select:checked")].map(item => item.value), event.currentTarget);
+  });
+  document.getElementById("migration-ai-accept-all")?.addEventListener("click", event => {
+    acceptAIBulk(aiProposals.filter(item => item.kind === "MAPPING_RECOMMENDATION").map(item => item.proposal_id), event.currentTarget);
+  });
 
   async function maybeRunAIAssistedAnalysis() {
     if (!aiReviewReady || !currentPreviewId || !aiAssistAvailable || aiAnalysisInFlight

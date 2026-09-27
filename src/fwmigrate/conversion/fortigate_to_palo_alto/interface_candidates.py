@@ -64,7 +64,7 @@ def _parent(target, topology):
     return getattr(target, "parent", None) or getattr(topology, "parent", None)
 
 
-def candidate_evidence(source, target, topology=None, mapped_parent=None):
+def candidate_evidence(source, target, topology=None, mapped_parent=None, evidence=None):
     strong, supporting, contradicting = [], [], []
     source_ips = {str(item) for item in _interfaces(getattr(source, "ip", None))}
     target_ips = {str(item) for item in _interfaces(getattr(target, "ipv4_addresses", None))}
@@ -85,6 +85,13 @@ def candidate_evidence(source, target, topology=None, mapped_parent=None):
         contradicting.append("interface family mismatch")
     elif source_kind not in {"", "vlan", "aggregate", "tunnel", "loopback"} and target_family != "ethernet":
         contradicting.append("interface family mismatch")
+    family_matches = ((source_kind == "aggregate" and target_family == "aggregate-ethernet")
+        or (source_kind == "tunnel" and target_family == "tunnel")
+        or (source_kind == "loopback" and target_family == "loopback")
+        or (source_kind == "vlan" and getattr(target, "tag", None) is not None)
+        or (source_kind in {"physical", ""} and target_family == "ethernet"))
+    if family_matches:
+        supporting.append("INTERFACE_FAMILY_MATCH")
 
     vlan = getattr(source, "vlanid", None)
     target_tag = getattr(target, "tag", None)
@@ -93,8 +100,10 @@ def candidate_evidence(source, target, topology=None, mapped_parent=None):
             contradicting.append("VLAN mismatch")
         else:
             supporting.append(f"VLAN {vlan}")
+            supporting.append("VLAN_MATCH")
             if mapped_parent and _parent(target, topology) == mapped_parent:
                 strong.append(f"confirmed parent {mapped_parent}")
+                strong.append("CONFIRMED_PARENT_MATCH")
     if mapped_parent and _parent(target, topology) and _parent(target, topology) != mapped_parent:
         contradicting.append("conflicting confirmed parent")
 
@@ -102,15 +111,42 @@ def candidate_evidence(source, target, topology=None, mapped_parent=None):
     target_names = {normalized_name(getattr(target, "name", None)), normalized_name(getattr(target, "comment", None))} - {""}
     if normalized_name(getattr(source, "name", None)) and normalized_name(getattr(source, "name", None)) in target_names:
         supporting.append("exact interface name or comment")
+        supporting.append("NAME_MATCH")
     elif source_names & target_names:
         supporting.append("source alias/comment matches target name/comment")
     elif any(SequenceMatcher(None, value, candidate).ratio() >= 0.88 for value in source_names for candidate in target_names):
         supporting.append("normalized interface-name similarity")
+        supporting.append("NAME_SIMILARITY")
 
     if source_kind == "aggregate" and target_family == "aggregate-ethernet":
         supporting.append("aggregate topology")
     if target_family == "ethernet" and source_kind in {"", "physical"}:
         supporting.append("physical interface family")
+
+    if evidence:
+        derived = evidence.get("derived_relationships", {})
+        source_zone = set(evidence.get("source_explicit", {}).get("zone_membership", ()))
+        target_zones = set(getattr(topology, "zones", ()) or ())
+        confirmed_zone = evidence.get("confirmed_target_zone")
+        if confirmed_zone and target_zones:
+            if confirmed_zone in target_zones:
+                supporting.append("ZONE_RELATIONSHIP_MATCH")
+            else:
+                contradicting.append("explicit target zone conflict")
+        if source_zone & target_zones:
+            supporting.append("ZONE_RELATIONSHIP_MATCH")
+        if derived.get("static_route_usage") and getattr(topology, "virtual_routers", ()):
+            supporting.append("ROUTE_USAGE_COMPATIBLE")
+        target_usage = evidence.get("target_policy_usage", {})
+        if ((derived.get("policy_source_reference_count") and target_usage.get("source_reference_count"))
+                or (derived.get("policy_destination_reference_count") and target_usage.get("destination_reference_count"))):
+            supporting.append("POLICY_ROLE_SIMILAR")
+        if derived.get("vpn_names") and getattr(topology, "attached_tunnels", ()):
+            source_vpns = set(derived["vpn_names"])
+            if source_vpns & set(topology.attached_tunnels):
+                strong.append("VPN_TOPOLOGY_MATCH")
+        if derived.get("sdwan_membership_count") and getattr(target, "sdwan_enabled", None) == "yes":
+            supporting.append("SDWAN_ROLE_MATCH")
 
     if source_ips & target_ips:
         strong.append("exact IP/prefix")

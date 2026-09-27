@@ -77,3 +77,34 @@ def test_analysis_questions_and_comparisons_cannot_escape_candidates_or_group_sc
     mixed[1]["decisions"] = [{**mixed[1]["decisions"][0], "key": "key2"}]
     with pytest.raises(AIInvalidResponseError):
         validate_analysis_output(output, groups=mixed, allowed_values={"key1": ("ae1",), "key2": ("ae1",)})
+    output = _analysis("MAPPING_RECOMMENDATION")
+    output["results"][0]["decision_keys"] = ["key1", "key2"]
+    output["results"][0]["assignments"][0]["decision_key"] = "key1"
+    with pytest.raises(AIInvalidResponseError):
+        validate_analysis_output(output, groups=mixed, allowed_values={"key1": ("ae1",), "key2": ("ae1",)})
+
+
+def test_candidate_comparison_discards_nonactionable_choices():
+    group = _group()
+    group[0]["decisions"][0]["candidates"][0]["evidence"] = ["confirmed parent ae1"]
+    output = _analysis("CANDIDATE_COMPARISON")
+    output["results"][0]["choices"] = [{"label": "malformed extra", "assignments": []}]
+    result = validate_analysis_output(output, groups=group, allowed_values={"key1": ("ae1",)})
+    assert result[0]["choices"] == []
+
+
+def test_one_recommendation_can_assign_interface_and_zone_within_one_review_group():
+    group = _group()[0]
+    group["decisions"].append({"key": "key2", "target_field": "target_zone", "mode": "REQUIRED",
+        "review_state": "PENDING", "allowed_values": ["trust"],
+        "candidates": [{"value": "trust", "class": "STRONG", "evidence": ["explicit target zone"]}], "source": {}})
+    group["decisions"][0]["candidates"][0]["evidence"] = ["confirmed parent ae1"]
+    output = _analysis("MAPPING_RECOMMENDATION")
+    result = output["results"][0]
+    result["decision_keys"] = ["key1", "key2"]
+    result["assignments"] = [{"decision_key": "key1", "value": "ae1"},
+                             {"decision_key": "key2", "value": "trust"}]
+    result["evidence"] = ["confirmed parent ae1", "explicit target zone"]
+    validated = validate_analysis_output(output, groups=[group],
+        allowed_values={"key1": ("ae1",), "key2": ("trust",)})
+    assert len(validated[0]["choices"][0]["assignments"]) == 2

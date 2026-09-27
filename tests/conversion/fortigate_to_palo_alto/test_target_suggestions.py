@@ -20,6 +20,30 @@ def test_redundant_source_interface_is_not_assumed_to_be_aggregate():
     assert _compatible(source, target) is False
 
 
+def test_tunnel_source_only_receives_tunnel_candidates():
+    assert _compatible(SimpleNamespace(type="tunnel", vlanid=None),
+                       SimpleNamespace(interface_family="ethernet")) is False
+    assert _compatible(SimpleNamespace(type="tunnel", vlanid=None),
+                       SimpleNamespace(interface_family="tunnel")) is True
+
+
+def test_tunnel_candidates_exclude_physical_and_remain_competing_without_topology_evidence():
+    scope = PANScope(kind="device", name="dev", device_name="dev")
+    identity = pan_scope_identity(scope)
+    source = FGConfig(interfaces=[FGInterface(name="AWS-MYRegion", type="tunnel")])
+    physical = SimpleNamespace(name="ethernet1/1", interface_family="ethernet", scope=scope, tag=None,
+                               ipv4_addresses=[], parent=None, comment=None)
+    tunnels = [SimpleNamespace(name=name, interface_family="tunnel", scope=scope, tag=None,
+                               ipv4_addresses=[], parent=None, comment=None)
+               for name in ("tunnel.11", "tunnel.12")]
+    target = SimpleNamespace(config=SimpleNamespace(interfaces=[physical, *tunnels], interface_units=[], zones=[]),
+        derived=SimpleNamespace(interface_topology=[PANInterfaceTopologyEntry(item.name, identity)
+            for item in (physical, *tunnels)]))
+    decision = PANMigrationDecision("root", "interface", "AWS-MYRegion", "target_interface")
+    candidates = discover_target_candidates(source, PANMigrationDecisionSet((decision,)), target, "dev")[decision.key]
+    assert {item["value"] for item in candidates} == {"tunnel.11", "tunnel.12"}
+
+
 def test_same_subnet_vlan_and_mapped_parent_is_a_unique_candidate():
     scope = PANScope(kind="device", name="dev", device_name="dev")
     identity = pan_scope_identity(scope)
@@ -185,3 +209,34 @@ def test_target_device_metadata_keeps_multiple_devices_separate():
 def test_target_devices_returns_empty_without_device_scoped_interfaces():
     target = SimpleNamespace(config=SimpleNamespace(interfaces=[], interface_units=[], zones=[]))
     assert target_devices(target) == []
+
+
+def test_target_device_can_be_selected_from_explicit_scope_and_virtual_router():
+    scope = PANScope(kind="vsys", name="vsys2", device_name="branch-02", vsys="vsys2")
+    target = SimpleNamespace(config=SimpleNamespace(interfaces=[], interface_units=[], zones=[], scopes=[scope],
+        virtual_routers=[SimpleNamespace(name="vr2", scope=scope)]))
+    assert target_devices(target) == ["branch-02"]
+
+
+def test_scope_and_zone_candidates_keep_target_scope_and_confirmed_vsys():
+    from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import discover_target_candidates
+
+    scopes = [PANScope(kind="vsys", name=f"{name}-scope", device_name="dev", vsys=name)
+              for name in ("vsys1", "vsys2")]
+    source = FGConfig()
+    decisions = PANMigrationDecisionSet((
+        PANMigrationDecision("root", "vdom", "root", "vsys", value="vsys2",
+                             review_state=PANDecisionReviewState.CONFIRMED),
+        PANMigrationDecision("root", "vdom", "root", "virtual_router"),
+        PANMigrationDecision("root", "zone", "inside", "target_zone"),
+    ))
+    routers = [SimpleNamespace(name=f"vr-{index + 1}", scope=scope) for index, scope in enumerate(scopes)]
+    zones = [SimpleNamespace(name="inside", scope=scope) for scope in scopes]
+    target = SimpleNamespace(config=SimpleNamespace(scopes=scopes, interfaces=[], interface_units=[],
+        zones=zones, virtual_routers=routers), derived=SimpleNamespace(interface_topology=[]))
+    candidates = discover_target_candidates(source, decisions, target, "dev")
+    router_key = PANMigrationDecision("root", "vdom", "root", "virtual_router").key
+    zone_key = PANMigrationDecision("root", "zone", "inside", "target_zone").key
+    assert [item["value"] for item in candidates[router_key]] == ["vr-2"]
+    assert [item["value"] for item in candidates[zone_key]] == ["inside"]
+    assert candidates[zone_key][0]["target_scope"] == pan_scope_identity(scopes[1])

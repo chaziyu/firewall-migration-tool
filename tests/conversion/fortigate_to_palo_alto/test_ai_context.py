@@ -29,6 +29,7 @@ def test_ai_eligible_values_exclude_ambiguous_scopes():
     ))
     group = result["context"]["groups"][0]
     assert group["decisions"][0]["allowed_values"] == ["ethernet1/3"]
+    assert group["decisions"][0]["recommendation_category"] == "REVIEW_RECOMMENDATION"
     assert result["allowed_values"][group["decisions"][0]["key"]] == ("ethernet1/3",)
 
 
@@ -70,3 +71,31 @@ def test_analysis_paginates_candidate_groups_and_keeps_state_digest_batch_indepe
     decisions[0].evidence_source = "ENGINEER"
     changed = build(20)
     assert changed["state_digest"] != first["state_digest"]
+
+
+def test_analysis_batches_migration_families_before_impact_ordering():
+    entries = [("zone", "inside", "target_zone", 90, None),
+               ("interface", "port1", "target_interface", 2, "physical"),
+               ("interface", "vlan10", "target_interface", 9, "vlan"),
+               ("interface", "vpn1", "target_interface", 4, "tunnel"),
+               ("vdom", "root", "vsys", 1, None),
+               ("interface", "port2", "target_interface", 8, "physical")]
+    decisions, groups, candidates, facts = [], [], {}, {}
+    for kind, name, target_field, impact, source_type in entries:
+        key = f"{kind}|{name}|{target_field}"
+        decisions.append(SimpleNamespace(key=key, source_vdom="root", source_kind=kind, source_name=name,
+            target_field=target_field, mode=SimpleNamespace(value="REQUIRED"),
+            review_state=SimpleNamespace(value="PENDING"), value=None, suggested_value=None,
+            evidence_type=None, evidence_value=None, evidence_source=None))
+        groups.append({"queue": "CHOOSE_CANDIDATE", "source_vdom": "root", "source_kind": kind,
+            "source_name": name, "affected_count": impact, "decisions": [{"key": key}]})
+        candidates[key] = [{"value": f"target-{name}", "class": "POSSIBLE", "supporting_evidence": ["explicit candidate"]}]
+        facts[key] = {"source_type": source_type} if source_type else {}
+    result = build_ai_review_context(source_digest="s", target_digest="t", target_device="fw1",
+        decisions=SimpleNamespace(decisions=tuple(decisions)), review_workflow={"review_groups": groups},
+        review_context=facts, decision_candidates=candidates, auto_decisions={}, target_findings=(),
+        operation="analysis", prompt_version="test", max_groups=20)
+    ordered = [(item["source_kind"], item["source_name"]) for item in result["context"]["groups"]]
+    assert ordered == [("vdom", "root"), ("interface", "port2"), ("interface", "port1"),
+                       ("interface", "vlan10"), ("interface", "vpn1"), ("zone", "inside")]
+    assert len(str(result["context"]).encode("utf-8")) < 16000
