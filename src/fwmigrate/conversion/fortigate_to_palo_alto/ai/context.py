@@ -25,14 +25,20 @@ def _eligible_candidates(candidates):
 
 def build_ai_review_context(*, source_digest, target_digest, target_device, decisions, review_workflow,
                             review_context, decision_candidates, auto_decisions, target_findings,
-                            operation, prompt_version, max_bytes=16000, max_groups=20, cursor=0):
+                            ai_selection_options=None,
+                            operation, prompt_version, max_bytes=16000, max_groups=20, cursor=0,
+                            group_identity=None):
     decision_by_key = {item.key: item for item in decisions.decisions}
     findings = {item.decision_key: item for item in target_findings}
     groups = []
     decision_refs = {}
     ai_candidates = {}
     insufficient_evidence = 0
+    option_overflow = {}
     for group in review_workflow.get("review_groups", ()):
+        if group_identity is not None and (group.get("source_vdom"), group.get("source_kind"),
+                                           group.get("source_name")) != group_identity:
+            continue
         if group.get("queue") == "COMPLETE" or (operation == "questions" and group.get("queue") == "READY_TO_CONFIRM"):
             continue
         rows = []
@@ -48,14 +54,20 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
                 continue
             unresolved_count += 1
             eligible = _eligible_candidates(decision_candidates.get(decision.key, ()))
+            if operation in {"analysis", "select"} and not eligible:
+                eligible = _eligible_candidates((ai_selection_options or {}).get(decision.key, ()))
             if operation == "analysis" and eligible:
                 safe_values = set(sanitize_ai_context({"values": [item["value"] for item in eligible]},
                     max_bytes=max_bytes)["values"])
                 eligible = [item for item in eligible if item["value"] in safe_values]
-            if not eligible and operation == "analysis":
+            if operation == "analysis" and len(eligible) > 8:
+                option_overflow[decision.key] = len(eligible)
+                continue
+            if not eligible and operation in {"analysis", "select"}:
                 continue
             decision_ref = f"decision_{len(decision_refs) + 1}"
             decision_refs[decision_ref] = decision.key
+            option_count = len(eligible)
             eligible = eligible[:8]
             ai_candidates[decision.key] = eligible
             values = list(dict.fromkeys(item["value"] for item in eligible))
@@ -87,6 +99,8 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
                 "mode": decision.mode.value,
                 "review_state": decision.review_state.value,
                 "allowed_values": values,
+                "option_count": option_count,
+                "unexamined_options": option_count - len(eligible),
                 "recommendation_category": recommendation_category,
                 "candidates": candidates,
                 "source": source_facts,
@@ -126,7 +140,9 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
         return 5
     groups.sort(key=lambda group: (family(group), -group["affected_count"],
                                    group["source_vdom"].casefold(), group["source_name"].casefold()))
-    if operation == "analysis":
+    if group_identity is not None:
+        groups = groups[:1]
+    elif operation == "analysis":
         groups = groups[cursor:cursor + max_groups]
     else:
         groups = groups[:max_groups]
@@ -143,9 +159,9 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
                                     ensure_ascii=False).encode("utf-8")) > max_bytes:
         groups.pop()
         base["groups"] = groups
-    if operation == "analysis" and not groups and cursor < total_groups:
+    if (operation == "analysis" and not groups and cursor < total_groups) or (group_identity and total_groups and not groups):
         from fwmigrate.ai.errors import AIInvalidResponseError
-        raise AIInvalidResponseError("A candidate-backed review group exceeds the AI context limit")
+        raise AIInvalidResponseError("The review group exceeds the AI context limit")
     selected_keys = {item["key"] for group in groups for item in group["decisions"]}
     safe = sanitize_ai_context(base, max_bytes=max_bytes)
     safe_allowed_values = {}
@@ -167,7 +183,8 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
             "evidence_type", "evidence_value", "target_object")}
             for item in decisions.decisions],
         "review_workflow": review_workflow, "review_context": review_context,
-        "decision_candidates": decision_candidates, "auto_decisions": auto_decisions,
+        "decision_candidates": decision_candidates, "ai_selection_options": ai_selection_options or {},
+        "auto_decisions": auto_decisions,
         "target_findings": target_findings}
     state_digest = hashlib.sha256(json.dumps(state_identity, sort_keys=True, separators=(",", ":"),
         ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
@@ -180,4 +197,5 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
             "decision_refs": {key: value for key, value in decision_refs.items() if key in selected_keys},
             "total_groups": total_groups, "candidate_backed_groups": total_groups,
             "insufficient_evidence": insufficient_evidence, "analyzed_groups": analyzed_groups,
+            "option_overflow": option_overflow,
             "next_cursor": next_cursor if next_cursor is not None and next_cursor < total_groups else None}

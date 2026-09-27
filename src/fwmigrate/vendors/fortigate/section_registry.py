@@ -518,6 +518,10 @@ register_section(
             "schedule",
             "nat",
             "nat64",
+            "nat46",
+            "natinbound",
+            "natoutbound",
+            "natip",
             "ippool",
 
             "session-ttl",

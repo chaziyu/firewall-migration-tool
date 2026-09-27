@@ -167,3 +167,50 @@ def validate_explanation_output(output, *, group):
     output["missing_information"] = _strings(output.get("missing_information"), "missing information")
     output["limitations"] = _strings(output.get("limitations"), "limitations")
     return output
+
+
+def validate_selection_output(output, *, group, allowed_values):
+    """Validate one non-confirming suggestion against current closed options."""
+    if not isinstance(output, dict):
+        raise AIInvalidResponseError("AI response has invalid selection data")
+    decisions = {item["key"]: item for item in group["decisions"]}
+    keys = output.get("decision_keys")
+    if (not isinstance(keys, list) or not keys or len(keys) > 8
+            or any(not isinstance(key, str) or key not in decisions for key in keys)
+            or len(set(keys)) != len(keys)):
+        raise AIInvalidResponseError("AI selection references an unknown decision")
+    assignments = output.get("suggested_assignments")
+    if not isinstance(assignments, list) or len(assignments) > len(keys):
+        raise AIInvalidResponseError("AI selection has invalid assignments")
+    checked, evidence_by_key = [], {}
+    for decision in group["decisions"]:
+        evidence_by_key[decision["key"]] = {
+            option["value"]: set(option.get("strong_evidence", ())) | set(option.get("supporting_evidence", ()))
+            for option in decision.get("candidates", ())
+        }
+    assigned = set()
+    for item in assignments:
+        if not isinstance(item, dict):
+            raise AIInvalidResponseError("AI selection has an invalid assignment")
+        key, value = item.get("decision_key"), item.get("value")
+        if (key not in keys or key in assigned or not isinstance(value, str)
+                or value not in allowed_values.get(key, ())):
+            raise AIInvalidResponseError("AI selection contains an unsupported target value")
+        assigned.add(key)
+        checked.append({"decision_key": key, "value": value})
+    evidence = _strings(output.get("evidence"), "selection evidence")
+    valid_evidence = set().union(*(evidence_by_key[item["decision_key"]].get(item["value"], set())
+                                   for item in checked)) if checked else set()
+    if (not checked and evidence) or not set(evidence).issubset(valid_evidence) or any(
+            not evidence_by_key[item["decision_key"]].get(item["value"], set()).intersection(evidence)
+            for item in checked):
+        raise AIInvalidResponseError("AI selection contains unsupported evidence")
+    alternatives = _strings(output.get("alternatives"), "alternatives")
+    group_values = {value for key in keys for value in allowed_values.get(key, ())}
+    if not set(alternatives).issubset(group_values):
+        raise AIInvalidResponseError("AI selection contains an unsupported alternative")
+    return {"decision_keys": keys, "suggested_assignments": checked, "evidence": evidence,
+        "rationale": _strings(output.get("rationale"), "rationale"),
+        "alternatives": alternatives,
+        "missing_information": _strings(output.get("missing_information"), "missing information"),
+        "limitations": _strings(output.get("limitations"), "limitations")}

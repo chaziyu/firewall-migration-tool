@@ -3,7 +3,10 @@ import pytest
 from fwmigrate.ai.errors import AIInvalidResponseError
 from fwmigrate.conversion.fortigate_to_palo_alto.ai.sanitizer import sanitize_ai_context
 from fwmigrate.conversion.fortigate_to_palo_alto.ai.validator import (
-    validate_analysis_output, validate_explanation_output,
+    validate_analysis_output, validate_explanation_output, validate_selection_output,
+)
+from fwmigrate.conversion.fortigate_to_palo_alto.ai.assistant import (
+    _compact_selection, _expand_compact_selection,
 )
 
 
@@ -108,3 +111,63 @@ def test_one_recommendation_can_assign_interface_and_zone_within_one_review_grou
     validated = validate_analysis_output(output, groups=[group],
         allowed_values={"key1": ("ae1",), "key2": ("trust",)})
     assert len(validated[0]["choices"][0]["assignments"]) == 2
+
+
+def test_selection_accepts_only_group_options_and_copied_evidence():
+    group = _group()[0]
+    group["decisions"][0]["candidates"] = [{"value": "ae1", "strong_evidence": ["explicit PAN interface"],
+        "supporting_evidence": ["same target VSYS"]}]
+    valid = {"decision_keys": ["key1"], "suggested_assignments": [
+        {"decision_key": "key1", "value": "ae1"}], "evidence": ["explicit PAN interface"],
+        "rationale": [], "alternatives": [], "missing_information": [], "limitations": []}
+    result = validate_selection_output(valid, group=group, allowed_values={"key1": ("ae1",)})
+    assert result["suggested_assignments"] == valid["suggested_assignments"]
+    for field, value in [
+        ("suggested_assignments", [{"decision_key": "key1", "value": "new-zone"}]),
+        ("suggested_assignments", [{"decision_key": "key1", "value": "ae1"},
+                                   {"decision_key": "key1", "value": "ae1"}]),
+        ("evidence", ["invented topology"]),
+    ]:
+        invalid = valid | {field: value}
+        with pytest.raises(AIInvalidResponseError):
+            validate_selection_output(invalid, group=group, allowed_values={"key1": ("ae1",)})
+
+
+def test_selection_may_return_no_assignment_when_evidence_is_ambiguous():
+    group = _group()[0]
+    output = {"decision_keys": ["key1"], "suggested_assignments": [], "evidence": [],
+        "rationale": ["Available options have equal evidence."], "alternatives": ["ae1"],
+        "missing_information": [], "limitations": []}
+    assert validate_selection_output(output, group=group, allowed_values={"key1": ("ae1",)})[
+        "suggested_assignments"] == []
+
+
+def test_selection_validates_evidence_for_each_combined_assignment():
+    group = _group()[0]
+    group["decisions"][0]["candidates"] = [{"value": "ae1", "strong_evidence": ["aggregate match"]}]
+    group["decisions"].append({"key": "key2", "candidates": [
+        {"value": "trust", "strong_evidence": ["zone match"]}]})
+    output = {"decision_keys": ["key1", "key2"], "suggested_assignments": [
+        {"decision_key": "key1", "value": "ae1"}, {"decision_key": "key2", "value": "trust"}],
+        "evidence": ["aggregate match", "zone match"], "rationale": [], "alternatives": [],
+        "missing_information": [], "limitations": []}
+    assert len(validate_selection_output(output, group=group,
+        allowed_values={"key1": ("ae1",), "key2": ("trust",)})["suggested_assignments"]) == 2
+
+
+def test_compact_selection_resolves_only_supplied_option_and_evidence_ids():
+    group = _group()[0]
+    group["confirmed_engineer_context"] = []
+    group["decisions"][0]["candidates"] = [{"value": "ae1", "strong_evidence": ["explicit aggregate"],
+        "supporting_evidence": []}]
+    payload, options = _compact_selection(group)
+    assert payload["decisions"][0]["options"][0]["id"] == "o1_1"
+    output = {"choices": [{"decision_id": "d1", "option_id": "o1_1", "evidence_ids": ["e1"]}],
+              "missing_information": [], "limitations": []}
+    expanded = _expand_compact_selection(output, group, options)
+    assert expanded["suggested_assignments"] == [{"decision_key": "key1", "value": "ae1"}]
+    ambiguous = _expand_compact_selection(output | {"choices": output["choices"] * 2}, group, options)
+    assert ambiguous["suggested_assignments"] == []
+    with pytest.raises(AIInvalidResponseError):
+        _expand_compact_selection(output | {"choices": [output["choices"][0] | {
+            "option_id": "invented"}]}, group, options)

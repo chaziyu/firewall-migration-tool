@@ -14,6 +14,7 @@ from ..command_evaluator import (
     CommandEvaluation,
     evaluate_commands,
 )
+from ..security.extraction import sanitize_source_attributes
 from ..nodes import (
     ConfigNode,
     EditNode,
@@ -322,9 +323,7 @@ def source_model_kwargs(
 
     values: dict[str, Any] = {}
 
-    raw_extra: dict[str, Any] = dict(
-        evaluation.untyped_values
-    )
+    raw_extra: dict[str, Any] = dict(evaluation.untyped_values)
 
     explicit_fields: set[str] = set()
 
@@ -409,6 +408,9 @@ def source_model_kwargs(
 
     elif "raw_extra" in model_fields:
         values["raw_extra"] = {}
+
+    if raw_extra:
+        values["raw_extra"] = sanitize_source_attributes(raw_extra, preserve_keys=True)
 
     if "explicit_fields" in model_fields:
         values["explicit_fields"] = (

@@ -67,7 +67,32 @@ def transform_nat(
     for policy in config.policies:
         nat64 = _enabled(policy.nat64)
         ordinary_nat = _enabled(policy.nat)
-        if not nat64 and not ordinary_nat:
+        nat46 = _enabled(policy.nat46)
+        ipsec_nat = (
+            _enabled(policy.natinbound)
+            or _enabled(policy.natoutbound)
+            or policy.natip is not None
+        )
+        if not (nat64 or ordinary_nat or nat46 or ipsec_nat):
+            continue
+
+        if nat46 or ipsec_nat:
+            modes = [
+                name for enabled, name in (
+                    (ordinary_nat, "nat"), (nat64, "nat64"),
+                    (nat46, "nat46"), (ipsec_nat, "IPsec NAT controls"),
+                ) if enabled
+            ]
+            result.append(NormalizedSourceNAT(
+                vdom=policy.vdom,
+                policy_id=policy.policy_id,
+                policy_name=policy.name,
+                translation_type="unsupported_" + "_".join(name.lower().replace(" ", "_") for name in modes),
+                pool_names=tuple(policy.poolname6 or ()) if nat46 else tuple(policy.poolname or ()),
+                translated_addresses=(),
+                egress_interfaces=tuple(policy.dstintf or ()),
+                issues=(f"FortiGate {', '.join(modes)} translation requires manual review; no PAN-OS NAT was inferred.",),
+            ))
             continue
 
         if ordinary_nat:
@@ -101,14 +126,15 @@ def _pool_nat(
     addresses: list[str] = []
     issues: list[str] = []
 
-    if not policy.poolname:
+    pool_names = policy.poolname or ()
+    if not pool_names:
         issues.append(
             "NAT64 is enabled but no poolname is configured."
             if nat64
             else "IP-pool NAT is enabled but no poolname is configured."
         )
 
-    for pool_name in policy.poolname:
+    for pool_name in pool_names:
         resolution = references.resolve_any(
             vdom=policy.vdom,
             name=pool_name,
@@ -170,14 +196,12 @@ def _pool_nat(
         policy_name=policy.name,
         translation_type=translation_type,
         pool_names=tuple(
-            policy.poolname
+            tuple(pool_names)
         ),
         translated_addresses=tuple(
             dict.fromkeys(addresses)
         ),
-        egress_interfaces=tuple(
-            policy.dstintf
-        ),
+        egress_interfaces=tuple(policy.dstintf or ()),
         issues=tuple(issues),
     )
 
@@ -191,7 +215,7 @@ def _interface_nat(
     addresses: list[str] = []
     issues: list[str] = []
 
-    for name in policy.dstintf:
+    for name in policy.dstintf or ():
         resolution = references.resolve_any(
             vdom=policy.vdom,
             name=name,

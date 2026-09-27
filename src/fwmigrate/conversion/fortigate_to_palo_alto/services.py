@@ -23,8 +23,10 @@ def plan_services(derived: Any, options: Any = None):
         ))
     groups = tuple(PlannedServiceGroup(
         source_vdom=item.vdom, source_kind="service_group", source_object_type="service_group",
-        source_name=item.name, status=PANMigrationStatus.SUPPORTED,
+        source_name=item.name,
+        status=PANMigrationStatus.MANUAL_REVIEW if item.members is None else PANMigrationStatus.SUPPORTED,
+        warnings=("service-group membership is not explicit in the source",) if item.members is None else (),
         target_vsys=getattr(getattr(options, "vdoms", {}).get(item.vdom), "vsys", None) if options else getattr(item, "vsys", None), target_name=item.name,
-        members=item.members,
+        members=item.members or (),
     ) for item in result.groups)
     return tuple(services), groups

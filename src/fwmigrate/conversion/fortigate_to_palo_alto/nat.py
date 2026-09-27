@@ -23,15 +23,15 @@ def plan_nat(source: Any, derived: Any, options: Any):
             warnings.append("NAT has multiple possible egress interfaces")
         if policy is None:
             warnings.append("source NAT policy could not be resolved")
-        elif len(policy.service) == 0:
+        elif not policy.service:
             warnings.append("source NAT policy has no explicit service match")
         elif len(policy.service) > 1:
             warnings.append("source NAT policy has multiple services; service-group semantics are not verified")
         if policy is not None:
-            for field, names in (("source", policy.srcintf), ("destination", item.egress_interfaces)):
+            for field, names in (("source", policy.srcintf or ()), ("destination", item.egress_interfaces)):
                 if not names or len(_policy_zones(policy, names, options)) != len(names):
                     warnings.append(f"NAT {field} zone mapping is incomplete")
-            if len(policy.srcaddr) == 0 or len(policy.dstaddr) == 0:
+            if not policy.srcaddr or not policy.dstaddr:
                 warnings.append("source NAT policy is missing explicit address match")
         if item.egress_interfaces and (egress_mapping is None or not getattr(egress_mapping, "target_interface", None)):
             warnings.append("missing mapped target interface for NAT egress")
@@ -51,11 +51,11 @@ def plan_nat(source: Any, derived: Any, options: Any):
             status=PANMigrationStatus.SUPPORTED if not warnings else PANMigrationStatus.MANUAL_REVIEW,
             warnings=tuple(warnings), source_translation_type=source_translation_type,
             translated_addresses=translated_addresses, source_interface_address=source_interface_address,
-            from_zones=_policy_zones(policy, policy.srcintf if policy else (), options),
+            from_zones=_policy_zones(policy, policy.srcintf or (), options) if policy else (),
             to_zones=_policy_zones(policy, item.egress_interfaces, options),
-            source_addresses=tuple(policy.srcaddr if policy else ()),
-            destination_addresses=tuple(policy.dstaddr if policy else ()),
-            service=(policy.service[0] if policy and len(policy.service) == 1 else None),
+            source_addresses=tuple(policy.srcaddr or ()) if policy else (),
+            destination_addresses=tuple(policy.dstaddr or ()) if policy else (),
+            service=(policy.service[0] if policy and policy.service and len(policy.service) == 1 else None),
             to_interface=getattr(egress_mapping, "target_interface", None),
         ))
     for vip in getattr(source, "vips", ()):

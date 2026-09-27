@@ -30,6 +30,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
     make_decision_key,
     build_recommendations,
 )
+from fwmigrate.conversion.fortigate_to_palo_alto.ai_selection_options import build_ai_selection_options
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
 from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import (
@@ -353,6 +354,8 @@ def _build_migration_review_state(entry, payload):
     device = target_context.selected_device if target_context else None
     candidates = discover_target_candidates(analysis.extracted.config, decisions, target, device,
                                             evidence=review_evidence) if target and device else {}
+    selection_options = build_ai_selection_options(analysis.extracted.config, analysis.derived, decisions,
+        target, device, review_evidence)
     target_warnings = {}
     if target and device:
         decisions, target_warnings = suggest_from_target(analysis.extracted.config, decisions, target, device)
@@ -365,6 +368,9 @@ def _build_migration_review_state(entry, payload):
         evidence=review_evidence)
     workflow = build_review_workflow(analysis.extracted.config, decisions, candidates=candidates,
         context=context, decision_evidence=evidence, target_warnings=target_warnings)
+    for group in workflow['review_groups']:
+        group['ai_selection_available'] = group['queue'] in {'CHOOSE_CANDIDATE', 'NEEDS_INPUT'} and any(
+            key in selection_options for key in group['decision_keys'])
     recommendations = build_recommendations(analysis.extracted.config, analysis.derived, decisions, target, device)
     return {
         'analysis': analysis,
@@ -375,6 +381,7 @@ def _build_migration_review_state(entry, payload):
         'target_device': device,
         'decisions': decisions,
         'decision_candidates': candidates,
+        'ai_selection_options': selection_options,
         'review_workflow': workflow,
         'review_context': context,
         'auto_decisions': auto,
@@ -405,6 +412,7 @@ def _validated_ai_confirmation(proposal, choice_index, state, max_context_bytes)
     current = build_ai_review_context(source_digest=state['source_digest'], target_digest=state['target_digest'],
         target_device=state['target_device'], decisions=state['decisions'], review_workflow=state['review_workflow'],
         review_context=state['review_context'], decision_candidates=state['decision_candidates'],
+        ai_selection_options=state.get('ai_selection_options', {}),
         auto_decisions=state['auto_decisions'], target_findings=state['target_findings'], operation='analysis',
         prompt_version=FG_PAN_AI_PROMPT_VERSION, max_bytes=max_context_bytes)
     if current['state_digest'] != proposal.state_digest:
@@ -421,7 +429,7 @@ def _validated_ai_confirmation(proposal, choice_index, state, max_context_bytes)
         candidates = state['decision_candidates'].get(assignment.decision_key, ())
         auto_status = getattr(state['auto_decisions'].get(assignment.decision_key, {}).get('status'), 'value',
                               state['auto_decisions'].get(assignment.decision_key, {}).get('status', ''))
-        eligible = _eligible_candidates(candidates)[:8]
+        eligible = _eligible_candidates(candidates or state.get('ai_selection_options', {}).get(assignment.decision_key, ()))[:8]
         allowed = set(sanitize_ai_context({'values': [item['value'] for item in eligible]},
             max_bytes=max_context_bytes)['values'])
         if (assignment.decision_key not in proposal.decision_keys or decision is None
@@ -438,6 +446,88 @@ def _validated_ai_confirmation(proposal, choice_index, state, max_context_bytes)
                 'prompt_version': proposal.prompt_version,
             }, target_object=assignment.value))
     return updated
+
+
+def _validated_ai_draft_confirmation(draft, selected_keys, state, settings):
+    """Apply only current, closed, mutually compatible draft selections."""
+    from fwmigrate.conversion.fortigate_to_palo_alto.ai.assistant import _build_context
+    from fwmigrate.conversion.fortigate_to_palo_alto.ai.context import _eligible_candidates
+    from fwmigrate.conversion.fortigate_to_palo_alto.ai.sanitizer import sanitize_ai_context
+
+    if _build_context(state, 'select', settings)['state_digest'] != draft.state_digest:
+        raise ValueError('AI draft is stale; prepare it again.')
+    assignments = [item for proposal in draft.proposals for choice in proposal.choices
+                   for item in choice.assignments]
+    proposed = {item.decision_key: item.value for item in assignments}
+    if len(proposed) != len(assignments) or not selected_keys or not selected_keys <= proposed.keys():
+        raise ValueError('AI draft contains invalid or duplicate selections.')
+    for dependency in draft.dependencies:
+        if dependency['decision_key'] in selected_keys and not set(dependency['depends_on']) <= selected_keys:
+            raise ValueError('Select the proposed prerequisite decisions together.')
+    by_key = {item.key: item for item in state['decisions'].decisions}
+    for key in selected_keys:
+        decision = by_key.get(key)
+        auto = state['auto_decisions'].get(key, {})
+        auto_status = getattr(auto.get('status'), 'value', auto.get('status', ''))
+        if (decision is None or decision.review_state != PANDecisionReviewState.PENDING
+                or decision.mode in {PANDecisionMode.AUTO, PANDecisionMode.UNSUPPORTED}
+                or auto_status in {'VERIFIED', 'DERIVED'}):
+            raise ValueError('AI draft is stale; prepare it again.')
+    tentative = PANMigrationDecisionSet(tuple(replace(item, value=proposed[item.key])
+        if item.key in selected_keys else item for item in state['decisions'].decisions))
+    target_context = state.get('target_context')
+    selection_options = {}
+    if target_context and target_context.selected_device:
+        source = state['analysis'].extracted.config
+        selection_options = build_ai_selection_options(source, state['analysis'].derived, tentative,
+            target_context.analysis, target_context.selected_device,
+            build_review_evidence(source, state['analysis'].derived))
+    updated = []
+    for key in selected_keys:
+        options = _eligible_candidates(state['decision_candidates'].get(key, ()))
+        manual = _eligible_candidates(selection_options.get(key, ()))
+        allowed = {item['value'] for item in (*options, *manual)}
+        safe = set(sanitize_ai_context({'values': list(allowed)},
+            max_bytes=settings.max_context_bytes)['values'])
+        if proposed[key] not in allowed & safe:
+            raise ValueError('AI draft contains a stale target option.')
+        proposal = next(item for item in draft.proposals if key in item.decision_keys)
+        updated.append(replace(by_key[key], value=proposed[key], review_state=PANDecisionReviewState.CONFIRMED,
+            evidence_source='ENGINEER', evidence_type='ENGINEER_ACCEPTED_AI_SUGGESTION',
+            evidence_value={'proposal_id': proposal.proposal_id, 'draft_id': draft.proposal_id,
+                'context_digest': proposal.context_digest, 'provider': proposal.provider,
+                'model': proposal.model, 'prompt_version': proposal.prompt_version},
+            target_object=proposed[key]))
+    by_key.update((item.key, item) for item in updated)
+    decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
+    if target_context and target_context.selected_device:
+        prior_errors = {(item.decision_key, item.code) for item in state['target_findings']
+                        if item.severity == 'error'}
+        errors = [item for item in validate_against_target(state['analysis'].extracted.config,
+            decisions, target_context.analysis, target_context.selected_device)
+            if item.severity == 'error' and (item.decision_key, item.code) not in prior_errors]
+        if errors:
+            raise ValueError('AI draft conflicts with current target topology: ' + errors[0].code)
+        mapped = {(item.source_vdom, item.source_name): item.value for item in decisions.decisions
+                  if item.source_kind == 'interface' and item.target_field == 'target_interface'
+                  and item.review_state == PANDecisionReviewState.CONFIRMED and item.value}
+        from fwmigrate.conversion.fortigate_to_palo_alto.target_validation import _records, _topology
+        for decision in updated:
+            if decision.source_kind != 'zone' or decision.target_field != 'target_zone':
+                continue
+            source_zone = next((item for item in source.zones
+                                if (item.vdom or 'root', item.name) ==
+                                (decision.source_vdom, decision.source_name)), None)
+            for member in getattr(source_zone, 'members', ()) or ():
+                name = mapped.get((decision.source_vdom, member))
+                records = _records(target_context.analysis, target_context.selected_device, name) if name else ()
+                if len(records) > 1:
+                    raise ValueError('AI draft has ambiguous target interface scope.')
+                zones = {zone for item in records for topology in _topology(target_context.analysis, item)
+                         for zone in topology.zones}
+                if zones and decision.value not in zones:
+                    raise ValueError('AI draft conflicts with an explicit target zone assignment.')
+    return decisions
 
 
 def _parse_bool(value, default=False):
@@ -760,7 +850,10 @@ def create_app(test_config=None):
                 state=state, cache=proposal_cache, cursor=cursor)
             return jsonify({'success': True, 'proposals': [item.to_dict() for item in proposals],
                 'analyzed_groups': built['analyzed_groups'], 'candidate_backed_groups': built['candidate_backed_groups'],
-                'next_cursor': built['next_cursor'], 'insufficient_evidence': built['insufficient_evidence']})
+                'next_cursor': built['next_cursor'], 'insufficient_evidence': built['insufficient_evidence'],
+                'covered_decisions': len(built.get('covered_decision_keys', ())),
+                'omitted_decision_keys': built.get('omitted_decision_keys', ()),
+                'option_overflow': built.get('option_overflow', {})})
         except AIError as exc:
             _LOGGER.warning('AI review analysis failed provider=%s model=%s',
                             settings.provider, settings.model)
@@ -796,6 +889,95 @@ def create_app(test_config=None):
             _LOGGER.error('AI candidate explanation operation failed provider=%s model=%s',
                           settings.provider, settings.model)
             return jsonify({'success': False, 'error': 'AI assistance is temporarily unavailable. Deterministic migration review is unchanged.'}), 502
+
+    @app.route('/api/migration/ai/select', methods=['POST'])
+    def migration_ai_select():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({'success': False, 'error': 'A JSON request is required.'}), 400
+        identity = tuple(payload.get(key) for key in ('source_vdom', 'source_kind', 'source_name'))
+        if any(not isinstance(value, str) or not value for value in identity):
+            return jsonify({'success': False, 'error': 'A review group identity is required.'}), 400
+        prepared, error = ai_review_payload(payload)
+        if error:
+            return error
+        settings, provider, state = prepared
+        try:
+            from fwmigrate.conversion.fortigate_to_palo_alto.ai.assistant import suggest_review_selection
+            _, proposal = suggest_review_selection(ai_provider=provider, settings=settings, state=state,
+                group_identity=identity, cache=proposal_cache)
+            return jsonify({'success': True, 'proposal': proposal.to_dict()})
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        except AIError as exc:
+            _LOGGER.warning('AI selection suggestion failed provider=%s model=%s',
+                            settings.provider, settings.model)
+            return ai_error_response(exc)
+        except Exception:
+            _LOGGER.error('AI selection operation failed provider=%s model=%s',
+                          settings.provider, settings.model)
+            return jsonify({'success': False, 'error': 'AI assistance is temporarily unavailable. Deterministic migration review is unchanged.'}), 502
+
+    @app.route('/api/migration/ai/prepare-draft', methods=['POST'])
+    def migration_ai_prepare_draft():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({'success': False, 'error': 'A JSON request is required.'}), 400
+        prepared, error = ai_review_payload(payload)
+        if error:
+            return error
+        settings, provider, state = prepared
+        from fwmigrate.conversion.fortigate_to_palo_alto.ai.assistant import prepare_review_draft
+        from fwmigrate.conversion.fortigate_to_palo_alto.ai.models import PANAIReviewDraft
+        draft_id = payload.get('draft_id')
+        draft = proposal_cache.get(draft_id) if isinstance(draft_id, str) else None
+        if draft_id and not isinstance(draft, PANAIReviewDraft):
+            return jsonify({'success': False, 'error': 'AI draft expired; prepare it again.'}), 409
+        if draft and payload.get('revision') != draft.revision:
+            revision = payload.get('revision')
+            if isinstance(revision, int) and not isinstance(revision, bool) and revision < draft.revision:
+                from fwmigrate.conversion.fortigate_to_palo_alto.ai.assistant import _build_context
+                try:
+                    if _build_context(state, 'select', settings)['state_digest'] == draft.state_digest:
+                        return jsonify({'success': True, 'draft': draft.to_dict()})
+                except AIError:
+                    pass
+            return jsonify({'success': False, 'error': 'AI draft revision changed; refresh it.'}), 409
+        try:
+            result = prepare_review_draft(ai_provider=provider, settings=settings, state=state,
+                cache=proposal_cache, draft=draft)
+            return jsonify({'success': True, 'draft': result.to_dict()})
+        except AIError as exc:
+            return ai_error_response(exc)
+
+    @app.route('/api/migration/ai/confirm-draft', methods=['POST'])
+    def migration_ai_confirm_draft():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({'success': False, 'error': 'A JSON request is required.'}), 400
+        from fwmigrate.conversion.fortigate_to_palo_alto.ai.models import PANAIReviewDraft
+        draft = proposal_cache.get(payload.get('draft_id'))
+        if not isinstance(draft, PANAIReviewDraft) or not draft.cursor == draft.total_groups:
+            return jsonify({'success': False, 'error': 'AI draft is incomplete or expired.'}), 409
+        if payload.get('revision') != draft.revision:
+            return jsonify({'success': False, 'error': 'AI draft revision changed; refresh it.'}), 409
+        selected = payload.get('selected_decision_keys')
+        if (not isinstance(selected, list) or not selected
+                or any(not isinstance(item, str) for item in selected)
+                or len(set(selected)) != len(selected)):
+            return jsonify({'success': False, 'error': 'A unique list of draft decisions is required.'}), 400
+        prepared, error = ai_review_payload(payload)
+        if error:
+            return error
+        settings, _, state = prepared
+        try:
+            decisions = _validated_ai_draft_confirmation(draft, set(selected), state, settings)
+        except (ValueError, AIError) as exc:
+            return jsonify({'success': False, 'error': str(exc) if isinstance(exc, ValueError)
+                else 'AI draft is stale; prepare it again.'}), 409
+        return jsonify({'success': True, 'confirmed_count': len(selected), 'decisions': decisions.to_dict(),
+            'decision_document': _decision_document(state['source_digest'], decisions,
+                _target_evidence(payload).metadata if payload.get('target_preview_id') else None)})
 
     @app.route('/api/migration/ai/confirm', methods=['POST'])
     def confirm_migration_ai_proposal():
@@ -840,7 +1022,8 @@ def create_app(test_config=None):
         if not settings or not settings.enabled or not available:
             return jsonify({'success': False, 'error': 'AI assistance is not configured.'}), 503
         proposals = [proposal_cache.get(item) for item in proposal_ids]
-        if any(proposal is None or proposal.kind.value != 'MAPPING_RECOMMENDATION' for proposal in proposals):
+        if any(proposal is None or proposal.kind.value not in {'MAPPING_RECOMMENDATION', 'SELECTION_SUGGESTION'}
+               or len(proposal.choices) != 1 for proposal in proposals):
             return jsonify({'success': False, 'error': 'A selected AI recommendation is stale or not selectable.'}), 409
         try:
             state = _build_ai_review_state(payload)

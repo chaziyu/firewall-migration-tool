@@ -1378,7 +1378,7 @@ def _service_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Itera
         source_item = source.get((item.vdom, item.name))
         row = {
             "Name": item.name,
-            "Members": list(item.members),
+            "Members": list(item.members) if item.members is not None else None,
             "Generated": item.generated,
             "Description": item.comment,
             "VDOM": item.vdom,

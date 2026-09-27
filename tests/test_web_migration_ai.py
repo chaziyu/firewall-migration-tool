@@ -87,6 +87,22 @@ class BulkProvider:
         return AIStructuredResult({"results": results}, "groq", "test-model", "request-test", 10, 5)
 
 
+class SelectionProvider:
+    def __init__(self): self.payload = None; self.calls = 0
+    def generate_structured(self, *, payload, **kwargs):
+        self.calls += 1
+        self.payload = payload
+        group = payload["group"]
+        decision = next(item for item in group["decisions"] if item["allowed_values"])
+        option = decision["candidates"][0]
+        evidence = option["strong_evidence"][:1] or option["supporting_evidence"][:1]
+        return AIStructuredResult({"decision_keys": [decision["key"]],
+            "suggested_assignments": [{"decision_key": decision["key"], "value": option["value"]}],
+            "rationale": ["The supplied option evidence supports this choice."], "evidence": evidence,
+            "alternatives": [], "missing_information": [], "limitations": []},
+            "groq", "test-model", "request-test", 10, 5)
+
+
 def test_ai_disabled_isolated_from_deterministic_review(monkeypatch):
     monkeypatch.setenv("AI_ASSIST_ENABLED", "false")
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
@@ -144,6 +160,8 @@ def test_analysis_rebuilds_context_and_confirmation_records_engineer_provenance(
                                "source_facts": {"injected": "not trusted"}}
     response = client.post("/api/migration/ai/analyze", json=request_body)
     assert response.status_code == 200
+    assert response.get_json()["covered_decisions"] == 1
+    assert response.get_json()["omitted_decision_keys"]
     assert "source_facts" not in provider.payload
     assert "injected" not in str(provider.payload)
     assert not re.search(r"(?<![A-Za-z0-9])(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?(?![A-Za-z0-9])", json.dumps(provider.payload))
@@ -224,6 +242,60 @@ def test_candidate_explanation_uses_server_group_without_changing_decisions(monk
     assert requirements["decisions"] == client.post("/api/migration/requirements", json=payload).get_json()["decisions"]
 
 
+def test_selection_uses_server_options_stages_no_decisions_and_cannot_be_confirmed(monkeypatch):
+    from dataclasses import replace
+    from fwmigrate import web as web_module
+    from fwmigrate.conversion.fortigate_to_palo_alto.decisions import (
+        PANDecisionMode, PANMigrationDecisionSet,
+    )
+
+    monkeypatch.setenv("AI_ASSIST_ENABLED", "true")
+    monkeypatch.setenv("AI_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    provider = SelectionProvider()
+    client = create_app({"TESTING": True, "AI_PROVIDER_INSTANCE": provider}).test_client()
+    preview_id = _preview(client, FIXTURE)
+    target_id = _preview(client, TARGET, "palo_alto")
+    payload = {"preview_id": preview_id, "target_preview_id": target_id}
+    requirements = client.post("/api/migration/requirements", json=payload).get_json()
+    original_ai_state = web_module._build_ai_review_state
+    def manual_ai_state(body):
+        state = original_ai_state(body)
+        decision = next(item for item in state["decisions"].decisions if item.target_field == "vsys")
+        replacement = replace(decision, mode=PANDecisionMode.REQUIRED)
+        state["decisions"] = PANMigrationDecisionSet(tuple(
+            replacement if item.key == decision.key else item for item in state["decisions"].decisions))
+        state["auto_decisions"][decision.key] = {"status": "MANUAL"}
+        group = next(item for item in state["review_workflow"]["review_groups"] if item["source_kind"] == "vdom")
+        group["queue"] = "NEEDS_INPUT"
+        state["ai_selection_options"] = {decision.key: [{"value": "vsys-choice", "target_scope": "vsys:explicit",
+            "strong_evidence": ["Explicit PAN VSYS"], "supporting_evidence": [], "contradictions": []}]}
+        return state
+    monkeypatch.setattr(web_module, "_build_ai_review_state", manual_ai_state)
+    group = next(item for item in requirements["review_groups"] if item["source_kind"] == "vdom")
+    body = payload | {"decision_document": requirements["decision_document"],
+        "source_vdom": group["source_vdom"], "source_kind": group["source_kind"],
+        "source_name": group["source_name"],
+        "ai_selection_options": {"injected": [{"value": "invented"}]}}
+    result = client.post("/api/migration/ai/select", json=body)
+    assert result.status_code == 200, (result.get_json(), provider.payload)
+    proposal = result.get_json()["proposal"]
+    assert proposal["kind"] == "SELECTION_SUGGESTION"
+    allowed = {value for item in provider.payload["group"]["decisions"] for value in item["allowed_values"]}
+    assert proposal["choices"][0]["assignments"][0]["value"] in allowed
+    assert "injected" not in json.dumps(provider.payload)
+    unchanged = client.post("/api/migration/requirements", json=payload).get_json()
+    assert unchanged["decisions"] == requirements["decisions"]
+    rejected = client.post("/api/migration/ai/confirm", json=body | {
+        "proposal_id": proposal["proposal_id"], "choice_index": 0})
+    assert rejected.status_code == 409
+    changed_target = _preview_target_with_changed_bytes(client)
+    refreshed = client.post("/api/migration/ai/select", json=body | {"target_preview_id": changed_target})
+    assert refreshed.status_code == 200
+    assert provider.calls == 2
+    assert refreshed.get_json()["proposal"]["context_digest"] != proposal["context_digest"]
+
+
 def test_bulk_confirmation_is_atomic_and_rejects_duplicate_and_nonrecommendation_proposals(monkeypatch):
     monkeypatch.setenv("AI_ASSIST_ENABLED", "true")
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
@@ -282,3 +354,61 @@ def test_bulk_confirmation_is_atomic_and_rejects_duplicate_and_nonrecommendation
     rejected = comparison_client.post("/api/migration/ai/confirm-bulk", json=payload | {
         "decision_document": requirements["decision_document"], "proposal_ids": [explained["proposal_id"]]})
     assert rejected.status_code == 409
+
+
+def test_prepare_draft_accounts_for_pending_decisions_and_rejects_stale_approval(monkeypatch):
+    monkeypatch.setenv("AI_ASSIST_ENABLED", "true")
+    monkeypatch.setenv("AI_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    client = create_app({"TESTING": True, "AI_PROVIDER_INSTANCE": SelectionProvider()}).test_client()
+    preview_id = _preview(client, FIXTURE)
+    target_id = _preview(client, TARGET, "palo_alto")
+    body = {"preview_id": preview_id, "target_preview_id": target_id}
+    initial = client.post("/api/migration/requirements", json=body).get_json()
+    body["decision_document"] = initial["decision_document"]
+    draft = None
+    for _ in range(200):
+        response = client.post("/api/migration/ai/prepare-draft", json=body | (
+            {"draft_id": draft["draft_id"], "revision": draft["revision"]} if draft else {}))
+        assert response.status_code == 200, response.get_json()
+        draft = response.get_json()["draft"]
+        if draft["complete"]:
+            break
+    assert draft["complete"]
+    caught_up = client.post("/api/migration/ai/prepare-draft", json=body | {
+        "draft_id": draft["draft_id"], "revision": draft["revision"] - 1})
+    assert caught_up.status_code == 200
+    assert caught_up.get_json()["draft"]["revision"] == draft["revision"]
+    pending = {item["key"] for item in initial["decisions"]["decisions"]
+               if item["review_state"] == "PENDING" and item["mode"] not in {"AUTO", "UNSUPPORTED"}}
+    covered = {assignment["decision_key"] for proposal in draft["proposals"]
+               for choice in proposal["choices"] for assignment in choice["assignments"]}
+    blocked = {item["decision_key"] for item in draft["blockers"]}
+    assert covered
+    assert pending == covered | blocked
+    assert not covered & blocked
+    assert initial["decisions"] == client.post("/api/migration/requirements", json={
+        "preview_id": preview_id, "target_preview_id": target_id}).get_json()["decisions"]
+    if covered:
+        stale_revision = client.post("/api/migration/ai/confirm-draft", json=body | {
+            "draft_id": draft["draft_id"], "revision": draft["revision"] - 1,
+            "selected_decision_keys": [next(iter(covered))]})
+        assert stale_revision.status_code == 409
+        if draft["dependencies"]:
+            dependent = draft["dependencies"][0]["decision_key"]
+            partial = client.post("/api/migration/ai/confirm-draft", json=body | {
+                "draft_id": draft["draft_id"], "revision": draft["revision"],
+                "selected_decision_keys": [dependent]})
+            assert partial.status_code == 409
+        first = draft["proposals"][0]
+        chosen = [item["decision_key"] for item in first["choices"][0]["assignments"]]
+        accepted = client.post("/api/migration/ai/confirm-draft", json=body | {
+            "draft_id": draft["draft_id"], "revision": draft["revision"],
+            "selected_decision_keys": chosen})
+        assert accepted.status_code == 200, accepted.get_json()
+        assert accepted.get_json()["confirmed_count"] == len(chosen)
+        stale = client.post("/api/migration/ai/confirm-draft", json=body | {
+            "target_preview_id": _preview_target_with_changed_bytes(client),
+            "draft_id": draft["draft_id"], "revision": draft["revision"],
+            "selected_decision_keys": [next(iter(covered))]})
+        assert stale.status_code == 409

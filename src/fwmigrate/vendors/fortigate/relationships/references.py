@@ -457,7 +457,7 @@ def collect_broken_references(
             vdom=group.vdom,
             source_name=group.name,
             source_field="members",
-            names=group.members,
+            names=group.members or (),
             kinds=(
                 ReferenceKind.ADDRESS6,
                 ReferenceKind.ADDRESS_GROUP6,
@@ -469,7 +469,7 @@ def collect_broken_references(
             vdom=group.vdom,
             source_name=group.name,
             source_field="exclude_members",
-            names=group.exclude_members,
+            names=group.exclude_members or (),
             kinds=(
                 ReferenceKind.ADDRESS6,
                 ReferenceKind.ADDRESS_GROUP6,
@@ -482,7 +482,7 @@ def collect_broken_references(
             vdom=group.vdom,
             source_name=group.name,
             source_field="members",
-            names=group.members,
+            names=group.members or (),
             kinds=service_like,
         )
 
@@ -492,7 +492,7 @@ def collect_broken_references(
             vdom=group.vdom,
             source_name=group.name,
             source_field="members",
-            names=group.members,
+            names=group.members or (),
             kinds=(ReferenceKind.SCHEDULE,),
         )
 
@@ -502,7 +502,7 @@ def collect_broken_references(
             vdom=group.vdom,
             source_name=group.name,
             source_field="members",
-            names=group.members,
+            names=group.members or (),
             kinds=(
                 ReferenceKind.VIP,
             ),
@@ -527,7 +527,7 @@ def collect_broken_references(
             vdom=policy.vdom,
             source_name=source_name,
             source_field="srcintf",
-            names=policy.srcintf,
+            names=policy.srcintf or (),
             kinds=policy_interface_like,
         )
 
@@ -536,7 +536,7 @@ def collect_broken_references(
             vdom=policy.vdom,
             source_name=source_name,
             source_field="dstintf",
-            names=policy.dstintf,
+            names=policy.dstintf or (),
             kinds=policy_interface_like,
         )
 
@@ -545,7 +545,7 @@ def collect_broken_references(
             vdom=policy.vdom,
             source_name=source_name,
             source_field="srcaddr",
-            names=policy.srcaddr,
+            names=policy.srcaddr or (),
             kinds=ipv4_address_like,
         )
 
@@ -554,7 +554,7 @@ def collect_broken_references(
             vdom=policy.vdom,
             source_name=source_name,
             source_field="dstaddr",
-            names=policy.dstaddr,
+            names=policy.dstaddr or (),
             kinds=destination_address_like,
         )
 
@@ -563,7 +563,7 @@ def collect_broken_references(
             vdom=policy.vdom,
             source_name=source_name,
             source_field="srcaddr6",
-            names=policy.srcaddr6,
+            names=policy.srcaddr6 or (),
             kinds=ipv6_address_like,
         )
 
@@ -572,7 +572,7 @@ def collect_broken_references(
             vdom=policy.vdom,
             source_name=source_name,
             source_field="dstaddr6",
-            names=policy.dstaddr6,
+            names=policy.dstaddr6 or (),
             kinds=ipv6_address_like,
         )
 
@@ -581,7 +581,7 @@ def collect_broken_references(
             vdom=policy.vdom,
             source_name=source_name,
             source_field="service",
-            names=policy.service,
+            names=policy.service or (),
             kinds=service_like,
         )
 
@@ -600,7 +600,7 @@ def collect_broken_references(
             vdom=policy.vdom,
             source_name=source_name,
             source_field="poolname",
-            names=policy.poolname,
+            names=policy.poolname or (),
             kinds=(
                 ReferenceKind.IP_POOL,
             ),
@@ -611,7 +611,7 @@ def collect_broken_references(
             vdom=policy.vdom,
             source_name=source_name,
             source_field="poolname6",
-            names=policy.poolname6,
+            names=policy.poolname6 or (),
             kinds=(ReferenceKind.IP_POOL6,),
         )
 

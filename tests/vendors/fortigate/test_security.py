@@ -42,6 +42,29 @@ end
     assert "do-not-export-auth" not in str(record)
     assert record.commands[0].values[-1] == "[REDACTED]"
 
+def test_typed_section_unknown_secret_is_redacted_from_reports_and_excel():
+    source = '''config system interface
+    edit "wan1"
+        set vendor-secret do-not-export-typed-secret
+    next
+end
+'''
+    analysis = source_reporters.get("fortigate").analyze_source(source)
+    assert analysis.extracted.config.interfaces[0].raw_extra["vendor-secret"] == "[REDACTED]"
+    assert "do-not-export-typed-secret" not in repr(analysis)
+
+    client = create_app({"TESTING": True}).test_client()
+    preview = client.post(
+        "/api/preview",
+        data={"file": (io.BytesIO(source.encode()), "typed-secret.conf")},
+        content_type="multipart/form-data",
+    )
+    assert preview.status_code == 200
+    assert "do-not-export-typed-secret" not in json.dumps(preview.get_json())
+    workbook = client.post("/api/extract/excel", data={"preview_id": preview.get_json()["preview_id"]})
+    assert workbook.status_code == 200
+    assert b"do-not-export-typed-secret" not in workbook.data
+
 def test_fortigate_web_preview_and_excel_redact_secrets():
     client = create_app({"TESTING": True}).test_client()
     preview = client.post(

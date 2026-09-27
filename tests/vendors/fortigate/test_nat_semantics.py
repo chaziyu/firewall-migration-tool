@@ -132,6 +132,26 @@ class NatSemanticsTest(unittest.TestCase):
         self.assertEqual(result.translated_addresses, ())
         self.assertTrue(any("No deterministic NAT64" in issue for issue in result.issues))
 
+    def test_nat46_and_ipsec_nat_are_manual_review_modes(self):
+        cases = (
+            (FGPolicy(policy_id=1, nat46="enable", poolname6=["V6POOL"]), "nat46", "V6POOL"),
+            (FGPolicy(policy_id=2, natinbound="enable"), "IPsec NAT controls", None),
+            (FGPolicy(policy_id=3, natoutbound="enable"), "IPsec NAT controls", None),
+            (FGPolicy(policy_id=4, natip="192.0.2.4"), "IPsec NAT controls", None),
+        )
+        for policy, mode, pool in cases:
+            with self.subTest(policy=policy.policy_id):
+                result = self._policy_nat(policy)
+                self.assertIn(mode, result.issues[0])
+                self.assertTrue(result.translation_type.startswith("unsupported_"))
+                self.assertEqual(result.translated_addresses, ())
+                self.assertEqual(result.pool_names, (pool,) if pool else ())
+
+    def test_nat46_does_not_fall_through_ordinary_nat(self):
+        rows = transform_nat(FGConfig(policies=[FGPolicy(nat="enable", nat46="enable")]))
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0].translation_type.startswith("unsupported_"))
+
     def test_incomplete_pool_endpoints_are_not_translations(self):
         for pool in (
             FGIPPool(name="POOL1", startip="198.51.100.10"),

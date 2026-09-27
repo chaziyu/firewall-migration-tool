@@ -69,6 +69,8 @@ NON_SECRET_CREDENTIAL_METADATA = frozenset({
 
 def sanitize_source_attributes(
     attributes: Mapping[str, Any],
+    *,
+    preserve_keys: bool = False,
 ) -> Dict[str, Any]:
     """
     Retain explicitly configured FortiGate source fields while
@@ -79,7 +81,8 @@ def sanitize_source_attributes(
     """
 
     return {
-        _normalize_source_key(key): sanitize_source_value(key, value)
+        (str(key) if preserve_keys else _normalize_source_key(key)):
+            sanitize_source_value(key, value, preserve_keys=preserve_keys)
         for key, value in attributes.items()
     }
 
@@ -87,6 +90,8 @@ def sanitize_source_attributes(
 def sanitize_source_value(
     key: str,
     value: Any,
+    *,
+    preserve_keys: bool = False,
 ) -> Any:
     """Redact one source value using the shared source-key policy."""
 
@@ -97,7 +102,15 @@ def sanitize_source_value(
         return value
     if classification == 2:
         return "[REDACTED]"
-
+    if isinstance(value, Mapping):
+        return sanitize_source_attributes(value, preserve_keys=preserve_keys)
+    if isinstance(value, list):
+        return [
+            sanitize_source_attributes(item, preserve_keys=preserve_keys)
+            if isinstance(item, Mapping)
+            else item
+            for item in value
+        ]
     return value
 
 
