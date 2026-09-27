@@ -33,12 +33,12 @@ class FortiGateToPaloAltoPlanner:
         elif isinstance(options, dict):
             options = PANMigrationOptions(**options)
         addresses, groups, issues = plan_addresses(source, options)
-        services, service_groups = plan_services(derived, options)
+        services, service_groups = plan_services(derived, options, source)
         schedules = plan_schedules(source, options)
         requirements = build_mapping_requirements(source, derived)
         zones = plan_topology(source, derived, options, requirements["required_zone_keys"])
         routes = plan_routes(source, options, derived)
-        policies = plan_policies(source, options)
+        policies = plan_policies(source, options, derived)
         nat_rules = plan_nat(source, derived, options)
         return PANMigrationPlan(
             addresses=addresses,

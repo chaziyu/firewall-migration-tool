@@ -24,7 +24,7 @@ def test_address_representations_and_static_group_are_preserved():
     )
 
     assert [(item.address_type, item.value) for item in plan.addresses] == [
-        ("ip-netmask", "10.0.0.0 255.255.255.0"),
+        ("ip-netmask", "10.0.0.0/24"),
         ("ip-range", "10.0.0.1-10.0.0.9"),
         ("fqdn", "example.com"),
         ("ip-wildcard", "10.0.0.0/255.255.0.0"),

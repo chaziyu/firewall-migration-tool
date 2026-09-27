@@ -17,11 +17,17 @@ class InterfaceMapping:
 
 
 @dataclass(frozen=True, slots=True)
+class ZoneMapping:
+    target_zone: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class PANMigrationOptions:
     """Mappings required to make source-to-target ownership explicit."""
 
     vdoms: Mapping[str, VDOMMapping | Mapping[str, str | None]] = field(default_factory=dict)
     interfaces: Mapping[str, Mapping[str, InterfaceMapping | Mapping[str, str | None]]] = field(default_factory=dict)
+    zones: Mapping[str, Mapping[str, ZoneMapping | Mapping[str, str | None]]] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "vdoms", self._coerce(self.vdoms, VDOMMapping))
@@ -29,6 +35,11 @@ class PANMigrationOptions:
             vdom: self._coerce(mappings, InterfaceMapping)
             for vdom, mappings in (self.interfaces or {}).items()
         })
+        if self.zones is not None:
+            object.__setattr__(self, "zones", {
+                vdom: self._coerce(mappings, ZoneMapping)
+                for vdom, mappings in self.zones.items()
+            })
 
     @staticmethod
     def _coerce(values, value_type):

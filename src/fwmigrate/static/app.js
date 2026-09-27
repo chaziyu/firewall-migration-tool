@@ -2532,12 +2532,16 @@ let migrationPlanNeedsRebuild = false;
   document.getElementById("mapping-template")?.addEventListener("click", () => {
     const decisions = currentDecisionSet.decisions;
     const vdoms = [...new Set(decisions.filter(item => item.source_kind === "vdom").map(item => item.source_vdom))];
-    const interfaces = new Map();
-    for (const item of decisions.filter(item => item.source_kind !== "vdom")) {
-      interfaces.set(item.source_vdom, [...new Set([...(interfaces.get(item.source_vdom) || []), item.source_name])]);
-    }
+    const namesByKind = kind => {
+      const names = new Map();
+      for (const item of decisions.filter(item => item.source_kind === kind)) names.set(item.source_vdom, [...new Set([...(names.get(item.source_vdom) || []), item.source_name])]);
+      return names;
+    };
+    const interfaces = namesByKind("interface"), zones = namesByKind("zone");
     const yaml = ["vdoms:", ...vdoms.flatMap(vdom => [`  ${JSON.stringify(vdom)}:`, "    vsys:", "    virtual_router:"]), "interfaces:", ...[...interfaces].flatMap(([vdom, names]) => [
       `  ${JSON.stringify(vdom)}:`, ...names.flatMap(name => [`    ${JSON.stringify(name)}:`, "      target_interface:", "      target_zone:"]),
+    ]), "zones:", ...[...zones].flatMap(([vdom, names]) => [
+      `  ${JSON.stringify(vdom)}:`, ...names.flatMap(name => [`    ${JSON.stringify(name)}:`, "      target_zone:"]),
     ])].join("\n") + "\n";
     const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([yaml], { type: "text/yaml" })); link.download = "target-mapping.yaml"; link.click(); URL.revokeObjectURL(link.href);
   });
@@ -2552,10 +2556,14 @@ let migrationPlanNeedsRebuild = false;
         if (value != null && upsertConfirmedDecision(vdom, "vdom", vdom, field, value)) matched++; else ignored++;
       }
       for (const [vdom, entries] of Object.entries(imported.mapping.interfaces || {})) for (const [name, values] of Object.entries(entries)) for (const [field, value] of Object.entries(values)) {
-        const kinds = field === "target_interface" ? ["interface"] : ["interface", "zone"].filter(kind => currentDecisionSet.decisions.some(item => item.source_vdom === vdom && item.source_kind === kind && item.source_name === name && item.target_field === field));
+        const kinds = currentDecisionSet.decisions.some(item => item.source_vdom === vdom && item.source_kind === "interface" && item.source_name === name && item.target_field === field)
+          ? ["interface"] : field === "target_zone" ? ["zone"] : ["interface"];
         if (value == null) { ignored++; continue; }
         const updated = kinds.filter(kind => upsertConfirmedDecision(vdom, kind, name, field, value));
         if (updated.length) matched++; else ignored++;
+      }
+      for (const [vdom, entries] of Object.entries(imported.mapping.zones || {})) for (const [name, values] of Object.entries(entries)) {
+        if (values.target_zone != null && upsertConfirmedDecision(vdom, "zone", name, "target_zone", values.target_zone)) matched++; else ignored++;
       }
       currentDecisionDocument = currentDecisionPayload();
       await refreshMigrationReviewFromCurrentDecisions();

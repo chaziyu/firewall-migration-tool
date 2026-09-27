@@ -71,5 +71,5 @@ def test_confirmed_decisions_override_suggestions_and_convert_to_options():
 
     assert options.vdoms["root"].vsys == "vsys-prod"
     assert options.vdoms["root"].virtual_router == "vr-prod"
-    assert options.interfaces["root"]["trust"].target_zone == "corp-trust"
+    assert options.zones["root"]["trust"].target_zone == "corp-trust"
     assert options.interfaces["root"]["port1"].target_interface == "ethernet1/7"

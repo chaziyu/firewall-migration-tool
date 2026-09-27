@@ -5,7 +5,7 @@ from enum import Enum
 import json
 from typing import Any
 
-from .options import InterfaceMapping, PANMigrationOptions, VDOMMapping
+from .options import InterfaceMapping, PANMigrationOptions, VDOMMapping, ZoneMapping
 
 
 class PANDecisionMode(str, Enum):
@@ -117,17 +117,21 @@ class PANMigrationDecisionSet:
     def to_options(self) -> PANMigrationOptions:
         vdoms: dict[str, dict[str, str]] = {}
         interfaces: dict[str, dict[str, dict[str, str]]] = {}
+        zones: dict[str, dict[str, dict[str, str]]] = {}
         for decision in self.decisions:
             usable = decision.mode == PANDecisionMode.AUTO or decision.review_state == PANDecisionReviewState.CONFIRMED
             if not usable or decision.mode == PANDecisionMode.UNSUPPORTED or not decision.value:
                 continue
             if decision.source_kind == "vdom":
                 vdoms.setdefault(decision.source_vdom, {})[decision.target_field] = decision.value
+            elif decision.source_kind == "zone":
+                zones.setdefault(decision.source_vdom, {}).setdefault(decision.source_name, {})[decision.target_field] = decision.value
             else:
                 interfaces.setdefault(decision.source_vdom, {}).setdefault(decision.source_name, {})[decision.target_field] = decision.value
         return PANMigrationOptions(
             vdoms={name: VDOMMapping(**values) for name, values in vdoms.items()},
             interfaces={vdom: {name: InterfaceMapping(**values) for name, values in items.items()} for vdom, items in interfaces.items()},
+            zones={vdom: {name: ZoneMapping(**values) for name, values in items.items()} for vdom, items in zones.items()},
         )
 
 

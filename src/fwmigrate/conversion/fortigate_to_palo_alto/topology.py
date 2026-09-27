@@ -15,7 +15,9 @@ def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=No
         if required_zone_keys is not None and (vdom, zone.name) not in required_zone_keys:
             continue
         mappings = getattr(options, "interfaces", {}).get(vdom, {})
-        zone_mapping = mappings.get(zone.name)
+        zone_mappings = getattr(options, "zones", None)
+        zone_mapping = ((zone_mappings or {}).get(vdom, {}).get(zone.name) if zone_mappings is not None
+                        else mappings.get(zone.name))
         target_interfaces = []
         warnings = []
         if zone_mapping is None or not zone_mapping.target_zone:

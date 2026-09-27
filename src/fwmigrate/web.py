@@ -169,13 +169,18 @@ def _target_evidence_changed(document, target_context):
 
 
 def _options_mapping(options):
-    return {
+    mapping = {
         "vdoms": {name: {key: value for key, value in asdict(item).items() if value is not None}
                    for name, item in options.vdoms.items()},
         "interfaces": {vdom: {name: {key: value for key, value in asdict(item).items() if value is not None}
                               for name, item in mappings.items()}
                        for vdom, mappings in options.interfaces.items()},
     }
+    if options.zones is not None:
+        mapping["zones"] = {vdom: {name: {"target_zone": item.target_zone} for name, item in mappings.items()
+                                    if item.target_zone is not None}
+                            for vdom, mappings in options.zones.items()}
+    return mapping
 
 
 def _confirm_mapping_decisions(decision_set, options, config):
@@ -197,12 +202,13 @@ def _confirm_mapping_decisions(decision_set, options, config):
     for vdom, mappings in options.interfaces.items():
         for name, mapping in mappings.items():
             for field, value in asdict(mapping).items():
-                kinds = ({"interface"} if field == "target_interface" else
-                         {kind for kind in ("interface", "zone") if make_decision_key(vdom, kind, name, field) in decisions})
-                if not kinds:
-                    kinds = {"zone" if (vdom, name) in zone_names and field == "target_zone" else "interface"}
-                for kind in kinds:
-                    confirm(vdom, kind, name, field, value)
+                kind = "zone" if field == "target_zone" and (vdom, name) in zone_names and not any(
+                    (item.vdom or "root", item.name) == (vdom, name) for item in getattr(config, "interfaces", ())
+                ) else "interface"
+                confirm(vdom, kind, name, field, value)
+    for vdom, mappings in (options.zones or {}).items():
+        for name, mapping in mappings.items():
+            confirm(vdom, "zone", name, "target_zone", mapping.target_zone)
     return PANMigrationDecisionSet(tuple(sorted(decisions.values(), key=lambda item: item.key)))
 @dataclass(frozen=True)
 class _PreviewCacheEntry:
@@ -212,6 +218,9 @@ class _PreviewCacheEntry:
     created_at: float
     analysis: object
     source_name: str | None = None
+    collection_status: CollectionStatus | None = None
+    collection_warnings: tuple[str, ...] = ()
+    collection_method: str | None = None
 
 
 _PREVIEW_CACHE: dict[str, _PreviewCacheEntry] = {}
@@ -272,13 +281,18 @@ def _cleanup_preview_cache(now: float | None = None) -> None:
         _PREVIEW_CACHE.pop(preview_id, None)
 
 
-def _cache_preview(source_vendor: str, raw: bytes, analysis, source_name: str | None = None) -> _PreviewCacheEntry:
+def _cache_preview(source_vendor: str, raw: bytes, analysis, source_name: str | None = None,
+                   *, collection_status: CollectionStatus | None = None,
+                   collection_warnings: tuple[str, ...] = (), collection_method: str | None = None) -> _PreviewCacheEntry:
     now = time.monotonic()
     source_digest = _source_digest(source_vendor, raw)
     with _PREVIEW_CACHE_LOCK:
         _cleanup_preview_cache(now)
         for entry in _PREVIEW_CACHE.values():
-            if entry.source_vendor == source_vendor and entry.source_digest == source_digest:
+            if (entry.source_vendor == source_vendor and entry.source_digest == source_digest
+                    and entry.collection_status == collection_status
+                    and entry.collection_warnings == collection_warnings
+                    and entry.collection_method == collection_method):
                 return entry
         while len(_PREVIEW_CACHE) >= _PREVIEW_CACHE_MAX_ENTRIES:
             oldest_id = min(_PREVIEW_CACHE, key=lambda key: _PREVIEW_CACHE[key].created_at)
@@ -290,6 +304,9 @@ def _cache_preview(source_vendor: str, raw: bytes, analysis, source_name: str | 
             created_at=now,
             analysis=analysis,
             source_name=source_name,
+            collection_status=collection_status,
+            collection_warnings=collection_warnings,
+            collection_method=collection_method,
         )
         _PREVIEW_CACHE[entry.preview_id] = entry
         return entry
@@ -312,6 +329,11 @@ def _lookup_preview(
 
 def _clone_preview(entry: _PreviewCacheEntry):
     return deepcopy(entry.analysis)
+
+
+def _require_complete_collection(entry: _PreviewCacheEntry) -> None:
+    if entry.collection_status is not None and entry.collection_status != CollectionStatus.SUCCESS:
+        raise ValueError("Migration requires a complete live collection; this source is PARTIAL or FAILED.")
 
 
 @dataclass(frozen=True)
@@ -343,6 +365,7 @@ def _target_evidence(payload):
 
 def _build_migration_review_state(entry, payload):
     """Build the deterministic migration review from a cached source preview."""
+    _require_complete_collection(entry)
     analysis = _clone_preview(entry)
     requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
     prior = payload.get('decision_document')
@@ -677,7 +700,9 @@ def create_app(test_config=None):
             raw = snapshot['source_text'].encode('utf-8')
             reporter = source_reporters.get(source.vendor_id)
             analysis = reporter.analyze_source(snapshot['source_text'])
-            entry = _cache_preview(source.vendor_id, raw, analysis, source.source_name)
+            entry = _cache_preview(source.vendor_id, raw, analysis, source.source_name,
+                                   collection_status=source.status,
+                                   collection_warnings=tuple(snapshot['warnings']), collection_method=source.method)
             return jsonify({
                 'success': True,
                 'preview_id': entry.preview_id,
@@ -697,7 +722,9 @@ def create_app(test_config=None):
             source = parse_snapshot(raw)
             reporter = source_reporters.get(source.vendor_id)
             analysis = reporter.analyze_source(source.source_text)
-            entry = _cache_preview(source.vendor_id, source.source_text.encode('utf-8'), analysis, source.source_name)
+            entry = _cache_preview(source.vendor_id, source.source_text.encode('utf-8'), analysis, source.source_name,
+                                   collection_status=source.status, collection_warnings=tuple(source.warnings),
+                                   collection_method=source.method)
             return jsonify({'success': True, 'vendor_id': source.vendor_id, 'preview_id': entry.preview_id,
                             'collection': {'status': source.status.value, 'parts': [asdict(part) for part in source.parts],
                                            'warnings': source.warnings}, 'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id)})
@@ -1288,6 +1315,7 @@ def create_app(test_config=None):
                 analysis = _clone_preview(entry)
             else:
                 return jsonify({'success': False, 'error': 'A valid preview_id or configuration file is required'}), 400
+            _require_complete_collection(entry)
             serialized = payload.get('decision_document', payload.get('decisions', payload.get('decision_set')))
             if serialized is not None:
                 if isinstance(serialized, dict) and 'format_version' in serialized:

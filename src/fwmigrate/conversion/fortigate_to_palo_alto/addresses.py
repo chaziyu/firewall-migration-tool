@@ -9,6 +9,7 @@ from .models import (
     PlannedAddress,
     PlannedAddressGroup,
 )
+from .routing import _normalize_subnet
 
 
 def plan_addresses(source: Any, options: Any) -> tuple[tuple[PlannedAddress, ...], tuple[PlannedAddressGroup, ...], tuple[MigrationIssue, ...]]:
@@ -52,7 +53,12 @@ def _plan_address(source: Any, options: Any):
     value = None
     address_type = None
     if getattr(source, "subnet", None):
-        address_type, value = "ip-netmask", source.subnet
+        value = _normalize_subnet(source.subnet)
+        if value:
+            address_type = "ip-netmask"
+        else:
+            status = PANMigrationStatus.UNSUPPORTED
+            warnings = (*warnings, "address subnet is not a valid explicit IPv4 subnet")
     elif getattr(source, "start_ip", None) and getattr(source, "end_ip", None):
         address_type, value = "ip-range", f"{source.start_ip}-{source.end_ip}"
     elif getattr(source, "fqdn", None):

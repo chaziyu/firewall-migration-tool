@@ -69,6 +69,7 @@ def static_route(item):
 def security_rule(item):
     base = ("rulebase", "security", "rules", item.target_name or item.source_name)
     commands = [("vsys", *base, key, "[", *values, "]") for key, values in (("from", item.from_zones), ("to", item.to_zones), ("source", item.sources), ("destination", item.destinations), ("service", item.services))]
+    if item.applications: commands.append(("vsys", *base, "application", "[", *item.applications, "]"))
     if item.schedule: commands.append(("vsys", *base, "schedule", item.schedule))
     if item.negate_source: commands.append(("vsys", *base, "negate-source", "yes"))
     if item.negate_destination: commands.append(("vsys", *base, "negate-destination", "yes"))
