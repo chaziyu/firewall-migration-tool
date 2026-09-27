@@ -2,7 +2,7 @@
 
 
 def build_review_context(config, decisions, *, candidates=None, target_available=False, target_selected=False,
-                         target_device_count=0):
+                         target_device_count=0, evidence=None):
     interfaces = {(item.vdom or "root", item.name): item for item in getattr(config, "interfaces", ())}
     zones = {(item.vdom or "root", item.name): item for item in getattr(config, "zones", ())}
     context = {}
@@ -15,6 +15,7 @@ def build_review_context(config, decisions, *, candidates=None, target_available
         identity = (decision.source_vdom, decision.source_name)
         item = interfaces.get(identity) if decision.source_kind == "interface" else zones.get(identity)
         values = {"affected_count": decision.affected_count, "affected_by": dict(decision.affected_by or {})}
+        values.update((evidence or {}).get(identity, {}))
         if item is not None and decision.source_kind == "interface":
             explicit = getattr(item, "explicit_fields", None)
             for output, name in fields.items():

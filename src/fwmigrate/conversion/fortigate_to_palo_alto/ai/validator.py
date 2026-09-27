@@ -43,14 +43,20 @@ def validate_analysis_output(output, *, groups, allowed_values, max_results=8):
                       for key in keys}
         if len(identities) != 1:
             raise AIInvalidResponseError("AI result combines unrelated review groups")
+        if (kind is PANAIAssistKind.CANDIDATE_COMPARISON
+                and (item.get("assignments") or item.get("evidence") or not item.get("comparisons"))):
+            # A malformed comparison cannot carry actionable data; downgrade it to a review-only question.
+            kind = PANAIAssistKind.ARCHITECTURE_QUESTION
+            item = item | {"assignments": [], "choices": [], "comparisons": [], "evidence": [],
+                           "question": item.get("question") or "Review the supplied candidates before choosing a mapping."}
         assignments = item.get("assignments")
         choices = item.get("choices")
         comparisons = item.get("comparisons")
         if not isinstance(assignments, list) or not isinstance(choices, list) or len(choices) > 8:
             raise AIInvalidResponseError("AI result has invalid assignments or choices")
-        checked_assignments = _validate_assignments(assignments, keys, allowed_values)
+        checked_assignments = [] if kind is PANAIAssistKind.CANDIDATE_COMPARISON else _validate_assignments(assignments, keys, allowed_values)
         checked_choices = []
-        for choice in choices:
+        for choice in (() if kind is PANAIAssistKind.CANDIDATE_COMPARISON else choices):
             if not isinstance(choice, dict):
                 raise AIInvalidResponseError("AI result has an invalid choice")
             choice_assignments = _validate_assignments(choice.get("assignments"), keys, allowed_values)
@@ -73,7 +79,7 @@ def validate_analysis_output(output, *, groups, allowed_values, max_results=8):
                 raise AIInvalidResponseError("AI recommendation contains unsupported evidence")
             choices_for_proposal = [{"label": item["summary"], "assignments": checked_assignments}]
         elif kind is PANAIAssistKind.CANDIDATE_COMPARISON:
-            if assignments or choices or evidence or not comparisons or len(comparisons) > 32:
+            if assignments or evidence or not comparisons or len(comparisons) > 32:
                 raise AIInvalidResponseError("AI comparison contains invalid decision data")
             seen_candidates = set()
             for comparison in comparisons:

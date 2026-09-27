@@ -15,12 +15,22 @@ from ...vendors.palo_alto.source_model import pan_scope_identity
 
 
 def _device(item):
-    scope = getattr(item, "scope", None)
+    scope = getattr(item, "scope", None) or (item if hasattr(item, "kind") else None)
     return (scope.device_serial or scope.device_name) if scope else None
 
 
+def _candidate(value, scope, strong=(), supporting=()):
+    return {"value": value, "target_scope": str(pan_scope_identity(scope)) if scope else None,
+            "class": "STRONG" if strong else "POSSIBLE", "strong_evidence": list(strong),
+            "supporting_evidence": list(supporting), "contradictions": []}
+
+
 def target_devices(target):
-    return sorted({_device(item) for item in (*target.config.interfaces, *target.config.interface_units) if _device(item)})
+    config = target.config
+    items = (*getattr(config, "interfaces", ()), *getattr(config, "interface_units", ()),
+             *getattr(config, "zones", ()), *getattr(config, "virtual_routers", ()),
+             *getattr(config, "scopes", ()))
+    return sorted({_device(item) for item in items if _device(item)})
 
 
 def target_device_metadata(target):
@@ -29,9 +39,13 @@ def target_device_metadata(target):
         interfaces = [item for item in target.config.interfaces if _device(item) == device]
         units = [item for item in target.config.interface_units if _device(item) == device]
         zones = [item for item in target.config.zones if _device(item) == device]
-        vsys = {item.scope.vsys for item in (*interfaces, *units, *zones) if item.scope and item.scope.vsys}
+        routers = [item for item in getattr(target.config, "virtual_routers", ()) if _device(item) == device]
+        scopes = [item for item in getattr(target.config, "scopes", ()) if _device(item) == device]
+        vsys = {scope.vsys for scope in (*[item.scope for item in (*interfaces, *units, *zones, *routers)], *scopes)
+                if scope and scope.vsys}
         result.append({"id": device, "name": device, "interfaces": len(interfaces),
-                       "interface_units": len(units), "zones": len(zones), "vsys": len(vsys)})
+                       "interface_units": len(units), "zones": len(zones),
+                       "virtual_routers": len(routers), "vsys": len(vsys)})
     return result
 
 
@@ -67,7 +81,7 @@ def _compatible(source, target):
     return family in {"ethernet", "aggregate-ethernet", "vlan", "loopback", "tunnel"} if not kind else family == "ethernet"
 
 
-def discover_target_candidates(source, decisions: PANMigrationDecisionSet, target, device: str):
+def discover_target_candidates(source, decisions: PANMigrationDecisionSet, target, device: str, *, evidence=None):
     """Return current target evidence, separate from the persisted decision document."""
     records = [item for item in (*target.config.interfaces, *target.config.interface_units)
                if item.name and _device(item) == device]
@@ -77,6 +91,9 @@ def discover_target_candidates(source, decisions: PANMigrationDecisionSet, targe
     mapped = {(item.source_vdom, item.source_name): item.value for item in decisions.decisions
               if item.source_kind == "interface" and item.target_field == "target_interface"
               and item.review_state == PANDecisionReviewState.CONFIRMED and item.value}
+    confirmed_zones = {(item.source_vdom, item.source_name): item.value for item in decisions.decisions
+                       if item.source_kind == "interface" and item.target_field == "target_zone"
+                       and item.review_state == PANDecisionReviewState.CONFIRMED and item.value}
     result = {}
     for (vdom, name), item in by_source.items():
         key = make_decision_key(vdom, "interface", name, "target_interface")
@@ -88,7 +105,19 @@ def discover_target_candidates(source, decisions: PANMigrationDecisionSet, targe
                 continue
             if target_vsys and (topo is None or target_vsys not in topo.imported_vsys):
                 continue
-            strong, supporting, contradicting = candidate_evidence(item, target_item, topo, parent)
+            source_evidence = (evidence or {}).get((vdom, name))
+            if source_evidence:
+                target_zones = set(getattr(topo, "zones", ()) or ())
+                target_evidence = {**source_evidence, "target_policy_usage": {
+                    "source_reference_count": sum(bool(target_zones.intersection(policy.from_zones or ()))
+                        and _device(policy) == device for policy in getattr(target.config, "policies", ())),
+                    "destination_reference_count": sum(bool(target_zones.intersection(policy.to_zones or ()))
+                        and _device(policy) == device for policy in getattr(target.config, "policies", ())),
+                }}
+                if (vdom, name) in confirmed_zones:
+                    target_evidence["confirmed_target_zone"] = confirmed_zones[(vdom, name)]
+                source_evidence = target_evidence
+            strong, supporting, contradicting = candidate_evidence(item, target_item, topo, parent, source_evidence)
             candidate_class = (PANInterfaceCandidateClass.EXCLUDED if contradicting else
                                PANInterfaceCandidateClass.STRONG if strong else
                                PANInterfaceCandidateClass.POSSIBLE)
@@ -98,6 +127,55 @@ def discover_target_candidates(source, decisions: PANMigrationDecisionSet, targe
         found.sort(key=lambda candidate: (candidate.candidate_class != PANInterfaceCandidateClass.STRONG,
                                           candidate.value, candidate.target_scope or ""))
         result[key] = [candidate.to_dict() for candidate in found if candidate.candidate_class != PANInterfaceCandidateClass.EXCLUDED]
+
+    # Other decision fields use the same closed, scope-aware candidate contract.
+    scope_records = (*getattr(target.config, "scopes", ()),
+                     *(getattr(item, "scope", None) for item in (*records, *getattr(target.config, "zones", ()),
+                         *getattr(target.config, "virtual_routers", ()))))
+    scopes = [scope for scope in scope_records if scope and _device(scope) == device]
+    scope_by_id = {pan_scope_identity(scope): scope for scope in scopes}
+    scopes = tuple(scope_by_id.values())
+    target_vrouters = [item for item in getattr(target.config, "virtual_routers", ()) if item.name and _device(item) == device]
+    target_zones = [item for item in getattr(target.config, "zones", ()) if item.name and
+                    (_device(item) == device or getattr(getattr(item, "scope", None), "kind", None) == "shared")]
+    for decision in decisions.decisions:
+        if decision.key in result:
+            continue
+        candidates = []
+        vsys = target_vsys_value(decisions, decision.source_vdom)
+        if decision.source_kind == "vdom" and decision.target_field == "vsys":
+            candidates.extend(_candidate(scope.vsys, scope, supporting=("explicit target VSYS",))
+                              for scope in scopes if scope.vsys)
+        elif decision.source_kind == "vdom" and decision.target_field == "virtual_router":
+            related = {router for (vdom, _), source_item in by_source.items() if vdom == decision.source_vdom
+                       for target_item, topo in scoped
+                       if (vdom, source_item.name) in mapped and mapped[(vdom, source_item.name)] == target_item.name
+                       and topo and (not vsys or vsys in topo.imported_vsys) for router in topo.virtual_routers}
+            candidates.extend(_candidate(item.name, item.scope,
+                strong=("confirmed interface uses this virtual router",) if item.name in related else (),
+                supporting=("explicit target virtual router",)) for item in target_vrouters
+                if item.scope and (not vsys or not item.scope.vsys or item.scope.vsys == vsys))
+        elif decision.target_field == "target_zone":
+            source_zone = next((item for item in source.zones
+                if (item.vdom or "root", item.name) == (decision.source_vdom, decision.source_name)), None)
+            source_interface = by_source.get((decision.source_vdom, decision.source_name))
+            mapped_name = mapped.get((decision.source_vdom, decision.source_name))
+            assigned = []
+            if mapped_name:
+                assigned = [topo for target_item, topo in scoped if target_item.name == mapped_name and topo
+                            and (not vsys or vsys in topo.imported_vsys)]
+            assigned_zones = {zone for topo in assigned for zone in topo.zones}
+            for zone in target_zones:
+                if zone.scope and vsys and zone.scope.vsys and zone.scope.vsys != vsys:
+                    continue
+                strong = ("selected interface has one explicit zone",) if len(assigned_zones) == 1 and zone.name in assigned_zones else ()
+                supporting = ["explicit target zone"]
+                if source_zone and source_zone.name.casefold() == zone.name.casefold():
+                    supporting.append("source and target zone names match")
+                candidates.append(_candidate(zone.name, zone.scope, strong, supporting))
+        if candidates:
+            # Keep duplicate names in separate PAN scopes; AI eligibility rejects them as ambiguous.
+            result[decision.key] = candidates
     return result
 
 

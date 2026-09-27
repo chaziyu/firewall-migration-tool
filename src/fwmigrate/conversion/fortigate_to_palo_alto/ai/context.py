@@ -5,7 +5,8 @@ import json
 
 from .sanitizer import sanitize_ai_context
 
-_SOURCE_FIELDS = ("source_type", "source_role", "source_parent", "source_vlan", "source_vrf", "source_members")
+_SOURCE_FIELDS = ("source_type", "source_role", "source_parent", "source_vlan", "source_vrf", "source_members",
+                  "source_explicit", "derived_relationships")
 _CANDIDATE_EVIDENCE = ("strong_evidence", "supporting_evidence", "contradictions")
 
 
@@ -66,7 +67,15 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
                     facts = candidate.get(field, ())
                     if isinstance(facts, (list, tuple)):
                         evidence.extend(str(fact)[:128] for fact in facts[:8] if isinstance(fact, str))
-                candidates.append({"value": value, "class": str(candidate.get("class", "")), "evidence": evidence[:8]})
+                candidates.append({"value": value, "target_scope": candidate.get("target_scope", candidate.get("scope_identity")),
+                    "class": str(candidate.get("class", candidate.get("match_class", ""))),
+                    "strong_evidence": list(candidate.get("strong_evidence", ()))[:8],
+                    "supporting_evidence": list(candidate.get("supporting_evidence", ()))[:8],
+                    "contradictions": list(candidate.get("contradictions", ()))[:8], "evidence": evidence[:8]})
+            recommendation_category = ("INSUFFICIENT_EVIDENCE" if not eligible else
+                "STRONG_RECOMMENDATION" if len(eligible) == 1 and
+                    str(eligible[0].get("class", "")).upper() == "STRONG" else
+                "REVIEW_RECOMMENDATION" if len(eligible) == 1 else "AMBIGUOUS")
             facts = review_context.get(decision.key, {})
             source_facts = {field: facts[field] for field in _SOURCE_FIELDS if field in facts and field != "source_members"}
             if "source_members" in facts:
@@ -78,6 +87,7 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
                 "mode": decision.mode.value,
                 "review_state": decision.review_state.value,
                 "allowed_values": values,
+                "recommendation_category": recommendation_category,
                 "candidates": candidates,
                 "source": source_facts,
                 "target_finding": str(getattr(findings.get(decision.key), "code", "")) or None,
@@ -89,18 +99,32 @@ def build_ai_review_context(*, source_digest, target_digest, target_device, deci
                     insufficient_evidence += 1
                 continue
         if rows:
+            confirmed_context = [{"source_kind": item.source_kind, "source_name": item.source_name,
+                "target_field": item.target_field, "value": item.value}
+                for item in decisions.decisions if getattr(item, "source_vdom", None) == group.get("source_vdom", "root")
+                and item.review_state.value == "CONFIRMED" and getattr(item, "evidence_source", None) == "ENGINEER" and item.value]
             groups.append({
                 "source_vdom": group.get("source_vdom", ""),
                 "source_kind": group.get("source_kind", ""),
                 "source_name": group.get("source_name", ""),
                 "queue": group.get("queue", "NEEDS_INPUT"),
                 "affected_count": int(group.get("affected_count", 0) or 0),
+                "confirmed_engineer_context": confirmed_context,
                 "decisions": rows,
             })
 
     total_groups = len(groups)
-    priority = {"vdom": 0, "interface": 1, "zone": 2}
-    groups.sort(key=lambda group: (-group["affected_count"], priority.get(group["source_kind"], 3),
+    def family(group):
+        if group["source_kind"] == "vdom":
+            return 0
+        if group["source_kind"] == "zone":
+            return 4
+        fields = {item["target_field"] for item in group["decisions"]}
+        if "target_interface" in fields:
+            types = {str(item.get("source", {}).get("source_type", "")).casefold() for item in group["decisions"]}
+            return 3 if types & {"tunnel", "ipsec", "gre"} else 2 if "vlan" in types else 1
+        return 5
+    groups.sort(key=lambda group: (family(group), -group["affected_count"],
                                    group["source_vdom"].casefold(), group["source_name"].casefold()))
     if operation == "analysis":
         groups = groups[cursor:cursor + max_groups]

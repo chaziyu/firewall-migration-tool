@@ -49,6 +49,11 @@
           <button type="button" class="btn btn-secondary btn-sm hidden" id="migration-ai-install">Download local model (1.28 GB)</button>
           <button type="button" class="btn btn-secondary btn-sm hidden" id="migration-ai-remove">Remove local model</button>
           <button type="button" class="btn btn-secondary btn-sm" id="migration-ai-refresh" disabled>Refresh AI analysis</button>
+          <div class="mapping-toolbar-row" id="migration-ai-bulk-controls">
+            <label><input type="checkbox" id="migration-ai-select-all"> Select all recommendations</label>
+            <button type="button" class="btn btn-secondary btn-sm" id="migration-ai-accept-selected" disabled>Accept selected</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="migration-ai-accept-all" disabled>Accept all recommendations</button>
+          </div>
           <div id="migration-ai-results" aria-live="polite"></div>
         </section>
       </details>

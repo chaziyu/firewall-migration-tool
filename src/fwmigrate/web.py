@@ -37,6 +37,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.target_validation import validate_against_target
 from fwmigrate.conversion.fortigate_to_palo_alto.review_context import build_review_context
+from fwmigrate.conversion.fortigate_to_palo_alto.review_evidence import build_review_evidence
 from fwmigrate.conversion.fortigate_to_palo_alto.review_workflow import build_review_workflow
 from fwmigrate.conversion.fortigate_to_palo_alto.decision_propagation import (
     MigrationRuleType, apply_repeated_zone_action, apply_zone_to_members,
@@ -346,10 +347,12 @@ def _build_migration_review_state(entry, payload):
     prior = payload.get('decision_document')
     previous = _load_decision_document(prior, entry.source_digest) if prior is not None else None
     decisions = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
+    review_evidence = build_review_evidence(analysis.extracted.config, analysis.derived)
     target_context = _target_evidence(payload)
     target = target_context.analysis if target_context else None
     device = target_context.selected_device if target_context else None
-    candidates = discover_target_candidates(analysis.extracted.config, decisions, target, device) if target and device else {}
+    candidates = discover_target_candidates(analysis.extracted.config, decisions, target, device,
+                                            evidence=review_evidence) if target and device else {}
     target_warnings = {}
     if target and device:
         decisions, target_warnings = suggest_from_target(analysis.extracted.config, decisions, target, device)
@@ -358,7 +361,8 @@ def _build_migration_review_state(entry, payload):
     evidence = _decision_evidence(decisions, findings)
     context = build_review_context(analysis.extracted.config, decisions, candidates=candidates,
         target_available=target is not None, target_selected=bool(device),
-        target_device_count=len(target_context.devices) if target_context else 0)
+        target_device_count=len(target_context.devices) if target_context else 0,
+        evidence=review_evidence)
     workflow = build_review_workflow(analysis.extracted.config, decisions, candidates=candidates,
         context=context, decision_evidence=evidence, target_warnings=target_warnings)
     recommendations = build_recommendations(analysis.extracted.config, analysis.derived, decisions, target, device)
@@ -388,6 +392,52 @@ def _build_ai_review_state(payload):
     if entry is None:
         raise ValueError('A valid FortiGate preview_id is required')
     return _build_migration_review_state(entry, payload)
+
+
+def _validated_ai_confirmation(proposal, choice_index, state, max_context_bytes):
+    """Revalidate one cached recommendation against the current closed review state."""
+    from fwmigrate.conversion.fortigate_to_palo_alto.ai.context import build_ai_review_context, _eligible_candidates
+    from fwmigrate.conversion.fortigate_to_palo_alto.ai.prompts import FG_PAN_AI_PROMPT_VERSION
+    from fwmigrate.conversion.fortigate_to_palo_alto.ai.sanitizer import sanitize_ai_context
+
+    if not isinstance(choice_index, int) or isinstance(choice_index, bool) or not 0 <= choice_index < len(proposal.choices):
+        raise ValueError("A valid proposal choice is required.")
+    current = build_ai_review_context(source_digest=state['source_digest'], target_digest=state['target_digest'],
+        target_device=state['target_device'], decisions=state['decisions'], review_workflow=state['review_workflow'],
+        review_context=state['review_context'], decision_candidates=state['decision_candidates'],
+        auto_decisions=state['auto_decisions'], target_findings=state['target_findings'], operation='analysis',
+        prompt_version=FG_PAN_AI_PROMPT_VERSION, max_bytes=max_context_bytes)
+    if current['state_digest'] != proposal.state_digest:
+        raise ValueError('AI proposal is stale; regenerate AI review.')
+
+    choice = proposal.choices[choice_index]
+    by_key = {item.key: item for item in state['decisions'].decisions}
+    assignments = choice.assignments
+    if not assignments or len({item.decision_key for item in assignments}) != len(assignments):
+        raise ValueError('AI proposal contains an invalid choice.')
+    updated = []
+    for assignment in assignments:
+        decision = by_key.get(assignment.decision_key)
+        candidates = state['decision_candidates'].get(assignment.decision_key, ())
+        auto_status = getattr(state['auto_decisions'].get(assignment.decision_key, {}).get('status'), 'value',
+                              state['auto_decisions'].get(assignment.decision_key, {}).get('status', ''))
+        eligible = _eligible_candidates(candidates)[:8]
+        allowed = set(sanitize_ai_context({'values': [item['value'] for item in eligible]},
+            max_bytes=max_context_bytes)['values'])
+        if (assignment.decision_key not in proposal.decision_keys or decision is None
+                or decision.review_state != PANDecisionReviewState.PENDING
+                or decision.mode in {PANDecisionMode.AUTO, PANDecisionMode.UNSUPPORTED}
+                or auto_status in {'VERIFIED', 'DERIVED'}
+                or assignment.value not in allowed):
+            raise ValueError('AI proposal is stale; regenerate AI review.')
+        updated.append(replace(decision, value=assignment.value,
+            review_state=PANDecisionReviewState.CONFIRMED, evidence_source='ENGINEER',
+            evidence_type='ENGINEER_ACCEPTED_AI_SUGGESTION', evidence_value={
+                'proposal_id': proposal.proposal_id, 'context_digest': proposal.context_digest,
+                'provider': proposal.provider, 'model': proposal.model,
+                'prompt_version': proposal.prompt_version,
+            }, target_object=assignment.value))
+    return updated
 
 
 def _parse_bool(value, default=False):
@@ -765,47 +815,52 @@ def create_app(test_config=None):
             state = _build_ai_review_state(payload)
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
-        from fwmigrate.conversion.fortigate_to_palo_alto.ai.context import build_ai_review_context
-        from fwmigrate.conversion.fortigate_to_palo_alto.ai.prompts import FG_PAN_AI_PROMPT_VERSION
         try:
-            current = build_ai_review_context(source_digest=state['source_digest'], target_digest=state['target_digest'],
-                target_device=state['target_device'], decisions=state['decisions'],
-                review_workflow=state['review_workflow'], review_context=state['review_context'],
-                decision_candidates=state['decision_candidates'], auto_decisions=state['auto_decisions'],
-                target_findings=state['target_findings'], operation='analysis',
-                prompt_version=FG_PAN_AI_PROMPT_VERSION, max_bytes=get_ai_settings().max_context_bytes,
-                max_groups=get_ai_settings().max_review_groups)
+            updated = _validated_ai_confirmation(proposal, choice_index, state, get_ai_settings().max_context_bytes)
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 409
         except AIError:
             return jsonify({'success': False, 'error': 'AI proposal is stale; regenerate AI review.'}), 409
-        if current['state_digest'] != proposal.state_digest:
-            return jsonify({'success': False, 'error': 'AI proposal is stale; regenerate AI review.'}), 409
-        choice = proposal.choices[choice_index]
         by_key = {item.key: item for item in state['decisions'].decisions}
-        from fwmigrate.conversion.fortigate_to_palo_alto.ai.context import _eligible_candidates
-        from fwmigrate.conversion.fortigate_to_palo_alto.ai.sanitizer import sanitize_ai_context
-        assignments = choice.assignments
-        if not assignments or len({item.decision_key for item in assignments}) != len(assignments):
-            return jsonify({'success': False, 'error': 'AI proposal contains an invalid choice.'}), 409
+        by_key.update((item.key, item) for item in updated)
+        decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
+        return jsonify({'success': True, 'confirmed_count': len(updated), 'decisions': decisions.to_dict(),
+            'decision_document': _decision_document(state['source_digest'], decisions,
+                _target_evidence(payload).metadata if payload.get('target_preview_id') else None)})
+
+    @app.route('/api/migration/ai/confirm-bulk', methods=['POST'])
+    def confirm_migration_ai_proposals_bulk():
+        payload = request.get_json(silent=True)
+        proposal_ids = payload.get('proposal_ids') if isinstance(payload, dict) else None
+        if not isinstance(proposal_ids, list) or not proposal_ids or len(proposal_ids) > 128 \
+                or any(not isinstance(item, str) or not item for item in proposal_ids) \
+                or len(set(proposal_ids)) != len(proposal_ids):
+            return jsonify({'success': False, 'error': 'A unique list of proposal IDs is required.'}), 400
+        settings, _, available = ai_runtime()
+        if not settings or not settings.enabled or not available:
+            return jsonify({'success': False, 'error': 'AI assistance is not configured.'}), 503
+        proposals = [proposal_cache.get(item) for item in proposal_ids]
+        if any(proposal is None or proposal.kind.value != 'MAPPING_RECOMMENDATION' for proposal in proposals):
+            return jsonify({'success': False, 'error': 'A selected AI recommendation is stale or not selectable.'}), 409
+        try:
+            state = _build_ai_review_state(payload)
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
         updated = []
-        for assignment in assignments:
-            decision = by_key.get(assignment.decision_key)
-            candidates = state['decision_candidates'].get(assignment.decision_key, ())
-            eligible = _eligible_candidates(candidates)[:8]
-            safe = sanitize_ai_context({'values': [item['value'] for item in eligible]},
-                max_bytes=get_ai_settings().max_context_bytes)['values']
-            allowed = set(safe)
-            if (assignment.decision_key not in proposal.decision_keys or decision is None
-                    or decision.review_state != PANDecisionReviewState.PENDING
-                    or decision.mode in {PANDecisionMode.AUTO, PANDecisionMode.UNSUPPORTED}
-                    or assignment.value not in allowed):
-                return jsonify({'success': False, 'error': 'AI proposal is stale; regenerate AI review.'}), 409
-            updated.append(replace(decision, value=assignment.value,
-                review_state=PANDecisionReviewState.CONFIRMED, evidence_source='ENGINEER',
-                evidence_type='ENGINEER_ACCEPTED_AI_SUGGESTION', evidence_value={
-                    'proposal_id': proposal.proposal_id, 'context_digest': proposal.context_digest,
-                    'provider': proposal.provider, 'model': proposal.model,
-                    'prompt_version': proposal.prompt_version,
-                }, target_object=assignment.value))
+        seen_decisions = set()
+        try:
+            for proposal in proposals:
+                assignments = _validated_ai_confirmation(proposal, 0, state, settings.max_context_bytes)
+                keys = {item.key for item in assignments}
+                if seen_decisions & keys:
+                    raise ValueError('Selected recommendations assign the same decision more than once.')
+                seen_decisions.update(keys)
+                updated.extend(assignments)
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 409
+        except AIError:
+            return jsonify({'success': False, 'error': 'AI proposal is stale; regenerate AI review.'}), 409
+        by_key = {item.key: item for item in state['decisions'].decisions}
         by_key.update((item.key, item) for item in updated)
         decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
         return jsonify({'success': True, 'confirmed_count': len(updated), 'decisions': decisions.to_dict(),
