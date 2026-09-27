@@ -10,15 +10,15 @@ class FGPolicy(BaseModel):
     name: str | None = None
 
     # Interfaces
-    srcintf: list[str] = Field(default_factory=list)
-    dstintf: list[str] = Field(default_factory=list)
+    srcintf: list[str] | None = None
+    dstintf: list[str] | None = None
 
     # Addresses
-    srcaddr: list[str] = Field(default_factory=list)
-    dstaddr: list[str] = Field(default_factory=list)
+    srcaddr: list[str] | None = None
+    dstaddr: list[str] | None = None
 
-    srcaddr6: list[str] = Field(default_factory=list)
-    dstaddr6: list[str] = Field(default_factory=list)
+    srcaddr6: list[str] | None = None
+    dstaddr6: list[str] | None = None
 
     srcaddr_negate: str | None = None
     dstaddr_negate: str | None = None
@@ -26,13 +26,13 @@ class FGPolicy(BaseModel):
     dstaddr6_negate: str | None = None
 
     # Services / schedule
-    service: list[str] = Field(default_factory=list)
+    service: list[str] | None = None
     service_negate: str | None = None
     schedule: str | None = None
 
     # Identity / authentication
-    groups: list[str] = Field(default_factory=list)
-    users: list[str] = Field(default_factory=list)
+    groups: list[str] | None = None
+    users: list[str] | None = None
 
     # Action
     action: str | None = None
@@ -43,34 +43,26 @@ class FGPolicy(BaseModel):
     # NAT
     nat: str | None = None
     nat64: str | None = None
+    nat46: str | None = None
+    natinbound: str | None = None
+    natoutbound: str | None = None
+    natip: str | None = None
     ippool: str | None = None
-    poolname: list[str] = Field(default_factory=list)
-    poolname6: list[str] = Field(default_factory=list)
+    poolname: list[str] | None = None
+    poolname6: list[str] | None = None
 
     # Internet Service matching
     internet_service: str | None = None
 
-    internet_service_name: list[str] = Field(
-        default_factory=list
-    )
-    internet_service_group: list[str] = Field(
-        default_factory=list
-    )
-    internet_service_custom: list[str] = Field(
-        default_factory=list
-    )
+    internet_service_name: list[str] | None = None
+    internet_service_group: list[str] | None = None
+    internet_service_custom: list[str] | None = None
 
     internet_service_src: str | None = None
 
-    internet_service_src_name: list[str] = Field(
-        default_factory=list
-    )
-    internet_service_src_group: list[str] = Field(
-        default_factory=list
-    )
-    internet_service_src_custom: list[str] = Field(
-        default_factory=list
-    )
+    internet_service_src_name: list[str] | None = None
+    internet_service_src_group: list[str] | None = None
+    internet_service_src_custom: list[str] | None = None
 
     # Security inspection
     utm_status: str | None = None

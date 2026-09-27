@@ -110,3 +110,26 @@ def test_target_validation_reports_vlan_parent_zone_vsys_and_router_conflicts():
     codes = {item.code for item in validate_against_target(source, decisions, target, "dev")}
     assert {"TARGET_VLAN_TAG_MISMATCH", "TARGET_PARENT_MISMATCH", "TARGET_ZONE_CONFLICT",
             "TARGET_VSYS_CONFLICT", "TARGET_VIRTUAL_ROUTER_CONFLICT"} <= codes
+
+
+def test_vdom_topology_checks_only_its_own_mapped_interfaces():
+    scope = PANScope(kind="device", name="dev", device_name="dev")
+    records = [SimpleNamespace(name=name, interface_family="ethernet", ipv4_addresses=[],
+               scope=scope, tag=None, parent=None) for name in ("ethernet1/1", "ethernet1/2")]
+    target = SimpleNamespace(config=SimpleNamespace(interfaces=records, interface_units=[],
+        scopes=[], virtual_routers=[]), derived=SimpleNamespace(interface_topology=[
+        PANInterfaceTopologyEntry(name, pan_scope_identity(scope), imported_vsys=(vsys,),
+            virtual_routers=(router,)) for name, vsys, router in (
+            ("ethernet1/1", "vsys1", "vr1"), ("ethernet1/2", "vsys2", "vr2"))]))
+    source = SimpleNamespace(interfaces=[SimpleNamespace(vdom=vdom, name="port1", type="physical",
+        vlanid=None, interface=None, ip=None) for vdom in ("root", "branch")])
+    decisions = _confirmed(
+        (("root", "interface", "port1", "target_interface"), "ethernet1/1"),
+        (("root", "vdom", "root", "vsys"), "vsys1"),
+        (("root", "vdom", "root", "virtual_router"), "vr1"),
+        (("branch", "interface", "port1", "target_interface"), "ethernet1/2"),
+        (("branch", "vdom", "branch", "vsys"), "vsys2"),
+        (("branch", "vdom", "branch", "virtual_router"), "vr2"),
+    )
+    assert not [item for item in validate_against_target(source, decisions, target, "dev")
+                if item.severity == "error"]

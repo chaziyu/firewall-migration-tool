@@ -6,6 +6,7 @@ from enum import Enum
 
 class PANAIAssistKind(str, Enum):
     MAPPING_RECOMMENDATION = "MAPPING_RECOMMENDATION"
+    SELECTION_SUGGESTION = "SELECTION_SUGGESTION"
     ARCHITECTURE_QUESTION = "ARCHITECTURE_QUESTION"
     CANDIDATE_COMPARISON = "CANDIDATE_COMPARISON"
 
@@ -48,6 +49,27 @@ class PANAIAssistProposal:
         return asdict(self) | {"kind": self.kind.value}
 
 
+@dataclass(frozen=True, slots=True)
+class PANAIReviewDraft:
+    proposal_id: str
+    state_digest: str
+    revision: int
+    cursor: int
+    total_groups: int
+    proposals: tuple[PANAIAssistProposal, ...] = ()
+    blockers: tuple[dict, ...] = ()
+    dependencies: tuple[dict, ...] = ()
+
+    def to_dict(self):
+        return {"draft_id": self.proposal_id, "revision": self.revision, "cursor": self.cursor,
+                "total_groups": self.total_groups, "complete": self.cursor == self.total_groups,
+                "proposals": [item.to_dict() for item in self.proposals],
+                "blockers": list(self.blockers), "dependencies": list(self.dependencies),
+                "prepared_decisions": len({assignment.decision_key for proposal in self.proposals
+                    for choice in proposal.choices for assignment in choice.assignments}),
+                "blocked_decisions": len(self.blockers)}
+
+
 def proposal_from_output(*, output, kind, proposal_id, context_digest, provider, model, prompt_version,
                          affected_count, state_digest="", comparisons=()):
     choices = tuple(PANAIChoice(item["label"], tuple(PANAIAssignment(**assignment)
@@ -60,6 +82,7 @@ def proposal_from_output(*, output, kind, proposal_id, context_digest, provider,
         affected_count=affected_count, provider=provider, model=model, prompt_version=prompt_version,
         rationale=tuple(output.get("rationale", ())),
         evidence=tuple(output.get("evidence", ())),
+        suggested_value=output.get("suggested_value"),
         missing_information=tuple(output.get("missing_information", ())),
         limitations=tuple(output.get("limitations", ())), comparisons=tuple(comparisons),
     )

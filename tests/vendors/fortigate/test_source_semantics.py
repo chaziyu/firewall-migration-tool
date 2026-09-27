@@ -62,3 +62,77 @@ end
 
     assert interface.explicit_fields == {"ip"}
     assert interface.raw_extra == {"vendor-option": "preserve-me"}
+
+
+def test_policy_absent_selectors_remain_unconfigured():
+    analysis = FortiGateSourceReporter().analyze_source('''config firewall policy
+    edit 1
+        set srcaddr "all"
+        append srcaddr "trusted"
+    next
+end
+''')
+    policy = analysis.extracted.config.policies[0]
+
+    assert policy.srcintf is None
+    assert policy.dstintf is None
+    assert policy.srcaddr == ["all", "trusted"]
+    assert policy.dstaddr is None
+    assert policy.service is None
+    assert policy.explicit_fields == {"srcaddr"}
+
+
+def test_policy_unset_removes_the_source_value():
+    analysis = FortiGateSourceReporter().analyze_source('''config firewall policy
+    edit 1
+        set srcaddr "all"
+        unset srcaddr
+    next
+end
+''')
+    policy = analysis.extracted.config.policies[0]
+
+    assert policy.srcaddr is None
+    assert "srcaddr" not in policy.explicit_fields
+
+
+def test_group_membership_absence_survives_extraction_and_derived_views():
+    analysis = FortiGateSourceReporter().analyze_source('''config firewall addrgrp
+    edit "empty-source-group"
+    next
+end
+config firewall service group
+    edit "empty-source-services"
+    next
+end
+''')
+
+    assert analysis.extracted.config.address_groups[0].members is None
+    assert analysis.extracted.config.service_groups[0].members is None
+    assert analysis.derived.services.groups[0].members is None
+
+
+def test_unknown_secret_command_is_redacted_at_extraction_boundary():
+    analysis = FortiGateSourceReporter().analyze_source('''config system interface
+    edit "wan1"
+        set vendor-secret "do-not-retain-this"
+    next
+end
+''')
+    interface = analysis.extracted.config.interfaces[0]
+
+    assert interface.raw_extra == {"vendor-secret": "[REDACTED]"}
+    assert "do-not-retain-this" not in repr(analysis.extracted.config)
+
+
+def test_unknown_secret_set_then_unset_leaves_no_source_value():
+    analysis = FortiGateSourceReporter().analyze_source('''config system interface
+    edit "wan1"
+        set vendor-secret "do-not-retain-this"
+        unset vendor-secret
+    next
+end
+''')
+
+    assert analysis.extracted.config.interfaces[0].raw_extra == {}
+    assert "do-not-retain-this" not in repr(analysis)

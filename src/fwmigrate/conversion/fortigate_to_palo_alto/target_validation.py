@@ -111,7 +111,8 @@ def validate_against_target(source, decisions: PANMigrationDecisionSet, target, 
                                          target_item.name, sorted(zones)))
         elif decision.source_kind == "vdom" and decision.target_field in {"vsys", "virtual_router"}:
             field = "imported_vsys" if decision.target_field == "vsys" else "virtual_routers"
-            values = {value for item in mapped.values() for topology in _topology(target, item) for value in getattr(topology, field)}
+            values = {value for (vdom, _), item in mapped.items() if vdom == decision.source_vdom
+                      for topology in _topology(target, item) for value in getattr(topology, field)}
             if not values and decision.target_field == "vsys":
                 scopes = [scope for scope in getattr(target.config, "scopes", ())
                           if scope.name == decision.value and (scope.device_serial or scope.device_name) == device]

@@ -40,7 +40,7 @@ def build_mapping_requirements(config, derived):
         vdom = policy.vdom or "root"
         identity = policy.policy_id if policy.policy_id is not None else policy.name or policy_index
         consumer = ("security_policy", vdom, identity)
-        for name in (*getattr(policy, "srcintf", ()), *getattr(policy, "dstintf", ())):
+        for name in (*(getattr(policy, "srcintf", None) or ()), *(getattr(policy, "dstintf", None) or ())):
             kind = "zone" if (vdom, name) in zone_names else "interface"
             fields = ("target_zone", "target_interface") if kind == "interface" else ("target_zone",)
             need(vdom, name, kind, "security_policy", consumer, *fields)
@@ -64,7 +64,7 @@ def build_mapping_requirements(config, derived):
             policy = policies.get((vdom, nat.policy_id))
             if policy:
                 consumer = ("source_nat", vdom, nat.policy_id)
-                for name in (*policy.srcintf, *nat.egress_interfaces):
+                for name in (*(policy.srcintf or ()), *nat.egress_interfaces):
                     need(vdom, name, "interface", "source_nat", consumer, "target_zone")
                 need(vdom, nat.egress_interfaces[0], "interface", "source_nat", consumer, "target_interface")
 
@@ -136,5 +136,5 @@ def build_mapping_requirements(config, derived):
             "interfaces": interfaces, "zones": zones,
             "required_zones": [item["source_zone"] for item in zones],
             "required_zone_keys": [(item["source_vdom"], item["source_zone"]) for item in zones],
-            "policy_interface_references": sorted({name for policy in getattr(config, "policies", ()) for name in (*policy.srcintf, *policy.dstintf)}),
+            "policy_interface_references": sorted({name for policy in getattr(config, "policies", ()) for name in (*(policy.srcintf or ()), *(policy.dstintf or ())) }),
             "optional": optional, "topology_issues": []}

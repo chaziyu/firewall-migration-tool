@@ -87,6 +87,9 @@ def _plan_group(source: Any, options: Any):
     if excluded:
         status = PANMigrationStatus.MANUAL_REVIEW
         warnings = (*warnings, "address-group exclusions are not represented by a static PAN group")
+    if source.members is None:
+        status = PANMigrationStatus.MANUAL_REVIEW
+        warnings = (*warnings, "address-group membership is not explicit in the source")
     return (
         PlannedAddressGroup(
             source_vdom=getattr(source, "vdom", None),
@@ -96,7 +99,7 @@ def _plan_group(source: Any, options: Any):
             target_vsys=_target_vsys(source, options), target_name=getattr(source, "name", None),
             status=status,
             warnings=warnings,
-            members=tuple(getattr(source, "members", ())),
+            members=tuple(source.members or ()),
         ),
         issue,
     )

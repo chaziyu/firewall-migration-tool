@@ -9,8 +9,16 @@ def plan_policies(source: Any, options: Any):
     result = []
     for policy in getattr(source, "policies", ()):
         warnings = []
-        from_zones = _zones(policy.srcintf, policy.vdom, options, warnings)
-        to_zones = _zones(policy.dstintf, policy.vdom, options, warnings)
+        if policy.srcintf is None or policy.dstintf is None:
+            warnings.append("policy interface match is not explicit in the source")
+        if policy.srcaddr is None and policy.srcaddr6 is None:
+            warnings.append("policy source address match is not explicit in the source")
+        if policy.dstaddr is None and policy.dstaddr6 is None:
+            warnings.append("policy destination address match is not explicit in the source")
+        if policy.service is None:
+            warnings.append("policy service match is not explicit in the source")
+        from_zones = _zones(policy.srcintf or (), policy.vdom, options, warnings)
+        to_zones = _zones(policy.dstintf or (), policy.vdom, options, warnings)
         if policy.service_negate in {"enable", "yes", "1"}:
             warnings.append("service negation is unsupported")
         if policy.users or policy.groups:
@@ -33,8 +41,8 @@ def plan_policies(source: Any, options: Any):
             target_vsys=getattr(getattr(options, "vdoms", {}).get(policy.vdom), "vsys", None),
             target_name=policy.name or str(policy.policy_id),
             status=status, warnings=tuple(warnings), from_zones=from_zones, to_zones=to_zones,
-            sources=tuple(policy.srcaddr or policy.srcaddr6), destinations=tuple(policy.dstaddr or policy.dstaddr6),
-            services=tuple(policy.service), schedule=policy.schedule, action=action,
+            sources=tuple(policy.srcaddr or policy.srcaddr6 or ()), destinations=tuple(policy.dstaddr or policy.dstaddr6 or ()),
+            services=tuple(policy.service or ()), schedule=policy.schedule, action=action,
             negate_source=getattr(policy, "srcaddr_negate", None) in {"enable", "yes", "1"},
             negate_destination=getattr(policy, "dstaddr_negate", None) in {"enable", "yes", "1"},
             disabled=getattr(policy, "status", None) in {"disable", "disabled"},

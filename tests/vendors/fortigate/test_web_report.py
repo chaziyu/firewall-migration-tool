@@ -154,9 +154,9 @@ class WebReportTest(unittest.TestCase):
         self.assertEqual(["DST-V6"], by_id[2]["destination_addresses_ipv6"])
         self.assertEqual("enable", by_id[2]["source_address_negate_ipv6"])
         self.assertEqual("disable", by_id[2]["destination_address_negate_ipv6"])
-        self.assertEqual([], by_id[3]["source_addresses"])
+        self.assertIsNone(by_id[3]["source_addresses"])
         self.assertEqual(["ONLY-SRC-V6"], by_id[3]["source_addresses_ipv6"])
-        self.assertEqual([], by_id[3]["destination_addresses"])
+        self.assertIsNone(by_id[3]["destination_addresses"])
         self.assertEqual(["ONLY-DST-V6"], by_id[3]["destination_addresses_ipv6"])
 
     def test_validation_and_broken_references_are_serialized(self):

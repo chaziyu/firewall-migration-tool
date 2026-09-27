@@ -36,7 +36,7 @@ class NormalizedServiceGroup:
     name: str
     vdom: str
 
-    members: tuple[str, ...]
+    members: tuple[str, ...] | None
 
     comment: str | None = None
 
@@ -183,9 +183,7 @@ def transform_services(
             NormalizedServiceGroup(
                 name=group.name,
                 vdom=group.vdom,
-                members=tuple(
-                    group.members
-                ),
+                members=tuple(group.members) if group.members is not None else None,
                 comment=group.comment,
                 generated=False,
             )

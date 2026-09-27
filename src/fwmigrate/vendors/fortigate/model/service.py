@@ -50,7 +50,7 @@ class FGServiceGroup(BaseModel):
     name: str
     vdom: str = "root"
 
-    members: list[str] = Field(default_factory=list)
+    members: list[str] | None = None
 
     proxy: str | None = None
     comment: str | None = None

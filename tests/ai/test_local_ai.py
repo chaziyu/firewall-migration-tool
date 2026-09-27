@@ -1,8 +1,10 @@
 import hashlib
 import io
 import json
+import pytest
 
 from fwmigrate.ai.config import AISettings
+from fwmigrate.ai.errors import AIInvalidResponseError
 from fwmigrate.ai.llama_cpp import LlamaCppProvider
 from fwmigrate.ai.local_model import LocalModelManager
 from fwmigrate.ai.local_runtime import LocalAIRuntimeManager, LocalRuntimeInfo
@@ -79,11 +81,13 @@ def test_runtime_binds_to_loopback_and_stops_only_owned_child(tmp_path, monkeypa
 def test_local_provider_uses_shared_json_schema_contract(monkeypatch):
     from fwmigrate.ai import llama_cpp
 
+    finish_reason = None
     class Response:
         def __enter__(self): return self
         def __exit__(self, *args): pass
         def read(self):
-            return json.dumps({"id": "local-1", "choices": [{"message": {"content": '{"ok":true}'}}],
+            return json.dumps({"id": "local-1", "choices": [{"finish_reason": finish_reason,
+                "message": {"content": '{"ok":true}'}}],
                                "usage": {"prompt_tokens": 2, "completion_tokens": 1}}).encode()
 
     request_data = {}
@@ -102,3 +106,7 @@ def test_local_provider_uses_shared_json_schema_contract(monkeypatch):
     assert request_data["headers"]["Authorization"] == "Bearer ephemeral-key"
     assert request_data["body"]["response_format"]["json_schema"]["name"] == "test"
     assert (result.data, result.provider, result.request_id, result.input_tokens) == ({"ok": True}, "local", "local-1", 2)
+    finish_reason = "length"
+    with pytest.raises(AIInvalidResponseError, match="truncated"):
+        LlamaCppProvider(AISettings(), runtime_manager=RuntimeManager()).generate_structured(
+            system_prompt="rules", payload={}, schema_name="test", schema={"type": "object"})

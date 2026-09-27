@@ -68,10 +68,10 @@ class FGAddressGroup(BaseModel):
 
     address_family: Literal["ipv4", "ipv6"] = "ipv4"
 
-    members: list[str] = Field(default_factory=list)
+    members: list[str] | None = None
 
     exclude: str | None = None
-    exclude_members: list[str] = Field(default_factory=list)
+    exclude_members: list[str] | None = None
 
     comment: str | None = None
 

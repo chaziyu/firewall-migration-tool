@@ -42,10 +42,15 @@ class LlamaCppProvider:
         except (URLError, OSError) as exc:
             raise AIProviderError("Local AI request failed") from exc
         try:
-            content = result["choices"][0]["message"]["content"]
+            choice = result["choices"][0]
+            if choice.get("finish_reason") == "length":
+                raise AIInvalidResponseError("Local AI response was truncated")
+            content = choice["message"]["content"]
             data = json.loads(content)
             if not isinstance(data, dict):
                 raise ValueError
+        except AIInvalidResponseError:
+            raise
         except (ValueError, TypeError, KeyError, IndexError) as exc:
             raise AIInvalidResponseError("Local AI returned an invalid structured response") from exc
         usage = result.get("usage") or {}
