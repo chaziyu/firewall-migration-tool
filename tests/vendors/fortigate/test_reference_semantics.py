@@ -26,6 +26,7 @@ from fwmigrate.vendors.fortigate.model.sdwan import FGSDWAN, FGSDWANZone
 from fwmigrate.vendors.fortigate.model.service import FGService, FGServiceGroup
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.model.vip import FGVIP, FGVIPGroup, FGVIPRealServer
+from fwmigrate.vendors.fortigate.model.user import FGLocalUser, FGUserGroup
 from fwmigrate.vendors.fortigate.model.vpn import FGIPsecPhase1
 from fwmigrate.vendors.fortigate.relationships.references import (
     ReferenceKind,
@@ -36,6 +37,25 @@ from fwmigrate.vendors.fortigate.validation.validator import validate_config
 
 
 class ReferenceSemanticsTest(unittest.TestCase):
+    def test_policy_users_and_groups_resolve_within_vdom(self):
+        config = FGConfig(
+            local_users=[FGLocalUser(name="alice", vdom="root")],
+            user_groups=[FGUserGroup(name="staff", vdom="root")],
+            policies=[
+                FGPolicy(policy_id=1, users=["alice"], groups=["staff"]),
+                FGPolicy(policy_id=2, users=["missing-user"], groups=["missing-group"]),
+                FGPolicy(policy_id=3, vdom="blue", users=["alice"], groups=["staff"]),
+                FGPolicy(policy_id=4),
+            ],
+        )
+        broken = collect_broken_references(config)
+        self.assertEqual({
+            ("root", "2", "users", "missing-user"),
+            ("root", "2", "groups", "missing-group"),
+            ("blue", "3", "users", "alice"),
+            ("blue", "3", "groups", "staff"),
+        }, {(item.source_vdom, item.source_name, item.source_field, item.reference) for item in broken})
+
     def test_duplicate_interfaces_are_reported_without_merging(self):
         first = FGInterface(name="INFUAT-BIBDUAT", raw_extra={"snmp-index": 34})
         second = FGInterface(name="INFUAT-BIBDUAT", raw_extra={"snmp-index": 11})

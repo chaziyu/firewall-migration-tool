@@ -68,6 +68,18 @@ def build_mapping_requirements(config, derived):
                     need(vdom, name, "interface", "source_nat", consumer, "target_zone")
                 need(vdom, nat.egress_interfaces[0], "interface", "source_nat", consumer, "target_interface")
 
+    for vip in getattr(config, "vips", ()):
+        vdom = vip.vdom or "root"
+        consumers = [policy for policy in getattr(config, "policies", ())
+                     if (policy.vdom or "root") == vdom and vip.name in (policy.dstaddr or ())]
+        for policy in consumers:
+            consumer = ("vip", vdom, vip.name)
+            for name in policy.srcintf or ():
+                need(vdom, name, "zone" if (vdom, name) in zone_names else "interface",
+                     "vip", consumer, "target_zone")
+            if vip.extintf and vip.extintf != "any":
+                need(vdom, vip.extintf, "interface", "vip", consumer, "target_zone")
+
     for server in getattr(config, "dhcp_servers", ()):
         if server.interface:
             vdom = server.vdom or "root"

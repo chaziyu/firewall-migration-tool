@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
+from .services import PAN_BUILTIN_SERVICES
 
 
 ItemKey = tuple[str | None, str | None, str | None]
@@ -110,7 +111,7 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         return None
 
     def require_reference(owner, name, accepted_families, *, code="missing_reference"):
-        if name == "any":
+        if name == "any" or "services" in accepted_families and name in PAN_BUILTIN_SERVICES:
             return
         dependency = find(accepted_families, name, owner.target_vsys)
         if dependency is None:
@@ -133,6 +134,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             if not members:
                 add("missing_group_member", "group has no members", group)
             for member in members:
+                if "services" in member_families and member in PAN_BUILTIN_SERVICES:
+                    continue
                 dependency = find(member_families, member, group.target_vsys)
                 if dependency is None:
                     add("missing_group_member", f"group member {member!r} is not planned in this target VSYS", group)
@@ -169,12 +172,13 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             if _key(rule) not in renderable:
                 continue
             before = _key(rule) in renderable
-            if rule.source_kind == "source_nat":
+            if rule.source_kind in {"source_nat", "vip"}:
                 for field, values in (("from_zones", rule.from_zones), ("to_zones", rule.to_zones)):
                     if not values:
                         add("missing_nat_zone", f"NAT rule missing {field}", rule)
                     for value in values:
                         require_reference(rule, value, ("zones",))
+            if rule.source_kind == "source_nat":
                 if not rule.source_addresses or not rule.destination_addresses:
                     add("missing_nat_address", "NAT rule is missing source or destination match", rule)
                 for value in (*rule.source_addresses, *rule.destination_addresses):

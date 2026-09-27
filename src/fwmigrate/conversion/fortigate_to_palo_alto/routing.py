@@ -13,7 +13,9 @@ def plan_routes(source: Any, options: Any, derived: Any = None):
         warnings = []
         mapping = getattr(options, "vdoms", {}).get(route.vdom)
         virtual_router = mapping.virtual_router if mapping else None
-        destination = route.dst
+        destination = _normalize_subnet(route.dst) if route.dst else None
+        if route.dst and destination is None:
+            warnings.append("route destination is not a valid explicit IPv4 subnet")
         if not destination and route.dstaddr:
             address = None
             references = getattr(derived, "references", None)
@@ -55,12 +57,18 @@ def _explicit_subnet(address: Any) -> str | None:
     """Return only an explicitly configured, deterministic subnet value."""
     if address is None or getattr(address, "address_family", None) != "ipv4" or not getattr(address, "subnet", None):
         return None
-    parts = str(address.subnet).split()
+    return _normalize_subnet(address.subnet)
+
+
+def _normalize_subnet(value: str | None) -> str | None:
+    if not value:
+        return None
+    parts = str(value).split()
     try:
         if len(parts) == 1 and "/" in parts[0]:
-            return str(ipaddress.ip_network(parts[0], strict=False))
+            return str(ipaddress.IPv4Network(parts[0], strict=True))
         if len(parts) == 2:
-            return str(ipaddress.ip_network(f"{parts[0]}/{parts[1]}", strict=False))
+            return str(ipaddress.IPv4Network(f"{parts[0]}/{parts[1]}", strict=True))
     except ValueError:
         return None
     return None

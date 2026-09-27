@@ -6,6 +6,7 @@ from unittest.mock import patch
 from openpyxl import load_workbook
 
 from fwmigrate.web import create_app
+from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
 
 ASA_SOURCE = (
@@ -180,6 +181,9 @@ def test_fortigate_preview_exposes_policy_fields_and_overview_sections():
 
 
 def test_fortigate_preview_preserves_ipv6_policy_addresses():
+    source_policy = FortiGateSourceReporter().analyze_source(FORTIGATE_IPV6_POLICY_SOURCE).extracted.config.policies[0]
+    assert source_policy.srcaddr is None
+    assert source_policy.dstaddr is None
     client = create_app({"TESTING": True}).test_client()
     response = client.post(
         "/api/preview",

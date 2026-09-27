@@ -34,6 +34,7 @@ class ReferenceKind(str, Enum):
     IP_POOL = "ip_pool"
     IP_POOL6 = "ip_pool6"
 
+    LOCAL_USER = "local_user"
     USER_GROUP = "user_group"
 
     SSL_VPN_PORTAL = "ssl_vpn_portal"
@@ -273,6 +274,7 @@ def build_reference_index(
     )
     _add_named(index, ReferenceKind.IP_POOL6, config.ip_pools6)
 
+    _add_named(index, ReferenceKind.LOCAL_USER, config.local_users)
     _add_named(
         index,
         ReferenceKind.USER_GROUP,
@@ -584,6 +586,11 @@ def collect_broken_references(
             names=policy.service or (),
             kinds=service_like,
         )
+
+        check(source_kind="policy", vdom=policy.vdom, source_name=source_name,
+              source_field="users", names=policy.users or (), kinds=(ReferenceKind.LOCAL_USER,))
+        check(source_kind="policy", vdom=policy.vdom, source_name=source_name,
+              source_field="groups", names=policy.groups or (), kinds=(ReferenceKind.USER_GROUP,))
 
         if policy.schedule:
             check(

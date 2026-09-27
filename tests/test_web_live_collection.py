@@ -4,7 +4,8 @@ import json
 from openpyxl import load_workbook
 
 from fwmigrate.collection import CollectedSource, CollectionStatus, source_collectors
-from fwmigrate.web import create_app
+from fwmigrate.web import create_app, _cache_preview, _lookup_preview
+from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
 
 SOURCE = "hostname asa\nusername admin password 0 do-not-save\ninterface GigabitEthernet0/1\n nameif outside\n ip address 203.0.113.1 255.255.255.0\n"
@@ -72,6 +73,35 @@ def test_partial_collection_keeps_preview(monkeypatch):
     response = client.post("/api/collection/collect", json=_payload())
     assert response.status_code == 200
     assert response.get_json()["collection"]["status"] == "PARTIAL"
+    entry = _lookup_preview(response.get_json()["preview_id"], "cisco_asa")
+    assert entry.collection_status is CollectionStatus.PARTIAL
+    assert entry.collection_warnings == ("Some source unavailable",)
+
+
+def test_partial_fortigate_cache_blocks_migration_but_manual_upload_is_allowed():
+    # FortiGate has no live collector yet; exercise the shared cache-to-migration boundary.
+    source = 'config system interface\n edit "port1"\n next\nend\n'
+    client = create_app({"TESTING": True}).test_client()
+    analysis = FortiGateSourceReporter().analyze_source(source)
+    entry = _cache_preview("fortigate", source.encode(), analysis, "partial.conf",
+                           collection_status=CollectionStatus.PARTIAL,
+                           collection_warnings=("Interface command failed",), collection_method="ssh")
+    for path in ("/api/migration/requirements", "/api/migrate"):
+        response = client.post(path, json={"preview_id": entry.preview_id})
+        assert response.status_code == 400
+        assert "complete live collection" in response.get_json()["error"]
+    manual = client.post("/api/migration/requirements", data={"file": (io.BytesIO(source.encode()), "manual.conf")})
+    assert manual.status_code == 200
+    assert manual.get_json()["preview_id"] != entry.preview_id
+    assert _lookup_preview(manual.get_json()["preview_id"], "fortigate").collection_status is None
+
+
+def test_failed_collection_is_rejected(monkeypatch):
+    client = create_app({"TESTING": True}).test_client()
+    monkeypatch.setattr(source_collectors.get("cisco_asa"), "collect", lambda options: CollectedSource(
+        "cisco_asa", SOURCE, "failed.cfg", "ssh", CollectionStatus.FAILED
+    ))
+    assert client.post("/api/collection/collect", json=_payload()).status_code == 502
 
 
 def test_native_collectors_reach_preview_and_excel(monkeypatch):

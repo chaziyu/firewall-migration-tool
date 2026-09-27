@@ -95,6 +95,7 @@ class PlannedSecurityRule(PlannedPANItem):
     sources: tuple[str, ...] = ()
     destinations: tuple[str, ...] = ()
     services: tuple[str, ...] = ()
+    applications: tuple[str, ...] = ()
     schedule: str | None = None
     action: str | None = None
     negate_source: bool = False
