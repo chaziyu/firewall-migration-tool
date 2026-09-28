@@ -104,7 +104,7 @@ def test_address_only_requires_vsys_but_not_virtual_router():
     assert result["vdoms"] == [{"source_vdom": "blue", "requires": ["vsys"]}]
 
 
-def test_static_route_requires_virtual_router_and_interface_only():
+def test_static_route_requires_interface_ownership_and_mapping():
     config = FGConfig(
         interfaces=[FGInterface(name="wan", vdom="blue")],
         static_routes=[FGStaticRoute(vdom="blue", seq_num=1, device="wan")],
@@ -113,7 +113,7 @@ def test_static_route_requires_virtual_router_and_interface_only():
     required = {(item["source_vdom"], item["source_name"], item["kind"]): item
                 for item in result["interfaces"]}
 
-    assert result["vdoms"] == [{"source_vdom": "blue", "requires": ["virtual_router"]}]
+    assert result["vdoms"] == [{"source_vdom": "blue", "requires": ["virtual_router", "vsys"]}]
     assert required[("blue", "wan", "interface")]["requires"] == ["target_interface"]
 
 
