@@ -135,13 +135,13 @@ def apply_target_intent(config, decisions: PANMigrationDecisionSet, intent):
 
 def export_target_intent(decisions):
     result = {"vdoms": {}, "interfaces": {}, "zones": {}}
-    interface_counts = {}
-    zone_counts = {}
+    interface_scopes = {}
+    zone_scopes = {}
     for item in decisions.decisions:
         if item.source_kind == "interface" and item.target_field in {"target_interface", "target_zone"}:
-            interface_counts[item.source_name] = interface_counts.get(item.source_name, 0) + 1
+            interface_scopes.setdefault(item.source_name, set()).add(item.source_vdom)
         elif item.source_kind == "zone" and item.target_field == "target_zone":
-            zone_counts[item.source_name] = zone_counts.get(item.source_name, 0) + 1
+            zone_scopes.setdefault(item.source_name, set()).add(item.source_vdom)
 
     for item in decisions.decisions:
         if item.review_state != PANDecisionReviewState.CONFIRMED or not item.value:
@@ -149,14 +149,14 @@ def export_target_intent(decisions):
         if item.source_kind == "vdom":
             result["vdoms"].setdefault(item.source_vdom, {})[item.target_field] = item.value
         elif item.source_kind == "interface" and item.target_field in {"target_interface", "target_zone"}:
-            scoped = interface_counts.get(item.source_name, 0) > 1 or item.source_vdom != "root"
+            scoped = len(interface_scopes.get(item.source_name, ())) > 1 or item.source_vdom != "root"
             name = f"{item.source_vdom}/{item.source_name}" if scoped else item.source_name
             field = "interface" if item.target_field == "target_interface" else "zone"
             result["interfaces"].setdefault(name, {})[field] = item.value
         elif item.source_kind == "zone" and item.target_field == "target_zone":
             name = (
                 f"{item.source_vdom}/{item.source_name}"
-                if zone_counts.get(item.source_name, 0) > 1 or item.source_vdom != "root"
+                if len(zone_scopes.get(item.source_name, ())) > 1 or item.source_vdom != "root"
                 else item.source_name
             )
             result["zones"][name] = item.value
