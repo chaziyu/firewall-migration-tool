@@ -341,7 +341,7 @@ def test_legacy_v2_auto_confirmations_are_bound_then_invalidated_by_new_target()
 
     changed_target = client.post("/api/preview", data={
         "source_vendor": "palo_alto",
-        "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes() + b"\n# changed"), "changed-target.xml"),
+        "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes() + b"\n"), "changed-target.xml"),
     }, content_type="multipart/form-data").get_json()["preview_id"]
     review = client.post("/api/migration/requirements", json={
         "preview_id": source_preview,
