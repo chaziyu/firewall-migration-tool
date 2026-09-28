@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from fwmigrate.conversion.fortigate_to_palo_alto.automation import (
     AutomationPolicy, run_automation_until_stable,
 )
@@ -8,6 +10,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.decisions import (
 )
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.source import FGConfig
+from fwmigrate.vendors.fortigate.model.zone import FGZone
 from fwmigrate.vendors.palo_alto.relationships.topology import PANInterfaceTopologyEntry
 from fwmigrate.vendors.palo_alto.source_model import PANScope, pan_scope_identity
 
@@ -37,14 +40,24 @@ def test_automation_is_off_by_default_and_fixed_point_applies_verified_then_deri
     off = run_automation_until_stable(source, None, decisions, target, "dev")
     assert not off.audit and all(item.review_state == PANDecisionReviewState.PENDING for item in off.decisions.decisions)
 
-    result = run_automation_until_stable(source, None, decisions, target, "dev", enabled_policies=(
-        AutomationPolicy.AUTO_APPLY_VERIFIED, AutomationPolicy.AUTO_APPLY_DERIVED))
+    result = run_automation_until_stable(
+        source, None, decisions, target, "dev",
+        target_evidence={"vendor": "palo_alto", "config_digest": "digest-a", "device": "dev"},
+        enabled_policies=(
+            AutomationPolicy.AUTO_APPLY_VERIFIED,
+            AutomationPolicy.AUTO_APPLY_DERIVED,
+        ),
+    )
     by_name = {item.source_name: item for item in result.decisions.decisions}
     assert by_name["port1"].value == "ethernet1/1"
     assert by_name["vlan100"].value == "ethernet1/1.100"
     assert [item["status"] for item in result.audit] == ["VERIFIED", "DERIVED"]
     assert all(item.evidence_source == "DERIVED" and item.evidence_type in {"AUTOMATION_VERIFIED", "AUTOMATION_DERIVED"}
                for item in result.decisions.decisions)
+    assert all(item.evidence_target_digest == "digest-a" and item.evidence_target_device == "dev"
+               for item in result.decisions.decisions)
+    assert all(item["uses_target_evidence"] is True and item["target_digest"] == "digest-a"
+               for item in result.audit)
     assert source.model_dump() == before
     assert result.stable
 
@@ -77,3 +90,50 @@ def test_target_conflict_stops_parent_propagation():
         enabled_policies=tuple(AutomationPolicy))
     assert not result.audit
     assert next(item for item in result.decisions.decisions if item.key == vlan.key).review_state == PANDecisionReviewState.PENDING
+
+
+def test_target_backed_automation_fails_closed_without_durable_target_identity():
+    source = FGConfig(interfaces=[FGInterface(name="lan", ip="198.51.100.1/24")])
+    target_item = SimpleNamespace(
+        name="ethernet1/1", interface_family="ethernet",
+        ipv4_addresses=["198.51.100.1/24"], tag=None, parent=None,
+    )
+    target, _ = _target([target_item])
+    decision = PANMigrationDecision("root", "interface", "lan", "target_interface")
+
+    with pytest.raises(ValueError, match="target-backed automation requires"):
+        run_automation_until_stable(
+            source,
+            None,
+            PANMigrationDecisionSet((decision,)),
+            target,
+            "dev",
+            enabled_policies=(AutomationPolicy.AUTO_APPLY_VERIFIED,),
+        )
+
+
+def test_source_only_derived_automation_does_not_require_or_store_target_identity():
+    source = FGConfig(
+        interfaces=[FGInterface(name="lan")],
+        zones=[FGZone(name="USERS", members=["lan"], explicit_fields={"members"})],
+    )
+    zone = PANMigrationDecision(
+        "root", "zone", "USERS", "target_zone",
+        value="TRUST",
+        review_state=PANDecisionReviewState.CONFIRMED,
+        evidence_source="ENGINEER",
+        evidence_type="TARGET_INTENT",
+    )
+    interface_zone = PANMigrationDecision("root", "interface", "lan", "target_zone")
+    result = run_automation_until_stable(
+        source,
+        None,
+        PANMigrationDecisionSet((zone, interface_zone)),
+        enabled_policies=(AutomationPolicy.AUTO_APPLY_DERIVED,),
+    )
+    mapped = next(item for item in result.decisions.decisions if item.key == interface_zone.key)
+    assert mapped.review_state is PANDecisionReviewState.CONFIRMED
+    assert mapped.value == "TRUST"
+    assert mapped.evidence_target_digest is None
+    assert mapped.evidence_target_device is None
+    assert result.audit[0]["uses_target_evidence"] is False

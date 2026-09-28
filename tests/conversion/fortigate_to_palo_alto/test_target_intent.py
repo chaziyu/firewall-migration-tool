@@ -26,6 +26,8 @@ def test_yaml_intent_confirms_only_existing_scoped_decisions_and_round_trips():
     confirmed = {item.key: item for item in updated.decisions}
     assert all(item.review_state == PANDecisionReviewState.CONFIRMED for item in confirmed.values())
     assert confirmed[decisions.decisions[1].key].value == "ethernet1/2"
+    assert all(item.evidence_target_digest is None and item.evidence_target_device is None
+               for item in confirmed.values())
     exported = parse_target_intent(export_target_intent(updated))
     assert exported["interfaces"]["blue/lan"]["interface"] == "ethernet1/2"
     assert exported["interfaces"]["blue/lan"]["zone"] == "TRUST"
