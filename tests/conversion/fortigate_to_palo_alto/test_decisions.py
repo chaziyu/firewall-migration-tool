@@ -61,7 +61,10 @@ def test_confirmed_decisions_override_suggestions_and_convert_to_options():
     config = FGConfig(
         interfaces=[FGInterface(name="port1")],
         zones=[FGZone(name="trust", members=["port1"])],
-        policies=[FGPolicy(policy_id=1, srcintf=["port1"])],
+        policies=[
+            FGPolicy(policy_id=1, srcintf=["port1"]),
+            FGPolicy(policy_id=2, srcintf=["trust"]),
+        ],
     )
     requirements = build_mapping_requirements(config, object())
     initial = build_decision_set(config, object(), requirements)
