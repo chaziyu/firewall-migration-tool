@@ -86,9 +86,15 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, target_config
 
     target = None
     selected_device = None
+    target_evidence = None
     if target_config:
         with open(target_config, encoding="utf-8") as stream:
-            target = source_reporters.get("palo_alto").analyze_source(stream.read())
+            target_text = stream.read()
+        target = source_reporters.get("palo_alto").analyze_source(target_text)
+        target_digest = hashlib.sha256()
+        target_digest.update(target_text.encode("utf-8"))
+        target_digest.update(b"\0")
+        target_digest.update(b"palo_alto")
         devices = target_devices(target)
         selected_device = target_device or (devices[0] if len(devices) == 1 else None)
         if target_device and target_device not in devices:
@@ -97,6 +103,11 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, target_config
             raise click.ClickException(
                 "PAN-OS XML contains multiple devices; specify --target-device explicitly"
             )
+        target_evidence = {
+            "vendor": "palo_alto",
+            "config_digest": target_digest.hexdigest(),
+            "device": selected_device,
+        }
     elif target_device:
         raise click.ClickException("--target-device requires --target-config")
 
@@ -106,6 +117,7 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, target_config
         options=PANMigrationOptions(**mapping),
         target=target,
         target_device=selected_device,
+        target_evidence=target_evidence,
         target_intent=intent,
         automation_mode=PANAutomationMode(automation_mode.upper()),
     )
