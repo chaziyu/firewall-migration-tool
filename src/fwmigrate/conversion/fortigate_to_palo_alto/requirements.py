@@ -20,6 +20,10 @@ def build_mapping_requirements(config, derived):
     def need(vdom, name, kind, reason, consumer, *fields):
         if not name:
             return
+        if "target_interface" in fields:
+            # Executable interface planning consumes explicit VSYS import and
+            # virtual-router ownership for every mapped target interface.
+            need_vdom(vdom, "vsys", "virtual_router")
         key = (vdom or "root", name, kind)
         item = required.setdefault(key, {
             "source_vdom": key[0], "source_name": name, "kind": kind,
