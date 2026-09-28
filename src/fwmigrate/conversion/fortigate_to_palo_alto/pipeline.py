@@ -11,6 +11,7 @@ from typing import Any
 
 from .artifact_status import classify_artifact_status
 from .automation import AutomationPolicy, run_automation_until_stable
+from .coverage import build_migration_coverage
 from .decisions import (
     PANDecisionMode,
     PANDecisionReviewState,
@@ -56,6 +57,7 @@ class PANMigrationPipelineResult:
     dispositions: dict
     render_blockers: dict
     recommendations: tuple
+    coverage: dict
     support_guidance: tuple
     automation_audit: tuple[dict, ...]
     unresolved_decisions: tuple[PANMigrationDecision, ...]
@@ -193,6 +195,7 @@ def run_migration_pipeline(
     validation = validate_plan(plan)
     support_guidance = build_support_guidance(plan, validation, current, target_findings)
     recommendations = build_recommendations(source, derived, current, target, target_device)
+    coverage = build_migration_coverage(source, recommendations)
     rendered = PANSetRenderer().render(
         plan,
         validation,
@@ -207,7 +210,11 @@ def run_migration_pipeline(
         if item.mode not in {PANDecisionMode.AUTO, PANDecisionMode.UNSUPPORTED}
         and item.review_state is not PANDecisionReviewState.CONFIRMED
     )
-    status = classify_artifact_status(rendered, pending_mapping_issues=unresolved).value
+    status = classify_artifact_status(
+        rendered,
+        pending_mapping_issues=unresolved,
+        coverage=coverage,
+    ).value
     rendered = replace(rendered, report={
         **rendered.report,
         "plan_status": status,
@@ -218,6 +225,7 @@ def run_migration_pipeline(
             "iterations": automation.iterations,
         },
         "unresolved_required_decisions": len(unresolved),
+        "coverage": coverage,
     })
     return PANMigrationPipelineResult(
         requirements=requirements,
@@ -233,6 +241,7 @@ def run_migration_pipeline(
         dispositions=dispositions,
         render_blockers=render_blockers,
         recommendations=recommendations,
+        coverage=coverage,
         support_guidance=support_guidance,
         automation_audit=automation.audit,
         unresolved_decisions=unresolved,
