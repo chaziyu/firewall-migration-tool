@@ -35,7 +35,10 @@ def test_requirements_generate_scoped_suggestions_without_defaults():
     config = FGConfig(
         interfaces=[FGInterface(name="port1")],
         zones=[FGZone(name="trust", members=["port1"])],
-        policies=[FGPolicy(policy_id=1, srcintf=["port1"])],
+        policies=[
+            FGPolicy(policy_id=1, srcintf=["port1"]),
+            FGPolicy(policy_id=2, srcintf=["trust"]),
+        ],
     )
     requirements = build_mapping_requirements(config, object())
     decisions = build_decision_set(config, object(), requirements)
@@ -49,7 +52,7 @@ def test_requirements_generate_scoped_suggestions_without_defaults():
     assert by_identity[("interface", "port1", "target_zone")].evidence_source == "SOURCE"
     assert by_identity[("interface", "port1", "target_interface")].mode == PANDecisionMode.REQUIRED
     assert by_identity[("vdom", "root", "vsys")].suggested_value is None
-    assert by_identity[("vdom", "root", "virtual_router")].suggested_value is None
+    assert ("vdom", "root", "virtual_router") not in by_identity
     assert decisions.to_options().interfaces == {}
     assert decisions.to_options().vdoms == {}
 
@@ -70,6 +73,6 @@ def test_confirmed_decisions_override_suggestions_and_convert_to_options():
     options = updated.to_options()
 
     assert options.vdoms["root"].vsys == "vsys-prod"
-    assert options.vdoms["root"].virtual_router == "vr-prod"
+    assert options.vdoms["root"].virtual_router is None
     assert options.zones["root"]["trust"].target_zone == "corp-trust"
     assert options.interfaces["root"]["port1"].target_interface == "ethernet1/7"
