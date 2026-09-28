@@ -43,7 +43,7 @@ def test_automation_is_off_by_default_and_fixed_point_applies_verified_then_deri
     assert by_name["port1"].value == "ethernet1/1"
     assert by_name["vlan100"].value == "ethernet1/1.100"
     assert [item["status"] for item in result.audit] == ["VERIFIED", "DERIVED"]
-    assert all(item.evidence_source == "ENGINEER" and item.evidence_type == "ENGINEER_AUTOMATION_POLICY"
+    assert all(item.evidence_source == "DERIVED" and item.evidence_type in {"AUTOMATION_VERIFIED", "AUTOMATION_DERIVED"}
                for item in result.decisions.decisions)
     assert source.model_dump() == before
     assert result.stable

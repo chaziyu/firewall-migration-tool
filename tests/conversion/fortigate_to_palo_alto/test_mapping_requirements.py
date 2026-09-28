@@ -72,13 +72,13 @@ def test_same_name_interface_and_zone_keep_compatible_decision_fields():
 
     assert same_name == {
         ("zone", ("target_zone",)),
-        ("interface", ("target_interface", "target_zone")),
+        ("interface", ("target_interface",)),
     }
     decisions = build_decision_set(config, object(), requirements)
     assert all(not (item.source_kind == "zone" and item.target_field == "target_interface") for item in decisions.decisions)
 
 
-def test_non_policy_consumers_receive_interface_and_vdom_requirements_with_impact():
+def test_recommendation_only_consumers_do_not_create_blocking_mapping_requirements():
     config = FGConfig(
         interfaces=[FGInterface(name=name, vdom="blue") for name in ("dhcp0", "wan0", "dmz0", "client0")],
         dhcp_servers=[FGDHCPServer(id=7, vdom="blue", interface="dhcp0")],
@@ -88,17 +88,42 @@ def test_non_policy_consumers_receive_interface_and_vdom_requirements_with_impac
             FGSSLVPNAuthenticationRule(id=4, source_interface=["dmz0"]),
         ])],
         ssl_vpn_clients=[FGSSLVPNClient(name="client-a", vdom="blue", interface="client0")],
-        addresses=[FGAddress(name="host", vdom="blue", subnet="10.0.0.1 255.255.255.255")],
     )
     result = build_mapping_requirements(config, object())
-    required = {(item["source_vdom"], item["source_name"]): item for item in result["interfaces"]}
 
-    assert "target_interface" in required[("blue", "dhcp0")]["requires"]
-    assert required[("blue", "dhcp0")]["affected_by"] == {"dhcp_server": 1}
-    assert required[("blue", "wan0")]["affected_by"] == {
-        "ipsec_phase1": 1, "sdwan_member": 1, "ssl_vpn": 1,
-    }
-    assert required[("blue", "dmz0")]["affected_by"] == {"ssl_vpn": 1}
-    assert required[("blue", "client0")]["affected_by"] == {"ssl_vpn": 1}
-    assert {item["source_vdom"] for item in result["vdoms"]} == {"blue"}
-    assert "vsys" in next(item["requires"] for item in result["vdoms"] if item["source_vdom"] == "blue")
+    assert result["interfaces"] == []
+    assert result["vdoms"] == []
+
+
+def test_address_only_requires_vsys_but_not_virtual_router():
+    config = FGConfig(addresses=[
+        FGAddress(name="host", vdom="blue", subnet="10.0.0.1 255.255.255.255"),
+    ])
+    result = build_mapping_requirements(config, object())
+
+    assert result["vdoms"] == [{"source_vdom": "blue", "requires": ["vsys"]}]
+
+
+def test_static_route_requires_virtual_router_and_interface_only():
+    config = FGConfig(
+        interfaces=[FGInterface(name="wan", vdom="blue")],
+        static_routes=[FGStaticRoute(vdom="blue", seq_num=1, device="wan")],
+    )
+    result = build_mapping_requirements(config, object())
+    required = {(item["source_vdom"], item["source_name"], item["kind"]): item
+                for item in result["interfaces"]}
+
+    assert result["vdoms"] == [{"source_vdom": "blue", "requires": ["virtual_router"]}]
+    assert required[("blue", "wan", "interface")]["requires"] == ["target_interface"]
+
+
+def test_direct_policy_interface_requires_zone_not_target_interface():
+    config = FGConfig(
+        interfaces=[FGInterface(name="lan", vdom="root")],
+        policies=[FGPolicy(policy_id=1, vdom="root", srcintf=["lan"])],
+    )
+    result = build_mapping_requirements(config, object())
+    item = next(entry for entry in result["interfaces"] if entry["source_name"] == "lan")
+
+    assert item["requires"] == ["target_zone"]
+    assert result["vdoms"] == [{"source_vdom": "root", "requires": ["vsys"]}]

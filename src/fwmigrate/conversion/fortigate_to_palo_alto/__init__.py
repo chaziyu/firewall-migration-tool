@@ -36,6 +36,13 @@ from .recommendations import (
 )
 from .target_candidates import PANTargetCandidate, PANTargetCandidateMatchClass
 from .recommendation_engine import build_recommendations
+from .pipeline import (
+    PANAutomationMode,
+    PANMigrationPipelineResult,
+    apply_explicit_options,
+    automation_policies,
+    run_migration_pipeline,
+)
 
 __all__ = [
     "FortiGateToPaloAltoPlanner",
@@ -73,4 +80,9 @@ __all__ = [
     "PANTargetCandidate",
     "PANTargetCandidateMatchClass",
     "build_recommendations",
+    "PANAutomationMode",
+    "PANMigrationPipelineResult",
+    "apply_explicit_options",
+    "automation_policies",
+    "run_migration_pipeline",
 ]
