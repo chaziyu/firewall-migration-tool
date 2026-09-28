@@ -36,7 +36,7 @@ def test_recommendations_are_immutable_source_safe_and_feature_scoped():
     recommendations = build_recommendations(config, SimpleNamespace(), decisions)
 
     assert isinstance(recommendations, tuple)
-    assert {item.family for item in recommendations} == {"DHCP", "VPN", "Users/Admin", "Security", "SD-WAN", "SSL VPN", "External Resource"}
+    assert {item.family for item in recommendations} == {"VPN", "Users/Admin", "Security", "SD-WAN", "SSL VPN", "External Resource"}
     serialized = json.dumps([item.to_dict() for item in recommendations])
     assert "aa:bb" not in serialized
     assert "CVE-1" not in serialized
