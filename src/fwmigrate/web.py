@@ -691,7 +691,7 @@ def create_app(test_config=None):
                 uses_target = bool(results[key].get('uses_target_evidence'))
                 if uses_target:
                     identity = target_evidence_identity(target_context.metadata if target_context else None)
-                    if identity[1] is None:
+                    if identity is None or identity[1] is None:
                         raise ValueError('Target-backed approval requires a selected PAN-OS device')
                     target_digest, evidence_device = identity
                 else:
