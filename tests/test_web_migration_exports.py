@@ -124,6 +124,13 @@ def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence(
     assert approved.get_json()["approved_count"] == len(safe_keys)
     approved_items = {item["key"]: item for item in approved.get_json()["decisions"]["decisions"]}
     assert all(approved_items[key]["review_state"] == "CONFIRMED" for key in safe_keys)
+    for key in safe_keys:
+        if requirements["auto_decisions"][key].get("uses_target_evidence"):
+            assert approved_items[key]["evidence_target_digest"] == requirements["target_evidence"]["config_digest"]
+            assert approved_items[key]["evidence_target_device"] == "integrated-fw"
+        else:
+            assert approved_items[key]["evidence_target_digest"] is None
+            assert approved_items[key]["evidence_target_device"] is None
 
     manual_key = next(key for key, item in requirements["auto_decisions"].items()
                       if item["status"] == "MANUAL")
@@ -161,6 +168,12 @@ def test_fixed_point_automation_requires_opt_in_policies_and_records_determinist
     assert all(item["evidence_source"] == "DERIVED"
                and item["evidence_type"] in {"AUTOMATION_VERIFIED", "AUTOMATION_DERIVED"}
                for item in confirmed)
+    assert all(item["evidence_target_digest"] == requirements["target_evidence"]["config_digest"]
+               and item["evidence_target_device"] == "integrated-fw"
+               for item in confirmed)
+    assert all(item["uses_target_evidence"] is True
+               and item["target_digest"] == requirements["target_evidence"]["config_digest"]
+               for item in payload["audit"])
     rejected = client.post("/api/migration/automation/run", json={**request, "enabled_policies": ["AUTO_APPLY_CANDIDATE"]})
     assert rejected.status_code == 400
 
@@ -249,6 +262,97 @@ def test_changed_target_evidence_restores_decisions_and_reports_staleness():
     assert migrated["report"]["review"]["target_evidence_changed"] is True
 
 
+
+def test_changed_target_evidence_invalidates_auto_confirmations_until_reproved():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    first_target = _target_preview(client)
+    requirements = client.post("/api/migration/requirements", json={
+        "preview_id": source_preview,
+        "target_preview_id": first_target,
+    }).get_json()
+    automated = client.post("/api/migration/automation/run", json={
+        "preview_id": source_preview,
+        "target_preview_id": first_target,
+        "decision_document": requirements["decision_document"],
+        "enabled_policies": ["AUTO_APPLY_VERIFIED", "AUTO_APPLY_DERIVED"],
+    }).get_json()
+    auto_document = automated["decision_document"]
+    auto_confirmed = {
+        item["key"] for item in auto_document["decisions"]
+        if item["review_state"] == "CONFIRMED" and item["evidence_target_digest"]
+    }
+    assert auto_confirmed
+
+    changed_target_response = client.post("/api/preview", data={
+        "source_vendor": "palo_alto",
+        "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes() + b"\n"), "changed-target.xml"),
+    }, content_type="multipart/form-data")
+    assert changed_target_response.status_code == 200
+    changed_target = changed_target_response.get_json()["preview_id"]
+
+    review = client.post("/api/migration/requirements", json={
+        "preview_id": source_preview,
+        "target_preview_id": changed_target,
+        "decision_document": auto_document,
+    }).get_json()
+    invalidated = {item["decision_key"] for item in review["invalidated_target_decisions"]}
+    assert invalidated == auto_confirmed
+    by_key = {item["key"]: item for item in review["decisions"]["decisions"]}
+    assert all(by_key[key]["review_state"] == "PENDING" for key in invalidated)
+    assert all(by_key[key]["evidence_target_digest"] is None for key in invalidated)
+    assert review["target_evidence_changed"] is True
+
+    plan = client.post("/api/migrate", json={
+        "preview_id": source_preview,
+        "target_preview_id": changed_target,
+        "decision_document": auto_document,
+        "automation_mode": "REVIEW_ONLY",
+    }).get_json()
+    assert plan["plan_status"] == "NEEDS_MAPPING"
+    assert {item["decision_key"] for item in plan["invalidated_target_decisions"]} == auto_confirmed
+    assert plan["report"]["review"]["invalidated_target_decisions"] == plan["invalidated_target_decisions"]
+
+
+def test_legacy_v2_auto_confirmations_are_bound_then_invalidated_by_new_target():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    first_target = _target_preview(client)
+    requirements = client.post("/api/migration/requirements", json={
+        "preview_id": source_preview,
+        "target_preview_id": first_target,
+    }).get_json()
+    automated = client.post("/api/migration/automation/run", json={
+        "preview_id": source_preview,
+        "target_preview_id": first_target,
+        "decision_document": requirements["decision_document"],
+        "enabled_policies": ["AUTO_APPLY_VERIFIED", "AUTO_APPLY_DERIVED"],
+    }).get_json()
+    legacy = json.loads(json.dumps(automated["decision_document"]))
+    legacy["format_version"] = 2
+    for item in legacy["decisions"]:
+        item.pop("evidence_target_digest", None)
+        item.pop("evidence_target_device", None)
+
+    changed_target = client.post("/api/preview", data={
+        "source_vendor": "palo_alto",
+        "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes() + b"\n# changed"), "changed-target.xml"),
+    }, content_type="multipart/form-data").get_json()["preview_id"]
+    review = client.post("/api/migration/requirements", json={
+        "preview_id": source_preview,
+        "target_preview_id": changed_target,
+        "decision_document": legacy,
+    }).get_json()
+
+    assert review["invalidated_target_decisions"]
+    assert review["target_evidence_changed"] is True
+    assert all(
+        item["review_state"] == "PENDING"
+        for item in review["decisions"]["decisions"]
+        if item["key"] in {entry["decision_key"] for entry in review["invalidated_target_decisions"]}
+    )
+
+
 def test_target_preview_rejects_wrong_vendor_preview():
     client = create_app({"TESTING": True}).test_client()
     source_preview = _preview(client)
@@ -326,12 +430,13 @@ def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources
     assert mismatch.status_code == 400
     assert "different source" in mismatch.get_json()["error"]
 
-    legacy = json.loads(json.dumps(saved))
-    legacy["format_version"] = 1
-    accepted = client.post("/api/migration/decisions/import", json={
-        "preview_id": preview_id, "document": legacy,
-    })
-    assert accepted.status_code == 200
+    for legacy_version in (1, 2):
+        legacy = json.loads(json.dumps(saved))
+        legacy["format_version"] = legacy_version
+        accepted = client.post("/api/migration/decisions/import", json={
+            "preview_id": preview_id, "document": legacy,
+        })
+        assert accepted.status_code == 200
 
 
 def test_plan_reports_missing_mappings_and_blocks_empty_bundle():
@@ -369,7 +474,7 @@ def test_complete_mappings_create_zip_for_same_plan_artifact():
         report = json.loads(archive.read("migration_report.json"))
         decisions = json.loads(archive.read("migration_decisions.json"))
         assert report["commands"] == plan["commands"]
-        assert decisions["format_version"] == 2
+        assert decisions["format_version"] == 3
         assert decisions["source_vendor"] == "fortigate"
         root_vsys = next(item for item in decisions["decisions"] if item["source_kind"] == "vdom" and item["target_field"] == "vsys")
         assert root_vsys["value"] == "vsys1"
