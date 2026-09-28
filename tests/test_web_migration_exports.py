@@ -168,12 +168,17 @@ def test_fixed_point_automation_requires_opt_in_policies_and_records_determinist
     assert all(item["evidence_source"] == "DERIVED"
                and item["evidence_type"] in {"AUTOMATION_VERIFIED", "AUTOMATION_DERIVED"}
                for item in confirmed)
-    assert all(item["evidence_target_digest"] == requirements["target_evidence"]["config_digest"]
-               and item["evidence_target_device"] == "integrated-fw"
-               for item in confirmed)
-    assert all(item["uses_target_evidence"] is True
-               and item["target_digest"] == requirements["target_evidence"]["config_digest"]
-               for item in payload["audit"])
+    audit_by_key = {item["decision_key"]: item for item in payload["audit"]}
+    for item in confirmed:
+        audit = audit_by_key[item["key"]]
+        if audit["uses_target_evidence"]:
+            assert item["evidence_target_digest"] == requirements["target_evidence"]["config_digest"]
+            assert item["evidence_target_device"] == "integrated-fw"
+            assert audit["target_digest"] == requirements["target_evidence"]["config_digest"]
+        else:
+            assert item["evidence_target_digest"] is None
+            assert item["evidence_target_device"] is None
+            assert audit["target_digest"] is None
     rejected = client.post("/api/migration/automation/run", json={**request, "enabled_policies": ["AUTO_APPLY_CANDIDATE"]})
     assert rejected.status_code == 400
 
