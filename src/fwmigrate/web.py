@@ -28,6 +28,9 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
     build_decision_set,
     make_decision_key,
     build_recommendations,
+    PANAutomationMode,
+    apply_explicit_options,
+    run_migration_pipeline,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
@@ -114,8 +117,9 @@ def _decision_evidence(decision_set, target_findings):
     return {
         item.key: (
             "CONFLICT" if item.key in conflicts else
-            "ENGINEER" if item.review_state is PANDecisionReviewState.CONFIRMED else
-            item.evidence_source or "SOURCE"
+            item.evidence_source or (
+                "ENGINEER" if item.review_state is PANDecisionReviewState.CONFIRMED else "SOURCE"
+            )
         )
         for item in decision_set.decisions
     }
@@ -177,32 +181,9 @@ def _options_mapping(options):
 
 
 def _confirm_mapping_decisions(decision_set, options, config):
-    decisions = {item.key: item for item in decision_set.decisions}
-    zone_names = {(item.vdom or "root", item.name) for item in getattr(config, "zones", ())}
+    """Compatibility wrapper around the pair-specific pipeline mapping logic."""
+    return apply_explicit_options(config, decision_set, options)
 
-    def confirm(vdom, kind, name, field, value):
-        if value is None:
-            return
-        key = make_decision_key(vdom, kind, name, field)
-        old = decisions.get(key)
-        if old is None:
-            old = PANMigrationDecision(vdom, kind, name, field, mode=PANDecisionMode.REQUIRED)
-        decisions[key] = replace(old, value=value, review_state=PANDecisionReviewState.CONFIRMED)
-
-    for vdom, mapping in options.vdoms.items():
-        for field, value in asdict(mapping).items():
-            confirm(vdom, "vdom", vdom, field, value)
-    for vdom, mappings in options.interfaces.items():
-        for name, mapping in mappings.items():
-            for field, value in asdict(mapping).items():
-                kind = "zone" if field == "target_zone" and (vdom, name) in zone_names and not any(
-                    (item.vdom or "root", item.name) == (vdom, name) for item in getattr(config, "interfaces", ())
-                ) else "interface"
-                confirm(vdom, kind, name, field, value)
-    for vdom, mappings in (options.zones or {}).items():
-        for name, mapping in mappings.items():
-            confirm(vdom, "zone", name, "target_zone", mapping.target_zone)
-    return PANMigrationDecisionSet(tuple(sorted(decisions.values(), key=lambda item: item.key)))
 @dataclass(frozen=True)
 class _PreviewCacheEntry:
     preview_id: str
@@ -901,6 +882,7 @@ def create_app(test_config=None):
             return jsonify({'success': False, 'error': 'source_vendor and target_vendor must be strings'}), 400
         if (source_vendor.casefold(), target_vendor.casefold()) != ('fortigate', 'palo_alto'):
             return jsonify({'success': False, 'error': 'Only fortigate -> palo_alto is supported'}), 400
+
         uploaded = request.files.get('file')
         try:
             preview_id = payload.get('preview_id')
@@ -918,8 +900,11 @@ def create_app(test_config=None):
                 analysis = _clone_preview(entry)
             else:
                 return jsonify({'success': False, 'error': 'A valid preview_id or configuration file is required'}), 400
+
             _require_complete_collection(entry)
             serialized = payload.get('decision_document', payload.get('decisions', payload.get('decision_set')))
+            decision_set = None
+            options = None
             if serialized is not None:
                 if isinstance(serialized, dict) and 'format_version' in serialized:
                     decision_set = _load_decision_document(serialized, entry.source_digest)
@@ -927,88 +912,107 @@ def create_app(test_config=None):
                     decision_set = PANMigrationDecisionSet.from_dict(
                         serialized if isinstance(serialized, dict) else {'decisions': serialized}
                     )
-                options = decision_set.to_options()
-                mapping = _options_mapping(options)
-                decision_document = _decision_document(entry.source_digest, decision_set)
             else:
                 mapping_value = payload.get('mapping', '{}')
                 mapping = json.loads(mapping_value) if isinstance(mapping_value, str) else mapping_value
                 if not isinstance(mapping, dict):
                     raise ValueError('Mapping must contain an object')
                 options = PANMigrationOptions(**mapping)
-                requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
-                decision_set = build_decision_set(analysis.extracted.config, analysis.derived, requirements)
-                decision_set = _confirm_mapping_decisions(decision_set, options, analysis.extracted.config)
-                decision_document = _decision_document(entry.source_digest, decision_set)
-                mapping = _options_mapping(options)
+
             target_context = _target_evidence(payload)
             target_evidence_changed = _target_evidence_changed(serialized, target_context)
             target = target_context.analysis if target_context else None
             target_device = target_context.selected_device if target_context else None
-            target_warnings = {}
-            if target and target_device:
-                decision_set, target_warnings = suggest_from_target(analysis.extracted.config, decision_set, target, target_device)
-            target_findings = validate_against_target(analysis.extracted.config, decision_set, target, target_device)
-            decision_evidence = _decision_evidence(decision_set, target_findings)
-            recommendations = build_recommendations(
-                analysis.extracted.config, analysis.derived, decision_set, target, target_device
+            mode_value = payload.get('automation_mode', PANAutomationMode.VERIFIED_AND_DERIVED.value)
+            if not isinstance(mode_value, str):
+                raise ValueError('automation_mode must be a string')
+            try:
+                automation_mode = PANAutomationMode(mode_value.upper())
+            except ValueError as exc:
+                raise ValueError('Unsupported automation_mode') from exc
+
+            result = run_migration_pipeline(
+                analysis.extracted.config,
+                analysis.derived,
+                decisions=decision_set,
+                options=options,
+                target=target,
+                target_device=target_device,
+                automation_mode=automation_mode,
             )
-            plan = migration_planners.get(source_vendor, target_vendor).plan(
-                analysis.extracted.config, analysis.derived, options=options
-            )
-            target_object_reuse = classify_target_object_reuse(plan, target, target_device)
-            dependencies = build_plan_dependency_index(plan, decision_set)
-            target_plan_findings = validate_target_plan(plan, target_object_reuse, target_findings,
-                                                        decision_set, dependencies)
-            dispositions, render_blockers = assess_target_plan(plan, target_object_reuse, target_findings,
-                                                                decision_set, dependencies)
-            validation = validate_plan(plan)
-            support_guidance = build_support_guidance(plan, validation, decision_set, target_findings)
-            rendered = PANSetRenderer().render(plan, validation, dispositions=dispositions,
-                                               render_blockers=render_blockers,
-                                               decision_keys=dependencies.decision_keys_by_item)
+            decision_set = result.decisions
+            mapping = _options_mapping(result.options)
             safe_target_evidence = target_context.metadata if target_context else None
-            rendered = replace(rendered, report={**rendered.report,
+            decision_document = _decision_document(entry.source_digest, decision_set, safe_target_evidence)
+            decision_evidence = _decision_evidence(decision_set, result.target_findings)
+
+            rendered = replace(result.rendered, report={
+                **result.rendered.report,
                 'source': {'vendor': 'fortigate', 'digest': entry.source_digest},
                 'target_evidence': safe_target_evidence,
                 'review': {
                     'target_evidence_changed': target_evidence_changed,
-                    'target_findings': [item.to_dict() for item in target_findings],
-                    'target_plan_findings': [item.to_dict() for item in target_plan_findings],
-                    'target_object_reuse': list(target_object_reuse),
+                    'target_findings': [item.to_dict() for item in result.target_findings],
+                    'target_plan_findings': [item.to_dict() for item in result.target_plan_findings],
+                    'target_object_reuse': list(result.target_object_reuse),
                     'decision_evidence': decision_evidence,
                     'evidence_summary': _evidence_summary(decision_set, decision_evidence),
-                    'support_guidance': [item.to_dict() for item in support_guidance],
-                    'recommendations': [item.to_dict() for item in recommendations],
-                }})
-            counts = rendered.report['counts']
-            render_counts = rendered.report['render_dispositions']
-            mapping_codes = {'missing_vsys_mapping', 'missing_target_vsys', 'missing_virtual_router', 'missing_route_interface'}
-            missing = [issue for issue in rendered.report['issue_summary'] if issue['code'] in mapping_codes or 'missing target' in issue['message'].lower() or 'missing palo alto vsys mapping' in issue['message'].lower()]
-            plan_status = classify_artifact_status(rendered, pending_mapping_issues=missing).value
-            rendered = replace(rendered, report={**rendered.report, 'plan_status': plan_status})
+                    'support_guidance': [item.to_dict() for item in result.support_guidance],
+                    'recommendations': [item.to_dict() for item in result.recommendations],
+                    'automation_audit': list(result.automation_audit),
+                },
+            })
+            plan_status = result.artifact_status
             artifact_id = uuid.uuid4().hex
             rendered_artifacts[artifact_id] = rendered
-            artifact_sources[artifact_id] = (analysis, mapping,
-                                             _decision_document(entry.source_digest, decision_set, safe_target_evidence),
-                                             entry.source_name)
+            artifact_sources[artifact_id] = (analysis, mapping, decision_document, entry.source_name)
+
+            counts = rendered.report['counts']
+            render_counts = rendered.report['render_dispositions']
+            mapping_codes = {
+                'missing_vsys_mapping', 'missing_target_vsys',
+                'missing_virtual_router', 'missing_route_interface',
+                'missing_nat_zone', 'missing_nat_interface',
+            }
+            missing = [
+                issue for issue in rendered.report['issue_summary']
+                if issue['code'] in mapping_codes
+                or 'missing target' in issue['message'].lower()
+                or 'missing palo alto vsys mapping' in issue['message'].lower()
+            ]
             issue_messages = {item['code']: item['message'] for item in rendered.report['issue_summary']}
             reasons = []
             for item in rendered.report['items']:
                 if item['render_disposition'] != 'BLOCK' and item['command_renderable']:
                     continue
                 for code in item['render_blockers']:
-                    reasons.append({'code': code, 'message': issue_messages.get(code, code.replace('_', ' ').capitalize()),
-                                    'source_vdom': item['source_vdom'], 'source_kind': item['source_kind'],
-                                    'source_name': item['source_name'], 'target_name': item['target_name']})
-            reasons.extend({'code': finding.code, 'message': finding.message, 'source_vdom': finding.source_vdom,
-                            'source_kind': finding.source_kind, 'source_name': finding.source_name,
-                            'target_name': finding.target_name} for finding in target_plan_findings)
-            blocking_reasons = list({(item['code'], item['source_vdom'], item['source_kind'], item['source_name'], item['target_name']): item
-                                     for item in reasons}.values())
-            render_summary = {'create': render_counts.get('CREATE', 0), 'reuse': render_counts.get('REUSE', 0),
-                              'blocked': render_counts.get('BLOCK', 0), 'satisfied': rendered.report['satisfied'],
-                              'command_renderable': rendered.report['command_renderable']}
+                    reasons.append({
+                        'code': code,
+                        'message': issue_messages.get(code, code.replace('_', ' ').capitalize()),
+                        'source_vdom': item['source_vdom'],
+                        'source_kind': item['source_kind'],
+                        'source_name': item['source_name'],
+                        'target_name': item['target_name'],
+                    })
+            reasons.extend({
+                'code': finding.code,
+                'message': finding.message,
+                'source_vdom': finding.source_vdom,
+                'source_kind': finding.source_kind,
+                'source_name': finding.source_name,
+                'target_name': finding.target_name,
+            } for finding in result.target_plan_findings)
+            blocking_reasons = list({
+                (item['code'], item['source_vdom'], item['source_kind'], item['source_name'], item['target_name']): item
+                for item in reasons
+            }.values())
+            render_summary = {
+                'create': render_counts.get('CREATE', 0),
+                'reuse': render_counts.get('REUSE', 0),
+                'blocked': render_counts.get('BLOCK', 0),
+                'satisfied': rendered.report['satisfied'],
+                'command_renderable': rendered.report['command_renderable'],
+            }
             return jsonify({
                 'success': True,
                 'artifact_id': artifact_id,
@@ -1018,15 +1022,17 @@ def create_app(test_config=None):
                 'render_dispositions': render_counts,
                 'render_summary': render_summary,
                 'missing_mappings': missing,
+                'unresolved_required_mappings': [item.to_dict() for item in result.unresolved_decisions],
                 'blocking_reasons': blocking_reasons,
-                'target_warnings': target_warnings,
-                'target_findings': [item.to_dict() for item in target_findings],
-                'target_plan_findings': [item.to_dict() for item in target_plan_findings],
-                'target_object_reuse': list(target_object_reuse),
+                'target_warnings': result.target_warnings,
+                'target_findings': [item.to_dict() for item in result.target_findings],
+                'target_plan_findings': [item.to_dict() for item in result.target_plan_findings],
+                'target_object_reuse': list(result.target_object_reuse),
                 'decision_evidence': decision_evidence,
                 'evidence_summary': _evidence_summary(decision_set, decision_evidence),
-                'support_guidance': [item.to_dict() for item in support_guidance],
-                'recommendations': [item.to_dict() for item in recommendations],
+                'support_guidance': [item.to_dict() for item in result.support_guidance],
+                'recommendations': [item.to_dict() for item in result.recommendations],
+                'automation_audit': list(result.automation_audit),
                 'target_evidence': safe_target_evidence,
                 'target_evidence_changed': target_evidence_changed,
                 'report': rendered.report,
