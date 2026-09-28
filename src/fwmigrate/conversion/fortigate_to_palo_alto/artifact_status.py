@@ -10,12 +10,14 @@ class PANArtifactStatus(StrEnum):
     NEEDS_MAPPING = "NEEDS_MAPPING"
 
 
-def classify_artifact_status(rendered, *, pending_mapping_issues=()):
+def classify_artifact_status(rendered, *, pending_mapping_issues=(), coverage=None):
     report = rendered.report
     dispositions = report.get("render_dispositions", {})
     counts = report.get("counts", {})
     if pending_mapping_issues:
         return PANArtifactStatus.NEEDS_MAPPING
+    if coverage is not None and not coverage.get("complete", False):
+        return PANArtifactStatus.PARTIAL
     if dispositions.get("BLOCK", 0):
         return PANArtifactStatus.PARTIAL
     if any(counts.get(key, 0) for key in ("PARTIAL", "MANUAL_REVIEW", "UNSUPPORTED")):
