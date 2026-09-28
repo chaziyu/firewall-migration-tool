@@ -13,7 +13,7 @@ def item_key(item):
 
 
 def _items(plan):
-    for family in ("addresses", "address_groups", "services", "service_groups", "schedules", "zones",
+    for family in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones",
                    "static_routes", "security_rules", "nat_rules"):
         yield from getattr(plan, family)
 
@@ -49,17 +49,22 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
             refs = [(('address', 'address_group'), name) for name in item.members]
         elif kind == "service_group":
             refs = [(('service', 'service_group'), name) for name in item.members]
+        elif kind == "interface" and getattr(item, "parent", None):
+            refs = [(('interface',), item.parent)]
+        elif kind == "zone":
+            refs = [(('interface',), name) for name in item.interfaces]
         elif kind in {"security_rule", "nat_rule"}:
             addresses = (item.sources + item.destinations) if kind == "security_rule" else (item.source_addresses + item.destination_addresses)
             services = item.services if kind == "security_rule" else ((item.service,) if item.service else ())
             refs = [(('address', 'address_group'), name) for name in addresses]
             refs += [(('service', 'service_group'), name) for name in services]
             refs += [(('zone',), name) for name in item.from_zones + item.to_zones]
+            if kind == "nat_rule" and item.to_interface:
+                refs.append((('interface',), item.to_interface))
             if kind == "security_rule" and item.schedule:
                 refs.append((('schedule',), item.schedule))
         elif kind == "static_route" and item.interface:
-            refs = [(('zone',), zone.target_name or zone.source_name)
-                    for zone in plan.zones if item.interface in zone.interfaces]
+            refs = [(('interface',), item.interface)]
         for families, name in refs:
             for dependency in resolve(item.target_vsys, families, name):
                 if dependency is not item:
@@ -73,7 +78,9 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
                 continue
             kind = item.source_object_type
             if decision.source_kind == "vdom":
-                match = decision.target_field == "vsys" or (decision.target_field == "virtual_router" and kind == "static_route")
+                match = decision.target_field == "vsys" or (
+                    decision.target_field == "virtual_router" and kind in {"interface", "static_route"}
+                )
             elif decision.source_kind == item.source_kind and decision.source_name == item.source_name:
                 match = True
             elif decision.source_kind == "interface":
