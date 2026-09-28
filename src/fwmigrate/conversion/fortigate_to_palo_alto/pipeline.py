@@ -203,6 +203,17 @@ def run_migration_pipeline(
         and item.review_state is not PANDecisionReviewState.CONFIRMED
     )
     status = classify_artifact_status(rendered, pending_mapping_issues=unresolved).value
+    rendered = replace(rendered, report={
+        **rendered.report,
+        "plan_status": status,
+        "automation": {
+            "mode": mode.value,
+            "applied": len(automation.audit),
+            "stable": automation.stable,
+            "iterations": automation.iterations,
+        },
+        "unresolved_required_decisions": len(unresolved),
+    })
     return PANMigrationPipelineResult(
         requirements=requirements,
         decisions=current,
