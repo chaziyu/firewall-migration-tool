@@ -17,15 +17,18 @@ def test_yaml_intent_confirms_only_existing_scoped_decisions_and_round_trips():
     decisions = PANMigrationDecisionSet((
         PANMigrationDecision("root", "interface", "agg1", "target_interface"),
         PANMigrationDecision("blue", "interface", "lan", "target_interface"),
+        PANMigrationDecision("blue", "interface", "lan", "target_zone"),
         PANMigrationDecision("blue", "zone", "LAN", "target_zone"),
         PANMigrationDecision("blue", "vdom", "blue", "vsys"),
     ))
-    text = "vdoms:\n  blue:\n    vsys: vsys2\ninterfaces:\n  agg1: ae1\n  blue/lan: ethernet1/2\nzones:\n  LAN: TRUST\n"
+    text = "vdoms:\n  blue:\n    vsys: vsys2\ninterfaces:\n  agg1: ae1\n  blue/lan:\n    interface: ethernet1/2\n    zone: TRUST\nzones:\n  LAN: TRUST\n"
     updated = apply_target_intent(config, decisions, text)
     confirmed = {item.key: item for item in updated.decisions}
     assert all(item.review_state == PANDecisionReviewState.CONFIRMED for item in confirmed.values())
     assert confirmed[decisions.decisions[1].key].value == "ethernet1/2"
-    assert parse_target_intent(export_target_intent(updated))["interfaces"]["blue/lan"]["interface"] == "ethernet1/2"
+    exported = parse_target_intent(export_target_intent(updated))
+    assert exported["interfaces"]["blue/lan"]["interface"] == "ethernet1/2"
+    assert exported["interfaces"]["blue/lan"]["zone"] == "TRUST"
 
 
 def test_target_intent_rejects_unknown_source_and_unsupported_decision():
