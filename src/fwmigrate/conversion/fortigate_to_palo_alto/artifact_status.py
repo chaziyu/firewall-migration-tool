@@ -14,10 +14,10 @@ def classify_artifact_status(rendered, *, pending_mapping_issues=()):
     report = rendered.report
     dispositions = report.get("render_dispositions", {})
     counts = report.get("counts", {})
-    if dispositions.get("BLOCK", 0):
-        return PANArtifactStatus.PARTIAL
     if pending_mapping_issues:
         return PANArtifactStatus.NEEDS_MAPPING
+    if dispositions.get("BLOCK", 0):
+        return PANArtifactStatus.PARTIAL
     if any(counts.get(key, 0) for key in ("PARTIAL", "MANUAL_REVIEW", "UNSUPPORTED")):
         return PANArtifactStatus.PARTIAL
     if dispositions.get("CREATE", 0) == 0 and dispositions.get("REUSE", 0) > 0:
