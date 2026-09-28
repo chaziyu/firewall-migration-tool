@@ -142,6 +142,7 @@ def run_migration_pipeline(
     target_intent=None,
     automation_mode: PANAutomationMode | str = PANAutomationMode.REVIEW_ONLY,
     planner: FortiGateToPaloAltoPlanner | None = None,
+    target_object_reuse_classifier=None,
 ) -> PANMigrationPipelineResult:
     """Run the complete supported FortiGate -> PAN-OS planning pipeline.
 
@@ -180,7 +181,8 @@ def run_migration_pipeline(
     actual_planner = planner or FortiGateToPaloAltoPlanner()
     plan = actual_planner.plan(source, derived, options=final_options)
 
-    target_object_reuse = classify_target_object_reuse(plan, target, target_device)
+    reuse_classifier = target_object_reuse_classifier or classify_target_object_reuse
+    target_object_reuse = reuse_classifier(plan, target, target_device)
     dependencies = build_plan_dependency_index(plan, current)
     target_plan_findings = validate_target_plan(
         plan, target_object_reuse, target_findings, current, dependencies
