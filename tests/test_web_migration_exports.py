@@ -88,7 +88,7 @@ def test_target_preview_adds_pending_evidence_based_suggestions():
     assert {item["target_field"] for item in lan_group["decisions"]} >= {"target_interface", "target_zone"}
     assert lan_group["queue"] in {"READY_TO_CONFIRM", "CHOOSE_CANDIDATE", "NEEDS_INPUT"}
     assert decisions[("root", "vsys")]["suggested_value"] == "vsys1"
-    assert ("root", "virtual_router") not in decisions
+    assert decisions[("root", "virtual_router")]["suggested_value"] == "vr-main"
 
 
 def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence():

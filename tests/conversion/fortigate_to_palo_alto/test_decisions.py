@@ -52,7 +52,7 @@ def test_requirements_generate_scoped_suggestions_without_defaults():
     assert by_identity[("interface", "port1", "target_zone")].evidence_source == "SOURCE"
     assert by_identity[("interface", "port1", "target_interface")].mode == PANDecisionMode.REQUIRED
     assert by_identity[("vdom", "root", "vsys")].suggested_value is None
-    assert ("vdom", "root", "virtual_router") not in by_identity
+    assert by_identity[("vdom", "root", "virtual_router")].suggested_value is None
     assert decisions.to_options().interfaces == {}
     assert decisions.to_options().vdoms == {}
 
@@ -76,6 +76,6 @@ def test_confirmed_decisions_override_suggestions_and_convert_to_options():
     options = updated.to_options()
 
     assert options.vdoms["root"].vsys == "vsys-prod"
-    assert options.vdoms["root"].virtual_router is None
+    assert options.vdoms["root"].virtual_router == "vr-prod"
     assert options.zones["root"]["trust"].target_zone == "corp-trust"
     assert options.interfaces["root"]["port1"].target_interface == "ethernet1/7"

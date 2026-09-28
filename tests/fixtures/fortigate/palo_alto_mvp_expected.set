@@ -1,4 +1,10 @@
+set network interface ethernet ethernet1/1 layer3
+set network interface ethernet ethernet1/1 layer3 ip 10.0.0.1/24
+set network interface ethernet ethernet1/2 layer3
+set network interface ethernet ethernet1/2 layer3 ip 192.0.2.2/24
 set system setting target-vsys vsys1
+set import network interface [ ethernet1/1 ]
+set import network interface [ ethernet1/2 ]
 set address web-host fqdn web.example.test
 set address-group web-servers static [ web-host ]
 set service HTTPS protocol tcp
@@ -21,3 +27,6 @@ set rulebase security rules allow-web schedule work-hours
 set rulebase security rules allow-web negate-source yes
 set rulebase security rules allow-web description "Allow web access"
 set rulebase security rules allow-web action allow
+set system target-vsys none
+set network virtual-router default interface [ ethernet1/1 ]
+set network virtual-router default interface [ ethernet1/2 ]
