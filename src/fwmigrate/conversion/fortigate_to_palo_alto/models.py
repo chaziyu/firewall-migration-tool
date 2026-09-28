@@ -72,6 +72,15 @@ class PlannedSchedule(PlannedPANItem):
 
 
 @dataclass(frozen=True, slots=True)
+class PlannedInterface(PlannedPANItem):
+    interface_family: str | None = None
+    parent: str | None = None
+    tag: int | None = None
+    ipv4_addresses: tuple[str, ...] = ()
+    virtual_router: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class PlannedZone(PlannedPANItem):
     interfaces: tuple[str, ...] = ()
 
@@ -138,6 +147,7 @@ class PANMigrationPlan:
     services: tuple[PlannedService, ...] = ()
     service_groups: tuple[PlannedServiceGroup, ...] = ()
     schedules: tuple[PlannedSchedule, ...] = ()
+    interfaces: tuple[PlannedInterface, ...] = ()
     zones: tuple[PlannedZone, ...] = ()
     static_routes: tuple[PlannedStaticRoute, ...] = ()
     security_rules: tuple[PlannedSecurityRule, ...] = ()
