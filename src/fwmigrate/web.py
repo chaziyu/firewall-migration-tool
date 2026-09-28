@@ -679,6 +679,10 @@ def create_app(test_config=None):
             previous = _load_decision_document(payload.get('decision_document'), entry.source_digest)
             analysis = _clone_preview(entry)
             target_context = _target_evidence(payload)
+            previous, invalidated_target_decisions = reconcile_target_evidence(
+                previous,
+                target_context.metadata if target_context else None,
+            )
             target = target_context.analysis if target_context else None
             device = target_context.selected_device if target_context else None
             results = _auto_review_results(analysis.extracted.config, analysis.derived, previous, target, device)
@@ -710,7 +714,8 @@ def create_app(test_config=None):
             decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
             return jsonify({'success': True, 'approved_count': len(payload['decision_keys']),
                 'decisions': decisions.to_dict(), 'decision_document': _decision_document(entry.source_digest, decisions,
-                    target_context.metadata if target_context else None)})
+                    target_context.metadata if target_context else None),
+                'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
@@ -733,6 +738,10 @@ def create_app(test_config=None):
             decisions = _load_decision_document(document, entry.source_digest)
             analysis = _clone_preview(entry)
             target_context = _target_evidence(payload)
+            decisions, invalidated_target_decisions = reconcile_target_evidence(
+                decisions,
+                target_context.metadata if target_context else None,
+            )
             result = run_automation_until_stable(
                 analysis.extracted.config, analysis.derived, decisions,
                 target_context.analysis if target_context else None,
@@ -743,7 +752,8 @@ def create_app(test_config=None):
             return jsonify({'success': True, 'decisions': result.decisions.to_dict(),
                 'decision_document': _decision_document(entry.source_digest, result.decisions,
                     target_context.metadata if target_context else None),
-                'audit': list(result.audit), 'iterations': result.iterations, 'stable': result.stable})
+                'audit': list(result.audit), 'iterations': result.iterations, 'stable': result.stable,
+                'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
@@ -763,7 +773,7 @@ def create_app(test_config=None):
             target_context = _target_evidence(payload)
             target_metadata = target_context.metadata if target_context else None
             decisions = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
-            decisions, _ = reconcile_target_evidence(decisions, target_metadata)
+            decisions, invalidated_target_decisions = reconcile_target_evidence(decisions, target_metadata)
             decisions = apply_target_intent(analysis.extracted.config, decisions, payload.get('intent', payload.get('yaml', {})))
             target = target_context.analysis if target_context else None
             device = target_context.selected_device if target_context else None
@@ -778,7 +788,8 @@ def create_app(test_config=None):
                 'decision_document': _decision_document(entry.source_digest, decisions,
                     target_context.metadata if target_context else None), 'auto_decisions': auto,
                 'target_intent': export_target_intent(decisions), 'automation_audit': list(automation.audit),
-                'automation_stable': automation.stable})
+                'automation_stable': automation.stable,
+                'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
