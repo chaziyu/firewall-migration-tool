@@ -524,3 +524,7 @@ def test_migration_recommendations_are_review_only_and_reported():
 
     plan = client.post("/api/migrate", json={"preview_id": preview, "mapping": {}}).get_json()
     assert plan["recommendations"] == plan["report"]["review"]["recommendations"]
+    assert plan["coverage"] == plan["report"]["coverage"]
+    assert plan["coverage"]["complete"] is False
+    assert any(item["code"] == "MIGRATION_COVERAGE_RECOMMENDATION_ONLY"
+               for item in plan["blocking_reasons"])
