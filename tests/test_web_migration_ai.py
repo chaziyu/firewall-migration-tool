@@ -116,17 +116,20 @@ def test_ai_disabled_isolated_from_deterministic_review(monkeypatch):
     assert disabled.status_code == 503
 
 
-def test_local_ai_status_is_safe_and_exposes_install_size(monkeypatch, tmp_path):
-    from fwmigrate.ai import local_model
-    from fwmigrate.ai.manifests import LOCAL_MODEL
-
+def test_migration_ai_status_has_no_local_model_controls(monkeypatch):
     monkeypatch.delenv("AI_ASSIST_ENABLED", raising=False)
-    monkeypatch.setattr(local_model, "local_ai_data_dir", lambda: tmp_path / "app-data")
-    result = create_app({"TESTING": True}).test_client().get("/api/migration/ai/status").get_json()
-    assert result["provider"] == "local"
+    monkeypatch.delenv("AI_PROVIDER", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    client = create_app({"TESTING": True}).test_client()
+    response = client.get("/api/migration/ai/status")
+    result = response.get_json()
+    assert response.status_code == 200
+    assert result["provider"] == "groq"
     assert result["available"] is False
-    assert result["local"]["download_bytes"] == LOCAL_MODEL.size_bytes
-    assert not ({"api_key", "pid", "base_url", "path"} & result["local"].keys())
+    assert "local" not in result
+    assert client.get("/api/ai/local/status").status_code == 404
+    assert client.post("/api/ai/local/install").status_code == 404
+    assert client.post("/api/ai/local/remove").status_code == 404
 
 
 @pytest.mark.parametrize("error,status", [(AIRateLimitError, 429), (AITimeoutError, 504), (AIProviderError, 502)])

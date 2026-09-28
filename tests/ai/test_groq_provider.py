@@ -19,13 +19,20 @@ class Session:
     def post(self, url, **kwargs): self.kwargs = (url, kwargs); return self.response
 
 
-def test_ai_is_disabled_by_default_and_key_is_not_a_setting(monkeypatch):
+def test_ai_defaults_to_groq_and_key_is_not_a_setting(monkeypatch):
     monkeypatch.delenv("AI_ASSIST_ENABLED", raising=False)
+    monkeypatch.delenv("AI_PROVIDER", raising=False)
     settings = get_ai_settings()
     assert settings.enabled is True
-    assert settings.provider == "local"
-    assert settings.local_model == "qwen3-1.7b-q4_k_m"
+    assert settings.provider == "groq"
+    assert settings.model == "openai/gpt-oss-120b"
     assert "api_key" not in settings.__dataclass_fields__
+
+
+def test_local_provider_is_rejected(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "local")
+    with pytest.raises(ValueError, match="AI_PROVIDER must be groq"):
+        get_ai_settings()
 
 
 def test_groq_sends_strict_schema_with_timeout_and_extracts_usage():

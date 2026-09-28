@@ -1,4 +1,3 @@
-import atexit
 import os
 import sys
 import io
@@ -783,13 +782,6 @@ def create_app(test_config=None):
         provider = app.config.get('AI_PROVIDER_INSTANCE')
         if provider is not None:
             return settings, provider, True
-        if settings.provider == 'local':
-            try:
-                from fwmigrate.ai.llama_cpp import LlamaCppProvider
-            except ImportError:
-                return settings, None, False
-            manager = local_ai_runtime_manager()
-            return settings, LlamaCppProvider(settings, runtime_manager=manager), manager.is_available_or_installable()
         api_key = os.environ.get('GROQ_API_KEY', '').strip()
         if not api_key:
             return settings, None, False
@@ -800,15 +792,6 @@ def create_app(test_config=None):
                 return settings, None, False
             provider = GroqProvider(settings, api_key=api_key)
         return settings, provider, True
-
-    def local_ai_runtime_manager():
-        from fwmigrate.ai.local_runtime import LocalAIRuntimeManager
-        settings = get_ai_settings()
-        manager = app.extensions.setdefault('local_ai_runtime_manager', LocalAIRuntimeManager(settings))
-        if not app.extensions.get('local_ai_cleanup_registered'):
-            atexit.register(manager.stop)
-            app.extensions['local_ai_cleanup_registered'] = True
-        return manager
 
     def ai_review_payload(payload):
         settings, provider, available = ai_runtime()
@@ -833,32 +816,7 @@ def create_app(test_config=None):
         result = {'enabled': settings.enabled, 'available': bool(settings.enabled and available)}
         if settings.enabled:
             result.update(provider=settings.provider, model=settings.model)
-            if settings.provider == 'local':
-                result['local'] = local_ai_runtime_manager().status()
         return jsonify(result)
-
-    @app.route('/api/ai/local/status', methods=['GET'])
-    def local_ai_status():
-        try:
-            return jsonify(local_ai_runtime_manager().status())
-        except ValueError:
-            return jsonify({'state': 'FAILED', 'installed': False, 'runtime_available': False}), 503
-
-    @app.route('/api/ai/local/install', methods=['POST'])
-    def install_local_ai():
-        try:
-            return jsonify(local_ai_runtime_manager().start_install())
-        except ValueError:
-            return jsonify({'success': False, 'error': 'Local AI settings are invalid.'}), 503
-
-    @app.route('/api/ai/local/remove', methods=['POST'])
-    def remove_local_ai():
-        try:
-            manager = local_ai_runtime_manager()
-            manager.remove_model()
-            return jsonify(manager.status())
-        except (ValueError, RuntimeError):
-            return jsonify({'success': False, 'error': 'The local AI model could not be removed while it is in use.'}), 409
 
     @app.route('/api/migration/ai/analyze', methods=['POST'])
     def migration_ai_analyze():
@@ -1741,7 +1699,3 @@ def run_desktop(port: int = 5000):
         print(f"pywebview is not installed. Opening in default browser at http://localhost:{port}")
         webbrowser.open(f"http://localhost:{port}")
         app.run(host='127.0.0.1', port=port, debug=False)
-    finally:
-        manager = app.extensions.get('local_ai_runtime_manager')
-        if manager is not None:
-            manager.stop()
