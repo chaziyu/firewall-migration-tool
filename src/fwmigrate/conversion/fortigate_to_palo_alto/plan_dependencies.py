@@ -14,7 +14,7 @@ def item_key(item):
 
 def _items(plan):
     for family in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones",
-                   "static_routes", "security_rules", "nat_rules"):
+                   "static_routes", "dhcp_servers", "security_rules", "nat_rules"):
         yield from getattr(plan, family)
 
 
@@ -64,6 +64,8 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
             if kind == "security_rule" and item.schedule:
                 refs.append((('schedule',), item.schedule))
         elif kind == "static_route" and item.interface:
+            refs = [(('interface',), item.interface)]
+        elif kind == "dhcp_server" and item.interface:
             refs = [(('interface',), item.interface)]
         for families, name in refs:
             for dependency in resolve(item.target_vsys, families, name):
