@@ -41,6 +41,8 @@ class PANMigrationDecision:
     evidence_type: str | None = None
     evidence_value: Any = None
     target_object: str | None = None
+    evidence_target_digest: str | None = None
+    evidence_target_device: str | None = None
 
     def __post_init__(self) -> None:
         if not all(isinstance(value, str) and value for value in (self.source_vdom, self.source_kind, self.source_name, self.target_field)):
@@ -67,6 +69,16 @@ class PANMigrationDecision:
             raise ValueError("evidence_type must be a string or null")
         if self.target_object is not None and not isinstance(self.target_object, str):
             raise ValueError("target_object must be a string or null")
+        if (self.evidence_target_digest is None) != (self.evidence_target_device is None):
+            raise ValueError("target evidence digest and device must be set together")
+        if self.evidence_target_digest is not None and (
+            not isinstance(self.evidence_target_digest, str) or not self.evidence_target_digest
+        ):
+            raise ValueError("evidence_target_digest must be a non-empty string or null")
+        if self.evidence_target_device is not None and (
+            not isinstance(self.evidence_target_device, str) or not self.evidence_target_device
+        ):
+            raise ValueError("evidence_target_device must be a non-empty string or null")
 
     @property
     def key(self) -> str:
@@ -159,7 +171,19 @@ def build_decision_set(config, derived, requirements, previous=None) -> PANMigra
         )
         old = previous_by_key.get(decision.key)
         if old and old.review_state == PANDecisionReviewState.CONFIRMED:
-            decision = replace(old, affected_count=decision.affected_count, affected_by=decision.affected_by)
+            # Preserve only the explicit confirmation and its provenance. Fresh
+            # requirements remain authoritative for suggestion/mode/reason/impact.
+            decision = replace(
+                decision,
+                value=old.value,
+                review_state=old.review_state,
+                evidence_source=old.evidence_source,
+                evidence_type=old.evidence_type,
+                evidence_value=old.evidence_value,
+                target_object=old.target_object,
+                evidence_target_digest=old.evidence_target_digest,
+                evidence_target_device=old.evidence_target_device,
+            )
         decisions.append(decision)
 
     for item in requirements.get("vdoms", ()):
