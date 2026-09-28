@@ -109,6 +109,28 @@ def build_mapping_requirements(config, derived):
                         need(vdom, member, "interface", "zone_membership",
                              ("zone_membership", vdom, vip.extintf), "target_interface")
 
+    # If a consumed interface is an explicit member of a FortiGate zone, the
+    # planner must preserve that zone rather than assume it already exists on
+    # PAN-OS. Rendering the zone consumes target_interface for every explicit
+    # member so a partial membership list can never be emitted silently.
+    zone_memberships = {}
+    for zone in getattr(config, "zones", ()):
+        vdom = zone.vdom or "root"
+        for member in zone.members or ():
+            zone_memberships.setdefault((vdom, member), []).append(zone)
+
+    zone_consuming_interfaces = [
+        (vdom, name)
+        for (vdom, name, kind), item in tuple(required.items())
+        if kind == "interface" and "target_zone" in item["requires"]
+    ]
+    for vdom, name in zone_consuming_interfaces:
+        for zone in zone_memberships.get((vdom, name), ()):
+            consumer = ("zone_membership", vdom, zone.name)
+            need(vdom, zone.name, "zone", "zone_membership", consumer, "target_zone")
+            for member in zone.members or ():
+                need(vdom, member, "interface", "zone_membership", consumer, "target_interface")
+
     # A child interface needs its explicit parent mapping only when the planned
     # target item itself consumes target_interface.
     source_interfaces = {(item.vdom or "root", item.name): item
