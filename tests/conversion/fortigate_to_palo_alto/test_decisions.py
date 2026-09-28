@@ -92,6 +92,7 @@ def test_target_evidence_provenance_round_trips_and_requires_a_complete_identity
         evidence_type="AUTOMATION_VERIFIED",
         evidence_target_digest="digest-a",
         evidence_target_device="fw-a",
+        affected_by={},
     )
     restored = PANMigrationDecision.from_dict(json.loads(json.dumps(decision.to_dict())))
     assert restored == decision
