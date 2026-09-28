@@ -26,10 +26,14 @@ def _target_interface(name, ip, *, virtual_router="vr-main"):
         ipv4_addresses=[ip],
         tag=None,
         parent=None,
+        mode="layer3",
+        raw_extra={},
+        explicit_fields={"mode", "ipv4_addresses"},
     )
     topology = PANInterfaceTopologyEntry(
         name,
         pan_scope_identity(scope),
+        imported_vsys=("vsys1",),
         virtual_routers=(virtual_router,),
     )
     config = SimpleNamespace(
@@ -102,7 +106,8 @@ def test_pipeline_uses_final_automated_decisions_before_planning():
     }
     assert by_identity[("interface", "wan", "target_interface")].value == "ethernet1/1"
     assert by_identity[("vdom", "root", "virtual_router")].value == "vr-main"
+    assert by_identity[("vdom", "root", "vsys")].value == "vsys1"
     assert all(item.evidence_source == "DERIVED" for item in by_identity.values())
     assert any("virtual-router vr-main" in command for command in result.rendered.commands)
     assert any("interface ethernet1/1" in command for command in result.rendered.commands)
-    assert result.rendered.report["automation"]["applied"] == 2
+    assert result.rendered.report["automation"]["applied"] == 3
