@@ -3,6 +3,7 @@
 from .models import PANMigrationPlan
 from .target_candidates import PANTargetCandidateMatchClass, build_target_candidates
 from .target_suggestions import _device
+from ...vendors.palo_alto.source_model import pan_scope_identity
 
 
 def _fields(item):
@@ -144,6 +145,115 @@ def _classify(target, family, attribute, item, device, compare):
             "evidence": list(candidate.strong_evidence + candidate.supporting_evidence + candidate.contradictions)}
 
 
+def _interface_collisions(planned, target, device):
+    """Compare planned interfaces with explicit device/topology evidence."""
+    if not planned:
+        return []
+    records = [
+        item for item in (*getattr(target.config, "interfaces", ()),
+                          *getattr(target.config, "interface_units", ()))
+        if item.name and _device(item) == device
+    ]
+    topology = {
+        (item.scope, item.interface): item
+        for item in getattr(getattr(target, "derived", None), "interface_topology", ())
+    }
+    result = []
+    for source in planned:
+        matches = [item for item in records if item.name == source.target_name]
+        if not matches:
+            continue
+        evidence = []
+        contradictions = []
+        supporting = []
+        if len(matches) != 1:
+            result.append({
+                "status": "AMBIGUOUS", "family": "interface",
+                "source_name": source.source_name, "source_vdom": source.source_vdom or "root",
+                "source_kind": source.source_kind, "target_vsys": source.target_vsys,
+                "target_name": source.target_name,
+                "evidence": ["multiple target interfaces share the mapped name"],
+            })
+            continue
+
+        target_item = matches[0]
+        explicit = _fields(target_item)
+        if getattr(target_item, "interface_family", None) != source.interface_family:
+            contradictions.append("target interface family differs")
+        else:
+            evidence.append("same explicit target interface family")
+
+        target_parent = getattr(target_item, "parent", None)
+        if source.parent != target_parent:
+            contradictions.append("target interface parent differs")
+        elif source.parent:
+            evidence.append("same explicit parent interface")
+
+        if source.parent:
+            if "tag" not in explicit:
+                supporting.append("target VLAN tag is not explicit")
+            elif str(getattr(target_item, "tag", None)) != str(source.tag):
+                contradictions.append("target VLAN tag differs")
+            else:
+                evidence.append("same explicit VLAN tag")
+        else:
+            mode = getattr(target_item, "mode", None)
+            if "mode" not in explicit:
+                supporting.append("target interface mode is not explicit")
+            elif mode != "layer3":
+                contradictions.append("target interface is not explicitly layer3")
+            else:
+                evidence.append("same explicit layer3 mode")
+
+        planned_addresses = tuple(source.ipv4_addresses)
+        target_addresses = tuple(getattr(target_item, "ipv4_addresses", None) or ())
+        if planned_addresses:
+            if "ipv4_addresses" not in explicit:
+                supporting.append("target IPv4 addresses are not explicit")
+            elif set(target_addresses) != set(planned_addresses):
+                contradictions.append("target IPv4 addresses differ")
+            else:
+                evidence.append("same explicit IPv4 addresses")
+        elif "ipv4_addresses" in explicit and target_addresses:
+            contradictions.append("target has explicit IPv4 addresses absent from the planned source state")
+
+        allowed_fields = {"tag", "ipv4_addresses"} if source.parent else {"mode", "ipv4_addresses"}
+        extras = sorted(explicit - allowed_fields)
+        if extras:
+            supporting.append("target has additional explicit interface semantics: " + ", ".join(extras))
+        if getattr(target_item, "raw_extra", None):
+            supporting.append("target interface has preserved unknown semantics")
+
+        topo = topology.get((pan_scope_identity(getattr(target_item, "scope", None)), target_item.name))
+        if topo is None:
+            supporting.append("target interface topology evidence is unavailable")
+        else:
+            if topo.issues:
+                supporting.extend(topo.issues)
+            if source.target_vsys not in topo.imported_vsys:
+                contradictions.append("target VSYS import differs")
+            else:
+                evidence.append("same explicit VSYS import")
+            if source.virtual_router not in topo.virtual_routers:
+                contradictions.append("target virtual-router membership differs")
+            else:
+                evidence.append("same explicit virtual-router membership")
+
+        status = (
+            "NAME_CONFLICT" if contradictions else
+            "AMBIGUOUS" if supporting else
+            "EXACT_MATCH"
+        )
+        result.append({
+            "status": status, "family": "interface",
+            "source_name": source.source_name, "source_vdom": source.source_vdom or "root",
+            "source_kind": source.source_kind, "target_vsys": source.target_vsys,
+            "target_name": source.target_name,
+            "evidence": [*evidence, *supporting, *contradictions],
+        })
+    return result
+
+
 def _route_collisions(planned, target, device):
     result = []
     routers = [router for router in getattr(target.config, "virtual_routers", ())
@@ -202,6 +312,7 @@ def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | N
     if target is None or not device:
         return ()
     result = []
+    result.extend(_interface_collisions(plan.interfaces, target, device))
     for family, attribute, items, compare in (
         ("address", "addresses", plan.addresses, _address),
         ("address_group", "address_groups", plan.address_groups, _members),
