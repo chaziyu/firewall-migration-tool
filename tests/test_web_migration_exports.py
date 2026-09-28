@@ -366,7 +366,18 @@ def test_complete_mappings_create_zip_for_same_plan_artifact():
         assert root_vsys["value"] == "vsys1"
         assert root_vsys["review_state"] == "CONFIRMED"
         import yaml
-        assert yaml.safe_load(archive.read("target_mapping.yaml")) == mapping
+        saved_mapping = yaml.safe_load(archive.read("target_mapping.yaml"))
+        assert saved_mapping["vdoms"]["root"] == {"vsys": "vsys1", "virtual_router": "default"}
+        assert saved_mapping["interfaces"]["root"]["lan"] == {
+            "target_interface": "ethernet1/1", "target_zone": "trust",
+        }
+        assert saved_mapping["interfaces"]["root"]["wan"] == {
+            "target_interface": "ethernet1/2", "target_zone": "untrust",
+        }
+        assert saved_mapping["zones"]["root"] == {
+            "trust": {"target_zone": "trust"},
+            "untrust": {"target_zone": "untrust"},
+        }
 
 
 def test_vsys_only_mapping_renders_objects_and_keeps_policy_for_review():
