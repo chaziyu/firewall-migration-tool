@@ -46,6 +46,26 @@ def schedule(item):
     return []
 
 
+def interface(item):
+    """Return ordered device/VSYS paths for one planned Layer 3 interface."""
+    name = item.target_name or item.source_name
+    commands = []
+    if item.parent:
+        base = ("network", "interface", item.interface_family, item.parent, "layer3", "units", name)
+        commands.append(("device_pre", *base))
+        if item.tag is not None:
+            commands.append(("device_pre", *base, "tag", item.tag))
+        commands.extend(("device_pre", *base, "ip", address) for address in item.ipv4_addresses)
+    else:
+        base = ("network", "interface", item.interface_family, name, "layer3")
+        commands.append(("device_pre", *base))
+        commands.extend(("device_pre", *base, "ip", address) for address in item.ipv4_addresses)
+    commands.append(("vsys", "import", "network", "interface", "[", name, "]"))
+    commands.append(("device_post", "network", "virtual-router", item.virtual_router,
+                     "interface", "[", name, "]"))
+    return commands
+
+
 def zone(item):
     if item.interfaces:
         return [("vsys", "zone", item.target_name or item.source_name, "network", "layer3", "[", *item.interfaces, "]")]
