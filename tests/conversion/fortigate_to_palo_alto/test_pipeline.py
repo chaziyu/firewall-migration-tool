@@ -6,7 +6,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
     run_migration_pipeline,
 )
 from fwmigrate.vendors.fortigate.model.address import FGAddress, FGWildcardFQDN
-from fwmigrate.vendors.fortigate.model.dhcp import FGDHCPServer
+from fwmigrate.vendors.fortigate.model.dhcp import FGDHCPIPRange, FGDHCPServer
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.route_static import FGStaticRoute
 from fwmigrate.vendors.fortigate.model.source import FGConfig
@@ -47,6 +47,7 @@ def _target_interface(name, ip, *, virtual_router="vr-main"):
         services=[],
         service_groups=[],
         schedules=[],
+        dhcp_servers=[],
         nat_rules=[],
         security_rules=[],
         scopes=[scope],
@@ -77,7 +78,7 @@ def test_pipeline_renders_supported_objects_from_explicit_mapping():
     assert result.rendered.report["plan_status"] == "READY"
 
 
-def test_pipeline_marks_recommendation_only_configuration_partial():
+def test_pipeline_marks_unsupported_dhcp_plan_partial_without_coverage_gap():
     source = FGConfig(
         addresses=[FGAddress(name="host-a", subnet="192.0.2.10 255.255.255.255")],
         dhcp_servers=[FGDHCPServer(id=1)],
@@ -90,11 +91,48 @@ def test_pipeline_marks_recommendation_only_configuration_partial():
     )
 
     assert result.artifact_status == "PARTIAL"
-    assert result.coverage["complete"] is False
-    assert result.coverage["counts"]["RECOMMENDATION_ONLY"] == 1
-    assert result.coverage["unplanned"][0]["source_kind"] == "dhcp_server"
+    assert result.coverage["complete"] is True
+    assert result.coverage["unplanned_count"] == 0
+    assert result.plan.dhcp_servers[0].status.value == "MANUAL_REVIEW"
     assert result.rendered.report["coverage"] == result.coverage
     assert any("set address host-a" in command for command in result.rendered.commands)
+    assert not any("network dhcp" in command for command in result.rendered.commands)
+
+
+def test_pipeline_renders_supported_dhcp_and_completes_coverage():
+    source = FGConfig(
+        interfaces=[FGInterface(name="lan", type="physical", mode="static", ip="10.0.0.1/24")],
+        dhcp_servers=[FGDHCPServer(
+            id=1,
+            interface="lan",
+            status="enable",
+            server_type="regular",
+            ip_mode="range",
+            default_gateway="10.0.0.1",
+            netmask="255.255.255.0",
+            lease_time=3600,
+            dns_service="specify",
+            dns_server1="10.0.0.2",
+            dns_server2="10.0.0.3",
+            ip_ranges=[FGDHCPIPRange(start_ip="10.0.0.10", end_ip="10.0.0.50")],
+        )],
+    )
+
+    result = run_migration_pipeline(
+        source,
+        _empty_derived(),
+        options=PANMigrationOptions(
+            vdoms={"root": {"vsys": "vsys1", "virtual_router": "vr-main"}},
+            interfaces={"root": {"lan": {"target_interface": "ethernet1/3"}}},
+        ),
+    )
+
+    assert result.artifact_status == "READY"
+    assert result.coverage["complete"] is True
+    assert result.plan.dhcp_servers[0].status.value == "SUPPORTED"
+    assert "set network dhcp interface ethernet1/3 server mode enabled" in result.rendered.commands
+    assert "set network dhcp interface ethernet1/3 server ip-pool [ 10.0.0.10-10.0.0.50 ]" in result.rendered.commands
+
 
 
 def test_pipeline_marks_preserved_source_only_configuration_partial():
