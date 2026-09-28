@@ -60,7 +60,7 @@ def vendors():
     show_default=True,
     help='Deterministic mapping automation policy',
 )
-@click.option('--format', type=click.Choice(['xml', 'set', 'cli']), default='xml', help='Output format')
+@click.option('--format', type=click.Choice(['xml', 'set', 'cli']), default='set', show_default=True, help='Output format')
 def migrate(input, output, source_vendor, target_vendor, zone_map, target_config,
             target_device, target_intent, automation_mode, format):
     """Plan and render the supported FortiGate -> PAN-OS migration."""
