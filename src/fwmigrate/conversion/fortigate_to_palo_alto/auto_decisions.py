@@ -86,6 +86,7 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                 "status": AutoDecisionStatus.MANUAL.value,
                 "value": decision.value,
                 "reason": "Confirmed value is preserved.",
+                "uses_target_evidence": False,
             }
             continue
         if decision.source_kind != "interface" or decision.target_field != "target_interface":
@@ -93,6 +94,7 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                 "status": AutoDecisionStatus.MANUAL.value,
                 "value": None,
                 "reason": "No deterministic interface decision is required here.",
+                "uses_target_evidence": False,
             }
             continue
 
@@ -102,6 +104,7 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                 "status": AutoDecisionStatus.MANUAL.value,
                 "value": None,
                 "reason": "Source interface or target architecture evidence is unavailable.",
+                "uses_target_evidence": False,
             }
             continue
 
@@ -123,18 +126,21 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                     if status == AutoDecisionStatus.VERIFIED
                     else "Confirmed parent and matching VLAN."
                 ),
+                "uses_target_evidence": True,
             }
         elif len(matches) > 1:
             results[decision.key] = {
                 "status": AutoDecisionStatus.CANDIDATE.value,
                 "candidates": sorted({item.name for item, _, _ in matches}),
                 "reason": "Multiple target interfaces satisfy the evidence.",
+                "uses_target_evidence": True,
             }
         else:
             results[decision.key] = {
                 "status": AutoDecisionStatus.MANUAL.value,
                 "value": None,
                 "reason": "No exact or confirmed-parent match is available.",
+                "uses_target_evidence": bool(target is not None),
             }
 
     mapped_for_recomputation = dict(mapped)
@@ -229,6 +235,7 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                     proposals.append((
                         zone_decision.value,
                         "Confirmed source-zone mapping and explicit membership.",
+                        False,
                     ))
 
             if target is not None and source is not None:
@@ -248,6 +255,7 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                         proposals.append((
                             next(iter(assigned)),
                             "Mapped PAN interface has one explicit zone assignment.",
+                            True,
                         ))
                 else:
                     parent = mapped_for_recomputation.get(
@@ -266,16 +274,22 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                             proposals.append((
                                 topo.zones[0],
                                 "Unique deterministic PAN interface evidence has one explicit zone.",
+                                True,
                             ))
 
-            values = {value for value, _ in proposals if value}
+            values = {value for value, _, _ in proposals if value}
             if len(values) == 1:
                 value = next(iter(values))
                 results[decision.key] = {
                     "status": AutoDecisionStatus.DERIVED.value,
                     "value": value,
                     "reason": "; ".join(
-                        reason for proposal, reason in proposals if proposal == value
+                        reason for proposal, reason, _ in proposals if proposal == value
+                    ),
+                    "uses_target_evidence": any(
+                        uses_target
+                        for proposal, _, uses_target in proposals
+                        if proposal == value
                     ),
                 }
             elif len(values) > 1:
@@ -283,6 +297,7 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                     "status": AutoDecisionStatus.CANDIDATE.value,
                     "candidates": sorted(values),
                     "reason": "Deterministic source and target zone evidence conflicts.",
+                    "uses_target_evidence": any(item[2] for item in proposals),
                 }
 
         elif decision.source_kind == "vdom":
@@ -305,6 +320,7 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                     "status": AutoDecisionStatus.DERIVED.value,
                     "value": values[0],
                     "reason": f"Consistent deterministic interface {decision.target_field} evidence.",
+                    "uses_target_evidence": True,
                 }
 
     return results
