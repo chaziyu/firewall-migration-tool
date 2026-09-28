@@ -153,8 +153,8 @@ def _dhcp(source, target):
         expected = getattr(source, field, None)
         actual = getattr(target, field, None)
         if expected is None:
-            if field in explicit and actual not in (None, "", [], ()):
-                contradictions.append(f"target DHCP {field} is explicitly configured but absent from the plan")
+            if field in explicit:
+                supporting.append(f"target DHCP {field} is explicit but absent from the plan")
         elif field not in explicit:
             supporting.append(f"target DHCP {field} is not explicit")
         elif str(actual) == str(expected):
@@ -163,8 +163,8 @@ def _dhcp(source, target):
             contradictions.append(f"target DHCP {field} differs")
 
     if source.lease_type is None:
-        if "lease_type" in explicit and getattr(target, "lease_type", None):
-            contradictions.append("target DHCP lease is explicitly configured but absent from the plan")
+        if "lease_type" in explicit:
+            supporting.append("target DHCP lease type is explicit but absent from the plan")
     elif "lease_type" not in explicit:
         supporting.append("target DHCP lease type is not explicit")
     elif target.lease_type != source.lease_type:
@@ -178,6 +178,8 @@ def _dhcp(source, target):
                 strong.append("same explicit DHCP lease timeout")
             else:
                 contradictions.append("target DHCP lease timeout differs")
+        elif "lease_timeout" in explicit:
+            supporting.append("target DHCP lease timeout is explicit outside the planned source state")
 
     if "ip_pools" not in explicit or getattr(target, "ip_pools", None) is None:
         supporting.append("target DHCP IP pools are not explicit")
@@ -193,11 +195,22 @@ def _dhcp(source, target):
         "interface", "mode", "lease_type", "lease_timeout", "gateway",
         "subnet_mask", "dns_primary", "dns_secondary", "ip_pools",
     }
-    additional = sorted(field for field in explicit - represented
-                        if getattr(target, field, None) not in (None, "", [], ()))
+    additional = sorted(explicit - represented)
     if additional:
         supporting.append("target DHCP has additional explicit semantics: " + ", ".join(additional))
     return tuple(strong), tuple(supporting), tuple(contradictions)
+
+
+def _dhcp_device(item):
+    scope = getattr(item, "scope", None)
+    if scope is None:
+        return None
+    provenance = getattr(scope, "template_provenance", None) or {}
+    return (
+        scope.device_serial or scope.device_name
+        or provenance.get("managed_device_serial")
+        or provenance.get("managed_device")
+    )
 
 
 def _dhcp_collisions(planned, target, device):
@@ -205,7 +218,7 @@ def _dhcp_collisions(planned, target, device):
     records = [
         item for item in getattr(target.config, "dhcp_servers", ())
         if (
-            _device(item) == device
+            _dhcp_device(item) == device
             or getattr(getattr(item, "scope", None), "kind", None) == "shared"
         )
     ]
