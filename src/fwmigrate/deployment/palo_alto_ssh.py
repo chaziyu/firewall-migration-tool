@@ -1,6 +1,7 @@
 """Optional, explicit candidate deployment for Palo Alto."""
 
 import re
+import time
 
 from .models import (PANCommitResult, PANDeploymentCommandResult, PANDeploymentOptions,
                      PANDeploymentResult, PANValidationResult)
@@ -57,27 +58,63 @@ class PANSSHDeployer:
                                            f"command {index} rejected: {response or 'command rejected'}", tuple(results))
         return PANDeploymentResult(True, len(results), len(results), command_results=tuple(results))
 
+    def _poll_job(self, job_id):
+        attempts = max(1, int(self.options.job_poll_attempts))
+        interval = max(0.0, float(self.options.job_poll_interval))
+        last = ""
+        for attempt in range(attempts):
+            last = _safe_text(
+                self.connection.send_command(f"show jobs id {job_id}"),
+                self.options.password,
+            )
+            if _ERROR.search(last or ""):
+                return "FAILED", last
+            if re.search(r"\bFIN\b", last or "", re.I):
+                status = (
+                    "SUCCESS"
+                    if re.search(r"(?:\bOK\b|\bsuccess(?:ful)?\b)", last or "", re.I)
+                    else "FAILED"
+                )
+                return status, last
+            if attempt + 1 < attempts and interval:
+                time.sleep(interval)
+        return "TIMEOUT", last or f"job {job_id} did not reach FIN"
+
     def validate_candidate(self):
         response = _safe_text(self.connection.send_command("validate full"), self.options.password)
         match = _JOB.search(response or "")
         job_id = match.group(1) if match else None
         if not job_id:
             return PANValidationResult(None, "FAILED", response or "validation job ID missing")
-        result = _safe_text(self.connection.send_command(f"show jobs id {job_id}"), self.options.password)
-        status = "SUCCESS" if not _ERROR.search(result or "") and re.search(r"(?:FIN|success|ok)", result or "", re.I) else "FAILED"
+        status, result = self._poll_job(job_id)
         return PANValidationResult(job_id, status, result or response or "")
 
     def commit_candidate(self):
         response = _safe_text(self.connection.commit(), self.options.password)
+        if _ERROR.search(response or ""):
+            return PANCommitResult(None, "FAILED", response or "")
         match = _JOB.search(response or "")
-        status = "FAILED" if _ERROR.search(response or "") else "SUCCESS"
-        return PANCommitResult(match.group(1) if match else None, status, response or "")
+        job_id = match.group(1) if match else None
+        if not job_id:
+            status = "SUCCESS" if re.search(r"\bsuccess(?:ful)?\b|\bOK\b", response or "", re.I) else "FAILED"
+            return PANCommitResult(None, status, response or "commit job ID missing")
+        status, result = self._poll_job(job_id)
+        return PANCommitResult(job_id, status, result or response or "")
 
     def deploy(self, rendered: RenderedMigration):
         if not isinstance(rendered, RenderedMigration):
             raise TypeError("deployment requires a RenderedMigration")
         if not rendered.commands:
             return PANDeploymentResult(False, failure_message="The rendered migration has no commands to deploy")
+        plan_status = rendered.report.get("plan_status")
+        if plan_status != "READY":
+            return PANDeploymentResult(
+                False,
+                failure_message=(
+                    "Candidate deployment requires a READY migration artifact; "
+                    f"current status is {plan_status or 'UNKNOWN'}"
+                ),
+            )
         try:
             self.connect()
         except Exception as exc:
@@ -94,8 +131,13 @@ class PANSSHDeployer:
                 commit = self.commit_candidate() if self.options.commit and validation.status == "SUCCESS" else PANCommitResult()
             except Exception as exc:
                 commit = PANCommitResult(None, "FAILED", _safe_text(exc, self.options.password))
+            failure_message = pushed.failure_message
+            if self.options.validate and validation.status != "SUCCESS":
+                failure_message = f"candidate validation {validation.status.lower()}"
+            elif self.options.commit and commit.status != "SUCCESS":
+                failure_message = f"candidate commit {commit.status.lower()}"
             return PANDeploymentResult(pushed.connected, pushed.commands_attempted, pushed.commands_succeeded,
-                                       pushed.failed_command_index, pushed.failure_message, pushed.command_results,
+                                       pushed.failed_command_index, failure_message, pushed.command_results,
                                        validation, commit)
         finally:
             try:
