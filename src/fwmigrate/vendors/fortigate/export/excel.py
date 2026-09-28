@@ -31,6 +31,7 @@ from ..extraction.coverage import (
 )
 from ..security.extraction import sanitize_source_attributes, sanitize_source_value
 from ..section_registry import registered_sections
+from ..transform.policies import effective_policy_action
 from ..validation.index import ValidationIssueIndex
 from ..validation.models import ValidationIssue, ValidationResult
 from .excel_schema import (
@@ -73,6 +74,7 @@ _COLUMN_WIDTH_OVERRIDES_BY_SHEET = {
     "Policies": {"Source Interface": 32, "Destination Interface": 32},
 }
 _DEFAULT_COLUMN_WIDTH = 22
+_POLICY_ACTION_NOTE = "Missing or empty Action values display the FortiOS default (deny)."
 
 
 _SOURCE_PATHS_BY_SHEET: dict[str, tuple[str, ...]] = {
@@ -780,7 +782,11 @@ def _write_table_sheet_fast(
     sheet.append([
         _fast_cell(
             sheet,
-            "FAST lightweight export; values preserve explicit source data and analysis columns.",
+            (
+                "FAST lightweight export. " + _POLICY_ACTION_NOTE
+                if sheet_name == "Policies"
+                else "FAST lightweight export; values preserve explicit source data and analysis columns."
+            ),
             font=_MUTED_FONT,
             alignment=Alignment(wrap_text=True, vertical="top"),
         ),
@@ -941,6 +947,12 @@ def _sheet_note(
             "Explicit FortiGate source commands retained for traceability. "
             "Extraction Status identifies whether the source section has "
             "dedicated typed extraction support."
+        )
+
+    if sheet_name == "Policies" and row_count:
+        return (
+            f"{row_count} record(s). {_POLICY_ACTION_NOTE} "
+            "Other values are explicit source data unless identified as derived or analysis output."
         )
 
     if row_count:
@@ -1409,7 +1421,7 @@ def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dic
             "Destination IPv6 Addresses": item.dstaddr6,
             "Destination IPv6 Address Negate": item.dstaddr6_negate,
             "Services": item.service,
-            "Action": item.action,
+            "Action": effective_policy_action(item.action),
             "Schedule": item.schedule,
             "NAT Enabled": _enabled_text(item.nat),
             "UTM Status": item.utm_status,
