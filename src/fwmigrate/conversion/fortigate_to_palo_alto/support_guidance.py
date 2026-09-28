@@ -63,12 +63,12 @@ def _warning_guidance(item, warning, decisions):
         return _guidance(item, "MISSING_TARGET_INTERFACE", "MISSING_MAPPING", "Missing target interface",
                          warning, f"Confirm a target interface for {name or 'the referenced interface'}.",
                          "the target interface decision is confirmed", _decision_key(decisions, vdom, name, "target_interface", ("interface",)))
-    if "missing target virtual-router mapping" in lower:
+    if "missing target virtual-router mapping" in lower or "missing palo alto virtual-router mapping" in lower:
         return _guidance(item, "MISSING_VIRTUAL_ROUTER", "MISSING_MAPPING", "Missing virtual router",
                          warning, f"Confirm a virtual router for VDOM {vdom}.",
                          "the VDOM virtual-router decision is confirmed",
                          _decision_key(decisions, vdom, vdom, "virtual_router", ("vdom",)))
-    if "missing target vsys mapping" in lower:
+    if "missing target vsys mapping" in lower or "missing palo alto vsys mapping" in lower:
         return _guidance(item, "MISSING_VSYS", "MISSING_MAPPING", "Missing target VSYS",
                          warning, f"Confirm a target VSYS for VDOM {vdom}.",
                          "the VDOM VSYS decision is confirmed",
@@ -139,7 +139,7 @@ def build_support_guidance(plan, validation, decisions, target_findings=()):
 def _items(plan):
     if plan is None:
         return
-    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "zones", "static_routes", "security_rules", "nat_rules"):
+    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "security_rules", "nat_rules"):
         yield from getattr(plan, name)
 
 
