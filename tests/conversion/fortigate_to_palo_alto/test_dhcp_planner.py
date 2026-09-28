@@ -189,3 +189,13 @@ def test_dhcp_target_with_additional_explicit_semantics_is_not_auto_reused():
     assert strong
     assert supporting
     assert not contradictions
+
+
+def test_dhcp_exact_reuse_does_not_collapse_explicit_empty_target_state():
+    target = _target_dhcp()
+    target.probe_ip = None
+    target.explicit_fields.add("probe_ip")
+    strong, supporting, contradictions = _dhcp(_planned_dhcp(), target)
+    assert strong
+    assert "target DHCP has additional explicit semantics: probe_ip" in supporting
+    assert not contradictions
