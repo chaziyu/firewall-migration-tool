@@ -152,11 +152,17 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
     # to a required interface or zone decision. This allows VSYS/VR derivation
     # without making target_interface a false requirement for security rules.
     vdom_interfaces = {}
+    vdom_evidence_sources = {}
+    relevant_sources = {}
+    for item in decisions.decisions:
+        if item.source_kind == "interface" and item.target_field in {"target_interface", "target_zone"}:
+            relevant_sources.setdefault(item.source_vdom, set()).add(item.source_name)
     seen_topology = set()
 
-    def add_topology(vdom, topo):
+    def add_topology(vdom, source_name, topo):
         if topo is None or topo.issues:
             return
+        vdom_evidence_sources.setdefault(vdom, set()).add(source_name)
         marker = (vdom, topo.scope, topo.interface)
         if marker in seen_topology:
             return
@@ -171,7 +177,7 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                 if item.name == target_name
             ]
             if len(matches) == 1:
-                add_topology(vdom, matches[0])
+                add_topology(vdom, source_name, matches[0])
 
         for decision in decisions.decisions:
             if decision.source_kind != "interface" or decision.target_field != "target_zone":
@@ -190,7 +196,7 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                 target_vsys_value(decisions, decision.source_vdom),
             )
             if len(matches) == 1:
-                add_topology(decision.source_vdom, matches[0][1])
+                add_topology(decision.source_vdom, decision.source_name, matches[0][1])
 
     # Then derive zone and VDOM ownership decisions from established evidence.
     for decision in decisions.decisions:
@@ -280,7 +286,9 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                 }
 
         elif decision.source_kind == "vdom":
-            relevant = vdom_interfaces.get(decision.source_vdom, [])
+            required = relevant_sources.get(decision.source_vdom, set())
+            evidenced = vdom_evidence_sources.get(decision.source_vdom, set())
+            relevant = vdom_interfaces.get(decision.source_vdom, []) if required and evidenced == required else []
             attribute = (
                 "imported_vsys"
                 if decision.target_field == "vsys"
