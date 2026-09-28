@@ -329,11 +329,9 @@ class FortiGateParser:
     ) -> list[str]:
         values: list[str] = []
 
-        while (
-            self.peek() is not None
-            and self.peek().type == TokenType.STRING
-            and self.peek().line_number == line_number
-        ):
+        while (token := self.peek()) is not None:
+            if token.type != TokenType.STRING or token.line_number != line_number:
+                break
             values.append(self.next_token().value)
 
         return values

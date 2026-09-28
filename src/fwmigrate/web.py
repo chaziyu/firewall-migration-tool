@@ -280,6 +280,31 @@ def _cleanup_preview_cache(now: float | None = None) -> None:
         _PREVIEW_CACHE.pop(preview_id, None)
 
 
+def _find_source_preview(source_vendor: str, source_digest: str, *,
+                         collection_status: CollectionStatus | None = None,
+                         collection_warnings: tuple[str, ...] = (),
+                         collection_method: str | None = None) -> _PreviewCacheEntry | None:
+    return next((entry for entry in _PREVIEW_CACHE.values()
+                 if entry.source_vendor == source_vendor
+                 and entry.source_digest == source_digest
+                 and entry.collection_status == collection_status
+                 and entry.collection_warnings == collection_warnings
+                 and entry.collection_method == collection_method), None)
+
+
+def _lookup_source_preview(source_vendor: str, raw: bytes, *,
+                           collection_status: CollectionStatus | None = None,
+                           collection_warnings: tuple[str, ...] = (),
+                           collection_method: str | None = None) -> _PreviewCacheEntry | None:
+    source_digest = _source_digest(source_vendor, raw)
+    with _PREVIEW_CACHE_LOCK:
+        _cleanup_preview_cache()
+        return _find_source_preview(source_vendor, source_digest,
+                                    collection_status=collection_status,
+                                    collection_warnings=collection_warnings,
+                                    collection_method=collection_method)
+
+
 def _cache_preview(source_vendor: str, raw: bytes, analysis, source_name: str | None = None,
                    *, collection_status: CollectionStatus | None = None,
                    collection_warnings: tuple[str, ...] = (), collection_method: str | None = None) -> _PreviewCacheEntry:
@@ -287,12 +312,12 @@ def _cache_preview(source_vendor: str, raw: bytes, analysis, source_name: str | 
     source_digest = _source_digest(source_vendor, raw)
     with _PREVIEW_CACHE_LOCK:
         _cleanup_preview_cache(now)
-        for entry in _PREVIEW_CACHE.values():
-            if (entry.source_vendor == source_vendor and entry.source_digest == source_digest
-                    and entry.collection_status == collection_status
-                    and entry.collection_warnings == collection_warnings
-                    and entry.collection_method == collection_method):
-                return entry
+        entry = _find_source_preview(source_vendor, source_digest,
+                                     collection_status=collection_status,
+                                     collection_warnings=collection_warnings,
+                                     collection_method=collection_method)
+        if entry is not None:
+            return entry
         while len(_PREVIEW_CACHE) >= _PREVIEW_CACHE_MAX_ENTRIES:
             oldest_id = min(_PREVIEW_CACHE, key=lambda key: _PREVIEW_CACHE[key].created_at)
             _PREVIEW_CACHE.pop(oldest_id, None)
@@ -639,15 +664,25 @@ def create_app(test_config=None):
             started = perf_counter()
             file = request.files['file']
             raw_content = file.read()
-            file_content = _timed(metrics, 'decode', lambda: _decode_configuration(raw_content))
             reporter = source_reporters.get(source_vendor)
             source_vendor = reporter.vendor_id
-            analysis = _timed(
-                metrics,
-                'extraction',
-                lambda: reporter.analyze_source(file_content, metrics=metrics),
+            preview_entry = _timed(
+                metrics, 'analysis cache lookup',
+                lambda: _lookup_source_preview(source_vendor, raw_content),
             )
-            preview_entry = _cache_preview(source_vendor, raw_content, analysis, os.path.basename(file.filename))
+            analysis_cache_hit = preview_entry is not None
+            if preview_entry is None:
+                file_content = _timed(metrics, 'decode', lambda: _decode_configuration(raw_content))
+                analysis = _timed(
+                    metrics,
+                    'extraction',
+                    lambda: reporter.analyze_source(file_content, metrics=metrics),
+                )
+                preview_entry = _cache_preview(source_vendor, raw_content, analysis, os.path.basename(file.filename))
+            else:
+                analysis = preview_entry.analysis
+            if metrics is not None:
+                metrics.set_metadata('analysis_cache_hit', analysis_cache_hit)
             report = _timed(metrics, 'web_preview_construction', lambda: normalize_web_report(reporter.build_preview(analysis), source_vendor))
             response = {
                 'success': True,
@@ -698,10 +733,17 @@ def create_app(test_config=None):
             snapshot = make_snapshot(source)
             raw = snapshot['source_text'].encode('utf-8')
             reporter = source_reporters.get(source.vendor_id)
-            analysis = reporter.analyze_source(snapshot['source_text'])
-            entry = _cache_preview(source.vendor_id, raw, analysis, source.source_name,
-                                   collection_status=source.status,
-                                   collection_warnings=tuple(snapshot['warnings']), collection_method=source.method)
+            collection_warnings = tuple(snapshot['warnings'])
+            entry = _lookup_source_preview(source.vendor_id, raw, collection_status=source.status,
+                                           collection_warnings=collection_warnings,
+                                           collection_method=source.method)
+            if entry is None:
+                analysis = reporter.analyze_source(snapshot['source_text'])
+                entry = _cache_preview(source.vendor_id, raw, analysis, source.source_name,
+                                       collection_status=source.status,
+                                       collection_warnings=collection_warnings, collection_method=source.method)
+            else:
+                analysis = entry.analysis
             return jsonify({
                 'success': True,
                 'preview_id': entry.preview_id,
@@ -720,10 +762,18 @@ def create_app(test_config=None):
             raw = uploaded.read(MAX_BYTES + 1) if uploaded else request.stream.read(MAX_BYTES + 1)
             source = parse_snapshot(raw)
             reporter = source_reporters.get(source.vendor_id)
-            analysis = reporter.analyze_source(source.source_text)
-            entry = _cache_preview(source.vendor_id, source.source_text.encode('utf-8'), analysis, source.source_name,
-                                   collection_status=source.status, collection_warnings=tuple(source.warnings),
-                                   collection_method=source.method)
+            source_bytes = source.source_text.encode('utf-8')
+            collection_warnings = tuple(source.warnings)
+            entry = _lookup_source_preview(source.vendor_id, source_bytes, collection_status=source.status,
+                                           collection_warnings=collection_warnings,
+                                           collection_method=source.method)
+            if entry is None:
+                analysis = reporter.analyze_source(source.source_text)
+                entry = _cache_preview(source.vendor_id, source_bytes, analysis, source.source_name,
+                                       collection_status=source.status, collection_warnings=collection_warnings,
+                                       collection_method=source.method)
+            else:
+                analysis = entry.analysis
             return jsonify({'success': True, 'vendor_id': source.vendor_id, 'preview_id': entry.preview_id,
                             'collection': {'status': source.status.value, 'parts': [asdict(part) for part in source.parts],
                                            'warnings': source.warnings}, 'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id)})
@@ -743,8 +793,10 @@ def create_app(test_config=None):
                 if uploaded is None or not uploaded.filename:
                     return jsonify({'success': False, 'error': 'A valid preview_id or configuration file is required'}), 400
                 raw = uploaded.read()
-                analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
-                entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
+                entry = _lookup_source_preview('fortigate', raw)
+                if entry is None:
+                    analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
+                    entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
             state = _build_migration_review_state(entry, payload)
             target_context = state['target_context']
             target = target_context.analysis if target_context else None
@@ -1267,8 +1319,13 @@ def create_app(test_config=None):
             entry = _lookup_preview(preview_id, 'fortigate') if preview_id else None
             if uploaded is not None and uploaded.filename:
                 raw = uploaded.read()
-                analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
-                entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
+                uploaded_entry = _lookup_source_preview('fortigate', raw)
+                if uploaded_entry is not None:
+                    entry = uploaded_entry
+                    analysis = _clone_preview(entry)
+                else:
+                    analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
+                    entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
             elif entry is not None:
                 analysis = _clone_preview(entry)
             else:
@@ -1550,6 +1607,12 @@ def create_app(test_config=None):
                 if preview_id
                 else None
             )
+            if preview_entry is None and raw_content is not None:
+                preview_entry = _timed(
+                    metrics,
+                    'cache lookup',
+                    lambda: _lookup_source_preview(source_vendor, raw_content),
+                )
             if preview_entry is not None:
                 analysis = (
                     preview_entry.analysis

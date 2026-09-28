@@ -161,7 +161,7 @@ def test_shared_web_host_uses_fortigate_reporter_for_preview_and_excel():
         data={
             "source_vendor": "fortigate",
             "collect_metrics": "1",
-            "file": (io.BytesIO(SOURCE.encode()), "fortigate-metrics.conf"),
+            "file": (io.BytesIO((SOURCE + "# metrics-only source\n").encode()), "fortigate-metrics.conf"),
         },
         content_type="multipart/form-data",
     )

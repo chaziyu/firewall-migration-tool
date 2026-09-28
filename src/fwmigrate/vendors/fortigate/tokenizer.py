@@ -67,6 +67,10 @@ class FortiGateTokenizer:
                 )
                 continue
 
+            if not logical_lines and not any(character in physical_line for character in ('"', "'", "\\")):
+                yield from self._tokens_from_parts(physical_line.split(), line_number)
+                continue
+
             if not logical_lines:
                 start_line_number = line_number
 

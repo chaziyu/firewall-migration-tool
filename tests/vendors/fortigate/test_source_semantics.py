@@ -1,4 +1,7 @@
+from fwmigrate.vendors.fortigate.command_evaluator import CommandEvaluation
+from fwmigrate.vendors.fortigate.extraction import common
 from fwmigrate.vendors.fortigate.extraction.source_metadata import capture_source_metadata
+from fwmigrate.vendors.fortigate.model.zone import FGZone
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
@@ -136,3 +139,23 @@ end
 
     assert analysis.extracted.config.interfaces[0].raw_extra == {}
     assert "do-not-retain-this" not in repr(analysis)
+def test_source_model_kwargs_resolves_each_source_key_once(monkeypatch):
+    original = common._model_field_name
+    resolved = []
+
+    def track(source_key, field_map):
+        resolved.append(source_key)
+        return original(source_key, field_map)
+
+    monkeypatch.setattr(common, "_model_field_name", track)
+    attributes = common.source_model_kwargs(
+        CommandEvaluation(values={"interface": ["port1"]}, explicit_fields={"interface"}),
+        model_type=FGZone,
+        name="inside",
+        field_map={"interface": "members"},
+    )
+
+    zone = FGZone(**attributes)
+    assert resolved.count("interface") == 1
+    assert zone.members == ["port1"]
+    assert zone.explicit_fields == {"members"}
