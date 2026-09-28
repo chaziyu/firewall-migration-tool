@@ -63,22 +63,31 @@ def test_target_preview_adds_pending_evidence_based_suggestions():
     assert payload["target_device_metadata"][0]["name"] == "integrated-fw"
     assert payload["target_evidence"]["vendor"] == "palo_alto"
     decisions = {(item["source_name"], item["target_field"]): item for item in payload["decisions"]["decisions"]}
-    lan = decisions[("lan", "target_zone")]
-    assert lan["suggested_value"] == "trust"
-    assert lan["mode"] == "SUGGESTED"
-    assert lan["review_state"] == "PENDING"
-    assert lan["evidence_source"] == "SOURCE"
-    assert lan["evidence_type"] == "SOURCE_ZONE_MEMBERSHIP"
-    assert payload["decision_evidence"][lan["key"]] == "SOURCE"
-    assert payload["auto_decisions"][lan["key"]]["status"] == "DERIVED"
-    assert payload["auto_decisions"][lan["key"]]["value"] == "trust"
-    assert "source_ip" in payload["decision_context"][lan["key"]]
+    lan_interface = decisions[("lan", "target_interface")]
+    assert lan_interface["suggested_value"] == "ethernet1/1"
+    assert lan_interface["mode"] == "SUGGESTED"
+    assert lan_interface["review_state"] == "PENDING"
+    assert lan_interface["evidence_source"] == "TARGET"
+    assert lan_interface["evidence_type"] == "TARGET_INTERFACE_ADDRESS"
+    assert payload["decision_evidence"][lan_interface["key"]] == "TARGET"
+    assert payload["evidence_summary"]["target_backed"] >= 1
+    suggested_candidate = next(
+        item for item in payload["decision_candidates"][lan_interface["key"]]
+        if item["value"] == lan_interface["suggested_value"]
+    )
+    assert suggested_candidate["class"] == "STRONG"
+
+    lan_zone = decisions[("lan", "target_zone")]
+    assert lan_zone["suggested_value"] == "trust"
+    assert payload["auto_decisions"][lan_zone["key"]]["status"] == "DERIVED"
+    assert payload["auto_decisions"][lan_zone["key"]]["value"] == "trust"
+    assert "source_ip" in payload["decision_context"][lan_interface["key"]]
     assert "decision_candidates" not in payload["decision_document"]
     assert set(payload["review_summary"]) == {"auto_resolved", "ready_to_confirm", "choose_candidate", "needs_input", "conflicts", "confirmed"}
     lan_group = next(item for item in payload["review_groups"] if item["source_name"] == "lan")
-    assert {item["target_field"] for item in lan_group["decisions"]} == {"target_zone"}
+    assert {item["target_field"] for item in lan_group["decisions"]} >= {"target_interface", "target_zone"}
     assert lan_group["queue"] in {"READY_TO_CONFIRM", "CHOOSE_CANDIDATE", "NEEDS_INPUT"}
-    assert decisions[("root", "vsys")]["suggested_value"] is None
+    assert decisions[("root", "vsys")]["suggested_value"] == "vsys1"
     assert ("root", "virtual_router") not in decisions
 
 
