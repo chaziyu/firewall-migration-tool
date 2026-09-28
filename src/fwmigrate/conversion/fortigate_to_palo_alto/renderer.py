@@ -40,24 +40,55 @@ class PANSetRenderer:
             if item.status is PANMigrationStatus.SUPPORTED else PANRenderDisposition.BLOCK)
         can_create = lambda item: disposition(item) is PANRenderDisposition.CREATE
         commands = []
+        interface_items = [
+            (item, cli_paths.interface(item))
+            for item in plan.interfaces
+            if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)
+        ]
+        interface_pre = [
+            (item, [path for path in paths if path[0] == "device_pre"])
+            for item, paths in interface_items
+        ]
+        interface_pre = [(item, paths) for item, paths in interface_pre if paths]
+        interface_imports = [
+            (item, [path for path in paths if path[0] == "vsys"])
+            for item, paths in interface_items
+        ]
+        interface_imports = [(item, paths) for item, paths in interface_imports if paths]
+        interface_post = [
+            (item, [path for path in paths if path[0] == "device_post"])
+            for item, paths in interface_items
+        ]
+        interface_post = [(item, paths) for item, paths in interface_post if paths]
+
         scopes = (("addresses", cli_paths.address), ("address_groups", cli_paths.address_group),
                   ("services", cli_paths.service), ("service_groups", cli_paths.service_group),
                   ("schedules", cli_paths.schedule), ("zones", cli_paths.zone),
                   ("nat_rules", cli_paths.nat_rule), ("security_rules", cli_paths.security_rule))
-        vsys_items = [(item, path(item)) for name, path in scopes for item in getattr(plan, name)
-                      if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
+        vsys_items = [*interface_imports, *[
+            (item, path(item)) for name, path in scopes for item in getattr(plan, name)
+            if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)
+        ]]
         vsys_commands = []
-        item_commands = {}
+        item_commands = {
+            _key(item): [_serialize(path[1:]) for path in paths]
+            for item, paths in interface_items
+        }
         for vsys in dict.fromkeys(item.target_vsys for item, _ in vsys_items if item.target_vsys is not None):
             scoped_items = [(item, paths) for item, paths in vsys_items if item.target_vsys == vsys]
             vsys_commands.extend(self._render_vsys_scope(vsys, scoped_items))
-            item_commands.update({_key(item): [_serialize(path[1:]) for path in paths]
-                                  for item, paths in scoped_items})
+            for item, paths in scoped_items:
+                item_commands.setdefault(_key(item), []).extend(
+                    command for command in (_serialize(path[1:]) for path in paths)
+                    if command not in item_commands.setdefault(_key(item), [])
+                )
         routes = [(item, cli_paths.static_route(item)) for item in plan.static_routes
                   if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in routes})
+        commands.extend(self._render_device_scope(interface_pre, reset_vsys=False))
         commands.extend(vsys_commands)
-        commands.extend(self._render_device_scope(routes, reset_vsys=bool(vsys_commands)))
+        device_tail = [*interface_post, *routes]
+        commands.extend(self._render_device_scope(device_tail, reset_vsys=bool(vsys_commands)))
         return RenderedMigration(tuple(commands), _report(plan, commands, validation, item_commands,
                                                           dispositions, render_blockers, decision_keys))
 
@@ -139,5 +170,5 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
 
 
 def _items(plan):
-    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "zones", "static_routes", "security_rules", "nat_rules"):
+    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "security_rules", "nat_rules"):
         yield from getattr(plan, name)
