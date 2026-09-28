@@ -21,7 +21,7 @@ from fwmigrate.vendors.fortigate.model.dhcp import (
     FGDHCPServer,
 )
 from fwmigrate.vendors.fortigate.model.source import FGConfig
-from fwmigrate.vendors.palo_alto.model.dhcp import PANDHCPIPPool, PANDHCPServer
+from fwmigrate.vendors.palo_alto.model.dhcp import PANDHCPIPPool, PANDHCPReservation, PANDHCPServer
 from fwmigrate.vendors.palo_alto.source_model import PANScope
 
 
@@ -181,7 +181,9 @@ def test_dhcp_target_reuse_requires_exact_explicit_semantics():
 
 
 def test_dhcp_target_with_additional_explicit_semantics_is_not_auto_reused():
-    reservation = SimpleNamespace(name="printer")
+    reservation = PANDHCPReservation(
+        name="printer", mac_address="00:11:22:33:44:55", explicit_fields={"mac_address"},
+    )
     target = _target_dhcp(reservations=[reservation])
     strong, supporting, contradictions = _dhcp(_planned_dhcp(), target)
     assert strong
