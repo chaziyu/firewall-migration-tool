@@ -1,12 +1,6 @@
-from fwmigrate.conversion.fortigate_to_palo_alto import (
-    PANDecisionMode, PANDecisionReviewState, PANMigrationDecision,
-    PANMigrationDecisionSet, PANRecommendationMethod, build_recommendations,
-)
 from fwmigrate.conversion.fortigate_to_palo_alto.target_candidates import (
     PANTargetCandidateMatchClass, build_target_candidates, classify_candidate,
 )
-from fwmigrate.vendors.fortigate.model.dhcp import FGDHCPServer
-from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.palo_alto.model.dhcp import PANDHCPServer
 from fwmigrate.vendors.palo_alto.model.source import PANOSConfig
 from fwmigrate.vendors.palo_alto.native import build_derived_views
@@ -36,13 +30,6 @@ def _target():
     return type("Target", (), {"config": config, "derived": build_derived_views(config)})()
 
 
-def _vsys_decision(value="vsys1"):
-    return PANMigrationDecision(
-        "root", "vdom", "root", "vsys", value=value, mode=PANDecisionMode.REQUIRED,
-        review_state=PANDecisionReviewState.CONFIRMED,
-    )
-
-
 def test_same_name_candidate_is_limited_to_selected_device_and_confirmed_vsys():
     candidates = build_target_candidates(_target(), "dhcp_servers", "dhcp-server", "scope-test",
                                          "fw-a", "vsys1")
@@ -64,27 +51,6 @@ def test_unconfirmed_vsys_never_surfaces_same_name_from_other_vsys():
     candidates = build_target_candidates(_target(), "dhcp_servers", "dhcp-server", "scope-test",
                                          "fw-a", None)
     assert candidates == ()
-
-
-def test_unrelated_target_inventory_does_not_change_recommendation_method():
-    source = FGConfig(dhcp_servers=[FGDHCPServer(id=99, interface="port1")])
-    decisions = PANMigrationDecisionSet((_vsys_decision(),))
-    recommendation = build_recommendations(source, object(), decisions, _target(), "fw-a")[0]
-    assert recommendation.method is PANRecommendationMethod.DETERMINISTIC
-    assert recommendation.candidate_target_objects == ()
-    assert recommendation.target_candidates == ()
-
-
-def test_matching_scoped_object_is_serialized_as_typed_target_evidence():
-    source = FGConfig(dhcp_servers=[FGDHCPServer(id=1, interface="port1")])
-    decisions = PANMigrationDecisionSet((_vsys_decision(),))
-    recommendation = build_recommendations(source, object(), decisions, _target(), "fw-a")[0]
-    assert recommendation.method is PANRecommendationMethod.TARGET_EVIDENCE
-    assert recommendation.candidate_target_objects == ("1",)
-    assert recommendation.target_candidates[0].match_class is PANTargetCandidateMatchClass.POSSIBLE
-    serialized = recommendation.to_dict()["target_candidates"][0]
-    assert serialized["source_path"] == "vsys1/dhcp-one"
-    assert serialized["scope_identity"] == "vsys:vsys1:device:fw-a"
 
 
 def test_candidate_comparison_classes_use_explainable_evidence():

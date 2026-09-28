@@ -98,6 +98,19 @@ class PlannedStaticRoute(PlannedPANItem):
 
 
 @dataclass(frozen=True, slots=True)
+class PlannedDHCPServer(PlannedPANItem):
+    interface: str | None = None
+    mode: str | None = None
+    lease_type: str | None = None
+    lease_timeout: int | None = None
+    gateway: str | None = None
+    subnet_mask: str | None = None
+    dns_primary: str | None = None
+    dns_secondary: str | None = None
+    ip_pools: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class PlannedSecurityRule(PlannedPANItem):
     from_zones: tuple[str, ...] = ()
     to_zones: tuple[str, ...] = ()
@@ -150,6 +163,7 @@ class PANMigrationPlan:
     interfaces: tuple[PlannedInterface, ...] = ()
     zones: tuple[PlannedZone, ...] = ()
     static_routes: tuple[PlannedStaticRoute, ...] = ()
+    dhcp_servers: tuple[PlannedDHCPServer, ...] = ()
     security_rules: tuple[PlannedSecurityRule, ...] = ()
     nat_rules: tuple[PlannedNATRule, ...] = ()
     issues: tuple[MigrationIssue, ...] = field(default_factory=tuple)

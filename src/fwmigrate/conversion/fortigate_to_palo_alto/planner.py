@@ -4,6 +4,7 @@ from typing import Any
 
 from ..contracts import VendorDerivedViews, VendorSourceConfig
 from .addresses import plan_addresses
+from .dhcp import plan_dhcp
 from .nat import plan_nat
 from .interfaces import plan_interfaces
 from .policies import plan_policies
@@ -40,6 +41,7 @@ class FortiGateToPaloAltoPlanner:
         requirements = build_mapping_requirements(source, derived)
         zones = plan_topology(source, derived, options, requirements["required_zone_keys"])
         routes = plan_routes(source, options, derived)
+        dhcp_servers = plan_dhcp(source, options)
         policies = plan_policies(source, options, derived)
         nat_rules = plan_nat(source, derived, options)
         return PANMigrationPlan(
@@ -51,6 +53,7 @@ class FortiGateToPaloAltoPlanner:
             interfaces=interfaces,
             zones=zones,
             static_routes=routes,
+            dhcp_servers=dhcp_servers,
             security_rules=policies,
             nat_rules=nat_rules,
             issues=issues,

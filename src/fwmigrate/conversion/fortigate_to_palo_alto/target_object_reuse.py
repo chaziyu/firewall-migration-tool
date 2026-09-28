@@ -119,6 +119,145 @@ def _schedule(source, target):
     return ("same explicit daily schedule",), tuple(supporting), ()
 
 
+def _dhcp_pool_values(target):
+    values = []
+    supporting = []
+    for pool in getattr(target, "ip_pools", None) or ():
+        explicit = _fields(pool)
+        if getattr(pool, "raw_extra", None):
+            supporting.append("target DHCP pool has unknown semantics")
+        if "value" in explicit and getattr(pool, "value", None):
+            values.append(str(pool.value))
+        elif {"start_ip", "end_ip"} <= explicit and pool.start_ip and pool.end_ip:
+            values.append(f"{pool.start_ip}-{pool.end_ip}")
+        else:
+            supporting.append("target DHCP pool is not explicitly comparable")
+    return tuple(values), tuple(supporting)
+
+
+def _dhcp(source, target):
+    explicit = _fields(target)
+    strong = []
+    supporting = []
+    contradictions = []
+    if getattr(target, "raw_extra", None):
+        supporting.append("target DHCP server has unknown semantics")
+
+    target_interface = getattr(target, "interface", None) or getattr(target, "name", None)
+    if target_interface != source.interface:
+        contradictions.append("target DHCP interface differs")
+    else:
+        strong.append("same interface-scoped DHCP server")
+
+    for field in ("mode", "gateway", "subnet_mask", "dns_primary", "dns_secondary"):
+        expected = getattr(source, field, None)
+        actual = getattr(target, field, None)
+        if expected is None:
+            if field in explicit:
+                supporting.append(f"target DHCP {field} is explicit but absent from the plan")
+        elif field not in explicit:
+            supporting.append(f"target DHCP {field} is not explicit")
+        elif str(actual) == str(expected):
+            strong.append(f"same explicit DHCP {field}")
+        else:
+            contradictions.append(f"target DHCP {field} differs")
+
+    if source.lease_type is None:
+        if "lease_type" in explicit:
+            supporting.append("target DHCP lease type is explicit but absent from the plan")
+    elif "lease_type" not in explicit:
+        supporting.append("target DHCP lease type is not explicit")
+    elif target.lease_type != source.lease_type:
+        contradictions.append("target DHCP lease type differs")
+    else:
+        strong.append("same explicit DHCP lease type")
+        if source.lease_type == "timeout":
+            if "lease_timeout" not in explicit:
+                supporting.append("target DHCP lease timeout is not explicit")
+            elif str(target.lease_timeout) == str(source.lease_timeout):
+                strong.append("same explicit DHCP lease timeout")
+            else:
+                contradictions.append("target DHCP lease timeout differs")
+        elif "lease_timeout" in explicit:
+            supporting.append("target DHCP lease timeout is explicit outside the planned source state")
+
+    if "ip_pools" not in explicit or getattr(target, "ip_pools", None) is None:
+        supporting.append("target DHCP IP pools are not explicit")
+    else:
+        pools, pool_supporting = _dhcp_pool_values(target)
+        supporting.extend(pool_supporting)
+        if not pool_supporting and set(pools) == set(source.ip_pools):
+            strong.append("same explicit DHCP IP pools")
+        elif not pool_supporting:
+            contradictions.append("target DHCP IP pools differ")
+
+    represented = {
+        "interface", "mode", "lease_type", "lease_timeout", "gateway",
+        "subnet_mask", "dns_primary", "dns_secondary", "ip_pools",
+    }
+    additional = sorted(explicit - represented)
+    if additional:
+        supporting.append("target DHCP has additional explicit semantics: " + ", ".join(additional))
+    return tuple(strong), tuple(supporting), tuple(contradictions)
+
+
+def _dhcp_device(item):
+    scope = getattr(item, "scope", None)
+    if scope is None:
+        return None
+    provenance = getattr(scope, "template_provenance", None) or {}
+    return (
+        scope.device_serial or scope.device_name
+        or provenance.get("managed_device_serial")
+        or provenance.get("managed_device")
+    )
+
+
+def _dhcp_collisions(planned, target, device):
+    result = []
+    records = [
+        item for item in getattr(target.config, "dhcp_servers", ())
+        if (
+            _dhcp_device(item) == device
+            or getattr(getattr(item, "scope", None), "kind", None) == "shared"
+        )
+    ]
+    for source in planned:
+        if source.status.value != "SUPPORTED":
+            continue
+        matches = [
+            item for item in records
+            if (getattr(item, "interface", None) or getattr(item, "name", None)) == source.interface
+        ]
+        if not matches:
+            continue
+        if len(matches) > 1:
+            result.append({
+                "status": "AMBIGUOUS", "family": "dhcp_server",
+                "source_name": source.source_name, "source_vdom": source.source_vdom or "root",
+                "source_kind": source.source_kind, "target_vsys": source.target_vsys,
+                "target_name": source.target_name,
+                "evidence": ["multiple target DHCP servers match the mapped interface"],
+            })
+            continue
+        target_item = matches[0]
+        strong, supporting, contradictions = _dhcp(source, target_item)
+        if contradictions:
+            status = "NAME_CONFLICT"
+        elif strong and not supporting:
+            status = "EXACT_MATCH"
+        else:
+            status = "AMBIGUOUS"
+        result.append({
+            "status": status, "family": "dhcp_server",
+            "source_name": source.source_name, "source_vdom": source.source_vdom or "root",
+            "source_kind": source.source_kind, "target_vsys": source.target_vsys,
+            "target_name": source.target_name,
+            "evidence": list((*strong, *supporting, *contradictions)),
+        })
+    return result
+
+
 def _classify(target, family, attribute, item, device, compare):
     name = item.target_name
     if not name:
@@ -323,6 +462,7 @@ def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | N
         result.extend(found for item in items if item.status.value == "SUPPORTED"
                       if (found := _classify(target, family, attribute, item, device, compare)) is not None)
     result.extend(_route_collisions(plan.static_routes, target, device))
+    result.extend(_dhcp_collisions(plan.dhcp_servers, target, device))
     result.extend(_rule_collisions(plan.nat_rules, target, device, "nat_rule", "nat_rules", lambda rule: (
         ("from_zones", "from_zones", rule.from_zones), ("to_zones", "to_zones", rule.to_zones),
         ("source", "source", rule.source_addresses), ("destination", "destination", rule.destination_addresses),
