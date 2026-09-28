@@ -1,6 +1,7 @@
 """Dependency and field validation for FortiGate to PAN-OS plans."""
 
 from dataclasses import dataclass
+from ipaddress import IPv4Address, IPv4Network
 
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
 from .services import PAN_BUILTIN_SERVICES
@@ -85,6 +86,35 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                 schedule_type == "one-time" and not getattr(item, "non_recurring", ())
             ) or schedule_type not in {"recurring", "one-time"}:
                 add("missing_schedule_value", "schedule has no supported explicit entries", item)
+        elif item.source_object_type == "dhcp_server":
+            if not item.target_vsys:
+                add("missing_target_vsys", "missing target VSYS mapping", item)
+            if not getattr(item, "interface", None):
+                add("missing_dhcp_interface", "DHCP server has no mapped target interface", item)
+            if getattr(item, "mode", None) not in {"enabled", "disabled"}:
+                add("unsupported_dhcp_mode", "DHCP server has no supported explicit mode", item)
+            lease_type = getattr(item, "lease_type", None)
+            lease_timeout = getattr(item, "lease_timeout", None)
+            if lease_type not in {None, "unlimited", "timeout"}:
+                add("unsupported_dhcp_lease", "DHCP server has an unsupported lease type", item)
+            if lease_type == "timeout" and (
+                not isinstance(lease_timeout, int) or not 0 <= lease_timeout <= 1_000_000
+            ):
+                add("invalid_dhcp_lease", "DHCP timeout is outside the PAN-OS supported range", item)
+            if lease_type != "timeout" and lease_timeout is not None:
+                add("invalid_dhcp_lease", "DHCP lease timeout is present without timeout mode", item)
+            if item.gateway and not _valid_ipv4(item.gateway):
+                add("invalid_dhcp_gateway", "DHCP gateway is not a valid IPv4 address", item)
+            if item.subnet_mask and not _valid_netmask(item.subnet_mask):
+                add("invalid_dhcp_netmask", "DHCP subnet mask is not a valid IPv4 netmask", item)
+            for value in (item.dns_primary, item.dns_secondary):
+                if value and not _valid_ipv4(value):
+                    add("invalid_dhcp_dns", "DHCP DNS server is not a valid IPv4 address", item)
+            if not item.ip_pools:
+                add("missing_dhcp_pool", "DHCP server has no supported explicit IP pool", item)
+            for pool in item.ip_pools:
+                if not _valid_pool(pool):
+                    add("invalid_dhcp_pool", f"DHCP pool {pool!r} is invalid", item)
         elif item.source_object_type == "static_route":
             if not getattr(item, "virtual_router", None):
                 add("missing_virtual_router", "missing target virtual-router mapping", item)
@@ -183,6 +213,15 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                     renderable.remove(_key(route))
                     changed = True
 
+        for server in plan.dhcp_servers:
+            if _key(server) not in renderable:
+                continue
+            before = _key(server) in renderable
+            require_reference(server, server.interface, ("interfaces",), code="missing_interface")
+            if before and _key(server) in errors:
+                renderable.remove(_key(server))
+                changed = True
+
         for rule in plan.security_rules:
             if _key(rule) not in renderable:
                 continue
@@ -241,6 +280,30 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
     return MigrationValidationResult(tuple(issues), plan, result)
 
 
+def _valid_ipv4(value):
+    try:
+        IPv4Address(str(value))
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _valid_netmask(value):
+    try:
+        IPv4Network(f"0.0.0.0/{value}")
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _valid_pool(value):
+    try:
+        start, end = str(value).split("-", 1)
+        return IPv4Address(start) <= IPv4Address(end)
+    except (ValueError, TypeError):
+        return False
+
+
 def _index(items):
     return {(item.target_vsys, item.target_name or item.source_name): item for item in items
             if item.target_name or item.source_name}
@@ -261,5 +324,5 @@ def _issue(code, message, item):
 def _items(plan):
     if plan is None:
         return
-    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "security_rules", "nat_rules"):
+    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules"):
         yield from getattr(plan, name)
