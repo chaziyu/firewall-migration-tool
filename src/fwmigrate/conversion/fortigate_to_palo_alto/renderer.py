@@ -84,10 +84,13 @@ class PANSetRenderer:
                 )
         routes = [(item, cli_paths.static_route(item)) for item in plan.static_routes
                   if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
+        dhcp_servers = [(item, cli_paths.dhcp_server(item)) for item in plan.dhcp_servers
+                        if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in routes})
+        item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in dhcp_servers})
         commands.extend(self._render_device_scope(interface_pre, reset_vsys=False))
         commands.extend(vsys_commands)
-        device_tail = [*interface_post, *routes]
+        device_tail = [*interface_post, *dhcp_servers, *routes]
         commands.extend(self._render_device_scope(device_tail, reset_vsys=bool(vsys_commands)))
         return RenderedMigration(tuple(commands), _report(plan, commands, validation, item_commands,
                                                           dispositions, render_blockers, decision_keys))
@@ -170,5 +173,5 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
 
 
 def _items(plan):
-    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "security_rules", "nat_rules"):
+    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules"):
         yield from getattr(plan, name)
