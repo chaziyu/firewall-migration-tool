@@ -151,7 +151,10 @@ def run_migration_pipeline(
     """
     mode = PANAutomationMode(automation_mode)
     requirements = build_mapping_requirements(source, derived)
-    current = decisions or build_decision_set(source, derived, requirements)
+    # Rebuild from current requirements so stale decision documents cannot keep
+    # obsolete pending mappings alive. Confirmed values for still-relevant keys
+    # are carried forward by build_decision_set.
+    current = build_decision_set(source, derived, requirements, decisions)
     current = apply_explicit_options(source, current, options)
 
     if target_intent is not None:
