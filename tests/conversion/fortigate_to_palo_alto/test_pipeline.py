@@ -135,6 +135,7 @@ def test_pipeline_uses_final_automated_decisions_before_planning():
         _empty_derived(),
         target=target,
         target_device="dev",
+        target_evidence={"vendor": "palo_alto", "config_digest": "digest-a", "device": "dev"},
         automation_mode=PANAutomationMode.VERIFIED_AND_DERIVED,
     )
 
@@ -148,6 +149,118 @@ def test_pipeline_uses_final_automated_decisions_before_planning():
     assert by_identity[("vdom", "root", "virtual_router")].value == "vr-main"
     assert by_identity[("vdom", "root", "vsys")].value == "vsys1"
     assert all(item.evidence_source == "DERIVED" for item in by_identity.values())
+    assert all(item.evidence_target_digest == "digest-a" and item.evidence_target_device == "dev"
+               for item in by_identity.values())
     assert any("virtual-router vr-main" in command for command in result.rendered.commands)
     assert any("interface ethernet1/1" in command for command in result.rendered.commands)
     assert result.rendered.report["automation"]["applied"] == 3
+
+
+def test_pipeline_invalidates_stale_target_backed_decisions_before_planning():
+    source = FGConfig(
+        interfaces=[FGInterface(name="wan", ip="198.51.100.1/24")],
+        static_routes=[FGStaticRoute(
+            seq_num=1, dst="0.0.0.0/0", device="wan", gateway="198.51.100.254",
+        )],
+    )
+    target = _target_interface("ethernet1/1", "198.51.100.1/24")
+    first = run_migration_pipeline(
+        source,
+        _empty_derived(),
+        target=target,
+        target_device="dev",
+        target_evidence={"vendor": "palo_alto", "config_digest": "digest-a", "device": "dev"},
+        automation_mode=PANAutomationMode.VERIFIED_AND_DERIVED,
+    )
+    assert first.artifact_status == "READY"
+
+    second = run_migration_pipeline(
+        source,
+        _empty_derived(),
+        decisions=first.decisions,
+        target=target,
+        target_device="dev",
+        target_evidence={"vendor": "palo_alto", "config_digest": "digest-b", "device": "dev"},
+        automation_mode=PANAutomationMode.REVIEW_ONLY,
+    )
+
+    assert second.artifact_status == "NEEDS_MAPPING"
+    assert len(second.invalidated_target_decisions) == 3
+    assert all(item.review_state.value == "PENDING" for item in second.decisions.decisions)
+    assert second.rendered.report["invalidated_target_decisions"] == list(second.invalidated_target_decisions)
+
+
+def test_pipeline_explicit_options_replace_invalidated_target_backed_decisions():
+    source = FGConfig(
+        interfaces=[FGInterface(name="wan", ip="198.51.100.1/24")],
+        static_routes=[FGStaticRoute(
+            seq_num=1, dst="0.0.0.0/0", device="wan", gateway="198.51.100.254",
+        )],
+    )
+    target = _target_interface("ethernet1/1", "198.51.100.1/24")
+    first = run_migration_pipeline(
+        source,
+        _empty_derived(),
+        target=target,
+        target_device="dev",
+        target_evidence={"vendor": "palo_alto", "config_digest": "digest-a", "device": "dev"},
+        automation_mode=PANAutomationMode.VERIFIED_AND_DERIVED,
+    )
+
+    second = run_migration_pipeline(
+        source,
+        _empty_derived(),
+        decisions=first.decisions,
+        options=PANMigrationOptions(
+            vdoms={"root": {"vsys": "vsys1", "virtual_router": "vr-main"}},
+            interfaces={"root": {"wan": {"target_interface": "ethernet1/1"}}},
+        ),
+        target=target,
+        target_device="dev",
+        target_evidence={"vendor": "palo_alto", "config_digest": "digest-b", "device": "dev"},
+        automation_mode=PANAutomationMode.REVIEW_ONLY,
+    )
+
+    assert second.artifact_status == "READY"
+    assert len(second.invalidated_target_decisions) == 3
+    assert all(item.review_state.value == "CONFIRMED" for item in second.decisions.decisions)
+    assert all(item.evidence_type == "EXPLICIT_MAPPING" for item in second.decisions.decisions)
+    assert all(item.evidence_target_digest is None and item.evidence_target_device is None
+               for item in second.decisions.decisions)
+
+
+def test_pipeline_target_intent_remains_durable_after_target_evidence_changes():
+    source = FGConfig(
+        interfaces=[FGInterface(name="wan", ip="198.51.100.1/24")],
+        static_routes=[FGStaticRoute(
+            seq_num=1, dst="0.0.0.0/0", device="wan", gateway="198.51.100.254",
+        )],
+    )
+    target = _target_interface("ethernet1/1", "198.51.100.1/24")
+    first = run_migration_pipeline(
+        source,
+        _empty_derived(),
+        target=target,
+        target_device="dev",
+        target_evidence={"vendor": "palo_alto", "config_digest": "digest-a", "device": "dev"},
+        automation_mode=PANAutomationMode.VERIFIED_AND_DERIVED,
+    )
+
+    second = run_migration_pipeline(
+        source,
+        _empty_derived(),
+        decisions=first.decisions,
+        target=target,
+        target_device="dev",
+        target_evidence={"vendor": "palo_alto", "config_digest": "digest-b", "device": "dev"},
+        target_intent={
+            "vdoms": {"root": {"vsys": "vsys1", "virtual_router": "vr-main"}},
+            "interfaces": {"wan": {"interface": "ethernet1/1"}},
+        },
+        automation_mode=PANAutomationMode.REVIEW_ONLY,
+    )
+
+    assert second.artifact_status == "READY"
+    assert len(second.invalidated_target_decisions) == 3
+    assert all(item.evidence_type == "TARGET_INTENT" for item in second.decisions.decisions)
+    assert all(item.evidence_target_digest is None for item in second.decisions.decisions)

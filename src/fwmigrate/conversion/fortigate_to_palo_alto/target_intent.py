@@ -88,6 +88,8 @@ def apply_target_intent(config, decisions: PANMigrationDecisionSet, intent):
             evidence_type="TARGET_INTENT",
             evidence_value=target,
             target_object=target,
+            evidence_target_digest=None,
+            evidence_target_device=None,
         )
 
     for source, mapping in intent["vdoms"].items():

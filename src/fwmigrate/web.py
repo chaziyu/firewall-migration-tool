@@ -47,6 +47,12 @@ from fwmigrate.conversion.fortigate_to_palo_alto.decision_propagation import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.auto_decisions import classify_auto_decisions
 from fwmigrate.conversion.fortigate_to_palo_alto.automation import AutomationPolicy, run_automation_until_stable
+from fwmigrate.conversion.fortigate_to_palo_alto.target_evidence import (
+    bind_legacy_target_evidence,
+    reconcile_target_evidence,
+    target_evidence_changed,
+    target_evidence_identity,
+)
 from fwmigrate.conversion.fortigate_to_palo_alto.target_intent import apply_target_intent, export_target_intent
 from fwmigrate.conversion.fortigate_to_palo_alto.target_object_reuse import (
     classify_target_object_reuse,
@@ -76,7 +82,7 @@ from fwmigrate.source_reporting import (
 )
 from fwmigrate.source_reporting.web_report import normalize_web_report
 _LOGGER = logging.getLogger(__name__)
-_DECISION_FORMAT_VERSION = 2
+_DECISION_FORMAT_VERSION = 3
 
 
 def _decision_document(source_digest, decision_set, target_evidence=None):
@@ -146,23 +152,22 @@ def _evidence_summary(decision_set, evidence):
 
 
 def _load_decision_document(document, source_digest):
-    if not isinstance(document, dict) or document.get("format_version") not in {1, _DECISION_FORMAT_VERSION}:
+    if not isinstance(document, dict) or document.get("format_version") not in {1, 2, _DECISION_FORMAT_VERSION}:
         raise ValueError("Unsupported migration decision document")
     if document.get("source_vendor") != "fortigate" or document.get("target_vendor") != "palo_alto":
         raise ValueError("Migration decision document must be fortigate -> palo_alto")
     if document.get("source_digest") != source_digest:
         raise ValueError("Migration decisions belong to a different source configuration")
-    return PANMigrationDecisionSet.from_dict({"decisions": document.get("decisions")})
+    decisions = PANMigrationDecisionSet.from_dict({"decisions": document.get("decisions")})
+    if document.get("format_version") in {1, 2}:
+        decisions = bind_legacy_target_evidence(decisions, document.get("target_evidence"))
+    return decisions
 
 
 def _target_evidence_changed(document, target_context):
     previous = document.get("target_evidence") if isinstance(document, dict) else None
-    return bool(
-        isinstance(previous, dict)
-        and previous.get("config_digest")
-        and target_context
-        and previous["config_digest"] != target_context.source_digest
-    )
+    current = target_context.metadata if target_context else None
+    return target_evidence_changed(previous, current)
 
 
 def _options_mapping(options):
@@ -369,9 +374,11 @@ def _build_migration_review_state(entry, payload):
     requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
     prior = payload.get('decision_document')
     previous = _load_decision_document(prior, entry.source_digest) if prior is not None else None
-    decisions = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
-    review_evidence = build_review_evidence(analysis.extracted.config, analysis.derived)
     target_context = _target_evidence(payload)
+    target_metadata = target_context.metadata if target_context else None
+    decisions = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
+    decisions, invalidated_target_decisions = reconcile_target_evidence(decisions, target_metadata)
+    review_evidence = build_review_evidence(analysis.extracted.config, analysis.derived)
     target = target_context.analysis if target_context else None
     device = target_context.selected_device if target_context else None
     candidates = discover_target_candidates(analysis.extracted.config, decisions, target, device,
@@ -405,7 +412,8 @@ def _build_migration_review_state(entry, payload):
         'decision_evidence': evidence,
         'target_warnings': target_warnings,
         'recommendations': recommendations,
-        'target_evidence_changed': _target_evidence_changed(prior, target_context),
+        'target_evidence_changed': _target_evidence_changed(prior, target_context) or bool(invalidated_target_decisions),
+        'invalidated_target_decisions': invalidated_target_decisions,
     }
 
 
@@ -650,6 +658,7 @@ def create_app(test_config=None):
                             'evidence_summary': _evidence_summary(decisions, state['decision_evidence']),
                             'target_evidence': target_context.metadata if target_context else None,
                             'target_evidence_changed': state['target_evidence_changed'],
+                            'invalidated_target_decisions': list(state['invalidated_target_decisions']),
                             'recommendations': [item.to_dict() for item in state['recommendations']]})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
@@ -670,6 +679,10 @@ def create_app(test_config=None):
             previous = _load_decision_document(payload.get('decision_document'), entry.source_digest)
             analysis = _clone_preview(entry)
             target_context = _target_evidence(payload)
+            previous, invalidated_target_decisions = reconcile_target_evidence(
+                previous,
+                target_context.metadata if target_context else None,
+            )
             target = target_context.analysis if target_context else None
             device = target_context.selected_device if target_context else None
             results = _auto_review_results(analysis.extracted.config, analysis.derived, previous, target, device)
@@ -679,14 +692,30 @@ def create_app(test_config=None):
                 if result is None or result.get('status') not in {'VERIFIED', 'DERIVED'} or not result.get('value'):
                     raise ValueError(f'Decision {key!r} is no longer VERIFIED or DERIVED')
             for key in payload['decision_keys']:
-                by_key[key] = replace(by_key[key], value=results[key]['value'],
-                    review_state=PANDecisionReviewState.CONFIRMED, evidence_source='ENGINEER',
-                    evidence_type='APPROVED_AUTO_REVIEW', evidence_value=results[key]['status'],
-                    target_object=results[key]['value'])
+                uses_target = bool(results[key].get('uses_target_evidence'))
+                if uses_target:
+                    identity = target_evidence_identity(target_context.metadata if target_context else None)
+                    if identity is None or identity[1] is None:
+                        raise ValueError('Target-backed approval requires a selected PAN-OS device')
+                    target_digest, evidence_device = identity
+                else:
+                    target_digest, evidence_device = None, None
+                by_key[key] = replace(
+                    by_key[key],
+                    value=results[key]['value'],
+                    review_state=PANDecisionReviewState.CONFIRMED,
+                    evidence_source='ENGINEER',
+                    evidence_type='APPROVED_AUTO_REVIEW',
+                    evidence_value=results[key]['status'],
+                    target_object=results[key]['value'],
+                    evidence_target_digest=target_digest,
+                    evidence_target_device=evidence_device,
+                )
             decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
             return jsonify({'success': True, 'approved_count': len(payload['decision_keys']),
                 'decisions': decisions.to_dict(), 'decision_document': _decision_document(entry.source_digest, decisions,
-                    target_context.metadata if target_context else None)})
+                    target_context.metadata if target_context else None),
+                'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
@@ -709,16 +738,22 @@ def create_app(test_config=None):
             decisions = _load_decision_document(document, entry.source_digest)
             analysis = _clone_preview(entry)
             target_context = _target_evidence(payload)
+            decisions, invalidated_target_decisions = reconcile_target_evidence(
+                decisions,
+                target_context.metadata if target_context else None,
+            )
             result = run_automation_until_stable(
                 analysis.extracted.config, analysis.derived, decisions,
                 target_context.analysis if target_context else None,
                 target_context.selected_device if target_context else None,
+                target_evidence=target_context.metadata if target_context else None,
                 enabled_policies=enabled,
             )
             return jsonify({'success': True, 'decisions': result.decisions.to_dict(),
                 'decision_document': _decision_document(entry.source_digest, result.decisions,
                     target_context.metadata if target_context else None),
-                'audit': list(result.audit), 'iterations': result.iterations, 'stable': result.stable})
+                'audit': list(result.audit), 'iterations': result.iterations, 'stable': result.stable,
+                'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
@@ -735,20 +770,26 @@ def create_app(test_config=None):
             previous = _load_decision_document(document, entry.source_digest) if document else None
             analysis = _clone_preview(entry)
             requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
-            decisions = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
-            decisions = apply_target_intent(analysis.extracted.config, decisions, payload.get('intent', payload.get('yaml', {})))
             target_context = _target_evidence(payload)
+            target_metadata = target_context.metadata if target_context else None
+            decisions = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
+            decisions, invalidated_target_decisions = reconcile_target_evidence(decisions, target_metadata)
+            decisions = apply_target_intent(analysis.extracted.config, decisions, payload.get('intent', payload.get('yaml', {})))
             target = target_context.analysis if target_context else None
             device = target_context.selected_device if target_context else None
-            automation = run_automation_until_stable(analysis.extracted.config, analysis.derived, decisions,
-                target, device, enabled_policies=payload.get('enabled_policies', ()))
+            automation = run_automation_until_stable(
+                analysis.extracted.config, analysis.derived, decisions,
+                target, device, target_evidence=target_metadata,
+                enabled_policies=payload.get('enabled_policies', ()),
+            )
             decisions = automation.decisions
             auto = _auto_review_results(analysis.extracted.config, analysis.derived, decisions, target, device)
             return jsonify({'success': True, 'decisions': decisions.to_dict(),
                 'decision_document': _decision_document(entry.source_digest, decisions,
                     target_context.metadata if target_context else None), 'auto_decisions': auto,
                 'target_intent': export_target_intent(decisions), 'automation_audit': list(automation.audit),
-                'automation_stable': automation.stable})
+                'automation_stable': automation.stable,
+                'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
@@ -938,10 +979,12 @@ def create_app(test_config=None):
                 options=options,
                 target=target,
                 target_device=target_device,
+                target_evidence=target_context.metadata if target_context else None,
                 automation_mode=automation_mode,
                 planner=migration_planners.get(source_vendor, target_vendor),
                 target_object_reuse_classifier=classify_target_object_reuse,
             )
+            target_evidence_changed = target_evidence_changed or bool(result.invalidated_target_decisions)
             decision_set = result.decisions
             mapping = _options_mapping(result.options)
             safe_target_evidence = target_context.metadata if target_context else None
@@ -954,6 +997,7 @@ def create_app(test_config=None):
                 'target_evidence': safe_target_evidence,
                 'review': {
                     'target_evidence_changed': target_evidence_changed,
+                    'invalidated_target_decisions': list(result.invalidated_target_decisions),
                     'target_findings': [item.to_dict() for item in result.target_findings],
                     'target_plan_findings': [item.to_dict() for item in result.target_plan_findings],
                     'target_object_reuse': list(result.target_object_reuse),
@@ -1046,6 +1090,7 @@ def create_app(test_config=None):
                 'automation_audit': list(result.automation_audit),
                 'target_evidence': safe_target_evidence,
                 'target_evidence_changed': target_evidence_changed,
+                'invalidated_target_decisions': list(result.invalidated_target_decisions),
                 'report': rendered.report,
                 'validation': {'issue_summary': rendered.report['issue_summary']},
             })

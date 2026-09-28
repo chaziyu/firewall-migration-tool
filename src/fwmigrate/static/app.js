@@ -33,6 +33,7 @@ let migrationPlanNeedsRebuild = false;
   let evidenceSummary = {};
   let supportGuidance = [];
   let targetEvidence = null;
+  let invalidatedTargetDecisions = [];
   let selectedSourceVendor = "fortigate";
   let selectedTargetVendor = "palo_alto";
   let offlineTargetVendor = "palo_alto";
@@ -1346,6 +1347,7 @@ let migrationPlanNeedsRebuild = false;
     decisionEvidence = result.decision_evidence || {};
     evidenceSummary = result.evidence_summary || {};
     targetEvidence = result.target_evidence || null;
+    invalidatedTargetDecisions = result.invalidated_target_decisions || [];
     currentRecommendations = result.recommendations || [];
     if (targetDeviceSelect) {
       const devices = result.target_devices || [];
@@ -1408,6 +1410,7 @@ let migrationPlanNeedsRebuild = false;
     decisionCandidates = {};
     evidenceSummary = {};
     targetEvidence = null;
+    invalidatedTargetDecisions = [];
     currentRecommendations = [];
     if (targetConfigFile) targetConfigFile.value = "";
     targetConfigRemove?.classList.add("hidden");
@@ -1563,6 +1566,8 @@ let migrationPlanNeedsRebuild = false;
             const decision = decisionByKey.get(option.key);
             if (input && decision) {
               input.value = option.target; decision.value = option.target;
+              decision.evidence_source = "ENGINEER";
+              decision.evidence_type = "ENGINEER_TARGET_SUGGESTION";
               if (decision.mode === "AUTO") decision.mode = "REQUIRED";
               decision.review_state = "PENDING"; updateMappingCompletion(); invalidateMigrationPlan();
             }
@@ -1611,6 +1616,8 @@ let migrationPlanNeedsRebuild = false;
             const use = document.createElement("button"); use.type = "button"; use.className = "btn btn-secondary btn-sm"; use.textContent = "Use";
             use.addEventListener("click", () => {
               input.value = candidate.value; decision.value = candidate.value;
+              decision.evidence_source = "ENGINEER";
+              decision.evidence_type = "ENGINEER_TARGET_SUGGESTION";
               if (decision.mode === "AUTO") decision.mode = "REQUIRED";
               decision.review_state = "PENDING"; pendingNotice.hidden = false;
               updateMappingCompletion(); invalidateMigrationPlan();
@@ -1627,7 +1634,12 @@ let migrationPlanNeedsRebuild = false;
           field.append(matches);
         }
         const findings = targetFindings.filter(item => item.decision_key === decision.key);
-        const warningText = [targetWarnings[decision.key], ...findings.map(item => item.message)].filter(Boolean);
+        const invalidation = invalidatedTargetDecisions.find(item => item.decision_key === decision.key);
+        const warningText = [
+          invalidation ? `Previous target-backed confirmation was invalidated: ${invalidation.reason}` : null,
+          targetWarnings[decision.key],
+          ...findings.map(item => item.message),
+        ].filter(Boolean);
         if (warningText.length) {
           const notes = document.createElement("ul"); notes.className = "review-work-notes";
           warningText.forEach(message => { const note = document.createElement("li"); note.textContent = message; notes.append(note); });
@@ -2061,9 +2073,25 @@ let migrationPlanNeedsRebuild = false;
     document.querySelectorAll(".decision-select:checked").forEach(input => { input.checked = false; });
     updateSelectedDecisionCount();
   });
+  function markEngineerConfirmation(decision) {
+    const targetSuggestion = Boolean(
+      targetEvidence?.config_digest && targetEvidence?.device && (
+        decision.evidence_type === "ENGINEER_TARGET_SUGGESTION"
+        || (decision.evidence_source === "TARGET" && decision.value === decision.suggested_value)
+      )
+    );
+    decision.evidence_source = "ENGINEER";
+    decision.evidence_type = targetSuggestion ? "ENGINEER_TARGET_SUGGESTION" : "MANUAL";
+    decision.evidence_value = decision.value;
+    decision.target_object = decision.value;
+    decision.evidence_target_digest = targetSuggestion ? targetEvidence.config_digest : null;
+    decision.evidence_target_device = targetSuggestion ? targetEvidence.device : null;
+  }
+
   async function saveDecisionValues(decisions) {
     for (const decision of decisions) {
       decision.mode = decision.mode === "AUTO" ? "REQUIRED" : decision.mode;
+      markEngineerConfirmation(decision);
       decision.review_state = "CONFIRMED";
     }
     try { await refreshMigrationReviewFromCurrentDecisions(); }
@@ -2099,6 +2127,12 @@ let migrationPlanNeedsRebuild = false;
       decision.value = null;
       if (decision.mode === "AUTO") decision.mode = "REQUIRED";
       decision.review_state = "PENDING";
+      decision.evidence_source = null;
+      decision.evidence_type = null;
+      decision.evidence_value = null;
+      decision.target_object = null;
+      decision.evidence_target_digest = null;
+      decision.evidence_target_device = null;
     }
     invalidateMigrationPlan(); renderDecisionTable(); updateMappingCompletion();
   });
@@ -2298,6 +2332,7 @@ let migrationPlanNeedsRebuild = false;
         evidenceSummary = artifact.evidence_summary || {};
         supportGuidance = artifact.support_guidance || artifact.report?.review?.support_guidance || [];
         targetEvidence = artifact.target_evidence || artifact.report?.target_evidence || targetEvidence;
+        invalidatedTargetDecisions = artifact.invalidated_target_decisions || artifact.report?.review?.invalidated_target_decisions || invalidatedTargetDecisions;
         const planFilter = document.getElementById("migration-plan-filter");
         planFilter.value = currentPlanItems.some(item => item.status !== "SUPPORTED" || !item.satisfied || item.warnings?.length || item.render_blockers?.length) ? "attention" : "all";
         renderMigrationPlanItems(currentPlanItems);

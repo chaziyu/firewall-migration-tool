@@ -6,6 +6,7 @@ from enum import StrEnum
 from .auto_decisions import classify_auto_decisions
 from .decision_propagation import dependent_decision_keys
 from .decisions import PANDecisionReviewState, PANMigrationDecisionSet
+from .target_evidence import target_evidence_identity
 from .target_validation import validate_against_target
 
 
@@ -23,7 +24,7 @@ class AutomationRunResult:
 
 
 def run_automation_until_stable(config, derived, decisions, target=None, device=None, *,
-                                enabled_policies=(), max_iterations=None):
+                                target_evidence=None, enabled_policies=(), max_iterations=None):
     """Apply explicitly enabled deterministic results without mutating source config."""
     policies = {AutomationPolicy(value) for value in enabled_policies}
     limit = max_iterations if max_iterations is not None else len(decisions.decisions) + 1
@@ -32,6 +33,7 @@ def run_automation_until_stable(config, derived, decisions, target=None, device=
 
     current = decisions
     audit = []
+    evidence_identity = target_evidence_identity(target_evidence) if target_evidence else None
     for iteration in range(1, limit + 1):
         results = classify_auto_decisions(config, derived, current, target, device)
         conflicts = {item.decision_key for item in validate_against_target(config, current, target, device)}
@@ -54,12 +56,33 @@ def run_automation_until_stable(config, derived, decisions, target=None, device=
             if (decision.review_state != PANDecisionReviewState.CONFIRMED
                     and decision.mode.value != "UNSUPPORTED"
                     and decision.key not in blocked and policy in policies and result.get("value")):
-                decision = replace(decision, value=result["value"],
-                                   review_state=PANDecisionReviewState.CONFIRMED,
-                                   evidence_source="DERIVED", evidence_type=f"AUTOMATION_{status}",
-                                   evidence_value=policy.value, target_object=result["value"])
-                audit.append({"iteration": iteration, "decision_key": decision.key,
-                              "status": status, "value": decision.value, "policy": policy.value})
+                uses_target = bool(result.get("uses_target_evidence"))
+                if uses_target and (evidence_identity is None or evidence_identity[1] is None):
+                    raise ValueError(
+                        "target-backed automation requires PAN-OS target digest and selected device"
+                    )
+                target_digest, target_device = evidence_identity if uses_target else (None, None)
+                decision = replace(
+                    decision,
+                    value=result["value"],
+                    review_state=PANDecisionReviewState.CONFIRMED,
+                    evidence_source="DERIVED",
+                    evidence_type=f"AUTOMATION_{status}",
+                    evidence_value=policy.value,
+                    target_object=result["value"],
+                    evidence_target_digest=target_digest,
+                    evidence_target_device=target_device,
+                )
+                audit.append({
+                    "iteration": iteration,
+                    "decision_key": decision.key,
+                    "status": status,
+                    "value": decision.value,
+                    "policy": policy.value,
+                    "uses_target_evidence": uses_target,
+                    "target_digest": target_digest,
+                    "target_device": target_device,
+                })
                 changed = True
             updated.append(decision)
         if not changed:
