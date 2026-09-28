@@ -41,6 +41,16 @@ def build_mapping_requirements(config, derived):
     for item in (*getattr(service_views, "services", ()), *getattr(service_views, "groups", ())):
         need_vdom(getattr(item, "vdom", None), "vsys")
 
+    # DHCP is now an executable planner family. Its PAN-OS server is bound to
+    # the mapped target interface, so it consumes the existing interface
+    # decision instead of introducing a DHCP-specific target mapping.
+    for dhcp_index, server in enumerate(getattr(config, "dhcp_servers", ())):
+        vdom = server.vdom or "root"
+        if server.interface:
+            identity = server.id if server.id is not None else server.interface or dhcp_index
+            need(vdom, server.interface, "interface", "dhcp_server",
+                 ("dhcp_server", vdom, identity), "target_interface")
+
     for policy_index, policy in enumerate(getattr(config, "policies", ())):
         vdom = policy.vdom or "root"
         need_vdom(vdom, "vsys")
