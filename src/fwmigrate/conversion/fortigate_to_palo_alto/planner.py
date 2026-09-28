@@ -5,6 +5,7 @@ from typing import Any
 from ..contracts import VendorDerivedViews, VendorSourceConfig
 from .addresses import plan_addresses
 from .nat import plan_nat
+from .interfaces import plan_interfaces
 from .policies import plan_policies
 from .routing import plan_routes
 from .schedules import plan_schedules
@@ -35,6 +36,7 @@ class FortiGateToPaloAltoPlanner:
         addresses, groups, issues = plan_addresses(source, options)
         services, service_groups = plan_services(derived, options, source)
         schedules = plan_schedules(source, options)
+        interfaces = plan_interfaces(source, options)
         requirements = build_mapping_requirements(source, derived)
         zones = plan_topology(source, derived, options, requirements["required_zone_keys"])
         routes = plan_routes(source, options, derived)
@@ -46,6 +48,7 @@ class FortiGateToPaloAltoPlanner:
             services=services,
             service_groups=service_groups,
             schedules=schedules,
+            interfaces=interfaces,
             zones=zones,
             static_routes=routes,
             security_rules=policies,
