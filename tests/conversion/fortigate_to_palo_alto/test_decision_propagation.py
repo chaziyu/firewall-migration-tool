@@ -52,6 +52,7 @@ def test_zone_apply_confirms_only_explicit_same_vdom_member_decisions():
     confirmed = next(item for item in updated.decisions if item.key == root_member.key)
     untouched = next(item for item in updated.decisions if item.key == blue_member.key)
     assert confirmed.review_state == PANDecisionReviewState.CONFIRMED and confirmed.value == "TRUST"
+    assert confirmed.evidence_target_digest is None and confirmed.evidence_target_device is None
     assert untouched.review_state == PANDecisionReviewState.PENDING
     with pytest.raises(ValueError, match="not an unresolved explicit zone member"):
         apply_zone_to_members(config, decisions, source_key=zone.key, value="TRUST", apply_to=[blue_member.key])
@@ -89,6 +90,8 @@ def test_repeated_engineer_pattern_is_only_a_suggestion_until_applied():
         value="TRUST", apply_to=suggestions[0]["apply_to"])
     assert all(item.review_state == PANDecisionReviewState.CONFIRMED
                and item.evidence_type == "ENGINEER_REPEATED_ACTION_RULE"
+               and item.evidence_target_digest is None
+               and item.evidence_target_device is None
                for item in updated.decisions[3:])
     with pytest.raises(ValueError, match="explicit-member pattern"):
         apply_repeated_zone_action(config, decision_set, source_vdom="root", source_zone="LAN",
