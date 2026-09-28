@@ -1004,6 +1004,14 @@ def create_app(test_config=None):
                 'source_name': finding.source_name,
                 'target_name': finding.target_name,
             } for finding in result.target_plan_findings)
+            reasons.extend({
+                'code': f"MIGRATION_COVERAGE_{item['status']}",
+                'message': item['reason'],
+                'source_vdom': item['source_vdom'],
+                'source_kind': item['source_kind'],
+                'source_name': item['source_name'],
+                'target_name': item.get('target_object_type'),
+            } for item in result.coverage.get('unplanned', ()))
             blocking_reasons = list({
                 (item['code'], item['source_vdom'], item['source_kind'], item['source_name'], item['target_name']): item
                 for item in reasons
@@ -1034,6 +1042,7 @@ def create_app(test_config=None):
                 'evidence_summary': _evidence_summary(decision_set, decision_evidence),
                 'support_guidance': [item.to_dict() for item in result.support_guidance],
                 'recommendations': [item.to_dict() for item in result.recommendations],
+                'coverage': result.coverage,
                 'automation_audit': list(result.automation_audit),
                 'target_evidence': safe_target_evidence,
                 'target_evidence_changed': target_evidence_changed,
