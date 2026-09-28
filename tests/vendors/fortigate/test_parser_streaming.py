@@ -19,6 +19,7 @@ def test_simple_commands_use_split_without_changing_tokens(monkeypatch):
         raise AssertionError("shlex should not run for simple commands")
 
     monkeypatch.setattr("fwmigrate.vendors.fortigate.tokenizer.shlex.shlex", fail_if_called)
+    monkeypatch.setattr("fwmigrate.vendors.fortigate.tokenizer.FortiGateTokenizer._scan_lexical_state", fail_if_called)
 
     tokens = list(FortiGateTokenizer("set hostname edge01\n").tokenize())
 
@@ -26,6 +27,28 @@ def test_simple_commands_use_split_without_changing_tokens(monkeypatch):
         (TokenType.SET, "set", 1),
         (TokenType.STRING, "hostname", 1),
         (TokenType.STRING, "edge01", 1),
+    ]
+
+
+def test_simple_unquoted_configuration_keeps_the_same_tree_shape():
+    tree = parse_fortigate_config(
+        "config system interface\n"
+        "edit port1\n"
+        "set ip 192.0.2.1 255.255.255.0\n"
+        "append alias edge\n"
+        "unset description\n"
+        "next\n"
+        "end\n"
+    )
+
+    config = tree.configs[0]
+    edit = config.edits[0]
+    assert (config.name, config.start_line_number, config.end_line_number) == ("system interface", 1, 7)
+    assert (edit.name, edit.start_line_number, edit.end_line_number) == ("port1", 2, 6)
+    assert [(command.operation, command.key, command.values, command.line_number) for command in edit.commands] == [
+        ("set", "ip", ["192.0.2.1", "255.255.255.0"], 3),
+        ("append", "alias", ["edge"], 4),
+        ("unset", "description", [], 5),
     ]
 
 

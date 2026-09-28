@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from openpyxl import load_workbook
 
-from fwmigrate.web import create_app
+from fwmigrate.web import create_app, source_reporters
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
 
@@ -117,6 +117,100 @@ def test_fast_excel_uses_cached_analysis_without_deepcopy():
         )
 
     assert workbook.status_code == 200
+
+
+def test_source_preview_reuses_cached_analysis_by_vendor_and_bytes(monkeypatch):
+    client = create_app({"TESTING": True}).test_client()
+    reporter = source_reporters.get("fortigate")
+    analyze = reporter.analyze_source
+    calls = 0
+
+    def counted(source, **options):
+        nonlocal calls
+        calls += 1
+        return analyze(source, **options)
+
+    monkeypatch.setattr(reporter, "analyze_source", counted)
+    source = "config system global\nset hostname cache-probe-unique-1\nend\n"
+
+    def preview(content):
+        return client.post("/api/preview", data={
+            "source_vendor": "fortigate",
+            "collect_metrics": "true",
+            "file": (io.BytesIO(content.encode()), "cache-probe.conf"),
+        }, content_type="multipart/form-data")
+
+    first = preview(source)
+    second = preview(source)
+    assert first.status_code == second.status_code == 200
+    first_payload, second_payload = first.get_json(), second.get_json()
+    assert first_payload["preview_id"] == second_payload["preview_id"]
+    assert calls == 1
+    assert second_payload["diagnostics"]["metrics"]["metadata"]["analysis_cache_hit"] is True
+    assert {stage["stage"] for stage in second_payload["diagnostics"]["metrics"]["stages"]}.isdisjoint(
+        {"decode", "extraction"}
+    )
+
+    changed = preview(source.replace("unique-1", "unique-2"))
+    assert changed.status_code == 200
+    assert changed.get_json()["preview_id"] != first_payload["preview_id"]
+    assert calls == 2
+
+
+def test_source_preview_cache_does_not_cross_vendors():
+    client = create_app({"TESTING": True}).test_client()
+    source = "hostname cache-vendor-isolation-unique\n"
+    previews = []
+    for vendor in ("cisco_asa", "fortigate"):
+        response = client.post("/api/preview", data={
+            "source_vendor": vendor,
+            "file": (io.BytesIO(source.encode()), "same-bytes.cfg"),
+        }, content_type="multipart/form-data")
+        assert response.status_code == 200
+        previews.append(response.get_json()["preview_id"])
+    assert previews[0] != previews[1]
+
+
+def test_excel_upload_reuses_cached_analysis_without_preview_id(monkeypatch):
+    client = create_app({"TESTING": True}).test_client()
+    reporter = source_reporters.get("fortigate")
+    source = "config system global\nset hostname cache-excel-unique\nend\n"
+    preview = client.post("/api/preview", data={
+        "source_vendor": "fortigate", "file": (io.BytesIO(source.encode()), "cache-excel.conf")
+    }, content_type="multipart/form-data")
+    assert preview.status_code == 200
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("cached source analysis should be reused")
+
+    monkeypatch.setattr(reporter, "analyze_source", fail_if_called)
+    workbook = client.post("/api/extract/excel", data={
+        "source_vendor": "fortigate", "file": (io.BytesIO(source.encode()), "cache-excel.conf")
+    }, content_type="multipart/form-data")
+    assert workbook.status_code == 200
+
+
+def test_requirements_and_migration_upload_fallbacks_reuse_preview_analysis(monkeypatch):
+    client = create_app({"TESTING": True}).test_client()
+    reporter = source_reporters.get("fortigate")
+    source = "config system global\nset hostname cache-migration-unique\nend\n"
+    preview = client.post("/api/preview", data={
+        "source_vendor": "fortigate", "file": (io.BytesIO(source.encode()), "cache-migration.conf")
+    }, content_type="multipart/form-data")
+    assert preview.status_code == 200
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("cached source analysis should be reused")
+
+    monkeypatch.setattr(reporter, "analyze_source", fail_if_called)
+    requirements = client.post("/api/migration/requirements", data={
+        "file": (io.BytesIO(source.encode()), "cache-migration.conf")
+    }, content_type="multipart/form-data")
+    assert requirements.status_code == 200
+    migration = client.post("/api/migrate", data={
+        "file": (io.BytesIO(source.encode()), "cache-migration.conf"), "mapping": "{}"
+    }, content_type="multipart/form-data")
+    assert migration.status_code == 200
 
 
 def test_source_excel_rejects_missing_input_and_unknown_vendor():

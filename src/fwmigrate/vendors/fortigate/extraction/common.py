@@ -326,6 +326,7 @@ def source_model_kwargs(
     raw_extra: dict[str, Any] = dict(evaluation.untyped_values)
 
     explicit_fields: set[str] = set()
+    resolved_fields: dict[str, str] = {}
 
     # --------------------------------------------------------------
     # Evaluated declared source fields
@@ -335,10 +336,7 @@ def source_model_kwargs(
         source_key,
         value,
     ) in evaluation.values.items():
-        target_key = _model_field_name(
-            source_key,
-            field_map,
-        )
+        target_key = resolved_fields[source_key] = _model_field_name(source_key, field_map)
 
         if target_key in model_fields:
             values[target_key] = value
@@ -360,10 +358,10 @@ def source_model_kwargs(
     # --------------------------------------------------------------
 
     for source_key in evaluation.explicit_fields:
-        target_key = _model_field_name(
-            source_key,
-            field_map,
-        )
+        if source_key in resolved_fields:
+            target_key = resolved_fields[source_key]
+        else:
+            target_key = resolved_fields[source_key] = _model_field_name(source_key, field_map)
 
         if target_key in model_fields:
             explicit_fields.add(
