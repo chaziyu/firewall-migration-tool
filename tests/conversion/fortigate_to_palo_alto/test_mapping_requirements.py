@@ -78,7 +78,7 @@ def test_same_name_interface_and_zone_keep_compatible_decision_fields():
     assert all(not (item.source_kind == "zone" and item.target_field == "target_interface") for item in decisions.decisions)
 
 
-def test_recommendation_only_consumers_do_not_create_blocking_mapping_requirements():
+def test_dhcp_is_executable_consumer_while_other_guidance_remains_nonblocking():
     config = FGConfig(
         interfaces=[FGInterface(name=name, vdom="blue") for name in ("dhcp0", "wan0", "dmz0", "client0")],
         dhcp_servers=[FGDHCPServer(id=7, vdom="blue", interface="dhcp0")],
@@ -90,10 +90,13 @@ def test_recommendation_only_consumers_do_not_create_blocking_mapping_requiremen
         ssl_vpn_clients=[FGSSLVPNClient(name="client-a", vdom="blue", interface="client0")],
     )
     result = build_mapping_requirements(config, object())
+    required = {(item["source_vdom"], item["source_name"], item["kind"]): item
+                for item in result["interfaces"]}
 
-    assert result["interfaces"] == []
-    assert result["vdoms"] == []
-
+    assert set(required) == {("blue", "dhcp0", "interface")}
+    assert required[("blue", "dhcp0", "interface")]["requires"] == ["target_interface"]
+    assert required[("blue", "dhcp0", "interface")]["affected_by"] == {"dhcp_server": 1}
+    assert result["vdoms"] == [{"source_vdom": "blue", "requires": ["vsys", "virtual_router"]}]
 
 def test_address_only_requires_vsys_but_not_virtual_router():
     config = FGConfig(addresses=[
