@@ -185,7 +185,6 @@ For development:
 python -m pip install -e ".[dev]"
 ```
 
-AI-assisted migration review uses Groq when `GROQ_API_KEY` is configured. Set `AI_MODEL` to choose a supported model. AI suggestions stay advisory and require engineer confirmation.
 
 Build the desktop executable with:
 
