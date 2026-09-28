@@ -1,12 +1,6 @@
-from fwmigrate.conversion.fortigate_to_palo_alto import (
-    PANDecisionMode, PANDecisionReviewState, PANMigrationDecision,
-    PANMigrationDecisionSet,
-)
 from fwmigrate.conversion.fortigate_to_palo_alto.target_candidates import (
     PANTargetCandidateMatchClass, build_target_candidates, classify_candidate,
 )
-from fwmigrate.vendors.fortigate.model.dhcp import FGDHCPServer
-from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.palo_alto.model.dhcp import PANDHCPServer
 from fwmigrate.vendors.palo_alto.model.source import PANOSConfig
 from fwmigrate.vendors.palo_alto.native import build_derived_views
@@ -34,13 +28,6 @@ def _target():
         ],
     )
     return type("Target", (), {"config": config, "derived": build_derived_views(config)})()
-
-
-def _vsys_decision(value="vsys1"):
-    return PANMigrationDecision(
-        "root", "vdom", "root", "vsys", value=value, mode=PANDecisionMode.REQUIRED,
-        review_state=PANDecisionReviewState.CONFIRMED,
-    )
 
 
 def test_same_name_candidate_is_limited_to_selected_device_and_confirmed_vsys():
