@@ -36,6 +36,7 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         "services": _index(plan.services),
         "service_groups": _index(plan.service_groups),
         "schedules": _index(plan.schedules),
+        "interfaces": _index(plan.interfaces),
         "zones": _index(plan.zones),
     }
     errors: set[ItemKey] = set()
@@ -57,7 +58,22 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             add("duplicate_target_name", "duplicate target name", item)
         seen.add(key)
 
-        if item.source_object_type == "address":
+        if item.source_object_type == "interface":
+            if not item.target_name:
+                add("missing_target_interface", "interface has no mapped target name", item)
+            if item.interface_family != "ethernet":
+                add("unsupported_interface_family", "interface has no supported target family", item)
+            if not item.target_vsys:
+                add("missing_target_vsys", "missing target VSYS mapping", item)
+            if not item.virtual_router:
+                add("missing_virtual_router", "missing target virtual-router mapping", item)
+            if item.parent and item.tag is None:
+                add("missing_interface_tag", "subinterface is missing an explicit VLAN tag", item)
+            if not item.parent and item.tag is not None:
+                add("unexpected_interface_tag", "physical interface cannot carry a subinterface tag", item)
+            if any(not isinstance(value, str) or not value for value in item.ipv4_addresses):
+                add("invalid_interface_address", "interface contains an invalid planned IPv4 address", item)
+        elif item.source_object_type == "address":
             if not getattr(item, "address_type", None) or not getattr(item, "value", None):
                 add("missing_address_value", "address has no supported explicit value", item)
         elif item.source_object_type == "service":
@@ -145,6 +161,28 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                 renderable.remove(_key(group))
                 changed = True
 
+        if plan.interfaces:
+            for zone in plan.zones:
+                if _key(zone) not in renderable:
+                    continue
+                before = _key(zone) in renderable
+                if not zone.interfaces:
+                    add("missing_zone_interface", "zone has no mapped target interfaces", zone)
+                for name in zone.interfaces:
+                    require_reference(zone, name, ("interfaces",), code="missing_interface")
+                if before and _key(zone) in errors:
+                    renderable.remove(_key(zone))
+                    changed = True
+
+            for route in plan.static_routes:
+                if _key(route) not in renderable or not route.interface:
+                    continue
+                before = _key(route) in renderable
+                require_reference(route, route.interface, ("interfaces",), code="missing_interface")
+                if before and _key(route) in errors:
+                    renderable.remove(_key(route))
+                    changed = True
+
         for rule in plan.security_rules:
             if _key(rule) not in renderable:
                 continue
@@ -189,6 +227,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                     require_reference(rule, rule.service, ("services", "service_groups"))
                 if not rule.to_interface:
                     add("missing_nat_interface", "NAT rule has no mapped target interface", rule)
+                elif plan.interfaces:
+                    require_reference(rule, rule.to_interface, ("interfaces",), code="missing_interface")
             if rule.source_kind != "source_nat" and rule.source_translation_type and not (rule.source_interface_address or rule.translated_addresses):
                 add("missing_snat_translation", "SNAT translation is missing", rule)
             if rule.source_kind != "source_nat" and not rule.source_translation_type and not rule.destination_translated_address:
@@ -221,5 +261,5 @@ def _issue(code, message, item):
 def _items(plan):
     if plan is None:
         return
-    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "zones", "static_routes", "security_rules", "nat_rules"):
+    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "security_rules", "nat_rules"):
         yield from getattr(plan, name)
