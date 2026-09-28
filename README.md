@@ -185,12 +185,11 @@ For development:
 python -m pip install -e ".[dev]"
 ```
 
-Local AI-assisted review is enabled by default and runs on the user's computer. The model is downloaded once from its pinned Hugging Face revision after the user selects **Download local model**; it is stored under `%LOCALAPPDATA%\FirewallMigrationTool\ai\models` on Windows. AI suggestions stay advisory and require engineer confirmation. Groq remains available only when explicitly selected with `AI_PROVIDER=groq`.
+AI-assisted migration review uses Groq when `GROQ_API_KEY` is configured. Set `AI_MODEL` to choose a supported model. AI suggestions stay advisory and require engineer confirmation.
 
-The current packaged runtime supports Windows x64 CPU builds. Prepare its pinned llama.cpp files before building the desktop executable:
+Build the desktop executable with:
 
 ```powershell
-python scripts/prepare_ai_runtime.py
 pyinstaller "Firewall Migration Tool.spec"
 ```
 

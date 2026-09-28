@@ -20,7 +20,6 @@ let migrationPlanNeedsRebuild = false;
   let autoDecisionResults = {};
   let architectureQuestions = [];
   let aiAssistAvailable = false;
-  let aiAssistProvider = null;
   let aiProposals = [];
   let aiDraft = null;
   let aiDraftController = null;
@@ -1342,47 +1341,17 @@ let migrationPlanNeedsRebuild = false;
       const response = await fetch("/api/migration/ai/status");
       const result = await readJson(response, "AI status unavailable");
       aiAssistAvailable = Boolean(result.available);
-      aiAssistProvider = result.provider || null;
-      const local = result.local;
-      const install = document.getElementById("migration-ai-install");
-      const remove = document.getElementById("migration-ai-remove");
-      document.getElementById("migration-ai-local-details")?.classList.toggle("hidden", result.provider !== "local");
-      if (result.provider === "local" && !local?.runtime_available) {
-        status.textContent = "The pinned local AI runtime is not installed for this platform.";
-        install?.classList.add("hidden");
-        remove?.classList.add("hidden");
-      } else if (local?.state === "DOWNLOADING" || local?.state === "VERIFYING") {
-        const amount = `${(local.downloaded_bytes / 1e9).toFixed(2)} GB / ${(local.download_bytes / 1e9).toFixed(2)} GB`;
-        status.textContent = `${local.state === "VERIFYING" ? "Verifying" : "Downloading"} Local AI model · ${amount}`;
-        install?.classList.add("hidden");
-        remove?.classList.add("hidden");
-        setTimeout(refreshAIAssistStatus, 1000);
-      } else if (result.provider === "local" && local?.state === "FAILED" && local?.installed) {
-        status.textContent = "Local AI runtime failed. AI analysis will retry when review is ready.";
-        install?.classList.add("hidden");
-        remove?.classList.remove("hidden");
-      } else if (result.provider === "local" && local?.installed) {
-        status.textContent = "Local AI is ready. Use Prepare all selections to draft the review.";
-        install?.classList.add("hidden");
-        remove?.classList.remove("hidden");
-      } else if (result.provider === "local") {
-        status.textContent = local?.state === "RUNTIME_REQUIRED"
-          ? "The pinned local AI runtime is not installed for this platform."
-          : "Enable local AI by downloading the model once. Deterministic review remains available.";
-        install?.classList.toggle("hidden", !local?.runtime_available);
-        remove?.classList.add("hidden");
-      } else if (!result.available) {
+      if (!result.available) {
         status.textContent = "AI-assisted review is not configured.";
       } else {
         status.textContent = "AI can organize unresolved mappings using sanitized review evidence.";
       }
-      document.getElementById("migration-ai-refresh").disabled = !aiAssistAvailable || aiAssistProvider === "local";
+      document.getElementById("migration-ai-refresh").disabled = !aiAssistAvailable;
       document.getElementById("migration-ai-prepare").disabled = !aiAssistAvailable;
       document.querySelectorAll("[data-ai-help]").forEach(button => { button.disabled = !aiAssistAvailable; });
       maybeRunAIAssistedAnalysis();
     } catch (_) {
       aiAssistAvailable = false;
-      aiAssistProvider = null;
       status.textContent = "AI-assisted review is not configured.";
       document.getElementById("migration-ai-refresh").disabled = true;
       document.getElementById("migration-ai-prepare").disabled = true;
@@ -1413,34 +1382,6 @@ let migrationPlanNeedsRebuild = false;
     updateMappingCompletion();
     invalidateMigrationPlan();
   }
-
-  document.getElementById("migration-ai-install")?.addEventListener("click", async event => {
-    const button = event.currentTarget;
-    button.disabled = true;
-    try {
-      const response = await fetch("/api/ai/local/install", { method: "POST" });
-      await readJson(response, "Could not install the local AI model");
-      await refreshAIAssistStatus();
-    } catch (error) {
-      document.getElementById("migration-ai-status").textContent = error.message;
-    } finally {
-      button.disabled = false;
-    }
-  });
-
-  document.getElementById("migration-ai-remove")?.addEventListener("click", async event => {
-    const button = event.currentTarget;
-    button.disabled = true;
-    try {
-      const response = await fetch("/api/ai/local/remove", { method: "POST" });
-      await readJson(response, "Could not remove the local AI model");
-      await refreshAIAssistStatus();
-    } catch (error) {
-      document.getElementById("migration-ai-status").textContent = error.message;
-    } finally {
-      button.disabled = false;
-    }
-  });
 
   function renderAIAssistProposals() {
     const container = document.getElementById("migration-ai-results");
@@ -1649,7 +1590,7 @@ let migrationPlanNeedsRebuild = false;
     approveAIDraft(aiDraft.proposals));
 
   async function maybeRunAIAssistedAnalysis() {
-    if (!aiReviewReady || !currentPreviewId || !aiAssistAvailable || aiAssistProvider === "local" || aiAnalysisInFlight
+    if (!aiReviewReady || !currentPreviewId || !aiAssistAvailable || aiAnalysisInFlight
         || aiAnalysisCompleteRevision === aiAnalysisRevision) return;
     const revision = aiAnalysisRevision;
     const previewId = currentPreviewId;
