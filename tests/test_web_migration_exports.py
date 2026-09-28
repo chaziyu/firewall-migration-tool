@@ -127,7 +127,7 @@ def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence(
     assert rejected.status_code == 400
 
 
-def test_fixed_point_automation_requires_opt_in_policies_and_records_engineer_provenance():
+def test_fixed_point_automation_requires_opt_in_policies_and_records_deterministic_provenance():
     client = create_app({"TESTING": True}).test_client()
     source_preview, target_preview = _preview(client), _target_preview(client)
     requirements = client.post("/api/migration/requirements", json={
@@ -151,8 +151,9 @@ def test_fixed_point_automation_requires_opt_in_policies_and_records_engineer_pr
     assert payload["audit"]
     confirmed = [item for item in payload["decisions"]["decisions"] if item["review_state"] == "CONFIRMED"]
     assert confirmed
-    assert all(item["evidence_source"] == "ENGINEER"
-               and item["evidence_type"] == "ENGINEER_AUTOMATION_POLICY" for item in confirmed)
+    assert all(item["evidence_source"] == "DERIVED"
+               and item["evidence_type"] in {"AUTOMATION_VERIFIED", "AUTOMATION_DERIVED"}
+               for item in confirmed)
     rejected = client.post("/api/migration/automation/run", json={**request, "enabled_policies": ["AUTO_APPLY_CANDIDATE"]})
     assert rejected.status_code == 400
 
@@ -334,7 +335,7 @@ def test_plan_reports_missing_mappings_and_blocks_empty_bundle():
     requirements = client.post("/api/migration/requirements", json={"preview_id": preview_id}).get_json()["requirements"]
     assert {item["source_vdom"] for item in requirements["vdoms"]} == {"root"}
     plan = client.post("/api/migrate", json={"preview_id": preview_id, "mapping": {}}).get_json()
-    assert plan["plan_status"] == "PARTIAL"
+    assert plan["plan_status"] == "NEEDS_MAPPING"
     assert plan["commands"] == 0
     assert plan["missing_mappings"]
     bundle = client.post("/api/migration/bundle", json={"artifact_id": plan["artifact_id"]})
@@ -379,7 +380,7 @@ def test_vsys_only_mapping_renders_objects_and_keeps_policy_for_review():
         "preview_id": preview_id,
         "mapping": {"vdoms": {"root": {"vsys": "vsys1", "virtual_router": "default"}}},
     }).get_json()
-    assert plan["plan_status"] == "PARTIAL"
+    assert plan["plan_status"] == "NEEDS_MAPPING"
     assert plan["commands"] > 0
     assert plan["counts"]["renderable"] > 0
     policies = [item for item in plan["report"]["items"] if item["source_kind"] == "policy"]
