@@ -939,6 +939,8 @@ def create_app(test_config=None):
                 target=target,
                 target_device=target_device,
                 automation_mode=automation_mode,
+                planner=migration_planners.get(source_vendor, target_vendor),
+                target_object_reuse_classifier=classify_target_object_reuse,
             )
             decision_set = result.decisions
             mapping = _options_mapping(result.options)
