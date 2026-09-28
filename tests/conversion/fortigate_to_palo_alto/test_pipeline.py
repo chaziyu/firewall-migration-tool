@@ -228,6 +228,46 @@ def test_pipeline_invalidates_stale_target_backed_decisions_before_planning():
     assert second.rendered.report["invalidated_target_decisions"] == list(second.invalidated_target_decisions)
 
 
+def test_dhcp_stops_rendering_when_target_backed_interface_evidence_is_invalidated():
+    source = FGConfig(
+        interfaces=[FGInterface(name="lan", ip="10.0.0.1/24")],
+        dhcp_servers=[FGDHCPServer(
+            id=1,
+            interface="lan",
+            status="enable",
+            server_type="regular",
+            ip_mode="range",
+            lease_time=3600,
+            ip_ranges=[FGDHCPIPRange(start_ip="10.0.0.10", end_ip="10.0.0.50")],
+        )],
+    )
+    target = _target_interface("ethernet1/3", "10.0.0.1/24")
+    first = run_migration_pipeline(
+        source,
+        _empty_derived(),
+        target=target,
+        target_device="dev",
+        target_evidence={"vendor": "palo_alto", "config_digest": "digest-a", "device": "dev"},
+        automation_mode=PANAutomationMode.VERIFIED_AND_DERIVED,
+    )
+    assert first.artifact_status == "READY"
+    assert any("network dhcp interface ethernet1/3" in command for command in first.rendered.commands)
+
+    second = run_migration_pipeline(
+        source,
+        _empty_derived(),
+        decisions=first.decisions,
+        target=target,
+        target_device="dev",
+        target_evidence={"vendor": "palo_alto", "config_digest": "digest-b", "device": "dev"},
+        automation_mode=PANAutomationMode.REVIEW_ONLY,
+    )
+    assert second.artifact_status == "NEEDS_MAPPING"
+    assert len(second.invalidated_target_decisions) == 3
+    assert not any("network dhcp" in command for command in second.rendered.commands)
+
+
+
 def test_pipeline_explicit_options_replace_invalidated_target_backed_decisions():
     source = FGConfig(
         interfaces=[FGInterface(name="wan", ip="198.51.100.1/24")],
