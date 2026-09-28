@@ -157,7 +157,8 @@ def apply_repeated_zone_action(config, decisions, *, source_vdom, source_zone, v
     for key in apply_to:
         by_key[key] = replace(by_key[key], value=value, review_state=PANDecisionReviewState.CONFIRMED,
             evidence_source="ENGINEER", evidence_type="ENGINEER_REPEATED_ACTION_RULE",
-            evidence_value=f"{source_vdom}/{source_zone}", target_object=value)
+            evidence_value=f"{source_vdom}/{source_zone}", target_object=value,
+            evidence_target_digest=None, evidence_target_device=None)
     return PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
 
 
@@ -175,5 +176,6 @@ def apply_zone_to_members(config, decisions, *, source_key, value, apply_to):
     for key in apply_to:
         by_key[key] = replace(by_key[key], value=value, review_state=PANDecisionReviewState.CONFIRMED,
                               evidence_source="ENGINEER", evidence_type="ENGINEER_ZONE_TO_MEMBERS",
-                              evidence_value=source.source_name, target_object=value)
+                              evidence_value=source.source_name, target_object=value,
+                              evidence_target_digest=None, evidence_target_device=None)
     return PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
