@@ -16,6 +16,7 @@ def _target(items):
         item.scope = scope
     topology = [PANInterfaceTopologyEntry(item.name, pan_scope_identity(scope),
         parent=getattr(item, "parent", None), imported_vsys=getattr(item, "imported_vsys", ()),
+        zones=getattr(item, "zones", ()),
         virtual_routers=getattr(item, "virtual_routers", ())) for item in items]
     return SimpleNamespace(config=SimpleNamespace(interfaces=items, interface_units=[], zones=[]),
         derived=SimpleNamespace(interface_topology=topology)), scope
@@ -66,7 +67,7 @@ def test_vsys_and_virtual_router_derive_only_when_all_mapped_interfaces_agree():
     decisions = PANMigrationDecisionSet(tuple((*mapped, *vdom)))
     result = classify_auto_decisions(source, None, decisions, target, "dev")
     assert result[vdom[0].key] == {"status": "DERIVED", "value": "vsys1",
-                                   "reason": "Consistent mapped interface vsys evidence."}
+                                   "reason": "Consistent deterministic interface vsys evidence."}
     assert result[vdom[1].key]["status"] == "DERIVED"
 
     second.virtual_routers = ("vr-other",)
@@ -74,3 +75,23 @@ def test_vsys_and_virtual_router_derive_only_when_all_mapped_interfaces_agree():
     result = classify_auto_decisions(source, None, decisions, target, "dev")
     assert result[vdom[0].key]["status"] == "DERIVED"
     assert result[vdom[1].key]["status"] == "MANUAL"
+
+
+def test_zone_and_vsys_derive_from_unique_exact_interface_without_target_interface_requirement():
+    source = FGConfig(interfaces=[FGInterface(name="lan", ip="192.0.2.1/24")])
+    target_item = SimpleNamespace(
+        name="ethernet1/1", interface_family="ethernet",
+        ipv4_addresses=["192.0.2.1/24"], tag=None, parent=None,
+        imported_vsys=("vsys1",), zones=("trust",), virtual_routers=("vr-main",),
+    )
+    target, _ = _target([target_item])
+    zone = PANMigrationDecision("root", "interface", "lan", "target_zone")
+    vsys = PANMigrationDecision("root", "vdom", "root", "vsys")
+    decisions = PANMigrationDecisionSet((zone, vsys))
+
+    result = classify_auto_decisions(source, None, decisions, target, "dev")
+
+    assert result[zone.key]["status"] == "DERIVED"
+    assert result[zone.key]["value"] == "trust"
+    assert result[vsys.key]["status"] == "DERIVED"
+    assert result[vsys.key]["value"] == "vsys1"

@@ -63,25 +63,32 @@ def test_target_preview_adds_pending_evidence_based_suggestions():
     assert payload["target_device_metadata"][0]["name"] == "integrated-fw"
     assert payload["target_evidence"]["vendor"] == "palo_alto"
     decisions = {(item["source_name"], item["target_field"]): item for item in payload["decisions"]["decisions"]}
-    lan = decisions[("lan", "target_interface")]
-    assert lan["suggested_value"] == "ethernet1/1"
-    assert lan["mode"] == "SUGGESTED"
-    assert lan["review_state"] == "PENDING"
-    assert lan["evidence_source"] == "TARGET"
-    assert lan["evidence_type"] == "TARGET_INTERFACE_ADDRESS"
-    assert payload["decision_evidence"][lan["key"]] == "TARGET"
+    lan_interface = decisions[("lan", "target_interface")]
+    assert lan_interface["suggested_value"] == "ethernet1/1"
+    assert lan_interface["mode"] == "SUGGESTED"
+    assert lan_interface["review_state"] == "PENDING"
+    assert lan_interface["evidence_source"] == "TARGET"
+    assert lan_interface["evidence_type"] == "TARGET_INTERFACE_ADDRESS"
+    assert payload["decision_evidence"][lan_interface["key"]] == "TARGET"
     assert payload["evidence_summary"]["target_backed"] >= 1
-    suggested_candidate = next(item for item in payload["decision_candidates"][lan["key"]]
-                               if item["value"] == lan["suggested_value"])
+    suggested_candidate = next(
+        item for item in payload["decision_candidates"][lan_interface["key"]]
+        if item["value"] == lan_interface["suggested_value"]
+    )
     assert suggested_candidate["class"] == "STRONG"
-    assert "source_ip" in payload["decision_context"][lan["key"]]
+
+    lan_zone = decisions[("lan", "target_zone")]
+    assert lan_zone["suggested_value"] == "trust"
+    assert payload["auto_decisions"][lan_zone["key"]]["status"] == "DERIVED"
+    assert payload["auto_decisions"][lan_zone["key"]]["value"] == "trust"
+    assert "source_ip" in payload["decision_context"][lan_interface["key"]]
     assert "decision_candidates" not in payload["decision_document"]
     assert set(payload["review_summary"]) == {"auto_resolved", "ready_to_confirm", "choose_candidate", "needs_input", "conflicts", "confirmed"}
     lan_group = next(item for item in payload["review_groups"] if item["source_name"] == "lan")
     assert {item["target_field"] for item in lan_group["decisions"]} >= {"target_interface", "target_zone"}
     assert lan_group["queue"] in {"READY_TO_CONFIRM", "CHOOSE_CANDIDATE", "NEEDS_INPUT"}
     assert decisions[("root", "vsys")]["suggested_value"] == "vsys1"
-    assert decisions[("root", "virtual_router")]["suggested_value"] == "vr-main"
+    assert ("root", "virtual_router") not in decisions
 
 
 def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence():
@@ -92,19 +99,19 @@ def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence(
     }).get_json()
     imported = client.post("/api/migration/target-intent/import", json={
         "preview_id": source_preview, "decision_document": requirements["decision_document"],
-        "yaml": "interfaces:\n  lan: ethernet1/1\n",
+        "yaml": "interfaces:\n  lan:\n    zone: trust\n",
     })
     assert imported.status_code == 200
     imported_document = imported.get_json()["decision_document"]
     lan = next(item for item in imported_document["decisions"]
                if item["source_kind"] == "interface" and item["source_name"] == "lan"
-               and item["target_field"] == "target_interface")
-    assert lan["review_state"] == "CONFIRMED" and lan["value"] == "ethernet1/1"
+               and item["target_field"] == "target_zone")
+    assert lan["review_state"] == "CONFIRMED" and lan["value"] == "trust"
     exported = client.post("/api/migration/target-intent/export", json={
         "preview_id": source_preview, "decision_document": imported_document,
     })
     assert exported.status_code == 200
-    assert "lan: ethernet1/1" in exported.get_json()["yaml"]
+    assert "zone: trust" in exported.get_json()["yaml"]
 
     safe_keys = [key for key, item in requirements["auto_decisions"].items()
                  if item["status"] in {"VERIFIED", "DERIVED"}]
@@ -127,7 +134,7 @@ def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence(
     assert rejected.status_code == 400
 
 
-def test_fixed_point_automation_requires_opt_in_policies_and_records_engineer_provenance():
+def test_fixed_point_automation_requires_opt_in_policies_and_records_deterministic_provenance():
     client = create_app({"TESTING": True}).test_client()
     source_preview, target_preview = _preview(client), _target_preview(client)
     requirements = client.post("/api/migration/requirements", json={
@@ -151,8 +158,9 @@ def test_fixed_point_automation_requires_opt_in_policies_and_records_engineer_pr
     assert payload["audit"]
     confirmed = [item for item in payload["decisions"]["decisions"] if item["review_state"] == "CONFIRMED"]
     assert confirmed
-    assert all(item["evidence_source"] == "ENGINEER"
-               and item["evidence_type"] == "ENGINEER_AUTOMATION_POLICY" for item in confirmed)
+    assert all(item["evidence_source"] == "DERIVED"
+               and item["evidence_type"] in {"AUTOMATION_VERIFIED", "AUTOMATION_DERIVED"}
+               for item in confirmed)
     rejected = client.post("/api/migration/automation/run", json={**request, "enabled_policies": ["AUTO_APPLY_CANDIDATE"]})
     assert rejected.status_code == 400
 
@@ -162,11 +170,11 @@ def test_source_only_requirements_show_facts_and_next_action_without_candidates(
     source_preview = _preview(client)
     payload = client.post("/api/migration/requirements", json={"preview_id": source_preview}).get_json()
     decision = next(item for item in payload["decisions"]["decisions"]
-                    if item["source_kind"] == "interface" and item["target_field"] == "target_interface")
+                    if item["source_kind"] == "interface" and item["target_field"] == "target_zone")
     assert payload["decision_candidates"] == {}
     context = payload["decision_context"][decision["key"]]
     assert context["affected_count"] >= 0
-    assert context["next_action"].startswith("Upload PAN-OS target XML")
+    assert context["source_ip"]
 
 
 def test_zone_rule_applies_only_requested_related_decisions_and_confirms_them():
@@ -260,12 +268,10 @@ def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources
     assert requirements["decisions"]["decisions"]
 
     mapping = {
-        "vdoms": {"root": {"vsys": "vsys1", "virtual_router": "vr-production"}},
+        "vdoms": {"root": {"vsys": "vsys1"}},
         "interfaces": {"root": {
-            "lan": {"target_interface": "ethernet1/1", "target_zone": "trust"},
-            "wan": {"target_interface": "ethernet1/2", "target_zone": "untrust"},
-            "trust": {"target_zone": "trust"},
-            "untrust": {"target_zone": "untrust"},
+            "lan": {"target_zone": "trust"},
+            "wan": {"target_zone": "untrust"},
         }},
     }
     for decision in document["decisions"]:
@@ -299,8 +305,8 @@ def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources
     assert imported.status_code == 200
     restored = imported.get_json()
     assert restored["decision_document"] == saved
-    assert restored["mapping"]["vdoms"]["root"]["virtual_router"] == "vr-production"
-    assert restored["mapping"]["interfaces"]["root"]["lan"]["target_interface"] == "ethernet1/1"
+    assert restored["mapping"]["vdoms"]["root"]["vsys"] == "vsys1"
+    assert restored["mapping"]["interfaces"]["root"]["lan"]["target_zone"] == "trust"
     assert restored["mapping"]["interfaces"]["blue"]["port1"]["target_zone"] == "dmz"
 
     malformed = json.loads(json.dumps(saved))
@@ -334,7 +340,7 @@ def test_plan_reports_missing_mappings_and_blocks_empty_bundle():
     requirements = client.post("/api/migration/requirements", json={"preview_id": preview_id}).get_json()["requirements"]
     assert {item["source_vdom"] for item in requirements["vdoms"]} == {"root"}
     plan = client.post("/api/migrate", json={"preview_id": preview_id, "mapping": {}}).get_json()
-    assert plan["plan_status"] == "PARTIAL"
+    assert plan["plan_status"] == "NEEDS_MAPPING"
     assert plan["commands"] == 0
     assert plan["missing_mappings"]
     bundle = client.post("/api/migration/bundle", json={"artifact_id": plan["artifact_id"]})
@@ -369,7 +375,18 @@ def test_complete_mappings_create_zip_for_same_plan_artifact():
         assert root_vsys["value"] == "vsys1"
         assert root_vsys["review_state"] == "CONFIRMED"
         import yaml
-        assert yaml.safe_load(archive.read("target_mapping.yaml")) == mapping
+        saved_mapping = yaml.safe_load(archive.read("target_mapping.yaml"))
+        assert saved_mapping["vdoms"]["root"] == {"vsys": "vsys1", "virtual_router": "default"}
+        assert saved_mapping["interfaces"]["root"]["lan"] == {
+            "target_interface": "ethernet1/1", "target_zone": "trust",
+        }
+        assert saved_mapping["interfaces"]["root"]["wan"] == {
+            "target_interface": "ethernet1/2", "target_zone": "untrust",
+        }
+        assert saved_mapping["zones"]["root"] == {
+            "trust": {"target_zone": "trust"},
+            "untrust": {"target_zone": "untrust"},
+        }
 
 
 def test_vsys_only_mapping_renders_objects_and_keeps_policy_for_review():
@@ -379,7 +396,7 @@ def test_vsys_only_mapping_renders_objects_and_keeps_policy_for_review():
         "preview_id": preview_id,
         "mapping": {"vdoms": {"root": {"vsys": "vsys1", "virtual_router": "default"}}},
     }).get_json()
-    assert plan["plan_status"] == "PARTIAL"
+    assert plan["plan_status"] == "NEEDS_MAPPING"
     assert plan["commands"] > 0
     assert plan["counts"]["renderable"] > 0
     policies = [item for item in plan["report"]["items"] if item["source_kind"] == "policy"]

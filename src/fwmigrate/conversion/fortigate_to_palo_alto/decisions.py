@@ -61,8 +61,8 @@ class PANMigrationDecision:
             for category, count in self.affected_by.items()
         ):
             raise ValueError("affected_by must contain non-negative integer counts")
-        if self.evidence_source is not None and self.evidence_source not in {"SOURCE", "TARGET", "ENGINEER"}:
-            raise ValueError("evidence_source must be SOURCE, TARGET, ENGINEER, or null")
+        if self.evidence_source is not None and self.evidence_source not in {"SOURCE", "TARGET", "ENGINEER", "DERIVED"}:
+            raise ValueError("evidence_source must be SOURCE, TARGET, ENGINEER, DERIVED, or null")
         if self.evidence_type is not None and not isinstance(self.evidence_type, str):
             raise ValueError("evidence_type must be a string or null")
         if self.target_object is not None and not isinstance(self.target_object, str):
