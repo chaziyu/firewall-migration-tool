@@ -5,7 +5,8 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANMigrationOptions,
     run_migration_pipeline,
 )
-from fwmigrate.vendors.fortigate.model.address import FGAddress
+from fwmigrate.vendors.fortigate.model.address import FGAddress, FGWildcardFQDN
+from fwmigrate.vendors.fortigate.model.dhcp import FGDHCPServer
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.route_static import FGStaticRoute
 from fwmigrate.vendors.fortigate.model.source import FGConfig
@@ -74,6 +75,45 @@ def test_pipeline_renders_supported_objects_from_explicit_mapping():
         "set address host-a ip-netmask 192.0.2.10/32",
     )
     assert result.rendered.report["plan_status"] == "READY"
+
+
+def test_pipeline_marks_recommendation_only_configuration_partial():
+    source = FGConfig(
+        addresses=[FGAddress(name="host-a", subnet="192.0.2.10 255.255.255.255")],
+        dhcp_servers=[FGDHCPServer(id=1)],
+    )
+
+    result = run_migration_pipeline(
+        source,
+        _empty_derived(),
+        options=PANMigrationOptions(vdoms={"root": {"vsys": "vsys1"}}),
+    )
+
+    assert result.artifact_status == "PARTIAL"
+    assert result.coverage["complete"] is False
+    assert result.coverage["counts"]["RECOMMENDATION_ONLY"] == 1
+    assert result.coverage["unplanned"][0]["source_kind"] == "dhcp_server"
+    assert result.rendered.report["coverage"] == result.coverage
+    assert any("set address host-a" in command for command in result.rendered.commands)
+
+
+def test_pipeline_marks_preserved_source_only_configuration_partial():
+    source = FGConfig(
+        addresses=[FGAddress(name="host-a", subnet="192.0.2.10 255.255.255.255")],
+        wildcard_fqdns=[FGWildcardFQDN(name="wild", wildcard_fqdn="*.example.test")],
+    )
+
+    result = run_migration_pipeline(
+        source,
+        _empty_derived(),
+        options=PANMigrationOptions(vdoms={"root": {"vsys": "vsys1"}}),
+    )
+
+    assert result.artifact_status == "PARTIAL"
+    assert result.coverage["counts"]["SOURCE_ONLY"] == 1
+    entry = result.coverage["unplanned"][0]
+    assert entry["source_kind"] == "wildcard_fqdn"
+    assert entry["source_name"] == "wild"
 
 
 def test_pipeline_uses_final_automated_decisions_before_planning():

@@ -6,8 +6,8 @@ from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import RenderedMigration
 
 
-def rendered(*commands):
-    return RenderedMigration(tuple(commands), {"commands": len(commands)})
+def rendered(*commands, plan_status="READY"):
+    return RenderedMigration(tuple(commands), {"commands": len(commands), "plan_status": plan_status})
 
 
 class FakeConnection:
@@ -66,6 +66,17 @@ def test_zero_command_artifact_is_rejected_before_connecting(monkeypatch):
     assert result.failure_message == "The rendered migration has no commands to deploy"
 
 
+def test_partial_artifact_is_rejected_before_connecting(monkeypatch):
+    fake_netmiko(monkeypatch, lambda **kwargs: (_ for _ in ()).throw(AssertionError("must not connect")))
+
+    result = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret")).deploy(
+        rendered("set one", plan_status="PARTIAL")
+    )
+
+    assert not result.connected
+    assert "requires a READY migration artifact" in result.failure_message
+
+
 def test_connection_failure_is_safe(monkeypatch):
     fake_netmiko(monkeypatch, lambda **kwargs: (_ for _ in ()).throw(RuntimeError("bad secret")))
 
@@ -97,7 +108,20 @@ def test_command_exception_disconnects_and_redacts_password(monkeypatch):
     assert connection.disconnected
 
 
-def test_validation_failure_and_timeout_disconnect(monkeypatch):
+def test_validation_polls_until_finished(monkeypatch):
+    connection = FakeConnection(["ok"], ["Job 8", "ACT", "PEND", "FIN: OK"])
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+
+    result = PANSSHDeployer(PANDeploymentOptions(
+        "fw", "admin", "secret", job_poll_interval=0, job_poll_attempts=3,
+    )).deploy(rendered("set one"))
+
+    assert result.validation.status == "SUCCESS"
+    assert result.failure_message is None
+    assert connection.disconnected
+
+
+def test_validation_failure_and_transport_timeout_disconnect(monkeypatch):
     for response in (["Job 8", "ERROR: invalid configuration"], [TimeoutError("timeout secret")]):
         connection = FakeConnection(["ok"], response)
         fake_netmiko(monkeypatch, lambda **kwargs: connection)
@@ -105,8 +129,22 @@ def test_validation_failure_and_timeout_disconnect(monkeypatch):
         result = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret")).deploy(rendered("set one"))
 
         assert result.validation.status == "FAILED"
+        assert result.failure_message
         assert "secret" not in result.validation.response
         assert connection.disconnected
+
+
+def test_validation_job_timeout_is_reported(monkeypatch):
+    connection = FakeConnection(["ok"], ["Job 8", "ACT", "PEND"])
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+
+    result = PANSSHDeployer(PANDeploymentOptions(
+        "fw", "admin", "secret", job_poll_interval=0, job_poll_attempts=2,
+    )).deploy(rendered("set one"))
+
+    assert result.validation.status == "TIMEOUT"
+    assert result.failure_message == "candidate validation timeout"
+    assert connection.disconnected
 
 
 def test_config_mode_failure_disconnects(monkeypatch):
@@ -120,7 +158,7 @@ def test_config_mode_failure_disconnects(monkeypatch):
 
 
 def test_explicit_commit_runs_only_after_successful_validation(monkeypatch):
-    connection = FakeConnection(["ok"], ["Job 42", "FIN: OK"])
+    connection = FakeConnection(["ok"], ["Job 42", "FIN: OK", "FIN: OK"])
     fake_netmiko(monkeypatch, lambda **kwargs: connection)
 
     result = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret", commit=True)).deploy(rendered("set one"))
