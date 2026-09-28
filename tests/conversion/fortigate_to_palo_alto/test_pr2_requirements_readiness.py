@@ -26,11 +26,8 @@ def _config():
 def test_pending_mapping_rows_remain_unresolved_and_recommendations_expose_readiness():
     source = _config()
     requirements = build_mapping_requirements(source, object())
-    decisions = PANMigrationDecisionSet(tuple(
-        PANMigrationDecision(item["source_vdom"], item["kind"], item["source_name"], field)
-        for item in requirements["interfaces"]
-        for field in item["requires"]
-    ))
+    assert requirements["interfaces"] == []
+    decisions = PANMigrationDecisionSet()
     recommendations = build_recommendations(source, object(), decisions)
     by_kind = {(item.source_kind, item.source_name): item for item in recommendations}
 
@@ -38,7 +35,7 @@ def test_pending_mapping_rows_remain_unresolved_and_recommendations_expose_readi
     assert dhcp.confidence.value == "HIGH"
     assert dhcp.readiness is PANRecommendationReadiness.REQUIRES_DECISION
     assert "Target interface mapping required" in dhcp.blockers
-    assert dhcp.required_decision_keys
+    assert dhcp.required_decision_keys == ()
 
     vpn = by_kind[("ipsec_phase1", "vpn-a")]
     assert "Target interface mapping required" in vpn.blockers
@@ -49,7 +46,7 @@ def test_pending_mapping_rows_remain_unresolved_and_recommendations_expose_readi
     assert sdwan.readiness is PANRecommendationReadiness.REQUIRES_DECISION
 
     ssl_vpn = by_kind[("ssl_vpn_settings", "settings-root-0")]
-    assert len(ssl_vpn.required_decision_keys) == 2
+    assert ssl_vpn.required_decision_keys == ()
     assert "Target interface mapping required for port1" in ssl_vpn.blockers
     assert "Target interface mapping required for port2" in ssl_vpn.blockers
     assert ssl_vpn.readiness is PANRecommendationReadiness.MANUAL_DESIGN
@@ -58,15 +55,10 @@ def test_pending_mapping_rows_remain_unresolved_and_recommendations_expose_readi
 
 def test_confirmed_interface_value_resolves_mapping_blockers():
     source = _config()
-    requirements = build_mapping_requirements(source, object())
-    pending = PANMigrationDecisionSet(tuple(
-        PANMigrationDecision(item["source_vdom"], item["kind"], item["source_name"], field)
-        for item in requirements["interfaces"]
-        for field in item["requires"]
-    ))
-    confirmed = PANMigrationDecisionSet(tuple(
-        decision.confirm("ethernet1/1" if decision.source_name == "port1" else "ethernet1/2")
-        for decision in pending.decisions
+    assert build_mapping_requirements(source, object())["interfaces"] == []
+    confirmed = PANMigrationDecisionSet((
+        PANMigrationDecision("root", "interface", "port1", "target_interface").confirm("ethernet1/1"),
+        PANMigrationDecision("root", "interface", "port2", "target_interface").confirm("ethernet1/2"),
     ))
     recommendations = build_recommendations(source, object(), confirmed)
     by_kind = {(item.source_kind, item.source_name): item for item in recommendations}
