@@ -6,6 +6,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.decisions import (
 )
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.source import FGConfig
+from fwmigrate.vendors.fortigate.model.zone import FGZone
 from fwmigrate.vendors.palo_alto.relationships.topology import PANInterfaceTopologyEntry
 from fwmigrate.vendors.palo_alto.source_model import PANScope, pan_scope_identity
 
@@ -36,6 +37,7 @@ def test_exact_ip_verifies_and_confirmed_parent_derives_vlan_without_mutating_de
     child_decision = decisions.decisions[1]
     assert result[child_decision.key]["status"] == "DERIVED"
     assert result[child_decision.key]["value"] == "ethernet1/1.100"
+    assert result[child_decision.key]["uses_target_evidence"] is True
     assert child_decision.review_state == PANDecisionReviewState.PENDING
 
 
@@ -51,6 +53,7 @@ def test_exact_address_is_verified_and_multiple_exact_targets_remain_candidates(
     one, _ = _target(targets[:1])
     result = classify_auto_decisions(source, None, PANMigrationDecisionSet((decision,)), one, "dev")
     assert result[decision.key]["status"] == "VERIFIED"
+    assert result[decision.key]["uses_target_evidence"] is True
 
 
 def test_vsys_and_virtual_router_derive_only_when_all_mapped_interfaces_agree():
@@ -66,8 +69,10 @@ def test_vsys_and_virtual_router_derive_only_when_all_mapped_interfaces_agree():
     vdom = [PANMigrationDecision("root", "vdom", "root", field) for field in ("vsys", "virtual_router")]
     decisions = PANMigrationDecisionSet(tuple((*mapped, *vdom)))
     result = classify_auto_decisions(source, None, decisions, target, "dev")
-    assert result[vdom[0].key] == {"status": "DERIVED", "value": "vsys1",
-                                   "reason": "Consistent deterministic interface vsys evidence."}
+    assert result[vdom[0].key]["status"] == "DERIVED"
+    assert result[vdom[0].key]["value"] == "vsys1"
+    assert result[vdom[0].key]["reason"] == "Consistent deterministic interface vsys evidence."
+    assert result[vdom[0].key]["uses_target_evidence"] is True
     assert result[vdom[1].key]["status"] == "DERIVED"
 
     second.virtual_routers = ("vr-other",)
@@ -93,5 +98,29 @@ def test_zone_and_vsys_derive_from_unique_exact_interface_without_target_interfa
 
     assert result[zone.key]["status"] == "DERIVED"
     assert result[zone.key]["value"] == "trust"
+    assert result[zone.key]["uses_target_evidence"] is True
     assert result[vsys.key]["status"] == "DERIVED"
     assert result[vsys.key]["value"] == "vsys1"
+
+
+def test_zone_derivation_from_explicit_source_membership_is_not_target_backed():
+    source = FGConfig(
+        interfaces=[FGInterface(name="lan")],
+        zones=[FGZone(name="USERS", members=["lan"], explicit_fields={"members"})],
+    )
+    zone_mapping = PANMigrationDecision(
+        "root", "zone", "USERS", "target_zone",
+        value="TRUST",
+        review_state=PANDecisionReviewState.CONFIRMED,
+        evidence_source="ENGINEER",
+        evidence_type="TARGET_INTENT",
+    )
+    interface_zone = PANMigrationDecision("root", "interface", "lan", "target_zone")
+    result = classify_auto_decisions(
+        source,
+        None,
+        PANMigrationDecisionSet((zone_mapping, interface_zone)),
+    )
+    assert result[interface_zone.key]["status"] == "DERIVED"
+    assert result[interface_zone.key]["value"] == "TRUST"
+    assert result[interface_zone.key]["uses_target_evidence"] is False
