@@ -210,6 +210,8 @@ def _dhcp_collisions(planned, target, device):
         )
     ]
     for source in planned:
+        if source.status.value != "SUPPORTED":
+            continue
         matches = [
             item for item in records
             if (getattr(item, "interface", None) or getattr(item, "name", None)) == source.interface
