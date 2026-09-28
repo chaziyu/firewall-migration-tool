@@ -56,7 +56,7 @@ def run_automation_until_stable(config, derived, decisions, target=None, device=
                     and decision.key not in blocked and policy in policies and result.get("value")):
                 decision = replace(decision, value=result["value"],
                                    review_state=PANDecisionReviewState.CONFIRMED,
-                                   evidence_source="ENGINEER", evidence_type="ENGINEER_AUTOMATION_POLICY",
+                                   evidence_source="DERIVED", evidence_type=f"AUTOMATION_{status}",
                                    evidence_value=policy.value, target_object=result["value"])
                 audit.append({"iteration": iteration, "decision_key": decision.key,
                               "status": status, "value": decision.value, "policy": policy.value})
