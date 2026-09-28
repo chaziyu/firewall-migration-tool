@@ -72,6 +72,28 @@ def zone(item):
     return []
 
 
+def dhcp_server(item):
+    base = ("network", "dhcp", "interface", item.interface or item.target_name, "server")
+    commands = []
+    if item.mode:
+        commands.append(("device", *base, "mode", item.mode))
+    if item.lease_type == "unlimited":
+        commands.append(("device", *base, "option", "lease", "unlimited"))
+    elif item.lease_type == "timeout" and item.lease_timeout is not None:
+        commands.append(("device", *base, "option", "lease", "timeout", item.lease_timeout))
+    for field, value in (
+        (("option", "gateway"), item.gateway),
+        (("option", "subnet-mask"), item.subnet_mask),
+        (("option", "dns", "primary"), item.dns_primary),
+        (("option", "dns", "secondary"), item.dns_secondary),
+    ):
+        if value:
+            commands.append(("device", *base, *field, value))
+    if item.ip_pools:
+        commands.append(("device", *base, "ip-pool", "[", *item.ip_pools, "]"))
+    return commands
+
+
 def static_route(item):
     base = ("network", "virtual-router", item.virtual_router, "routing-table", "ip", "static-route", item.target_name or item.source_name)
     commands = [("device", *base, "destination", item.destination)]
