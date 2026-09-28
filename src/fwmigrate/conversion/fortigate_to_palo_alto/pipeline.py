@@ -27,6 +27,7 @@ from .recommendation_engine import build_recommendations
 from .renderer import PANSetRenderer, RenderedMigration
 from .requirements import build_mapping_requirements
 from .support_guidance import build_support_guidance
+from .target_evidence import reconcile_target_evidence
 from .target_intent import apply_target_intent
 from .target_object_reuse import classify_target_object_reuse
 from .target_plan_validation import assess_target_plan, validate_target_plan
@@ -60,6 +61,7 @@ class PANMigrationPipelineResult:
     coverage: dict
     support_guidance: tuple
     automation_audit: tuple[dict, ...]
+    invalidated_target_decisions: tuple[dict, ...]
     unresolved_decisions: tuple[PANMigrationDecision, ...]
     rendered: RenderedMigration
     artifact_status: str
@@ -108,6 +110,8 @@ def apply_explicit_options(config, decisions: PANMigrationDecisionSet,
             evidence_type="EXPLICIT_MAPPING",
             evidence_value=value,
             target_object=value,
+            evidence_target_digest=None,
+            evidence_target_device=None,
         )
 
     for vdom, mapping in options.vdoms.items():
@@ -141,6 +145,7 @@ def run_migration_pipeline(
     options: PANMigrationOptions | dict | None = None,
     target=None,
     target_device: str | None = None,
+    target_evidence=None,
     target_intent=None,
     automation_mode: PANAutomationMode | str = PANAutomationMode.REVIEW_ONLY,
     planner: FortiGateToPaloAltoPlanner | None = None,
@@ -158,6 +163,10 @@ def run_migration_pipeline(
     # obsolete pending mappings alive. Confirmed values for still-relevant keys
     # are carried forward by build_decision_set.
     current = build_decision_set(source, derived, requirements, decisions)
+    current, invalidated_target_decisions = reconcile_target_evidence(
+        current,
+        target_evidence,
+    )
     current = apply_explicit_options(source, current, options)
 
     if target_intent is not None:
@@ -173,6 +182,7 @@ def run_migration_pipeline(
         current,
         target,
         target_device,
+        target_evidence=target_evidence,
         enabled_policies=automation_policies(mode),
     )
     current = automation.decisions
@@ -225,6 +235,7 @@ def run_migration_pipeline(
             "iterations": automation.iterations,
         },
         "unresolved_required_decisions": len(unresolved),
+        "invalidated_target_decisions": list(invalidated_target_decisions),
         "coverage": coverage,
     })
     return PANMigrationPipelineResult(
@@ -244,6 +255,7 @@ def run_migration_pipeline(
         coverage=coverage,
         support_guidance=support_guidance,
         automation_audit=automation.audit,
+        invalidated_target_decisions=invalidated_target_decisions,
         unresolved_decisions=unresolved,
         rendered=rendered,
         artifact_status=status,
