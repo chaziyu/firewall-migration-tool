@@ -5,7 +5,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.decisions import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PANMigrationPlan, PANMigrationStatus, PlannedAddress, PlannedAddressGroup, PlannedServiceGroup,
-    PlannedNATRule, PlannedStaticRoute, PlannedSchedule,
+    PlannedInterface, PlannedNATRule, PlannedStaticRoute, PlannedSchedule,
     PlannedZone, PlannedSecurityRule, PlannedService,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
@@ -23,6 +23,9 @@ from fwmigrate.vendors.palo_alto.model.service import PANService, PANServiceProt
 from fwmigrate.vendors.palo_alto.source_model import PANScope
 from fwmigrate.vendors.palo_alto.model.routing import PANStaticRoute, PANVirtualRouter
 from fwmigrate.vendors.palo_alto.model.nat import PANNATRule
+from fwmigrate.vendors.palo_alto.model.interface import PANInterface
+from fwmigrate.vendors.palo_alto.relationships.topology import PANInterfaceTopologyEntry
+from fwmigrate.vendors.palo_alto.source_model import pan_scope_identity
 
 
 def _target(address):
@@ -341,3 +344,75 @@ def test_target_conflicts_do_not_cross_associate_same_name_different_source_kind
     assert dispositions[item_key(first)] is PANRenderDisposition.BLOCK
     assert dispositions[item_key(second)] is PANRenderDisposition.CREATE
     assert finding.affected_item_keys == (item_key(first),)
+
+
+def _interface_target(ip="192.0.2.1/24"):
+    scope = PANScope(kind="device", name="dev", device_name="dev")
+    interface = PANInterface(
+        name="ethernet1/1",
+        source_path="/network/interface/ethernet/entry",
+        scope=scope,
+        interface_family="ethernet",
+        mode="layer3",
+        ipv4_addresses=[ip],
+        explicit_fields={"mode", "ipv4_addresses"},
+    )
+    topology = PANInterfaceTopologyEntry(
+        "ethernet1/1",
+        pan_scope_identity(scope),
+        imported_vsys=("vsys1",),
+        virtual_routers=("vr-main",),
+    )
+    return SimpleNamespace(
+        config=SimpleNamespace(
+            interfaces=[interface], interface_units=[], virtual_routers=[],
+            addresses=[], address_groups=[], services=[], service_groups=[],
+            schedules=[], zones=[], nat_rules=[], security_rules=[], scopes=[scope],
+        ),
+        derived=SimpleNamespace(
+            interface_topology=[topology],
+            reference_index=None,
+            scope_hierarchy=None,
+        ),
+    )
+
+
+def test_exact_interface_reuse_skips_creation_and_conflicts_block_dependents():
+    interface = PlannedInterface(
+        source_vdom="root", source_kind="interface", source_object_type="interface",
+        source_name="port1", target_vsys="vsys1", target_name="ethernet1/1",
+        status=PANMigrationStatus.SUPPORTED, interface_family="ethernet",
+        ipv4_addresses=("192.0.2.1/24",), virtual_router="vr-main",
+    )
+    zone = PlannedZone(
+        source_vdom="root", source_kind="zone", source_object_type="zone",
+        source_name="trust", target_vsys="vsys1", target_name="trust",
+        status=PANMigrationStatus.SUPPORTED, interfaces=("ethernet1/1",),
+    )
+    rule = PlannedSecurityRule(
+        source_vdom="root", source_kind="policy", source_object_type="security_rule",
+        source_name="allow", target_vsys="vsys1", target_name="allow",
+        status=PANMigrationStatus.SUPPORTED, from_zones=("trust",), to_zones=("trust",),
+        sources=("any",), destinations=("any",), services=("any",), action="allow",
+    )
+    plan = PANMigrationPlan(interfaces=(interface,), zones=(zone,), security_rules=(rule,))
+    decisions = PANMigrationDecisionSet()
+
+    reuse = classify_target_object_reuse(plan, _interface_target(), "dev")
+    exact = next(item for item in reuse if item["family"] == "interface")
+    assert exact["status"] == "EXACT_MATCH"
+    index = build_plan_dependency_index(plan, decisions)
+    dispositions, _ = assess_target_plan(plan, reuse, (), decisions, index)
+    assert dispositions[item_key(interface)] is PANRenderDisposition.REUSE
+    assert dispositions[item_key(zone)] is PANRenderDisposition.CREATE
+    assert dispositions[item_key(rule)] is PANRenderDisposition.CREATE
+    rendered = PANSetRenderer().render(plan, dispositions=dispositions)
+    assert not any("network interface ethernet ethernet1/1 layer3" in command
+                   for command in rendered.commands)
+    assert any("set zone trust" in command for command in rendered.commands)
+
+    conflict = classify_target_object_reuse(plan, _interface_target("198.51.100.1/24"), "dev")
+    conflict_dispositions, _ = assess_target_plan(plan, conflict, (), decisions, index)
+    assert conflict_dispositions[item_key(interface)] is PANRenderDisposition.BLOCK
+    assert conflict_dispositions[item_key(zone)] is PANRenderDisposition.BLOCK
+    assert conflict_dispositions[item_key(rule)] is PANRenderDisposition.BLOCK
