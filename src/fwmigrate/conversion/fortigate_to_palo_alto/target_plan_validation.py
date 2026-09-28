@@ -13,7 +13,7 @@ class PANRenderDisposition(StrEnum):
     BLOCK = "BLOCK"
 
 
-_REUSABLE = {"interface", "address", "address_group", "service", "service_group", "schedule"}
+_REUSABLE = {"interface", "address", "address_group", "service", "service_group", "schedule", "dhcp_server"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +37,7 @@ class PANTargetPlanFinding:
 
 def _items(plan):
     for family in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones",
-                   "static_routes", "security_rules", "nat_rules"):
+                   "static_routes", "dhcp_servers", "security_rules", "nat_rules"):
         yield from getattr(plan, family)
 
 
