@@ -47,6 +47,12 @@ from fwmigrate.conversion.fortigate_to_palo_alto.decision_propagation import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.auto_decisions import classify_auto_decisions
 from fwmigrate.conversion.fortigate_to_palo_alto.automation import AutomationPolicy, run_automation_until_stable
+from fwmigrate.conversion.fortigate_to_palo_alto.target_evidence import (
+    bind_legacy_target_evidence,
+    reconcile_target_evidence,
+    target_evidence_changed,
+    target_evidence_identity,
+)
 from fwmigrate.conversion.fortigate_to_palo_alto.target_intent import apply_target_intent, export_target_intent
 from fwmigrate.conversion.fortigate_to_palo_alto.target_object_reuse import (
     classify_target_object_reuse,
@@ -76,7 +82,7 @@ from fwmigrate.source_reporting import (
 )
 from fwmigrate.source_reporting.web_report import normalize_web_report
 _LOGGER = logging.getLogger(__name__)
-_DECISION_FORMAT_VERSION = 2
+_DECISION_FORMAT_VERSION = 3
 
 
 def _decision_document(source_digest, decision_set, target_evidence=None):
@@ -146,23 +152,22 @@ def _evidence_summary(decision_set, evidence):
 
 
 def _load_decision_document(document, source_digest):
-    if not isinstance(document, dict) or document.get("format_version") not in {1, _DECISION_FORMAT_VERSION}:
+    if not isinstance(document, dict) or document.get("format_version") not in {1, 2, _DECISION_FORMAT_VERSION}:
         raise ValueError("Unsupported migration decision document")
     if document.get("source_vendor") != "fortigate" or document.get("target_vendor") != "palo_alto":
         raise ValueError("Migration decision document must be fortigate -> palo_alto")
     if document.get("source_digest") != source_digest:
         raise ValueError("Migration decisions belong to a different source configuration")
-    return PANMigrationDecisionSet.from_dict({"decisions": document.get("decisions")})
+    decisions = PANMigrationDecisionSet.from_dict({"decisions": document.get("decisions")})
+    if document.get("format_version") in {1, 2}:
+        decisions = bind_legacy_target_evidence(decisions, document.get("target_evidence"))
+    return decisions
 
 
 def _target_evidence_changed(document, target_context):
     previous = document.get("target_evidence") if isinstance(document, dict) else None
-    return bool(
-        isinstance(previous, dict)
-        and previous.get("config_digest")
-        and target_context
-        and previous["config_digest"] != target_context.source_digest
-    )
+    current = target_context.metadata if target_context else None
+    return target_evidence_changed(previous, current)
 
 
 def _options_mapping(options):
@@ -369,9 +374,11 @@ def _build_migration_review_state(entry, payload):
     requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
     prior = payload.get('decision_document')
     previous = _load_decision_document(prior, entry.source_digest) if prior is not None else None
-    decisions = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
-    review_evidence = build_review_evidence(analysis.extracted.config, analysis.derived)
     target_context = _target_evidence(payload)
+    target_metadata = target_context.metadata if target_context else None
+    decisions = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
+    decisions, invalidated_target_decisions = reconcile_target_evidence(decisions, target_metadata)
+    review_evidence = build_review_evidence(analysis.extracted.config, analysis.derived)
     target = target_context.analysis if target_context else None
     device = target_context.selected_device if target_context else None
     candidates = discover_target_candidates(analysis.extracted.config, decisions, target, device,
@@ -405,7 +412,8 @@ def _build_migration_review_state(entry, payload):
         'decision_evidence': evidence,
         'target_warnings': target_warnings,
         'recommendations': recommendations,
-        'target_evidence_changed': _target_evidence_changed(prior, target_context),
+        'target_evidence_changed': _target_evidence_changed(prior, target_context) or bool(invalidated_target_decisions),
+        'invalidated_target_decisions': invalidated_target_decisions,
     }
 
 
