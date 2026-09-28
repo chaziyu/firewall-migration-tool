@@ -14,7 +14,6 @@ from .target_candidates import PANTargetCandidate, build_target_candidates, targ
 class PANRecommendationMethod(str, Enum):
     DETERMINISTIC = "DETERMINISTIC"
     TARGET_EVIDENCE = "TARGET_EVIDENCE"
-    AI_ASSISTED = "AI_ASSISTED"
 
 
 class PANRecommendationConfidence(str, Enum):

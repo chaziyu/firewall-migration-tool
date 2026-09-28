@@ -19,15 +19,6 @@ let migrationPlanNeedsRebuild = false;
   let reviewGroups = [];
   let autoDecisionResults = {};
   let architectureQuestions = [];
-  let aiAssistAvailable = false;
-  let aiProposals = [];
-  let aiDraft = null;
-  let aiDraftController = null;
-  let aiExplanation = null;
-  let aiAnalysisRevision = 0;
-  let aiAnalysisInFlight = false;
-  let aiAnalysisCompleteRevision = -1;
-  let aiReviewReady = false;
   let ruleSuggestions = [];
   let activeReviewQueue = "READY_TO_CONFIRM";
   let reviewVisibleLimit = 12;
@@ -1292,7 +1283,6 @@ let migrationPlanNeedsRebuild = false;
   // 8. Mode A: Export Target Migration Bundle (.zip)
   // =========================================================================
   function invalidateMigrationPlan(rebuilding = false) {
-    markAIAssistStale();
     if (rebuilding) migrationPlanNeedsRebuild = false;
     else if (currentRenderedArtifactId) migrationPlanNeedsRebuild = true;
     migrationPlanRevision += 1;
@@ -1317,334 +1307,7 @@ let migrationPlanNeedsRebuild = false;
     syncWorkspace();
   }
 
-  function markAIAssistStale() {
-    aiDraftController?.abort();
-    aiDraftController = null;
-    document.getElementById("migration-ai-cancel").hidden = true;
-    const hadResults = aiProposals.length || aiExplanation;
-    aiAnalysisRevision += 1;
-    aiReviewReady = false;
-    aiProposals = [];
-    aiDraft = null;
-    aiExplanation = null;
-    const status = document.getElementById("migration-ai-status");
-    if (status && hadResults) status.textContent = "Review state changed. AI analysis will refresh after deterministic review.";
-    const results = document.getElementById("migration-ai-results");
-    results?.replaceChildren();
-  }
-
-  async function refreshAIAssistStatus() {
-    const panel = document.getElementById("migration-ai-review");
-    if (!panel) return;
-    const status = document.getElementById("migration-ai-status");
-    try {
-      const response = await fetch("/api/migration/ai/status");
-      const result = await readJson(response, "AI status unavailable");
-      aiAssistAvailable = Boolean(result.available);
-      if (!result.available) {
-        status.textContent = "AI-assisted review is not configured.";
-      } else {
-        status.textContent = "AI can organize unresolved mappings using sanitized review evidence.";
-      }
-      document.getElementById("migration-ai-refresh").disabled = !aiAssistAvailable;
-      document.getElementById("migration-ai-prepare").disabled = !aiAssistAvailable;
-      document.querySelectorAll("[data-ai-help]").forEach(button => { button.disabled = !aiAssistAvailable; });
-      maybeRunAIAssistedAnalysis();
-    } catch (_) {
-      aiAssistAvailable = false;
-      status.textContent = "AI-assisted review is not configured.";
-      document.getElementById("migration-ai-refresh").disabled = true;
-      document.getElementById("migration-ai-prepare").disabled = true;
-      document.querySelectorAll("[data-ai-help]").forEach(button => { button.disabled = true; });
-    }
-  }
-
-  function focusProposalMapping(proposal) {
-    const editor = document.getElementById("advanced-decision-view");
-    if (editor) editor.open = true;
-    const key = proposal.decision_keys?.[0];
-    const input = key ? document.querySelector(`.decision-value[data-decision-key="${CSS.escape(key)}"], .review-work-value[data-decision-key="${CSS.escape(key)}"]`) : null;
-    (input || editor)?.scrollIntoView({ behavior: "smooth", block: "center" });
-    input?.focus();
-  }
-
-  function stageAIAssignments(assignments) {
-    for (const assignment of assignments || []) {
-      const decision = currentDecisionSet.decisions.find(item => item.key === assignment.decision_key);
-      const input = document.querySelector(`.decision-value[data-decision-key="${CSS.escape(assignment.decision_key)}"], .review-work-value[data-decision-key="${CSS.escape(assignment.decision_key)}"]`);
-      if (!decision || decision.mode === "UNSUPPORTED") continue;
-      if (input) input.value = assignment.value;
-      decision.value = assignment.value;
-      if (decision.mode === "AUTO") decision.mode = "REQUIRED";
-      decision.review_state = "PENDING";
-      input?.closest(".review-work-field")?.querySelector("[data-pending-review-notice]")?.removeAttribute("hidden");
-    }
-    updateMappingCompletion();
-    invalidateMigrationPlan();
-  }
-
-  function renderAIAssistProposals() {
-    const container = document.getElementById("migration-ai-results");
-    if (!container) return;
-    container.replaceChildren();
-    for (const proposal of aiProposals) {
-      const card = document.createElement("article"); card.className = "review-work-card";
-      if (proposal.kind === "MAPPING_RECOMMENDATION" || (aiDraft && proposal.choices?.length)) {
-        const label = document.createElement("label");
-        const select = document.createElement("input"); select.type = "checkbox"; select.className = "migration-ai-proposal-select";
-        select.value = proposal.proposal_id; select.addEventListener("change", updateAIBulkControls);
-        label.append(select, document.createTextNode(aiDraft ? " Select draft proposal" : " Select recommendation")); card.append(label);
-      }
-      const title = document.createElement("h4"); title.textContent = proposal.title;
-      const question = document.createElement("p"); question.textContent = proposal.summary;
-      card.append(title, question);
-      if (proposal.question) { const prompt = document.createElement("p"); prompt.textContent = proposal.question; card.append(prompt); }
-      for (const fact of proposal.evidence || []) { const evidence = document.createElement("p"); evidence.textContent = `Evidence: ${fact}`; card.append(evidence); }
-      if (proposal.kind === "SELECTION_SUGGESTION") {
-        for (const assignment of proposal.choices?.[0]?.assignments || []) {
-          const decision = currentDecisionSet.decisions.find(item => item.key === assignment.decision_key);
-          const row = document.createElement("p");
-          row.textContent = `${({ target_zone: "Target zone", target_interface: "Target interface", vsys: "Target VSYS", virtual_router: "Target virtual router" })[decision?.target_field] || "Target"}: ${assignment.value}`;
-          card.append(row);
-        }
-      }
-      if (proposal.kind === "CANDIDATE_COMPARISON") {
-        for (const item of proposal.comparisons || []) {
-          const row = document.createElement("section");
-          const name = document.createElement("strong"); name.textContent = item.candidate_value; row.append(name);
-          const list = document.createElement("ul");
-          for (const fact of [...item.evidence, ...item.limitations]) { const li = document.createElement("li"); li.textContent = fact; list.append(li); }
-          row.append(list); card.append(row);
-        }
-        const choose = document.createElement("button"); choose.type = "button"; choose.className = "btn btn-secondary btn-sm";
-        choose.textContent = "Choose a mapping"; choose.addEventListener("click", () => focusProposalMapping(proposal)); card.append(choose);
-      }
-      for (const choice of proposal.choices || []) {
-        const button = document.createElement("button"); button.type = "button"; button.className = "btn btn-secondary btn-sm";
-        button.textContent = proposal.kind === "SELECTION_SUGGESTION" ? "Use suggestion"
-          : proposal.kind === "MAPPING_RECOMMENDATION" ? "Use recommendation" : `Use ${choice.label}`;
-        button.addEventListener("click", () => stageAIAssignments(choice.assignments));
-        card.append(button);
-      }
-      if (proposal.kind !== "CANDIDATE_COMPARISON") {
-        const manual = document.createElement("button"); manual.type = "button"; manual.className = "btn btn-secondary btn-sm";
-        manual.textContent = "Choose another"; manual.addEventListener("click", () => focusProposalMapping(proposal)); card.append(manual);
-      }
-      const details = document.createElement("details");
-      const summary = document.createElement("summary"); summary.textContent = "Why this result?";
-      const list = document.createElement("ul");
-      for (const fact of [
-        ...(proposal.rationale || []).map(item => `AI rationale: ${item}`),
-        ...(proposal.missing_information || []).map(item => `Missing: ${item}`),
-        ...(proposal.limitations || []).map(item => `AI limitation: ${item}`),
-      ]) {
-        const row = document.createElement("li"); row.textContent = fact; list.append(row);
-      }
-      details.append(summary, list); card.append(details);
-      if (proposal.affected_count) {
-        const impact = document.createElement("p"); impact.textContent = `Affected: ${proposal.affected_count}`; card.append(impact);
-      }
-      for (const dependency of aiDraft?.dependencies || []) {
-        if (!proposal.decision_keys?.includes(dependency.decision_key)) continue;
-        const note = document.createElement("p");
-        note.textContent = `Depends on ${dependency.depends_on.map(key => {
-          const item = currentDecisionSet.decisions.find(decision => decision.key === key);
-          return item ? `${item.source_name} ${item.target_field}` : "another draft choice";
-        }).join(", ")}.`;
-        card.append(note);
-      }
-      const advisory = document.createElement("p"); advisory.textContent = "AI-assisted suggestion. Nothing changes until you confirm.";
-      card.append(advisory); container.append(card);
-    }
-    if (aiExplanation) {
-      const card = document.createElement("article"); card.className = "review-work-card";
-      const heading = document.createElement("h4"); heading.textContent = "AI-assisted comparison"; card.append(heading);
-      const title = document.createElement("p"); title.textContent = aiExplanation.summary; card.append(title);
-      for (const item of aiExplanation.comparisons || []) {
-        const row = document.createElement("section");
-        const name = document.createElement("strong"); name.textContent = item.candidate_value; row.append(name);
-        const list = document.createElement("ul");
-        for (const fact of [...item.evidence, ...item.limitations]) { const li = document.createElement("li"); li.textContent = fact; list.append(li); }
-        row.append(list); card.append(row);
-      }
-      const note = document.createElement("p"); note.textContent = "This explanation does not change the mapping."; card.append(note);
-      container.append(card);
-    }
-    for (const blocker of aiDraft?.blockers || []) {
-      const item = currentDecisionSet.decisions.find(decision => decision.key === blocker.decision_key);
-      const note = document.createElement("p");
-      note.textContent = `${item ? `${item.source_vdom}/${item.source_name} ${item.target_field}` : "Decision"}: ${blocker.reason}${blocker.alternatives?.length ? ` Alternatives: ${blocker.alternatives.join(", ")}` : ""}`;
-      container.append(note);
-    }
-    updateAIBulkControls();
-  }
-
-  function updateAIBulkControls() {
-    const draftControls = document.getElementById("migration-ai-draft-controls");
-    if (draftControls) draftControls.hidden = !aiDraft;
-    const oldControls = document.getElementById("migration-ai-bulk-controls");
-    if (oldControls) oldControls.hidden = Boolean(aiDraft);
-    const draftChoices = aiDraft?.proposals?.filter(item => item.choices?.length) || [];
-    const selectedDraft = document.querySelectorAll(".migration-ai-proposal-select:checked").length;
-    const approveSelected = document.getElementById("migration-ai-approve-selected");
-    const approveAll = document.getElementById("migration-ai-approve-all");
-    if (approveSelected) approveSelected.disabled = !aiDraft?.complete || !selectedDraft;
-    if (approveAll) approveAll.disabled = !aiDraft?.complete || !draftChoices.length || Boolean(aiDraft?.blockers?.length);
-    const recommendations = aiProposals.filter(item => item.kind === "MAPPING_RECOMMENDATION");
-    const selected = document.querySelectorAll(".migration-ai-proposal-select:checked").length;
-    const selectAll = document.getElementById("migration-ai-select-all");
-    if (selectAll) selectAll.checked = recommendations.length > 0 && selected === recommendations.length;
-    const selectedButton = document.getElementById("migration-ai-accept-selected");
-    const allButton = document.getElementById("migration-ai-accept-all");
-    if (selectedButton) selectedButton.disabled = selected === 0;
-    if (allButton) {
-      allButton.disabled = recommendations.length === 0;
-      allButton.textContent = `Use all ${recommendations.length} recommendations`;
-    }
-  }
-
-  function stageAIBulk(proposalIds, button) {
-    const selected = aiProposals.filter(item => proposalIds.includes(item.proposal_id));
-    stageAIAssignments(selected.flatMap(proposal => (proposal.choices || []).flatMap(choice => choice.assignments)));
-    button.disabled = true;
-  }
-
-  document.getElementById("migration-ai-select-all")?.addEventListener("change", event => {
-    document.querySelectorAll(".migration-ai-proposal-select").forEach(item => { item.checked = event.target.checked; });
-    updateAIBulkControls();
-  });
-  document.getElementById("migration-ai-accept-selected")?.addEventListener("click", event => {
-    stageAIBulk([...document.querySelectorAll(".migration-ai-proposal-select:checked")].map(item => item.value), event.currentTarget);
-  });
-  document.getElementById("migration-ai-accept-all")?.addEventListener("click", event => {
-    stageAIBulk(aiProposals.filter(item => item.kind === "MAPPING_RECOMMENDATION").map(item => item.proposal_id), event.currentTarget);
-  });
-
-  document.getElementById("migration-ai-prepare")?.addEventListener("click", async event => {
-    if (!currentPreviewId) {
-      document.getElementById("migration-ai-status").textContent = "Load a FortiGate source before preparing a draft.";
-      return;
-    }
-    const button = event.currentTarget;
-    const revision = ++aiAnalysisRevision;
-    aiAnalysisCompleteRevision = revision;
-    const previewId = currentPreviewId;
-    let draft = aiDraft && !aiDraft.complete ? aiDraft : null;
-    if (!draft) { aiDraft = null; aiProposals = []; renderAIAssistProposals(); }
-    button.disabled = true;
-    document.getElementById("migration-ai-cancel").hidden = false;
-    try {
-      do {
-        aiDraftController = new AbortController();
-        const response = await fetch("/api/migration/ai/prepare-draft", {
-          method: "POST", headers: { "Content-Type": "application/json" }, signal: aiDraftController.signal,
-          body: JSON.stringify({ preview_id: previewId, decision_document: currentDecisionPayload(),
-            ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}),
-            ...(draft ? { draft_id: draft.draft_id, revision: draft.revision } : {}) }),
-        });
-        const result = await readJson(response, "Could not prepare AI draft");
-        if (revision !== aiAnalysisRevision || previewId !== currentPreviewId) return;
-        draft = result.draft; aiDraft = draft; aiProposals = draft.proposals || [];
-        renderAIAssistProposals();
-        document.getElementById("migration-ai-status").textContent =
-          `Prepared ${draft.cursor} of ${draft.total_groups} groups · ${draft.prepared_decisions} proposed · ${draft.blocked_decisions} blocked.`;
-      } while (!draft.complete);
-    } catch (error) {
-      if (revision === aiAnalysisRevision) {
-        if (/expired|stale|revision changed/i.test(error.message)) {
-          aiDraft = null; aiProposals = []; renderAIAssistProposals();
-        }
-        document.getElementById("migration-ai-status").textContent =
-          error.name === "AbortError" ? "Draft preparation stopped." : error.message;
-      }
-    } finally {
-      aiDraftController = null;
-      document.getElementById("migration-ai-cancel").hidden = true;
-      button.disabled = !aiAssistAvailable;
-    }
-  });
-  document.getElementById("migration-ai-cancel")?.addEventListener("click", () => aiDraftController?.abort());
-
-  async function approveAIDraft(proposals) {
-    if (!aiDraft?.complete) return;
-    const keys = [...new Set(proposals.flatMap(item => (item.choices?.[0]?.assignments || [])
-      .map(assignment => assignment.decision_key)))];
-    if (!keys.length) return;
-    try {
-      const response = await fetch("/api/migration/ai/confirm-draft", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(),
-          ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}),
-          draft_id: aiDraft.draft_id, revision: aiDraft.revision, selected_decision_keys: keys }),
-      });
-      const result = await readJson(response, "Could not approve AI draft");
-      await loadMigrationReview(currentPreviewId, result.decision_document);
-    } catch (error) {
-      document.getElementById("migration-ai-status").textContent = error.message;
-    }
-  }
-  document.getElementById("migration-ai-approve-selected")?.addEventListener("click", () =>
-    approveAIDraft(aiDraft.proposals.filter(item => document.querySelector(
-      `.migration-ai-proposal-select[value="${CSS.escape(item.proposal_id)}"]:checked`))));
-  document.getElementById("migration-ai-approve-all")?.addEventListener("click", () =>
-    approveAIDraft(aiDraft.proposals));
-
-  async function maybeRunAIAssistedAnalysis() {
-    if (!aiReviewReady || !currentPreviewId || !aiAssistAvailable || aiAnalysisInFlight
-        || aiAnalysisCompleteRevision === aiAnalysisRevision) return;
-    const revision = aiAnalysisRevision;
-    const previewId = currentPreviewId;
-    const requestBody = { preview_id: previewId, decision_document: currentDecisionPayload(),
-      ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}) };
-    const status = document.getElementById("migration-ai-status");
-    aiAnalysisInFlight = true;
-    aiProposals = []; aiExplanation = null; renderAIAssistProposals();
-    status.textContent = "Analyzing candidate-backed review groups…";
-    let cursor = 0;
-    let insufficient = 0;
-    let omitted = 0;
-    let overflow = 0;
-    try {
-      do {
-        const response = await fetch("/api/migration/ai/analyze", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...requestBody, cursor }) });
-        const result = await readJson(response, "AI assistance is temporarily unavailable");
-        if (revision !== aiAnalysisRevision || previewId !== currentPreviewId) return;
-        aiProposals.push(...(result.proposals || [])); aiExplanation = null; renderAIAssistProposals();
-        insufficient = result.insufficient_evidence || 0;
-        omitted += result.omitted_decision_keys?.length || 0;
-        overflow = Object.keys(result.option_overflow || {}).length;
-        const next = result.next_cursor;
-        if (next === null || next === undefined) break;
-        cursor = next;
-        status.textContent = `Sent ${cursor} of ${result.candidate_backed_groups} review groups to AI…`;
-      } while (true);
-      if (revision !== aiAnalysisRevision) return;
-      const countKind = kind => aiProposals.filter(item => item.kind === kind).length;
-      status.textContent = `${countKind("MAPPING_RECOMMENDATION")} recommended mappings · ${countKind("CANDIDATE_COMPARISON")} candidate comparisons · ${countKind("ARCHITECTURE_QUESTION")} engineer decisions · ${omitted} decisions omitted by AI · ${overflow} with more than eight options · ${insufficient} without enough target evidence.`;
-      aiAnalysisCompleteRevision = revision;
-    } catch (_) {
-      if (revision === aiAnalysisRevision) {
-        status.textContent = "AI assistance is temporarily unavailable. Deterministic migration review is unchanged.";
-        aiAnalysisCompleteRevision = revision;
-      }
-    } finally {
-      aiAnalysisInFlight = false;
-      if (aiReviewReady && aiAnalysisCompleteRevision !== aiAnalysisRevision) maybeRunAIAssistedAnalysis();
-    }
-  }
-  document.getElementById("migration-ai-refresh")?.addEventListener("click", () => {
-    aiDraft = null; aiProposals = []; renderAIAssistProposals();
-    aiAnalysisCompleteRevision = -1;
-    maybeRunAIAssistedAnalysis();
-  });
-  document.addEventListener("input", event => {
-    if (event.target.matches?.(".decision-value, .review-work-value")) markAIAssistStale();
-  });
-  refreshAIAssistStatus();
-
   async function loadMigrationReview(previewId = currentPreviewId, previousDocument = null) {
-    markAIAssistStale();
     const panel = document.getElementById("migration-mapping");
     if (selectedSourceVendor !== "fortigate" || !previewId) {
       currentDecisionSet = { decisions: [] };
@@ -1656,7 +1319,6 @@ let migrationPlanNeedsRebuild = false;
       autoDecisionResults = {};
       architectureQuestions = [];
       panel?.classList.add("hidden");
-      aiReviewReady = true;
       return;
     }
     const payload = { preview_id: previewId };
@@ -1719,8 +1381,6 @@ let migrationPlanNeedsRebuild = false;
     renderRecommendations();
     panel?.classList.toggle("hidden", !sourceReady || selectedTargetVendor !== "palo_alto");
     updateMappingCompletion();
-    aiReviewReady = true;
-    maybeRunAIAssistedAnalysis();
   }
 
   function currentDecisionPayload() {
@@ -1993,33 +1653,6 @@ let migrationPlanNeedsRebuild = false;
         facts.append(list); summary.append(facts);
       }
       card.append(summary);
-      if (group.queue === "CHOOSE_CANDIDATE" || (group.queue === "NEEDS_INPUT" && group.ai_selection_available)) {
-        const help = document.createElement("button"); help.type = "button"; help.className = "btn btn-secondary btn-sm";
-        help.dataset.aiHelp = "true"; help.disabled = !aiAssistAvailable;
-        help.textContent = "Help select with AI";
-        help.addEventListener("click", async () => {
-          help.disabled = true;
-          const aiDetails = document.getElementById("migration-ai-review")?.closest("details");
-          if (aiDetails) aiDetails.open = true;
-          const status = document.getElementById("migration-ai-status");
-          status.textContent = "AI is reviewing this group…";
-          try {
-            const response = await fetch("/api/migration/ai/select", { method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(),
-                source_vdom: group.source_vdom, source_kind: group.source_kind, source_name: group.source_name,
-                ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}) }) });
-            const result = await readJson(response, "AI assistance is temporarily unavailable");
-            aiExplanation = null; aiProposals = [result.proposal];
-            renderAIAssistProposals();
-            status.textContent = "AI suggestion is ready for review.";
-            document.getElementById("migration-ai-results")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          } catch (error) {
-            status.textContent = `${error.message}. Deterministic migration review is unchanged.`;
-            status.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          } finally { help.disabled = false; }
-        });
-        card.append(help);
-      }
       if (group.actions?.length) for (const action of group.actions) {
         const apply = document.createElement("button"); apply.type = "button"; apply.className = "btn btn-secondary";
         apply.textContent = `Apply to ${action.apply_to.length} member decisions`;
