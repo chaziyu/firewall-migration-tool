@@ -703,7 +703,9 @@ let migrationBuildInFlight = false;
         ? "warning"
         : currentSourceContext.status === "FAILED"
           ? "error"
-          : "ready";
+          : sourceReady
+            ? "ready"
+            : "idle";
   }
 
   function appendReportDetailValue(container, value, key = "") {
@@ -1205,7 +1207,6 @@ let migrationBuildInFlight = false;
       reportData.setAttribute("aria-labelledby", `report-tab-${activeReportSection}`);
     }
 
-    renderSourceContext();
     renderValidationSummary();
     if (!overview) renderReportTable();
   }
