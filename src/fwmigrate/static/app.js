@@ -596,11 +596,13 @@ let migrationBuildInFlight = false;
   function openReportDetailModal(triggerElement) {
     reportDetailTrigger = triggerElement;
     reportDetailModal?.classList.remove("hidden");
+    reportDetailModal?.setAttribute("aria-hidden", "false");
     reportDetailClose?.focus();
   }
 
   function closeReportDetailModal(restoreFocus = true) {
     reportDetailModal?.classList.add("hidden");
+    reportDetailModal?.setAttribute("aria-hidden", "true");
     if (restoreFocus && reportDetailTrigger?.isConnected) reportDetailTrigger.focus();
     reportDetailTrigger = null;
   }
@@ -609,7 +611,8 @@ let migrationBuildInFlight = false;
     const targets = {
       interface: ["interfaces"], address: ["objects", "addresses"], address6: ["objects", "addresses"],
       address_group: ["objects", "address_groups"], service: ["objects", "services"], service_group: ["objects", "service_groups"],
-      policy: ["policies"], route: ["routes"], static_route: ["routes"], static_route6: ["routes"],
+      policy: ["policies"], schedule: ["schedules"], scheduler: ["schedules"], time_range: ["schedules"],
+      route: ["routes"], static_route: ["routes"], static_route6: ["routes"],
       vpn: ["vpn"], ipsec_phase1: ["vpn"], vpn_phase2: ["vpn"],
     };
     const target = targets[row.domain];
@@ -632,6 +635,7 @@ let migrationBuildInFlight = false;
     const sections = currentReport?.sections || {};
     if (section === "interfaces") return sections.interface_topology || sections.interfaces || [];
     if (section === "objects") return sections[activeObjectSection] || [];
+    if (section === "references") return sections.unresolved_references || [];
     if (section === "vpn") return [
       ...(sections.vpn_tunnels || []).map((row) => ({ ...row, kind: "Tunnel", attachment: row.interface, peer: row.remote_gateway || row.ike_gateways, crypto: row.ike_version || row.ipsec_crypto_profile, topology: row.topology_path })),
       ...(sections.vpn_phase2 || []).map((row) => ({ ...row, kind: "Phase 2", attachment: row.phase1, peer: [["IPv4 src", row.source_range], ["IPv4 dst", row.destination_range], ["IPv6 src", row.source_range6], ["IPv6 dst", row.destination_range6]].filter(([, value]) => value).map(([label, value]) => `${label}: ${value}`).join(" → "), crypto: row.proposal, topology: [] })),
@@ -652,7 +656,7 @@ let migrationBuildInFlight = false;
           JSON.stringify([row.severity, row.domain, row.field, row.message]) !== activeValidationGroup) return false;
       if (scope && (row.scope || row.vdom) !== scope) return false;
       if (severity && row.severity !== severity) return false;
-      return !search || Object.values(row).some((value) => reportCell(value).toLowerCase().includes(search));
+      return !search || reportSearchText(row).includes(search);
     });
     const identityColumns = new Set(["name", "policy_id", "policy_name", "object_name", "display_name", "route_id", "destination", "id", "severity", "domain"]);
     columns = columns.filter(([key]) => identityColumns.has(key) || rows.some((row) => reportCell(row[key]) !== "—"));
@@ -789,13 +793,22 @@ let migrationBuildInFlight = false;
     if (["addresses", "address_groups", "services", "service_groups"].some((key) => objects[key] != null)) stats.push(["Objects", objectTotal]);
     if (severity.error != null) stats.push(["Errors", severity.error]);
     if (severity.warning != null) stats.push(["Warnings", severity.warning]);
+    if (sections.schedules) stats.push(["Schedules", sections.schedules.length]);
     if (sections.routes) stats.push(["Routes", sections.routes.length]);
     if (sections.vpn_tunnels || sections.vpn_phase2) stats.push(["VPNs", (sections.vpn_tunnels || []).length + (sections.vpn_phase2 || []).length]);
     if (sections.unresolved_references) stats.push(["Unresolved references", sections.unresolved_references.length]);
     const unsupported = summary.unsupported_count ?? summary.source_only_count;
     if (unsupported != null) stats.push(["Unsupported / source-only", unsupported]);
     const fragment = document.createDocumentFragment();
-    const destinations = { Interfaces: ["interfaces"], Objects: ["objects", "addresses"], Policies: ["policies"], Routes: ["routes"], VPNs: ["vpn"] };
+    const destinations = {
+      Interfaces: ["interfaces"],
+      Objects: ["objects", "addresses"],
+      Schedules: ["schedules"],
+      Policies: ["policies"],
+      Routes: ["routes"],
+      VPNs: ["vpn"],
+      "Unresolved references": ["references"],
+    };
     stats.forEach(([label, value]) => {
       const stat = destinations[label] || ["Errors", "Warnings"].includes(label)
         ? document.createElement("button") : document.createElement("div");
@@ -836,8 +849,19 @@ let migrationBuildInFlight = false;
     reportData?.classList.toggle("hidden", overview);
     reportObjectTabs?.classList.toggle("hidden", activeReportSection !== "objects");
     reportSeverityFilter?.classList.toggle("hidden", activeReportSection !== "validation");
-    document.querySelectorAll("[data-object-section]").forEach((button) => button.classList.toggle("active", button.dataset.objectSection === activeObjectSection));
-    document.querySelectorAll("[data-report-section]").forEach((button) => button.classList.toggle("active", button.dataset.reportSection === activeReportSection));
+    document.querySelectorAll("[data-object-section]").forEach((button) => {
+      const selected = button.dataset.objectSection === activeObjectSection;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+    document.querySelectorAll("[data-report-section]").forEach((button) => {
+      const selected = button.dataset.reportSection === activeReportSection;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+    renderSourceContext();
     renderValidationSummary();
     if (!overview) renderReportTable();
   }
@@ -846,7 +870,7 @@ let migrationBuildInFlight = false;
     const hasInput = Boolean(currentFile || currentPreviewId);
     const migrationPairSupported = selectedSourceVendor === "fortigate" && selectedTargetVendor === "palo_alto";
     document.getElementById("migration-pair-support")?.classList.toggle("hidden", activeMode !== "download");
-    tabReport?.classList.toggle("hidden", !vendorCapabilities[selectedSourceVendor]?.web_report);
+    tabReport?.classList.toggle("hidden", vendorCapabilities[selectedSourceVendor]?.web_report === false);
     if (btnGenerateBundle)
       btnGenerateBundle.disabled =
         !currentPreviewId || !sourceReady || !migrationPairSupported || busyButtons.has(btnGenerateBundle);
@@ -962,6 +986,13 @@ let migrationBuildInFlight = false;
     if (btnCommitCandidate) btnCommitCandidate.disabled = true;
     currentPolicies = [];
     currentReport = null;
+    currentSourceContext = {
+      acquisition: "Uploaded configuration",
+      status: null,
+      warnings: [],
+    };
+    if (reportSearchTimer) clearTimeout(reportSearchTimer);
+    reportSearchTimer = null;
     reportPage = 1;
     activeValidationGroup = "";
     activeReportSection = "overview";
@@ -1007,7 +1038,6 @@ let migrationBuildInFlight = false;
       selectedTargetVendor = offlineTargetVendor;
     }
     if (targetVendorSelect) targetVendorSelect.value = selectedTargetVendor;
-    if (mode === "collect" && activeMode !== "collect") clearSource();
     activeMode = mode;
     [
       [tabDownload, "download"],
@@ -1098,6 +1128,8 @@ let migrationBuildInFlight = false;
   }
   enableTabKeys([tabReport, tabCollect, tabDownload, tabLive]);
   enableTabKeys([btnIngestFile, btnIngestSnapshot]);
+  enableTabKeys([...document.querySelectorAll("[data-report-section]")]);
+  enableTabKeys([...document.querySelectorAll("[data-object-section]")]);
 
   // =========================================================================
   // 3. Vendor Selector Dropdowns
@@ -1263,7 +1295,13 @@ let migrationBuildInFlight = false;
     renderReportTable();
     renderValidationSummary();
   }
-  reportSearch?.addEventListener("input", updateReportFilters);
+  reportSearch?.addEventListener("input", () => {
+    if (reportSearchTimer) clearTimeout(reportSearchTimer);
+    reportSearchTimer = setTimeout(() => {
+      reportSearchTimer = null;
+      updateReportFilters();
+    }, 120);
+  });
   reportScopeFilter?.addEventListener("change", updateReportFilters);
   reportSeverityFilter?.addEventListener("change", updateReportFilters);
   reportPagePrevious?.addEventListener("click", () => { reportPage = Math.max(1, reportPage - 1); renderReportTable(); });
@@ -1287,7 +1325,13 @@ let migrationBuildInFlight = false;
     if (event.target === reportDetailModal) closeReportDetailModal();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !reportDetailModal?.classList.contains("hidden")) closeReportDetailModal();
+    const detailOpen = !reportDetailModal?.classList.contains("hidden");
+    if (event.key === "Escape" && detailOpen) {
+      closeReportDetailModal();
+    } else if (event.key === "Tab" && detailOpen) {
+      event.preventDefault();
+      reportDetailClose?.focus();
+    }
   });
 
   function clearSource() {
