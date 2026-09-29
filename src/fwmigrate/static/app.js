@@ -325,7 +325,6 @@ let migrationBuildInFlight = false;
   const reportPageNext = document.getElementById("report-page-next");
   const validationSummary = document.getElementById("validation-summary");
   const validationGroupsPanel = document.getElementById("validation-groups-panel");
-  const validationDetailsHeading = document.getElementById("validation-details-heading");
   const validationActiveFilter = document.getElementById("validation-active-filter");
   const validationActiveFilterLabel = document.getElementById("validation-active-filter-label");
   const validationFilterClear = document.getElementById("validation-filter-clear");
@@ -493,8 +492,8 @@ let migrationBuildInFlight = false;
     services: [["name", "Name"], ["protocol", "Protocol", "compact"], ["port", "Port", "compact"], ["source_port", "Source Port", "compact"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
     service_groups: [["name", "Name"], ["members", "Members"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
     schedules: [["name", "Name"], ["type", "Type", "compact"], ["start", "Start"], ["end", "End"], ["days", "Days"], ["daily", "Daily"], ["weekdays", "Weekdays"], ["clauses", "Clauses"], ["value", "Value"], ["review", "Review", "notes"]],
-    policies: [["policy_id", "ID", "compact"], ["name", "Name"], ["source_interfaces", "From"], ["destination_interfaces", "To"], ["source_addresses", "Source"], ["source_addresses_ipv6", "Source IPv6"], ["destination_addresses", "Destination"], ["destination_addresses_ipv6", "Destination IPv6"], ["services", "Service"], ["schedule", "Schedule"], ["action", "Action", "compact"], ["nat", "NAT", "compact"], ["review", "Review", "notes"]],
-    nat: [["policy_id", "Policy ID", "compact"], ["policy_name", "Policy"], ["translation_type", "Type", "compact"], ["translated_addresses", "Address", "address"], ["egress_interfaces", "Egress"], ["review", "Review", "notes"]],
+    policies: [["__identity", "Policy", "identity"], ["source_interfaces", "From"], ["destination_interfaces", "To"], ["source_addresses", "Source"], ["source_addresses_ipv6", "Source IPv6"], ["destination_addresses", "Destination"], ["destination_addresses_ipv6", "Destination IPv6"], ["services", "Service"], ["schedule", "Schedule"], ["action", "Action", "compact"], ["nat", "NAT", "compact"], ["review", "Review", "notes"]],
+    nat: [["__identity", "Policy", "identity"], ["translation_type", "Type", "compact"], ["translated_addresses", "Address", "address"], ["egress_interfaces", "Egress"], ["review", "Review", "notes"]],
     routes: [["route_id", "ID", "compact"], ["destination", "Destination", "address"], ["gateway", "Gateway", "address"], ["device", "Device"], ["distance", "Distance", "compact"], ["status", "Status", "compact"], ["review", "Review", "notes"]],
     vpn: [["kind", "Type", "compact"], ["name", "Name"], ["attachment", "Interface / Phase 1"], ["peer", "Gateway / Selectors", "address"], ["crypto", "IKE / Proposal"], ["topology", "Topology"], ["review", "Review", "notes"]],
     references: [["source_kind", "Source Type"], ["source_name", "Source"], ["source_field", "Field"], ["domain", "Domain"], ["object_name", "Object"], ["field", "Field"], ["reference", "Reference"], ["expected_kinds", "Expected"], ["expected_type", "Expected Type"], ["status", "Status", "compact"]],
@@ -520,8 +519,8 @@ let migrationBuildInFlight = false;
     services: "name",
     service_groups: "name",
     schedules: "name",
-    policies: "name",
-    nat: "policy_name",
+    policies: "__identity",
+    nat: "__identity",
     routes: "destination",
     vpn: "name",
     references: "source_name",
@@ -547,11 +546,31 @@ let migrationBuildInFlight = false;
     vpn_phase2: ["vpn"],
   };
 
+  const REPORT_SENSITIVE_KEY = /raw_extra|password|secret|credential|token|private.?key|psk/i;
+
   function reportCell(value) {
     if (value === null || value === undefined || value === "") return "—";
-    if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
+    if (Array.isArray(value)) return value.length ? value.map((item) => reportCell(item)).join(", ") : "—";
     if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "object") return "Structured details";
     return String(value);
+  }
+
+  function safeReportSearchValues(value, key = "", values = []) {
+    if (REPORT_SENSITIVE_KEY.test(key)) return values;
+    if (value === null || value === undefined || value === "") return values;
+    if (Array.isArray(value)) {
+      value.forEach((item) => safeReportSearchValues(item, key, values));
+      return values;
+    }
+    if (typeof value === "object") {
+      Object.entries(value).forEach(([nestedKey, nestedValue]) =>
+        safeReportSearchValues(nestedValue, nestedKey, values),
+      );
+      return values;
+    }
+    values.push(typeof value === "boolean" ? (value ? "Yes" : "No") : String(value));
+    return values;
   }
 
   function reportTableCell(value) {
@@ -573,8 +592,9 @@ let migrationBuildInFlight = false;
     }
     if (key === "status") {
       if (["success", "ready", "up", "enabled", "active"].includes(token)) return "success";
-      if (["failed", "down", "disabled"].includes(token)) return "danger";
-      if (["partial", "warning"].includes(token)) return "warning";
+      if (token === "failed") return "danger";
+      if (["down", "partial", "warning"].includes(token)) return "warning";
+      if (["disabled", "inactive", "shutdown"].includes(token)) return "neutral";
     }
     if (["protocol", "address_family", "kind", "type"].includes(key) && token && token !== "—") {
       return "neutral";
@@ -583,11 +603,11 @@ let migrationBuildInFlight = false;
   }
 
   function reportSearchText(row) {
-    if (!row || typeof row !== "object") return reportCell(row).toLowerCase();
+    if (!row || typeof row !== "object") return safeReportSearchValues(row).join("\n").toLowerCase();
     const cached = reportSearchIndex.get(row);
     if (cached !== undefined) return cached;
-    const searchable = Object.values(row)
-      .map((value) => reportCell(value))
+    const searchable = Object.entries(row)
+      .flatMap(([key, value]) => safeReportSearchValues(value, key))
       .join("\n")
       .toLowerCase();
     reportSearchIndex.set(row, searchable);
@@ -684,22 +704,66 @@ let migrationBuildInFlight = false;
           : "ready";
   }
 
+  function appendReportDetailValue(container, value, key = "") {
+    if (REPORT_SENSITIVE_KEY.test(key)) return false;
+    if (value === null || value === undefined || value === "") {
+      container.textContent = "—";
+      return true;
+    }
+    if (Array.isArray(value)) {
+      if (!value.length) {
+        container.textContent = "—";
+        return true;
+      }
+      const list = document.createElement("ul");
+      value.forEach((item) => {
+        const entry = document.createElement("li");
+        if (item && typeof item === "object") {
+          const nested = document.createElement("dl");
+          Object.entries(item).forEach(([nestedKey, nestedValue]) => {
+            if (REPORT_SENSITIVE_KEY.test(nestedKey)) return;
+            const term = document.createElement("dt");
+            term.textContent = nestedKey.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+            const detail = document.createElement("dd");
+            appendReportDetailValue(detail, nestedValue, nestedKey);
+            nested.append(term, detail);
+          });
+          entry.appendChild(nested);
+        } else {
+          entry.textContent = reportCell(item);
+        }
+        list.appendChild(entry);
+      });
+      container.appendChild(list);
+      return true;
+    }
+    if (typeof value === "object") {
+      const nested = document.createElement("dl");
+      Object.entries(value).forEach(([nestedKey, nestedValue]) => {
+        if (REPORT_SENSITIVE_KEY.test(nestedKey)) return;
+        const term = document.createElement("dt");
+        term.textContent = nestedKey.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+        const detail = document.createElement("dd");
+        appendReportDetailValue(detail, nestedValue, nestedKey);
+        nested.append(term, detail);
+      });
+      container.appendChild(nested);
+      return true;
+    }
+    container.textContent = reportCell(value);
+    return true;
+  }
+
   function showReportDetails(row, triggerElement) {
     if (!reportDetailModal || !reportDetailBody) return;
     if (reportDetailTitle) reportDetailTitle.textContent = row.policy_id != null ? `Policy ${row.policy_id}` : row.name || row.display_name || row.object_name || "Row details";
     const list = document.createElement("dl");
     Object.entries(row).forEach(([key, value]) => {
-      if (/raw_extra|password|secret|credential|token|private.?key|psk/i.test(key)) return;
+      if (REPORT_SENSITIVE_KEY.test(key)) return;
       const term = document.createElement("dt");
       term.textContent = key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
       const detail = document.createElement("dd");
-      if (Array.isArray(value)) {
-        if (value.length) {
-          const items = document.createElement("ul");
-          value.forEach((item) => { const entry = document.createElement("li"); entry.textContent = reportCell(item); items.appendChild(entry); });
-          detail.appendChild(items);
-        } else detail.textContent = "—";
-      } else detail.textContent = reportCell(value);
+      appendReportDetailValue(detail, value, key);
       list.append(term, detail);
     });
     reportDetailBody.replaceChildren(list);
