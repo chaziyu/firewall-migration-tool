@@ -4,6 +4,7 @@ from fwmigrate.vendors.fortigate.model.address import FGAddress, FGAddressGroup
 from fwmigrate.vendors.fortigate.model.external_resource import FGExternalResource
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.policy import FGPolicy
+from fwmigrate.vendors.fortigate.model.sdwan import FGSDWAN, FGSDWANMember, FGSDWANZone
 from fwmigrate.vendors.fortigate.model.service import FGService
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.model.vip import FGVIP, FGVIPRealServer
@@ -188,6 +189,38 @@ class NatSemanticsTest(unittest.TestCase):
         self.assertIn("...", message)
         self.assertNotIn(source, message)
         self.assertNotIn("103.230.127.102 " * 10, message)
+
+    def test_sdwan_interface_nat_index_is_vdom_scoped(self):
+        rows = transform_nat(
+            FGConfig(
+                interfaces=[
+                    FGInterface(name="wan-a", vdom="a", ip="192.0.2.1/24"),
+                    FGInterface(name="wan-b", vdom="b", ip="198.51.100.1/24"),
+                ],
+                sdwans=[
+                    FGSDWAN(
+                        vdom="a",
+                        zones=[FGSDWANZone(name="overlay")],
+                        members=[FGSDWANMember(interface="wan-a", zone="overlay")],
+                    ),
+                    FGSDWAN(
+                        vdom="b",
+                        zones=[FGSDWANZone(name="overlay")],
+                        members=[FGSDWANMember(interface="wan-b", zone="overlay")],
+                    ),
+                ],
+                policies=[
+                    FGPolicy(policy_id=1, vdom="a", nat="enable", dstintf=["overlay"]),
+                    FGPolicy(policy_id=2, vdom="b", nat="enable", dstintf=["overlay"]),
+                ],
+            )
+        )
+
+        by_vdom = {row.vdom: row for row in rows}
+        self.assertEqual(by_vdom["a"].egress_interfaces, ("wan-a",))
+        self.assertEqual(by_vdom["a"].translated_addresses, ("192.0.2.1",))
+        self.assertEqual(by_vdom["b"].egress_interfaces, ("wan-b",))
+        self.assertEqual(by_vdom["b"].translated_addresses, ("198.51.100.1",))
 
 
 if __name__ == "__main__":
