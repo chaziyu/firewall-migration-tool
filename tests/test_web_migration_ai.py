@@ -1121,6 +1121,7 @@ def test_request_byte_budget_splits_batches_and_never_truncates_candidates(monke
     assert len(session.design.proposals) == 2
     assert all(len(original_candidates[key]) == 1 for key in keys)
 
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_REQUEST_BYTES", "49152")
     candidate_state = _state()
     key = candidate_state["decisions"].decisions[0].key
     candidate_state["decision_candidates"][key] = [
@@ -1128,9 +1129,30 @@ def test_request_byte_budget_splits_batches_and_never_truncates_candidates(monke
         for index in range(1, 5)
     ]
     monkeypatch.setenv("FWMIGRATE_AI_MAX_CANDIDATES_PER_DECISION", "3")
-    with pytest.raises(ai_advisor.AdvisorRequestError, match="candidate limit") as error:
+    with pytest.raises(ValueError, match="not AI-eligible"):
         ai_advisor.build_proposal_context(candidate_state, [key], model=model, provider="groq")
-    assert error.value.failure.candidate_count == 4
+    assert len(candidate_state["decision_candidates"][key]) == 4
+
+    pruned_state = _state()
+    pruned_key = pruned_state["decisions"].decisions[0].key
+    base = pruned_state["decision_candidates"][pruned_key][0]
+    pruned_state["decision_candidates"][pruned_key] = [
+        {**base, "value": "ethernet1/21", "class": "STRONG",
+         "strong_evidence": ["exact address", "matching family"]},
+        {**base, "value": "ethernet1/22", "class": "STRONG",
+         "strong_evidence": ["exact address"]},
+        {**base, "value": "ethernet1/23", "class": "STRONG",
+         "strong_evidence": ["matching family"]},
+        {**base, "value": "ethernet1/24", "class": "POSSIBLE",
+         "strong_evidence": [], "supporting_evidence": ["explicit target interface"]},
+    ]
+    pruned = ai_advisor.build_proposal_context(
+        pruned_state, [pruned_key], model=model, provider="groq"
+    )
+    assert len(pruned_state["decision_candidates"][pruned_key]) == 4
+    assert [item["value"] for item in pruned["request"]["decisions"][0]["candidates"]] == [
+        "ethernet1/21", "ethernet1/22", "ethernet1/23",
+    ]
 
     large_state = _design_state(2)
     keys = tuple(item.key for item in large_state["decisions"].decisions)
@@ -1146,7 +1168,7 @@ def test_request_byte_budget_splits_batches_and_never_truncates_candidates(monke
     limited = ai_orchestrator.build_ai_proposed_design(large_state)
     assert calls == [(keys[1],)]
     assert len(limited.design.proposals) == 1
-    assert limited.failures[0]["decision_keys"] == [keys[0]]
+    assert limited.failures == ()
     assert limited.summary(large_state["design_session"].dependency_graph)["not_ai_eligible"] == 1
 
 
