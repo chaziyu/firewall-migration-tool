@@ -7,6 +7,7 @@ from fwmigrate.deployment import (
     PANDeploymentCommandResult,
     PANDeploymentOptions,
     PANDeploymentResult,
+    PANDeploymentSession,
     PANValidationResult,
 )
 
@@ -25,8 +26,18 @@ def test_deployment_models_defaults_and_secret_repr():
     assert PANValidationResult().status == "NOT_RUN"
     assert PANCommitResult().status == "NOT_RUN"
     assert PANDeploymentCommandResult(0, "set x", True).accepted
+    session = PANDeploymentSession(
+        "session-1", "artifact-1", 2, "abc123", "fw", 22, "admin", "7", 123.0,
+    )
+    assert session.artifact_id == "artifact-1"
+    assert session.command_count == 2
+    assert "secret" not in repr(session)
 
 
 def test_deployment_models_are_immutable():
     with pytest.raises(FrozenInstanceError):
         PANDeploymentOptions("fw", "admin", "secret").port = 23
+    with pytest.raises(FrozenInstanceError):
+        PANDeploymentSession(
+            "session-1", "artifact-1", 1, "abc", "fw", 22, "admin", "7", 123.0,
+        ).artifact_id = "artifact-2"
