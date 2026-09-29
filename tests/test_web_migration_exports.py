@@ -620,7 +620,7 @@ def test_migration_workflow_uses_planning_terminology():
     assert 'id="report-filename"' not in html
     assert html.count('id="report-detail-modal"') == 1
     assert 'class="report-detail-modal hidden"' in html
-    assert 'role="dialog" aria-modal="true" aria-labelledby="report-detail-title"' in html
+    assert 'role="dialog" aria-modal="false" aria-labelledby="report-detail-title"' in html
     assert 'id="report-detail-close"' in html and 'id="report-detail-body"' in html
     assert 'id="report-detail-panel"' not in html
     assert html.count('id="report-summary"') == 1
