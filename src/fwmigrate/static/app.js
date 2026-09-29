@@ -49,6 +49,11 @@ let migrationBuildInFlight = false;
   let activeMode = "download"; // 'download', 'live', 'collect', or 'report'
   let currentPolicies = [];
   let currentReport = null;
+  let currentSourceContext = {
+    acquisition: "Uploaded configuration",
+    status: null,
+    warnings: [],
+  };
   let sourceReady = false;
   let sourceFailed = false;
   let sourceRevision = 0;
@@ -295,6 +300,7 @@ let migrationBuildInFlight = false;
   const reportOverview = document.getElementById("report-overview");
   const reportData = document.getElementById("report-data");
   const reportSummary = document.getElementById("report-summary");
+  const reportSourceMeta = document.getElementById("report-source-meta");
   const reportScopeSummary = document.getElementById("report-scope-summary");
   const reportObjectTabs = document.getElementById("report-object-tabs");
   const reportSearch = document.getElementById("report-search");
@@ -327,6 +333,8 @@ let migrationBuildInFlight = false;
   let activeObjectSection = "addresses";
   let reportPage = 1;
   let activeValidationGroup = "";
+  let reportSearchTimer = null;
+  const reportSearchIndex = new WeakMap();
   const REPORT_PAGE_SIZE = 100;
 
   // Ingestion Method Tabs
@@ -479,10 +487,12 @@ let migrationBuildInFlight = false;
     address_groups: [["name", "Name"], ["members", "Members"], ["address_family", "Family", "compact"], ["exclude_members", "Excluded"], ["review", "Review", "notes"]],
     services: [["name", "Name"], ["protocol", "Protocol", "compact"], ["port", "Port", "compact"], ["source_port", "Source Port", "compact"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
     service_groups: [["name", "Name"], ["members", "Members"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
+    schedules: [["name", "Name"], ["type", "Type", "compact"], ["start", "Start"], ["end", "End"], ["days", "Days"], ["daily", "Daily"], ["weekdays", "Weekdays"], ["clauses", "Clauses"], ["value", "Value"], ["review", "Review", "notes"]],
     policies: [["policy_id", "ID", "compact"], ["name", "Name"], ["source_interfaces", "From"], ["destination_interfaces", "To"], ["source_addresses", "Source"], ["source_addresses_ipv6", "Source IPv6"], ["destination_addresses", "Destination"], ["destination_addresses_ipv6", "Destination IPv6"], ["services", "Service"], ["schedule", "Schedule"], ["action", "Action", "compact"], ["nat", "NAT", "compact"], ["review", "Review", "notes"]],
     nat: [["policy_id", "Policy ID", "compact"], ["policy_name", "Policy"], ["translation_type", "Type", "compact"], ["translated_addresses", "Address", "address"], ["egress_interfaces", "Egress"], ["review", "Review", "notes"]],
     routes: [["route_id", "ID", "compact"], ["destination", "Destination", "address"], ["gateway", "Gateway", "address"], ["device", "Device"], ["distance", "Distance", "compact"], ["status", "Status", "compact"], ["review", "Review", "notes"]],
     vpn: [["kind", "Type", "compact"], ["name", "Name"], ["attachment", "Interface / Phase 1"], ["peer", "Gateway / Selectors", "address"], ["crypto", "IKE / Proposal"], ["topology", "Topology"], ["review", "Review", "notes"]],
+    references: [["source_kind", "Source Type"], ["source_name", "Source"], ["source_field", "Field"], ["domain", "Domain"], ["object_name", "Object"], ["field", "Field"], ["reference", "Reference"], ["expected_kinds", "Expected"], ["expected_type", "Expected Type"], ["status", "Status", "compact"]],
     validation: [["severity", "Severity", "compact"], ["domain", "Domain"], ["object_name", "Object"], ["field", "Field"], ["message", "Issue", "notes"]],
   };
 
@@ -491,6 +501,67 @@ let migrationBuildInFlight = false;
     if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
     if (typeof value === "boolean") return value ? "Yes" : "No";
     return String(value);
+  }
+
+  function reportSearchText(row) {
+    if (!row || typeof row !== "object") return reportCell(row).toLowerCase();
+    const cached = reportSearchIndex.get(row);
+    if (cached !== undefined) return cached;
+    const searchable = Object.values(row)
+      .map((value) => reportCell(value))
+      .join("\n")
+      .toLowerCase();
+    reportSearchIndex.set(row, searchable);
+    return searchable;
+  }
+
+  function sourceOverviewCounts(report) {
+    const summary = report?.summary || {};
+    const objects = summary.objects || {};
+    const severity = summary.validation?.severity_counts || {};
+    return {
+      policies: count(objects.policies),
+      objects: ["addresses", "address_groups", "services", "service_groups"]
+        .reduce((total, key) => total + count(objects[key]), 0),
+      errors: count(severity.error),
+      warnings: count(severity.warning),
+      items: Object.values(objects)
+        .reduce((total, value) => total + (typeof value === "number" ? count(value) : 0), 0),
+    };
+  }
+
+  function updateSourceOverview(report) {
+    const overview = sourceOverviewCounts(report);
+    if (statTotalRules) statTotalRules.textContent = String(overview.policies);
+    if (statTotalObjects) statTotalObjects.textContent = String(overview.objects);
+    if (statErrors) statErrors.textContent = String(overview.errors);
+    if (statWarnings) statWarnings.textContent = String(overview.warnings);
+    return overview;
+  }
+
+  function setSourceContext({ acquisition = "Uploaded configuration", status = null, warnings = [] } = {}) {
+    currentSourceContext = {
+      acquisition,
+      status,
+      warnings: Array.isArray(warnings) ? warnings : [],
+    };
+    renderSourceContext();
+  }
+
+  function renderSourceContext() {
+    if (!reportSourceMeta) return;
+    const parts = [`Source: ${currentSourceContext.acquisition}`];
+    if (currentSourceContext.status) parts.push(`Collection: ${currentSourceContext.status}`);
+    if (currentSourceContext.warnings.length) {
+      parts.push(`${currentSourceContext.warnings.length} collection ${currentSourceContext.warnings.length === 1 ? "warning" : "warnings"}`);
+    }
+    reportSourceMeta.textContent = parts.join(" · ");
+    reportSourceMeta.dataset.state =
+      currentSourceContext.status === "PARTIAL"
+        ? "warning"
+        : currentSourceContext.status === "FAILED"
+          ? "error"
+          : "ready";
   }
 
   function showReportDetails(row, triggerElement) {
@@ -518,11 +589,13 @@ let migrationBuildInFlight = false;
   function openReportDetailModal(triggerElement) {
     reportDetailTrigger = triggerElement;
     reportDetailModal?.classList.remove("hidden");
+    reportDetailModal?.setAttribute("aria-hidden", "false");
     reportDetailClose?.focus();
   }
 
   function closeReportDetailModal(restoreFocus = true) {
     reportDetailModal?.classList.add("hidden");
+    reportDetailModal?.setAttribute("aria-hidden", "true");
     if (restoreFocus && reportDetailTrigger?.isConnected) reportDetailTrigger.focus();
     reportDetailTrigger = null;
   }
@@ -531,7 +604,8 @@ let migrationBuildInFlight = false;
     const targets = {
       interface: ["interfaces"], address: ["objects", "addresses"], address6: ["objects", "addresses"],
       address_group: ["objects", "address_groups"], service: ["objects", "services"], service_group: ["objects", "service_groups"],
-      policy: ["policies"], route: ["routes"], static_route: ["routes"], static_route6: ["routes"],
+      policy: ["policies"], schedule: ["schedules"], scheduler: ["schedules"], time_range: ["schedules"],
+      route: ["routes"], static_route: ["routes"], static_route6: ["routes"],
       vpn: ["vpn"], ipsec_phase1: ["vpn"], vpn_phase2: ["vpn"],
     };
     const target = targets[row.domain];
@@ -554,6 +628,7 @@ let migrationBuildInFlight = false;
     const sections = currentReport?.sections || {};
     if (section === "interfaces") return sections.interface_topology || sections.interfaces || [];
     if (section === "objects") return sections[activeObjectSection] || [];
+    if (section === "references") return sections.unresolved_references || [];
     if (section === "vpn") return [
       ...(sections.vpn_tunnels || []).map((row) => ({ ...row, kind: "Tunnel", attachment: row.interface, peer: row.remote_gateway || row.ike_gateways, crypto: row.ike_version || row.ipsec_crypto_profile, topology: row.topology_path })),
       ...(sections.vpn_phase2 || []).map((row) => ({ ...row, kind: "Phase 2", attachment: row.phase1, peer: [["IPv4 src", row.source_range], ["IPv4 dst", row.destination_range], ["IPv6 src", row.source_range6], ["IPv6 dst", row.destination_range6]].filter(([, value]) => value).map(([label, value]) => `${label}: ${value}`).join(" → "), crypto: row.proposal, topology: [] })),
@@ -574,7 +649,7 @@ let migrationBuildInFlight = false;
           JSON.stringify([row.severity, row.domain, row.field, row.message]) !== activeValidationGroup) return false;
       if (scope && (row.scope || row.vdom) !== scope) return false;
       if (severity && row.severity !== severity) return false;
-      return !search || Object.values(row).some((value) => reportCell(value).toLowerCase().includes(search));
+      return !search || reportSearchText(row).includes(search);
     });
     const identityColumns = new Set(["name", "policy_id", "policy_name", "object_name", "display_name", "route_id", "destination", "id", "severity", "domain"]);
     columns = columns.filter(([key]) => identityColumns.has(key) || rows.some((row) => reportCell(row[key]) !== "—"));
@@ -711,13 +786,22 @@ let migrationBuildInFlight = false;
     if (["addresses", "address_groups", "services", "service_groups"].some((key) => objects[key] != null)) stats.push(["Objects", objectTotal]);
     if (severity.error != null) stats.push(["Errors", severity.error]);
     if (severity.warning != null) stats.push(["Warnings", severity.warning]);
+    if (sections.schedules) stats.push(["Schedules", sections.schedules.length]);
     if (sections.routes) stats.push(["Routes", sections.routes.length]);
     if (sections.vpn_tunnels || sections.vpn_phase2) stats.push(["VPNs", (sections.vpn_tunnels || []).length + (sections.vpn_phase2 || []).length]);
     if (sections.unresolved_references) stats.push(["Unresolved references", sections.unresolved_references.length]);
     const unsupported = summary.unsupported_count ?? summary.source_only_count;
     if (unsupported != null) stats.push(["Unsupported / source-only", unsupported]);
     const fragment = document.createDocumentFragment();
-    const destinations = { Interfaces: ["interfaces"], Objects: ["objects", "addresses"], Policies: ["policies"], Routes: ["routes"], VPNs: ["vpn"] };
+    const destinations = {
+      Interfaces: ["interfaces"],
+      Objects: ["objects", "addresses"],
+      Schedules: ["schedules"],
+      Policies: ["policies"],
+      Routes: ["routes"],
+      VPNs: ["vpn"],
+      "Unresolved references": ["references"],
+    };
     stats.forEach(([label, value]) => {
       const stat = destinations[label] || ["Errors", "Warnings"].includes(label)
         ? document.createElement("button") : document.createElement("div");
@@ -758,8 +842,19 @@ let migrationBuildInFlight = false;
     reportData?.classList.toggle("hidden", overview);
     reportObjectTabs?.classList.toggle("hidden", activeReportSection !== "objects");
     reportSeverityFilter?.classList.toggle("hidden", activeReportSection !== "validation");
-    document.querySelectorAll("[data-object-section]").forEach((button) => button.classList.toggle("active", button.dataset.objectSection === activeObjectSection));
-    document.querySelectorAll("[data-report-section]").forEach((button) => button.classList.toggle("active", button.dataset.reportSection === activeReportSection));
+    document.querySelectorAll("[data-object-section]").forEach((button) => {
+      const selected = button.dataset.objectSection === activeObjectSection;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+    document.querySelectorAll("[data-report-section]").forEach((button) => {
+      const selected = button.dataset.reportSection === activeReportSection;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+    renderSourceContext();
     renderValidationSummary();
     if (!overview) renderReportTable();
   }
@@ -768,7 +863,7 @@ let migrationBuildInFlight = false;
     const hasInput = Boolean(currentFile || currentPreviewId);
     const migrationPairSupported = selectedSourceVendor === "fortigate" && selectedTargetVendor === "palo_alto";
     document.getElementById("migration-pair-support")?.classList.toggle("hidden", activeMode !== "download");
-    tabReport?.classList.toggle("hidden", !vendorCapabilities[selectedSourceVendor]?.web_report);
+    tabReport?.classList.toggle("hidden", vendorCapabilities[selectedSourceVendor]?.web_report === false);
     if (btnGenerateBundle)
       btnGenerateBundle.disabled =
         !currentPreviewId || !sourceReady || !migrationPairSupported || busyButtons.has(btnGenerateBundle);
@@ -884,6 +979,13 @@ let migrationBuildInFlight = false;
     if (btnCommitCandidate) btnCommitCandidate.disabled = true;
     currentPolicies = [];
     currentReport = null;
+    currentSourceContext = {
+      acquisition: "Uploaded configuration",
+      status: null,
+      warnings: [],
+    };
+    if (reportSearchTimer) clearTimeout(reportSearchTimer);
+    reportSearchTimer = null;
     reportPage = 1;
     activeValidationGroup = "";
     activeReportSection = "overview";
@@ -929,7 +1031,6 @@ let migrationBuildInFlight = false;
       selectedTargetVendor = offlineTargetVendor;
     }
     if (targetVendorSelect) targetVendorSelect.value = selectedTargetVendor;
-    if (mode === "collect" && activeMode !== "collect") clearSource();
     activeMode = mode;
     [
       [tabDownload, "download"],
@@ -1020,15 +1121,26 @@ let migrationBuildInFlight = false;
   }
   enableTabKeys([tabReport, tabCollect, tabDownload, tabLive]);
   enableTabKeys([btnIngestFile, btnIngestSnapshot]);
+  enableTabKeys([...document.querySelectorAll("[data-report-section]")]);
+  enableTabKeys([...document.querySelectorAll("[data-object-section]")]);
 
   // =========================================================================
   // 3. Vendor Selector Dropdowns
   // =========================================================================
+  function syncSourceVendorPresentation() {
+    renderCollectionFields();
+    const cfg = VENDOR_CONFIGS[selectedSourceVendor];
+    if (cfg) {
+      if (dropzoneSubtext) dropzoneSubtext.innerHTML = cfg.dropText;
+      if (fileInput) fileInput.accept = ingestMode === "snapshot" ? ".json" : cfg.fileAccept;
+    }
+    syncWorkspace();
+  }
+
   if (sourceVendorSelect) {
     selectedSourceVendor = sourceVendorSelect.value || "fortigate";
     sourceVendorSelect.addEventListener("change", (e) => {
       selectedSourceVendor = e.target.value;
-      renderCollectionFields();
       currentRenderedArtifactId = null;
       clearSource();
       const vendorName =
@@ -1038,14 +1150,7 @@ let migrationBuildInFlight = false;
         `[VENDOR] Source vendor selected: ${vendorName}`,
         "term-system",
       );
-
-      const cfg = VENDOR_CONFIGS[selectedSourceVendor];
-      if (cfg) {
-        if (dropzoneSubtext) dropzoneSubtext.innerHTML = cfg.dropText;
-        if (fileInput) fileInput.accept = ingestMode === "snapshot" ? ".json" : cfg.fileAccept;
-      }
-
-      syncWorkspace();
+      syncSourceVendorPresentation();
     });
   }
 
@@ -1142,6 +1247,7 @@ let migrationBuildInFlight = false;
     clearSource();
     currentFile = file;
     currentRenderedArtifactId = null;
+    setSourceContext({ acquisition: "Uploaded configuration" });
 
     if (selectedFilename) selectedFilename.textContent = file.name;
     if (selectedFilesize) selectedFilesize.textContent = formatBytes(file.size);
@@ -1177,15 +1283,20 @@ let migrationBuildInFlight = false;
   document.querySelectorAll("[data-object-section]").forEach((button) => button.addEventListener("click", () => {
     activeObjectSection = button.dataset.objectSection;
     reportPage = 1;
-    document.querySelectorAll("[data-object-section]").forEach((item) => item.classList.toggle("active", item === button));
-    renderReportTable();
+    renderReport();
   }));
   function updateReportFilters() {
     reportPage = 1;
     renderReportTable();
     renderValidationSummary();
   }
-  reportSearch?.addEventListener("input", updateReportFilters);
+  reportSearch?.addEventListener("input", () => {
+    if (reportSearchTimer) clearTimeout(reportSearchTimer);
+    reportSearchTimer = setTimeout(() => {
+      reportSearchTimer = null;
+      updateReportFilters();
+    }, 120);
+  });
   reportScopeFilter?.addEventListener("change", updateReportFilters);
   reportSeverityFilter?.addEventListener("change", updateReportFilters);
   reportPagePrevious?.addEventListener("click", () => { reportPage = Math.max(1, reportPage - 1); renderReportTable(); });
@@ -1209,14 +1320,24 @@ let migrationBuildInFlight = false;
     if (event.target === reportDetailModal) closeReportDetailModal();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !reportDetailModal?.classList.contains("hidden")) closeReportDetailModal();
+    const detailOpen = !reportDetailModal?.classList.contains("hidden");
+    if (event.key === "Escape" && detailOpen) {
+      closeReportDetailModal();
+    } else if (event.key === "Tab" && detailOpen) {
+      event.preventDefault();
+      reportDetailClose?.focus();
+    }
   });
 
-  function clearSource() {
+  function detachLocalFile() {
     currentFile = null;
     if (fileInput) fileInput.value = "";
     selectedFileCard?.classList.add("hidden");
     dropzone?.classList.remove("hidden");
+  }
+
+  function clearSource() {
+    detachLocalFile();
     hideError();
     resetPreview();
   }
@@ -1254,39 +1375,24 @@ let migrationBuildInFlight = false;
       const data = await readJson(resp, "Could not read this configuration");
       if (requestRevision !== sourceRevision) return;
       currentPreviewId = data.preview_id || null;
-      await loadMigrationReview(currentPreviewId);
-      if (requestRevision !== sourceRevision) return;
-      const stats = data.stats || data.summary || {};
-      const objects = stats.objects || stats;
-      const severityCounts = stats.validation?.severity_counts || {};
-      const errorCount = count(severityCounts.error);
-      const warningCount = count(severityCounts.warning);
-      if (statTotalRules) statTotalRules.textContent = count(objects.policies);
-      if (statTotalObjects)
-        statTotalObjects.textContent =
-          ["addresses", "address_groups", "services", "service_groups"]
-            .reduce((total, key) => total + count(objects[key]), 0);
-      if (statErrors) statErrors.textContent = errorCount;
-      if (statWarnings) statWarnings.textContent = warningCount;
       currentPolicies = Array.isArray(data.policies) ? data.policies : [];
       currentReport = data;
       reportPage = 1;
       activeValidationGroup = "";
       renderReport();
       sourceReady = true;
-      scheduleMigrationPlanBuild();
-      const itemCount = Object.values(objects).reduce(
-        (total, value) => total + count(value),
-        0,
-      );
+      const overview = updateSourceOverview(data);
+      syncWorkspace();
       setPreviewStatus(
-        itemCount
-          ? (errorCount || warningCount
-              ? `Parsed · ${errorCount} errors · ${warningCount} warnings`
+        overview.items
+          ? (overview.errors || overview.warnings
+              ? `Parsed · ${overview.errors} errors · ${overview.warnings} warnings`
               : "Parsed successfully.")
           : "No supported objects were found. Review the source file and extraction warnings in the Excel workbook.",
-        itemCount ? "ready" : "empty",
+        overview.items ? "ready" : "empty",
       );
+      await loadMigrationReviewForReadySource(currentPreviewId);
+      if (requestRevision !== sourceRevision) return;
     } catch (err) {
       if (err.name === "AbortError" || requestRevision !== sourceRevision)
         return;
@@ -1428,6 +1534,24 @@ let migrationBuildInFlight = false;
     panel?.classList.toggle("hidden", !sourceReady || selectedTargetVendor !== "palo_alto");
     updateMappingCompletion();
     if (scheduleBuild) scheduleMigrationPlanBuild();
+  }
+
+  async function loadMigrationReviewForReadySource(previewId) {
+    if (selectedSourceVendor !== "fortigate" || !previewId) return;
+    try {
+      await loadMigrationReview(previewId);
+      const status = document.getElementById("migration-build-status");
+      if (status && previewId === currentPreviewId && status.textContent.startsWith("Migration review unavailable:")) {
+        status.textContent = "";
+      }
+    } catch (error) {
+      if (previewId !== currentPreviewId) return;
+      const status = document.getElementById("migration-build-status");
+      if (status) status.textContent = `Migration review unavailable: ${error.message}`;
+      document.getElementById("migration-mapping")?.classList.add("hidden");
+      document.getElementById("migration-plan")?.classList.add("hidden");
+      syncWorkspace();
+    }
   }
 
   function currentDecisionPayload() {
@@ -2078,24 +2202,26 @@ let migrationBuildInFlight = false;
     return { vendor: selectedSourceVendor, connection };
   }
 
-  async function applyCollectionPreview(data) {
+  async function applyCollectionPreview(data, acquisition = "Snapshot") {
+    detachLocalFile();
     currentPreviewId = data.preview_id;
     sourceReady = false;
+    sourceFailed = false;
     automationRunSummary = null;
     currentReport = data.preview?.sections ? data.preview : null;
+    setSourceContext({
+      acquisition,
+      status: data.collection?.status || null,
+      warnings: data.collection?.warnings || [],
+    });
     reportPage = 1;
     activeValidationGroup = "";
     if (currentReport) renderReport();
     invalidateMigrationPlan();
-    await loadMigrationReview(currentPreviewId);
     sourceReady = true;
-    scheduleMigrationPlanBuild();
-    const summary = data.preview?.summary || {};
-    for (const [element, value] of [[statTotalRules, summary.rules], [statTotalObjects, summary.objects], [statErrors, summary.errors], [statWarnings, summary.warnings]]) {
-      if (element) element.textContent = typeof value === "number" ? value : 0;
-    }
-    optimizerPanel?.classList.toggle("hidden", ![summary.rules, summary.objects, summary.errors, summary.warnings].some(value => typeof value === "number"));
+    if (currentReport) updateSourceOverview(currentReport);
     syncWorkspace();
+    await loadMigrationReviewForReadySource(currentPreviewId);
   }
 
   async function importSnapshot(file) {
@@ -2106,8 +2232,8 @@ let migrationBuildInFlight = false;
       const data = await readJson(response, "Snapshot import failed");
       selectedSourceVendor = data.vendor_id;
       sourceVendorSelect.value = data.vendor_id;
-      currentFile = null;
-      await applyCollectionPreview(data);
+      syncSourceVendorPresentation();
+      await applyCollectionPreview(data, "Imported snapshot");
       setPreviewStatus("Snapshot imported. Preview and Excel are ready.");
     } catch (error) { setPreviewStatus(error.message, "error"); }
   }
@@ -2120,7 +2246,7 @@ let migrationBuildInFlight = false;
       const data = await readJson(response, "Collection failed");
       if (path.endsWith("/test")) status.textContent = "✓ Connected";
       else {
-        await applyCollectionPreview(data);
+        await applyCollectionPreview(data, `Live collection (${data.collection.method || "device"})`);
         status.textContent = `Configuration collected (${data.collection.status}). ${data.collection.warnings?.length || 0} warnings. Snapshot download ready.`;
         const filename = `firewall_snapshot_${selectedSourceVendor}_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
         await downloadBlob(new Blob([JSON.stringify(data.snapshot)], { type: "application/json" }), filename);
@@ -2770,9 +2896,9 @@ let migrationBuildInFlight = false;
       hideError();
 
       const formData = new FormData();
+      formData.append("source_vendor", selectedSourceVendor);
       if (currentFile) {
         formData.append("file", currentFile);
-        formData.append("source_vendor", selectedSourceVendor);
       }
       if (currentPreviewId) formData.append("preview_id", currentPreviewId);
       formData.append("excel_profile", excelProfile?.value || "fast");
