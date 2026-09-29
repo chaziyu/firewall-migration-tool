@@ -818,25 +818,53 @@ let migrationBuildInFlight = false;
     return sections[section] || [];
   }
 
+  function filteredReportRows(section, { includeValidationGroup = true } = {}) {
+    const search = reportSearch?.value.trim().toLowerCase() || "";
+    const scope = reportScopeFilter?.value || "";
+    const severity = reportSeverityFilter?.value || "";
+    return reportRows(section).filter((row) => {
+      if (section === "validation" && includeValidationGroup && activeValidationGroup &&
+          JSON.stringify([row.severity, row.domain, row.field, row.message]) !== activeValidationGroup) return false;
+      if (scope && (row.scope || row.vdom) !== scope) return false;
+      if (section === "validation" && severity && row.severity !== severity) return false;
+      return !search || reportSearchText(row).includes(search);
+    });
+  }
+
+  function reportIdentityText(columnKey, row) {
+    if (columnKey === "policies") {
+      const id = row.policy_id != null ? `#${row.policy_id}` : "";
+      const name = row.name || "";
+      return [id, name].filter(Boolean).join("\n") || "—";
+    }
+    if (columnKey === "nat") {
+      const id = row.policy_id != null ? `#${row.policy_id}` : "";
+      const name = row.policy_name || row.name || "";
+      return [id, name].filter(Boolean).join("\n") || "—";
+    }
+    return "—";
+  }
+
+  function setActiveReportRow(rowElement) {
+    if (!reportTableBody || !rowElement) return;
+    [...reportTableBody.rows].forEach((row) => {
+      row.tabIndex = row === rowElement ? 0 : -1;
+    });
+  }
+
   function renderReportTable() {
     if (!currentReport || activeReportSection === "overview") return;
     const columnKey = activeReportSection === "objects" ? activeObjectSection : activeReportSection;
     let columns = reportColumns[columnKey] || [];
+    const rows = filteredReportRows(activeReportSection);
     const search = reportSearch?.value.trim().toLowerCase() || "";
     const scope = reportScopeFilter?.value || "";
     const severity = reportSeverityFilter?.value || "";
-    const sectionRows = reportRows(activeReportSection);
-    const rows = sectionRows.filter((row) => {
-      if (activeReportSection === "validation" && activeValidationGroup &&
-          JSON.stringify([row.severity, row.domain, row.field, row.message]) !== activeValidationGroup) return false;
-      if (scope && (row.scope || row.vdom) !== scope) return false;
-      if (severity && row.severity !== severity) return false;
-      return !search || reportSearchText(row).includes(search);
-    });
 
-    const identityColumns = new Set(["name", "policy_id", "policy_name", "object_name", "display_name", "route_id", "destination", "id", "severity", "domain"]);
+    const identityColumns = new Set(["__identity", "name", "policy_id", "policy_name", "object_name", "display_name", "route_id", "destination", "id", "severity", "domain"]);
     columns = columns.filter(([key]) => {
       if (key === "__target") return rows.some((row) => validationTarget(row));
+      if (key === "__identity") return true;
       return identityColumns.has(key) || rows.some((row) => reportCell(row[key]) !== "—");
     });
 
@@ -860,14 +888,32 @@ let migrationBuildInFlight = false;
     reportTableHead?.replaceChildren(head);
 
     const body = document.createDocumentFragment();
-    visibleRows.forEach((row) => {
+    visibleRows.forEach((row, visibleIndex) => {
       const tr = document.createElement("tr");
-      tr.tabIndex = 0;
-      tr.addEventListener("click", () => showReportDetails(row, tr));
+      tr.tabIndex = visibleIndex === 0 ? 0 : -1;
+      tr.addEventListener("click", () => {
+        setActiveReportRow(tr);
+        showReportDetails(row, tr);
+      });
       tr.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           tr.click();
+          return;
+        }
+        if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const tableRows = [...(reportTableBody?.rows || [])];
+        const index = tableRows.indexOf(tr);
+        const nextIndex = event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? tableRows.length - 1
+            : Math.max(0, Math.min(tableRows.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
+        const nextRow = tableRows[nextIndex];
+        if (nextRow) {
+          setActiveReportRow(nextRow);
+          nextRow.focus();
         }
       });
 
@@ -892,9 +938,11 @@ let migrationBuildInFlight = false;
             td.appendChild(button);
           }
         } else {
-          const displayValue = columnKey === "interfaces" && key === "ip"
-            ? reportCell(row[key]).replace(/\s+/g, "\n")
-            : reportTableCell(row[key]);
+          const displayValue = key === "__identity"
+            ? reportIdentityText(columnKey, row)
+            : columnKey === "interfaces" && key === "ip"
+              ? reportCell(row[key]).replace(/\s+/g, "\n")
+              : reportTableCell(row[key]);
           const chipKind = layout === "compact" ? semanticChipKind(key, displayValue) : "";
           if (chipKind) {
             const chip = document.createElement("span");
@@ -918,8 +966,9 @@ let migrationBuildInFlight = false;
       : REPORT_SECTION_META[activeReportSection]?.[0] || "Configuration";
     if (reportTableCaption) reportTableCaption.textContent = `${sectionLabel} report`;
     if (reportRowCount) {
+      const orderNote = ["policies", "nat"].includes(columnKey) && rows.length ? " · Source order preserved" : "";
       reportRowCount.textContent = rows.length
-        ? `${start + 1}–${Math.min(start + REPORT_PAGE_SIZE, rows.length)} of ${rows.length} ${rows.length === 1 ? "row" : "rows"}`
+        ? `${start + 1}–${Math.min(start + REPORT_PAGE_SIZE, rows.length)} of ${rows.length} ${rows.length === 1 ? "row" : "rows"}${orderNote}`
         : "0 of 0 rows";
     }
 
@@ -941,7 +990,7 @@ let migrationBuildInFlight = false;
   function renderValidationSummary() {
     if (!validationSummary) return;
     const groups = new Map();
-    reportRows("validation").forEach((row) => {
+    filteredReportRows("validation", { includeValidationGroup: false }).forEach((row) => {
       const key = JSON.stringify([row.severity, row.domain, row.field, row.message]);
       const group = groups.get(key) || { row, count: 0 };
       group.count += 1;
@@ -999,33 +1048,12 @@ let migrationBuildInFlight = false;
   }
 
   function reportSectionCount(section) {
-    const summary = currentReport?.summary || {};
-    const objects = summary.objects || {};
-    const sections = currentReport?.sections || {};
     if (section === "overview") return null;
-    if (section === "interfaces") {
-      if (objects.interfaces != null) return count(objects.interfaces);
-      if (sections.interface_topology || sections.interfaces) return reportRows("interfaces").length;
-      return null;
-    }
     if (section === "objects") {
-      const keys = ["addresses", "address_groups", "services", "service_groups"];
-      if (keys.some((key) => objects[key] != null)) {
-        return keys.reduce((total, key) => total + count(objects[key]), 0);
-      }
-      return keys.some((key) => sections[key]) ? keys.reduce((total, key) => total + (sections[key] || []).length, 0) : null;
+      return ["addresses", "address_groups", "services", "service_groups"]
+        .reduce((total, key) => total + (currentReport?.sections?.[key] || []).length, 0);
     }
-    if (section === "vpn") {
-      return sections.vpn_tunnels || sections.vpn_phase2 ? reportRows("vpn").length : null;
-    }
-    if (section === "references") {
-      return sections.unresolved_references ? sections.unresolved_references.length : null;
-    }
-    if (section === "validation") {
-      return sections.validation ? sections.validation.length : null;
-    }
-    if (section === "policies" && objects.policies != null) return count(objects.policies);
-    return sections[section] ? sections[section].length : null;
+    return reportRows(section).length;
   }
 
   function updateReportTabCounts() {
@@ -1038,7 +1066,8 @@ let migrationBuildInFlight = false;
 
   function renderOverviewMetric({ label, value, tier, destination, tone = "" }) {
     const element = destination ? document.createElement("button") : document.createElement("div");
-    element.className = `report-stat report-stat-${tier}${destination ? " report-stat-button" : ""}${tone ? ` report-stat-${tone}` : ""}`;
+    const emphasizedTone = tone && count(value) > 0 ? tone : "";
+    element.className = `report-stat report-stat-${tier}${destination ? " report-stat-button" : ""}${emphasizedTone ? ` report-stat-${emphasizedTone}` : ""}`;
     if (destination) {
       element.type = "button";
       element.setAttribute("aria-label", `Show ${label.toLowerCase()}`);
@@ -1128,6 +1157,7 @@ let migrationBuildInFlight = false;
       const options = [...new Set(scopes.map((scope) => typeof scope === "string" ? scope : scope.name || scope.vsys).filter(Boolean))];
       reportScopeFilter.replaceChildren(new Option("All scopes", ""), ...options.map((scope) => new Option(scope, scope)));
       reportScopeFilter.value = options.includes(selected) ? selected : "";
+      reportScopeFilter.classList.toggle("hidden", options.length < 2);
     }
 
     updateReportTabCounts();
@@ -1595,14 +1625,18 @@ let migrationBuildInFlight = false;
   });
 
   document.querySelectorAll("[data-report-section]").forEach((button) => button.addEventListener("click", () => {
-    activeReportSection = button.dataset.reportSection;
+    const nextSection = button.dataset.reportSection;
+    if (nextSection !== activeReportSection && reportSearch) reportSearch.value = "";
+    activeReportSection = nextSection;
     if (activeReportSection !== "validation" && reportSeverityFilter) reportSeverityFilter.value = "";
     reportPage = 1;
     activeValidationGroup = "";
     renderReport();
   }));
   document.querySelectorAll("[data-object-section]").forEach((button) => button.addEventListener("click", () => {
-    activeObjectSection = button.dataset.objectSection;
+    const nextObjectSection = button.dataset.objectSection;
+    if (nextObjectSection !== activeObjectSection && reportSearch) reportSearch.value = "";
+    activeObjectSection = nextObjectSection;
     reportPage = 1;
     renderReport();
   }));
