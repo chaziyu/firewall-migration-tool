@@ -682,10 +682,12 @@ def _candidate_id(decision_key, candidate) -> str:
 
 
 def _candidate_strength(candidate):
-    strong = sum(isinstance(item, str) and bool(item) for item in candidate.get("strong_evidence", ())[:6])
+    strong_values = candidate.get("strong_evidence") or ()
+    supporting_values = candidate.get("supporting_evidence") or ()
+    strong = sum(isinstance(item, str) and bool(item) for item in strong_values[:6])
     supporting = sum(
         isinstance(item, str) and bool(item)
-        for item in candidate.get("supporting_evidence", ())[:6]
+        for item in supporting_values[:6]
     )
     return (
         0 if candidate.get("class") == "STRONG" else 1,
@@ -1084,7 +1086,7 @@ def request_proposals(prepared):
             coupled_ids.update(decision_ids)
     complex_keys = [
         by_id[item["decision_id"]] for item in prepared["request"]["decisions"]
-        if len(item["candidates"]) > 3 or item.get("requires_strong_reasoner")
+        if len(item["candidates"]) > _complex_candidate_threshold() or item.get("requires_strong_reasoner")
         or item["decision_id"] in coupled_ids
     ] if groq_available else []
     simple_keys = [key for key in keys if key not in complex_keys]
