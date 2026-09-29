@@ -1217,9 +1217,6 @@ select {
   word-break: normal;
 }
 .report-table th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   color: var(--text-heading);
   background: var(--canvas);
   white-space: nowrap;
@@ -1273,8 +1270,10 @@ select {
   font-weight: 500;
 }
 .report-table .report-cell-identity {
+  min-width: 11rem;
   color: var(--text-heading);
   font-weight: 600;
+  white-space: pre-line;
 }
 .report-table .report-cell-action {
   width: 1%;
@@ -1445,12 +1444,13 @@ select {
   align-items: stretch;
   justify-content: flex-end;
   padding: 0;
-  background: rgb(0 0 0 / 18%);
+  background: transparent;
+  pointer-events: none;
 }
 .report-detail-dialog {
   display: flex;
   flex-direction: column;
-  width: min(480px, 92vw);
+  width: min(460px, 38vw);
   max-height: 100vh;
   overflow: hidden;
   border: 0;
@@ -1458,6 +1458,7 @@ select {
   border-radius: 0;
   background: var(--surface);
   box-shadow: -18px 0 48px rgb(0 0 0 / 18%);
+  pointer-events: auto;
 }
 .report-detail-header {
   display: flex;
@@ -1517,10 +1518,18 @@ select {
   margin: 0;
   padding-left: 16px;
 }
+.report-detail-body dd > dl,
+.report-detail-body li > dl {
+  grid-template-columns: minmax(7rem, .7fr) 1.5fr;
+  margin: 0;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
 .report-table tbody tr {
   cursor: pointer;
 }
-.report-table tbody tr.report-row-highlight td {
+.report-table tbody tr.report-row-highlight td,
+.report-table tbody tr.report-row-selected td {
   background: color-mix(in srgb, var(--color-primary) 18%, var(--surface));
 }
 
@@ -1574,6 +1583,10 @@ select {
   .report-toolbar select {
     width: 100%;
     min-width: 0;
+  }
+  .report-detail-modal {
+    background: rgb(0 0 0 / 24%);
+    pointer-events: auto;
   }
   .report-detail-dialog {
     width: min(92vw, 480px);
