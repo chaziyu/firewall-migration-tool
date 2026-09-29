@@ -8,13 +8,14 @@ import json
 import time
 import tracemalloc
 
-from fwmigrate.source_reporting import ExcelExportMetrics, ExcelExportProfile
+from fwmigrate.source_reporting import (
+    ExcelExportMetrics,
+    ExcelExportProfile,
+    SourceReportMetrics,
+)
 from fwmigrate.vendors.fortigate.config import ExtractionConfig
-from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export.excel import export_excel
-from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
-from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
-from fwmigrate.vendors.fortigate.validation.validator import validate_config
+from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
 
 def make_source(addresses: int, groups: int, services: int, policies: int) -> str:
@@ -98,16 +99,25 @@ def main() -> None:
     args = parser.parse_args()
 
     source = make_source(args.addresses, args.groups, args.services, args.policies)
+    analysis_metrics = SourceReportMetrics()
     started = time.perf_counter()
-    extracted = extract_fortigate_config(
-        parse_fortigate_config(source),
+    analysis = FortiGateSourceReporter().analyze_source(
+        source,
         config=ExtractionConfig(),
+        metrics=analysis_metrics,
     )
-    extraction_seconds = time.perf_counter() - started
-    started = time.perf_counter()
-    derived = build_derived_views(extracted.config)
-    validation = validate_config(extracted.config, derived=derived)
     analysis_seconds = time.perf_counter() - started
+    stage_ms = {
+        stage.stage: stage.duration_ms
+        for stage in analysis_metrics.stages
+    }
+    extraction_seconds = (
+        stage_ms.get("fortigate_parse", 0.0)
+        + stage_ms.get("fortigate_extraction", 0.0)
+    ) / 1000
+    extracted = analysis.extracted
+    derived = analysis.derived
+    validation = analysis.validation
 
     output = io.BytesIO()
     metrics = ExcelExportMetrics()
@@ -139,6 +149,7 @@ def main() -> None:
         "input_counts": vars(args),
         "extraction_seconds": round(extraction_seconds, 3),
         "analysis_seconds": round(analysis_seconds, 3),
+        "analysis_metrics": analysis_metrics.as_dict(),
         "fast_export_seconds": round(export_seconds, 3),
         "peak_traced_bytes": peak_bytes,
         "xlsx_bytes": output.tell(),
