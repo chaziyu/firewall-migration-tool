@@ -1016,6 +1016,59 @@ def test_provider_retries_only_transient_failure(monkeypatch):
         ai_advisor.request_proposals(prepared)
     assert len(calls) == 1
 
+    calls.clear()
+    sleeps = []
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_RETRY_DELAY_SECONDS", "10")
+    monkeypatch.setattr(ai_advisor.time, "sleep", sleeps.append)
+
+    def rate_limited_then_ok(value):
+        calls.append(value)
+        if len(calls) == 1:
+            failure = ai_advisor.AdvisorFailure(
+                category="AI_RATE_LIMITED",
+                provider="groq",
+                model=value["model"],
+                retry_after_seconds=2.5,
+            )
+            raise ai_advisor.AdvisorRateLimitError("rate limited", failure=failure)
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": _proposal_rows(value)}), value
+        )
+
+    monkeypatch.setattr(ai_advisor, "_request_groq", rate_limited_then_ok)
+    assert ai_advisor.request_proposals(prepared)
+    assert len(calls) == 2
+    assert sleeps == [2.5]
+
+    calls.clear()
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_RETRY_DELAY_SECONDS", "1")
+
+    def long_rate_limit(value):
+        calls.append(value)
+        failure = ai_advisor.AdvisorFailure(
+            category="AI_RATE_LIMITED",
+            provider="groq",
+            model=value["model"],
+            retry_after_seconds=30,
+        )
+        raise ai_advisor.AdvisorRateLimitError("rate limited", failure=failure)
+
+    monkeypatch.setattr(ai_advisor, "_request_groq", long_rate_limit)
+    with pytest.raises(ai_advisor.AdvisorRateLimitError):
+        ai_advisor.request_proposals(prepared)
+    assert len(calls) == 1
+
+
+def test_provider_error_records_retry_after_header():
+    class RateLimited(Exception):
+        status_code = 429
+        headers = {"Retry-After": "3.25", "X-Request-Id": "retry-request"}
+
+    error = ai_advisor.classify_provider_error(RateLimited(), provider="groq")
+    assert isinstance(error, ai_advisor.AdvisorRateLimitError)
+    assert error.failure.retry_after_seconds == 3.25
+    assert error.failure.request_id == "retry-request"
+
 
 def test_design_summary_separates_ready_blocked_and_manual_decisions():
     parent = PANMigrationDecision(
