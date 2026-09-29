@@ -1813,7 +1813,10 @@ let migrationBuildInFlight = false;
   function applyAIDesignSession(session) {
     aiDesignSessionId = session?.design_session_id || null;
     aiDesignSummary = session?.summary || null;
-    aiDesignFailure = session?.failure_category || null;
+    const failure = session?.failures?.find(item => item.safe_reason);
+    aiDesignFailure = session?.failure_category
+      ? `${session.failure_category}${failure ? `: ${failure.safe_reason}` : ""}`
+      : null;
     aiProposals.clear();
     for (const proposal of session?.proposals || []) aiProposals.set(proposal.decision_key, proposal);
   }
@@ -1827,7 +1830,7 @@ let migrationBuildInFlight = false;
     const conflicts = proposals.filter(item => item.validation_status === "CONFLICT");
     const summary = document.createElement("p");
     summary.textContent = aiDesignSummary
-      ? `${aiDesignSummary.deterministic_confirmed || 0} deterministic · ${aiDesignSummary.engineer_confirmed || 0} engineer confirmed · ${valid.length} valid AI proposals · ${abstained.length} no safe proposal · ${conflicts.length} conflicts · ${aiDesignSummary.unsupported || 0} unsupported · ${aiDesignSummary.blocked || 0} blocked${aiDesignSummary.stable ? " · design stable" : " · design needs another pass"}${aiDesignFailure ? ` · ${aiDesignFailure}` : ""}.`
+      ? `${aiDesignSummary.deterministic_confirmed || 0} deterministic · ${aiDesignSummary.engineer_confirmed || 0} engineer confirmed · ${aiDesignSummary.ready_unresolved || 0} AI-ready · ${aiDesignSummary.ai_proposed || 0} valid AI proposals · ${aiDesignSummary.abstained || 0} no safe proposal · ${aiDesignSummary.conflicted || 0} conflicts · ${aiDesignSummary.blocked_by_dependency || 0} blocked by dependencies · ${aiDesignSummary.not_ai_eligible || 0} need manual review · ${aiDesignSummary.unsupported || 0} unsupported${aiDesignSummary.stable ? " · design stable" : " · design needs another pass"}${aiDesignFailure ? ` · ${aiDesignFailure}` : ""}.`
       : proposals.length
       ? `${valid.length} valid proposals · ${abstained.length} no safe proposal · ${conflicts.length} conflicts. Review the grouped selections before approval.`
       : `${readyAIKeys().length} unresolved decisions ready for AI.`;
@@ -1950,7 +1953,11 @@ let migrationBuildInFlight = false;
     button.disabled = true;
     try {
       const result = await readJson(await fetch("/api/migration/ai/test", { method: "POST" }), "Advisor test failed");
-      if (status) status.textContent = `${result.provider} · ${result.model} · Test passed`;
+      const checks = (result.checks || []).map(item => ({
+        provider_contract: "Provider contract",
+        production_shape: "Production-shaped request",
+      }[item.name] || item.name).concat(item.success ? ": PASS" : ": FAIL")).join(" · ");
+      if (status) status.textContent = `${result.provider} · ${result.model} · ${checks || "Test passed"}`;
     } catch (error) { if (status) status.textContent = error.message; }
     finally { button.disabled = false; }
   });

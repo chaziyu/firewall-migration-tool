@@ -164,6 +164,12 @@ class AdvisorProposalValidationError(AdvisorError):
 def _safe_diagnostic_text(value):
     if not isinstance(value, str) or "\n" in value or "\r" in value:
         return None
+    lowered = value.casefold()
+    if (value.lstrip().startswith(("{", "[")) or any(marker in lowered for marker in (
+        "migration_pair", "candidate_id", "decision_id", "evidence_refs", "source_vdom",
+        "target_device", "fortigate to pan-os", "config system", "config firewall",
+    ))):
+        return None
     value = " ".join(value.split())
     api_key = os.environ.get("GROQ_API_KEY", "").strip()
     if api_key:
@@ -435,10 +441,10 @@ def test_advisor():
         "design_session": session,
         "decision_candidates": {
             item.key: [{
-                "value": f"ethernet1/{index}", "target_scope": "vsys1", "class": "STRONG",
+                "value": f"ethernet1/{position * 4 + index}", "target_scope": "vsys1", "class": "STRONG",
                 "strong_evidence": ["Synthetic family match", "Synthetic target usage"],
                 "supporting_evidence": ["Synthetic parent relation"],
-            } for index in range(1, 4 + position)]
+            } for index in range(1, 4)]
             for position, item in enumerate(children)
         },
         "review_context": {item.key: {"source_type": "physical", "source_role": f"port-{index}"}
@@ -569,11 +575,26 @@ def validate_static_configuration():
     ):
         raw = os.environ.get(name, default)
         try:
-            valid = float(raw) > 0 if "TIMEOUT" in name else int(raw) > 0
+            if "TIMEOUT" in name:
+                valid = float(raw) > 0
+            elif name == "FWMIGRATE_AI_MAX_COMPLETION_TOKENS":
+                valid = 256 <= int(raw) <= 65536
+            elif name == "FWMIGRATE_AI_MAX_REQUEST_BYTES":
+                valid = 1024 <= int(raw) <= 1_000_000
+            else:
+                valid = int(raw) > 0
         except (ValueError, TypeError):
             valid = False
         if not valid:
             raise AdvisorRequestError(f"Invalid {name} configuration")
+    if os.environ.get("FWMIGRATE_AI_REASONING_EFFORT", "medium").strip().lower() not in {
+        "low", "medium", "high",
+    }:
+        raise AdvisorRequestError("Invalid FWMIGRATE_AI_REASONING_EFFORT configuration")
+    if os.environ.get("FWMIGRATE_AI_REASONING_FORMAT", "hidden").strip().lower() not in {
+        "hidden", "raw", "parsed",
+    }:
+        raise AdvisorRequestError("Invalid FWMIGRATE_AI_REASONING_FORMAT configuration")
     return status
 
 
