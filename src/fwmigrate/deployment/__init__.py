@@ -5,6 +5,7 @@ from .models import (
     PANDeploymentCommandResult,
     PANDeploymentOptions,
     PANDeploymentResult,
+    PANDeploymentSession,
     PANValidationResult,
 )
 from .palo_alto_ssh import PANSSHDeployer, deploy_set_commands
@@ -14,6 +15,7 @@ __all__ = [
     "PANDeploymentCommandResult",
     "PANDeploymentOptions",
     "PANDeploymentResult",
+    "PANDeploymentSession",
     "PANSSHDeployer",
     "PANValidationResult",
     "deploy_set_commands",
