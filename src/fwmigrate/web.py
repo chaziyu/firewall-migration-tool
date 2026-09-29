@@ -1192,6 +1192,9 @@ def create_app(test_config=None):
                     'context_digest': proposal['context_digest'],
                     'base_context_digest': proposal.get('base_context_digest', proposal['context_digest']),
                     'decision_key': proposal['decision_key'],
+                    'target_field': proposal_context['request']['decisions'][0].get('target_field'),
+                    'candidate_count': len(proposal_context['request']['decisions'][0].get('candidates', ())),
+                    'request_bytes': proposal_context.get('request_bytes', 0),
                     'review_context': proposal_context['request']['decisions'][0],
                     'proposal': {
                         'action': proposal['action'],
