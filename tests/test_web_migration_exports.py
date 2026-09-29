@@ -624,7 +624,7 @@ def test_migration_workflow_uses_planning_terminology():
     assert 'id="report-detail-close"' in html and 'id="report-detail-body"' in html
     assert 'id="report-detail-panel"' not in html
     assert html.count('id="report-summary"') == 1
-    assert "Download Excel" in html
+    assert "Export Excel" in html
     assert "Prepare candidate" in html
     assert "Revalidate Candidate" in html
     assert "Verified and derived mappings are applied automatically." in html
