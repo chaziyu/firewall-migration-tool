@@ -406,10 +406,11 @@ end
             source_name="sample.conf",
         )
         events = []
+        times = iter((0.0, 0.1, 1.0, 2.0))
 
         def timed_counter():
             events.append("perf")
-            return float(len(events))
+            return next(times)
 
         def rows_for_sheet(sheet_name, _context, _headers):
             assert sheet_name == "Addresses"
