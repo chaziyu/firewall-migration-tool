@@ -620,11 +620,11 @@ def test_migration_workflow_uses_planning_terminology():
     assert 'id="report-filename"' not in html
     assert html.count('id="report-detail-modal"') == 1
     assert 'class="report-detail-modal hidden"' in html
-    assert 'role="dialog" aria-modal="true" aria-labelledby="report-detail-title"' in html
+    assert 'role="dialog" aria-modal="false" aria-labelledby="report-detail-title"' in html
     assert 'id="report-detail-close"' in html and 'id="report-detail-body"' in html
     assert 'id="report-detail-panel"' not in html
     assert html.count('id="report-summary"') == 1
-    assert "Download Excel" in html
+    assert "Export Excel" in html
     assert "Prepare candidate" in html
     assert "Revalidate Candidate" in html
     assert "Verified and derived mappings are applied automatically." in html
@@ -638,8 +638,9 @@ def test_migration_workflow_uses_planning_terminology():
     report_end = html.index("</section>", report_start)
     assert report_start < html.index('id="btn-extract-excel"') < report_end
     assert 'id="validation-groups-heading">Issue groups</h3>' in html
-    assert "Select an issue group to filter the findings below." in html
-    assert 'id="validation-details-heading"' in html and "Validation details" in html
+    assert "Select an issue group to filter the reported findings below." in html
+    assert 'id="report-section-title"' in html and 'id="report-section-description"' in html
+    assert 'id="validation-details-heading"' not in html
     assert 'id="validation-filter-clear"' in html and ">Clear</button>" in html
     assert "Your source inventory" not in html
     assert "Convert config" not in html
