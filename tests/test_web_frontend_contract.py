@@ -96,3 +96,72 @@ def test_source_report_search_is_debounced_and_cached():
     assert "const reportSearchIndex = new WeakMap();" in js
     assert "reportSearchText(row).includes(search)" in js
     assert "reportSearchTimer = setTimeout(() => {" in js
+
+
+def test_report_workspace_exposes_compact_source_controls_and_tab_counts():
+    client = create_app({"TESTING": True}).test_client()
+    html = client.get("/").get_data(as_text=True)
+
+    assert 'id="source-configuration-card"' in html
+    assert 'id="btn-report-change-source"' in html
+    assert 'class="report-source-context"' in html
+    assert 'data-report-count="policies"' in html
+    assert 'data-report-count="validation"' in html
+    assert "No reported entries in this section." in html
+
+
+def test_report_frontend_collapses_ready_source_only_in_report_mode():
+    js = _app_js()
+
+    assert "let sourcePanelExpanded = true;" in js
+    assert 'activeMode === "report" && sourceReady && !sourcePanelExpanded' in js
+    assert "sourcePanelExpanded = false;" in js
+    assert 'sourceConfigurationCard?.scrollIntoView({ block: "start", behavior: "smooth" });' in js
+
+
+def test_report_frontend_distinguishes_empty_section_from_filtered_results():
+    js = _app_js()
+    block = _between(
+        js,
+        "function renderReportTable()",
+        "function renderValidationSummary()",
+    )
+
+    assert '"No entries match the current filters."' in block
+    assert '"No reported entries in this section."' in block
+
+
+def test_report_validation_rows_keep_details_and_offer_explicit_target_navigation():
+    js = _app_js()
+    block = _between(
+        js,
+        "function renderReportTable()",
+        "function renderValidationSummary()",
+    )
+
+    assert 'tr.addEventListener("click", () => showReportDetails(row, tr));' in block
+    assert 'button.textContent = "View object →";' in block
+    assert "navigateToValidationTarget(row);" in block
+
+
+def test_report_tables_use_compact_list_previews_and_sticky_identity_columns():
+    js = _app_js()
+
+    assert "function reportTableCell(value)" in js
+    assert 'return `${value.slice(0, 2).join(", ")}  +${value.length - 2}`;' in js
+    assert "const REPORT_STICKY_IDENTITY = {" in js
+    assert 'th.classList.add("report-cell-sticky", "report-cell-identity");' in js
+
+
+def test_report_overview_uses_primary_and_secondary_metric_groups():
+    js = _app_js()
+    block = _between(
+        js,
+        "function renderOverviewMetric",
+        "function syncWorkspace()",
+    )
+
+    assert '"report-summary-primary"' in block
+    assert '"report-summary-secondary"' in block
+    assert 'affordance.textContent = "View →";' in block
+    assert '"Scope metadata was not reported."' in block
