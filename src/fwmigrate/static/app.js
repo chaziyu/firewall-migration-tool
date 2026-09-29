@@ -500,13 +500,6 @@ let migrationBuildInFlight = false;
     if (value === null || value === undefined || value === "") return "—";
     if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
     if (typeof value === "boolean") return value ? "Yes" : "No";
-    if (typeof value === "object") {
-      try {
-        return JSON.stringify(value);
-      } catch (_) {
-        return String(value);
-      }
-    }
     return String(value);
   }
 
@@ -1290,8 +1283,7 @@ let migrationBuildInFlight = false;
   document.querySelectorAll("[data-object-section]").forEach((button) => button.addEventListener("click", () => {
     activeObjectSection = button.dataset.objectSection;
     reportPage = 1;
-    document.querySelectorAll("[data-object-section]").forEach((item) => item.classList.toggle("active", item === button));
-    renderReportTable();
+    renderReport();
   }));
   function updateReportFilters() {
     reportPage = 1;
