@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from enum import Enum
+from functools import lru_cache
 from itertools import chain
 from pathlib import Path
 from time import perf_counter
@@ -403,14 +404,20 @@ def _build_fast_workbook(
         if sheet_name == "Summary" or sheet_name in _FAST_EXCLUDED_SHEETS:
             continue
 
+        sheet_started = perf_counter()
         headers = SHEET_HEADERS[sheet_name]
         rows = iter(_rows_for_sheet(sheet_name, context, headers))
 
         first = next(rows, no_rows)
         if first is no_rows and sheet_name not in _FAST_REQUIRED_SHEETS:
+            sheet_elapsed = (perf_counter() - sheet_started) * 1000
+            if metrics is not None and sheet_name in measured_names:
+                metrics.add_sheet(sheet_name, 0, len(headers), sheet_elapsed)
+                measured_sheets.add(sheet_name)
+            if sheet_name not in measured_names:
+                other_sheet_total += sheet_elapsed
             continue
 
-        sheet_started = perf_counter()
         row_count = _write_table_sheet_fast(
             workbook,
             sheet_name,
@@ -2780,13 +2787,24 @@ def _model_rows(
     domains: Iterable[str] | None = None,
     issue_vdom: str | None = None,
 ) -> Iterator[dict[str, Any]]:
+    header_set = frozenset(headers)
+    active_mapping = tuple(
+        (header, attribute)
+        for header, attribute in mapping.items()
+        if header in header_set
+    )
+    represented_fields = frozenset(
+        attribute
+        for _, attribute in active_mapping
+        if isinstance(attribute, str) and attribute
+    )
+    include_explicit_fields = "Source Explicit Fields" in header_set
+    include_additional_settings = "Additional Settings" in header_set
+
     for item in objects:
         row: dict[str, Any] = {}
 
-        for header, attribute in mapping.items():
-            if header not in headers:
-                continue
-
+        for header, attribute in active_mapping:
             if callable(attribute):
                 row[header] = attribute(item)
             elif attribute:
@@ -2794,11 +2812,6 @@ def _model_rows(
                     getattr(item, attribute, None)
                 )
 
-        represented_fields = {
-            attribute
-            for header, attribute in mapping.items()
-            if header in headers and isinstance(attribute, str) and attribute
-        }
         raw_extra = _additional_settings(item, represented_fields=represented_fields)
 
         _overlay_safe_raw(
@@ -2807,12 +2820,12 @@ def _model_rows(
             headers,
         )
 
-        if "Source Explicit Fields" in headers:
+        if include_explicit_fields:
             row["Source Explicit Fields"] = sorted(
                 getattr(item, "explicit_fields", ())
             )
 
-        if "Additional Settings" in headers:
+        if include_additional_settings:
             row["Additional Settings"] = raw_extra
 
         vdom = issue_vdom if issue_vdom is not None else str(getattr(item, "vdom", "") or "")
@@ -2848,6 +2861,14 @@ def _additional_settings(
     )
 
 
+@lru_cache(maxsize=None)
+def _model_field_order(model_type: type[Any]) -> Mapping[str, int]:
+    return {
+        field: position
+        for position, field in enumerate(model_type.model_fields)
+    }
+
+
 def _build_additional_settings(
     item: Any,
     *,
@@ -2857,13 +2878,18 @@ def _build_additional_settings(
 
     explicit_fields = set(getattr(item, "explicit_fields", ()) or ())
     represented = frozenset(represented_fields)
-    for field in type(item).model_fields:
-        if field not in explicit_fields:
-            continue
-        if field in {"name", "vdom", "raw_extra", "explicit_fields"}:
-            continue
-        if field in represented:
-            continue
+    remaining_fields = explicit_fields.difference(
+        {"name", "vdom", "raw_extra", "explicit_fields"},
+        represented,
+    )
+    if not remaining_fields:
+        return settings
+
+    field_order = _model_field_order(type(item))
+    for field in sorted(
+        (field for field in remaining_fields if field in field_order),
+        key=field_order.__getitem__,
+    ):
         value = _serialize_nested_value(getattr(item, field, None))
         if value in (None, "", [], {}):
             continue
