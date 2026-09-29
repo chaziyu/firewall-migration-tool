@@ -324,19 +324,22 @@ end
         ):
             self._workbook(profile=ExcelExportProfile.FAST)
 
-    def test_fast_export_does_not_mutate_analysis(self):
+    def test_export_profiles_do_not_mutate_analysis(self):
         extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG), config=ExtractionConfig())
         derived = build_derived_views(extracted.config)
         validation = validate_config(extracted.config, derived=derived)
         before = deepcopy((extracted.config, extracted.source_objects, derived, validation))
-        export_excel(
-            extracted=extracted,
-            derived=derived,
-            validation=validation,
-            output=io.BytesIO(),
-            profile=ExcelExportProfile.FAST,
-        )
-        assert (extracted.config, extracted.source_objects, derived, validation) == before
+
+        for profile in (ExcelExportProfile.FAST, ExcelExportProfile.FULL):
+            with self.subTest(profile=profile.value):
+                export_excel(
+                    extracted=extracted,
+                    derived=derived,
+                    validation=validation,
+                    output=io.BytesIO(),
+                    profile=profile,
+                )
+                assert (extracted.config, extracted.source_objects, derived, validation) == before
 
     def test_fast_export_metrics_are_value_free_and_split_build_from_save(self):
         extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG), config=ExtractionConfig())

@@ -74,6 +74,10 @@ def build_interface_topology(
     )
 
     aggregate_owners: dict[tuple[str, str], list[str]] = {}
+    physical_cache: dict[
+        tuple[str, str],
+        tuple[tuple[str, ...], tuple[str, ...]],
+    ] = {}
     for aggregate in config.interfaces:
         if not _is_aggregate(aggregate):
             continue
@@ -93,6 +97,7 @@ def build_interface_topology(
                 (interface.vdom, interface.name),
                 (),
             ),
+            physical_cache=physical_cache,
         )
         for interface in config.interfaces
     )
@@ -183,6 +188,10 @@ def _resolve_interface(
     references: ReferenceIndex,
     *,
     aggregate_owners: tuple[str, ...] | list[str] = (),
+    physical_cache: dict[
+        tuple[str, str],
+        tuple[tuple[str, ...], tuple[str, ...]],
+    ],
 ) -> InterfaceTopologyEntry:
     path: list[str] = [
         interface.name
@@ -261,8 +270,14 @@ def _resolve_interface(
             interface,
             references,
             seen=set(),
+            cache=physical_cache,
         )
     )
+    if not any("cycle detected" in message.lower() for message in physical_issues):
+        physical_cache[(interface.vdom, interface.name)] = (
+            tuple(physical_interfaces),
+            tuple(physical_issues),
+        )
 
     issues.extend(
         physical_issues
@@ -291,6 +306,10 @@ def _resolve_physical_interfaces(
     references: ReferenceIndex,
     *,
     seen: set[str],
+    cache: dict[
+        tuple[str, str],
+        tuple[tuple[str, ...], tuple[str, ...]],
+    ],
 ) -> tuple[list[str], list[str]]:
     if interface.name in seen:
         return (
@@ -299,6 +318,13 @@ def _resolve_physical_interfaces(
                 "Interface topology cycle detected "
                 f"at {interface.name!r}."
             ],
+        )
+
+    cached = cache.get((interface.vdom, interface.name))
+    if cached is not None:
+        return (
+            list(cached[0]),
+            list(cached[1]),
         )
 
     seen = {
@@ -335,6 +361,7 @@ def _resolve_physical_interfaces(
                     member,
                     references,
                     seen=seen,
+                    cache=cache,
                 )
             )
 
@@ -373,6 +400,7 @@ def _resolve_physical_interfaces(
             parent,
             references,
             seen=seen,
+            cache=cache,
         )
 
     # Terminal interface.

@@ -19,11 +19,6 @@ from .section_index import SectionIndex
 class SourceCommandRecord:
     """One explicit source command retained for report traceability."""
 
-    vdom: str
-    source_path: str
-    object_name: str | None
-    parent_objects: tuple[str, ...]
-
     operation: str
     key: str
     values: tuple[str, ...]
@@ -151,13 +146,7 @@ def _make_record(
         explicit_fields=tuple(sorted(evaluation.explicit_fields)),
         unset_fields=tuple(sorted(evaluation.unset_fields)),
         commands=tuple(
-            _command_record(
-                command,
-                vdom=vdom,
-                source_path=source_path,
-                object_name=object_name,
-                parent_objects=parent_objects,
-            )
+            _command_record(command)
             for command in commands
         ),
         start_line_number=start_line_number,
@@ -167,18 +156,9 @@ def _make_record(
 
 def _command_record(
     command: CommandNode | UnknownCommandNode,
-    *,
-    vdom: str,
-    source_path: str,
-    object_name: str | None,
-    parent_objects: tuple[str, ...],
 ) -> SourceCommandRecord:
     if isinstance(command, UnknownCommandNode):
         return SourceCommandRecord(
-            vdom=vdom,
-            source_path=source_path,
-            object_name=object_name,
-            parent_objects=parent_objects,
             operation="unknown",
             key=command.keyword,
             values=_safe_unknown_values(command.keyword, command.values),
@@ -186,16 +166,11 @@ def _command_record(
         )
 
     return SourceCommandRecord(
-        vdom=vdom,
-        source_path=source_path,
-        object_name=object_name,
-        parent_objects=parent_objects,
         operation=command.operation,
         key=command.key,
         values=_safe_command_values(command.key, command.values),
         line_number=command.line_number,
     )
-
 
 def _safe_command_values(key: str, values: list[str]) -> tuple[str, ...]:
     safe = sanitize_source_value(key, values)

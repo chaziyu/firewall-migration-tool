@@ -6,6 +6,8 @@ from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_c
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
+from fwmigrate.vendors.fortigate.relationships.interface_topology import build_interface_topology
+from fwmigrate.vendors.fortigate.relationships.references import build_reference_index
 from fwmigrate.vendors.fortigate.validation.validator import validate_config
 
 _CONFIG = r'''
@@ -116,6 +118,48 @@ end
         self.assertEqual(by_name["port2"].path, ("port2",))
         self.assertEqual(by_name["vlan100"].path, ("vlan100", "agg1"))
         self.assertEqual(by_name["agg1"].physical_interfaces, ("port1", "port2"))
+
+    def test_physical_resolution_reuses_completed_acyclic_interfaces(self):
+        config = FGConfig(
+            interfaces=[
+                FGInterface(name="port1"),
+                FGInterface(name="agg1", type="aggregate", members=["port1"]),
+                FGInterface(name="vlan100", type="vlan", interface="agg1"),
+                FGInterface(name="vlan200", type="vlan", interface="agg1"),
+            ]
+        )
+        inner = build_reference_index(config)
+
+        class CountingReferences:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+                self.get_calls = 0
+
+            def get(self, kind, *, vdom, name):
+                self.get_calls += 1
+                return self.wrapped.get(kind, vdom=vdom, name=name)
+
+        references = CountingReferences(inner)
+        topology = build_interface_topology(config, references=references)
+        by_name = {item.name: item for item in topology.interfaces}
+
+        self.assertEqual(by_name["vlan100"].physical_interfaces, ("port1",))
+        self.assertEqual(by_name["vlan200"].physical_interfaces, ("port1",))
+        self.assertEqual(references.get_calls, 5)
+
+    def test_physical_resolution_cache_does_not_hide_cycles(self):
+        config = FGConfig(
+            interfaces=[
+                FGInterface(name="cycle-a", type="vlan", interface="cycle-b"),
+                FGInterface(name="cycle-b", type="vlan", interface="cycle-a"),
+            ]
+        )
+
+        topology = build_interface_topology(config)
+        by_name = {item.name: item for item in topology.interfaces}
+
+        self.assertTrue(any("cycle" in issue.lower() for issue in by_name["cycle-a"].issues))
+        self.assertTrue(any("cycle" in issue.lower() for issue in by_name["cycle-b"].issues))
 
     def test_invalid_membership_is_scoped_and_reviewable(self):
         config = FGConfig(

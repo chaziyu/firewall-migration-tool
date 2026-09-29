@@ -204,6 +204,30 @@ def test_fast_preview_export_reuses_cached_analysis(monkeypatch):
     assert workbook.status_code == 200
 
 
+def test_full_preview_export_reuses_cached_fortigate_analysis(monkeypatch):
+    client = create_app({"TESTING": True}).test_client()
+    preview = client.post(
+        "/api/preview",
+        data={
+            "source_vendor": "fortigate",
+            "file": (io.BytesIO(SOURCE.encode()), "fortigate.conf"),
+        },
+        content_type="multipart/form-data",
+    )
+    preview_id = preview.get_json()["preview_id"]
+
+    monkeypatch.setattr(
+        "fwmigrate.web._clone_preview",
+        lambda _: (_ for _ in ()).throw(AssertionError("FortiGate FULL should reuse cached analysis")),
+    )
+    workbook = client.post(
+        "/api/extract/excel",
+        data={"source_vendor": "fortigate", "preview_id": preview_id, "excel_profile": "full"},
+    )
+
+    assert workbook.status_code == 200
+
+
 def test_data_only_excel_profile_is_rejected():
     response = create_app({"TESTING": True}).test_client().post(
         "/api/extract/excel",

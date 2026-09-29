@@ -1266,7 +1266,7 @@ def create_app(test_config=None):
             if preview_entry is not None:
                 analysis = (
                     preview_entry.analysis
-                    if profile is ExcelExportProfile.FAST
+                    if profile is ExcelExportProfile.FAST or source_vendor == "fortigate"
                     else _clone_preview(preview_entry)
                 )
             else:
