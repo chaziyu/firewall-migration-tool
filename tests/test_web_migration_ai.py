@@ -796,6 +796,7 @@ def test_proposed_design_session_has_no_256_decision_ceiling(monkeypatch):
         return ai_advisor.validate_model_output(json.dumps({"proposals": _proposal_rows(prepared)}), prepared)
 
     monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "32")
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_REQUEST_BYTES", "49152")
     monkeypatch.setattr(ai_orchestrator, "discover_target_candidates", discover)
     monkeypatch.setattr(ai_orchestrator, "build_review_evidence", lambda *_: {})
     monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
