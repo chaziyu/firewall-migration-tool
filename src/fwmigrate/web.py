@@ -22,6 +22,7 @@ from fwmigrate.conversion.builtin import register_builtin_migration_planners
 from fwmigrate.conversion import migration_planners
 from fwmigrate.conversion.fortigate_to_palo_alto.design.graph import build_decision_graph
 from fwmigrate.conversion.fortigate_to_palo_alto.design.session import create_design_session
+from fwmigrate.conversion.fortigate_to_palo_alto.design.resolver import resolve_design_session_until_stable
 from fwmigrate.conversion.fortigate_to_palo_alto.design.proposed import PANProposedDesignSession
 from fwmigrate.conversion.fortigate_to_palo_alto.ai.orchestrator import (
     build_ai_proposed_design, state_with_proposed_design,
@@ -383,7 +384,7 @@ def _target_evidence(payload):
     return _TargetEvidenceContext(analysis, entry.source_digest, tuple(devices), selected)
 
 
-def _build_migration_review_state(entry, payload):
+def _build_migration_review_state(entry, payload, apply_deterministic=False):
     """Build the deterministic migration review from a cached source preview."""
     _require_complete_collection(entry)
     analysis = _clone_preview(entry)
@@ -397,20 +398,28 @@ def _build_migration_review_state(entry, payload):
     review_evidence = build_review_evidence(analysis.extracted.config, analysis.derived)
     target = target_context.analysis if target_context else None
     device = target_context.selected_device if target_context else None
-    candidates = discover_target_candidates(analysis.extracted.config, decisions, target, device,
-                                            evidence=review_evidence) if target and device else {}
     target_warnings = {}
     if target and device:
         decisions, target_warnings = suggest_from_target(analysis.extracted.config, decisions, target, device)
-    findings = validate_against_target(analysis.extracted.config, decisions, target, device)
-    design_session = create_design_session(
+    auto = _auto_review_results(analysis.extracted.config, analysis.derived, decisions, target, device)
+    design_session = resolve_design_session_until_stable(
+        analysis.extracted.config,
+        analysis.derived,
         decisions,
-        build_decision_graph(analysis.extracted.config, analysis.derived, decisions, requirements),
+        target,
+        device,
         source_digest=entry.source_digest,
         target_evidence=target_metadata,
-        findings=findings,
+        requirements=requirements,
+        enabled_policies=(
+            AutomationPolicy.AUTO_APPLY_VERIFIED,
+            AutomationPolicy.AUTO_APPLY_DERIVED,
+        ) if apply_deterministic else (),
     )
-    auto = _auto_review_results(analysis.extracted.config, analysis.derived, decisions, target, device)
+    decisions = design_session.decisions
+    findings = validate_against_target(analysis.extracted.config, decisions, target, device)
+    candidates = discover_target_candidates(analysis.extracted.config, decisions, target, device,
+                                            evidence=review_evidence) if target and device else {}
     evidence = _decision_evidence(decisions, findings)
     context = build_review_context(analysis.extracted.config, decisions, candidates=candidates,
         target_available=target is not None, target_selected=bool(device),
@@ -541,6 +550,13 @@ def create_app(test_config=None):
 
     def _store_ai_design_session(session, previous=None):
         _expire_ai_design_sessions()
+        for failure in session.failures:
+            _LOGGER.warning(
+                'AI design failed provider=%s model=%s category=%s reason=%s status=%s request_id=%s batch_size=%s candidate_count=%s request_bytes=%s',
+                failure.get('provider'), failure.get('model'), failure.get('failure_category'),
+                failure.get('safe_reason'), failure.get('status'), failure.get('request_id'),
+                failure.get('batch_size'), failure.get('candidate_count'), failure.get('request_bytes'),
+            )
         with ai_proposal_lock:
             if previous and ai_design_sessions.get(previous.session_id) is not previous:
                 raise ValueError('This AI design session changed; reload and retry')
@@ -562,7 +578,7 @@ def create_app(test_config=None):
         entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
         if entry is None:
             raise ValueError('A valid FortiGate preview_id is required')
-        state = _build_migration_review_state(entry, payload)
+        state = _build_migration_review_state(entry, payload, True)
         if not state.get('target_digest') or not state.get('target_device'):
             raise ValueError('Upload PAN-OS target XML and select a target device before AI design review')
         return entry, state
@@ -793,24 +809,61 @@ def create_app(test_config=None):
     def _ai_failure(exc, *, provider, model, batch_size, duration_ms, batch_id=None):
         error = exc if isinstance(exc, ai_advisor.AdvisorError) else ai_advisor.AdvisorError()
         cause = exc.__cause__ if isinstance(exc, ai_advisor.AdvisorError) and exc.__cause__ else exc
+        diagnostic = ai_advisor.failure_record(error, provider=provider, model=model)
+        if not isinstance(exc, ai_advisor.AdvisorError):
+            _LOGGER.exception('Unexpected AI advisor failure provider=%s model=%s', provider, model)
         _LOGGER.warning(
-            'AI request failed provider=%s model=%s category=%s reason=%s status=%s request_id=%s batch_size=%s duration_ms=%s exception=%s',
-            provider, model, error.code, getattr(error, 'reason', None), error.status, error.request_id,
-            batch_size, duration_ms, cause.__class__.__name__,
+            'AI request failed provider=%s model=%s category=%s reason=%s status=%s request_id=%s provider_code=%s provider_type=%s batch_size=%s candidate_count=%s request_bytes=%s duration_ms=%s exception=%s',
+            provider, model, error.code, diagnostic.get('safe_reason'), error.status, error.request_id,
+            diagnostic.get('provider_code'), diagnostic.get('provider_type'),
+            diagnostic.get('batch_size', batch_size), diagnostic.get('candidate_count'),
+            diagnostic.get('request_bytes'), duration_ms, cause.__class__.__name__,
         )
         if batch_id:
             with ai_proposal_lock:
                 ai_audit.append({
                     'event': 'AI_REQUEST_FAILED', 'batch_id': batch_id,
-                    'created_at': time.time(), 'provider': provider, 'model': model,
-                    'batch_size': batch_size, 'request_duration_ms': duration_ms,
-                    'failure_category': error.code, 'failure_reason': getattr(error, 'reason', None),
-                    'status': error.status, 'request_id': error.request_id,
+                    'created_at': time.time(), 'request_duration_ms': duration_ms, **diagnostic,
                 })
                 if len(ai_audit) > 5000:
                     ai_audit_by_id.pop(ai_audit.pop(0).get('proposal_id'), None)
         status = 503 if error.code in {'AI_DISABLED', 'AI_UNAVAILABLE', 'AI_AUTH_FAILED', 'AI_RATE_LIMITED'} else 502
-        return jsonify({'success': False, 'code': error.code, 'error': error.message}), status
+        return jsonify({'success': False, 'code': error.code, 'error': error.message,
+                        'failure': diagnostic}), status
+
+    def _record_repair_failures(result, batch_id):
+        records = [dict(item) for item in result.failures]
+        if result.exhausted:
+            conflicts = [item["decision_key"] for item in result.proposals
+                         if item.get("validation_status") == "CONFLICT"]
+            if conflicts:
+                proposal = result.proposals[0]
+                records.append({
+                    "failure_category": "AI_REPAIR_EXHAUSTED",
+                    "provider": proposal.get("provider", "groq"),
+                    "model": ai_advisor.groq_model("repair"),
+                    "safe_reason": "Conflicts remained after the configured repair passes.",
+                    "decision_keys": conflicts,
+                    "batch_size": len(conflicts),
+                    "candidate_count": 0,
+                    "request_bytes": 0,
+                })
+        if records:
+            now = time.time()
+            with ai_proposal_lock:
+                ai_audit.extend({"event": "AI_REPAIR_FAILED", "batch_id": batch_id,
+                                 "created_at": now, **item} for item in records)
+                while len(ai_audit) > 5000:
+                    removed = ai_audit.pop(0)
+                    ai_audit_by_id.pop(removed.get('proposal_id'), None)
+            for failure in records:
+                _LOGGER.warning(
+                    'AI repair failed provider=%s model=%s category=%s reason=%s status=%s request_id=%s batch_size=%s candidate_count=%s request_bytes=%s',
+                    failure.get('provider'), failure.get('model'), failure.get('failure_category'),
+                    failure.get('safe_reason'), failure.get('status'), failure.get('request_id'),
+                    failure.get('batch_size'), failure.get('candidate_count'), failure.get('request_bytes'),
+                )
+        return records
 
     @app.route('/api/migration/ai/status', methods=['GET'])
     def migration_ai_status():
@@ -1044,7 +1097,11 @@ def create_app(test_config=None):
             if decision_keys:
                 ai_advisor.build_proposal_context(
                     state, decision_keys[:ai_advisor._max_decisions()],
-                    model=ai_advisor.advisor_model(), provider=ai_advisor.advisor_provider(),
+                    model=ai_advisor.model_for_decisions(
+                        state, decision_keys[:ai_advisor._max_decisions()],
+                        provider=ai_advisor.advisor_provider(),
+                    ),
+                    provider=ai_advisor.advisor_provider(),
                 )
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
@@ -1053,25 +1110,39 @@ def create_app(test_config=None):
         batch_id = uuid.uuid4().hex
         proposals = []
         failure_code = None
+        failure_details = []
         for offset in range(0, len(decision_keys), ai_advisor._max_decisions()):
             batch = decision_keys[offset:offset + ai_advisor._max_decisions()]
             try:
                 prepared = ai_advisor.build_proposal_context(
-                    state, batch, model=ai_advisor.advisor_model(), provider=ai_advisor.advisor_provider(),
+                    state, batch,
+                    model=ai_advisor.model_for_decisions(state, batch, provider=ai_advisor.advisor_provider()),
+                    provider=ai_advisor.advisor_provider(),
                 )
                 current = ai_advisor.request_proposals(prepared)
-                proposals.extend(ai_advisor.repair_conflicted_proposals(state, batch, current))
+                repaired = ai_advisor.repair_conflicted_proposals(state, batch, current)
+                proposals.extend(repaired.proposals)
+                failure_details.extend(_record_repair_failures(repaired, batch_id))
+                if failure_details:
+                    failure_code = failure_details[0]["failure_category"]
             except Exception as exc:
                 failure = _ai_failure(exc, provider=ai_advisor.advisor_provider(), model=ai_advisor.advisor_model(),
                                       batch_size=len(batch), duration_ms=round((perf_counter() - started) * 1000),
                                       batch_id=batch_id)
                 if not proposals:
                     return failure
-                failure_code = failure[0].get_json()['code']
+                failed_response = failure[0].get_json()
+                failure_code = failed_response['code']
+                if failed_response.get('failure'):
+                    failure_details.append(failed_response['failure'])
                 break
         if proposals:
             proposal_keys = tuple(item['decision_key'] for item in proposals)
-            proposals = ai_advisor.repair_conflicted_proposals(state, proposal_keys, proposals)
+            repaired = ai_advisor.repair_conflicted_proposals(state, proposal_keys, proposals)
+            proposals = list(repaired.proposals)
+            failure_details.extend(_record_repair_failures(repaired, batch_id))
+            if failure_details:
+                failure_code = failure_code or failure_details[0]["failure_category"]
             failure_code = failure_code or next(
                 (item.get('escalation_failure_category') for item in proposals
                  if item.get('escalation_failure_category')), None)
@@ -1141,7 +1212,8 @@ def create_app(test_config=None):
                     removed = ai_audit.pop(0)
                     ai_audit_by_id.pop(removed.get('proposal_id'), None)
                 result.append({**proposal, 'proposal_id': proposal_id})
-        return jsonify({'success': True, 'proposals': result, 'failure_category': failure_code})
+        return jsonify({'success': True, 'proposals': result, 'failure_category': failure_code,
+                        'failures': failure_details})
 
     @app.route('/api/migration/ai/approve', methods=['POST'])
     def approve_migration_ai_proposal():

@@ -81,6 +81,9 @@ class PANProposedDesignSession:
     iterations: int = 0
     audit: tuple[dict, ...] = ()
     failure_category: str | None = None
+    failures: tuple[dict, ...] = ()
+    ai_eligible_decision_keys: tuple[str, ...] = ()
+    dependency_graph: object | None = None
 
     def __post_init__(self) -> None:
         if not self.session_id or not isinstance(self.created_at, (int, float)) or self.created_at <= 0:
@@ -89,6 +92,7 @@ class PANProposedDesignSession:
             raise ValueError("iterations must be a non-negative integer")
 
     def summary(self, dependency_graph) -> dict:
+        dependency_graph = dependency_graph or self.dependency_graph
         decisions = {item.key: item for item in self.design.authoritative_decisions.decisions}
         proposals = self.design.proposals_by_decision_key
         counts = {
@@ -100,7 +104,13 @@ class PANProposedDesignSession:
             "rejected": 0,
             "unsupported": 0,
             "blocked": 0,
+            "ready_unresolved": 0,
+            "blocked_by_dependency": 0,
+            "not_ai_eligible": 0,
         }
+        ready = (set(dependency_graph.ready_proposed_decision_keys(self.design))
+                 if dependency_graph is not None else set(self.ai_eligible_decision_keys))
+        ai_eligible = set(self.ai_eligible_decision_keys)
         groups = {}
         for key, decision in decisions.items():
             proposal = proposals.get(key)
@@ -117,14 +127,19 @@ class PANProposedDesignSession:
             elif decision.mode is PANDecisionMode.AUTO or decision.review_state is PANDecisionReviewState.CONFIRMED:
                 status = "engineer_confirmed" if decision.evidence_source == "ENGINEER" else "deterministic_confirmed"
             else:
-                status = "blocked"
+                status = ("blocked_by_dependency" if key not in ready else
+                          "ready_unresolved" if key in ai_eligible else "not_ai_eligible")
+                counts["blocked"] += 1
             counts[status] += 1
             family = decision.target_field
             for group_key, group_name in (("family", family), ("source_vdom", decision.source_vdom)):
                 group = groups.setdefault(group_key, {}).setdefault(group_name, {name: 0 for name in counts})
                 group[status] += 1
+                if status in {"ready_unresolved", "blocked_by_dependency", "not_ai_eligible"}:
+                    group["blocked"] += 1
         counts["stable"] = self.stable
         counts["iterations"] = self.iterations
+        counts["failure_count"] = len(self.failures)
         counts["proposed_design_digest"] = self.design.digest
         counts["groups"] = groups
         return counts
@@ -142,5 +157,6 @@ class PANProposedDesignSession:
             "stable": self.stable,
             "iterations": self.iterations,
             "failure_category": self.failure_category,
+            "failures": list(self.failures),
             "audit": list(self.audit),
         }
