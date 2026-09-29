@@ -10,7 +10,8 @@ from enum import StrEnum
 from typing import Any
 
 from .artifact_status import classify_artifact_status
-from .automation import AutomationPolicy, run_automation_until_stable
+from .automation import AutomationPolicy
+from .design import PANMigrationDesignSession, resolve_design_session_until_stable
 from .coverage import build_migration_coverage
 from .decisions import (
     PANDecisionMode,
@@ -65,6 +66,7 @@ class PANMigrationPipelineResult:
     unresolved_decisions: tuple[PANMigrationDecision, ...]
     rendered: RenderedMigration
     artifact_status: str
+    design_session: PANMigrationDesignSession | None = None
 
 
 def automation_policies(mode: PANAutomationMode | str) -> tuple[AutomationPolicy, ...]:
@@ -148,6 +150,7 @@ def run_migration_pipeline(
     target_evidence=None,
     target_intent=None,
     automation_mode: PANAutomationMode | str = PANAutomationMode.REVIEW_ONLY,
+    source_digest: str | None = None,
     planner: FortiGateToPaloAltoPlanner | None = None,
     target_object_reuse_classifier=None,
 ) -> PANMigrationPipelineResult:
@@ -176,7 +179,7 @@ def run_migration_pipeline(
     if target is not None and target_device:
         current, target_warnings = suggest_from_target(source, current, target, target_device)
 
-    automation = run_automation_until_stable(
+    design_session = resolve_design_session_until_stable(
         source,
         derived,
         current,
@@ -184,8 +187,10 @@ def run_migration_pipeline(
         target_device,
         target_evidence=target_evidence,
         enabled_policies=automation_policies(mode),
+        source_digest=source_digest,
+        requirements=requirements,
     )
-    current = automation.decisions
+    current = design_session.decisions
 
     # All target validation and planning use the same final decisions.
     target_findings = validate_against_target(source, current, target, target_device)
@@ -230,9 +235,9 @@ def run_migration_pipeline(
         "plan_status": status,
         "automation": {
             "mode": mode.value,
-            "applied": len(automation.audit),
-            "stable": automation.stable,
-            "iterations": automation.iterations,
+            "applied": len(design_session.deterministic_audit),
+            "stable": design_session.stable,
+            "iterations": design_session.iterations,
         },
         "unresolved_required_decisions": len(unresolved),
         "invalidated_target_decisions": list(invalidated_target_decisions),
@@ -254,11 +259,12 @@ def run_migration_pipeline(
         recommendations=recommendations,
         coverage=coverage,
         support_guidance=support_guidance,
-        automation_audit=automation.audit,
+        automation_audit=design_session.deterministic_audit,
         invalidated_target_decisions=invalidated_target_decisions,
         unresolved_decisions=unresolved,
         rendered=rendered,
         artifact_status=status,
+        design_session=design_session,
     )
 
 

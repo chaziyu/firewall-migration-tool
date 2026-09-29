@@ -20,6 +20,8 @@ from flask import Flask, render_template, request, send_file, jsonify
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
 from fwmigrate.conversion import migration_planners
+from fwmigrate.conversion.fortigate_to_palo_alto.design.graph import build_decision_graph
+from fwmigrate.conversion.fortigate_to_palo_alto.design.session import create_design_session
 from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANDecisionMode,
     PANDecisionReviewState,
@@ -397,6 +399,13 @@ def _build_migration_review_state(entry, payload):
     if target and device:
         decisions, target_warnings = suggest_from_target(analysis.extracted.config, decisions, target, device)
     findings = validate_against_target(analysis.extracted.config, decisions, target, device)
+    design_session = create_design_session(
+        decisions,
+        build_decision_graph(analysis.extracted.config, analysis.derived, decisions, requirements),
+        source_digest=entry.source_digest,
+        target_evidence=target_metadata,
+        findings=findings,
+    )
     auto = _auto_review_results(analysis.extracted.config, analysis.derived, decisions, target, device)
     evidence = _decision_evidence(decisions, findings)
     context = build_review_context(analysis.extracted.config, decisions, candidates=candidates,
@@ -414,6 +423,7 @@ def _build_migration_review_state(entry, payload):
         'target_digest': target_context.source_digest if target_context else None,
         'target_device': device,
         'decisions': decisions,
+        'design_session': design_session,
         'decision_candidates': candidates,
         'review_workflow': workflow,
         'review_context': context,
@@ -471,6 +481,9 @@ def create_app(test_config=None):
 
     rendered_artifacts = {}
     ai_proposals = {}
+    ai_proposal_lock = threading.Lock()
+    ai_audit = []
+    ai_audit_by_id = {}
     artifact_sources = {}
     deployment_sessions: dict[str, PANDeploymentSession] = {}
 
@@ -655,6 +668,7 @@ def create_app(test_config=None):
             decisions = state['decisions']
             return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': state['requirements'],
                             'decisions': decisions.to_dict(),
+                            'design_session': state['design_session'].to_dict(),
                             'decision_document': _decision_document(entry.source_digest, decisions,
                                                                      target_context.metadata if target_context else None),
                             'target_devices': list(target_context.devices) if target_context else [],
@@ -681,9 +695,7 @@ def create_app(test_config=None):
     def propose_migration_ai():
         payload = request.get_json(silent=True)
         if not ai_advisor.advisor_enabled():
-            return jsonify({'success': False, 'error': 'Groq AI advisor is disabled; set FWMIGRATE_AI_ENABLED=1 to enable it.'}), 503
-        if not os.environ.get('GROQ_API_KEY', '').strip():
-            return jsonify({'success': False, 'error': 'Groq AI advisor is unavailable; configure GROQ_API_KEY.'}), 503
+            return jsonify({'success': False, 'error': 'AI advisor is disabled; set FWMIGRATE_AI_ENABLED=1 to enable it.'}), 503
         try:
             if not isinstance(payload, dict):
                 raise ValueError('A JSON object is required')
@@ -692,30 +704,80 @@ def create_app(test_config=None):
                 raise ValueError('A valid FortiGate preview_id is required')
             state = _build_migration_review_state(entry, payload)
             prepared = ai_advisor.build_proposal_context(
-                state, payload.get('decision_keys'), model=ai_advisor.advisor_model()
+                state, payload.get('decision_keys'), model=ai_advisor.advisor_model(),
+                provider=ai_advisor.advisor_provider(),
             )
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
         try:
             proposals = ai_advisor.request_proposals(prepared)
+            proposals = ai_advisor.repair_conflicted_proposals(
+                state, payload['decision_keys'], proposals
+            )
         except ai_advisor.AdvisorUnavailable:
-            return jsonify({'success': False, 'error': 'Groq AI advisor is unavailable; install the AI extra and check its local configuration.'}), 503
+            return jsonify({'success': False, 'error': 'AI advisor is unavailable; check the local inference URL or Groq API configuration.'}), 503
         except Exception:
-            return jsonify({'success': False, 'error': 'Groq could not return a valid proposal. The migration review is unchanged.'}), 502
+            return jsonify({'success': False, 'error': 'AI advisor could not return a valid proposal. The migration review is unchanged.'}), 502
 
         now = time.time()
-        for proposal_id, (created, _) in list(ai_proposals.items()):
-            if now - created > 15 * 60:
-                ai_proposals.pop(proposal_id, None)
-        while len(ai_proposals) >= 256:
-            oldest = min(ai_proposals, key=lambda item: ai_proposals[item][0])
-            ai_proposals.pop(oldest, None)
         result = []
-        for proposal in proposals:
-            proposal_id = uuid.uuid4().hex
-            ai_proposals[proposal_id] = (now, proposal)
-            result.append({**proposal, 'proposal_id': proposal_id})
+        with ai_proposal_lock:
+            for proposal_id, (created, _) in list(ai_proposals.items()):
+                if now - created > 15 * 60:
+                    ai_proposals.pop(proposal_id, None)
+                    audit = ai_audit_by_id.get(proposal_id)
+                    if audit and audit['engineer_action'] is None:
+                        audit['engineer_action'] = 'UNRESOLVED'
+            while len(ai_proposals) + len(proposals) > 256:
+                oldest = min(ai_proposals, key=lambda item: ai_proposals[item][0])
+                ai_proposals.pop(oldest, None)
+                audit = ai_audit_by_id.get(oldest)
+                if audit and audit['engineer_action'] is None:
+                    audit['engineer_action'] = 'UNRESOLVED'
+            for proposal in proposals:
+                proposal_id = uuid.uuid4().hex
+                ai_proposals[proposal_id] = (now, proposal)
+                proposal_context = ai_advisor.build_proposal_context(
+                    state,
+                    [proposal['decision_key']],
+                    model=proposal['model'],
+                    provider=proposal.get('provider', 'groq'),
+                )
+                audit = {
+                    'proposal_id': proposal_id,
+                    'created_at': now,
+                    'provider': proposal.get('provider', 'groq'),
+                    'escalated_from': proposal.get('escalated_from'),
+                    'model': proposal['model'],
+                    'prompt_version': proposal['prompt_version'],
+                    'source_digest': proposal['source_digest'],
+                    'target_digest': proposal['target_digest'],
+                    'target_device': proposal['target_device'],
+                    'state_digest': proposal['state_digest'],
+                    'context_digest': proposal['context_digest'],
+                    'base_context_digest': proposal.get('base_context_digest', proposal['context_digest']),
+                    'decision_key': proposal['decision_key'],
+                    'review_context': proposal_context['request']['decisions'][0],
+                    'proposal': {
+                        'action': proposal['action'],
+                        'proposed_value': proposal['proposed_value'],
+                        'target_scope': proposal['target_scope'],
+                        'evidence_refs': proposal['evidence_refs'],
+                    },
+                    'validation_result': {
+                        'status': proposal.get('validation_status', 'VALID'),
+                        'findings': proposal.get('validation_findings', []),
+                    },
+                    'engineer_action': None,
+                    'final_value': None,
+                }
+                ai_audit.append(audit)
+                ai_audit_by_id[proposal_id] = audit
+                while len(ai_audit) > 5000:
+                    removed = ai_audit.pop(0)
+                    ai_audit_by_id.pop(removed['proposal_id'], None)
+                result.append({**proposal, 'proposal_id': proposal_id})
         return jsonify({'success': True, 'proposals': result})
 
     @app.route('/api/migration/ai/approve', methods=['POST'])
@@ -724,10 +786,17 @@ def create_app(test_config=None):
         if not isinstance(payload, dict):
             return jsonify({'success': False, 'error': 'A JSON object is required'}), 400
         proposal_id = payload.get('proposal_id')
-        record = ai_proposals.get(proposal_id) if isinstance(proposal_id, str) else None
-        if record is None or time.time() - record[0] > 15 * 60:
-            if isinstance(proposal_id, str):
-                ai_proposals.pop(proposal_id, None)
+        with ai_proposal_lock:
+            record = ai_proposals.get(proposal_id) if isinstance(proposal_id, str) else None
+        if record is None:
+            return jsonify({'success': False, 'error': 'This AI proposal expired; request a new proposal.'}), 409
+        if time.time() - record[0] > 15 * 60:
+            with ai_proposal_lock:
+                if ai_proposals.get(proposal_id) is record:
+                    ai_proposals.pop(proposal_id, None)
+                    audit = ai_audit_by_id.get(proposal_id)
+                    if audit and audit['engineer_action'] is None:
+                        audit['engineer_action'] = 'UNRESOLVED'
             return jsonify({'success': False, 'error': 'This AI proposal expired; request a new proposal.'}), 409
         try:
             entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
@@ -735,30 +804,17 @@ def create_app(test_config=None):
                 raise ValueError('A valid FortiGate preview_id is required')
             state = _build_migration_review_state(entry, payload)
             proposal = record[1]
-            if proposal.get('action') != 'USE_EXISTING':
-                raise ValueError('Only an existing-target proposal can be approved')
-            validated = ai_advisor.revalidate_stored_proposal(state, proposal)
-            decisions = state['decisions']
-            by_key = {item.key: item for item in decisions.decisions}
-            decision = by_key.get(validated['decision_key'])
+            confirmed, validated = ai_advisor.approve_proposals_as_engineer(state, [proposal])
+            validated = validated[0]
             target_context = state['target_context']
-            identity = target_evidence_identity(target_context.metadata if target_context else None)
-            if decision is None or identity is None:
-                raise ValueError('The target evidence for this proposal is no longer available')
-            target_digest, target_device = identity
-            by_key[decision.key] = replace(
-                decision,
-                value=validated['proposed_value'],
-                review_state=PANDecisionReviewState.CONFIRMED,
-                evidence_source='ENGINEER',
-                evidence_type='ENGINEER_APPROVED_AI_PROPOSAL',
-                evidence_value=validated['proposed_value'],
-                target_object=validated['proposed_value'],
-                evidence_target_digest=target_digest,
-                evidence_target_device=target_device,
-            )
-            confirmed = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
-            ai_proposals.pop(proposal_id, None)
+            with ai_proposal_lock:
+                if ai_proposals.get(proposal_id) is not record:
+                    raise ValueError('This AI proposal has already been used')
+                ai_proposals.pop(proposal_id, None)
+                audit = ai_audit_by_id.get(proposal_id)
+                if audit:
+                    audit['engineer_action'] = 'APPROVED'
+                    audit['final_value'] = validated['proposed_value']
             return jsonify({
                 'success': True,
                 'approved_count': 1,
@@ -768,8 +824,86 @@ def create_app(test_config=None):
                 ),
             })
         except (ValueError, KeyError, TypeError) as exc:
-            ai_proposals.pop(proposal_id, None)
             return jsonify({'success': False, 'error': str(exc)}), 409
+
+    @app.route('/api/migration/ai/approve-bulk', methods=['POST'])
+    def approve_migration_ai_proposals():
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError('A JSON object is required')
+            proposal_ids = payload.get('proposal_ids')
+            if (not isinstance(proposal_ids, list) or not proposal_ids or len(proposal_ids) > 64
+                    or any(not isinstance(item, str) or not item for item in proposal_ids)
+                    or len(set(proposal_ids)) != len(proposal_ids)):
+                raise ValueError('proposal_ids must contain 1 to 64 unique proposal IDs')
+            with ai_proposal_lock:
+                records = {key: ai_proposals.get(key) for key in proposal_ids}
+            now = time.time()
+            if any(record is None or now - record[0] > 15 * 60 for record in records.values()):
+                raise ValueError('One or more AI proposals expired; request current proposals.')
+            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+            if entry is None:
+                raise ValueError('A valid FortiGate preview_id is required')
+            state = _build_migration_review_state(entry, payload)
+            proposals = [records[key][1] for key in proposal_ids]
+            confirmed, validated = ai_advisor.approve_proposals_as_engineer(state, proposals)
+            target_context = state['target_context']
+            with ai_proposal_lock:
+                if any(ai_proposals.get(key) is not record for key, record in records.items()):
+                    raise ValueError('One or more AI proposals have already been used')
+                for key in proposal_ids:
+                    ai_proposals.pop(key, None)
+                    audit = ai_audit_by_id.get(key)
+                    if audit:
+                        item = next(value for value in validated if value['decision_key'] == audit['decision_key'])
+                        audit['engineer_action'] = 'APPROVED'
+                        audit['final_value'] = item['proposed_value']
+            return jsonify({
+                'success': True,
+                'approved_count': len(validated),
+                'decisions': confirmed.to_dict(),
+                'decision_document': _decision_document(
+                    entry.source_digest, confirmed, target_context.metadata
+                ),
+            })
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 409
+
+    @app.route('/api/migration/ai/outcome', methods=['POST'])
+    def record_migration_ai_outcome():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({'success': False, 'error': 'A JSON object is required'}), 400
+        proposal_id = payload.get('proposal_id')
+        action = payload.get('engineer_action')
+        final_value = payload.get('final_value')
+        if not isinstance(action, str) or action not in {'MODIFIED', 'REJECTED', 'UNRESOLVED'}:
+            return jsonify({'success': False, 'error': 'engineer_action must be MODIFIED, REJECTED, or UNRESOLVED'}), 400
+        if action == 'MODIFIED' and (not isinstance(final_value, str) or not final_value.strip()):
+            return jsonify({'success': False, 'error': 'A final_value is required for a modified proposal'}), 400
+        with ai_proposal_lock:
+            audit = ai_audit_by_id.get(proposal_id) if isinstance(proposal_id, str) else None
+            if audit is None:
+                return jsonify({'success': False, 'error': 'This AI proposal is no longer available for audit.'}), 404
+            if audit['engineer_action'] is not None:
+                return jsonify({'success': False, 'error': 'This AI proposal already has a recorded outcome.'}), 409
+            audit['engineer_action'] = action
+            audit['final_value'] = final_value.strip() if action == 'MODIFIED' else None
+            ai_proposals.pop(proposal_id, None)
+        return jsonify({'success': True})
+
+    @app.route('/api/migration/ai/audit/export', methods=['GET'])
+    def export_migration_ai_audit():
+        with ai_proposal_lock:
+            rows = list(ai_audit)
+        content = ''.join(json.dumps(item, separators=(',', ':')) + '\n' for item in rows)
+        return send_file(
+            io.BytesIO(content.encode('utf-8')),
+            mimetype='application/x-ndjson',
+            as_attachment=True,
+            download_name='migration_ai_audit.jsonl',
+        )
 
     @app.route('/api/migration/decisions/approve', methods=['POST'])
     def approve_migration_decisions():
@@ -1087,6 +1221,7 @@ def create_app(test_config=None):
                 target_device=target_device,
                 target_evidence=target_context.metadata if target_context else None,
                 automation_mode=automation_mode,
+                source_digest=entry.source_digest,
                 planner=migration_planners.get(source_vendor, target_vendor),
                 target_object_reuse_classifier=classify_target_object_reuse,
             )
@@ -1198,6 +1333,7 @@ def create_app(test_config=None):
                 'target_evidence_changed': target_evidence_changed,
                 'invalidated_target_decisions': list(result.invalidated_target_decisions),
                 'decisions': decision_set.to_dict(),
+                'design_session': result.design_session.to_dict() if result.design_session else None,
                 'decision_document': decision_document,
                 'report': rendered.report,
                 'validation': {'issue_summary': rendered.report['issue_summary']},
