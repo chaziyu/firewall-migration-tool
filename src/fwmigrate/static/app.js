@@ -49,6 +49,11 @@ let migrationBuildInFlight = false;
   let activeMode = "download"; // 'download', 'live', 'collect', or 'report'
   let currentPolicies = [];
   let currentReport = null;
+  let currentSourceContext = {
+    acquisition: "Uploaded configuration",
+    status: null,
+    warnings: [],
+  };
   let sourceReady = false;
   let sourceFailed = false;
   let sourceRevision = 0;
@@ -295,6 +300,7 @@ let migrationBuildInFlight = false;
   const reportOverview = document.getElementById("report-overview");
   const reportData = document.getElementById("report-data");
   const reportSummary = document.getElementById("report-summary");
+  const reportSourceMeta = document.getElementById("report-source-meta");
   const reportScopeSummary = document.getElementById("report-scope-summary");
   const reportObjectTabs = document.getElementById("report-object-tabs");
   const reportSearch = document.getElementById("report-search");
@@ -327,6 +333,8 @@ let migrationBuildInFlight = false;
   let activeObjectSection = "addresses";
   let reportPage = 1;
   let activeValidationGroup = "";
+  let reportSearchTimer = null;
+  const reportSearchIndex = new WeakMap();
   const REPORT_PAGE_SIZE = 100;
 
   // Ingestion Method Tabs
@@ -479,10 +487,12 @@ let migrationBuildInFlight = false;
     address_groups: [["name", "Name"], ["members", "Members"], ["address_family", "Family", "compact"], ["exclude_members", "Excluded"], ["review", "Review", "notes"]],
     services: [["name", "Name"], ["protocol", "Protocol", "compact"], ["port", "Port", "compact"], ["source_port", "Source Port", "compact"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
     service_groups: [["name", "Name"], ["members", "Members"], ["generated", "Generated", "compact"], ["review", "Review", "notes"]],
+    schedules: [["name", "Name"], ["type", "Type", "compact"], ["start", "Start"], ["end", "End"], ["days", "Days"], ["daily", "Daily"], ["weekdays", "Weekdays"], ["clauses", "Clauses"], ["value", "Value"], ["review", "Review", "notes"]],
     policies: [["policy_id", "ID", "compact"], ["name", "Name"], ["source_interfaces", "From"], ["destination_interfaces", "To"], ["source_addresses", "Source"], ["source_addresses_ipv6", "Source IPv6"], ["destination_addresses", "Destination"], ["destination_addresses_ipv6", "Destination IPv6"], ["services", "Service"], ["schedule", "Schedule"], ["action", "Action", "compact"], ["nat", "NAT", "compact"], ["review", "Review", "notes"]],
     nat: [["policy_id", "Policy ID", "compact"], ["policy_name", "Policy"], ["translation_type", "Type", "compact"], ["translated_addresses", "Address", "address"], ["egress_interfaces", "Egress"], ["review", "Review", "notes"]],
     routes: [["route_id", "ID", "compact"], ["destination", "Destination", "address"], ["gateway", "Gateway", "address"], ["device", "Device"], ["distance", "Distance", "compact"], ["status", "Status", "compact"], ["review", "Review", "notes"]],
     vpn: [["kind", "Type", "compact"], ["name", "Name"], ["attachment", "Interface / Phase 1"], ["peer", "Gateway / Selectors", "address"], ["crypto", "IKE / Proposal"], ["topology", "Topology"], ["review", "Review", "notes"]],
+    references: [["source_kind", "Source Type"], ["source_name", "Source"], ["source_field", "Field"], ["domain", "Domain"], ["object_name", "Object"], ["field", "Field"], ["reference", "Reference"], ["expected_kinds", "Expected"], ["expected_type", "Expected Type"], ["status", "Status", "compact"]],
     validation: [["severity", "Severity", "compact"], ["domain", "Domain"], ["object_name", "Object"], ["field", "Field"], ["message", "Issue", "notes"]],
   };
 
@@ -490,7 +500,75 @@ let migrationBuildInFlight = false;
     if (value === null || value === undefined || value === "") return "—";
     if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
     if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "object") {
+      try {
+        return JSON.stringify(value);
+      } catch (_) {
+        return String(value);
+      }
+    }
     return String(value);
+  }
+
+  function reportSearchText(row) {
+    if (!row || typeof row !== "object") return reportCell(row).toLowerCase();
+    const cached = reportSearchIndex.get(row);
+    if (cached !== undefined) return cached;
+    const searchable = Object.values(row)
+      .map((value) => reportCell(value))
+      .join("\n")
+      .toLowerCase();
+    reportSearchIndex.set(row, searchable);
+    return searchable;
+  }
+
+  function sourceOverviewCounts(report) {
+    const summary = report?.summary || {};
+    const objects = summary.objects || {};
+    const severity = summary.validation?.severity_counts || {};
+    return {
+      policies: count(objects.policies),
+      objects: ["addresses", "address_groups", "services", "service_groups"]
+        .reduce((total, key) => total + count(objects[key]), 0),
+      errors: count(severity.error),
+      warnings: count(severity.warning),
+      items: Object.values(objects)
+        .reduce((total, value) => total + (typeof value === "number" ? count(value) : 0), 0),
+    };
+  }
+
+  function updateSourceOverview(report) {
+    const overview = sourceOverviewCounts(report);
+    if (statTotalRules) statTotalRules.textContent = String(overview.policies);
+    if (statTotalObjects) statTotalObjects.textContent = String(overview.objects);
+    if (statErrors) statErrors.textContent = String(overview.errors);
+    if (statWarnings) statWarnings.textContent = String(overview.warnings);
+    return overview;
+  }
+
+  function setSourceContext({ acquisition = "Uploaded configuration", status = null, warnings = [] } = {}) {
+    currentSourceContext = {
+      acquisition,
+      status,
+      warnings: Array.isArray(warnings) ? warnings : [],
+    };
+    renderSourceContext();
+  }
+
+  function renderSourceContext() {
+    if (!reportSourceMeta) return;
+    const parts = [`Source: ${currentSourceContext.acquisition}`];
+    if (currentSourceContext.status) parts.push(`Collection: ${currentSourceContext.status}`);
+    if (currentSourceContext.warnings.length) {
+      parts.push(`${currentSourceContext.warnings.length} collection ${currentSourceContext.warnings.length === 1 ? "warning" : "warnings"}`);
+    }
+    reportSourceMeta.textContent = parts.join(" · ");
+    reportSourceMeta.dataset.state =
+      currentSourceContext.status === "PARTIAL"
+        ? "warning"
+        : currentSourceContext.status === "FAILED"
+          ? "error"
+          : "ready";
   }
 
   function showReportDetails(row, triggerElement) {
