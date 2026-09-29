@@ -47,6 +47,10 @@ def test_inventory_preserves_source_evidence_and_provenance():
     assert parent.explicit_fields == ()
     assert parent.unset_fields == ("comment",)
     assert [command.operation for command in parent.commands] == ["set", "append", "unset", "unknown"]
+    assert not hasattr(parent.commands[0], "vdom")
+    assert not hasattr(parent.commands[0], "source_path")
+    assert not hasattr(parent.commands[0], "object_name")
+    assert not hasattr(parent.commands[0], "parent_objects")
     assert all(command.line_number is not None for command in parent.commands)
     assert parent.start_line_number is not None and parent.end_line_number is not None
     assert nested.values == {"color": "blue"}
