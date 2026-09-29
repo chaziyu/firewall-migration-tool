@@ -15,10 +15,13 @@ from fwmigrate.vendors.fortigate.export import export_excel
 from fwmigrate.vendors.fortigate.export.excel import (
     _additional_source_settings,
     _additional_settings,
+    _build_additional_settings,
+    _build_fast_workbook,
     _ExcelContext,
     _excel_safe,
     _interface_source_values,
     _lookup_source_header,
+    _model_rows,
     _normalized_source_values,
     _overlay_safe_raw,
 )
@@ -388,6 +391,113 @@ end
         diagnostics = repr(metrics.as_dict())
         for source_value in ("FG-TEST", "wan-dhcp", "source-user", "do-not-export-this-secret"):
             self.assertNotIn(source_value, diagnostics)
+
+    def test_fast_sheet_timing_starts_before_first_row_is_materialized(self):
+        from unittest.mock import patch
+
+        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG), config=ExtractionConfig())
+        derived = build_derived_views(extracted.config)
+        validation = validate_config(extracted.config, derived=derived)
+        context = _ExcelContext(
+            extracted=extracted,
+            derived=derived,
+            validation=validation,
+            profile=ExcelExportProfile.FAST,
+            source_name="sample.conf",
+        )
+        events = []
+
+        def timed_counter():
+            events.append("perf")
+            return float(len(events))
+
+        def rows_for_sheet(sheet_name, _context, _headers):
+            assert sheet_name == "Addresses"
+
+            def rows():
+                events.append("first_row")
+                yield {"Name": "timed"}
+
+            return rows()
+
+        metrics = ExcelExportMetrics()
+        with (
+            patch(
+                "fwmigrate.vendors.fortigate.export.excel.SHEET_ORDER",
+                ("Summary", "Addresses"),
+            ),
+            patch(
+                "fwmigrate.vendors.fortigate.export.excel.perf_counter",
+                side_effect=timed_counter,
+            ),
+            patch(
+                "fwmigrate.vendors.fortigate.export.excel._rows_for_sheet",
+                side_effect=rows_for_sheet,
+            ),
+        ):
+            workbook = _build_fast_workbook(context, metrics=metrics)
+
+        workbook.save(io.BytesIO())
+        self.assertEqual(["perf", "first_row", "perf"], events[2:5])
+        by_name = {sheet["sheet_name"]: sheet for sheet in metrics.sheets}
+        self.assertEqual(1000.0, by_name["Addresses"]["duration_ms"])
+
+    def test_model_rows_precompute_sheet_mapping_once(self):
+        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG), config=ExtractionConfig())
+        derived = build_derived_views(extracted.config)
+        validation = validate_config(extracted.config, derived=derived)
+        context = _ExcelContext(
+            extracted=extracted,
+            derived=derived,
+            validation=validation,
+            profile=ExcelExportProfile.FAST,
+            source_name="sample.conf",
+        )
+
+        class CountingMapping(dict):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.items_calls = 0
+
+            def items(self):
+                self.items_calls += 1
+                return super().items()
+
+        mapping = CountingMapping({"Name": "name", "VDOM": "vdom"})
+        headers = ("Name", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings")
+        rows = list(
+            _model_rows(
+                context,
+                extracted.config.interfaces[:2],
+                headers,
+                mapping,
+                domains=("interface",),
+            )
+        )
+
+        self.assertEqual(2, len(rows))
+        self.assertEqual(1, mapping.items_calls)
+
+    def test_additional_settings_preserve_model_field_order(self):
+        policy = FGPolicy(
+            policy_id=101,
+            name="ordered",
+            action="accept",
+            comments="keep-order",
+            explicit_fields={"comments", "action", "name", "policy_id"},
+        )
+
+        settings = _build_additional_settings(
+            policy,
+            represented_fields={"name", "policy_id"},
+        )
+        expected = [
+            field
+            for field in type(policy).model_fields
+            if field in {"action", "comments"}
+        ]
+
+        self.assertEqual(expected, list(settings))
 
     @staticmethod
     def _rows(sheet):
