@@ -56,6 +56,7 @@ let migrationBuildInFlight = false;
   };
   let sourceReady = false;
   let sourceFailed = false;
+  let sourcePanelExpanded = true;
   let sourceRevision = 0;
   let previewController = null;
   const busyButtons = new Set();
@@ -302,6 +303,10 @@ let migrationBuildInFlight = false;
   const reportSummary = document.getElementById("report-summary");
   const reportSourceMeta = document.getElementById("report-source-meta");
   const reportScopeSummary = document.getElementById("report-scope-summary");
+  const reportSectionTitle = document.getElementById("report-section-title");
+  const reportSectionDescription = document.getElementById("report-section-description");
+  const btnReportChangeSource = document.getElementById("btn-report-change-source");
+  const sourceConfigurationCard = document.getElementById("source-configuration-card");
   const reportObjectTabs = document.getElementById("report-object-tabs");
   const reportSearch = document.getElementById("report-search");
   const reportScopeFilter = document.getElementById("report-scope-filter");
@@ -493,7 +498,53 @@ let migrationBuildInFlight = false;
     routes: [["route_id", "ID", "compact"], ["destination", "Destination", "address"], ["gateway", "Gateway", "address"], ["device", "Device"], ["distance", "Distance", "compact"], ["status", "Status", "compact"], ["review", "Review", "notes"]],
     vpn: [["kind", "Type", "compact"], ["name", "Name"], ["attachment", "Interface / Phase 1"], ["peer", "Gateway / Selectors", "address"], ["crypto", "IKE / Proposal"], ["topology", "Topology"], ["review", "Review", "notes"]],
     references: [["source_kind", "Source Type"], ["source_name", "Source"], ["source_field", "Field"], ["domain", "Domain"], ["object_name", "Object"], ["field", "Field"], ["reference", "Reference"], ["expected_kinds", "Expected"], ["expected_type", "Expected Type"], ["status", "Status", "compact"]],
-    validation: [["severity", "Severity", "compact"], ["domain", "Domain"], ["object_name", "Object"], ["field", "Field"], ["message", "Issue", "notes"]],
+    validation: [["severity", "Severity", "compact"], ["domain", "Domain"], ["object_name", "Object"], ["field", "Field"], ["message", "Issue", "notes"], ["__target", "", "action"]],
+  };
+
+  const REPORT_SECTION_META = {
+    interfaces: ["Interfaces", "Reported interface and topology state from the source configuration."],
+    objects: ["Objects", "Reported address and service objects, grouped by source object type."],
+    schedules: ["Schedules", "Reported schedule entries from the source configuration."],
+    policies: ["Policies", "Reported policy entries from the source configuration."],
+    nat: ["NAT", "Reported NAT entries from the source configuration."],
+    routes: ["Routes", "Reported routing entries from the source configuration."],
+    vpn: ["VPN", "Reported VPN tunnel and phase information from the source configuration."],
+    references: ["References", "Reported unresolved source references that require review."],
+    validation: ["Validation", "Validation findings detected from the reported source state."],
+  };
+
+  const REPORT_STICKY_IDENTITY = {
+    interfaces: "display_name",
+    addresses: "name",
+    address_groups: "name",
+    services: "name",
+    service_groups: "name",
+    schedules: "name",
+    policies: "name",
+    nat: "policy_name",
+    routes: "destination",
+    vpn: "name",
+    references: "source_name",
+    validation: "object_name",
+  };
+
+  const VALIDATION_TARGETS = {
+    interface: ["interfaces"],
+    address: ["objects", "addresses"],
+    address6: ["objects", "addresses"],
+    address_group: ["objects", "address_groups"],
+    service: ["objects", "services"],
+    service_group: ["objects", "service_groups"],
+    policy: ["policies"],
+    schedule: ["schedules"],
+    scheduler: ["schedules"],
+    time_range: ["schedules"],
+    route: ["routes"],
+    static_route: ["routes"],
+    static_route6: ["routes"],
+    vpn: ["vpn"],
+    ipsec_phase1: ["vpn"],
+    vpn_phase2: ["vpn"],
   };
 
   function reportCell(value) {
@@ -501,6 +552,34 @@ let migrationBuildInFlight = false;
     if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
     if (typeof value === "boolean") return value ? "Yes" : "No";
     return String(value);
+  }
+
+  function reportTableCell(value) {
+    if (!Array.isArray(value)) return reportCell(value);
+    if (!value.length) return "—";
+    if (value.length <= 3) return value.join(", ");
+    return `${value.slice(0, 2).join(", ")}  +${value.length - 2}`;
+  }
+
+  function semanticChipKind(key, value) {
+    const token = String(value || "").trim().toLowerCase();
+    if (key === "severity") {
+      if (token === "error") return "danger";
+      if (token === "warning") return "warning";
+    }
+    if (key === "action") {
+      if (["accept", "allow", "permit"].includes(token)) return "success";
+      if (["deny", "drop", "reject", "block"].includes(token)) return "danger";
+    }
+    if (key === "status") {
+      if (["success", "ready", "up", "enabled", "active"].includes(token)) return "success";
+      if (["failed", "down", "disabled"].includes(token)) return "danger";
+      if (["partial", "warning"].includes(token)) return "warning";
+    }
+    if (["protocol", "address_family", "kind", "type"].includes(key) && token && token !== "—") {
+      return "neutral";
+    }
+    return "";
   }
 
   function reportSearchText(row) {
@@ -550,12 +629,41 @@ let migrationBuildInFlight = false;
 
   function renderSourceContext() {
     if (!reportSourceMeta) return;
-    const parts = [`Source: ${currentSourceContext.acquisition}`];
-    if (currentSourceContext.status) parts.push(`Collection: ${currentSourceContext.status}`);
-    if (currentSourceContext.warnings.length) {
-      parts.push(`${currentSourceContext.warnings.length} collection ${currentSourceContext.warnings.length === 1 ? "warning" : "warnings"}`);
+    const vendorName = VENDOR_CONFIGS[selectedSourceVendor]?.name || selectedSourceVendor;
+    const fragment = document.createDocumentFragment();
+
+    const vendor = document.createElement("span");
+    vendor.className = "report-source-item report-source-vendor";
+    vendor.textContent = vendorName;
+    fragment.appendChild(vendor);
+
+    if (currentFile?.name) {
+      const filename = document.createElement("span");
+      filename.className = "report-source-item report-source-filename";
+      filename.textContent = currentFile.name;
+      fragment.appendChild(filename);
     }
-    reportSourceMeta.textContent = parts.join(" · ");
+
+    const acquisition = document.createElement("span");
+    acquisition.className = "report-source-item";
+    acquisition.textContent = currentSourceContext.acquisition;
+    fragment.appendChild(acquisition);
+
+    if (currentSourceContext.status) {
+      const status = document.createElement("span");
+      status.className = `report-source-chip report-source-chip-${String(currentSourceContext.status).toLowerCase()}`;
+      status.textContent = currentSourceContext.status;
+      fragment.appendChild(status);
+    }
+
+    if (currentSourceContext.warnings.length) {
+      const warnings = document.createElement("span");
+      warnings.className = "report-source-chip report-source-chip-warning";
+      warnings.textContent = `${currentSourceContext.warnings.length} collection ${currentSourceContext.warnings.length === 1 ? "warning" : "warnings"}`;
+      fragment.appendChild(warnings);
+    }
+
+    reportSourceMeta.replaceChildren(fragment);
     reportSourceMeta.dataset.state =
       currentSourceContext.status === "PARTIAL"
         ? "warning"
@@ -600,16 +708,14 @@ let migrationBuildInFlight = false;
     reportDetailTrigger = null;
   }
 
+  function validationTarget(row) {
+    if (!row?.object_name) return null;
+    return VALIDATION_TARGETS[row.domain] || null;
+  }
+
   function navigateToValidationTarget(row) {
-    const targets = {
-      interface: ["interfaces"], address: ["objects", "addresses"], address6: ["objects", "addresses"],
-      address_group: ["objects", "address_groups"], service: ["objects", "services"], service_group: ["objects", "service_groups"],
-      policy: ["policies"], schedule: ["schedules"], scheduler: ["schedules"], time_range: ["schedules"],
-      route: ["routes"], static_route: ["routes"], static_route6: ["routes"],
-      vpn: ["vpn"], ipsec_phase1: ["vpn"], vpn_phase2: ["vpn"],
-    };
-    const target = targets[row.domain];
-    if (!target || !row.object_name) return false;
+    const target = validationTarget(row);
+    if (!target) return false;
     activeReportSection = target[0];
     if (target[1]) activeObjectSection = target[1];
     reportPage = 1;
