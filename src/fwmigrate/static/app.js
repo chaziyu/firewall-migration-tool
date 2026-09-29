@@ -64,7 +64,7 @@ let migrationBuildInFlight = false;
   const MODE_COPY = {
     report: [
       "Configuration Report",
-      "Review source details and download Excel.",
+      "Review reported source state, validation findings, and inventory.",
     ],
     download: [
       "Plan migration",
