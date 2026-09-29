@@ -796,6 +796,7 @@ def test_proposed_design_session_has_no_256_decision_ceiling(monkeypatch):
         return ai_advisor.validate_model_output(json.dumps({"proposals": _proposal_rows(prepared)}), prepared)
 
     monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "32")
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_REQUEST_BYTES", "49152")
     monkeypatch.setattr(ai_orchestrator, "discover_target_candidates", discover)
     monkeypatch.setattr(ai_orchestrator, "build_review_evidence", lambda *_: {})
     monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
@@ -1016,6 +1017,59 @@ def test_provider_retries_only_transient_failure(monkeypatch):
         ai_advisor.request_proposals(prepared)
     assert len(calls) == 1
 
+    calls.clear()
+    sleeps = []
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_RETRY_DELAY_SECONDS", "10")
+    monkeypatch.setattr(ai_advisor.time, "sleep", sleeps.append)
+
+    def rate_limited_then_ok(value):
+        calls.append(value)
+        if len(calls) == 1:
+            failure = ai_advisor.AdvisorFailure(
+                category="AI_RATE_LIMITED",
+                provider="groq",
+                model=value["model"],
+                retry_after_seconds=2.5,
+            )
+            raise ai_advisor.AdvisorRateLimitError("rate limited", failure=failure)
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": _proposal_rows(value)}), value
+        )
+
+    monkeypatch.setattr(ai_advisor, "_request_groq", rate_limited_then_ok)
+    assert ai_advisor.request_proposals(prepared)
+    assert len(calls) == 2
+    assert sleeps == [2.5]
+
+    calls.clear()
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_RETRY_DELAY_SECONDS", "1")
+
+    def long_rate_limit(value):
+        calls.append(value)
+        failure = ai_advisor.AdvisorFailure(
+            category="AI_RATE_LIMITED",
+            provider="groq",
+            model=value["model"],
+            retry_after_seconds=30,
+        )
+        raise ai_advisor.AdvisorRateLimitError("rate limited", failure=failure)
+
+    monkeypatch.setattr(ai_advisor, "_request_groq", long_rate_limit)
+    with pytest.raises(ai_advisor.AdvisorRateLimitError):
+        ai_advisor.request_proposals(prepared)
+    assert len(calls) == 1
+
+
+def test_provider_error_records_retry_after_header():
+    class RateLimited(Exception):
+        status_code = 429
+        headers = {"Retry-After": "3.25", "X-Request-Id": "retry-request"}
+
+    error = ai_advisor.classify_provider_error(RateLimited(), provider="groq")
+    assert isinstance(error, ai_advisor.AdvisorRateLimitError)
+    assert error.failure.retry_after_seconds == 3.25
+    assert error.failure.request_id == "retry-request"
+
 
 def test_design_summary_separates_ready_blocked_and_manual_decisions():
     parent = PANMigrationDecision(
@@ -1121,6 +1175,7 @@ def test_request_byte_budget_splits_batches_and_never_truncates_candidates(monke
     assert len(session.design.proposals) == 2
     assert all(len(original_candidates[key]) == 1 for key in keys)
 
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_REQUEST_BYTES", "49152")
     candidate_state = _state()
     key = candidate_state["decisions"].decisions[0].key
     candidate_state["decision_candidates"][key] = [
@@ -1128,9 +1183,30 @@ def test_request_byte_budget_splits_batches_and_never_truncates_candidates(monke
         for index in range(1, 5)
     ]
     monkeypatch.setenv("FWMIGRATE_AI_MAX_CANDIDATES_PER_DECISION", "3")
-    with pytest.raises(ai_advisor.AdvisorRequestError, match="candidate limit") as error:
+    with pytest.raises(ValueError, match="not AI-eligible"):
         ai_advisor.build_proposal_context(candidate_state, [key], model=model, provider="groq")
-    assert error.value.failure.candidate_count == 4
+    assert len(candidate_state["decision_candidates"][key]) == 4
+
+    pruned_state = _state()
+    pruned_key = pruned_state["decisions"].decisions[0].key
+    base = pruned_state["decision_candidates"][pruned_key][0]
+    pruned_state["decision_candidates"][pruned_key] = [
+        {**base, "value": "ethernet1/21", "class": "STRONG",
+         "strong_evidence": ["exact address", "matching family"]},
+        {**base, "value": "ethernet1/22", "class": "STRONG",
+         "strong_evidence": ["exact address"]},
+        {**base, "value": "ethernet1/23", "class": "STRONG",
+         "strong_evidence": ["matching family"]},
+        {**base, "value": "ethernet1/24", "class": "POSSIBLE",
+         "strong_evidence": [], "supporting_evidence": ["explicit target interface"]},
+    ]
+    pruned = ai_advisor.build_proposal_context(
+        pruned_state, [pruned_key], model=model, provider="groq"
+    )
+    assert len(pruned_state["decision_candidates"][pruned_key]) == 4
+    assert [item["value"] for item in pruned["request"]["decisions"][0]["candidates"]] == [
+        "ethernet1/21", "ethernet1/22", "ethernet1/23",
+    ]
 
     large_state = _design_state(2)
     keys = tuple(item.key for item in large_state["decisions"].decisions)
@@ -1146,7 +1222,7 @@ def test_request_byte_budget_splits_batches_and_never_truncates_candidates(monke
     limited = ai_orchestrator.build_ai_proposed_design(large_state)
     assert calls == [(keys[1],)]
     assert len(limited.design.proposals) == 1
-    assert limited.failures[0]["decision_keys"] == [keys[0]]
+    assert limited.failures == ()
     assert limited.summary(large_state["design_session"].dependency_graph)["not_ai_eligible"] == 1
 
 

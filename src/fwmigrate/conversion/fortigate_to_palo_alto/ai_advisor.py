@@ -14,6 +14,7 @@ from dataclasses import replace
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from .ai import groq_client
 from .ai.models import PANAIProposal, PANAIProposalAction, PANAIProposalSet
 from .decisions import PANDecisionMode, PANDecisionReviewState, PANMigrationDecision, PANMigrationDecisionSet
 from .target_evidence import target_evidence_identity
@@ -25,9 +26,11 @@ DEFAULT_COMPLEX_MODEL = "openai/gpt-oss-120b"
 DEFAULT_REPAIR_MODEL = "openai/gpt-oss-120b"
 MAX_DECISIONS = 2
 MAX_AI_REPAIR_PASSES = 2
-DEFAULT_MAX_REQUEST_BYTES = 48 * 1024
-DEFAULT_MAX_CANDIDATES_PER_DECISION = 64
-DEFAULT_MAX_COMPLETION_TOKENS = 4096
+DEFAULT_MAX_REQUEST_BYTES = 24 * 1024
+DEFAULT_MAX_CANDIDATES_PER_DECISION = 12
+DEFAULT_MAX_COMPLETION_TOKENS = 1536
+DEFAULT_MAX_RETRY_DELAY_SECONDS = 10.0
+DEFAULT_COMPLEX_CANDIDATE_THRESHOLD = 3
 _SOURCE_FIELDS = (
     "source_type", "source_role", "source_ip", "source_parent",
     "source_vlan", "source_vrf",
@@ -83,6 +86,7 @@ class AdvisorFailure:
     batch_size: int = 0
     candidate_count: int = 0
     request_bytes: int = 0
+    retry_after_seconds: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -98,6 +102,7 @@ class AdvisorFailure:
             "batch_size": self.batch_size,
             "candidate_count": self.candidate_count,
             "request_bytes": self.request_bytes,
+            "retry_after_seconds": self.retry_after_seconds,
         }
 
 
@@ -211,7 +216,7 @@ def failure_record(exc, prepared=None, *, provider=None, model=None):
     candidate_count = sum(len(item.get("candidates", ())) for item in decisions)
     try:
         request_bytes = prepared.get("request_bytes") or _estimate_request_bytes(prepared)
-    except (AdvisorError, TypeError, ValueError):
+    except (AdvisorError, KeyError, TypeError, ValueError):
         request_bytes = 0
     return AdvisorFailure(
         category=getattr(exc, "code", "AI_INTERNAL_ERROR"),
@@ -229,6 +234,19 @@ def failure_record(exc, prepared=None, *, provider=None, model=None):
     ).to_dict()
 
 
+def _retry_after_seconds(headers):
+    if headers is None:
+        return None
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
 def classify_provider_error(exc, *, prepared=None, provider="groq"):
     if isinstance(exc, AdvisorError):
         return exc
@@ -241,6 +259,7 @@ def classify_provider_error(exc, *, prepared=None, provider="groq"):
     request_id = getattr(exc, "request_id", None)
     if request_id is None and headers is not None:
         request_id = headers.get("x-request-id") or headers.get("X-Request-Id")
+    retry_after_seconds = _retry_after_seconds(headers)
     if status in (401, 403):
         kind = AdvisorAuthenticationError
     elif status == 429:
@@ -272,7 +291,7 @@ def classify_provider_error(exc, *, prepared=None, provider="groq"):
     candidate_count = sum(len(item.get("candidates", ())) for item in decisions)
     try:
         request_bytes = prepared.get("request_bytes") or _estimate_request_bytes(prepared)
-    except (AdvisorError, TypeError, ValueError):
+    except (AdvisorError, KeyError, TypeError, ValueError):
         request_bytes = 0
     failure = AdvisorFailure(
         category=kind.code,
@@ -287,6 +306,7 @@ def classify_provider_error(exc, *, prepared=None, provider="groq"):
         batch_size=len(keys),
         candidate_count=candidate_count,
         request_bytes=request_bytes,
+        retry_after_seconds=retry_after_seconds,
     )
     return kind(status=status, request_id=failure.request_id, reason=safe_reason, failure=failure)
 
@@ -506,18 +526,19 @@ def classify_advisor_tiers(state, decision_keys, *, repair=False):
     graph = getattr(state.get("design_session"), "dependency_graph", None)
     complex_keys = set()
     claims = {}
+    threshold = _complex_candidate_threshold()
     for key in decision_keys:
         decision = decisions.get(key)
-        candidates = [item for item in state["decision_candidates"].get(key, ())
-                      if item.get("class") in {"STRONG", "POSSIBLE"}
-                      and isinstance(item.get("value"), str)]
+        candidates, _ = _select_ai_candidates(
+            key, state["decision_candidates"].get(key, ())
+        )
         unique = {(item.get("target_scope"), item["value"]) for item in candidates}
         dependencies = ()
         if graph is not None:
             dependencies = next((item.depends_on for item in graph.dependencies
                                  if item.decision_key == key), ())
         if (decision and decision.target_field in {"vsys", "virtual_router"}
-                or len(unique) > 3 or dependencies):
+                or len(unique) > threshold or dependencies):
             complex_keys.add(key)
         for scope, value in unique:
             claims.setdefault((scope, value), []).append(key)
@@ -544,13 +565,15 @@ def advisor_status() -> dict:
         "enabled": enabled,
         "provider": provider,
         "model": advisor_model(),
-        "groq_configured": bool(os.environ.get("GROQ_API_KEY", "").strip()),
+        "groq_configured": groq_client.configured(),
         "local_configured": bool(os.environ.get("FWMIGRATE_AI_LOCAL_URL", "").strip()),
         "prompt_version": PROMPT_VERSION,
         "max_batch": _max_decisions(),
         "max_request_bytes": _max_request_bytes(),
         "max_candidates_per_decision": _max_candidates_per_decision(),
         "max_completion_tokens": _max_completion_tokens(),
+        "max_retry_delay_seconds": _max_retry_delay(),
+        "complex_candidate_threshold": _complex_candidate_threshold(),
         "models": {tier: groq_model(tier) for tier in ("simple", "complex", "repair")},
         "response_mode": advisor_capabilities(provider, advisor_model()).response_mode if enabled else None,
     }
@@ -571,11 +594,13 @@ def validate_static_configuration():
         ("FWMIGRATE_AI_MAX_REQUEST_BYTES", DEFAULT_MAX_REQUEST_BYTES),
         ("FWMIGRATE_AI_MAX_CANDIDATES_PER_DECISION", DEFAULT_MAX_CANDIDATES_PER_DECISION),
         ("FWMIGRATE_AI_MAX_COMPLETION_TOKENS", DEFAULT_MAX_COMPLETION_TOKENS),
+        ("FWMIGRATE_AI_MAX_RETRY_DELAY_SECONDS", DEFAULT_MAX_RETRY_DELAY_SECONDS),
+        ("FWMIGRATE_AI_COMPLEX_CANDIDATE_THRESHOLD", DEFAULT_COMPLEX_CANDIDATE_THRESHOLD),
         ("FWMIGRATE_AI_TIMEOUT", os.environ.get("FWMIGRATE_AI_TIMEOUT_SECONDS", "30")),
     ):
         raw = os.environ.get(name, default)
         try:
-            if "TIMEOUT" in name:
+            if "TIMEOUT" in name or name == "FWMIGRATE_AI_MAX_RETRY_DELAY_SECONDS":
                 valid = float(raw) > 0
             elif name == "FWMIGRATE_AI_MAX_COMPLETION_TOKENS":
                 valid = 256 <= int(raw) <= 65536
@@ -630,6 +655,75 @@ def _timeout() -> float:
         return 30.0
 
 
+def _max_retry_delay() -> float:
+    try:
+        return min(60.0, max(0.1, float(os.environ.get(
+            "FWMIGRATE_AI_MAX_RETRY_DELAY_SECONDS", DEFAULT_MAX_RETRY_DELAY_SECONDS
+        ))))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_RETRY_DELAY_SECONDS
+
+
+def _complex_candidate_threshold() -> int:
+    try:
+        return min(64, max(1, int(os.environ.get(
+            "FWMIGRATE_AI_COMPLEX_CANDIDATE_THRESHOLD", DEFAULT_COMPLEX_CANDIDATE_THRESHOLD
+        ))))
+    except (TypeError, ValueError):
+        return DEFAULT_COMPLEX_CANDIDATE_THRESHOLD
+
+
+def _candidate_id(decision_key, candidate) -> str:
+    scope = candidate.get("target_scope")
+    value = candidate.get("value")
+    return hashlib.sha256(
+        f"{decision_key}\0{scope or ''}\0{value}".encode("utf-8")
+    ).hexdigest()
+
+
+def _candidate_strength(candidate):
+    strong_values = candidate.get("strong_evidence") or ()
+    supporting_values = candidate.get("supporting_evidence") or ()
+    strong = sum(isinstance(item, str) and bool(item) for item in strong_values[:6])
+    supporting = sum(
+        isinstance(item, str) and bool(item)
+        for item in supporting_values[:6]
+    )
+    return (
+        0 if candidate.get("class") == "STRONG" else 1,
+        -strong,
+        -supporting,
+    )
+
+
+def _select_ai_candidates(decision_key, raw_candidates, *, excluded_candidate_ids=()):
+    """Return a bounded deterministic candidate subset without splitting evidence ties."""
+    value_counts = Counter(
+        item.get("value") for item in raw_candidates
+        if item.get("class") in {"STRONG", "POSSIBLE"}
+        and isinstance(item.get("value"), str)
+    )
+    excluded = set(excluded_candidate_ids)
+    eligible = [
+        item for item in raw_candidates
+        if item.get("class") in {"STRONG", "POSSIBLE"}
+        and isinstance(item.get("value"), str)
+        and value_counts[item["value"]] == 1
+        and _candidate_id(decision_key, item) not in excluded
+    ]
+    eligible.sort(key=lambda item: (
+        _candidate_strength(item),
+        item.get("target_scope") or "",
+        item["value"],
+    ))
+    limit = _max_candidates_per_decision()
+    if len(eligible) <= limit:
+        return tuple(eligible), None
+    if _candidate_strength(eligible[limit - 1]) == _candidate_strength(eligible[limit]):
+        return (), "Candidate evidence is tied across the configured AI candidate cutoff."
+    return tuple(eligible[:limit]), None
+
+
 def _canonical_digest(value) -> str:
     content = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
@@ -648,10 +742,10 @@ def ready_proposal_keys(state, proposed_design=None):
             continue
         if state["decision_evidence"].get(key) == "CONFLICT":
             continue
-        candidates = state["decision_candidates"].get(key, ())
-        values = Counter(item.get("value") for item in candidates
-                         if item.get("class") in {"STRONG", "POSSIBLE"} and isinstance(item.get("value"), str))
-        if 1 in values.values():
+        candidates, cutoff_reason = _select_ai_candidates(
+            key, state["decision_candidates"].get(key, ())
+        )
+        if candidates and cutoff_reason is None:
             yield key
 
 
@@ -708,24 +802,22 @@ def build_proposal_context(state, decision_keys, *, model=None, provider=None,
             raise ValueError(f"Decision {key!r} has a target conflict and cannot receive AI advice")
 
         raw_candidates = state["decision_candidates"].get(key, ())
-        value_counts = {}
-        for candidate in raw_candidates:
-            if candidate.get("class") in {"STRONG", "POSSIBLE"} and isinstance(candidate.get("value"), str):
-                value_counts[candidate["value"]] = value_counts.get(candidate["value"], 0) + 1
+        selected_candidates, cutoff_reason = _select_ai_candidates(
+            key,
+            raw_candidates,
+            excluded_candidate_ids=(excluded_candidate_ids or {}).get(key, ()),
+        )
+        if cutoff_reason:
+            raise ValueError(f"Decision {key!r} is not AI-eligible: {cutoff_reason}")
         candidate_map = {}
         candidate_evidence_refs = {}
         evidence_by_ref = {}
         candidates = []
-        excluded = set((excluded_candidate_ids or {}).get(key, ()))
-        for candidate in raw_candidates:
-            value = candidate.get("value")
-            candidate_class = candidate.get("class")
-            if candidate_class not in {"STRONG", "POSSIBLE"} or not isinstance(value, str) or value_counts.get(value) != 1:
-                continue
+        for candidate in selected_candidates:
+            value = candidate["value"]
+            candidate_class = candidate["class"]
             scope = candidate.get("target_scope")
-            candidate_id = hashlib.sha256(f"{key}\0{scope or ''}\0{value}".encode("utf-8")).hexdigest()
-            if candidate_id in candidate_map or candidate_id in excluded:
-                continue
+            candidate_id = _candidate_id(key, candidate)
             evidence = []
             for strength, field in (("strong", "strong_evidence"), ("supporting", "supporting_evidence")):
                 for index, fact in enumerate(candidate.get(field, ())[:6]):
@@ -745,15 +837,6 @@ def build_proposal_context(state, decision_keys, *, model=None, provider=None,
             })
         if not candidates:
             raise ValueError(f"Decision {key!r} has no unambiguous target candidates for AI review")
-        if len(candidates) > _max_candidates_per_decision():
-            raise _request_budget_error(
-                "Decision exceeds the configured AI candidate limit.",
-                provider=prompt_provider,
-                model=prompt_model,
-                decision_keys=(key,),
-                candidate_count=len(candidates),
-            )
-
         review_facts = state["review_context"].get(key, {})
         source_facts = []
         for field in _SOURCE_FIELDS:
@@ -925,25 +1008,15 @@ def validate_model_output(response_text, prepared):
 
 
 def _request_groq(prepared):
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not api_key:
-        raise AdvisorUnavailable("GROQ_API_KEY is not configured")
-    try:
-        from groq import Groq
-    except ImportError as exc:
-        raise AdvisorUnavailable("Install the optional AI dependencies to use Groq") from exc
-
     kwargs = _groq_request_kwargs(prepared)
     try:
-        completion = Groq(api_key=api_key, timeout=_timeout()).chat.completions.create(**kwargs)
+        content = groq_client.request_content(kwargs, timeout=_timeout())
+    except groq_client.GroqClientUnavailable as exc:
+        raise AdvisorUnavailable(str(exc)) from exc
+    except groq_client.GroqClientResponseError as exc:
+        raise AdvisorResponseError(str(exc)) from exc
     except Exception as exc:
         raise classify_provider_error(exc, prepared=prepared, provider="groq") from exc
-    try:
-        content = completion.choices[0].message.content
-    except (AttributeError, IndexError, TypeError) as exc:
-        raise AdvisorResponseError("AI advisor returned no proposal content") from exc
-    if not isinstance(content, str) or not content:
-        raise AdvisorResponseError("AI advisor returned no proposal content")
     return validate_model_output(content, prepared)
 
 
@@ -977,7 +1050,17 @@ def _request_with_retry(operation, prepared):
         except AdvisorError as exc:
             if exc.code not in {"AI_TIMEOUT", "AI_RATE_LIMITED", "AI_UNAVAILABLE"} or attempt == 2:
                 raise
-            time.sleep(0.2 * (2 ** attempt))
+            delay = 0.5 * (2 ** attempt)
+            retry_after = (
+                exc.failure.retry_after_seconds
+                if exc.code == "AI_RATE_LIMITED" and exc.failure is not None
+                else None
+            )
+            if retry_after is not None:
+                if retry_after > _max_retry_delay():
+                    raise
+                delay = max(delay, retry_after)
+            time.sleep(min(delay, _max_retry_delay()))
 
 
 def request_proposals(prepared):
@@ -990,7 +1073,7 @@ def request_proposals(prepared):
 
     keys = list(prepared["by_decision"])
     remote_model = groq_model("complex")
-    groq_available = bool(os.environ.get("GROQ_API_KEY", "").strip())
+    groq_available = groq_client.configured()
     by_id = {item["decision_id"]: key for key, item in prepared["by_decision"].items()}
     coupled_ids = set()
     claims = {}
@@ -1003,7 +1086,7 @@ def request_proposals(prepared):
             coupled_ids.update(decision_ids)
     complex_keys = [
         by_id[item["decision_id"]] for item in prepared["request"]["decisions"]
-        if len(item["candidates"]) > 3 or item.get("requires_strong_reasoner")
+        if len(item["candidates"]) > _complex_candidate_threshold() or item.get("requires_strong_reasoner")
         or item["decision_id"] in coupled_ids
     ] if groq_available else []
     simple_keys = [key for key in keys if key not in complex_keys]
@@ -1111,7 +1194,7 @@ def repair_conflicted_proposals(state, decision_keys, proposals, *, proposed_des
             if item.get("candidate_id")
         }
         feedback = {key: item["validation_findings"] for key, item in conflicts.items()}
-        repair_provider = ("groq" if os.environ.get("GROQ_API_KEY", "").strip()
+        repair_provider = ("groq" if groq_client.configured()
                            else first.get("provider", "groq"))
         repair_model = (groq_model("repair") if repair_provider == "groq"
                         else first.get("model", advisor_model()))
