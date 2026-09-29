@@ -193,7 +193,7 @@ python -m pip install -e ".[ai]"
 if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
 ```
 
-Set `GROQ_API_KEY` and `FWMIGRATE_AI_ENABLED=1` in `.env.local`. The advisor only proposes existing, unambiguous target candidates. An engineer must approve each proposal.
+Set `GROQ_API_KEY` and `FWMIGRATE_AI_ENABLED=1` in `.env.local`. Set `FWMIGRATE_AI_LOCAL_URL` to use local Qwen first, with Groq available for fallback. The advisor checks ready decisions after deterministic planning and proposes only existing, unambiguous target candidates. An engineer must approve proposals before they affect the plan. The review page has a synthetic **Test advisor** action; `/api/migration/ai/status` returns configuration metadata without credentials. Set `FWMIGRATE_AI_LOCAL_RESPONSE_MODE=JSON_ONLY` if the local server rejects strict JSON schema requests. `FWMIGRATE_AI_MODEL` and `FWMIGRATE_GROQ_MODEL` remain supported as fallback settings. `FWMIGRATE_AI_GUARD_MODEL` is reserved for free-text evidence; the current advisor context excludes descriptions and comments.
 
 Build the desktop executable with:
 

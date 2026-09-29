@@ -2,6 +2,7 @@
 
 import argparse
 import json
+from collections import Counter
 from pathlib import Path
 
 
@@ -82,6 +83,8 @@ def evaluate_rows(rows):
         if row.get("expected_abstention") is True
     )
     return {
+        "provider_failures": dict(Counter(row["failure_category"] for row in rows
+                                          if row.get("event") == "AI_REQUEST_FAILED")),
         "valid_proposal_rate": _metric(valid, len(proposals)),
         "exact_engineer_agreement": _metric(exact, exact_total),
         "acceptable_agreement": _metric(acceptable, acceptable_total),

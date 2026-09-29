@@ -30,6 +30,8 @@ class PANAIProposal:
     base_context_digest: str | None = None
     validation_status: str = "VALID"
     validation_findings: tuple[str, ...] = ()
+    response_mode: str = "STRICT_SCHEMA"
+    repair_pass: int = 0
 
     def __post_init__(self) -> None:
         if not self.decision_key or not self.provider or not self.model:
@@ -67,6 +69,8 @@ class PANAIProposal:
             "base_context_digest": self.base_context_digest,
             "validation_status": self.validation_status,
             "validation_findings": list(self.validation_findings),
+            "response_mode": self.response_mode,
+            "repair_pass": self.repair_pass,
         }
 
 

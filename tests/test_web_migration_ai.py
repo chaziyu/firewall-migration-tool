@@ -1,5 +1,7 @@
 import hashlib
 import json
+import sys
+import types
 from types import SimpleNamespace
 
 import pytest
@@ -318,6 +320,13 @@ def test_qwen_abstention_escalates_only_that_decision_to_groq(monkeypatch):
     assert len(result) == 2
     assert all(item["action"] == "USE_EXISTING" for item in result)
     assert [item["provider"] for item in result] == ["qwen_local", "groq"]
+    def unavailable(_):
+        raise ai_advisor.AdvisorUnavailable("unavailable")
+
+    monkeypatch.setattr(ai_advisor, "_request_groq", unavailable)
+    retained = ai_advisor.request_proposals(local_prepared)
+    assert [item["provider"] for item in retained] == ["qwen_local", "qwen_local"]
+    assert all(item["escalation_failure_category"] == "AI_UNAVAILABLE" for item in retained)
 
 
 def test_bulk_ai_approval_is_atomic_when_one_proposal_is_stale(monkeypatch):
@@ -377,3 +386,177 @@ def test_bulk_ai_approval_is_atomic_when_one_proposal_is_stale(monkeypatch):
     assert all(item["engineer_action"] == "APPROVED" for item in audit_rows)
     assert all(item["review_context"] for item in audit_rows)
     assert "must never reach Groq" not in exported.data.decode()
+
+
+def test_provider_contract_and_categorized_safe_failure(monkeypatch, caplog):
+    state = _state()
+    key = state["decisions"].decisions[0].key
+    prepared = ai_advisor.build_proposal_context(state, [key], model="openai/gpt-oss-120b", provider="groq")
+    sent = []
+    content = json.dumps({"proposals": _proposal_rows(prepared)})
+    completion = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+        create=lambda **kwargs: sent.append(kwargs) or completion)))
+    monkeypatch.setitem(sys.modules, "groq", types.SimpleNamespace(Groq=lambda **_: client))
+    monkeypatch.setenv("GROQ_API_KEY", "secret-test-key")
+    assert ai_advisor._request_groq(prepared)[0]["action"] == "USE_EXISTING"
+    assert sent[0]["reasoning_effort"] == "medium"
+    assert sent[0]["response_format"]["json_schema"]["strict"] is True
+    assert ai_advisor.advisor_capabilities("groq", "another-model").response_mode == "JSON_ONLY"
+
+    class Rejected(Exception):
+        status_code = 400
+        request_id = "safe-request-id"
+
+    def reject(**_):
+        raise Rejected("secret-test-key must not appear in logs")
+
+    client.chat.completions.create = reject
+    monkeypatch.setattr(web, "_lookup_preview", lambda *_: SimpleNamespace(source_digest="source-digest"))
+    monkeypatch.setattr(web, "_build_migration_review_state", lambda *_: state)
+    monkeypatch.setenv("FWMIGRATE_AI_ENABLED", "1")
+    client_api = web.create_app({"TESTING": True}).test_client()
+    response = client_api.post("/api/migration/ai/propose", json={
+        "preview_id": "source-preview", "decision_keys": [key],
+    })
+    assert response.status_code == 502
+    assert response.get_json()["code"] == "AI_REQUEST_REJECTED"
+    assert "secret-test-key" not in response.get_data(as_text=True)
+    assert "secret-test-key" not in caplog.text
+    assert "status=400" in caplog.text
+    assert "request_id=safe-request-id" in caplog.text
+    audit = json.loads(client_api.get("/api/migration/ai/audit/export").data.decode().strip())
+    assert audit["failure_category"] == "AI_REQUEST_REJECTED"
+    assert "secret-test-key" not in json.dumps(audit)
+
+
+def test_status_self_test_and_local_json_only(monkeypatch):
+    monkeypatch.setenv("FWMIGRATE_AI_ENABLED", "1")
+    monkeypatch.setenv("FWMIGRATE_AI_LOCAL_URL", "http://127.0.0.1:1234/v1")
+    monkeypatch.setenv("FWMIGRATE_AI_LOCAL_RESPONSE_MODE", "JSON_ONLY")
+    monkeypatch.setenv("GROQ_API_KEY", "secret-test-key")
+    state = _state()
+    key = state["decisions"].decisions[0].key
+    prepared = ai_advisor.build_proposal_context(state, [key], provider="qwen_local")
+    assert prepared["response_mode"] == "JSON_ONLY"
+    captured = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def read(self):
+            body = {"choices": [{"message": {"content": json.dumps({"proposals": _proposal_rows(prepared)})}}]}
+            return json.dumps(body).encode()
+
+    def fake_urlopen(request, timeout):
+        captured.append(json.loads(request.data))
+        return Response()
+
+    monkeypatch.setattr(ai_advisor, "urlopen", fake_urlopen)
+    assert ai_advisor._request_local(prepared)[0]["response_mode"] == "JSON_ONLY"
+    assert captured[0]["response_format"] == {"type": "json_object"}
+    assert "reasoning_effort" not in captured[0]
+
+    monkeypatch.setattr(ai_advisor, "_request_local", lambda test_prepared: ai_advisor.validate_model_output(
+        json.dumps({"proposals": _proposal_rows(test_prepared)}), test_prepared))
+    client = web.create_app({"TESTING": True}).test_client()
+    status = client.get("/api/migration/ai/status")
+    assert status.status_code == 200
+    assert status.get_json()["local_configured"] is True
+    assert "secret-test-key" not in status.get_data(as_text=True)
+    tested = client.post("/api/migration/ai/test")
+    assert tested.status_code == 200
+    assert tested.get_json()["structured_output"] is True
+
+
+def test_automatic_ready_batches_follow_graph(monkeypatch):
+    state = _two_decision_state()
+    first, second = (item.key for item in state["decisions"].decisions)
+    state["design_session"] = PANMigrationDesignSession(
+        source_digest="source-digest", target_digest="target-digest", target_device="device-1",
+        decisions=state["decisions"],
+        dependency_graph=PANDecisionGraph((
+            PANDecisionDependency(first), PANDecisionDependency(second, (first,)),
+        )), unresolved=(first, second),
+    )
+    sent = []
+
+    def fake_provider(prepared):
+        sent.extend(prepared["by_decision"])
+        return ai_advisor.validate_model_output(json.dumps({"proposals": _proposal_rows(prepared)}), prepared)
+
+    monkeypatch.setenv("FWMIGRATE_AI_ENABLED", "1")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.delenv("FWMIGRATE_AI_LOCAL_URL", raising=False)
+    monkeypatch.setattr(ai_advisor, "request_proposals", fake_provider)
+    monkeypatch.setattr(web, "_lookup_preview", lambda *_: SimpleNamespace(source_digest="source-digest"))
+    monkeypatch.setattr(web, "_build_migration_review_state", lambda *_: state)
+    client = web.create_app({"TESTING": True}).test_client()
+    result = client.post("/api/migration/ai/propose", json={"preview_id": "source-preview"})
+    assert result.status_code == 200
+    assert sent == [first]
+    assert [item["decision_key"] for item in result.get_json()["proposals"]] == [first]
+
+
+def test_ready_proposals_batch_server_side(monkeypatch):
+    state = _state()
+    decisions = list(state["decisions"].decisions)
+    for index in range(1, 9):
+        decision = PANMigrationDecision(
+            source_vdom="root", source_kind="interface", source_name=f"port{index}",
+            target_field="target_interface", mode=PANDecisionMode.REQUIRED,
+        )
+        decisions.append(decision)
+        state["decision_candidates"][decision.key] = [{
+            "value": f"ethernet1/{index + 1}", "target_scope": "vsys1", "class": "STRONG",
+            "strong_evidence": ["synthetic matching interface"], "supporting_evidence": [],
+        }]
+        state["review_context"][decision.key] = {"source_type": "physical"}
+    state["decisions"] = PANMigrationDecisionSet(tuple(decisions))
+    state["design_session"] = PANMigrationDesignSession(
+        source_digest="source-digest", target_digest="target-digest", target_device="device-1",
+        decisions=state["decisions"],
+        dependency_graph=PANDecisionGraph(tuple(PANDecisionDependency(item.key) for item in decisions)),
+        unresolved=tuple(item.key for item in decisions),
+    )
+    batches = []
+
+    def fake_provider(prepared):
+        batches.append(len(prepared["by_decision"]))
+        return ai_advisor.validate_model_output(json.dumps({"proposals": _proposal_rows(prepared)}), prepared)
+
+    monkeypatch.setenv("FWMIGRATE_AI_ENABLED", "1")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.delenv("FWMIGRATE_AI_LOCAL_URL", raising=False)
+    monkeypatch.setattr(ai_advisor, "request_proposals", fake_provider)
+    monkeypatch.setattr(web, "_lookup_preview", lambda *_: SimpleNamespace(source_digest="source-digest"))
+    monkeypatch.setattr(web, "_build_migration_review_state", lambda *_: state)
+    client = web.create_app({"TESTING": True}).test_client()
+    result = client.post("/api/migration/ai/propose", json={"preview_id": "source-preview"})
+    assert result.status_code == 200
+    assert batches == [8, 1]
+    assert len(result.get_json()["proposals"]) == 9
+    audit = [json.loads(line) for line in client.get("/api/migration/ai/audit/export").data.decode().splitlines()]
+    assert len({item["batch_id"] for item in audit}) == 1
+    assert all(item["request_duration_ms"] >= 0 for item in audit)
+
+
+def test_complex_candidate_set_escalates_without_local_call(monkeypatch):
+    state = _state()
+    key = state["decisions"].decisions[0].key
+    state["decision_candidates"][key] = [{
+        "value": f"ethernet1/{index}", "target_scope": "vsys1", "class": "STRONG",
+        "strong_evidence": ["synthetic evidence"], "supporting_evidence": [],
+    } for index in range(1, 5)]
+    prepared = ai_advisor.build_proposal_context(state, [key], provider="qwen_local")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setattr(ai_advisor, "_request_local", lambda _: pytest.fail("complex choice sent to local model"))
+    monkeypatch.setattr(ai_advisor, "_request_groq", lambda remote: ai_advisor.validate_model_output(
+        json.dumps({"proposals": _proposal_rows(remote)}), remote))
+    proposal = ai_advisor.request_proposals(prepared)[0]
+    assert proposal["provider"] == "groq"
+    assert proposal["escalated_from"] == "qwen_local"
