@@ -17,23 +17,25 @@
         </button>
       </div>
     </div>
-    <nav class="report-tabs" aria-label="Report sections">
+    <nav class="report-tabs" role="tablist" aria-label="Report sections">
       {% for key, label in (
         ('overview', 'Overview'), ('interfaces', 'Interfaces'), ('objects', 'Objects'),
-        ('policies', 'Policies'), ('nat', 'NAT'), ('routes', 'Routes'),
-        ('vpn', 'VPN'), ('validation', 'Validation')
+        ('schedules', 'Schedules'), ('policies', 'Policies'), ('nat', 'NAT'),
+        ('routes', 'Routes'), ('vpn', 'VPN'), ('references', 'References'),
+        ('validation', 'Validation')
       ) %}
-        <button type="button" class="report-tab{% if loop.first %} active{% endif %}" data-report-section="{{ key }}">{{ label }}</button>
+        <button type="button" role="tab" aria-selected="{{ 'true' if loop.first else 'false' }}" tabindex="{{ 0 if loop.first else -1 }}" aria-controls="{{ 'report-overview' if key == 'overview' else 'report-data' }}" class="report-tab{% if loop.first %} active{% endif %}" data-report-section="{{ key }}">{{ label }}</button>
       {% endfor %}
     </nav>
   </div>
 
-  <div id="report-overview" class="report-overview">
+  <div id="report-overview" class="report-overview" role="tabpanel">
     <div class="report-summary" id="report-summary"></div>
+    <p class="report-status" id="report-source-meta" role="status" aria-live="polite"></p>
     <p class="report-status" id="report-scope-summary"></p>
   </div>
 
-  <div id="report-data" class="hidden">
+  <div id="report-data" class="hidden" role="tabpanel">
     <section id="validation-groups-panel" class="validation-groups-panel hidden" aria-labelledby="validation-groups-heading">
       <h3 id="validation-groups-heading">Issue groups</h3>
       <p>Select an issue group to filter the findings below.</p>
@@ -44,9 +46,9 @@
       <span id="validation-active-filter-label"></span>
       <button id="validation-filter-clear" type="button" class="btn btn-secondary btn-sm">Clear</button>
     </div>
-    <div class="report-object-tabs hidden" id="report-object-tabs">
+    <div class="report-object-tabs hidden" id="report-object-tabs" role="tablist" aria-label="Object sections">
       {% for key, label in (('addresses', 'Addresses'), ('address_groups', 'Address Groups'), ('services', 'Services'), ('service_groups', 'Service Groups')) %}
-        <button type="button" class="report-object-tab{% if loop.first %} active{% endif %}" data-object-section="{{ key }}">{{ label }}</button>
+        <button type="button" role="tab" aria-selected="{{ 'true' if loop.first else 'false' }}" tabindex="{{ 0 if loop.first else -1 }}" class="report-object-tab{% if loop.first %} active{% endif %}" data-object-section="{{ key }}">{{ label }}</button>
       {% endfor %}
     </div>
     <div class="report-toolbar">
@@ -75,7 +77,7 @@
     </div>
   </div>
 </section>
-<div id="report-detail-modal" class="report-detail-modal hidden">
+<div id="report-detail-modal" class="report-detail-modal hidden" aria-hidden="true">
   <section class="report-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="report-detail-title">
     <div class="report-detail-header"><h3 id="report-detail-title"></h3><button id="report-detail-close" type="button" aria-label="Close row details">×</button></div>
     <div id="report-detail-body" class="report-detail-body"></div>
