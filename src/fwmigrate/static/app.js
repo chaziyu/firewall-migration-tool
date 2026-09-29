@@ -1264,6 +1264,7 @@ let migrationBuildInFlight = false;
       activeValidationGroup = "";
       renderReport();
       sourceReady = true;
+      scheduleMigrationPlanBuild();
       const itemCount = Object.values(objects).reduce(
         (total, value) => total + count(value),
         0,
@@ -1502,7 +1503,6 @@ let migrationBuildInFlight = false;
       ["choose_candidate", "Choices"], ["needs_input", "Manual"], ["conflicts", "Conflicts"],
     ];
     const safeCount = status => Object.values(autoDecisionResults).filter(item => item.status === status).length;
-    const safeKeys = Object.entries(autoDecisionResults).filter(([, item]) => ["VERIFIED", "DERIVED"].includes(item.status)).map(([key]) => key);
     reviewSummary.verified = safeCount("VERIFIED");
     reviewSummary.derived = safeCount("DERIVED");
     summaryNode.replaceChildren(...summaryItems.map(([key, label]) => {
@@ -1756,19 +1756,6 @@ let migrationBuildInFlight = false;
       invalidateMigrationPlan();
     } catch (error) { showError(`Could not run deterministic automation: ${error.message}`); }
     finally { button.disabled = false; }
-  });
-
-  document.getElementById("decision-approve-safe")?.addEventListener("click", async () => {
-    const decisionKeys = Object.entries(autoDecisionResults).filter(([, item]) => ["VERIFIED", "DERIVED"].includes(item.status)).map(([key]) => key);
-    if (!decisionKeys.length) return;
-    try {
-      const response = await fetch("/api/migration/decisions/approve", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(), decision_keys: decisionKeys,
-          ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}) }) });
-      const result = await readJson(response, "Could not approve verified mappings");
-      await loadMigrationReview(currentPreviewId, result.decision_document);
-      invalidateMigrationPlan();
-    } catch (error) { showError(`Could not approve mappings: ${error.message}`); }
   });
 
   document.getElementById("target-intent-import")?.addEventListener("change", async event => {
