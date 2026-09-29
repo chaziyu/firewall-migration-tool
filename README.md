@@ -186,6 +186,15 @@ python -m pip install -e ".[dev]"
 ```
 
 
+For the optional Groq migration advisor:
+
+```powershell
+python -m pip install -e ".[ai]"
+if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
+```
+
+Set `GROQ_API_KEY` and `FWMIGRATE_AI_ENABLED=1` in `.env.local`. The advisor only proposes existing, unambiguous target candidates. An engineer must approve each proposal.
+
 Build the desktop executable with:
 
 ```powershell

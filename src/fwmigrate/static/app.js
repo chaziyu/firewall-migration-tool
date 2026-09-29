@@ -17,6 +17,7 @@ let migrationBuildInFlight = false;
   let currentDecisionDocument = null;
   let decisionContext = {};
   let decisionCandidates = {};
+  const aiProposals = new Map();
   let reviewSummary = {};
   let automationRunSummary = null;
   let reviewGroups = [];
@@ -1310,6 +1311,7 @@ let migrationBuildInFlight = false;
   }
 
   function invalidateMigrationPlan(rebuilding = false) {
+    aiProposals.clear();
     if (migrationBuildTimer) {
       clearTimeout(migrationBuildTimer);
       migrationBuildTimer = null;
@@ -1341,6 +1343,7 @@ let migrationBuildInFlight = false;
   }
 
   async function loadMigrationReview(previewId = currentPreviewId, previousDocument = null, scheduleBuild = true) {
+    aiProposals.clear();
     const panel = document.getElementById("migration-mapping");
     if (selectedSourceVendor !== "fortigate" || !previewId) {
       currentDecisionSet = { decisions: [] };
@@ -1431,6 +1434,7 @@ let migrationBuildInFlight = false;
   }
 
   function clearTargetEvidence() {
+    aiProposals.clear();
     automationRunSummary = null;
     targetRevision += 1;
     currentTargetPreviewId = null;
@@ -1658,6 +1662,80 @@ let migrationBuildInFlight = false;
             why.append(evidence); row.append(description, use, why); matches.append(row);
           });
           field.append(matches);
+        }
+        const pending = decision.review_state !== "CONFIRMED" && decision.mode !== "UNSUPPORTED";
+        if (pending && candidates.length && decisionEvidence[decision.key] !== "CONFLICT") {
+          const ask = document.createElement("button"); ask.type = "button";
+          ask.className = "btn btn-secondary btn-sm"; ask.textContent = "Ask Groq for a proposal";
+          ask.addEventListener("click", async () => {
+            ask.disabled = true;
+            try {
+              const response = await fetch("/api/migration/ai/propose", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ preview_id: currentPreviewId,
+                  decision_document: currentDecisionPayload(),
+                  target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice,
+                  decision_keys: [decision.key] }),
+              });
+              const result = await readJson(response, "Groq could not propose a mapping");
+              const proposal = result.proposals?.[0];
+              if (!proposal) throw new Error("Groq returned no proposal for this decision");
+              aiProposals.set(decision.key, proposal);
+              renderMigrationReviewWorkflow();
+            } catch (error) { showError(error.message); ask.disabled = false; }
+          });
+          field.append(ask);
+        }
+        const proposal = aiProposals.get(decision.key);
+        if (proposal) {
+          const advice = document.createElement("section"); advice.className = "review-work-suggestion";
+          const heading = document.createElement("strong"); heading.textContent = proposal.action === "USE_EXISTING"
+            ? `Groq proposal: ${proposal.proposed_value}${proposal.target_scope ? ` · ${proposal.target_scope}` : ""}`
+            : "Groq found no safe candidate";
+          const rationale = document.createElement("p"); rationale.textContent = proposal.rationale || "No rationale supplied.";
+          const provenance = document.createElement("p"); provenance.textContent = `${proposal.model} · evidence-bound proposal · still pending engineer review`;
+          advice.append(heading, rationale, provenance);
+          if (proposal.evidence?.length) {
+            const details = document.createElement("details");
+            const summary = document.createElement("summary"); summary.textContent = "Evidence cited";
+            const list = document.createElement("ul");
+            proposal.evidence.forEach(item => { const row = document.createElement("li"); row.textContent = item.text; list.append(row); });
+            details.append(summary, list); advice.append(details);
+          }
+          if (proposal.action === "USE_EXISTING") {
+            const approve = document.createElement("button"); approve.type = "button";
+            approve.className = "btn btn-primary btn-sm"; approve.textContent = "Approve proposal";
+            approve.addEventListener("click", async () => {
+              approve.disabled = true;
+              try {
+                const response = await fetch("/api/migration/ai/approve", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ preview_id: currentPreviewId,
+                    decision_document: currentDecisionPayload(),
+                    target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice,
+                    proposal_id: proposal.proposal_id }),
+                });
+                const result = await readJson(response, "The Groq proposal is no longer current");
+                currentDecisionSet = result.decisions;
+                currentDecisionDocument = result.decision_document;
+                aiProposals.delete(decision.key);
+                await refreshMigrationReviewFromCurrentDecisions();
+              } catch (error) { showError(error.message); approve.disabled = false; }
+            });
+            const use = document.createElement("button"); use.type = "button";
+            use.className = "btn btn-secondary btn-sm"; use.textContent = "Use value to edit";
+            use.addEventListener("click", () => {
+              input.value = proposal.proposed_value;
+              decision.value = proposal.proposed_value;
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+              renderMigrationReviewWorkflow();
+            });
+            advice.append(approve, use);
+          }
+          const dismiss = document.createElement("button"); dismiss.type = "button";
+          dismiss.className = "btn btn-secondary btn-sm"; dismiss.textContent = "Dismiss";
+          dismiss.addEventListener("click", () => { aiProposals.delete(decision.key); renderMigrationReviewWorkflow(); });
+          advice.append(dismiss); field.append(advice);
         }
         const findings = targetFindings.filter(item => item.decision_key === decision.key);
         const invalidation = invalidatedTargetDecisions.find(item => item.decision_key === decision.key);

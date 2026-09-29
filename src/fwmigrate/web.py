@@ -10,6 +10,7 @@ import time
 import json
 import zipfile
 import yaml
+from pathlib import Path
 from dataclasses import asdict, replace
 from copy import deepcopy
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
     apply_explicit_options,
     run_migration_pipeline,
 )
+from fwmigrate.conversion.fortigate_to_palo_alto import ai_advisor
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
 from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import (
@@ -68,6 +70,13 @@ from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession, PAN
 from fwmigrate.collection import CollectionStatus, source_collectors
 from fwmigrate.collection.builtin import register_builtin_collectors
 from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot, MAX_BYTES
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+if load_dotenv is not None:
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env.local", override=False)
 
 register_builtin_source_reporters()
 register_builtin_migration_planners()
@@ -461,6 +470,7 @@ def create_app(test_config=None):
         app.config.update(test_config)
 
     rendered_artifacts = {}
+    ai_proposals = {}
     artifact_sources = {}
     deployment_sessions: dict[str, PANDeploymentSession] = {}
 
@@ -666,6 +676,100 @@ def create_app(test_config=None):
             return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception as exc:
             return jsonify({'success': False, 'error': str(exc)}), 500
+
+    @app.route('/api/migration/ai/propose', methods=['POST'])
+    def propose_migration_ai():
+        payload = request.get_json(silent=True)
+        if not ai_advisor.advisor_enabled():
+            return jsonify({'success': False, 'error': 'Groq AI advisor is disabled; set FWMIGRATE_AI_ENABLED=1 to enable it.'}), 503
+        if not os.environ.get('GROQ_API_KEY', '').strip():
+            return jsonify({'success': False, 'error': 'Groq AI advisor is unavailable; configure GROQ_API_KEY.'}), 503
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError('A JSON object is required')
+            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+            if entry is None:
+                raise ValueError('A valid FortiGate preview_id is required')
+            state = _build_migration_review_state(entry, payload)
+            prepared = ai_advisor.build_proposal_context(
+                state, payload.get('decision_keys'), model=ai_advisor.advisor_model()
+            )
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
+        try:
+            proposals = ai_advisor.request_proposals(prepared)
+        except ai_advisor.AdvisorUnavailable:
+            return jsonify({'success': False, 'error': 'Groq AI advisor is unavailable; install the AI extra and check its local configuration.'}), 503
+        except Exception:
+            return jsonify({'success': False, 'error': 'Groq could not return a valid proposal. The migration review is unchanged.'}), 502
+
+        now = time.time()
+        for proposal_id, (created, _) in list(ai_proposals.items()):
+            if now - created > 15 * 60:
+                ai_proposals.pop(proposal_id, None)
+        while len(ai_proposals) >= 256:
+            oldest = min(ai_proposals, key=lambda item: ai_proposals[item][0])
+            ai_proposals.pop(oldest, None)
+        result = []
+        for proposal in proposals:
+            proposal_id = uuid.uuid4().hex
+            ai_proposals[proposal_id] = (now, proposal)
+            result.append({**proposal, 'proposal_id': proposal_id})
+        return jsonify({'success': True, 'proposals': result})
+
+    @app.route('/api/migration/ai/approve', methods=['POST'])
+    def approve_migration_ai_proposal():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({'success': False, 'error': 'A JSON object is required'}), 400
+        proposal_id = payload.get('proposal_id')
+        record = ai_proposals.get(proposal_id) if isinstance(proposal_id, str) else None
+        if record is None or time.time() - record[0] > 15 * 60:
+            if isinstance(proposal_id, str):
+                ai_proposals.pop(proposal_id, None)
+            return jsonify({'success': False, 'error': 'This AI proposal expired; request a new proposal.'}), 409
+        try:
+            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+            if entry is None:
+                raise ValueError('A valid FortiGate preview_id is required')
+            state = _build_migration_review_state(entry, payload)
+            proposal = record[1]
+            if proposal.get('action') != 'USE_EXISTING':
+                raise ValueError('Only an existing-target proposal can be approved')
+            validated = ai_advisor.revalidate_stored_proposal(state, proposal)
+            decisions = state['decisions']
+            by_key = {item.key: item for item in decisions.decisions}
+            decision = by_key.get(validated['decision_key'])
+            target_context = state['target_context']
+            identity = target_evidence_identity(target_context.metadata if target_context else None)
+            if decision is None or identity is None:
+                raise ValueError('The target evidence for this proposal is no longer available')
+            target_digest, target_device = identity
+            by_key[decision.key] = replace(
+                decision,
+                value=validated['proposed_value'],
+                review_state=PANDecisionReviewState.CONFIRMED,
+                evidence_source='ENGINEER',
+                evidence_type='ENGINEER_APPROVED_AI_PROPOSAL',
+                evidence_value=validated['proposed_value'],
+                target_object=validated['proposed_value'],
+                evidence_target_digest=target_digest,
+                evidence_target_device=target_device,
+            )
+            confirmed = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
+            ai_proposals.pop(proposal_id, None)
+            return jsonify({
+                'success': True,
+                'approved_count': 1,
+                'decisions': confirmed.to_dict(),
+                'decision_document': _decision_document(
+                    entry.source_digest, confirmed, target_context.metadata
+                ),
+            })
+        except (ValueError, KeyError, TypeError) as exc:
+            ai_proposals.pop(proposal_id, None)
+            return jsonify({'success': False, 'error': str(exc)}), 409
 
     @app.route('/api/migration/decisions/approve', methods=['POST'])
     def approve_migration_decisions():
