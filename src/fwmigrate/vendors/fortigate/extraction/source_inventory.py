@@ -19,11 +19,6 @@ from .section_index import SectionIndex
 class SourceCommandRecord:
     """One explicit source command retained for report traceability."""
 
-    vdom: str
-    source_path: str
-    object_name: str | None
-    parent_objects: tuple[str, ...]
-
     operation: str
     key: str
     values: tuple[str, ...]
@@ -81,11 +76,8 @@ def capture_source_objects(
             )
             records.append(
                 _make_record(
-                    vdom=vdom,
-                    source_path=source_path,
-                    object_name=None,
-                    parent_objects=parent_objects,
-                    commands=node.commands,
+                                    object_name=None,
+                            commands=node.commands,
                     evaluation=evaluation,
                     start_line_number=node.start_line_number,
                     end_line_number=node.end_line_number,
@@ -99,11 +91,8 @@ def capture_source_objects(
             )
             records.append(
                 _make_record(
-                    vdom=vdom,
-                    source_path=source_path,
-                    object_name=edit.name,
-                    parent_objects=parent_objects,
-                    commands=edit.commands,
+                                            object_name=edit.name,
+                                commands=edit.commands,
                     evaluation=evaluation,
                     start_line_number=edit.start_line_number,
                     end_line_number=edit.end_line_number,
@@ -142,7 +131,6 @@ def _make_record(
     return SourceObjectRecord(
         vdom=vdom,
         source_path=source_path,
-        object_name=object_name,
         parent_objects=parent_objects,
         values={
             key: _safe_evidence_value(key, value)
@@ -151,13 +139,7 @@ def _make_record(
         explicit_fields=tuple(sorted(evaluation.explicit_fields)),
         unset_fields=tuple(sorted(evaluation.unset_fields)),
         commands=tuple(
-            _command_record(
-                command,
-                vdom=vdom,
-                source_path=source_path,
-                object_name=object_name,
-                parent_objects=parent_objects,
-            )
+            _command_record(command)
             for command in commands
         ),
         start_line_number=start_line_number,
@@ -167,17 +149,11 @@ def _make_record(
 
 def _command_record(
     command: CommandNode | UnknownCommandNode,
-    *,
-    vdom: str,
-    source_path: str,
-    object_name: str | None,
-    parent_objects: tuple[str, ...],
 ) -> SourceCommandRecord:
     if isinstance(command, UnknownCommandNode):
         return SourceCommandRecord(
             vdom=vdom,
             source_path=source_path,
-            object_name=object_name,
             parent_objects=parent_objects,
             operation="unknown",
             key=command.keyword,
