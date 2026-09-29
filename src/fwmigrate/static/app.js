@@ -1508,6 +1508,15 @@ let migrationBuildInFlight = false;
     });
   }
 
+  btnReportChangeSource?.addEventListener("click", () => {
+    sourcePanelExpanded = true;
+    syncWorkspace();
+    requestAnimationFrame(() => {
+      sourceConfigurationCard?.scrollIntoView({ block: "start", behavior: "smooth" });
+      sourceVendorSelect?.focus({ preventScroll: true });
+    });
+  });
+
   document.querySelectorAll("[data-report-section]").forEach((button) => button.addEventListener("click", () => {
     activeReportSection = button.dataset.reportSection;
     if (activeReportSection !== "validation" && reportSeverityFilter) reportSeverityFilter.value = "";
