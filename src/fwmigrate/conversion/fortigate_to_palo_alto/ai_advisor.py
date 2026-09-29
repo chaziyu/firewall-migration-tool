@@ -216,7 +216,7 @@ def failure_record(exc, prepared=None, *, provider=None, model=None):
     candidate_count = sum(len(item.get("candidates", ())) for item in decisions)
     try:
         request_bytes = prepared.get("request_bytes") or _estimate_request_bytes(prepared)
-    except (AdvisorError, TypeError, ValueError):
+    except (AdvisorError, KeyError, TypeError, ValueError):
         request_bytes = 0
     return AdvisorFailure(
         category=getattr(exc, "code", "AI_INTERNAL_ERROR"),
@@ -291,7 +291,7 @@ def classify_provider_error(exc, *, prepared=None, provider="groq"):
     candidate_count = sum(len(item.get("candidates", ())) for item in decisions)
     try:
         request_bytes = prepared.get("request_bytes") or _estimate_request_bytes(prepared)
-    except (AdvisorError, TypeError, ValueError):
+    except (AdvisorError, KeyError, TypeError, ValueError):
         request_bytes = 0
     failure = AdvisorFailure(
         category=kind.code,
