@@ -2856,9 +2856,8 @@ def _additional_settings(
 ) -> dict[str, Any]:
     if sheet_name is not None:
         represented_fields = _VISIBLE_MODEL_FIELDS_BY_SHEET.get(sheet_name, represented_fields)
-    return sanitize_source_attributes(
-        _build_additional_settings(item, represented_fields=represented_fields)
-    )
+    settings = _build_additional_settings(item, represented_fields=represented_fields)
+    return sanitize_source_attributes(settings) if settings else {}
 
 
 @lru_cache(maxsize=None)
@@ -2954,6 +2953,9 @@ def _overlay_safe_raw(
     headers: Sequence[str],
 ) -> None:
     """Overlay an already-sanitized raw source mapping without sanitizing again."""
+    if not safe_raw:
+        return
+
     safe = safe_raw
     normalized_values = _normalized_source_values(safe)
 
