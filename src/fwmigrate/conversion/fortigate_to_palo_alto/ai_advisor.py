@@ -5,12 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
+from collections import Counter
+from dataclasses import dataclass
 from dataclasses import replace
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .ai.models import PANAIProposal, PANAIProposalAction, PANAIProposalSet
-from .decisions import PANDecisionReviewState, PANMigrationDecisionSet
+from .decisions import PANDecisionMode, PANDecisionReviewState, PANMigrationDecision, PANMigrationDecisionSet
 from .target_evidence import target_evidence_identity
 from .target_validation import validate_against_target
 
@@ -59,8 +62,133 @@ _RESPONSE_SCHEMA = {
 }
 
 
-class AdvisorUnavailable(RuntimeError):
-    pass
+class AdvisorError(ValueError):
+    code = "AI_INTERNAL_ERROR"
+    message = "The AI advisor could not complete the request."
+
+    def __init__(self, detail="", *, status=None, request_id=None):
+        super().__init__(detail or self.message)
+        self.status = status
+        self.request_id = request_id
+
+
+class AdvisorUnavailable(AdvisorError):
+    code = "AI_UNAVAILABLE"
+    message = "The configured AI provider is unavailable."
+
+
+class AdvisorAuthenticationError(AdvisorError):
+    code = "AI_AUTH_FAILED"
+    message = "The AI provider rejected its credentials."
+
+
+class AdvisorRateLimitError(AdvisorError):
+    code = "AI_RATE_LIMITED"
+    message = "The AI provider is rate limited."
+
+
+class AdvisorTimeoutError(AdvisorError):
+    code = "AI_TIMEOUT"
+    message = "The AI provider timed out."
+
+
+class AdvisorRequestError(AdvisorError):
+    code = "AI_REQUEST_REJECTED"
+    message = "The configured AI model rejected the advisor request."
+
+
+class AdvisorResponseError(AdvisorError):
+    code = "AI_RESPONSE_INVALID"
+    message = "The AI provider returned an invalid response."
+
+
+class AdvisorProposalValidationError(AdvisorError):
+    code = "AI_PROPOSAL_INVALID"
+    message = "The AI proposal failed deterministic validation."
+
+    def __init__(self, detail="", *, reason="PROPOSAL_INVALID"):
+        super().__init__(detail)
+        self.reason = reason
+
+
+def classify_provider_error(exc):
+    if isinstance(exc, AdvisorError):
+        return exc
+    status = getattr(exc, "status_code", getattr(exc, "code", None))
+    headers = getattr(exc, "headers", None)
+    request_id = getattr(exc, "request_id", None)
+    if request_id is None and headers is not None:
+        request_id = headers.get("x-request-id")
+    if status in (401, 403):
+        kind = AdvisorAuthenticationError
+    elif status == 429:
+        kind = AdvisorRateLimitError
+    elif status in (408, 504):
+        kind = AdvisorTimeoutError
+    elif isinstance(status, int) and 400 <= status < 500:
+        kind = AdvisorRequestError
+    elif (isinstance(exc, (TimeoutError, socket.timeout))
+          or isinstance(getattr(exc, "reason", None), (TimeoutError, socket.timeout))
+          or exc.__class__.__name__ in {"APITimeoutError", "ReadTimeout"}):
+        kind = AdvisorTimeoutError
+    elif (isinstance(exc, (URLError, OSError)) or status in (500, 502, 503, 504)
+          or exc.__class__.__name__ == "APIConnectionError"):
+        kind = AdvisorUnavailable
+    else:
+        kind = AdvisorError
+    return kind(status=status, request_id=request_id)
+
+
+@dataclass(frozen=True)
+class AdvisorCapabilities:
+    reasoning_effort: bool
+    response_mode: str
+
+
+def advisor_capabilities(provider, model):
+    if provider == "groq":
+        if model in {"openai/gpt-oss-120b", "openai/gpt-oss-20b"}:
+            return AdvisorCapabilities(True, "STRICT_SCHEMA")
+        return AdvisorCapabilities(False, "JSON_ONLY")
+    if provider == "qwen_local":
+        mode = os.environ.get("FWMIGRATE_AI_LOCAL_RESPONSE_MODE", "STRICT_SCHEMA").strip().upper()
+        if mode not in {"STRICT_SCHEMA", "JSON_ONLY"}:
+            raise AdvisorRequestError("Unsupported local AI response mode")
+        return AdvisorCapabilities(False, mode)
+    raise AdvisorUnavailable("Unsupported AI advisor provider")
+
+
+def response_format(mode):
+    return ({"type": "json_schema", "json_schema": {
+        "name": "pan_migration_proposals", "strict": True, "schema": _RESPONSE_SCHEMA,
+    }} if mode == "STRICT_SCHEMA" else {"type": "json_object"})
+
+
+def test_advisor():
+    """Exercise the configured provider and production validator with synthetic data."""
+    validate_static_configuration()
+    decision = PANMigrationDecision(
+        source_vdom="synthetic", source_kind="interface", source_name="test-port",
+        target_field="target_interface", mode=PANDecisionMode.REQUIRED,
+    )
+    state = {
+        "source_digest": "synthetic-source", "target_digest": "synthetic-target",
+        "target_device": "synthetic-device",
+        "decisions": PANMigrationDecisionSet((decision,)),
+        "decision_candidates": {decision.key: [{
+            "value": "ethernet1/1", "target_scope": "vsys1", "class": "STRONG",
+            "strong_evidence": ["Synthetic test interface"], "supporting_evidence": [],
+        }]},
+        "decision_evidence": {}, "target_findings": [],
+        "review_context": {decision.key: {"source_type": "physical"}},
+    }
+    prepared = build_proposal_context(state, [decision.key])
+    proposals = (_request_local(prepared) if prepared["provider"] == "qwen_local"
+                 else _request_groq(prepared))
+    if len(proposals) != 1:
+        raise AdvisorResponseError("Synthetic test returned an incomplete proposal")
+    return {"success": True, "provider": prepared["provider"], "model": prepared["model"],
+            "structured_output": True, "response_mode": prepared["response_mode"]}
 
 
 def advisor_enabled() -> bool:
@@ -74,7 +202,51 @@ def advisor_provider() -> str:
 def advisor_model() -> str:
     if advisor_provider() == "qwen_local":
         return os.environ.get("FWMIGRATE_AI_LOCAL_MODEL", "Qwen/Qwen3-0.6B").strip() or "Qwen/Qwen3-0.6B"
-    return os.environ.get("FWMIGRATE_GROQ_MODEL", os.environ.get("FWMIGRATE_AI_MODEL", DEFAULT_MODEL)).strip() or DEFAULT_MODEL
+    return groq_model()
+
+
+def groq_model() -> str:
+    return (os.environ.get("FWMIGRATE_AI_GROQ_MODEL")
+            or os.environ.get("FWMIGRATE_GROQ_MODEL")
+            or os.environ.get("FWMIGRATE_AI_MODEL")
+            or DEFAULT_MODEL).strip() or DEFAULT_MODEL
+
+
+def advisor_status() -> dict:
+    provider = advisor_provider()
+    enabled = advisor_enabled()
+    return {
+        "enabled": enabled,
+        "provider": provider,
+        "model": advisor_model(),
+        "groq_configured": bool(os.environ.get("GROQ_API_KEY", "").strip()),
+        "local_configured": bool(os.environ.get("FWMIGRATE_AI_LOCAL_URL", "").strip()),
+        "prompt_version": PROMPT_VERSION,
+        "max_batch": _max_decisions(),
+        "response_mode": advisor_capabilities(provider, advisor_model()).response_mode if enabled else None,
+    }
+
+
+def validate_static_configuration():
+    status = advisor_status()
+    if not status["enabled"]:
+        return status
+    if status["provider"] == "groq" and not status["groq_configured"]:
+        raise AdvisorUnavailable("GROQ_API_KEY is not configured")
+    if status["provider"] == "qwen_local" and not status["local_configured"]:
+        raise AdvisorUnavailable("Local AI inference is not configured")
+    if not status["model"]:
+        raise AdvisorRequestError("AI model is empty")
+    for name, default in (("FWMIGRATE_AI_MAX_BATCH", MAX_DECISIONS),
+                          ("FWMIGRATE_AI_TIMEOUT", os.environ.get("FWMIGRATE_AI_TIMEOUT_SECONDS", "30"))):
+        raw = os.environ.get(name, default)
+        try:
+            valid = float(raw) > 0 if "TIMEOUT" in name else int(raw) > 0
+        except (ValueError, TypeError):
+            valid = False
+        if not valid:
+            raise AdvisorRequestError(f"Invalid {name} configuration")
+    return status
 
 
 def _max_decisions() -> int:
@@ -94,6 +266,23 @@ def _timeout() -> float:
 def _canonical_digest(value) -> str:
     content = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def ready_proposal_keys(state):
+    session = state["design_session"]
+    by_key = {item.key: item for item in state["decisions"].decisions}
+    ready = session.dependency_graph.ready_decision_keys(session.decisions, conflicted=session.conflicted)
+    for key in ready:
+        decision = by_key[key]
+        if (decision.source_kind, decision.target_field) not in _ALLOWED_FIELDS:
+            continue
+        if state["decision_evidence"].get(key) == "CONFLICT":
+            continue
+        candidates = state["decision_candidates"].get(key, ())
+        values = Counter(item.get("value") for item in candidates
+                         if item.get("class") in {"STRONG", "POSSIBLE"} and isinstance(item.get("value"), str))
+        if 1 in values.values():
+            yield key
 
 
 def build_proposal_context(state, decision_keys, *, model=None, provider=None,
@@ -121,6 +310,7 @@ def build_proposal_context(state, decision_keys, *, model=None, provider=None,
     by_decision = {}
     model_decisions = []
     prompt_provider = provider or advisor_provider()
+    response_mode = advisor_capabilities(prompt_provider, prompt_model).response_mode
     design_session = state.get("design_session")
     ready_keys = None
     if design_session is not None:
@@ -210,6 +400,7 @@ def build_proposal_context(state, decision_keys, *, model=None, provider=None,
             "prompt_version": PROMPT_VERSION,
             "provider": prompt_provider,
             "model": prompt_model,
+            "response_mode": response_mode,
             "decision": model_item,
         })
         by_decision[key] = {
@@ -231,18 +422,22 @@ def build_proposal_context(state, decision_keys, *, model=None, provider=None,
         "target_device": state["target_device"],
         "model": prompt_model,
         "provider": prompt_provider,
+        "response_mode": response_mode,
         "_state": state,
     }
 
 
 def validate_model_output(response_text, prepared):
     """Fail closed on invented decisions, candidates, or evidence references."""
-    response = json.loads(response_text)
+    try:
+        response = json.loads(response_text)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise AdvisorResponseError("AI advisor returned invalid JSON") from exc
     if not isinstance(response, dict) or set(response) != {"proposals"}:
-        raise ValueError("AI advisor returned a malformed proposal object")
+        raise AdvisorResponseError("AI advisor returned a malformed proposal object")
     rows = response["proposals"]
     if not isinstance(rows, list) or len(rows) != len(prepared["by_decision"]):
-        raise ValueError("AI advisor returned an incomplete or malformed proposal set")
+        raise AdvisorResponseError("AI advisor returned an incomplete or malformed proposal set")
     by_id = {value["decision_id"]: (key, value) for key, value in prepared["by_decision"].items()}
     output = []
     seen = set()
@@ -250,33 +445,37 @@ def validate_model_output(response_text, prepared):
         if (not isinstance(row, dict)
                 or set(row) != {"decision_id", "action", "candidate_id", "rationale", "evidence_refs"}
                 or row.get("decision_id") not in by_id):
-            raise ValueError("AI advisor returned an unknown decision")
+            raise AdvisorResponseError("AI advisor returned an unknown decision")
         key, current = by_id[row["decision_id"]]
         if key in seen:
-            raise ValueError("AI advisor returned a duplicate decision")
+            raise AdvisorResponseError("AI advisor returned a duplicate decision")
         seen.add(key)
         action = row.get("action")
         candidate_id = row.get("candidate_id")
         rationale = row.get("rationale")
         refs = row.get("evidence_refs")
         if action not in {"USE_EXISTING", "NO_SAFE_PROPOSAL"}:
-            raise ValueError("AI advisor returned an unsupported proposal action")
+            raise AdvisorResponseError("AI advisor returned an unsupported proposal action")
         if not isinstance(rationale, str) or not rationale.strip() or len(rationale.strip()) > 500:
-            raise ValueError("AI advisor returned an invalid rationale")
+            raise AdvisorResponseError("AI advisor returned an invalid rationale")
         if not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs) or len(set(refs)) != len(refs):
-            raise ValueError("AI advisor returned invalid evidence references")
+            raise AdvisorResponseError("AI advisor returned invalid evidence references")
         if any(ref not in current["evidence_by_ref"] for ref in refs):
-            raise ValueError("AI advisor cited evidence that was not supplied")
+            raise AdvisorProposalValidationError("AI advisor cited evidence that was not supplied",
+                                                 reason="UNKNOWN_EVIDENCE_REFERENCE")
 
         target = None
         if action == "USE_EXISTING":
             if not isinstance(candidate_id, str) or candidate_id not in current["candidate_map"] or not refs:
-                raise ValueError("AI advisor selected a candidate or evidence reference outside the supplied context")
+                raise AdvisorProposalValidationError("AI advisor selected a candidate or evidence reference outside the supplied context",
+                                                     reason="UNKNOWN_CANDIDATE")
             if not current["candidate_evidence_refs"][candidate_id].intersection(refs):
-                raise ValueError("AI advisor did not cite evidence for its selected candidate")
+                raise AdvisorProposalValidationError("AI advisor did not cite evidence for its selected candidate",
+                                                     reason="CANDIDATE_EVIDENCE_MISMATCH")
             target = current["candidate_map"][candidate_id]
         elif candidate_id is not None:
-            raise ValueError("NO_SAFE_PROPOSAL cannot include a candidate")
+            raise AdvisorProposalValidationError("NO_SAFE_PROPOSAL cannot include a candidate",
+                                                 reason="ABSTENTION_WITH_CANDIDATE")
 
         output.append(PANAIProposal(
             decision_key=key,
@@ -296,6 +495,7 @@ def validate_model_output(response_text, prepared):
             state_digest=prepared["state_digest"],
             context_digest=current["context_digest"],
             base_context_digest=current["base_context_digest"],
+            response_mode=prepared.get("response_mode", "STRICT_SCHEMA"),
         ))
     return PANAIProposalSet(tuple(output)).to_list()
 
@@ -309,24 +509,29 @@ def _request_groq(prepared):
     except ImportError as exc:
         raise AdvisorUnavailable("Install the optional AI dependencies to use Groq") from exc
 
-    client = Groq(api_key=api_key, timeout=_timeout())
-    completion = client.chat.completions.create(
-        model=prepared["model"],
-        messages=[
+    capabilities = advisor_capabilities("groq", prepared["model"])
+    kwargs = {
+        "model": prepared["model"],
+        "messages": [
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps(prepared["request"], separators=(",", ":"))},
         ],
-        reasoning_effort="medium",
-        temperature=0,
-        max_completion_tokens=1200,
-        response_format={
-            "type": "json_schema",
-            "json_schema": {"name": "pan_migration_proposals", "strict": True, "schema": _RESPONSE_SCHEMA},
-        },
-    )
-    content = completion.choices[0].message.content
+        "temperature": 0,
+        "max_completion_tokens": 1200,
+        "response_format": response_format(capabilities.response_mode),
+    }
+    if capabilities.reasoning_effort:
+        kwargs["reasoning_effort"] = "medium"
+    try:
+        completion = Groq(api_key=api_key, timeout=_timeout()).chat.completions.create(**kwargs)
+    except Exception as exc:
+        raise classify_provider_error(exc) from exc
+    try:
+        content = completion.choices[0].message.content
+    except (AttributeError, IndexError, TypeError) as exc:
+        raise AdvisorResponseError("AI advisor returned no proposal content") from exc
     if not isinstance(content, str) or not content:
-        raise ValueError("AI advisor returned no proposal content")
+        raise AdvisorResponseError("AI advisor returned no proposal content")
     return validate_model_output(content, prepared)
 
 
@@ -343,25 +548,22 @@ def _request_local(prepared):
         ],
         "temperature": 0,
         "max_tokens": 1200,
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {"name": "pan_migration_proposals", "strict": True, "schema": _RESPONSE_SCHEMA},
-        },
+        "response_format": response_format(advisor_capabilities("qwen_local", prepared["model"]).response_mode),
     }
     request = Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
     try:
         with urlopen(request, timeout=_timeout()) as response:
             completion = json.loads(response.read().decode("utf-8"))
-    except (URLError, TimeoutError, OSError) as exc:
-        raise AdvisorUnavailable("Local AI inference is unavailable") from exc
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        raise classify_provider_error(exc) from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError("Local AI inference returned malformed JSON") from exc
+        raise AdvisorResponseError("Local AI inference returned malformed JSON") from exc
     try:
         content = completion["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
-        raise ValueError("Local AI inference returned no proposal content") from exc
+        raise AdvisorResponseError("Local AI inference returned no proposal content") from exc
     if not isinstance(content, str) or not content:
-        raise ValueError("Local AI inference returned no proposal content")
+        raise AdvisorResponseError("Local AI inference returned no proposal content")
     return validate_model_output(content, prepared)
 
 
@@ -374,33 +576,44 @@ def request_proposals(prepared):
         raise AdvisorUnavailable("Unsupported AI advisor provider")
 
     keys = list(prepared["by_decision"])
-    groq_model = os.environ.get(
-        "FWMIGRATE_GROQ_MODEL",
-        os.environ.get("FWMIGRATE_AI_MODEL", DEFAULT_MODEL),
-    )
+    remote_model = groq_model()
+    groq_available = bool(os.environ.get("GROQ_API_KEY", "").strip())
+    by_id = {item["decision_id"]: key for key, item in prepared["by_decision"].items()}
+    complex_keys = [by_id[item["decision_id"]] for item in prepared["request"]["decisions"]
+                    if len(item["candidates"]) > 3] if groq_available else []
+    simple_keys = [key for key in keys if key not in complex_keys]
     try:
-        local = _request_local(prepared)
-    except (AdvisorUnavailable, ValueError):
-        if not os.environ.get("GROQ_API_KEY", "").strip():
-            raise AdvisorUnavailable("Local AI inference failed and Groq fallback is not configured")
+        local_prepared = prepared
+        if len(simple_keys) != len(keys):
+            local_prepared = (build_proposal_context(
+                prepared["_state"], simple_keys, model=prepared["model"], provider="qwen_local"
+            ) if simple_keys else None)
+        local = _request_local(local_prepared) if local_prepared else []
+    except (AdvisorError, ValueError) as exc:
+        if not groq_available:
+            raise
         fallback = build_proposal_context(
-            prepared["_state"], keys, model=groq_model, provider="groq"
+            prepared["_state"], keys, model=remote_model, provider="groq"
         )
         return [dict(item, escalated_from="qwen_local") for item in _request_groq(fallback)]
 
     abstained = [item["decision_key"] for item in local if item["action"] == "NO_SAFE_PROPOSAL"]
-    if not abstained or not os.environ.get("GROQ_API_KEY", "").strip():
+    escalation_keys = [key for key in keys if key in complex_keys or key in abstained]
+    if not escalation_keys or not groq_available:
         return local
     fallback = build_proposal_context(
-        prepared["_state"], abstained, model=groq_model, provider="groq"
+        prepared["_state"], escalation_keys, model=remote_model, provider="groq"
     )
     try:
         remote = _request_groq(fallback)
-    except (AdvisorUnavailable, ValueError):
-        return local
+    except (AdvisorError, ValueError) as exc:
+        if not local:
+            raise
+        category = exc.code if isinstance(exc, AdvisorError) else "AI_INTERNAL_ERROR"
+        return [dict(item, escalation_failure_category=category) for item in local]
     by_key = {item["decision_key"]: item for item in local}
     by_key.update({item["decision_key"]: dict(item, escalated_from="qwen_local") for item in remote})
-    return [by_key[key] for key in keys]
+    return [by_key[key] for key in keys if key in by_key]
 
 
 def validate_proposal_set(state, proposals):
@@ -454,7 +667,7 @@ def validate_proposal_set(state, proposals):
 
 def repair_conflicted_proposals(state, decision_keys, proposals):
     current = validate_proposal_set(state, proposals)
-    for _ in range(MAX_AI_REPAIR_PASSES):
+    for repair_pass in range(1, MAX_AI_REPAIR_PASSES + 1):
         conflicts = {
             item["decision_key"]: item
             for item in current
@@ -512,14 +725,14 @@ def repair_conflicted_proposals(state, decision_keys, proposals):
                 for key in conflicts
             }
             repaired = [
-                dict(item, base_context_digest=base_digests[item["decision_key"]])
+                dict(item, base_context_digest=base_digests[item["decision_key"]], repair_pass=repair_pass)
                 for item in repaired
             ]
         except (AdvisorUnavailable, ValueError):
             break
         by_key = {item["decision_key"]: item for item in current}
         by_key.update({item["decision_key"]: item for item in repaired})
-        current = validate_proposal_set(state, [by_key[key] for key in decision_keys])
+        current = validate_proposal_set(state, [by_key[key] for key in decision_keys if key in by_key])
     return current
 
 
