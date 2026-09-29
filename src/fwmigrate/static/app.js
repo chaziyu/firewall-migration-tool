@@ -1134,11 +1134,20 @@ let migrationBuildInFlight = false;
   // =========================================================================
   // 3. Vendor Selector Dropdowns
   // =========================================================================
+  function syncSourceVendorPresentation() {
+    renderCollectionFields();
+    const cfg = VENDOR_CONFIGS[selectedSourceVendor];
+    if (cfg) {
+      if (dropzoneSubtext) dropzoneSubtext.innerHTML = cfg.dropText;
+      if (fileInput) fileInput.accept = ingestMode === "snapshot" ? ".json" : cfg.fileAccept;
+    }
+    syncWorkspace();
+  }
+
   if (sourceVendorSelect) {
     selectedSourceVendor = sourceVendorSelect.value || "fortigate";
     sourceVendorSelect.addEventListener("change", (e) => {
       selectedSourceVendor = e.target.value;
-      renderCollectionFields();
       currentRenderedArtifactId = null;
       clearSource();
       const vendorName =
@@ -1148,14 +1157,7 @@ let migrationBuildInFlight = false;
         `[VENDOR] Source vendor selected: ${vendorName}`,
         "term-system",
       );
-
-      const cfg = VENDOR_CONFIGS[selectedSourceVendor];
-      if (cfg) {
-        if (dropzoneSubtext) dropzoneSubtext.innerHTML = cfg.dropText;
-        if (fileInput) fileInput.accept = ingestMode === "snapshot" ? ".json" : cfg.fileAccept;
-      }
-
-      syncWorkspace();
+      syncSourceVendorPresentation();
     });
   }
 
@@ -1252,6 +1254,7 @@ let migrationBuildInFlight = false;
     clearSource();
     currentFile = file;
     currentRenderedArtifactId = null;
+    setSourceContext({ acquisition: "Uploaded configuration" });
 
     if (selectedFilename) selectedFilename.textContent = file.name;
     if (selectedFilesize) selectedFilesize.textContent = formatBytes(file.size);
@@ -1334,11 +1337,15 @@ let migrationBuildInFlight = false;
     }
   });
 
-  function clearSource() {
+  function detachLocalFile() {
     currentFile = null;
     if (fileInput) fileInput.value = "";
     selectedFileCard?.classList.add("hidden");
     dropzone?.classList.remove("hidden");
+  }
+
+  function clearSource() {
+    detachLocalFile();
     hideError();
     resetPreview();
   }
@@ -1376,39 +1383,24 @@ let migrationBuildInFlight = false;
       const data = await readJson(resp, "Could not read this configuration");
       if (requestRevision !== sourceRevision) return;
       currentPreviewId = data.preview_id || null;
-      await loadMigrationReview(currentPreviewId);
-      if (requestRevision !== sourceRevision) return;
-      const stats = data.stats || data.summary || {};
-      const objects = stats.objects || stats;
-      const severityCounts = stats.validation?.severity_counts || {};
-      const errorCount = count(severityCounts.error);
-      const warningCount = count(severityCounts.warning);
-      if (statTotalRules) statTotalRules.textContent = count(objects.policies);
-      if (statTotalObjects)
-        statTotalObjects.textContent =
-          ["addresses", "address_groups", "services", "service_groups"]
-            .reduce((total, key) => total + count(objects[key]), 0);
-      if (statErrors) statErrors.textContent = errorCount;
-      if (statWarnings) statWarnings.textContent = warningCount;
       currentPolicies = Array.isArray(data.policies) ? data.policies : [];
       currentReport = data;
       reportPage = 1;
       activeValidationGroup = "";
       renderReport();
       sourceReady = true;
-      scheduleMigrationPlanBuild();
-      const itemCount = Object.values(objects).reduce(
-        (total, value) => total + count(value),
-        0,
-      );
+      const overview = updateSourceOverview(data);
+      syncWorkspace();
       setPreviewStatus(
-        itemCount
-          ? (errorCount || warningCount
-              ? `Parsed · ${errorCount} errors · ${warningCount} warnings`
+        overview.items
+          ? (overview.errors || overview.warnings
+              ? `Parsed · ${overview.errors} errors · ${overview.warnings} warnings`
               : "Parsed successfully.")
           : "No supported objects were found. Review the source file and extraction warnings in the Excel workbook.",
-        itemCount ? "ready" : "empty",
+        overview.items ? "ready" : "empty",
       );
+      await loadMigrationReviewForReadySource(currentPreviewId);
+      if (requestRevision !== sourceRevision) return;
     } catch (err) {
       if (err.name === "AbortError" || requestRevision !== sourceRevision)
         return;
