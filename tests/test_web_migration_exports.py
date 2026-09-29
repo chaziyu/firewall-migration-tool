@@ -638,8 +638,9 @@ def test_migration_workflow_uses_planning_terminology():
     report_end = html.index("</section>", report_start)
     assert report_start < html.index('id="btn-extract-excel"') < report_end
     assert 'id="validation-groups-heading">Issue groups</h3>' in html
-    assert "Select an issue group to filter the findings below." in html
-    assert 'id="validation-details-heading"' in html and "Validation details" in html
+    assert "Select an issue group to filter the reported findings below." in html
+    assert 'id="report-section-title"' in html and 'id="report-section-description"' in html
+    assert 'id="validation-details-heading"' not in html
     assert 'id="validation-filter-clear"' in html and ">Clear</button>" in html
     assert "Your source inventory" not in html
     assert "Convert config" not in html
