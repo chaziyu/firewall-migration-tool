@@ -981,6 +981,13 @@ select {
   border-color: color-mix(in srgb, var(--danger) 34%, var(--line));
   background: color-mix(in srgb, var(--danger) 8%, var(--surface));
 }
+.report-source-advisory {
+  flex-basis: 100%;
+  padding-top: 2px;
+  color: var(--warning);
+  font-size: 10px;
+  line-height: 1.45;
+}
 
 .report-tabs {
   display: flex;
