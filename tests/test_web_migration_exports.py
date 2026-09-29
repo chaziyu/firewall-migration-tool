@@ -141,6 +141,31 @@ def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence(
     assert rejected.status_code == 400
 
 
+def test_migrate_returns_authoritative_automated_decision_document():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview, target_preview = _preview(client), _target_preview(client)
+    requirements = client.post("/api/migration/requirements", json={
+        "preview_id": source_preview,
+        "target_preview_id": target_preview,
+    }).get_json()
+
+    response = client.post("/api/migrate", json={
+        "preview_id": source_preview,
+        "target_preview_id": target_preview,
+        "decision_document": requirements["decision_document"],
+    })
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["decision_document"]["format_version"] == 3
+    assert payload["decisions"]["decisions"] == payload["decision_document"]["decisions"]
+    assert payload["automation_audit"]
+    assert any(
+        item["review_state"] == "CONFIRMED"
+        and item["evidence_type"] in {"AUTOMATION_VERIFIED", "AUTOMATION_DERIVED"}
+        for item in payload["decisions"]["decisions"]
+    )
+
+
 def test_fixed_point_automation_requires_opt_in_policies_and_records_deterministic_provenance():
     client = create_app({"TESTING": True}).test_client()
     source_preview, target_preview = _preview(client), _target_preview(client)
@@ -570,7 +595,7 @@ def test_migration_workflow_uses_planning_terminology():
     assert 'id="migration-plan-items"' in html and 'id="migration-plan-filter"' in html
     assert 'id="migration-pair-support"' in html and "target XML and intent YAML are optional" in html
     assert "Optional: import or export target intent YAML" in html
-    assert 'id="migration-build-link"' in html and "Go to build plan" in html
+    assert 'id="migration-build-link"' in html and "View migration plan" in html
     assert 'id="migration-build-status"' in html
     assert 'id="migration-command-preview"' in html and 'id="migration-copy-commands"' in html
     assert 'id="migration-recommendation-fields"' in html
@@ -600,8 +625,10 @@ def test_migration_workflow_uses_planning_terminology():
     assert 'id="report-detail-panel"' not in html
     assert html.count('id="report-summary"') == 1
     assert "Download Excel" in html
-    assert "Push candidate" in html
-    assert "Validate candidate" in html
+    assert "Prepare candidate" in html
+    assert "Revalidate Candidate" in html
+    assert "Verified and derived mappings are applied automatically." in html
+    assert 'id="decision-approve-safe"' not in html
     assert "Activity log" in html
     assert "Execution log" not in html
     assert 'id="tab-extract"' not in html
