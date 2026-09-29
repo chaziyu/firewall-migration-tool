@@ -96,22 +96,22 @@
       <div class="step-box" id="step-box-validate">
         <div class="step-badge" aria-hidden="true">1</div>
         <div class="step-info">
-          <strong>Push candidate</strong>
-          <span role="status">Send generated commands to the candidate configuration.</span>
+          <strong>Prepare candidate</strong>
+          <span role="status">Push the reviewed artifact and validate the candidate automatically.</span>
         </div>
         <button type="button" class="btn btn-secondary" id="btn-push-candidate" disabled>
-          <span>Push Candidate</span>
+          <span>Prepare Candidate</span>
         </button>
       </div>
 
       <div class="step-box" id="step-box-deploy">
         <div class="step-badge" aria-hidden="true">2</div>
         <div class="step-info">
-          <strong>Validate candidate</strong>
-          <span role="status">Validate the candidate configuration on the target.</span>
+          <strong>Validation</strong>
+          <span role="status">Successful preparation records a validated artifact-bound deployment session.</span>
         </div>
         <button type="button" class="btn btn-success" id="btn-validate-candidate" disabled>
-          <span>Validate Candidate</span>
+          <span>Revalidate Candidate</span>
         </button>
       </div>
 
@@ -169,7 +169,7 @@
         tabindex="0"
       >
         <div class="term-line term-system">
-          [SYSTEM] Candidate deployment is ready. Push → Validate → Commit.
+          [SYSTEM] Candidate workflow is ready. Prepare (push + validate) → explicit commit.
         </div>
       </div>
     </div>
