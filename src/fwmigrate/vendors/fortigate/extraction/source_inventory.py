@@ -76,8 +76,11 @@ def capture_source_objects(
             )
             records.append(
                 _make_record(
-                                    object_name=None,
-                            commands=node.commands,
+                    vdom=vdom,
+                    source_path=source_path,
+                    object_name=None,
+                    parent_objects=parent_objects,
+                    commands=node.commands,
                     evaluation=evaluation,
                     start_line_number=node.start_line_number,
                     end_line_number=node.end_line_number,
@@ -91,8 +94,11 @@ def capture_source_objects(
             )
             records.append(
                 _make_record(
-                                            object_name=edit.name,
-                                commands=edit.commands,
+                    vdom=vdom,
+                    source_path=source_path,
+                    object_name=edit.name,
+                    parent_objects=parent_objects,
+                    commands=edit.commands,
                     evaluation=evaluation,
                     start_line_number=edit.start_line_number,
                     end_line_number=edit.end_line_number,
@@ -131,6 +137,7 @@ def _make_record(
     return SourceObjectRecord(
         vdom=vdom,
         source_path=source_path,
+        object_name=object_name,
         parent_objects=parent_objects,
         values={
             key: _safe_evidence_value(key, value)
@@ -152,9 +159,6 @@ def _command_record(
 ) -> SourceCommandRecord:
     if isinstance(command, UnknownCommandNode):
         return SourceCommandRecord(
-            vdom=vdom,
-            source_path=source_path,
-            parent_objects=parent_objects,
             operation="unknown",
             key=command.keyword,
             values=_safe_unknown_values(command.keyword, command.values),
@@ -162,16 +166,11 @@ def _command_record(
         )
 
     return SourceCommandRecord(
-        vdom=vdom,
-        source_path=source_path,
-        object_name=object_name,
-        parent_objects=parent_objects,
         operation=command.operation,
         key=command.key,
         values=_safe_command_values(command.key, command.values),
         line_number=command.line_number,
     )
-
 
 def _safe_command_values(key: str, values: list[str]) -> tuple[str, ...]:
     safe = sanitize_source_value(key, values)
