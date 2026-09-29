@@ -691,6 +691,8 @@ let migrationBuildInFlight = false;
     if (currentSourceContext.status === "PARTIAL") {
       const advisory = document.createElement("span");
       advisory.className = "report-source-advisory";
+      advisory.setAttribute("role", "status");
+      advisory.setAttribute("aria-live", "polite");
       advisory.textContent = "Incomplete collection; unreported areas remain unknown.";
       fragment.appendChild(advisory);
     }
@@ -770,16 +772,24 @@ let migrationBuildInFlight = false;
     openReportDetailModal(triggerElement);
   }
 
+  function reportDetailIsModal() {
+    return window.matchMedia("(max-width: 700px)").matches;
+  }
+
   function openReportDetailModal(triggerElement) {
     reportDetailTrigger = triggerElement;
     reportDetailModal?.classList.remove("hidden");
     reportDetailModal?.setAttribute("aria-hidden", "false");
-    reportDetailClose?.focus();
+    const modal = reportDetailIsModal();
+    reportDetailModal?.querySelector(".report-detail-dialog")?.setAttribute("aria-modal", String(modal));
+    if (modal) reportDetailClose?.focus();
   }
 
   function closeReportDetailModal(restoreFocus = true) {
     reportDetailModal?.classList.add("hidden");
     reportDetailModal?.setAttribute("aria-hidden", "true");
+    reportDetailModal?.querySelector(".report-detail-dialog")?.setAttribute("aria-modal", "false");
+    reportTableBody?.querySelectorAll(".report-row-selected").forEach((row) => row.classList.remove("report-row-selected"));
     if (restoreFocus && reportDetailTrigger?.isConnected) reportDetailTrigger.focus();
     reportDetailTrigger = null;
   }
@@ -848,7 +858,9 @@ let migrationBuildInFlight = false;
   function setActiveReportRow(rowElement) {
     if (!reportTableBody || !rowElement) return;
     [...reportTableBody.rows].forEach((row) => {
-      row.tabIndex = row === rowElement ? 0 : -1;
+      const selected = row === rowElement;
+      row.tabIndex = selected ? 0 : -1;
+      row.classList.toggle("report-row-selected", selected);
     });
   }
 
@@ -1189,6 +1201,9 @@ let migrationBuildInFlight = false;
       button.setAttribute("aria-selected", String(selected));
       button.tabIndex = selected ? 0 : -1;
     });
+    if (reportData && !overview) {
+      reportData.setAttribute("aria-labelledby", `report-tab-${activeReportSection}`);
+    }
 
     renderSourceContext();
     renderValidationSummary();
@@ -1270,7 +1285,11 @@ let migrationBuildInFlight = false;
       "hidden",
       activeMode === "report" && sourceReady && !sourcePanelExpanded,
     );
-    if (activeMode === "report" && currentReport) renderSourceContext();
+    if (btnReportChangeSource) {
+      btnReportChangeSource.setAttribute("aria-expanded", String(sourcePanelExpanded));
+      const label = btnReportChangeSource.querySelector("span");
+      if (label) label.textContent = sourcePanelExpanded ? "Hide source controls" : "Change source";
+    }
   }
 
   function setBusy(button, busy) {
@@ -1616,8 +1635,9 @@ let migrationBuildInFlight = false;
   }
 
   btnReportChangeSource?.addEventListener("click", () => {
-    sourcePanelExpanded = true;
+    sourcePanelExpanded = !sourcePanelExpanded;
     syncWorkspace();
+    if (!sourcePanelExpanded) return;
     requestAnimationFrame(() => {
       sourceConfigurationCard?.scrollIntoView({ block: "start", behavior: "smooth" });
       sourceVendorSelect?.focus({ preventScroll: true });
@@ -1672,13 +1692,13 @@ let migrationBuildInFlight = false;
   });
   reportDetailClose?.addEventListener("click", () => closeReportDetailModal());
   reportDetailModal?.addEventListener("click", (event) => {
-    if (event.target === reportDetailModal) closeReportDetailModal();
+    if (event.target === reportDetailModal && reportDetailIsModal()) closeReportDetailModal();
   });
   document.addEventListener("keydown", (event) => {
     const detailOpen = !reportDetailModal?.classList.contains("hidden");
     if (event.key === "Escape" && detailOpen) {
       closeReportDetailModal();
-    } else if (event.key === "Tab" && detailOpen) {
+    } else if (event.key === "Tab" && detailOpen && reportDetailIsModal()) {
       event.preventDefault();
       reportDetailClose?.focus();
     }
@@ -1737,6 +1757,7 @@ let migrationBuildInFlight = false;
       renderReport();
       sourceReady = true;
       sourcePanelExpanded = false;
+      renderSourceContext();
       const overview = updateSourceOverview(data);
       syncWorkspace();
       setPreviewStatus(
@@ -2583,6 +2604,7 @@ let migrationBuildInFlight = false;
     invalidateMigrationPlan();
     sourceReady = true;
     sourcePanelExpanded = false;
+    renderSourceContext();
     if (currentReport) updateSourceOverview(currentReport);
     syncWorkspace();
     await loadMigrationReviewForReadySource(currentPreviewId);
