@@ -29,8 +29,12 @@
         <button type="button" role="tab" data-review-queue="COMPLETE" aria-selected="false">Completed <span></span></button>
       </div>
       <div class="review-actions">
+        <button type="button" class="btn btn-secondary" id="migration-ai-propose-ready">Propose ready mappings</button>
+        <button type="button" class="btn btn-primary" id="migration-ai-approve-valid" disabled>Approve valid AI proposals</button>
+        <a class="btn btn-secondary" href="/api/migration/ai/audit/export">Download AI review audit</a>
         <a class="btn btn-secondary" href="#migration-build" id="migration-build-link">View migration plan</a>
       </div>
+      <p id="migration-ai-status" role="status" aria-live="polite"></p>
       <div id="migration-review-groups" aria-live="polite"></div>
       <details class="optional-review-tools">
         <summary>Optional review tools</summary>

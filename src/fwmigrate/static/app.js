@@ -15,9 +15,11 @@ let migrationBuildInFlight = false;
   let currentRecommendations = [];
   let currentDecisionSet = { decisions: [] };
   let currentDecisionDocument = null;
+  let currentDesignSession = null;
   let decisionContext = {};
   let decisionCandidates = {};
   const aiProposals = new Map();
+  const aiProposalEdits = new Map();
   let reviewSummary = {};
   let automationRunSummary = null;
   let reviewGroups = [];
@@ -1348,6 +1350,7 @@ let migrationBuildInFlight = false;
     if (selectedSourceVendor !== "fortigate" || !previewId) {
       currentDecisionSet = { decisions: [] };
       currentDecisionDocument = null;
+      currentDesignSession = null;
       decisionContext = {};
       decisionCandidates = {};
       reviewSummary = {};
@@ -1370,6 +1373,7 @@ let migrationBuildInFlight = false;
     if (previewId !== currentPreviewId) return;
     currentDecisionSet = result.decisions;
     currentDecisionDocument = result.decision_document;
+    currentDesignSession = result.design_session || null;
     decisionContext = result.decision_context || {};
     decisionCandidates = result.decision_candidates || {};
     reviewSummary = result.review_summary || {};
@@ -1666,7 +1670,7 @@ let migrationBuildInFlight = false;
         const pending = decision.review_state !== "CONFIRMED" && decision.mode !== "UNSUPPORTED";
         if (pending && candidates.length && decisionEvidence[decision.key] !== "CONFLICT") {
           const ask = document.createElement("button"); ask.type = "button";
-          ask.className = "btn btn-secondary btn-sm"; ask.textContent = "Ask Groq for a proposal";
+          ask.className = "btn btn-secondary btn-sm"; ask.textContent = "Ask AI for a proposal";
           ask.addEventListener("click", async () => {
             ask.disabled = true;
             try {
@@ -1679,7 +1683,7 @@ let migrationBuildInFlight = false;
               });
               const result = await readJson(response, "Groq could not propose a mapping");
               const proposal = result.proposals?.[0];
-              if (!proposal) throw new Error("Groq returned no proposal for this decision");
+              if (!proposal) throw new Error("AI advisor returned no proposal for this decision");
               aiProposals.set(decision.key, proposal);
               renderMigrationReviewWorkflow();
             } catch (error) { showError(error.message); ask.disabled = false; }
@@ -1689,12 +1693,18 @@ let migrationBuildInFlight = false;
         const proposal = aiProposals.get(decision.key);
         if (proposal) {
           const advice = document.createElement("section"); advice.className = "review-work-suggestion";
-          const heading = document.createElement("strong"); heading.textContent = proposal.action === "USE_EXISTING"
-            ? `Groq proposal: ${proposal.proposed_value}${proposal.target_scope ? ` · ${proposal.target_scope}` : ""}`
-            : "Groq found no safe candidate";
+          const providerLabel = proposal.provider === "qwen_local" ? "Qwen" : "Groq";
+          const heading = document.createElement("strong"); heading.textContent = proposal.validation_status === "CONFLICT"
+            ? `${providerLabel} proposal needs repair`
+            : proposal.action === "USE_EXISTING"
+              ? `${providerLabel} proposal: ${proposal.proposed_value}${proposal.target_scope ? ` · ${proposal.target_scope}` : ""}`
+              : `${providerLabel} found no safe candidate`;
           const rationale = document.createElement("p"); rationale.textContent = proposal.rationale || "No rationale supplied.";
           const provenance = document.createElement("p"); provenance.textContent = `${proposal.model} · evidence-bound proposal · still pending engineer review`;
           advice.append(heading, rationale, provenance);
+          for (const finding of proposal.validation_findings || []) {
+            const conflict = document.createElement("p"); conflict.textContent = finding; advice.append(conflict);
+          }
           if (proposal.evidence?.length) {
             const details = document.createElement("details");
             const summary = document.createElement("summary"); summary.textContent = "Evidence cited";
@@ -1705,6 +1715,7 @@ let migrationBuildInFlight = false;
           if (proposal.action === "USE_EXISTING") {
             const approve = document.createElement("button"); approve.type = "button";
             approve.className = "btn btn-primary btn-sm"; approve.textContent = "Approve proposal";
+            approve.disabled = proposal.validation_status !== "VALID";
             approve.addEventListener("click", async () => {
               approve.disabled = true;
               try {
@@ -1727,6 +1738,7 @@ let migrationBuildInFlight = false;
             use.addEventListener("click", () => {
               input.value = proposal.proposed_value;
               decision.value = proposal.proposed_value;
+              aiProposalEdits.set(decision.key, proposal.proposal_id);
               input.dispatchEvent(new Event("input", { bubbles: true }));
               renderMigrationReviewWorkflow();
             });
@@ -1734,7 +1746,14 @@ let migrationBuildInFlight = false;
           }
           const dismiss = document.createElement("button"); dismiss.type = "button";
           dismiss.className = "btn btn-secondary btn-sm"; dismiss.textContent = "Dismiss";
-          dismiss.addEventListener("click", () => { aiProposals.delete(decision.key); renderMigrationReviewWorkflow(); });
+          dismiss.addEventListener("click", async () => {
+            try {
+              await recordAIAuditOutcome(proposal.proposal_id, "REJECTED");
+              aiProposals.delete(decision.key);
+              aiProposalEdits.delete(decision.key);
+              renderMigrationReviewWorkflow();
+            } catch (error) { showError(error.message); }
+          });
           advice.append(dismiss); field.append(advice);
         }
         const findings = targetFindings.filter(item => item.decision_key === decision.key);
@@ -1795,7 +1814,18 @@ let migrationBuildInFlight = false;
               .find(node => node.dataset.decisionKey === item.key);
             if (input) item.value = input.value.trim() || null;
           });
-          await saveDecisionValues(selected.filter(item => item.value));
+          const saved = await saveDecisionValues(selected.filter(item => item.value));
+          if (!saved) return;
+          for (const item of selected) {
+            const proposalId = aiProposalEdits.get(item.key);
+            if (proposalId && item.value) {
+              try {
+                await recordAIAuditOutcome(proposalId, "MODIFIED", item.value);
+                aiProposalEdits.delete(item.key);
+                aiProposals.delete(item.key);
+              } catch (error) { showError(error.message); }
+            }
+          }
         });
         card.append(confirm);
       }
@@ -1808,7 +1838,110 @@ let migrationBuildInFlight = false;
       fragment.append(more);
     }
     container.replaceChildren(fragment);
+    updateMigrationAIActions();
   }
+
+  function updateMigrationAIActions() {
+    const propose = document.getElementById("migration-ai-propose-ready");
+    const approve = document.getElementById("migration-ai-approve-valid");
+    if (propose) {
+      const ready = new Set(currentDesignSession?.ready_decision_keys || []);
+      const available = currentDecisionSet.decisions.filter(item =>
+        ready.has(item.key) && item.review_state !== "CONFIRMED" && item.mode !== "UNSUPPORTED"
+        && decisionEvidence[item.key] !== "CONFLICT" && (decisionCandidates[item.key] || []).length
+        && !aiProposals.has(item.key)
+      ).length;
+      propose.disabled = !available || !currentTargetPreviewId || !selectedTargetDevice;
+      propose.textContent = available ? `Propose ${available} ready mapping${available === 1 ? "" : "s"}` : "Propose ready mappings";
+    }
+    if (approve) {
+      const count = [...aiProposals.values()].filter(item =>
+        item.action === "USE_EXISTING" && item.validation_status === "VALID"
+      ).length;
+      approve.disabled = !count;
+      approve.textContent = count ? `Approve ${count} valid proposal${count === 1 ? "" : "s"}` : "Approve valid AI proposals";
+    }
+  }
+
+  async function recordAIAuditOutcome(proposalId, action, finalValue) {
+    const response = await fetch("/api/migration/ai/outcome", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ proposal_id: proposalId, engineer_action: action, final_value: finalValue }),
+    });
+    await readJson(response, "Could not record AI proposal review");
+  }
+
+  document.getElementById("migration-ai-propose-ready")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    const status = document.getElementById("migration-ai-status");
+    const ready = new Set(currentDesignSession?.ready_decision_keys || []);
+    const keys = currentDecisionSet.decisions.filter(item =>
+      ready.has(item.key) && item.review_state !== "CONFIRMED" && item.mode !== "UNSUPPORTED"
+      && decisionEvidence[item.key] !== "CONFLICT" && (decisionCandidates[item.key] || []).length
+      && !aiProposals.has(item.key)
+    ).map(item => item.key);
+    if (!keys.length || !currentPreviewId || !currentTargetPreviewId || !selectedTargetDevice) return;
+    button.disabled = true;
+    if (status) status.textContent = `Requesting proposals for ${keys.length} ready decisions…`;
+    try {
+      for (let offset = 0; offset < keys.length; offset += 8) {
+        const response = await fetch("/api/migration/ai/propose", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            preview_id: currentPreviewId,
+            decision_document: currentDecisionPayload(),
+            target_preview_id: currentTargetPreviewId,
+            target_device: selectedTargetDevice,
+            decision_keys: keys.slice(offset, offset + 8),
+          }),
+        });
+        const result = await readJson(response, "AI advisor could not propose mappings");
+        for (const proposal of result.proposals || []) aiProposals.set(proposal.decision_key, proposal);
+      }
+      activeReviewQueue = "CHOOSE_CANDIDATE";
+      reviewVisibleLimit = Math.max(reviewVisibleLimit, 24);
+      renderMigrationReviewWorkflow();
+      if (status) status.textContent = `Received ${keys.filter(key => aiProposals.has(key)).length} proposals. Review each proposal before approval.`;
+    } catch (error) {
+      if (status) status.textContent = error.message;
+      showError(error.message);
+    } finally {
+      updateMigrationAIActions();
+    }
+  });
+
+  document.getElementById("migration-ai-approve-valid")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    const status = document.getElementById("migration-ai-status");
+    const proposals = [...aiProposals.entries()].filter(([, item]) =>
+      item.action === "USE_EXISTING" && item.validation_status === "VALID"
+    );
+    if (!proposals.length || !currentPreviewId) return;
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/migration/ai/approve-bulk", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preview_id: currentPreviewId,
+          decision_document: currentDecisionPayload(),
+          target_preview_id: currentTargetPreviewId,
+          target_device: selectedTargetDevice,
+          proposal_ids: proposals.map(([, item]) => item.proposal_id),
+        }),
+      });
+      const result = await readJson(response, "AI proposals could not be approved");
+      currentDecisionSet = result.decisions;
+      currentDecisionDocument = result.decision_document;
+      aiProposals.clear();
+      await refreshMigrationReviewFromCurrentDecisions();
+      if (status) status.textContent = `Approved ${result.approved_count} proposals as engineer-confirmed decisions.`;
+    } catch (error) {
+      if (status) status.textContent = error.message;
+      showError(error.message);
+    } finally {
+      updateMigrationAIActions();
+    }
+  });
 
   document.querySelectorAll("[data-review-queue]").forEach(tab => tab.addEventListener("click", () => {
     activeReviewQueue = tab.dataset.reviewQueue; reviewVisibleLimit = 12; renderMigrationReviewWorkflow();
@@ -2186,8 +2319,8 @@ let migrationBuildInFlight = false;
       markEngineerConfirmation(decision);
       decision.review_state = "CONFIRMED";
     }
-    try { await refreshMigrationReviewFromCurrentDecisions(); }
-    catch (error) { showError(`Could not refresh migration review: ${error.message}`); }
+    try { await refreshMigrationReviewFromCurrentDecisions(); return true; }
+    catch (error) { showError(`Could not refresh migration review: ${error.message}`); return false; }
   }
   document.getElementById("decision-confirm-selected")?.addEventListener("click", () => {
     const selected = selectedDecisions();
