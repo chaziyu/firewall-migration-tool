@@ -59,6 +59,7 @@ def transform_nat(
         references
         or build_reference_index(config)
     )
+    sdwan_zone_interfaces = _sdwan_zone_interface_index(config)
 
     result: list[
         NormalizedSourceNAT
@@ -101,7 +102,13 @@ def transform_nat(
                     _pool_nat(policy, references)
                 )
             else:
-                result.append(_interface_nat(config, policy, references))
+                result.append(
+                    _interface_nat(
+                        policy,
+                        references,
+                        sdwan_zone_interfaces,
+                    )
+                )
 
         if nat64:
             result.append(
@@ -207,9 +214,9 @@ def _pool_nat(
 
 
 def _interface_nat(
-    config: FGConfig,
     policy,
     references: ReferenceIndex,
+    sdwan_zone_interfaces: dict[tuple[str, str], tuple[str, ...]],
 ) -> NormalizedSourceNAT:
     interface_names: list[str] = []
     addresses: list[str] = []
@@ -264,10 +271,9 @@ def _interface_nat(
             == ReferenceKind.SDWAN_ZONE
         ):
             interface_names.extend(
-                _sdwan_zone_interfaces(
-                    config,
-                    vdom=policy.vdom,
-                    zone=name,
+                sdwan_zone_interfaces.get(
+                    (policy.vdom, name),
+                    (),
                 )
             )
 
@@ -426,29 +432,25 @@ def _pool_address(
     return None
 
 
-def _sdwan_zone_interfaces(
+def _sdwan_zone_interface_index(
     config: FGConfig,
-    *,
-    vdom: str,
-    zone: str,
-) -> list[str]:
-    result: list[str] = []
+) -> dict[tuple[str, str], tuple[str, ...]]:
+    grouped: dict[tuple[str, str], list[str]] = {}
 
     for sdwan in config.sdwans:
-        if sdwan.vdom != vdom:
-            continue
-
         for member in sdwan.members:
-            if (
-                member.zone == zone
-                and member.interface
-            ):
-                result.append(
-                    member.interface
-                )
+            if not member.zone or not member.interface:
+                continue
 
-    return result
+            grouped.setdefault(
+                (sdwan.vdom, member.zone),
+                [],
+            ).append(member.interface)
 
+    return {
+        key: tuple(interfaces)
+        for key, interfaces in grouped.items()
+    }
 
 def _enabled(
     value: str | None,
