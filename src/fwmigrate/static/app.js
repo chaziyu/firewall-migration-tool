@@ -16,11 +16,13 @@ let migrationBuildInFlight = false;
   let currentDecisionSet = { decisions: [] };
   let currentDecisionDocument = null;
   let currentDesignSession = null;
+  let aiDesignSessionId = null;
+  let aiDesignSummary = null;
+  let aiDesignFailure = null;
   let decisionContext = {};
   let decisionCandidates = {};
   const aiProposals = new Map();
   const aiProposalEdits = new Map();
-  let aiAutoAttempt = null;
   let reviewSummary = {};
   let automationRunSummary = null;
   let reviewGroups = [];
@@ -860,6 +862,10 @@ let migrationBuildInFlight = false;
     sourceReady = false;
     sourceFailed = false;
     currentPreviewId = null;
+    aiDesignSessionId = null;
+    aiDesignSummary = null;
+    aiDesignFailure = null;
+    aiProposals.clear();
     currentDecisionSet = { decisions: [] };
     currentDecisionDocument = null;
     decisionEvidence = {};
@@ -1314,7 +1320,6 @@ let migrationBuildInFlight = false;
   }
 
   function invalidateMigrationPlan(rebuilding = false) {
-    if (!rebuilding) aiProposals.clear();
     if (migrationBuildTimer) {
       clearTimeout(migrationBuildTimer);
       migrationBuildTimer = null;
@@ -1439,6 +1444,9 @@ let migrationBuildInFlight = false;
 
   function clearTargetEvidence() {
     aiProposals.clear();
+    aiDesignSessionId = null;
+    aiDesignSummary = null;
+    aiDesignFailure = null;
     automationRunSummary = null;
     targetRevision += 1;
     currentTargetPreviewId = null;
@@ -1490,6 +1498,10 @@ let migrationBuildInFlight = false;
   targetDeviceSelect?.addEventListener("change", async () => {
     const previous = currentDecisionPayload();
     selectedTargetDevice = targetDeviceSelect.value;
+    aiProposals.clear();
+    aiDesignSessionId = null;
+    aiDesignSummary = null;
+    aiDesignFailure = null;
     invalidateMigrationPlan();
     await loadMigrationReview(currentPreviewId, previous);
   });
@@ -1693,29 +1705,13 @@ let migrationBuildInFlight = false;
             const approve = document.createElement("button"); approve.type = "button";
             approve.className = "btn btn-primary btn-sm"; approve.textContent = "Approve proposal";
             approve.disabled = proposal.validation_status !== "VALID";
-            approve.addEventListener("click", async () => {
-              approve.disabled = true;
-              try {
-                const response = await fetch("/api/migration/ai/approve", {
-                  method: "POST", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ preview_id: currentPreviewId,
-                    decision_document: currentDecisionPayload(),
-                    target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice,
-                    proposal_id: proposal.proposal_id }),
-                });
-                const result = await readJson(response, "The Groq proposal is no longer current");
-                currentDecisionSet = result.decisions;
-                currentDecisionDocument = result.decision_document;
-                aiProposals.delete(decision.key);
-                await refreshMigrationReviewFromCurrentDecisions();
-              } catch (error) { showError(error.message); approve.disabled = false; }
-            });
+            approve.addEventListener("click", () => approveAIProposals([proposal]));
             const use = document.createElement("button"); use.type = "button";
             use.className = "btn btn-secondary btn-sm"; use.textContent = "Use value to edit";
             use.addEventListener("click", () => {
               input.value = proposal.proposed_value;
               decision.value = proposal.proposed_value;
-              aiProposalEdits.set(decision.key, proposal.proposal_id);
+              aiProposalEdits.set(decision.key, true);
               input.dispatchEvent(new Event("input", { bubbles: true }));
               renderMigrationReviewWorkflow();
             });
@@ -1724,12 +1720,8 @@ let migrationBuildInFlight = false;
           const dismiss = document.createElement("button"); dismiss.type = "button";
           dismiss.className = "btn btn-secondary btn-sm"; dismiss.textContent = "Dismiss";
           dismiss.addEventListener("click", async () => {
-            try {
-              await recordAIAuditOutcome(proposal.proposal_id, "REJECTED");
-              aiProposals.delete(decision.key);
-              aiProposalEdits.delete(decision.key);
-              renderMigrationReviewWorkflow();
-            } catch (error) { showError(error.message); }
+            await rejectAIProposals([proposal]);
+            aiProposalEdits.delete(decision.key);
           });
           advice.append(dismiss); field.append(advice);
         }
@@ -1793,16 +1785,7 @@ let migrationBuildInFlight = false;
           });
           const saved = await saveDecisionValues(selected.filter(item => item.value));
           if (!saved) return;
-          for (const item of selected) {
-            const proposalId = aiProposalEdits.get(item.key);
-            if (proposalId && item.value) {
-              try {
-                await recordAIAuditOutcome(proposalId, "MODIFIED", item.value);
-                aiProposalEdits.delete(item.key);
-                aiProposals.delete(item.key);
-              } catch (error) { showError(error.message); }
-            }
-          }
+          selected.forEach(item => aiProposalEdits.delete(item.key));
         });
         card.append(confirm);
       }
@@ -1827,6 +1810,14 @@ let migrationBuildInFlight = false;
     ).map(item => item.key);
   }
 
+  function applyAIDesignSession(session) {
+    aiDesignSessionId = session?.design_session_id || null;
+    aiDesignSummary = session?.summary || null;
+    aiDesignFailure = session?.failure_category || null;
+    aiProposals.clear();
+    for (const proposal of session?.proposals || []) aiProposals.set(proposal.decision_key, proposal);
+  }
+
   function renderAIProposalSummary() {
     const container = document.getElementById("migration-ai-proposals");
     if (!container) return;
@@ -1835,7 +1826,9 @@ let migrationBuildInFlight = false;
     const abstained = proposals.filter(item => item.action === "NO_SAFE_PROPOSAL");
     const conflicts = proposals.filter(item => item.validation_status === "CONFLICT");
     const summary = document.createElement("p");
-    summary.textContent = proposals.length
+    summary.textContent = aiDesignSummary
+      ? `${aiDesignSummary.deterministic_confirmed || 0} deterministic · ${aiDesignSummary.engineer_confirmed || 0} engineer confirmed · ${valid.length} valid AI proposals · ${abstained.length} no safe proposal · ${conflicts.length} conflicts · ${aiDesignSummary.unsupported || 0} unsupported · ${aiDesignSummary.blocked || 0} blocked${aiDesignSummary.stable ? " · design stable" : " · design needs another pass"}${aiDesignFailure ? ` · ${aiDesignFailure}` : ""}.`
+      : proposals.length
       ? `${valid.length} valid proposals · ${abstained.length} no safe proposal · ${conflicts.length} conflicts. Review the grouped selections before approval.`
       : `${readyAIKeys().length} unresolved decisions ready for AI.`;
     container.replaceChildren(summary);
@@ -1845,17 +1838,19 @@ let migrationBuildInFlight = false;
       const field = byKey.get(proposal.decision_key)?.target_field || "other";
       const family = field === "target_interface" ? "Interfaces" : field === "target_zone" ? "Zones"
         : field === "vsys" ? "Ownership" : field === "virtual_router" ? "Virtual routers" : "Other";
-      if (!families.has(family)) families.set(family, []);
-      families.get(family).push(proposal);
+      const vdom = byKey.get(proposal.decision_key)?.source_vdom || "root";
+      const groupKey = `${family}\0${field}\0${vdom}`;
+      if (!families.has(groupKey)) families.set(groupKey, { family, field, vdom, items: [] });
+      families.get(groupKey).items.push(proposal);
     }
-    for (const [family, items] of families) {
+    for (const { family, field, vdom, items } of families.values()) {
       const section = document.createElement("section");
-      const heading = document.createElement("h4"); heading.textContent = family;
+      const heading = document.createElement("h4"); heading.textContent = `${family} · ${vdom}`;
       const list = document.createElement("ul");
       for (const proposal of items) {
         const decision = byKey.get(proposal.decision_key);
         const row = document.createElement("li");
-        row.textContent = `${decision?.source_name || proposal.decision_key} → ${proposal.proposed_value || "No safe proposal"} · ${proposal.validation_status === "CONFLICT" ? "Conflict" : proposal.action === "USE_EXISTING" ? "AI proposed" : "Needs engineer input"}`;
+        row.textContent = `${decision?.source_name || proposal.decision_key} → ${proposal.proposed_value || "No safe proposal"} · ${proposal.validation_status === "CONFLICT" ? "Conflict" : proposal.validation_status === "REJECTED" ? "Rejected" : proposal.action === "USE_EXISTING" ? "AI proposed" : "Needs engineer input"}`;
         list.append(row);
       }
       section.append(heading, list);
@@ -1864,8 +1859,15 @@ let migrationBuildInFlight = false;
         const approve = document.createElement("button"); approve.type = "button";
         approve.className = "btn btn-secondary btn-sm";
         approve.textContent = `Approve ${groupValid.length} ${family.toLowerCase()} proposal${groupValid.length === 1 ? "" : "s"}`;
-        approve.addEventListener("click", () => approveAIProposals(groupValid));
+        approve.addEventListener("click", () => approveAIProposals(null, { family: field, source_vdom: vdom }));
         section.append(approve);
+      }
+      const rejectable = items.filter(item => item.validation_status !== "REJECTED");
+      if (rejectable.length) {
+        const reject = document.createElement("button"); reject.type = "button";
+        reject.className = "btn btn-secondary btn-sm"; reject.textContent = "Reject group";
+        reject.addEventListener("click", () => rejectAIProposals(rejectable));
+        section.append(reject);
       }
       container.append(section);
     }
@@ -1876,8 +1878,9 @@ let migrationBuildInFlight = false;
     const approve = document.getElementById("migration-ai-approve-valid");
     if (propose) {
       const available = readyAIKeys().length;
-      propose.disabled = !available || !currentTargetPreviewId || !selectedTargetDevice;
-      propose.textContent = available ? `Retry ${available} ready proposal${available === 1 ? "" : "s"}` : "No ready proposals";
+      const exceptions = (aiDesignSummary?.abstained || 0) + (aiDesignSummary?.conflicted || 0);
+      propose.disabled = (!available && !exceptions && !aiDesignFailure) || !currentTargetPreviewId || !selectedTargetDevice;
+      propose.textContent = aiDesignSessionId ? "Retry unresolved design decisions" : available ? "Build proposed design" : "No ready proposals";
     }
     if (approve) {
       const count = [...aiProposals.values()].filter(item =>
@@ -1889,41 +1892,39 @@ let migrationBuildInFlight = false;
     renderAIProposalSummary();
   }
 
-  async function recordAIAuditOutcome(proposalId, action, finalValue) {
-    const response = await fetch("/api/migration/ai/outcome", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ proposal_id: proposalId, engineer_action: action, final_value: finalValue }),
-    });
-    await readJson(response, "Could not record AI proposal review");
-  }
-
-  async function requestReadyAIProposals({ automatic = false } = {}) {
+  let aiDesignRequestInFlight = false;
+  async function requestReadyAIProposals({ automatic = false, retryExceptions = false } = {}) {
     const status = document.getElementById("migration-ai-status");
     const keys = readyAIKeys();
-    if (!keys.length || !currentPreviewId || !currentTargetPreviewId || !selectedTargetDevice) return;
-    if (status) status.textContent = `Requesting proposals for ${keys.length} ready decisions…`;
+    if (aiDesignRequestInFlight || !currentPreviewId || !currentTargetPreviewId || !selectedTargetDevice) return;
+    if (!aiDesignSessionId && !keys.length) return;
+    aiDesignRequestInFlight = true;
+    if (status) status.textContent = "Building the proposed design across ready dependency waves…";
     try {
       const signature = JSON.stringify([currentPreviewId, currentTargetPreviewId, selectedTargetDevice, currentDecisionSet.decisions]);
-      const response = await fetch("/api/migration/ai/propose", {
+      const response = await fetch("/api/migration/ai/design", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           preview_id: currentPreviewId,
           decision_document: currentDecisionPayload(),
           target_preview_id: currentTargetPreviewId,
           target_device: selectedTargetDevice,
-          ...(automatic ? {} : { decision_keys: keys }),
+          ...(aiDesignSessionId ? { design_session_id: aiDesignSessionId } : {}),
+          ...(retryExceptions ? { retry_exceptions: true } : {}),
         }),
       });
-      const result = await readJson(response, "AI advisor could not propose mappings");
+      const result = await readJson(response, "AI advisor could not build the proposed design");
       if (signature !== JSON.stringify([currentPreviewId, currentTargetPreviewId, selectedTargetDevice, currentDecisionSet.decisions])) return;
-      for (const proposal of result.proposals || []) aiProposals.set(proposal.decision_key, proposal);
+      applyAIDesignSession(result.design_session);
       activeReviewQueue = "CHOOSE_CANDIDATE";
       reviewVisibleLimit = Math.max(reviewVisibleLimit, 24);
       renderMigrationReviewWorkflow();
-      if (status) status.textContent = `Received ${result.proposals?.length || 0} proposals.${result.failure_category ? ` Some batches stopped: ${result.failure_category}.` : ""}`;
+      if (status) status.textContent = `${aiDesignSummary?.ai_proposed || 0} proposals are ready for review.${aiDesignFailure ? ` Further work stopped: ${aiDesignFailure}.` : ""}`;
     } catch (error) {
       if (status) status.textContent = error.message;
       if (!automatic) showError(error.message);
+    } finally {
+      aiDesignRequestInFlight = false;
     }
     updateMigrationAIActions();
   }
@@ -1936,10 +1937,7 @@ let migrationBuildInFlight = false;
       if (label) label.textContent = config.enabled
         ? `${config.provider === "qwen_local" ? "Local Qwen" : "Groq"} · ${config.model} · ${config.response_mode} · ${configured ? "Ready" : "Configuration error"}`
         : "AI advisor disabled";
-      if (!config.enabled || !configured || !readyAIKeys().length) return;
-      const signature = JSON.stringify([currentPreviewId, currentTargetPreviewId, selectedTargetDevice, currentDecisionSet.decisions]);
-      if (signature === aiAutoAttempt) return;
-      aiAutoAttempt = signature;
+      if (!config.enabled || !configured || aiDesignSessionId || !readyAIKeys().length) return;
       await requestReadyAIProposals({ automatic: true });
     } catch (error) {
       if (label) label.textContent = `Advisor configuration error: ${error.message}`;
@@ -1957,26 +1955,28 @@ let migrationBuildInFlight = false;
     finally { button.disabled = false; }
   });
 
-  document.getElementById("migration-ai-propose-ready")?.addEventListener("click", () => requestReadyAIProposals());
+  document.getElementById("migration-ai-propose-ready")?.addEventListener("click", () =>
+    requestReadyAIProposals({ retryExceptions: Boolean(aiDesignSessionId) }));
 
-  async function approveAIProposals(items) {
+  async function approveAIProposals(items, scope = null) {
     const status = document.getElementById("migration-ai-status");
-    if (!items.length || !currentPreviewId) return;
+    if (!currentPreviewId || !aiDesignSessionId || (items && !items.length)) return;
     try {
-      const response = await fetch("/api/migration/ai/approve-bulk", {
+      const response = await fetch(`/api/migration/ai/design/${encodeURIComponent(aiDesignSessionId)}/approve`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           preview_id: currentPreviewId,
           decision_document: currentDecisionPayload(),
           target_preview_id: currentTargetPreviewId,
           target_device: selectedTargetDevice,
-          proposal_ids: items.map(item => item.proposal_id),
+          ...(items ? { decision_keys: items.map(item => item.decision_key) } :
+            scope ? scope : { approve_all: true }),
         }),
       });
       const result = await readJson(response, "AI proposals could not be approved");
       currentDecisionSet = result.decisions;
       currentDecisionDocument = result.decision_document;
-      aiProposals.clear();
+      applyAIDesignSession(result.design_session);
       await refreshMigrationReviewFromCurrentDecisions();
       if (status) status.textContent = `Approved ${result.approved_count} proposals as engineer-confirmed decisions.`;
     } catch (error) {
@@ -1986,9 +1986,22 @@ let migrationBuildInFlight = false;
     updateMigrationAIActions();
   }
 
-  document.getElementById("migration-ai-approve-valid")?.addEventListener("click", () =>
-    approveAIProposals([...aiProposals.values()].filter(item =>
-      item.action === "USE_EXISTING" && item.validation_status === "VALID")));
+  async function rejectAIProposals(items) {
+    if (!items.length || !aiDesignSessionId) return;
+    try {
+      const response = await fetch(`/api/migration/ai/design/${encodeURIComponent(aiDesignSessionId)}/reject`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(),
+          target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice,
+          decision_keys: items.map(item => item.decision_key) }),
+      });
+      const result = await readJson(response, "AI proposals could not be rejected");
+      applyAIDesignSession(result.design_session);
+      renderMigrationReviewWorkflow();
+    } catch (error) { showError(error.message); }
+  }
+
+  document.getElementById("migration-ai-approve-valid")?.addEventListener("click", () => approveAIProposals(null));
 
   document.querySelectorAll("[data-review-queue]").forEach(tab => tab.addEventListener("click", () => {
     activeReviewQueue = tab.dataset.reviewQueue; reviewVisibleLimit = 12; renderMigrationReviewWorkflow();
@@ -2361,12 +2374,46 @@ let migrationBuildInFlight = false;
   }
 
   async function saveDecisionValues(decisions) {
+    if (!decisions.length) return true;
     for (const decision of decisions) {
-      decision.mode = decision.mode === "AUTO" ? "REQUIRED" : decision.mode;
-      markEngineerConfirmation(decision);
-      decision.review_state = "CONFIRMED";
+      if (!decision.value) {
+        decision.value = null;
+        decision.mode = decision.mode === "AUTO" ? "REQUIRED" : decision.mode;
+        decision.review_state = "PENDING";
+        decision.evidence_source = null;
+        decision.evidence_type = null;
+        decision.evidence_value = null;
+        decision.target_object = null;
+        decision.evidence_target_digest = null;
+        decision.evidence_target_device = null;
+      } else {
+        decision.mode = decision.mode === "AUTO" ? "REQUIRED" : decision.mode;
+        markEngineerConfirmation(decision);
+        decision.review_state = "CONFIRMED";
+      }
     }
-    try { await refreshMigrationReviewFromCurrentDecisions(); return true; }
+    try {
+      if (aiDesignSessionId && currentTargetPreviewId) {
+        const response = await fetch(`/api/migration/ai/design/${encodeURIComponent(aiDesignSessionId)}/modify`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            preview_id: currentPreviewId,
+            decision_document: currentDecisionPayload(),
+            target_preview_id: currentTargetPreviewId,
+            target_device: selectedTargetDevice,
+            changes: decisions.map(item => ({ decision_key: item.key, value: item.value })),
+          }),
+        });
+        const result = await readJson(response, "Could not update the AI design");
+        currentDecisionSet = result.decisions;
+        currentDecisionDocument = result.decision_document;
+        applyAIDesignSession(result.design_session);
+        await loadMigrationReview(currentPreviewId, result.decision_document);
+      } else {
+        await refreshMigrationReviewFromCurrentDecisions();
+      }
+      return true;
+    }
     catch (error) { showError(`Could not refresh migration review: ${error.message}`); return false; }
   }
   document.getElementById("decision-confirm-selected")?.addEventListener("click", () => {
@@ -2395,18 +2442,9 @@ let migrationBuildInFlight = false;
     selected.forEach(item => { item.value = item.suggested_value; }); saveDecisionValues(selected);
   });
   document.getElementById("decision-clear-selected")?.addEventListener("click", () => {
-    for (const decision of selectedDecisions()) {
-      decision.value = null;
-      if (decision.mode === "AUTO") decision.mode = "REQUIRED";
-      decision.review_state = "PENDING";
-      decision.evidence_source = null;
-      decision.evidence_type = null;
-      decision.evidence_value = null;
-      decision.target_object = null;
-      decision.evidence_target_digest = null;
-      decision.evidence_target_device = null;
-    }
-    invalidateMigrationPlan(); renderDecisionTable(); updateMappingCompletion();
+    const selected = selectedDecisions();
+    selected.forEach(item => { item.value = null; });
+    saveDecisionValues(selected);
   });
 
   document.getElementById("mapping-template")?.addEventListener("click", () => {

@@ -32,6 +32,9 @@ class PANAIProposal:
     validation_findings: tuple[str, ...] = ()
     response_mode: str = "STRICT_SCHEMA"
     repair_pass: int = 0
+    dependency_values: tuple[tuple[str, str], ...] = ()
+    escalated_from: str | None = None
+    escalation_failure_category: str | None = None
 
     def __post_init__(self) -> None:
         if not self.decision_key or not self.provider or not self.model:
@@ -71,7 +74,20 @@ class PANAIProposal:
             "validation_findings": list(self.validation_findings),
             "response_mode": self.response_mode,
             "repair_pass": self.repair_pass,
+            "dependency_values": [list(item) for item in self.dependency_values],
+            "escalated_from": self.escalated_from,
+            "escalation_failure_category": self.escalation_failure_category,
         }
+
+    @classmethod
+    def from_dict(cls, value: dict) -> "PANAIProposal":
+        data = dict(value)
+        data["action"] = PANAIProposalAction(data["action"])
+        data["evidence_refs"] = tuple(data.get("evidence_refs", ()))
+        data["evidence"] = tuple(data.get("evidence", ()))
+        data["validation_findings"] = tuple(data.get("validation_findings", ()))
+        data["dependency_values"] = tuple(tuple(item) for item in data.get("dependency_values", ()))
+        return cls(**data)
 
 
 @dataclass(frozen=True, slots=True)

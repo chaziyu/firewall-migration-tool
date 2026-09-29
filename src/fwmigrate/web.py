@@ -22,6 +22,10 @@ from fwmigrate.conversion.builtin import register_builtin_migration_planners
 from fwmigrate.conversion import migration_planners
 from fwmigrate.conversion.fortigate_to_palo_alto.design.graph import build_decision_graph
 from fwmigrate.conversion.fortigate_to_palo_alto.design.session import create_design_session
+from fwmigrate.conversion.fortigate_to_palo_alto.design.proposed import PANProposedDesignSession
+from fwmigrate.conversion.fortigate_to_palo_alto.ai.orchestrator import (
+    build_ai_proposed_design, state_with_proposed_design,
+)
 from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANDecisionMode,
     PANDecisionReviewState,
@@ -475,6 +479,8 @@ def create_app(test_config=None):
     app.config['TEMPLATES_AUTO_RELOAD'] = True
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
     app.jinja_env.auto_reload = True
+    app.config.setdefault('AI_DESIGN_SESSION_TTL_SECONDS', 30 * 60)
+    app.config.setdefault('AI_DESIGN_SESSION_MAX', 32)
 
     if test_config:
         app.config.update(test_config)
@@ -489,11 +495,96 @@ def create_app(test_config=None):
 
     rendered_artifacts = {}
     ai_proposals = {}
+    ai_design_sessions = {}
     ai_proposal_lock = threading.Lock()
     ai_audit = []
     ai_audit_by_id = {}
     artifact_sources = {}
     deployment_sessions: dict[str, PANDeploymentSession] = {}
+
+    def _sync_ai_design_audit(rows):
+        by_id = {row.get('audit_id'): row for row in ai_audit if row.get('audit_id')}
+        for row in rows:
+            stored = by_id.get(row.get('audit_id'))
+            if stored:
+                for field in ('engineer_action', 'final_value', 'failure_category'):
+                    if field in row:
+                        stored[field] = row[field]
+
+    def _design_audit_actions(session, actions):
+        return tuple(
+            {**row, 'engineer_action': actions[row['decision_key']][0],
+             'final_value': actions[row['decision_key']][1]}
+            if row.get('decision_key') in actions and row.get('engineer_action') is None else row
+            for row in session.audit
+        )
+
+    def _expire_ai_design_sessions(now=None):
+        now = time.time() if now is None else now
+        ttl = max(1, int(app.config['AI_DESIGN_SESSION_TTL_SECONDS']))
+        limit = max(1, int(app.config['AI_DESIGN_SESSION_MAX']))
+        with ai_proposal_lock:
+            expired = [key for key, value in ai_design_sessions.items() if now - value.created_at > ttl]
+            for key in expired:
+                session = ai_design_sessions.pop(key)
+                for row in session.audit:
+                    if row.get('engineer_action') is None:
+                        row['engineer_action'] = 'UNRESOLVED'
+                _sync_ai_design_audit(session.audit)
+            while len(ai_design_sessions) > limit:
+                oldest = min(ai_design_sessions, key=lambda key: ai_design_sessions[key].created_at)
+                session = ai_design_sessions.pop(oldest)
+                for row in session.audit:
+                    if row.get('engineer_action') is None:
+                        row['engineer_action'] = 'UNRESOLVED'
+                _sync_ai_design_audit(session.audit)
+
+    def _store_ai_design_session(session, previous=None):
+        _expire_ai_design_sessions()
+        with ai_proposal_lock:
+            if previous and ai_design_sessions.get(previous.session_id) is not previous:
+                raise ValueError('This AI design session changed; reload and retry')
+            old_rows = previous.audit if previous and previous.session_id == session.session_id else ()
+            _sync_ai_design_audit(session.audit[:len(old_rows)])
+            for row in session.audit[len(old_rows):]:
+                ai_audit.append(row)
+            ai_design_sessions[session.session_id] = session
+            while len(ai_audit) > 5000:
+                removed = ai_audit.pop(0)
+                ai_audit_by_id.pop(removed.get('proposal_id'), None)
+
+    def _lookup_ai_design_session(session_id):
+        _expire_ai_design_sessions()
+        with ai_proposal_lock:
+            return ai_design_sessions.get(session_id)
+
+    def _ai_design_state(payload):
+        entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+        if entry is None:
+            raise ValueError('A valid FortiGate preview_id is required')
+        state = _build_migration_review_state(entry, payload)
+        if not state.get('target_digest') or not state.get('target_device'):
+            raise ValueError('Upload PAN-OS target XML and select a target device before AI design review')
+        return entry, state
+
+    def _check_ai_design_identity(session, state):
+        if (session.design.source_digest, session.design.target_digest, session.design.target_device) != (
+            state['source_digest'], state['target_digest'], state['target_device']
+        ):
+            raise ValueError('This design session is stale; refresh the source and target evidence')
+
+    def _ai_design_response(session, state, **extra):
+        result = {
+            'success': True,
+            'design_session': session.to_dict(state['design_session'].dependency_graph),
+            'decisions': state['decisions'].to_dict(),
+            'decision_document': _decision_document(
+                state['source_digest'], state['decisions'],
+                state['target_context'].metadata if state['target_context'] else None,
+            ),
+        }
+        result.update(extra)
+        return result
 
     @app.route('/')
     def index():
@@ -740,6 +831,199 @@ def create_app(test_config=None):
             return _ai_failure(exc, provider=provider, model=model, batch_size=1,
                                duration_ms=round((perf_counter() - started) * 1000))
 
+    @app.route('/api/migration/ai/design', methods=['POST'])
+    def build_migration_ai_design():
+        payload = request.get_json(silent=True)
+        if not ai_advisor.advisor_enabled():
+            return jsonify({'success': False, 'code': 'AI_DISABLED', 'error': 'AI advisor is disabled.'}), 503
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError('A JSON object is required')
+            entry, state = _ai_design_state(payload)
+            session_id = payload.get('design_session_id')
+            stored_previous = _lookup_ai_design_session(session_id) if session_id else None
+            if session_id and stored_previous is None:
+                return jsonify({'success': False, 'error': 'This AI design session expired; start a new review.'}), 409
+            previous = stored_previous
+            if stored_previous:
+                _check_ai_design_identity(stored_previous, state)
+                if payload.get('retry_exceptions'):
+                    retained = tuple(item for item in stored_previous.design.proposals
+                                     if item.validation_status == 'VALID'
+                                     and item.action.value == 'USE_EXISTING')
+                    previous = replace(stored_previous, design=stored_previous.design.with_state(proposals=retained))
+            session = build_ai_proposed_design(state, previous)
+            _store_ai_design_session(session, stored_previous)
+            return jsonify(_ai_design_response(session, state))
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        except Exception as exc:
+            return _ai_failure(exc, provider=ai_advisor.advisor_provider(), model=ai_advisor.advisor_model(),
+                               batch_size=0, duration_ms=0)
+
+    @app.route('/api/migration/ai/design/<session_id>', methods=['GET'])
+    def get_migration_ai_design(session_id):
+        session = _lookup_ai_design_session(session_id)
+        if session is None:
+            return jsonify({'success': False, 'error': 'This AI design session expired; start a new review.'}), 404
+        return jsonify({'success': True, 'design_session': session.to_dict(None)})
+
+    @app.route('/api/migration/ai/design/<session_id>/approve', methods=['POST'])
+    def approve_migration_ai_design(session_id):
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError('A JSON object is required')
+            session = _lookup_ai_design_session(session_id)
+            if session is None:
+                raise ValueError('This AI design session expired; start a new review.')
+            entry, state = _ai_design_state(payload)
+            _check_ai_design_identity(session, state)
+            design = session.design.with_state(decisions=state['decisions'])
+            proposals = design.proposals
+            if payload.get('approve_all') is True:
+                selected = [item for item in proposals if item.action.value == 'USE_EXISTING'
+                            and item.validation_status == 'VALID']
+            elif payload.get('family'):
+                family = str(payload['family']).strip().casefold()
+                fields = {
+                    'interfaces': {'target_interface'}, 'zones': {'target_zone'},
+                    'ownership': {'vsys'}, 'virtual routers': {'virtual_router'},
+                }
+                selected_fields = fields.get(family, {family})
+                source_vdom = payload.get('source_vdom')
+                decisions_by_key = {item.key: item for item in state['decisions'].decisions}
+                selected = [item for item in proposals
+                            if item.action.value == 'USE_EXISTING' and item.validation_status == 'VALID'
+                            and decisions_by_key[item.decision_key].target_field in selected_fields
+                            and (source_vdom is None
+                                 or decisions_by_key[item.decision_key].source_vdom == source_vdom)]
+            else:
+                keys = payload.get('decision_keys')
+                if (not isinstance(keys, list) or not keys
+                        or any(not isinstance(key, str) or not key for key in keys)
+                        or len(set(keys)) != len(keys)):
+                    raise ValueError('decision_keys, family, or approve_all is required')
+                requested = set(keys)
+                selected = [item for item in proposals if item.decision_key in requested]
+                if len(selected) != len(requested):
+                    raise ValueError('One or more selected proposals are no longer in this design')
+            if not selected:
+                raise ValueError('No valid AI proposals were selected')
+            state = state_with_proposed_design(state, design)
+            whole = ai_advisor.validate_proposal_set(state, [item.to_dict() for item in proposals])
+            whole_by_key = {item['decision_key']: item for item in whole}
+            if any(whole_by_key[item.decision_key]['validation_status'] != 'VALID' for item in selected):
+                raise ValueError('One or more selected proposals are stale or conflict with the current design')
+            confirmed, validated = ai_advisor.approve_proposals_as_engineer(
+                state, [item.to_dict() for item in selected], proposed_design=design
+            )
+            selected_keys = {item['decision_key'] for item in validated}
+            remaining = tuple(item for item in design.proposals if item.decision_key not in selected_keys)
+            audit_actions = {key: ('APPROVED', whole_by_key[key]['proposed_value']) for key in selected_keys}
+            updated = replace(
+                session, design=design.with_state(decisions=confirmed, proposals=remaining),
+                audit=_design_audit_actions(session, audit_actions),
+            )
+            _store_ai_design_session(updated, session)
+            state = dict(state, decisions=confirmed)
+            return jsonify(_ai_design_response(updated, state, approved_count=len(validated)))
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 409
+
+    @app.route('/api/migration/ai/design/<session_id>/modify', methods=['POST'])
+    def modify_migration_ai_design(session_id):
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict) or not isinstance(payload.get('changes'), list) or not payload['changes']:
+                raise ValueError('changes must be a non-empty array')
+            session = _lookup_ai_design_session(session_id)
+            if session is None:
+                raise ValueError('This AI design session expired; start a new review.')
+            entry, state = _ai_design_state(payload)
+            _check_ai_design_identity(session, state)
+            identity = target_evidence_identity(state['target_context'].metadata)
+            if identity is None or identity[1] is None:
+                raise ValueError('Target evidence and a selected PAN-OS device are required')
+            by_key = {item.key: item for item in state['decisions'].decisions}
+            ai_decision_keys = {item.decision_key for item in session.design.proposals}
+            changes = {}
+            for item in payload['changes']:
+                if not isinstance(item, dict) or not isinstance(item.get('decision_key'), str):
+                    raise ValueError('Each change requires a decision_key and value')
+                key, value = item['decision_key'], item.get('value')
+                if key not in by_key or 'value' not in item or (value is not None and (not isinstance(value, str) or not value.strip())):
+                    raise ValueError('Each change must select a current decision and a value or null')
+                if key in changes:
+                    raise ValueError('changes cannot repeat a decision_key')
+                changes[key] = value.strip() if isinstance(value, str) else None
+            for key, value in changes.items():
+                decision = by_key[key]
+                if value is None:
+                    by_key[key] = replace(
+                        decision, value=None,
+                        mode=PANDecisionMode.REQUIRED if decision.mode is PANDecisionMode.AUTO else decision.mode,
+                        review_state=PANDecisionReviewState.PENDING,
+                        evidence_source=None, evidence_type=None, evidence_value=None, target_object=None,
+                        evidence_target_digest=None, evidence_target_device=None,
+                    )
+                else:
+                    by_key[key] = replace(
+                        decision, value=value, review_state=PANDecisionReviewState.CONFIRMED,
+                        evidence_source='ENGINEER',
+                        evidence_type=('ENGINEER_MODIFIED_AI_PROPOSAL' if key in ai_decision_keys else 'MANUAL'),
+                        evidence_value=value, target_object=value,
+                        evidence_target_digest=identity[0], evidence_target_device=identity[1],
+                    )
+            decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
+            document = _decision_document(entry.source_digest, decisions, state['target_context'].metadata)
+            updated_payload = dict(payload, decision_document=document)
+            state = _build_migration_review_state(entry, updated_payload)
+            audit_actions = {
+                key: ('MODIFIED' if value is not None else 'UNRESOLVED', value)
+                for key, value in changes.items()
+            }
+            build_session = replace(session, audit=_design_audit_actions(session, audit_actions))
+            rebuilt = build_ai_proposed_design(state, build_session)
+            _store_ai_design_session(rebuilt, session)
+            return jsonify(_ai_design_response(rebuilt, state, decisions=state['decisions'].to_dict(),
+                                              decision_document=document))
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 409
+
+    @app.route('/api/migration/ai/design/<session_id>/reject', methods=['POST'])
+    def reject_migration_ai_design_proposals(session_id):
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError('A JSON object is required')
+            keys = payload.get('decision_keys')
+            if (not isinstance(keys, list) or not keys
+                    or any(not isinstance(key, str) or not key for key in keys)
+                    or len(set(keys)) != len(keys)):
+                raise ValueError('decision_keys must contain unique proposal keys')
+            session = _lookup_ai_design_session(session_id)
+            if session is None:
+                raise ValueError('This AI design session expired; start a new review.')
+            entry, state = _ai_design_state(payload)
+            _check_ai_design_identity(session, state)
+            by_key = {item.decision_key: item for item in session.design.proposals}
+            if any(key not in by_key for key in keys):
+                raise ValueError('One or more selected proposals are no longer in this design')
+            proposals = tuple(
+                replace(item, validation_status='REJECTED',
+                        validation_findings=('Rejected by engineer',)) if item.decision_key in keys else item
+                for item in session.design.proposals
+            )
+            updated = replace(
+                session, design=session.design.with_state(proposals=proposals),
+                audit=_design_audit_actions(session, {key: ('REJECTED', None) for key in keys}),
+            )
+            _store_ai_design_session(updated, session)
+            return jsonify(_ai_design_response(updated, state))
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 409
+
     @app.route('/api/migration/ai/propose', methods=['POST'])
     def propose_migration_ai():
         payload = request.get_json(silent=True)
@@ -786,8 +1070,8 @@ def create_app(test_config=None):
                 failure_code = failure[0].get_json()['code']
                 break
         if proposals:
-            proposals = ai_advisor.repair_conflicted_proposals(
-                state, decision_keys[:len(proposals)], proposals)
+            proposal_keys = tuple(item['decision_key'] for item in proposals)
+            proposals = ai_advisor.repair_conflicted_proposals(state, proposal_keys, proposals)
             failure_code = failure_code or next(
                 (item.get('escalation_failure_category') for item in proposals
                  if item.get('escalation_failure_category')), None)

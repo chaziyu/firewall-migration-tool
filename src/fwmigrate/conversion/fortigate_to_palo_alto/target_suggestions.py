@@ -81,24 +81,31 @@ def _compatible(source, target):
     return family in {"ethernet", "aggregate-ethernet", "vlan", "loopback", "tunnel"} if not kind else family == "ethernet"
 
 
-def discover_target_candidates(source, decisions: PANMigrationDecisionSet, target, device: str, *, evidence=None):
+def discover_target_candidates(source, decisions: PANMigrationDecisionSet, target, device: str, *, evidence=None,
+                              proposed_design=None):
     """Return current target evidence, separate from the persisted decision document."""
     records = [item for item in (*target.config.interfaces, *target.config.interface_units)
                if item.name and _device(item) == device]
     topology = {(item.scope, item.interface): item for item in target.derived.interface_topology}
     scoped = [(item, topology.get((pan_scope_identity(item.scope), item.name))) for item in records]
     by_source = {(item.vdom or "root", item.name): item for item in source.interfaces if item.name}
-    mapped = {(item.source_vdom, item.source_name): item.value for item in decisions.decisions
-              if item.source_kind == "interface" and item.target_field == "target_interface"
-              and item.review_state == PANDecisionReviewState.CONFIRMED and item.value}
-    confirmed_zones = {(item.source_vdom, item.source_name): item.value for item in decisions.decisions
-                       if item.source_kind == "interface" and item.target_field == "target_zone"
-                       and item.review_state == PANDecisionReviewState.CONFIRMED and item.value}
+    mapped = {}
+    confirmed_zones = {}
+    for decision in decisions.decisions:
+        if decision.source_kind != "interface" or decision.target_field not in {"target_interface", "target_zone"}:
+            continue
+        value = (proposed_design.provisional_value(decision.key) if proposed_design is not None
+                 else decision.value if decision.mode is PANDecisionMode.AUTO
+                 or decision.review_state is PANDecisionReviewState.CONFIRMED else None)
+        if value and decision.target_field == "target_interface":
+            mapped[(decision.source_vdom, decision.source_name)] = value
+        elif value and decision.target_field == "target_zone":
+            confirmed_zones[(decision.source_vdom, decision.source_name)] = value
     result = {}
     for (vdom, name), item in by_source.items():
         key = make_decision_key(vdom, "interface", name, "target_interface")
         parent = mapped.get((vdom, item.interface)) if item.interface else None
-        target_vsys = target_vsys_value(decisions, vdom)
+        target_vsys = target_vsys_value(decisions, vdom, proposed_design=proposed_design)
         found = []
         for target_item, topo in scoped:
             if not _compatible(item, target_item):
@@ -142,7 +149,7 @@ def discover_target_candidates(source, decisions: PANMigrationDecisionSet, targe
         if decision.key in result:
             continue
         candidates = []
-        vsys = target_vsys_value(decisions, decision.source_vdom)
+        vsys = target_vsys_value(decisions, decision.source_vdom, proposed_design=proposed_design)
         if decision.source_kind == "vdom" and decision.target_field == "vsys":
             candidates.extend(_candidate(scope.vsys, scope, supporting=("explicit target VSYS",))
                               for scope in scopes if scope.vsys)

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import socket
+import time
 from collections import Counter
 from dataclasses import dataclass
 from dataclasses import replace
@@ -268,10 +269,13 @@ def _canonical_digest(value) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def ready_proposal_keys(state):
+def ready_proposal_keys(state, proposed_design=None):
     session = state["design_session"]
     by_key = {item.key: item for item in state["decisions"].decisions}
-    ready = session.dependency_graph.ready_decision_keys(session.decisions, conflicted=session.conflicted)
+    proposed_design = proposed_design or state.get("proposed_design")
+    ready = (session.dependency_graph.ready_proposed_decision_keys(proposed_design, conflicted=session.conflicted)
+             if proposed_design is not None else
+             session.dependency_graph.ready_decision_keys(session.decisions, conflicted=session.conflicted))
     for key in ready:
         decision = by_key[key]
         if (decision.source_kind, decision.target_field) not in _ALLOWED_FIELDS:
@@ -287,7 +291,7 @@ def ready_proposal_keys(state):
 
 def build_proposal_context(state, decision_keys, *, model=None, provider=None,
                            excluded_candidate_ids=None, repair_feedback=None,
-                           design_context=None):
+                           design_context=None, proposed_design=None):
     """Build compact model input from current sanitized review evidence."""
     max_decisions = _max_decisions()
     if not isinstance(decision_keys, list) or not decision_keys or len(decision_keys) > max_decisions:
@@ -300,23 +304,29 @@ def build_proposal_context(state, decision_keys, *, model=None, provider=None,
     decisions = {item.key: item for item in state["decisions"].decisions}
     findings = {item.decision_key for item in state.get("target_findings", ())}
     prompt_model = model or advisor_model()
-    digest_input = {
+    state_digest = _canonical_digest({
         "source_digest": state["source_digest"],
         "target_digest": state["target_digest"],
         "target_device": state["target_device"],
         "decisions": [item.to_dict() for item in sorted(decisions.values(), key=lambda item: item.key)],
-    }
-    state_digest = _canonical_digest(digest_input)
+    })
     by_decision = {}
     model_decisions = []
     prompt_provider = provider or advisor_provider()
     response_mode = advisor_capabilities(prompt_provider, prompt_model).response_mode
     design_session = state.get("design_session")
+    proposed_design = proposed_design or state.get("proposed_design")
     ready_keys = None
     if design_session is not None:
-        ready_keys = set(design_session.dependency_graph.ready_decision_keys(
-            design_session.decisions, conflicted=design_session.conflicted
-        ))
+        ready_keys = set(
+            design_session.dependency_graph.ready_proposed_decision_keys(
+                proposed_design, conflicted=design_session.conflicted
+            )
+            if proposed_design is not None else
+            design_session.dependency_graph.ready_decision_keys(
+                design_session.decisions, conflicted=design_session.conflicted
+            )
+        )
 
     for key in decision_keys:
         if ready_keys is not None and key not in ready_keys:
@@ -382,6 +392,23 @@ def build_proposal_context(state, decision_keys, *, model=None, provider=None,
                 source_facts.append({"ref": field, "value": compact})
                 evidence_by_ref[field] = ", ".join(str(item) for item in compact)[:240]
         decision_id = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        dependencies = ()
+        if design_session is not None:
+            dependency_keys = next(
+                item.depends_on for item in design_session.dependency_graph.dependencies
+                if item.decision_key == key
+            )
+            dependencies = tuple(
+                (dependency, proposed_design.provisional_value(dependency)
+                 if proposed_design is not None else
+                 next((item.value for item in state["decisions"].decisions
+                       if item.key == dependency and (item.mode.value == "AUTO" or item.review_state.value == "CONFIRMED")), None))
+                for dependency in dependency_keys
+            )
+            if any(value is None for _, value in dependencies):
+                raise ValueError(f"Decision {key!r} has unresolved design dependencies")
+        dependency_facts = [{"decision_id": hashlib.sha256(parent.encode("utf-8")).hexdigest(), "value": value}
+                            for parent, value in dependencies]
         model_item = {
             "decision_id": decision_id,
             "source": {"vdom": decision.source_vdom, "kind": decision.source_kind, "name": decision.source_name},
@@ -390,6 +417,8 @@ def build_proposal_context(state, decision_keys, *, model=None, provider=None,
             "source_facts": source_facts,
             "affected_count": decision.affected_count,
             "candidates": candidates,
+            "dependencies": dependency_facts,
+            "requires_strong_reasoner": decision.target_field in {"vsys", "virtual_router"},
         }
         feedback = (repair_feedback or {}).get(key, ())
         if feedback:
@@ -402,6 +431,7 @@ def build_proposal_context(state, decision_keys, *, model=None, provider=None,
             "model": prompt_model,
             "response_mode": response_mode,
             "decision": model_item,
+            "dependency_values": dependencies,
         })
         by_decision[key] = {
             "decision_id": decision_id,
@@ -410,6 +440,7 @@ def build_proposal_context(state, decision_keys, *, model=None, provider=None,
             "candidate_map": candidate_map,
             "candidate_evidence_refs": candidate_evidence_refs,
             "evidence_by_ref": evidence_by_ref,
+            "dependency_values": dependencies,
         }
         model_decisions.append(model_item)
 
@@ -423,6 +454,8 @@ def build_proposal_context(state, decision_keys, *, model=None, provider=None,
         "model": prompt_model,
         "provider": prompt_provider,
         "response_mode": response_mode,
+        "proposed_design": proposed_design,
+        "design_context": design_context,
         "_state": state,
     }
 
@@ -496,6 +529,7 @@ def validate_model_output(response_text, prepared):
             context_digest=current["context_digest"],
             base_context_digest=current["base_context_digest"],
             response_mode=prepared.get("response_mode", "STRICT_SCHEMA"),
+            dependency_values=current["dependency_values"],
         ))
     return PANAIProposalSet(tuple(output)).to_list()
 
@@ -567,11 +601,21 @@ def _request_local(prepared):
     return validate_model_output(content, prepared)
 
 
+def _request_with_retry(operation, prepared):
+    for attempt in range(3):
+        try:
+            return operation(prepared)
+        except AdvisorError as exc:
+            if exc.code not in {"AI_TIMEOUT", "AI_RATE_LIMITED", "AI_UNAVAILABLE"} or attempt == 2:
+                raise
+            time.sleep(0.2 * (2 ** attempt))
+
+
 def request_proposals(prepared):
     """Run local Qwen when configured, escalating abstentions to Groq."""
     provider = prepared.get("provider", "groq")
     if provider == "groq":
-        return _request_groq(prepared)
+        return _request_with_retry(_request_groq, prepared)
     if provider != "qwen_local":
         raise AdvisorUnavailable("Unsupported AI advisor provider")
 
@@ -579,33 +623,48 @@ def request_proposals(prepared):
     remote_model = groq_model()
     groq_available = bool(os.environ.get("GROQ_API_KEY", "").strip())
     by_id = {item["decision_id"]: key for key, item in prepared["by_decision"].items()}
-    complex_keys = [by_id[item["decision_id"]] for item in prepared["request"]["decisions"]
-                    if len(item["candidates"]) > 3] if groq_available else []
+    coupled_ids = set()
+    claims = {}
+    for item in prepared["request"]["decisions"]:
+        for candidate in item["candidates"]:
+            claim = (candidate.get("target_scope"), candidate.get("value"))
+            claims.setdefault(claim, []).append(item["decision_id"])
+    for decision_ids in claims.values():
+        if len(set(decision_ids)) > 1:
+            coupled_ids.update(decision_ids)
+    complex_keys = [
+        by_id[item["decision_id"]] for item in prepared["request"]["decisions"]
+        if len(item["candidates"]) > 3 or item.get("requires_strong_reasoner")
+        or item["decision_id"] in coupled_ids
+    ] if groq_available else []
     simple_keys = [key for key in keys if key not in complex_keys]
     try:
         local_prepared = prepared
         if len(simple_keys) != len(keys):
             local_prepared = (build_proposal_context(
-                prepared["_state"], simple_keys, model=prepared["model"], provider="qwen_local"
+                prepared["_state"], simple_keys, model=prepared["model"], provider="qwen_local",
+                proposed_design=prepared.get("proposed_design"), design_context=prepared.get("design_context"),
             ) if simple_keys else None)
-        local = _request_local(local_prepared) if local_prepared else []
+        local = _request_with_retry(_request_local, local_prepared) if local_prepared else []
     except (AdvisorError, ValueError) as exc:
         if not groq_available:
             raise
         fallback = build_proposal_context(
-            prepared["_state"], keys, model=remote_model, provider="groq"
+            prepared["_state"], keys, model=remote_model, provider="groq",
+            proposed_design=prepared.get("proposed_design"), design_context=prepared.get("design_context"),
         )
-        return [dict(item, escalated_from="qwen_local") for item in _request_groq(fallback)]
+        return [dict(item, escalated_from="qwen_local") for item in _request_with_retry(_request_groq, fallback)]
 
     abstained = [item["decision_key"] for item in local if item["action"] == "NO_SAFE_PROPOSAL"]
     escalation_keys = [key for key in keys if key in complex_keys or key in abstained]
     if not escalation_keys or not groq_available:
         return local
     fallback = build_proposal_context(
-        prepared["_state"], escalation_keys, model=remote_model, provider="groq"
+        prepared["_state"], escalation_keys, model=remote_model, provider="groq",
+        proposed_design=prepared.get("proposed_design"), design_context=prepared.get("design_context"),
     )
     try:
-        remote = _request_groq(fallback)
+        remote = _request_with_retry(_request_groq, fallback)
     except (AdvisorError, ValueError) as exc:
         if not local:
             raise
@@ -665,7 +724,7 @@ def validate_proposal_set(state, proposals):
     return proposals
 
 
-def repair_conflicted_proposals(state, decision_keys, proposals):
+def repair_conflicted_proposals(state, decision_keys, proposals, *, proposed_design=None):
     current = validate_proposal_set(state, proposals)
     for repair_pass in range(1, MAX_AI_REPAIR_PASSES + 1):
         conflicts = {
@@ -709,6 +768,7 @@ def repair_conflicted_proposals(state, decision_keys, proposals):
                 list(conflicts),
                 model=first.get("model"),
                 provider=first.get("provider", "groq"),
+                proposed_design=proposed_design,
             )
             prepared = build_proposal_context(
                 state,
@@ -718,6 +778,7 @@ def repair_conflicted_proposals(state, decision_keys, proposals):
                 excluded_candidate_ids=excluded,
                 repair_feedback=feedback,
                 design_context=design_context,
+                proposed_design=proposed_design,
             )
             repaired = request_proposals(prepared)
             base_digests = {
@@ -732,31 +793,32 @@ def repair_conflicted_proposals(state, decision_keys, proposals):
             break
         by_key = {item["decision_key"]: item for item in current}
         by_key.update({item["decision_key"]: item for item in repaired})
-        current = validate_proposal_set(state, [by_key[key] for key in decision_keys if key in by_key])
+        proposal_keys = tuple(dict.fromkeys(item["decision_key"] for item in current))
+        current = validate_proposal_set(state, [by_key[key] for key in proposal_keys if key in by_key])
     return current
 
 
-def revalidate_stored_proposal(state, proposal):
+def revalidate_stored_proposal(state, proposal, *, proposed_design=None):
     """Recompute current digests and candidate membership before engineer approval."""
     prepared = build_proposal_context(
         state,
         [proposal.get("decision_key")],
         model=proposal.get("model"),
         provider=proposal.get("provider", "groq"),
+        proposed_design=proposed_design,
     )
     key = proposal["decision_key"]
     current = prepared["by_decision"][key]
-    expected_values = {
-        "source_digest": prepared["source_digest"],
-        "target_digest": prepared["target_digest"],
-        "target_device": prepared["target_device"],
-        "state_digest": prepared["state_digest"],
-    }
+    expected_values = {"source_digest": prepared["source_digest"],
+                       "target_digest": prepared["target_digest"],
+                       "target_device": prepared["target_device"]}
     for field, expected in expected_values.items():
         if proposal.get(field) != expected:
             raise ValueError("This AI proposal is stale; request a new proposal")
     if proposal.get("base_context_digest", proposal.get("context_digest")) != current["context_digest"]:
         raise ValueError("This AI proposal is stale; request a new proposal")
+    if tuple(tuple(item) for item in proposal.get("dependency_values", ())) != current["dependency_values"]:
+        raise ValueError("An upstream mapping changed; request a new proposal")
     validated = validate_model_output(json.dumps({"proposals": [{
         "decision_id": current["decision_id"],
         "action": proposal.get("action"),
@@ -769,14 +831,22 @@ def revalidate_stored_proposal(state, proposal):
     return validated
 
 
-def approve_proposals_as_engineer(state, proposals):
+def approve_proposals_as_engineer(state, proposals, *, proposed_design=None):
     """Revalidate proposals and convert the whole accepted set to engineer decisions."""
     if not proposals:
         raise ValueError("At least one AI proposal is required")
     if any(item.get("action") != "USE_EXISTING" or item.get("validation_status", "VALID") != "VALID"
            for item in proposals):
         raise ValueError("Only valid existing-target proposals can be approved")
-    validated = [revalidate_stored_proposal(state, item) for item in proposals]
+    validated = []
+    for item in proposals:
+        overlay = proposed_design
+        if proposed_design is not None:
+            overlay = proposed_design.with_state(proposals=tuple(
+                proposal for proposal in proposed_design.proposals
+                if proposal.decision_key != item["decision_key"]
+            ))
+        validated.append(revalidate_stored_proposal(state, item, proposed_design=overlay))
     keys = [item["decision_key"] for item in validated]
     if len(set(keys)) != len(keys):
         raise ValueError("Only one proposal per migration decision can be approved")
