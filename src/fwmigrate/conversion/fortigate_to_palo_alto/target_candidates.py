@@ -52,12 +52,15 @@ def classify_candidate(strong_evidence=(), supporting_evidence=(), contradiction
     return PANTargetCandidateMatchClass.AMBIGUOUS
 
 
-def target_vsys_value(decisions, source_vdom: str) -> str | None:
+def target_vsys_value(decisions, source_vdom: str, *, proposed_design=None) -> str | None:
     """Return a target VSYS only from a usable, explicit decision value."""
     from .recommendations import decision_value
     from .decisions import make_decision_key
 
-    return decision_value(decisions, make_decision_key(source_vdom, "vdom", source_vdom, "vsys"))
+    key = make_decision_key(source_vdom, "vdom", source_vdom, "vsys")
+    if proposed_design is not None:
+        return proposed_design.provisional_value(key)
+    return decision_value(decisions, key)
 
 
 def build_target_candidates(target, attribute: str, family: str, source_name: str,

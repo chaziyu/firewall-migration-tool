@@ -2,6 +2,7 @@ import hashlib
 import json
 import sys
 import types
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 from fwmigrate.conversion.fortigate_to_palo_alto import ai_advisor
 from fwmigrate.conversion.fortigate_to_palo_alto.decisions import (
     PANDecisionMode,
+    PANDecisionReviewState,
     PANMigrationDecision,
     PANMigrationDecisionSet,
 )
@@ -17,6 +19,10 @@ from fwmigrate.conversion.fortigate_to_palo_alto.design.models import (
     PANDecisionGraph,
     PANMigrationDesignSession,
 )
+from fwmigrate.conversion.fortigate_to_palo_alto.ai.models import PANAIProposal, PANAIProposalAction
+from fwmigrate.conversion.fortigate_to_palo_alto.design.proposed import PANProposedDesign
+from fwmigrate.conversion.fortigate_to_palo_alto.design.session import create_design_session
+from fwmigrate.conversion.fortigate_to_palo_alto.ai import orchestrator as ai_orchestrator
 from fwmigrate import web
 
 
@@ -91,6 +97,86 @@ def _proposal_rows(prepared):
             "evidence_refs": [candidate["evidence"][0]["ref"]],
         })
     return rows
+
+
+def _design_state(decision_count=2, *, chained=False):
+    decisions = []
+    candidates = {}
+    evidence = {}
+    context = {}
+    for index in range(decision_count):
+        kind = "vdom" if chained and index == 0 else "interface"
+        name = "root" if kind == "vdom" else f"port{index:03d}"
+        field = "vsys" if kind == "vdom" else "target_interface"
+        decision = PANMigrationDecision(
+            source_vdom="root", source_kind=kind, source_name=name,
+            target_field=field, mode=PANDecisionMode.REQUIRED,
+        )
+        decisions.append(decision)
+        value = "vsys1" if kind == "vdom" else f"ethernet1/{index + 1}"
+        candidates[decision.key] = [{
+            "value": value, "target_scope": "vsys1", "class": "STRONG",
+            "strong_evidence": ["matching interface family"], "supporting_evidence": [],
+        }]
+        evidence[decision.key] = "TARGET"
+        context[decision.key] = {"source_type": "physical"}
+    decision_set = PANMigrationDecisionSet(tuple(decisions))
+    if chained:
+        dependencies = (PANDecisionDependency(decisions[0].key), PANDecisionDependency(decisions[1].key, (decisions[0].key,)))
+    else:
+        dependencies = tuple(PANDecisionDependency(item.key) for item in decisions)
+    graph = PANDecisionGraph(dependencies)
+    target_metadata = {"vendor": "palo_alto", "config_digest": "target-digest", "device": "device-1"}
+    source = SimpleNamespace(interfaces=[])
+    target = SimpleNamespace(config=SimpleNamespace(), derived=SimpleNamespace())
+    return {
+        "analysis": SimpleNamespace(extracted=SimpleNamespace(config=source), derived=SimpleNamespace()),
+        "source_digest": "source-digest", "target_digest": "target-digest", "target_device": "device-1",
+        "target_context": SimpleNamespace(metadata=target_metadata, analysis=target, selected_device="device-1"),
+        "decisions": decision_set,
+        "design_session": PANMigrationDesignSession(
+            source_digest="source-digest", target_digest="target-digest", target_device="device-1",
+            decisions=decision_set, dependency_graph=graph, unresolved=tuple(item.key for item in decisions),
+        ),
+        "decision_candidates": candidates, "decision_evidence": evidence, "target_findings": [],
+        "review_context": context,
+    }
+
+
+def _install_design_api(monkeypatch, state, *, discover=None, app_config=None):
+    batches = []
+
+    def fake_provider(prepared):
+        batches.append(tuple(prepared["by_decision"]))
+        return ai_advisor.validate_model_output(json.dumps({"proposals": _proposal_rows(prepared)}), prepared)
+
+    def rebuild_state(_entry, payload):
+        document = payload.get("decision_document") or {}
+        if not document.get("decisions"):
+            return state
+        decisions = PANMigrationDecisionSet.from_dict({"decisions": document["decisions"]})
+        graph = state["design_session"].dependency_graph
+        updated = dict(state, decisions=decisions)
+        updated["design_session"] = create_design_session(
+            decisions, graph, source_digest=state["source_digest"],
+            target_evidence=state["target_context"].metadata,
+        )
+        return updated
+
+    original_candidates = state["decision_candidates"]
+    monkeypatch.setattr(ai_orchestrator, "discover_target_candidates", discover or
+                        (lambda _source, decisions, _target, _device, **_kwargs:
+                         {item.key: original_candidates[item.key] for item in decisions.decisions
+                          if item.key in original_candidates}))
+    monkeypatch.setattr(ai_orchestrator, "build_review_evidence", lambda *_: {})
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    monkeypatch.setattr(ai_advisor, "advisor_provider", lambda: "groq")
+    monkeypatch.setattr(ai_advisor, "advisor_model", lambda: "openai/gpt-oss-120b")
+    monkeypatch.setattr(ai_advisor, "request_proposals", fake_provider)
+    monkeypatch.setattr(ai_advisor, "advisor_enabled", lambda: True)
+    monkeypatch.setattr(web, "_lookup_preview", lambda *_: SimpleNamespace(source_digest=state["source_digest"]))
+    monkeypatch.setattr(web, "_build_migration_review_state", rebuild_state)
+    return web.create_app({"TESTING": True, **(app_config or {})}).test_client(), batches
 
 
 def test_groq_proposal_is_candidate_bound_and_server_approved(monkeypatch):
@@ -560,3 +646,345 @@ def test_complex_candidate_set_escalates_without_local_call(monkeypatch):
     proposal = ai_advisor.request_proposals(prepared)[0]
     assert proposal["provider"] == "groq"
     assert proposal["escalated_from"] == "qwen_local"
+
+
+def test_provisional_parent_unlocks_next_ai_wave_without_planner_input(monkeypatch):
+    state = _design_state(chained=True)
+    vsys_key, interface_key = (item.key for item in state["decisions"].decisions)
+    zone = PANMigrationDecision("root", "zone", "LAN", "target_zone")
+    state["decisions"] = PANMigrationDecisionSet((*state["decisions"].decisions, zone))
+    graph = PANDecisionGraph((
+        PANDecisionDependency(vsys_key),
+        PANDecisionDependency(interface_key, (vsys_key,)),
+        PANDecisionDependency(zone.key, (interface_key,)),
+    ))
+    state["design_session"] = create_design_session(
+        state["decisions"], graph, source_digest=state["source_digest"],
+        target_evidence=state["target_context"].metadata,
+    )
+    state["decision_candidates"] = {vsys_key: state["decision_candidates"][vsys_key]}
+    state["review_context"][zone.key] = {"source_type": "zone"}
+    state["decision_evidence"][zone.key] = "SOURCE"
+    batches = []
+
+    def discover(_source, decisions, _target, _device, *, evidence=None, proposed_design=None):
+        result = {vsys_key: [{
+            "value": "vsys1", "target_scope": "vsys1", "class": "STRONG",
+            "strong_evidence": ["explicit target VSYS"], "supporting_evidence": [],
+        }]}
+        if proposed_design.provisional_value(vsys_key):
+            result[interface_key] = [{
+                "value": "ethernet1/7", "target_scope": "vsys1", "class": "STRONG",
+                "strong_evidence": ["matching interface family"], "supporting_evidence": [],
+            }]
+        if proposed_design.provisional_value(interface_key):
+            result[zone.key] = [{
+                "value": "trust", "target_scope": "vsys1", "class": "STRONG",
+                "strong_evidence": ["selected interface belongs to this zone"], "supporting_evidence": [],
+            }]
+        return result
+
+    def fake_provider(prepared):
+        batches.append(tuple(prepared["by_decision"]))
+        return ai_advisor.validate_model_output(json.dumps({"proposals": _proposal_rows(prepared)}), prepared)
+
+    monkeypatch.setattr(ai_orchestrator, "discover_target_candidates", discover)
+    monkeypatch.setattr(ai_orchestrator, "build_review_evidence", lambda *_: {})
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    monkeypatch.setattr(ai_advisor, "advisor_provider", lambda: "groq")
+    monkeypatch.setattr(ai_advisor, "advisor_model", lambda: "openai/gpt-oss-120b")
+    monkeypatch.setattr(ai_advisor, "request_proposals", fake_provider)
+    monkeypatch.setattr(ai_advisor, "advisor_enabled", lambda: True)
+    entry = SimpleNamespace(source_digest="source-digest")
+    monkeypatch.setattr(web, "_lookup_preview", lambda *_: entry)
+    monkeypatch.setattr(web, "_build_migration_review_state", lambda *_: state)
+    client = web.create_app({"TESTING": True}).test_client()
+
+    built = client.post("/api/migration/ai/design", json={"preview_id": "source-preview"})
+    assert built.status_code == 200
+    body = built.get_json()
+    assert batches == [(vsys_key,), (interface_key,), (zone.key,)]
+    assert [item["decision_key"] for item in body["design_session"]["proposals"]] == [
+        vsys_key, interface_key, zone.key,
+    ]
+    assert body["design_session"]["proposals"][1]["dependency_values"] == [[vsys_key, "vsys1"]]
+    unapproved_options = PANMigrationDecisionSet.from_dict(body["decisions"]).to_options()
+    assert unapproved_options.vdoms == {}
+    assert unapproved_options.interfaces == {}
+    assert unapproved_options.zones == {}
+
+    approved = client.post(
+        f"/api/migration/ai/design/{body['design_session']['design_session_id']}/approve",
+        json={"preview_id": "source-preview", "decision_document": body["decision_document"],
+              "target_preview_id": "target-preview", "target_device": "device-1", "approve_all": True},
+    )
+    assert approved.status_code == 200
+    options = PANMigrationDecisionSet.from_dict(approved.get_json()["decisions"]).to_options()
+    assert options.vdoms["root"].vsys == "vsys1"
+    assert options.interfaces["root"]["port001"].target_interface == "ethernet1/7"
+    assert options.zones["root"]["LAN"].target_zone == "trust"
+    audit = [json.loads(line) for line in client.get("/api/migration/ai/audit/export").data.decode().splitlines()]
+    assert all(item["engineer_action"] == "APPROVED" for item in audit)
+
+
+def test_unrelated_decision_change_does_not_stale_proposal_but_dependency_change_does():
+    state = _two_decision_state()
+    first, second = (item.key for item in state["decisions"].decisions)
+    original = ai_advisor.build_proposal_context(state, [first])
+    proposal = ai_advisor.validate_model_output(json.dumps({"proposals": _proposal_rows(original)}), original)[0]
+    changed_second = replace(state["decisions"].decisions[1], value="manual-vsys",
+                             review_state=PANDecisionReviewState.CONFIRMED)
+    unrelated_change = dict(state, decisions=PANMigrationDecisionSet((state["decisions"].decisions[0], changed_second)))
+    assert ai_advisor.revalidate_stored_proposal(unrelated_change, proposal)["proposed_value"] == "ethernet1/1"
+
+    state["design_session"] = PANMigrationDesignSession(
+        source_digest="source-digest", target_digest="target-digest", target_device="device-1",
+        decisions=state["decisions"], dependency_graph=PANDecisionGraph((
+            PANDecisionDependency(first), PANDecisionDependency(second, (first,)),
+        )), unresolved=(first, second),
+    )
+    parent_context = ai_advisor.build_proposal_context(state, [first])
+    parent = PANAIProposal.from_dict(ai_advisor.validate_model_output(
+        json.dumps({"proposals": _proposal_rows(parent_context)}), parent_context
+    )[0])
+    design = PANProposedDesign("source-digest", "target-digest", "device-1", state["decisions"], (parent,))
+    child_context = ai_advisor.build_proposal_context(state, [second], proposed_design=design)
+    child = ai_advisor.validate_model_output(json.dumps({"proposals": _proposal_rows(child_context)}), child_context)[0]
+    changed_parent = replace(parent, proposed_value="ethernet1/9")
+    changed_design = design.with_state(proposals=(changed_parent,))
+    with pytest.raises(ValueError, match="stale|upstream"):
+        ai_advisor.revalidate_stored_proposal(state, child, proposed_design=changed_design)
+
+
+def test_proposed_design_session_has_no_256_decision_ceiling(monkeypatch):
+    state = _design_state(300)
+    original_candidates = state["decision_candidates"]
+    batches = []
+
+    def discover(_source, decisions, _target, _device, *, evidence=None, proposed_design=None):
+        return {item.key: original_candidates[item.key] for item in decisions.decisions}
+
+    def fake_provider(prepared):
+        batches.append(tuple(prepared["by_decision"]))
+        return ai_advisor.validate_model_output(json.dumps({"proposals": _proposal_rows(prepared)}), prepared)
+
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "32")
+    monkeypatch.setattr(ai_orchestrator, "discover_target_candidates", discover)
+    monkeypatch.setattr(ai_orchestrator, "build_review_evidence", lambda *_: {})
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    monkeypatch.setattr(ai_advisor, "advisor_provider", lambda: "groq")
+    monkeypatch.setattr(ai_advisor, "advisor_model", lambda: "openai/gpt-oss-120b")
+    monkeypatch.setattr(ai_advisor, "request_proposals", fake_provider)
+    monkeypatch.setattr(ai_advisor, "advisor_enabled", lambda: True)
+    monkeypatch.setattr(web, "_lookup_preview", lambda *_: SimpleNamespace(source_digest="source-digest"))
+    monkeypatch.setattr(web, "_build_migration_review_state", lambda *_: state)
+    client = web.create_app({"TESTING": True}).test_client()
+
+    response = client.post("/api/migration/ai/design", json={"preview_id": "source-preview"})
+    assert response.status_code == 200
+    proposals = response.get_json()["design_session"]["proposals"]
+    assert [len(batch) for batch in batches] == [32] * 9 + [12]
+    assert len(proposals) == 300
+    assert {item["decision_key"] for item in proposals} == set(original_candidates)
+
+
+def test_family_approval_keeps_other_proposals_in_the_design(monkeypatch):
+    state = _design_state(chained=True)
+    vsys_key, interface_key = (item.key for item in state["decisions"].decisions)
+    client, _ = _install_design_api(monkeypatch, state)
+    built = client.post("/api/migration/ai/design", json={"preview_id": "source-preview"}).get_json()
+    session_id = built["design_session"]["design_session_id"]
+    approved_vsys = client.post(
+        f"/api/migration/ai/design/{session_id}/approve",
+        json={"preview_id": "source-preview", "decision_document": built["decision_document"],
+              "target_preview_id": "target-preview", "target_device": "device-1",
+              "family": "ownership", "source_vdom": "root"},
+    )
+    assert approved_vsys.status_code == 200
+    remaining = approved_vsys.get_json()["design_session"]["proposals"]
+    assert [item["decision_key"] for item in remaining] == [interface_key]
+    assert approved_vsys.get_json()["design_session"]["summary"]["engineer_confirmed"] == 1
+
+    approved_interface = client.post(
+        f"/api/migration/ai/design/{session_id}/approve",
+        json={"preview_id": "source-preview",
+              "decision_document": approved_vsys.get_json()["decision_document"],
+              "target_preview_id": "target-preview", "target_device": "device-1",
+              "decision_keys": [interface_key]},
+    )
+    assert approved_interface.status_code == 200
+    assert approved_interface.get_json()["approved_count"] == 1
+    assert approved_interface.get_json()["design_session"]["proposals"] == []
+    assert {item["key"] for item in approved_interface.get_json()["decisions"]["decisions"]} == {
+        vsys_key, interface_key,
+    }
+
+
+def test_engineer_modification_rebuilds_only_dependent_proposals(monkeypatch):
+    state = _design_state(chained=True)
+    vsys_key, interface_key = (item.key for item in state["decisions"].decisions)
+
+    def discover(_source, decisions, _target, _device, *, evidence=None, proposed_design=None):
+        result = {vsys_key: state["decision_candidates"][vsys_key]}
+        if proposed_design.provisional_value(vsys_key):
+            result[interface_key] = [{
+                "value": "ethernet1/7", "target_scope": "vsys1", "class": "STRONG",
+                "strong_evidence": ["matching interface family"], "supporting_evidence": [],
+            }]
+        return result
+
+    client, _ = _install_design_api(monkeypatch, state, discover=discover)
+    built = client.post("/api/migration/ai/design", json={"preview_id": "source-preview"}).get_json()
+    session_id = built["design_session"]["design_session_id"]
+    modified = client.post(
+        f"/api/migration/ai/design/{session_id}/modify",
+        json={"preview_id": "source-preview", "decision_document": built["decision_document"],
+              "target_preview_id": "target-preview", "target_device": "device-1",
+              "changes": [{"decision_key": vsys_key, "value": "vsys2"}]},
+    )
+    assert modified.status_code == 200
+    body = modified.get_json()
+    assert next(item for item in body["decisions"]["decisions"] if item["key"] == vsys_key)["value"] == "vsys2"
+    assert [item["decision_key"] for item in body["design_session"]["proposals"]] == [interface_key]
+    assert body["design_session"]["proposals"][0]["dependency_values"] == [[vsys_key, "vsys2"]]
+    actions = [(row["decision_key"], row["engineer_action"], row.get("failure_category"))
+               for row in body["design_session"]["audit"]]
+    assert (vsys_key, "MODIFIED", None) in actions
+    assert (interface_key, "UNRESOLVED", "DEPENDENCY_CHANGED") in actions
+    audit = [json.loads(line) for line in client.get("/api/migration/ai/audit/export").data.decode().splitlines()]
+    audit_by_key = {item["decision_key"]: item for item in audit}
+    assert audit_by_key[vsys_key]["final_value"] == "vsys2"
+    assert any(item["decision_key"] == interface_key
+               and item["failure_category"] == "DEPENDENCY_CHANGED" for item in audit)
+
+
+def test_engineer_can_clear_a_decision_in_the_design_session(monkeypatch):
+    state = _design_state(decision_count=1)
+    decision_key = state["decisions"].decisions[0].key
+    client, _ = _install_design_api(monkeypatch, state)
+    built = client.post("/api/migration/ai/design", json={"preview_id": "source-preview"}).get_json()
+    session_id = built["design_session"]["design_session_id"]
+
+    cleared = client.post(
+        f"/api/migration/ai/design/{session_id}/modify",
+        json={"preview_id": "source-preview", "decision_document": built["decision_document"],
+              "target_preview_id": "target-preview", "target_device": "device-1",
+              "changes": [{"decision_key": decision_key, "value": None}]},
+    )
+
+    assert cleared.status_code == 200
+    decision = cleared.get_json()["decisions"]["decisions"][0]
+    assert decision["value"] is None
+    assert decision["review_state"] == "PENDING"
+    assert PANMigrationDecisionSet.from_dict(cleared.get_json()["decisions"]).to_options().interfaces == {}
+
+
+def test_reject_and_stale_target_design_session(monkeypatch):
+    state = _design_state()
+    client, _ = _install_design_api(monkeypatch, state)
+    built = client.post("/api/migration/ai/design", json={"preview_id": "source-preview"}).get_json()
+    session_id = built["design_session"]["design_session_id"]
+    first_key = built["design_session"]["proposals"][0]["decision_key"]
+    rejected = client.post(
+        f"/api/migration/ai/design/{session_id}/reject",
+        json={"preview_id": "source-preview", "decision_document": built["decision_document"],
+              "target_preview_id": "target-preview", "target_device": "device-1",
+              "decision_keys": [first_key]},
+    )
+    assert rejected.status_code == 200
+    body = rejected.get_json()
+    assert next(item for item in body["design_session"]["proposals"]
+                if item["decision_key"] == first_key)["validation_status"] == "REJECTED"
+    assert body["design_session"]["summary"]["rejected"] == 1
+    audit = [json.loads(line) for line in client.get("/api/migration/ai/audit/export").data.decode().splitlines()]
+    assert next(item for item in audit if item["decision_key"] == first_key)["engineer_action"] == "REJECTED"
+
+    changed = dict(state, target_digest="different-target")
+    monkeypatch.setattr(web, "_build_migration_review_state", lambda *_: changed)
+    stale = client.post(
+        f"/api/migration/ai/design/{session_id}/approve",
+        json={"preview_id": "source-preview", "decision_document": body["decision_document"],
+              "target_preview_id": "target-preview", "target_device": "device-1",
+              "approve_all": True},
+    )
+    assert stale.status_code == 409
+    assert "stale" in stale.get_json()["error"].lower()
+
+
+def test_design_session_expires_as_a_whole(monkeypatch):
+    state = _design_state(1)
+    client, _ = _install_design_api(monkeypatch, state, app_config={"AI_DESIGN_SESSION_TTL_SECONDS": 1})
+    built = client.post("/api/migration/ai/design", json={"preview_id": "source-preview"}).get_json()
+    session_id = built["design_session"]["design_session_id"]
+    expired_at = built["design_session"]["created_at"] + 2
+    monkeypatch.setattr(web.time, "time", lambda: expired_at)
+    expired = client.get(f"/api/migration/ai/design/{session_id}")
+    assert expired.status_code == 404
+    audit = [json.loads(line) for line in client.get("/api/migration/ai/audit/export").data.decode().splitlines()]
+    assert all(item["engineer_action"] == "UNRESOLVED" for item in audit)
+
+
+def test_retry_exceptions_reuses_the_stored_session(monkeypatch):
+    state = _design_state(1)
+    client, _ = _install_design_api(monkeypatch, state)
+    built = client.post("/api/migration/ai/design", json={"preview_id": "source-preview"}).get_json()
+    retried = client.post("/api/migration/ai/design", json={
+        "preview_id": "source-preview", "decision_document": built["decision_document"],
+        "target_preview_id": "target-preview", "target_device": "device-1",
+        "design_session_id": built["design_session"]["design_session_id"], "retry_exceptions": True,
+    })
+
+    assert retried.status_code == 200
+    assert retried.get_json()["design_session"]["design_session_id"] == built["design_session"]["design_session_id"]
+    assert retried.get_json()["design_session"]["proposals"] == built["design_session"]["proposals"]
+
+
+def test_design_approval_is_atomic_when_a_candidate_changes(monkeypatch):
+    state = _design_state()
+    client, _ = _install_design_api(monkeypatch, state)
+    built = client.post("/api/migration/ai/design", json={"preview_id": "source-preview"}).get_json()
+    session_id = built["design_session"]["design_session_id"]
+    first_key = built["design_session"]["proposals"][0]["decision_key"]
+    state["decision_candidates"][first_key] = [{
+        "value": "ethernet9/99", "target_scope": "vsys1", "class": "STRONG",
+        "strong_evidence": ["replacement candidate"], "supporting_evidence": [],
+    }]
+    failed = client.post(
+        f"/api/migration/ai/design/{session_id}/approve",
+        json={"preview_id": "source-preview", "decision_document": built["decision_document"],
+              "target_preview_id": "target-preview", "target_device": "device-1",
+              "approve_all": True},
+    )
+    assert failed.status_code == 409
+    current = client.get(f"/api/migration/ai/design/{session_id}").get_json()["design_session"]
+    assert len(current["proposals"]) == 2
+    assert current["summary"]["engineer_confirmed"] == 0
+
+
+def test_provider_retries_only_transient_failure(monkeypatch):
+    state = _state()
+    key = state["decisions"].decisions[0].key
+    prepared = ai_advisor.build_proposal_context(state, [key], provider="groq")
+    calls = []
+
+    def transient_then_ok(value):
+        calls.append(value)
+        if len(calls) == 1:
+            raise ai_advisor.AdvisorTimeoutError("temporary timeout")
+        return ai_advisor.validate_model_output(json.dumps({"proposals": _proposal_rows(value)}), value)
+
+    monkeypatch.setattr(ai_advisor, "_request_groq", transient_then_ok)
+    monkeypatch.setattr(ai_advisor.time, "sleep", lambda *_: None)
+    assert ai_advisor.request_proposals(prepared)
+    assert len(calls) == 2
+
+    calls.clear()
+
+    def rejected(value):
+        calls.append(value)
+        raise ai_advisor.AdvisorRequestError("invalid request")
+
+    monkeypatch.setattr(ai_advisor, "_request_groq", rejected)
+    with pytest.raises(ai_advisor.AdvisorRequestError):
+        ai_advisor.request_proposals(prepared)
+    assert len(calls) == 1
