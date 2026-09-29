@@ -654,6 +654,11 @@ let migrationBuildInFlight = false;
       status.className = `report-source-chip report-source-chip-${String(currentSourceContext.status).toLowerCase()}`;
       status.textContent = currentSourceContext.status;
       fragment.appendChild(status);
+    } else if (sourceReady) {
+      const parsed = document.createElement("span");
+      parsed.className = "report-source-chip report-source-chip-ready";
+      parsed.textContent = "Parsed";
+      fragment.appendChild(parsed);
     }
 
     if (currentSourceContext.warnings.length) {
@@ -661,6 +666,13 @@ let migrationBuildInFlight = false;
       warnings.className = "report-source-chip report-source-chip-warning";
       warnings.textContent = `${currentSourceContext.warnings.length} collection ${currentSourceContext.warnings.length === 1 ? "warning" : "warnings"}`;
       fragment.appendChild(warnings);
+    }
+
+    if (currentSourceContext.status === "PARTIAL") {
+      const advisory = document.createElement("span");
+      advisory.className = "report-source-advisory";
+      advisory.textContent = "Incomplete collection; unreported areas remain unknown.";
+      fragment.appendChild(advisory);
     }
 
     reportSourceMeta.replaceChildren(fragment);
@@ -1164,6 +1176,7 @@ let migrationBuildInFlight = false;
       "hidden",
       activeMode === "report" && sourceReady && !sourcePanelExpanded,
     );
+    if (activeMode === "report" && currentReport) renderSourceContext();
   }
 
   function setBusy(button, busy) {
