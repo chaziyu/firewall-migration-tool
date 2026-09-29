@@ -64,7 +64,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.target_plan_validation import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.support_guidance import build_support_guidance
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
-from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
+from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession, PANSSHDeployer
 from fwmigrate.collection import CollectionStatus, source_collectors
 from fwmigrate.collection.builtin import register_builtin_collectors
 from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot, MAX_BYTES
@@ -83,6 +83,7 @@ from fwmigrate.source_reporting import (
 from fwmigrate.source_reporting.web_report import normalize_web_report
 _LOGGER = logging.getLogger(__name__)
 _DECISION_FORMAT_VERSION = 3
+_DEPLOYMENT_SESSION_TTL_SECONDS = 30 * 60
 
 
 def _decision_document(source_digest, decision_set, target_evidence=None):
@@ -461,6 +462,7 @@ def create_app(test_config=None):
 
     rendered_artifacts = {}
     artifact_sources = {}
+    deployment_sessions: dict[str, PANDeploymentSession] = {}
 
     @app.route('/')
     def index():
@@ -1091,6 +1093,8 @@ def create_app(test_config=None):
                 'target_evidence': safe_target_evidence,
                 'target_evidence_changed': target_evidence_changed,
                 'invalidated_target_decisions': list(result.invalidated_target_decisions),
+                'decisions': decision_set.to_dict(),
+                'decision_document': decision_document,
                 'report': rendered.report,
                 'validation': {'issue_summary': rendered.report['issue_summary']},
             })
@@ -1182,6 +1186,34 @@ def create_app(test_config=None):
             raise ValueError('Host, SSH username, password, and a valid port are required')
         return options
 
+    def _require_deployment_session(payload):
+        session_id = payload.get('deployment_session_id')
+        if not isinstance(session_id, str) or not session_id:
+            raise ValueError('A validated candidate deployment session is required')
+        session = deployment_sessions.get(session_id)
+        if session is None:
+            raise ValueError('The validated candidate deployment session is missing or expired')
+        if time.time() - session.validated_at > _DEPLOYMENT_SESSION_TTL_SECONDS:
+            deployment_sessions.pop(session_id, None)
+            raise ValueError('The validated candidate deployment session has expired; prepare the candidate again')
+        artifact_id = payload.get('artifact_id')
+        if artifact_id != session.artifact_id:
+            raise ValueError('The deployment session belongs to a different migration artifact')
+        rendered = rendered_artifacts.get(session.artifact_id)
+        if rendered is None:
+            deployment_sessions.pop(session_id, None)
+            raise ValueError('The migration artifact for this deployment session has expired')
+        if (
+            len(rendered.commands) != session.command_count
+            or rendered.report.get('command_sha256') != session.command_sha256
+        ):
+            deployment_sessions.pop(session_id, None)
+            raise ValueError('The migration artifact changed after candidate validation')
+        options = _deployment_options(payload)
+        if (options.host, options.port, options.username) != (session.host, session.port, session.username):
+            raise ValueError('The deployment session belongs to a different PAN-OS target identity')
+        return session, rendered, options
+
     @app.route('/api/deploy', methods=['POST'])
     def deploy_candidate():
         try:
@@ -1192,31 +1224,83 @@ def create_app(test_config=None):
                 raise ValueError('A current validated rendered migration is required')
             if not rendered.commands:
                 raise ValueError('The migration artifact contains no renderable commands')
-            options = _deployment_options(payload)
+            options = replace(_deployment_options(payload), validate=True, commit=False)
             result = PANSSHDeployer(options).deploy(rendered)
             source = artifact_sources.get(artifact_id)
             decision_document = source[2] if source else None
             validation_feedback = _deployment_validation_feedback(rendered, decision_document, result.validation)
-            succeeded = (result.failure_message is None and result.failed_command_index is None
-                         and result.validation.status != 'FAILED' and result.commit.status != 'FAILED')
-            return jsonify({'success': succeeded, 'result': asdict(result),
-                            'validation_feedback': validation_feedback}), (200 if succeeded else 502)
+            succeeded = (
+                result.failure_message is None
+                and result.failed_command_index is None
+                and result.validation.status == 'SUCCESS'
+                and result.commit.status != 'FAILED'
+            )
+            deployment_session_id = None
+            if succeeded:
+                for session_id, session in tuple(deployment_sessions.items()):
+                    if session.artifact_id == artifact_id:
+                        deployment_sessions.pop(session_id, None)
+                deployment_session_id = uuid.uuid4().hex
+                deployment_sessions[deployment_session_id] = PANDeploymentSession(
+                    session_id=deployment_session_id,
+                    artifact_id=artifact_id,
+                    command_count=len(rendered.commands),
+                    command_sha256=rendered.report['command_sha256'],
+                    host=options.host,
+                    port=options.port,
+                    username=options.username,
+                    validation_job_id=result.validation.job_id,
+                    validated_at=time.time(),
+                )
+            return jsonify({
+                'success': succeeded,
+                'result': asdict(result),
+                'validation_feedback': validation_feedback,
+                'deployment_session_id': deployment_session_id,
+                'candidate_validated': succeeded,
+            }), (200 if succeeded else 502)
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
     @app.route('/api/validate-candidate', methods=['POST'])
     def validate_candidate():
         try:
-            result = PANSSHDeployer(_deployment_options(request.get_json(silent=True) or {})).validate()
-            return jsonify({'success': result.status == 'SUCCESS', 'result': asdict(result)}), (200 if result.status == 'SUCCESS' else 502)
+            payload = request.get_json(silent=True) or {}
+            session, rendered, options = _require_deployment_session(payload)
+            result = PANSSHDeployer(replace(options, validate=True, commit=False)).validate()
+            source = artifact_sources.get(session.artifact_id)
+            decision_document = source[2] if source else None
+            validation_feedback = _deployment_validation_feedback(rendered, decision_document, result)
+            if result.status == 'SUCCESS':
+                deployment_sessions[session.session_id] = replace(
+                    session,
+                    validation_job_id=result.job_id,
+                    validated_at=time.time(),
+                )
+            else:
+                deployment_sessions.pop(session.session_id, None)
+            return jsonify({
+                'success': result.status == 'SUCCESS',
+                'result': asdict(result),
+                'deployment_session_id': session.session_id if result.status == 'SUCCESS' else None,
+                'validation_feedback': validation_feedback,
+            }), (200 if result.status == 'SUCCESS' else 502)
         except ValueError as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
     @app.route('/api/commit', methods=['POST'])
     def commit_candidate():
         try:
-            result = PANSSHDeployer(_deployment_options(request.get_json(silent=True) or {})).commit()
-            return jsonify({'success': result.status == 'SUCCESS', 'result': asdict(result)}), (200 if result.status == 'SUCCESS' else 502)
+            payload = request.get_json(silent=True) or {}
+            session, _rendered, options = _require_deployment_session(payload)
+            result = PANSSHDeployer(replace(options, validate=False, commit=False)).commit()
+            if result.status == 'SUCCESS':
+                deployment_sessions.pop(session.session_id, None)
+            return jsonify({
+                'success': result.status == 'SUCCESS',
+                'result': asdict(result),
+                'deployment_session_id': session.session_id if result.status != 'SUCCESS' else None,
+            }), (200 if result.status == 'SUCCESS' else 502)
         except ValueError as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 

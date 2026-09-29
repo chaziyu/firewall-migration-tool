@@ -36,6 +36,19 @@ class PANDeploymentResult:
 
 
 @dataclass(frozen=True, slots=True)
+class PANDeploymentSession:
+    session_id: str
+    artifact_id: str
+    command_count: int
+    command_sha256: str
+    host: str
+    port: int
+    username: str
+    validation_job_id: str | None
+    validated_at: float
+
+
+@dataclass(frozen=True, slots=True)
 class PANDeploymentOptions:
     host: str
     username: str

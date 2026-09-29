@@ -6,8 +6,11 @@ let currentFile = null;
 let currentRenderedArtifactId = null;
 let currentArtifactCommandCount = 0;
 let currentArtifactSha256 = null;
+let currentArtifactPlanStatus = null;
 let migrationPlanRevision = 0;
 let migrationPlanNeedsRebuild = false;
+let migrationBuildTimer = null;
+let migrationBuildInFlight = false;
   let currentPlanItems = [];
   let currentRecommendations = [];
   let currentDecisionSet = { decisions: [] };
@@ -442,7 +445,7 @@ let migrationPlanNeedsRebuild = false;
   const btnPushCandidate = document.getElementById("btn-push-candidate");
   const btnValidateCandidate = document.getElementById("btn-validate-candidate");
   const btnCommitCandidate = document.getElementById("btn-commit-candidate");
-  let candidatePushed = false;
+  let deploymentSessionId = null;
   let candidateValidated = false;
 
   // Terminal
@@ -772,12 +775,17 @@ let migrationPlanNeedsRebuild = false;
       "hidden", !sourceReady || !migrationPairSupported || !currentDecisionSet.decisions.length,
     );
     const reviewedArtifact = Boolean(currentRenderedArtifactId && currentArtifactCommandCount);
+    const deployableArtifact = reviewedArtifact && currentArtifactPlanStatus === "READY";
     if (btnPushCandidate && !busyButtons.has(btnPushCandidate))
-      btnPushCandidate.disabled = !sourceReady || !reviewedArtifact;
+      btnPushCandidate.disabled = !sourceReady || !deployableArtifact;
+    if (btnValidateCandidate && !busyButtons.has(btnValidateCandidate))
+      btnValidateCandidate.disabled = !deploymentSessionId;
+    if (btnCommitCandidate && !busyButtons.has(btnCommitCandidate))
+      btnCommitCandidate.disabled = !deploymentSessionId || !candidateValidated;
     const liveArtifactSummary = document.getElementById("live-artifact-summary");
     if (liveArtifactSummary) liveArtifactSummary.textContent = reviewedArtifact
-      ? `Current reviewed artifact · ${currentArtifactCommandCount} commands · SHA-256 ${currentArtifactSha256 || "unavailable"}`
-      : "No current reviewed artifact. Build and review a migration plan first.";
+      ? `Current reviewed artifact · ${currentArtifactPlanStatus || "UNKNOWN"} · ${currentArtifactCommandCount} commands · SHA-256 ${currentArtifactSha256 || "unavailable"}`
+      : "No current reviewed artifact. The migration plan will update automatically after source review.";
     const exportHint = document.querySelector(
       "#mode-download-form .export-hint",
     );
@@ -786,13 +794,15 @@ let migrationPlanNeedsRebuild = false;
         (item) => item.mode === "REQUIRED" && item.review_state !== "CONFIRMED",
       ).length;
       const buildLabel = btnGenerateBundle?.querySelector("span:last-child");
-      if (buildLabel) buildLabel.textContent = pendingRequired ? "Build partial plan" : "Build migration plan";
+      if (buildLabel) buildLabel.textContent = "Rebuild now";
       const hintCopy = sourceReady && migrationPairSupported
-        ? migrationPlanNeedsRebuild
-          ? "Mappings changed. Rebuild the migration plan to update its commands."
+        ? migrationBuildInFlight
+          ? "Updating the migration plan automatically…"
+          : migrationPlanNeedsRebuild
+          ? "Changes detected. The migration plan will rebuild automatically."
           : pendingRequired
-          ? `${pendingRequired} required decisions pending. Build a partial plan or finish the mappings.`
-          : "Ready to build the migration plan."
+          ? `${pendingRequired} required decisions remain. The current partial plan updates automatically.`
+          : "Migration plan is synchronized with the current decisions."
         : sourceReady
           ? "This source and target pair is not supported for migration planning."
         : sourceFailed
@@ -857,7 +867,7 @@ let migrationPlanNeedsRebuild = false;
     btnDownloadBundle?.classList.add("hidden");
     btnDownloadSet?.classList.add("hidden");
     if (btnDownloadBundle) btnDownloadBundle.disabled = true;
-    candidatePushed = false;
+    deploymentSessionId = null;
     candidateValidated = false;
     if (btnPushCandidate) btnPushCandidate.disabled = true;
     if (btnValidateCandidate) btnValidateCandidate.disabled = true;
@@ -1254,6 +1264,7 @@ let migrationPlanNeedsRebuild = false;
       activeValidationGroup = "";
       renderReport();
       sourceReady = true;
+      scheduleMigrationPlanBuild();
       const itemCount = Object.values(objects).reduce(
         (total, value) => total + count(value),
         0,
@@ -1283,14 +1294,34 @@ let migrationPlanNeedsRebuild = false;
   // =========================================================================
   // 8. Mode A: Export Target Migration Bundle (.zip)
   // =========================================================================
+  function scheduleMigrationPlanBuild(delay = 350) {
+    if (migrationBuildTimer) clearTimeout(migrationBuildTimer);
+    migrationBuildTimer = null;
+    const migrationPairSupported = selectedSourceVendor === "fortigate" && selectedTargetVendor === "palo_alto";
+    if (!sourceReady || !currentPreviewId || !migrationPairSupported) return;
+    migrationBuildTimer = setTimeout(() => {
+      migrationBuildTimer = null;
+      if (migrationBuildInFlight) {
+        scheduleMigrationPlanBuild(250);
+        return;
+      }
+      buildMigrationPlan({ automatic: true });
+    }, delay);
+  }
+
   function invalidateMigrationPlan(rebuilding = false) {
+    if (migrationBuildTimer) {
+      clearTimeout(migrationBuildTimer);
+      migrationBuildTimer = null;
+    }
     if (rebuilding) migrationPlanNeedsRebuild = false;
     else if (currentRenderedArtifactId) migrationPlanNeedsRebuild = true;
     migrationPlanRevision += 1;
     currentRenderedArtifactId = null;
     currentArtifactCommandCount = 0;
     currentArtifactSha256 = null;
-    candidatePushed = false;
+    currentArtifactPlanStatus = null;
+    deploymentSessionId = null;
     candidateValidated = false;
     btnDownloadBundle?.classList.add("hidden");
     btnDownloadSet?.classList.add("hidden");
@@ -1306,9 +1337,10 @@ let migrationPlanNeedsRebuild = false;
     if (commandSummary) commandSummary.textContent = "";
     if (copyCommands) copyCommands.disabled = true;
     syncWorkspace();
+    if (!rebuilding) scheduleMigrationPlanBuild();
   }
 
-  async function loadMigrationReview(previewId = currentPreviewId, previousDocument = null) {
+  async function loadMigrationReview(previewId = currentPreviewId, previousDocument = null, scheduleBuild = true) {
     const panel = document.getElementById("migration-mapping");
     if (selectedSourceVendor !== "fortigate" || !previewId) {
       currentDecisionSet = { decisions: [] };
@@ -1383,6 +1415,7 @@ let migrationPlanNeedsRebuild = false;
     renderRecommendations();
     panel?.classList.toggle("hidden", !sourceReady || selectedTargetVendor !== "palo_alto");
     updateMappingCompletion();
+    if (scheduleBuild) scheduleMigrationPlanBuild();
   }
 
   function currentDecisionPayload() {
@@ -1470,15 +1503,8 @@ let migrationPlanNeedsRebuild = false;
       ["choose_candidate", "Choices"], ["needs_input", "Manual"], ["conflicts", "Conflicts"],
     ];
     const safeCount = status => Object.values(autoDecisionResults).filter(item => item.status === status).length;
-    const safeKeys = Object.entries(autoDecisionResults).filter(([, item]) => ["VERIFIED", "DERIVED"].includes(item.status)).map(([key]) => key);
     reviewSummary.verified = safeCount("VERIFIED");
     reviewSummary.derived = safeCount("DERIVED");
-    const approveSafe = document.getElementById("decision-approve-safe");
-    if (approveSafe) {
-      approveSafe.textContent = `Approve ${safeKeys.length} verified / derived mappings`;
-      approveSafe.disabled = safeKeys.length === 0;
-      approveSafe.classList.toggle("hidden", safeKeys.length === 0);
-    }
     summaryNode.replaceChildren(...summaryItems.map(([key, label]) => {
       const card = document.createElement("div"); card.className = "review-summary-card";
       const count = document.createElement("strong"); count.textContent = String(reviewSummary[key] || 0);
@@ -1732,19 +1758,6 @@ let migrationPlanNeedsRebuild = false;
     finally { button.disabled = false; }
   });
 
-  document.getElementById("decision-approve-safe")?.addEventListener("click", async () => {
-    const decisionKeys = Object.entries(autoDecisionResults).filter(([, item]) => ["VERIFIED", "DERIVED"].includes(item.status)).map(([key]) => key);
-    if (!decisionKeys.length) return;
-    try {
-      const response = await fetch("/api/migration/decisions/approve", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preview_id: currentPreviewId, decision_document: currentDecisionPayload(), decision_keys: decisionKeys,
-          ...(currentTargetPreviewId ? { target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice } : {}) }) });
-      const result = await readJson(response, "Could not approve verified mappings");
-      await loadMigrationReview(currentPreviewId, result.decision_document);
-      invalidateMigrationPlan();
-    } catch (error) { showError(`Could not approve mappings: ${error.message}`); }
-  });
-
   document.getElementById("target-intent-import")?.addEventListener("change", async event => {
     const file = event.target.files?.[0]; if (!file || !currentPreviewId) return;
     try {
@@ -1805,6 +1818,7 @@ let migrationPlanNeedsRebuild = false;
     invalidateMigrationPlan();
     await loadMigrationReview(currentPreviewId);
     sourceReady = true;
+    scheduleMigrationPlanBuild();
     const summary = data.preview?.summary || {};
     for (const [element, value] of [[statTotalRules, summary.rules], [statTotalObjects, summary.objects], [statErrors, summary.errors], [statWarnings, summary.warnings]]) {
       if (element) element.textContent = typeof value === "number" ? value : 0;
@@ -2307,88 +2321,110 @@ let migrationPlanNeedsRebuild = false;
     catch { showToast("error", "Could not copy", "Select the command text and copy it using your keyboard."); }
   });
 
-  if (btnGenerateBundle) {
-    btnGenerateBundle.addEventListener("click", async () => {
-      if (!currentPreviewId || !sourceReady) return;
-      invalidateMigrationPlan(true);
-      const requestRevision = migrationPlanRevision;
-      setBusy(btnGenerateBundle, true);
-      document.getElementById("migration-build-status").textContent = "Building migration plan…";
-      hideError();
-      try {
+  async function buildMigrationPlan({ automatic = false } = {}) {
+    if (!currentPreviewId || !sourceReady || migrationBuildInFlight) return;
+    invalidateMigrationPlan(true);
+    const requestRevision = migrationPlanRevision;
+    migrationBuildInFlight = true;
+    setBusy(btnGenerateBundle, true);
+    const buildStatus = document.getElementById("migration-build-status");
+    if (buildStatus) buildStatus.textContent = automatic ? "Updating migration plan…" : "Rebuilding migration plan…";
+    hideError();
+    try {
       const resp = await fetch("/api/migrate", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ preview_id: currentPreviewId, source_vendor: selectedSourceVendor, target_vendor: selectedTargetVendor, decision_document: currentDecisionPayload(), target_preview_id: currentTargetPreviewId, target_device: selectedTargetDevice }),
-        });
-        const artifact = await readJson(resp, "Migration planning failed");
-        if (requestRevision !== migrationPlanRevision) return;
-        currentRenderedArtifactId = artifact.artifact_id;
-        migrationPlanNeedsRebuild = false;
-        currentPlanItems = artifact.report?.items || [];
-        currentRecommendations = artifact.recommendations || artifact.report?.review?.recommendations || currentRecommendations;
-        targetFindings = artifact.target_findings || [];
-        targetPlanFindings = artifact.target_plan_findings || [];
-        decisionEvidence = artifact.decision_evidence || {};
-        evidenceSummary = artifact.evidence_summary || {};
-        supportGuidance = artifact.support_guidance || artifact.report?.review?.support_guidance || [];
-        targetEvidence = artifact.target_evidence || artifact.report?.target_evidence || targetEvidence;
-        invalidatedTargetDecisions = artifact.invalidated_target_decisions || artifact.report?.review?.invalidated_target_decisions || invalidatedTargetDecisions;
-        const planFilter = document.getElementById("migration-plan-filter");
-        planFilter.value = currentPlanItems.some(item => item.status !== "SUPPORTED" || !item.satisfied || item.warnings?.length || item.render_blockers?.length) ? "attention" : "all";
-        renderMigrationPlanItems(currentPlanItems);
-        renderRecommendations();
-        document.getElementById("migration-plan")?.classList.remove("hidden");
-        const counts = artifact.counts || {};
-        const summary = document.getElementById("migration-plan-summary");
-        if (summary) {
-          const status = artifact.plan_status === "READY_NO_CHANGES"
-            ? "No PAN-OS configuration changes are required. All supported planned objects are already satisfied by the selected target."
-            : artifact.plan_status === "READY" ? "Migration artifact ready."
-              : artifact.plan_status === "PARTIAL" ? (artifact.commands ? "Partial plan: commands are ready, with blockers remaining." : "Partial plan: blockers remain and no commands are ready.")
-                : artifact.plan_status === "NEEDS_MAPPING" ? `${(artifact.missing_mappings || []).length} required target mappings remain. Review decisions before building a complete plan.` : "Migration plan status unavailable.";
-          const blockers = new Set(artifact.blocking_reasons || []);
-          const targetIssueCount = (artifact.target_findings || []).length;
-          const guidanceCount = (artifact.support_guidance || []).length;
-          const render = artifact.render_summary || {};
-          summary.textContent = `Plan status: ${artifact.plan_status}\n${render.create || 0} to create · ${render.reuse || 0} existing objects to reuse · ${render.blocked || 0} blocked · ${artifact.commands} commands\n${status}${blockers.size ? `\n${blockers.size} blocking issue${blockers.size === 1 ? "" : "s"}. Review the results below.` : ""}${targetIssueCount ? `\n${targetIssueCount} target conflict${targetIssueCount === 1 ? "" : "s"}.` : ""}${guidanceCount ? `\n${guidanceCount} support guidance item${guidanceCount === 1 ? "" : "s"}.` : ""}\nSource status: ${counts.SUPPORTED || 0} supported · ${counts.PARTIAL || 0} partial · ${counts.MANUAL_REVIEW || 0} manual review · ${counts.UNSUPPORTED || 0} unsupported`;
-        }
-        const previewElement = document.getElementById("migration-command-preview");
-        const reviewSummary = document.getElementById("migration-command-summary");
-        if (artifact.commands || artifact.plan_status === "READY_NO_CHANGES") {
-          const preview = await readJson(await fetch("/api/migration/command-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ artifact_id: currentRenderedArtifactId }) }), "Could not load command preview");
-          if (requestRevision !== migrationPlanRevision) return;
-          currentArtifactCommandCount = preview.command_count;
-          currentArtifactSha256 = preview.command_sha256;
-          if (previewElement) previewElement.textContent = preview.command_text;
-          if (reviewSummary) reviewSummary.textContent = `Reviewed artifact · ${preview.command_count} commands · SHA-256 ${preview.command_sha256}. Pending decisions ${preview.review_summary.pending} · Manual review ${preview.review_summary.manual} · Unsupported ${preview.review_summary.unsupported}.`;
-          const copyCommands = document.getElementById("migration-copy-commands");
-          if (copyCommands) copyCommands.disabled = preview.command_count === 0;
-        } else {
-          if (previewElement) previewElement.textContent = "No renderable commands. Complete required decisions to build a command preview.";
-          if (reviewSummary) reviewSummary.textContent = `Pending decisions ${currentDecisionSet.decisions.filter(item => item.review_state === "PENDING").length} · Manual review ${counts.MANUAL_REVIEW || 0} · Unsupported ${counts.UNSUPPORTED || 0}`;
-        }
-        syncWorkspace();
-        const noChanges = artifact.plan_status === "READY_NO_CHANGES";
-        btnDownloadBundle?.classList.toggle("hidden", !artifact.commands && !noChanges);
-        btnDownloadSet?.classList.toggle("hidden", noChanges || artifact.commands === 0);
-        document.getElementById("migration-export")?.classList.toggle("hidden", !artifact.commands && !noChanges);
-        if (btnDownloadBundle) {
-          btnDownloadBundle.disabled = !artifact.commands && !noChanges;
-          const label = btnDownloadBundle.querySelector("span:last-child");
-          if (label) label.textContent = "Download bundle";
-        }
-        if (btnDownloadSet) btnDownloadSet.disabled = artifact.commands === 0;
-        if (activeMode === "download") document.getElementById("migration-plan")?.scrollIntoView({ block: "start" });
-        logToTerminal(`[PLAN] ${artifact.plan_status}: ${artifact.commands} commands ready.`, artifact.commands || noChanges ? "term-success" : "term-error");
-      } catch (err) {
-        showError(err.message);
-        logToTerminal(`[ERROR] Migration planning failed: ${err.message}`, "term-error");
-      } finally {
-        document.getElementById("migration-build-status").textContent = "";
-        setBusy(btnGenerateBundle, false);
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preview_id: currentPreviewId,
+          source_vendor: selectedSourceVendor,
+          target_vendor: selectedTargetVendor,
+          decision_document: currentDecisionPayload(),
+          target_preview_id: currentTargetPreviewId,
+          target_device: selectedTargetDevice,
+        }),
+      });
+      const artifact = await readJson(resp, "Migration planning failed");
+      if (requestRevision !== migrationPlanRevision) return;
+      currentRenderedArtifactId = artifact.artifact_id;
+      currentArtifactPlanStatus = artifact.plan_status || null;
+      currentDecisionSet = artifact.decisions || currentDecisionSet;
+      currentDecisionDocument = artifact.decision_document || currentDecisionDocument;
+      migrationPlanNeedsRebuild = false;
+      currentPlanItems = artifact.report?.items || [];
+      currentRecommendations = artifact.recommendations || artifact.report?.review?.recommendations || currentRecommendations;
+      targetFindings = artifact.target_findings || [];
+      targetPlanFindings = artifact.target_plan_findings || [];
+      decisionEvidence = artifact.decision_evidence || {};
+      evidenceSummary = artifact.evidence_summary || {};
+      supportGuidance = artifact.support_guidance || artifact.report?.review?.support_guidance || [];
+      targetEvidence = artifact.target_evidence || artifact.report?.target_evidence || targetEvidence;
+      invalidatedTargetDecisions = artifact.invalidated_target_decisions || artifact.report?.review?.invalidated_target_decisions || invalidatedTargetDecisions;
+      await loadMigrationReview(currentPreviewId, currentDecisionDocument, false);
+      if (requestRevision !== migrationPlanRevision) return;
+      const planFilter = document.getElementById("migration-plan-filter");
+      planFilter.value = currentPlanItems.some(item => item.status !== "SUPPORTED" || !item.satisfied || item.warnings?.length || item.render_blockers?.length) ? "attention" : "all";
+      renderMigrationPlanItems(currentPlanItems);
+      renderRecommendations();
+      document.getElementById("migration-plan")?.classList.remove("hidden");
+      const counts = artifact.counts || {};
+      const summary = document.getElementById("migration-plan-summary");
+      if (summary) {
+        const status = artifact.plan_status === "READY_NO_CHANGES"
+          ? "No PAN-OS configuration changes are required. All supported planned objects are already satisfied by the selected target."
+          : artifact.plan_status === "READY" ? "Migration artifact ready."
+            : artifact.plan_status === "PARTIAL" ? (artifact.commands ? "Partial plan: commands are ready, with blockers remaining." : "Partial plan: blockers remain and no commands are ready.")
+              : artifact.plan_status === "NEEDS_MAPPING" ? `${(artifact.missing_mappings || []).length} required target mappings remain. Review decisions before building a complete plan.` : "Migration plan status unavailable.";
+        const blockers = new Set(artifact.blocking_reasons || []);
+        const targetIssueCount = (artifact.target_findings || []).length;
+        const guidanceCount = (artifact.support_guidance || []).length;
+        const render = artifact.render_summary || {};
+        summary.textContent = `Plan status: ${artifact.plan_status}\n${render.create || 0} to create · ${render.reuse || 0} existing objects to reuse · ${render.blocked || 0} blocked · ${artifact.commands} commands\n${status}${blockers.size ? `\n${blockers.size} blocking issue${blockers.size === 1 ? "" : "s"}. Review the results below.` : ""}${targetIssueCount ? `\n${targetIssueCount} target conflict${targetIssueCount === 1 ? "" : "s"}.` : ""}${guidanceCount ? `\n${guidanceCount} support guidance item${guidanceCount === 1 ? "" : "s"}.` : ""}\nSource status: ${counts.SUPPORTED || 0} supported · ${counts.PARTIAL || 0} partial · ${counts.MANUAL_REVIEW || 0} manual review · ${counts.UNSUPPORTED || 0} unsupported`;
       }
-    });
+      const previewElement = document.getElementById("migration-command-preview");
+      const reviewSummaryNode = document.getElementById("migration-command-summary");
+      if (artifact.commands || artifact.plan_status === "READY_NO_CHANGES") {
+        const preview = await readJson(await fetch("/api/migration/command-preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ artifact_id: currentRenderedArtifactId }),
+        }), "Could not load command preview");
+        if (requestRevision !== migrationPlanRevision) return;
+        currentArtifactCommandCount = preview.command_count;
+        currentArtifactSha256 = preview.command_sha256;
+        if (previewElement) previewElement.textContent = preview.command_text;
+        if (reviewSummaryNode) reviewSummaryNode.textContent = `Reviewed artifact · ${preview.command_count} commands · SHA-256 ${preview.command_sha256}. Pending decisions ${preview.review_summary.pending} · Manual review ${preview.review_summary.manual} · Unsupported ${preview.review_summary.unsupported}.`;
+        const copyCommands = document.getElementById("migration-copy-commands");
+        if (copyCommands) copyCommands.disabled = preview.command_count === 0;
+      } else {
+        currentArtifactCommandCount = 0;
+        currentArtifactSha256 = artifact.report?.command_sha256 || null;
+        if (previewElement) previewElement.textContent = "No renderable commands. Complete required decisions to build a command preview.";
+        if (reviewSummaryNode) reviewSummaryNode.textContent = `Pending decisions ${currentDecisionSet.decisions.filter(item => item.review_state === "PENDING").length} · Manual review ${counts.MANUAL_REVIEW || 0} · Unsupported ${counts.UNSUPPORTED || 0}`;
+      }
+      syncWorkspace();
+      const noChanges = artifact.plan_status === "READY_NO_CHANGES";
+      btnDownloadBundle?.classList.toggle("hidden", !artifact.commands && !noChanges);
+      btnDownloadSet?.classList.toggle("hidden", noChanges || artifact.commands === 0);
+      document.getElementById("migration-export")?.classList.toggle("hidden", !artifact.commands && !noChanges);
+      if (btnDownloadBundle) {
+        btnDownloadBundle.disabled = !artifact.commands && !noChanges;
+        const label = btnDownloadBundle.querySelector("span:last-child");
+        if (label) label.textContent = "Download bundle";
+      }
+      if (btnDownloadSet) btnDownloadSet.disabled = artifact.commands === 0;
+      if (activeMode === "download" && !automatic) document.getElementById("migration-plan")?.scrollIntoView({ block: "start" });
+      logToTerminal(`[PLAN] ${artifact.plan_status}: ${artifact.commands} commands ready.`, artifact.commands || noChanges ? "term-success" : "term-error");
+    } catch (err) {
+      showError(err.message);
+      logToTerminal(`[ERROR] Migration planning failed: ${err.message}`, "term-error");
+    } finally {
+      migrationBuildInFlight = false;
+      if (buildStatus) buildStatus.textContent = "";
+      setBusy(btnGenerateBundle, false);
+      if (migrationPlanNeedsRebuild) scheduleMigrationPlanBuild(250);
+    }
   }
+
+  btnGenerateBundle?.addEventListener("click", () => buildMigrationPlan({ automatic: false }));
 
   btnDownloadBundle?.addEventListener("click", async () => {
     if (!currentRenderedArtifactId) return;
@@ -2525,57 +2561,79 @@ let migrationPlanNeedsRebuild = false;
   }
 
   btnPushCandidate?.addEventListener("click", async () => {
-    if (!sourceReady || !currentRenderedArtifactId || !currentArtifactCommandCount) return;
-    btnPushCandidate.disabled = true;
+    if (!sourceReady || !currentRenderedArtifactId || !currentArtifactCommandCount || currentArtifactPlanStatus !== "READY") return;
+    setBusy(btnPushCandidate, true);
+    deploymentSessionId = null;
+    candidateValidated = false;
     try {
-      if (!currentRenderedArtifactId) throw new Error("Generate a migration plan first.");
       const response = await fetch("/api/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...sshPayload(), artifact_id: currentRenderedArtifactId }),
       });
-      const data = await readJson(response, "Candidate push failed");
-      candidatePushed = true;
-      btnValidateCandidate.disabled = false;
-      logToTerminal(`[DEPLOY] Pushed ${data.result.commands_succeeded} candidate commands.`, "term-success");
+      const data = await readJson(response, "Candidate preparation failed");
+      deploymentSessionId = data.deployment_session_id || null;
+      candidateValidated = Boolean(deploymentSessionId && data.candidate_validated && data.result?.validation?.status === "SUCCESS");
+      logToTerminal(`[PREPARE] Pushed ${data.result.commands_succeeded} candidate commands.`, "term-success");
+      logToTerminal(
+        `[VALIDATE] Candidate ${String(data.result.validation.status || "unknown").toLowerCase()}: ${data.result.validation.response || ""}`,
+        candidateValidated ? "term-success" : "term-error",
+      );
+      if (!candidateValidated) throw new Error("Candidate validation did not complete successfully.");
     } catch (err) {
-      candidatePushed = false;
-      btnValidateCandidate.disabled = true;
-      logToTerminal(`[ERROR] Candidate push failed: ${err.message}`, "term-error");
+      deploymentSessionId = null;
+      candidateValidated = false;
+      logToTerminal(`[ERROR] Candidate preparation failed: ${err.message}`, "term-error");
       showError(err.message);
     } finally {
+      setBusy(btnPushCandidate, false);
       syncWorkspace();
     }
   });
 
   btnValidateCandidate?.addEventListener("click", async () => {
-    if (!candidatePushed) return;
-    btnValidateCandidate.disabled = true;
+    if (!deploymentSessionId || !currentRenderedArtifactId) return;
+    setBusy(btnValidateCandidate, true);
+    candidateValidated = false;
     try {
-      const data = await postSSH("/api/validate-candidate", sshPayload());
-      candidateValidated = data.result.status === "SUCCESS";
-      btnCommitCandidate.disabled = !candidateValidated;
-      logToTerminal(`[VALIDATE] Candidate ${data.result.status.toLowerCase()}: ${data.result.response}`, candidateValidated ? "term-success" : "term-error");
+      const data = await postSSH("/api/validate-candidate", {
+        ...sshPayload(),
+        artifact_id: currentRenderedArtifactId,
+        deployment_session_id: deploymentSessionId,
+      });
+      deploymentSessionId = data.deployment_session_id || null;
+      candidateValidated = Boolean(deploymentSessionId && data.result.status === "SUCCESS");
+      logToTerminal(`[REVALIDATE] Candidate ${data.result.status.toLowerCase()}: ${data.result.response}`, candidateValidated ? "term-success" : "term-error");
     } catch (err) {
+      deploymentSessionId = null;
       candidateValidated = false;
-      btnCommitCandidate.disabled = true;
-      logToTerminal(`[ERROR] Candidate validation failed: ${err.message}`, "term-error");
+      logToTerminal(`[ERROR] Candidate revalidation failed: ${err.message}`, "term-error");
       showError(err.message);
     } finally {
-      btnValidateCandidate.disabled = false;
+      setBusy(btnValidateCandidate, false);
+      syncWorkspace();
     }
   });
 
   btnCommitCandidate?.addEventListener("click", async () => {
-    if (!candidateValidated || !confirm("Commit the validated candidate configuration to the firewall?")) return;
-    btnCommitCandidate.disabled = true;
+    if (!deploymentSessionId || !candidateValidated || !currentRenderedArtifactId ||
+        !confirm("Commit the validated candidate configuration to the firewall?")) return;
+    setBusy(btnCommitCandidate, true);
     try {
-      const data = await postSSH("/api/commit", sshPayload());
-      logToTerminal(`[COMMIT] Commit submitted (job ${data.result.job_id || "unknown"}).`, "term-success");
+      const data = await postSSH("/api/commit", {
+        ...sshPayload(),
+        artifact_id: currentRenderedArtifactId,
+        deployment_session_id: deploymentSessionId,
+      });
+      deploymentSessionId = data.deployment_session_id || null;
+      candidateValidated = false;
+      logToTerminal(`[COMMIT] Commit completed (job ${data.result.job_id || "unknown"}).`, "term-success");
     } catch (err) {
-      btnCommitCandidate.disabled = false;
       logToTerminal(`[ERROR] Commit failed: ${err.message}`, "term-error");
       showError(err.message);
+    } finally {
+      setBusy(btnCommitCandidate, false);
+      syncWorkspace();
     }
   });
 
