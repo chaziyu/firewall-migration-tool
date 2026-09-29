@@ -17,6 +17,7 @@
         </button>
       </div>
     </div>
+    <p class="report-status" id="report-source-meta" role="status" aria-live="polite"></p>
     <nav class="report-tabs" role="tablist" aria-label="Report sections">
       {% for key, label in (
         ('overview', 'Overview'), ('interfaces', 'Interfaces'), ('objects', 'Objects'),
@@ -31,7 +32,6 @@
 
   <div id="report-overview" class="report-overview" role="tabpanel">
     <div class="report-summary" id="report-summary"></div>
-    <p class="report-status" id="report-source-meta" role="status" aria-live="polite"></p>
     <p class="report-status" id="report-scope-summary"></p>
   </div>
 
