@@ -1544,6 +1544,24 @@ let migrationBuildInFlight = false;
     if (scheduleBuild) scheduleMigrationPlanBuild();
   }
 
+  async function loadMigrationReviewForReadySource(previewId) {
+    if (selectedSourceVendor !== "fortigate" || !previewId) return;
+    try {
+      await loadMigrationReview(previewId);
+      const status = document.getElementById("migration-build-status");
+      if (status && previewId === currentPreviewId && status.textContent.startsWith("Migration review unavailable:")) {
+        status.textContent = "";
+      }
+    } catch (error) {
+      if (previewId !== currentPreviewId) return;
+      const status = document.getElementById("migration-build-status");
+      if (status) status.textContent = `Migration review unavailable: ${error.message}`;
+      document.getElementById("migration-mapping")?.classList.add("hidden");
+      document.getElementById("migration-plan")?.classList.add("hidden");
+      syncWorkspace();
+    }
+  }
+
   function currentDecisionPayload() {
     return { ...(currentDecisionDocument || {}), decisions: currentDecisionSet.decisions };
   }
@@ -2192,24 +2210,26 @@ let migrationBuildInFlight = false;
     return { vendor: selectedSourceVendor, connection };
   }
 
-  async function applyCollectionPreview(data) {
+  async function applyCollectionPreview(data, acquisition = "Snapshot") {
+    detachLocalFile();
     currentPreviewId = data.preview_id;
     sourceReady = false;
+    sourceFailed = false;
     automationRunSummary = null;
     currentReport = data.preview?.sections ? data.preview : null;
+    setSourceContext({
+      acquisition,
+      status: data.collection?.status || null,
+      warnings: data.collection?.warnings || [],
+    });
     reportPage = 1;
     activeValidationGroup = "";
     if (currentReport) renderReport();
     invalidateMigrationPlan();
-    await loadMigrationReview(currentPreviewId);
     sourceReady = true;
-    scheduleMigrationPlanBuild();
-    const summary = data.preview?.summary || {};
-    for (const [element, value] of [[statTotalRules, summary.rules], [statTotalObjects, summary.objects], [statErrors, summary.errors], [statWarnings, summary.warnings]]) {
-      if (element) element.textContent = typeof value === "number" ? value : 0;
-    }
-    optimizerPanel?.classList.toggle("hidden", ![summary.rules, summary.objects, summary.errors, summary.warnings].some(value => typeof value === "number"));
+    if (currentReport) updateSourceOverview(currentReport);
     syncWorkspace();
+    await loadMigrationReviewForReadySource(currentPreviewId);
   }
 
   async function importSnapshot(file) {
@@ -2220,8 +2240,8 @@ let migrationBuildInFlight = false;
       const data = await readJson(response, "Snapshot import failed");
       selectedSourceVendor = data.vendor_id;
       sourceVendorSelect.value = data.vendor_id;
-      currentFile = null;
-      await applyCollectionPreview(data);
+      syncSourceVendorPresentation();
+      await applyCollectionPreview(data, "Imported snapshot");
       setPreviewStatus("Snapshot imported. Preview and Excel are ready.");
     } catch (error) { setPreviewStatus(error.message, "error"); }
   }
@@ -2234,7 +2254,7 @@ let migrationBuildInFlight = false;
       const data = await readJson(response, "Collection failed");
       if (path.endsWith("/test")) status.textContent = "✓ Connected";
       else {
-        await applyCollectionPreview(data);
+        await applyCollectionPreview(data, `Live collection (${data.collection.method || "device"})`);
         status.textContent = `Configuration collected (${data.collection.status}). ${data.collection.warnings?.length || 0} warnings. Snapshot download ready.`;
         const filename = `firewall_snapshot_${selectedSourceVendor}_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
         await downloadBlob(new Blob([JSON.stringify(data.snapshot)], { type: "application/json" }), filename);
@@ -2884,9 +2904,9 @@ let migrationBuildInFlight = false;
       hideError();
 
       const formData = new FormData();
+      formData.append("source_vendor", selectedSourceVendor);
       if (currentFile) {
         formData.append("file", currentFile);
-        formData.append("source_vendor", selectedSourceVendor);
       }
       if (currentPreviewId) formData.append("preview_id", currentPreviewId);
       formData.append("excel_profile", excelProfile?.value || "fast");
