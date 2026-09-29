@@ -20,7 +20,10 @@ from fwmigrate.conversion.fortigate_to_palo_alto.design.models import (
     PANMigrationDesignSession,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.ai.models import PANAIProposal, PANAIProposalAction
-from fwmigrate.conversion.fortigate_to_palo_alto.design.proposed import PANProposedDesign
+from fwmigrate.conversion.fortigate_to_palo_alto.design.proposed import (
+    PANProposedDesign,
+    PANProposedDesignSession,
+)
 from fwmigrate.conversion.fortigate_to_palo_alto.design.session import create_design_session
 from fwmigrate.conversion.fortigate_to_palo_alto.ai import orchestrator as ai_orchestrator
 from fwmigrate import web
@@ -150,7 +153,7 @@ def _install_design_api(monkeypatch, state, *, discover=None, app_config=None):
         batches.append(tuple(prepared["by_decision"]))
         return ai_advisor.validate_model_output(json.dumps({"proposals": _proposal_rows(prepared)}), prepared)
 
-    def rebuild_state(_entry, payload):
+    def rebuild_state(_entry, payload, *_args):
         document = payload.get("decision_document") or {}
         if not document.get("decisions"):
             return state
@@ -331,6 +334,7 @@ def test_repaired_proposal_revalidates_against_current_base_context(monkeypatch)
     state["decision_evidence"][third.key] = "SOURCE"
     state["review_context"][third.key] = {"source_type": "physical", "source_ip": "203.0.113.1/24"}
     keys = [item.key for item in state["decisions"].decisions]
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "3")
 
     def candidate(value):
         return {
@@ -357,15 +361,15 @@ def test_repaired_proposal_revalidates_against_current_base_context(monkeypatch)
     monkeypatch.setattr(ai_advisor, "request_proposals", repair)
     repaired = ai_advisor.repair_conflicted_proposals(state, keys, initial)
 
-    assert [item["proposed_value"] for item in repaired] == ["ethernet1/2", "ethernet1/3", "ethernet1/4"]
-    assert all(item["validation_status"] == "VALID" for item in repaired)
-    assert all(item["context_digest"] != item["base_context_digest"] for item in repaired[:2])
+    assert [item["proposed_value"] for item in repaired.proposals] == ["ethernet1/2", "ethernet1/3", "ethernet1/4"]
+    assert all(item["validation_status"] == "VALID" for item in repaired.proposals)
+    assert all(item["context_digest"] != item["base_context_digest"] for item in repaired.proposals[:2])
     assert len(repair_contexts[0]["current_proposals"]) == 3
     assert len(repair_contexts[0]["mutable_decision_ids"]) == 2
     assert hashlib.sha256(third.key.encode()).hexdigest() not in repair_contexts[0]["mutable_decision_ids"]
     assert all(
         ai_advisor.revalidate_stored_proposal(state, item)["proposed_value"] == item["proposed_value"]
-        for item in repaired
+        for item in repaired.proposals
     )
 
 
@@ -485,14 +489,28 @@ def test_provider_contract_and_categorized_safe_failure(monkeypatch, caplog):
         create=lambda **kwargs: sent.append(kwargs) or completion)))
     monkeypatch.setitem(sys.modules, "groq", types.SimpleNamespace(Groq=lambda **_: client))
     monkeypatch.setenv("GROQ_API_KEY", "secret-test-key")
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_COMPLETION_TOKENS", "4096")
+    monkeypatch.setenv("FWMIGRATE_AI_REASONING_EFFORT", "medium")
+    monkeypatch.setenv("FWMIGRATE_AI_REASONING_FORMAT", "hidden")
     assert ai_advisor._request_groq(prepared)[0]["action"] == "USE_EXISTING"
     assert sent[0]["reasoning_effort"] == "medium"
+    assert sent[0]["reasoning_format"] == "hidden"
+    assert sent[0]["max_completion_tokens"] == 4096
     assert sent[0]["response_format"]["json_schema"]["strict"] is True
     assert ai_advisor.advisor_capabilities("groq", "another-model").response_mode == "JSON_ONLY"
 
     class Rejected(Exception):
         status_code = 400
         request_id = "safe-request-id"
+        body = {"error": {
+            "code": "failed_generation",
+            "type": "invalid_request_error",
+            "message": "The model could not complete this request.",
+            "failed_generation": {
+                "reason": "Structured output exceeded the completion budget.",
+                "content": "secret-test-key and submitted prompt content",
+            },
+        }}
 
     def reject(**_):
         raise Rejected("secret-test-key must not appear in logs")
@@ -511,9 +529,15 @@ def test_provider_contract_and_categorized_safe_failure(monkeypatch, caplog):
     assert "secret-test-key" not in caplog.text
     assert "status=400" in caplog.text
     assert "request_id=safe-request-id" in caplog.text
+    assert "Structured output exceeded the completion budget." in caplog.text
     audit = json.loads(client_api.get("/api/migration/ai/audit/export").data.decode().strip())
     assert audit["failure_category"] == "AI_REQUEST_REJECTED"
+    assert audit["provider_code"] == "failed_generation"
+    assert audit["provider_type"] == "invalid_request_error"
+    assert audit["request_bytes"] > 0
+    assert audit["safe_reason"] == "Structured output exceeded the completion budget."
     assert "secret-test-key" not in json.dumps(audit)
+    assert "submitted prompt content" not in json.dumps(audit)
 
 
 def test_status_self_test_and_local_json_only(monkeypatch):
@@ -556,6 +580,9 @@ def test_status_self_test_and_local_json_only(monkeypatch):
     assert "secret-test-key" not in status.get_data(as_text=True)
     tested = client.post("/api/migration/ai/test")
     assert tested.status_code == 200
+    assert [item["name"] for item in tested.get_json()["checks"]] == [
+        "provider_contract", "production_shape",
+    ]
     assert tested.get_json()["structured_output"] is True
 
 
@@ -624,7 +651,7 @@ def test_ready_proposals_batch_server_side(monkeypatch):
     client = web.create_app({"TESTING": True}).test_client()
     result = client.post("/api/migration/ai/propose", json={"preview_id": "source-preview"})
     assert result.status_code == 200
-    assert batches == [8, 1]
+    assert batches == [2, 2, 2, 2, 1]
     assert len(result.get_json()["proposals"]) == 9
     audit = [json.loads(line) for line in client.get("/api/migration/ai/audit/export").data.decode().splitlines()]
     assert len({item["batch_id"] for item in audit}) == 1
@@ -850,12 +877,12 @@ def test_engineer_modification_rebuilds_only_dependent_proposals(monkeypatch):
     actions = [(row["decision_key"], row["engineer_action"], row.get("failure_category"))
                for row in body["design_session"]["audit"]]
     assert (vsys_key, "MODIFIED", None) in actions
-    assert (interface_key, "UNRESOLVED", "DEPENDENCY_CHANGED") in actions
+    assert (interface_key, "UNRESOLVED", "CONTEXT_CHANGED") in actions
     audit = [json.loads(line) for line in client.get("/api/migration/ai/audit/export").data.decode().splitlines()]
     audit_by_key = {item["decision_key"]: item for item in audit}
     assert audit_by_key[vsys_key]["final_value"] == "vsys2"
     assert any(item["decision_key"] == interface_key
-               and item["failure_category"] == "DEPENDENCY_CHANGED" for item in audit)
+               and item["failure_category"] == "CONTEXT_CHANGED" for item in audit)
 
 
 def test_engineer_can_clear_a_decision_in_the_design_session(monkeypatch):
@@ -988,3 +1015,394 @@ def test_provider_retries_only_transient_failure(monkeypatch):
     with pytest.raises(ai_advisor.AdvisorRequestError):
         ai_advisor.request_proposals(prepared)
     assert len(calls) == 1
+
+
+def test_design_summary_separates_ready_blocked_and_manual_decisions():
+    parent = PANMigrationDecision(
+        source_vdom="root", source_kind="vdom", source_name="root",
+        target_field="vsys", mode=PANDecisionMode.REQUIRED,
+    )
+    child = PANMigrationDecision(
+        source_vdom="root", source_kind="interface", source_name="port1",
+        target_field="target_interface", mode=PANDecisionMode.REQUIRED,
+    )
+    manual = PANMigrationDecision(
+        source_vdom="root", source_kind="zone", source_name="dmz",
+        target_field="target_zone", mode=PANDecisionMode.REQUIRED,
+    )
+    decisions = PANMigrationDecisionSet((parent, child, manual))
+    graph = PANDecisionGraph((
+        PANDecisionDependency(parent.key),
+        PANDecisionDependency(child.key, (parent.key,)),
+        PANDecisionDependency(manual.key),
+    ))
+    design = PANProposedDesign("source", "target", "device", decisions)
+    session = PANProposedDesignSession(
+        session_id="session", created_at=1, design=design,
+        ai_eligible_decision_keys=(parent.key,), dependency_graph=graph,
+    )
+
+    summary = session.summary(graph)
+    assert summary["ready_unresolved"] == 1
+    assert summary["blocked_by_dependency"] == 1
+    assert summary["not_ai_eligible"] == 1
+    assert summary["blocked"] == 3
+
+
+def test_proposed_design_splits_rejected_batches_and_keeps_partial_results(monkeypatch):
+    state = _design_state(4)
+    original_candidates = state["decision_candidates"]
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "4")
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_REQUEST_BYTES", "49152")
+    monkeypatch.setattr(ai_orchestrator, "discover_target_candidates", lambda _source, decisions, *_args, **_kwargs:
+                        {item.key: original_candidates[item.key] for item in decisions.decisions})
+    monkeypatch.setattr(ai_orchestrator, "build_review_evidence", lambda *_: {})
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    monkeypatch.setattr(ai_advisor, "advisor_provider", lambda: "groq")
+    monkeypatch.setattr(ai_advisor, "groq_model", lambda tier="complex": f"test-{tier}")
+    monkeypatch.setattr(ai_advisor, "classify_advisor_tiers", lambda _state, keys: {key: "simple" for key in keys})
+    order = tuple(ai_advisor.ready_proposal_keys(state))
+    calls = []
+
+    def request(prepared):
+        keys = tuple(prepared["by_decision"])
+        calls.append(keys)
+        if len(keys) == 4 or keys == order[2:] or keys == (order[2],):
+            raise ai_advisor.AdvisorRequestError("provider rejected this batch")
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": _proposal_rows(prepared)}), prepared
+        )
+
+    monkeypatch.setattr(ai_advisor, "request_proposals", request)
+    session = ai_orchestrator.build_ai_proposed_design(state)
+
+    assert [len(item) for item in calls] == [4, 2, 2, 1, 1]
+    assert len(session.design.proposals) == 3
+    assert session.failures[0]["decision_keys"] == [order[2]]
+    assert session.failure_category == "AI_REQUEST_REJECTED"
+    assert session.stable is True
+    assert session.summary(state["design_session"].dependency_graph)["ready_unresolved"] == 1
+
+
+def test_request_byte_budget_splits_batches_and_never_truncates_candidates(monkeypatch):
+    state = _design_state(2)
+    keys = tuple(item.key for item in state["decisions"].decisions)
+    model = "openai/gpt-oss-20b"
+    one = [ai_advisor.build_proposal_context(state, [key], model=model, provider="groq")["request_bytes"]
+           for key in keys]
+    pair = ai_advisor.build_proposal_context(state, list(keys), model=model, provider="groq")["request_bytes"]
+    assert pair > max(one)
+
+    original_candidates = state["decision_candidates"]
+    byte_limit = max(one) + 1
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_REQUEST_BYTES", str(byte_limit))
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "2")
+    monkeypatch.setattr(ai_orchestrator, "discover_target_candidates", lambda _source, decisions, *_args, **_kwargs:
+                        {item.key: original_candidates[item.key] for item in decisions.decisions})
+    monkeypatch.setattr(ai_orchestrator, "build_review_evidence", lambda *_: {})
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    monkeypatch.setattr(ai_advisor, "advisor_provider", lambda: "groq")
+    monkeypatch.setattr(ai_advisor, "groq_model", lambda tier="complex": model)
+    monkeypatch.setattr(ai_advisor, "classify_advisor_tiers", lambda _state, decision_keys: {
+        key: "simple" for key in decision_keys
+    })
+    calls = []
+
+    def request(prepared):
+        calls.append(tuple(prepared["by_decision"]))
+        assert prepared["request_bytes"] <= byte_limit
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": _proposal_rows(prepared)}), prepared
+        )
+
+    monkeypatch.setattr(ai_advisor, "request_proposals", request)
+    session = ai_orchestrator.build_ai_proposed_design(state)
+    assert [len(item) for item in calls] == [1, 1]
+    assert len(session.design.proposals) == 2
+    assert all(len(original_candidates[key]) == 1 for key in keys)
+
+    candidate_state = _state()
+    key = candidate_state["decisions"].decisions[0].key
+    candidate_state["decision_candidates"][key] = [
+        {**candidate_state["decision_candidates"][key][0], "value": f"ethernet1/{index + 10}"}
+        for index in range(1, 5)
+    ]
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_CANDIDATES_PER_DECISION", "3")
+    with pytest.raises(ai_advisor.AdvisorRequestError, match="candidate limit") as error:
+        ai_advisor.build_proposal_context(candidate_state, [key], model=model, provider="groq")
+    assert error.value.failure.candidate_count == 4
+
+    large_state = _design_state(2)
+    keys = tuple(item.key for item in large_state["decisions"].decisions)
+    large_state["decision_candidates"][keys[0]] = [
+        {**large_state["decision_candidates"][keys[0]][0], "value": f"ethernet1/{index + 20}"}
+        for index in range(4)
+    ]
+    large_candidates = large_state["decision_candidates"]
+    monkeypatch.setattr(ai_orchestrator, "discover_target_candidates", lambda _source, decisions, *_args, **_kwargs:
+                        {item.key: large_candidates[item.key] for item in decisions.decisions})
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_CANDIDATES_PER_DECISION", "3")
+    calls.clear()
+    limited = ai_orchestrator.build_ai_proposed_design(large_state)
+    assert calls == [(keys[1],)]
+    assert len(limited.design.proposals) == 1
+    assert limited.failures[0]["decision_keys"] == [keys[0]]
+    assert limited.summary(large_state["design_session"].dependency_graph)["not_ai_eligible"] == 1
+
+
+def test_repair_result_surfaces_failures_and_retries_timeout(monkeypatch):
+    state = _two_decision_state()
+    decisions = state["decisions"].decisions
+    shared = {**state["decision_candidates"][decisions[0].key][0]}
+    state["decision_candidates"][decisions[0].key] = [shared, {
+        **shared, "value": "ethernet1/2", "strong_evidence": ["fallback one"],
+    }]
+    state["decision_candidates"][decisions[1].key] = [{**shared}, {
+        **shared, "value": "ethernet1/3", "strong_evidence": ["fallback two"],
+    }]
+    keys = [item.key for item in decisions]
+    initial_context = ai_advisor.build_proposal_context(state, keys, provider="groq")
+    initial = ai_advisor.validate_model_output(
+        json.dumps({"proposals": _proposal_rows(initial_context)}), initial_context
+    )
+    assert any(item["validation_status"] == "CONFLICT"
+               for item in ai_advisor.validate_proposal_set(state, initial))
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setattr(ai_advisor.time, "sleep", lambda *_: None)
+    calls = []
+
+    def timeout_then_repair(prepared):
+        calls.append(prepared)
+        if len(calls) == 1:
+            raise ai_advisor.AdvisorTimeoutError("temporary timeout")
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": _proposal_rows(prepared)}), prepared
+        )
+
+    monkeypatch.setattr(ai_advisor, "_request_groq", timeout_then_repair)
+    repaired = ai_advisor.repair_conflicted_proposals(state, keys, initial)
+    assert len(calls) == 2
+    assert repaired.failures == ()
+    assert not repaired.exhausted
+
+    monkeypatch.setattr(ai_advisor, "_request_groq", lambda *_: (_ for _ in ()).throw(
+        ai_advisor.AdvisorRequestError("safe provider failure")
+    ))
+    failed = ai_advisor.repair_conflicted_proposals(state, keys, initial)
+    assert failed.failures[0]["failure_category"] == "AI_REQUEST_REJECTED"
+    assert failed.failures[0]["decision_keys"] == keys
+    assert failed.exhausted
+
+
+def test_groq_model_tiering_is_deterministic(monkeypatch):
+    state = _design_state(2)
+    first, second = (item.key for item in state["decisions"].decisions)
+    state["decision_candidates"][second] = [
+        {"value": f"ethernet1/{index + 10}", "target_scope": "vsys1", "class": "STRONG",
+         "strong_evidence": ["synthetic evidence"], "supporting_evidence": []}
+        for index in range(1, 5)
+    ]
+    for name in ("FWMIGRATE_AI_GROQ_MODEL", "FWMIGRATE_GROQ_MODEL", "FWMIGRATE_AI_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("FWMIGRATE_AI_SIMPLE_MODEL", "openai/gpt-oss-20b")
+    monkeypatch.setenv("FWMIGRATE_AI_COMPLEX_MODEL", "openai/gpt-oss-120b")
+    monkeypatch.setenv("FWMIGRATE_AI_REPAIR_MODEL", "openai/gpt-oss-120b")
+
+    tiers = ai_advisor.classify_advisor_tiers(state, [first, second])
+    assert tiers == {first: "simple", second: "complex"}
+    assert ai_advisor.model_for_decisions(state, [first], provider="groq") == "openai/gpt-oss-20b"
+    assert ai_advisor.model_for_decisions(state, [second], provider="groq") == "openai/gpt-oss-120b"
+    assert ai_advisor.model_for_decisions(state, [second], provider="groq", repair=True) == "openai/gpt-oss-120b"
+
+
+def test_successful_parent_unlocks_child_after_unrelated_batch_failure(monkeypatch):
+    state = _design_state(chained=True)
+    parent, child = state["decisions"].decisions
+    other = PANMigrationDecision(
+        source_vdom="root", source_kind="zone", source_name="unrelated-zone",
+        target_field="target_zone", mode=PANDecisionMode.REQUIRED,
+    )
+    decisions = PANMigrationDecisionSet((*state["decisions"].decisions, other))
+    state["decisions"] = decisions
+    state["decision_candidates"][other.key] = [{
+        "value": "trust", "target_scope": "vsys1", "class": "STRONG",
+        "strong_evidence": ["matching synthetic zone"], "supporting_evidence": [],
+    }]
+    state["decision_evidence"][other.key] = "TARGET"
+    state["review_context"][other.key] = {"source_type": "zone"}
+    graph = PANDecisionGraph((
+        PANDecisionDependency(parent.key),
+        PANDecisionDependency(child.key, (parent.key,)),
+        PANDecisionDependency(other.key),
+    ))
+    state["design_session"] = replace(
+        state["design_session"], decisions=decisions, dependency_graph=graph,
+        unresolved=tuple(item.key for item in decisions.decisions),
+    )
+    original_candidates = state["decision_candidates"]
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "2")
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_REQUEST_BYTES", "49152")
+    monkeypatch.setattr(ai_orchestrator, "discover_target_candidates", lambda _source, current, *_args, **_kwargs:
+                        {item.key: original_candidates[item.key] for item in current.decisions})
+    monkeypatch.setattr(ai_orchestrator, "build_review_evidence", lambda *_: {})
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    monkeypatch.setattr(ai_advisor, "advisor_provider", lambda: "groq")
+    monkeypatch.setattr(ai_advisor, "groq_model", lambda tier="complex": f"test-{tier}")
+    monkeypatch.setattr(ai_advisor, "classify_advisor_tiers", lambda _state, keys: {key: "simple" for key in keys})
+    calls = []
+
+    def request(prepared):
+        keys = tuple(prepared["by_decision"])
+        calls.append(keys)
+        if len(keys) > 1 or keys == (other.key,):
+            raise ai_advisor.AdvisorRequestError("one request failed")
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": _proposal_rows(prepared)}), prepared
+        )
+
+    monkeypatch.setattr(ai_advisor, "request_proposals", request)
+    session = ai_orchestrator.build_ai_proposed_design(state)
+
+    assert [len(item) for item in calls] == [2, 1, 1, 1]
+    child_proposal = next(item for item in session.design.proposals if item.decision_key == child.key)
+    assert child_proposal.dependency_values == ((parent.key, "vsys1"),)
+    assert session.failures[0]["decision_keys"] == [other.key]
+    assert session.summary(graph)["ai_proposed"] == 2
+
+
+def test_stored_proposals_are_revalidated_before_provisional_reuse(monkeypatch):
+    state = _design_state(chained=True)
+    parent, child = state["decisions"].decisions
+    original_candidates = state["decision_candidates"]
+    monkeypatch.setattr(ai_orchestrator, "discover_target_candidates", lambda _source, decisions, *_args, **_kwargs:
+                        {item.key: original_candidates[item.key] for item in decisions.decisions
+                         if item.key in original_candidates})
+    monkeypatch.setattr(ai_orchestrator, "build_review_evidence", lambda *_: {})
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    monkeypatch.setattr(ai_advisor, "advisor_provider", lambda: "groq")
+    monkeypatch.setattr(ai_advisor, "groq_model", lambda tier="complex": f"test-{tier}")
+    calls = []
+
+    def request(prepared):
+        calls.append(prepared)
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": _proposal_rows(prepared)}), prepared
+        )
+
+    monkeypatch.setattr(ai_advisor, "request_proposals", request)
+    first = ai_orchestrator.build_ai_proposed_design(state)
+    assert {item.decision_key for item in first.design.proposals} == {parent.key, child.key}
+
+    original_candidates[parent.key] = [{
+        "value": "vsys2", "target_scope": "vsys2", "class": "STRONG",
+        "strong_evidence": ["replacement VSYS evidence"], "supporting_evidence": [],
+    }]
+    calls.clear()
+    current = ai_orchestrator.build_ai_proposed_design(state, first)
+
+    assert [tuple(item["by_decision"]) for item in calls] == [(parent.key,), (child.key,)]
+    child_context = calls[1]["by_decision"][child.key]
+    assert child_context["dependency_values"] == ((parent.key, "vsys2"),)
+    assert next(item for item in current.design.proposals if item.decision_key == parent.key).proposed_value == "vsys2"
+    assert any(row["decision_key"] == parent.key and row["failure_category"] == "CONTEXT_CHANGED"
+               and row["engineer_action"] == "UNRESOLVED" for row in current.audit)
+    assert any(row["decision_key"] == child.key and row["failure_category"] == "CONTEXT_CHANGED"
+               and row["engineer_action"] == "UNRESOLVED" for row in current.audit)
+
+
+def test_review_state_applies_deterministic_fixed_point_before_candidates(monkeypatch):
+    pending = PANMigrationDecision(
+        source_vdom="root", source_kind="interface", source_name="port1",
+        target_field="target_interface", mode=PANDecisionMode.REQUIRED,
+    )
+    suggestion = PANMigrationDecision(
+        source_vdom="root", source_kind="interface", source_name="port2",
+        target_field="target_interface", mode=PANDecisionMode.SUGGESTED,
+    )
+    decisions = PANMigrationDecisionSet((pending, suggestion))
+    deterministic = replace(
+        pending, value="ethernet1/1", review_state=PANDecisionReviewState.CONFIRMED,
+        evidence_source="DERIVED", evidence_type="AUTOMATION_VERIFIED",
+    )
+    resolved = PANMigrationDecisionSet((deterministic, suggestion))
+    analysis = SimpleNamespace(extracted=SimpleNamespace(config=object()), derived=object())
+    target_context = SimpleNamespace(
+        metadata={"vendor": "palo_alto", "config_digest": "target", "device": "device-1"},
+        analysis=object(), source_digest="target", selected_device="device-1", devices=("device-1",),
+    )
+    events = []
+    monkeypatch.setattr(web, "_require_complete_collection", lambda *_: None)
+    monkeypatch.setattr(web, "_clone_preview", lambda *_: analysis)
+    monkeypatch.setattr(web, "build_mapping_requirements", lambda *_: "requirements")
+    monkeypatch.setattr(web, "_target_evidence", lambda *_: target_context)
+    monkeypatch.setattr(web, "build_decision_set", lambda *_: decisions)
+    monkeypatch.setattr(web, "reconcile_target_evidence", lambda current, *_: (current, ()))
+    monkeypatch.setattr(web, "build_review_evidence", lambda *_: {})
+    monkeypatch.setattr(web, "suggest_from_target", lambda _config, current, *_: (current, {"suggestion": True}))
+
+    def resolve(_config, _derived, current, target, device, *, enabled_policies, **kwargs):
+        events.append("resolve")
+        assert current is decisions
+        assert target is target_context.analysis and device == "device-1"
+        assert enabled_policies == (
+            web.AutomationPolicy.AUTO_APPLY_VERIFIED,
+            web.AutomationPolicy.AUTO_APPLY_DERIVED,
+        )
+        assert kwargs["requirements"] == "requirements"
+        return SimpleNamespace(decisions=resolved, dependency_graph=object())
+
+    monkeypatch.setattr(web, "resolve_design_session_until_stable", resolve)
+
+    def discover(_config, current, *_args, **_kwargs):
+        events.append("candidates")
+        assert current is resolved
+        return {}
+
+    monkeypatch.setattr(web, "discover_target_candidates", discover)
+    monkeypatch.setattr(web, "validate_against_target", lambda *_: ())
+    monkeypatch.setattr(web, "_auto_review_results", lambda *_: {})
+    monkeypatch.setattr(web, "build_review_context", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(web, "build_review_workflow", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(web, "build_recommendations", lambda *_: [])
+    monkeypatch.setattr(web, "_target_evidence_changed", lambda *_: False)
+
+    state = web._build_migration_review_state(
+        SimpleNamespace(source_digest="source"), {}, apply_deterministic=True
+    )
+    assert events == ["resolve", "candidates"]
+    assert state["decisions"] is resolved
+    assert state["decisions"].decisions[1].review_state is PANDecisionReviewState.PENDING
+
+
+def test_design_failure_details_reach_session_logs_and_audit_export(monkeypatch, caplog):
+    state = _design_state(1)
+    client, _ = _install_design_api(monkeypatch, state)
+
+    class Rejected(Exception):
+        status_code = 400
+        request_id = "design-request-id"
+        body = {"error": {
+            "code": "failed_generation", "type": "invalid_request_error",
+            "failed_generation": {
+                "reason": "Structured output exceeded the completion budget.",
+                "content": "submitted prompt and sensitive input",
+            },
+        }}
+
+    def reject(prepared):
+        raise ai_advisor.classify_provider_error(Rejected(), prepared=prepared, provider="groq")
+
+    monkeypatch.setattr(ai_advisor, "request_proposals", reject)
+    response = client.post("/api/migration/ai/design", json={"preview_id": "source-preview"})
+
+    assert response.status_code == 200
+    session = response.get_json()["design_session"]
+    assert session["failure_category"] == "AI_REQUEST_REJECTED"
+    assert session["failures"][0]["request_id"] == "design-request-id"
+    assert session["failures"][0]["safe_reason"] == "Structured output exceeded the completion budget."
+    audit = [json.loads(line) for line in client.get("/api/migration/ai/audit/export").data.decode().splitlines()]
+    assert audit[0]["event"] == "AI_REQUEST_FAILED"
+    assert audit[0]["provider_code"] == "failed_generation"
+    assert "submitted prompt" not in json.dumps(audit)
+    assert "sensitive input" not in caplog.text
+    assert "design-request-id" in caplog.text
