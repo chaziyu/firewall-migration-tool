@@ -479,6 +479,14 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
+    try:
+        ai_config = ai_advisor.validate_static_configuration()
+        _LOGGER.info('AI advisor %s provider=%s model=%s',
+                     'configured' if ai_config['enabled'] else 'disabled',
+                     ai_config['provider'], ai_config['model'])
+    except ai_advisor.AdvisorError as exc:
+        _LOGGER.warning('AI advisor configuration error category=%s', exc.code)
+
     rendered_artifacts = {}
     ai_proposals = {}
     ai_proposal_lock = threading.Lock()
@@ -691,11 +699,52 @@ def create_app(test_config=None):
         except Exception as exc:
             return jsonify({'success': False, 'error': str(exc)}), 500
 
+    def _ai_failure(exc, *, provider, model, batch_size, duration_ms, batch_id=None):
+        error = exc if isinstance(exc, ai_advisor.AdvisorError) else ai_advisor.AdvisorError()
+        cause = exc.__cause__ if isinstance(exc, ai_advisor.AdvisorError) and exc.__cause__ else exc
+        _LOGGER.warning(
+            'AI request failed provider=%s model=%s category=%s reason=%s status=%s request_id=%s batch_size=%s duration_ms=%s exception=%s',
+            provider, model, error.code, getattr(error, 'reason', None), error.status, error.request_id,
+            batch_size, duration_ms, cause.__class__.__name__,
+        )
+        if batch_id:
+            with ai_proposal_lock:
+                ai_audit.append({
+                    'event': 'AI_REQUEST_FAILED', 'batch_id': batch_id,
+                    'created_at': time.time(), 'provider': provider, 'model': model,
+                    'batch_size': batch_size, 'request_duration_ms': duration_ms,
+                    'failure_category': error.code, 'failure_reason': getattr(error, 'reason', None),
+                    'status': error.status, 'request_id': error.request_id,
+                })
+                if len(ai_audit) > 5000:
+                    ai_audit_by_id.pop(ai_audit.pop(0).get('proposal_id'), None)
+        status = 503 if error.code in {'AI_DISABLED', 'AI_UNAVAILABLE', 'AI_AUTH_FAILED', 'AI_RATE_LIMITED'} else 502
+        return jsonify({'success': False, 'code': error.code, 'error': error.message}), status
+
+    @app.route('/api/migration/ai/status', methods=['GET'])
+    def migration_ai_status():
+        try:
+            return jsonify(ai_advisor.advisor_status())
+        except ai_advisor.AdvisorError as exc:
+            return _ai_failure(exc, provider='configuration', model='', batch_size=0, duration_ms=0)
+
+    @app.route('/api/migration/ai/test', methods=['POST'])
+    def migration_ai_test():
+        if not ai_advisor.advisor_enabled():
+            return jsonify({'success': False, 'code': 'AI_DISABLED', 'error': 'AI advisor is disabled.'}), 503
+        started = perf_counter()
+        provider, model = ai_advisor.advisor_provider(), ai_advisor.advisor_model()
+        try:
+            return jsonify(ai_advisor.test_advisor())
+        except Exception as exc:
+            return _ai_failure(exc, provider=provider, model=model, batch_size=1,
+                               duration_ms=round((perf_counter() - started) * 1000))
+
     @app.route('/api/migration/ai/propose', methods=['POST'])
     def propose_migration_ai():
         payload = request.get_json(silent=True)
         if not ai_advisor.advisor_enabled():
-            return jsonify({'success': False, 'error': 'AI advisor is disabled; set FWMIGRATE_AI_ENABLED=1 to enable it.'}), 503
+            return jsonify({'success': False, 'code': 'AI_DISABLED', 'error': 'AI advisor is disabled.'}), 503
         try:
             if not isinstance(payload, dict):
                 raise ValueError('A JSON object is required')
@@ -703,24 +752,48 @@ def create_app(test_config=None):
             if entry is None:
                 raise ValueError('A valid FortiGate preview_id is required')
             state = _build_migration_review_state(entry, payload)
-            prepared = ai_advisor.build_proposal_context(
-                state, payload.get('decision_keys'), model=ai_advisor.advisor_model(),
-                provider=ai_advisor.advisor_provider(),
-            )
+            decision_keys = payload.get('decision_keys')
+            if decision_keys is None:
+                decision_keys = list(ai_advisor.ready_proposal_keys(state))
+            if not isinstance(decision_keys, list):
+                raise ValueError('decision_keys must be an array')
+            if decision_keys:
+                ai_advisor.build_proposal_context(
+                    state, decision_keys[:ai_advisor._max_decisions()],
+                    model=ai_advisor.advisor_model(), provider=ai_advisor.advisor_provider(),
+                )
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
-        try:
-            proposals = ai_advisor.request_proposals(prepared)
+        started = perf_counter()
+        batch_id = uuid.uuid4().hex
+        proposals = []
+        failure_code = None
+        for offset in range(0, len(decision_keys), ai_advisor._max_decisions()):
+            batch = decision_keys[offset:offset + ai_advisor._max_decisions()]
+            try:
+                prepared = ai_advisor.build_proposal_context(
+                    state, batch, model=ai_advisor.advisor_model(), provider=ai_advisor.advisor_provider(),
+                )
+                current = ai_advisor.request_proposals(prepared)
+                proposals.extend(ai_advisor.repair_conflicted_proposals(state, batch, current))
+            except Exception as exc:
+                failure = _ai_failure(exc, provider=ai_advisor.advisor_provider(), model=ai_advisor.advisor_model(),
+                                      batch_size=len(batch), duration_ms=round((perf_counter() - started) * 1000),
+                                      batch_id=batch_id)
+                if not proposals:
+                    return failure
+                failure_code = failure[0].get_json()['code']
+                break
+        if proposals:
             proposals = ai_advisor.repair_conflicted_proposals(
-                state, payload['decision_keys'], proposals
-            )
-        except ai_advisor.AdvisorUnavailable:
-            return jsonify({'success': False, 'error': 'AI advisor is unavailable; check the local inference URL or Groq API configuration.'}), 503
-        except Exception:
-            return jsonify({'success': False, 'error': 'AI advisor could not return a valid proposal. The migration review is unchanged.'}), 502
+                state, decision_keys[:len(proposals)], proposals)
+            failure_code = failure_code or next(
+                (item.get('escalation_failure_category') for item in proposals
+                 if item.get('escalation_failure_category')), None)
 
         now = time.time()
+        duration_ms = round((perf_counter() - started) * 1000)
         result = []
         with ai_proposal_lock:
             for proposal_id, (created, _) in list(ai_proposals.items()):
@@ -746,9 +819,15 @@ def create_app(test_config=None):
                 )
                 audit = {
                     'proposal_id': proposal_id,
+                    'batch_id': batch_id,
+                    'request_duration_ms': duration_ms,
+                    'failure_category': failure_code or proposal.get('escalation_failure_category'),
+                    'response_mode': proposal.get('response_mode', 'STRICT_SCHEMA'),
+                    'repair_pass': proposal.get('repair_pass', 0),
                     'created_at': now,
                     'provider': proposal.get('provider', 'groq'),
                     'escalated_from': proposal.get('escalated_from'),
+                    'escalation_failure_category': proposal.get('escalation_failure_category'),
                     'model': proposal['model'],
                     'prompt_version': proposal['prompt_version'],
                     'source_digest': proposal['source_digest'],
@@ -776,9 +855,9 @@ def create_app(test_config=None):
                 ai_audit_by_id[proposal_id] = audit
                 while len(ai_audit) > 5000:
                     removed = ai_audit.pop(0)
-                    ai_audit_by_id.pop(removed['proposal_id'], None)
+                    ai_audit_by_id.pop(removed.get('proposal_id'), None)
                 result.append({**proposal, 'proposal_id': proposal_id})
-        return jsonify({'success': True, 'proposals': result})
+        return jsonify({'success': True, 'proposals': result, 'failure_category': failure_code})
 
     @app.route('/api/migration/ai/approve', methods=['POST'])
     def approve_migration_ai_proposal():

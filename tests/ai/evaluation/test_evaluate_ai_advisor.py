@@ -32,6 +32,7 @@ def test_evaluation_reports_safety_and_labeled_metrics():
             "expected_conflict": False,
             "engineer_action": "REJECTED",
         },
+        {"event": "AI_REQUEST_FAILED", "failure_category": "AI_TIMEOUT"},
     ]
 
     metrics = evaluate_rows(rows)
@@ -44,3 +45,4 @@ def test_evaluation_reports_safety_and_labeled_metrics():
     assert metrics["conflict_detection"]["rate"] == 1
     assert metrics["groq_escalation_rate"]["rate"] == 1 / 3
     assert metrics["engineer_modification_rate"]["rate"] == 1 / 3
+    assert metrics["provider_failures"] == {"AI_TIMEOUT": 1}
