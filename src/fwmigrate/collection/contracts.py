@@ -47,6 +47,12 @@ class SourceCollector(Protocol):
     def collect(self, options: dict[str, Any]) -> CollectedSource: ...
 
 
+class CollectedSourceSanitizer(Protocol):
+    vendor_id: str
+
+    def sanitize(self, source_text: str) -> str: ...
+
+
 def validate_connection(connection: dict[str, Any], *, port: int, optional: tuple[str, ...] = ()) -> dict[str, Any]:
     if not isinstance(connection, dict):
         raise ValueError("Connection details are required.")

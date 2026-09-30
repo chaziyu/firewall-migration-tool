@@ -20,14 +20,13 @@ from flask import Flask, render_template, request, send_file, jsonify
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
 from fwmigrate.conversion import migration_planners
-from fwmigrate.conversion.fortigate_to_palo_alto.design.graph import build_decision_graph
-from fwmigrate.conversion.fortigate_to_palo_alto.design.session import create_design_session
-from fwmigrate.conversion.fortigate_to_palo_alto.design.resolver import resolve_design_session_until_stable
 from fwmigrate.conversion.fortigate_to_palo_alto.design.proposed import PANProposedDesignSession
 from fwmigrate.conversion.fortigate_to_palo_alto.ai.orchestrator import (
     build_ai_proposed_design, state_with_proposed_design,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto import (
+from fwmigrate.conversion.fortigate_to_palo_alto import run_migration_pipeline
+from fwmigrate.conversion.fortigate_to_palo_alto.application import (
+    PANAutomationMode,
     PANDecisionMode,
     PANDecisionReviewState,
     PANMigrationDecision,
@@ -36,43 +35,47 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
     build_decision_set,
     make_decision_key,
     build_recommendations,
-    PANAutomationMode,
-    apply_explicit_options,
-    run_migration_pipeline,
+    build_decision_document,
+    load_decision_document,
+    options_mapping,
+    deployment_validation_feedback,
+    build_review_state,
+    confirm_mapping_decisions,
+    build_mapping_requirements,
+    evidence_summary,
+    discover_target_candidates,
+    suggest_from_target,
+    target_devices,
+    target_device_metadata,
+    validate_against_target,
+    build_review_context,
+    build_review_evidence,
+    build_review_workflow,
+    MigrationRuleType,
+    apply_repeated_zone_action,
+    apply_zone_to_members,
+    rule_affected_decision_keys,
+    classify_auto_decisions,
+    AutomationPolicy,
+    run_automation_until_stable,
+    reconcile_target_evidence,
+    target_evidence_changed as target_evidence_has_changed,
+    auto_review_results,
+    decision_evidence as build_decision_evidence,
+    target_evidence_identity,
+    apply_target_intent,
+    export_target_intent,
+    classify_target_object_reuse,
+    build_plan_dependency_index,
+    item_key,
+    assess_target_plan,
+    validate_target_plan,
+    build_support_guidance,
+    validate_plan,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto import ai_advisor
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
-from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
-from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import (
-    discover_target_candidates, suggest_from_target, target_devices, target_device_metadata,
-)
-from fwmigrate.conversion.fortigate_to_palo_alto.target_validation import validate_against_target
-from fwmigrate.conversion.fortigate_to_palo_alto.review_context import build_review_context
-from fwmigrate.conversion.fortigate_to_palo_alto.review_evidence import build_review_evidence
-from fwmigrate.conversion.fortigate_to_palo_alto.review_workflow import build_review_workflow
-from fwmigrate.conversion.fortigate_to_palo_alto.decision_propagation import (
-    MigrationRuleType, apply_repeated_zone_action, apply_zone_to_members,
-    rule_affected_decision_keys,
-)
-from fwmigrate.conversion.fortigate_to_palo_alto.auto_decisions import classify_auto_decisions
-from fwmigrate.conversion.fortigate_to_palo_alto.automation import AutomationPolicy, run_automation_until_stable
-from fwmigrate.conversion.fortigate_to_palo_alto.target_evidence import (
-    bind_legacy_target_evidence,
-    reconcile_target_evidence,
-    target_evidence_changed,
-    target_evidence_identity,
-)
-from fwmigrate.conversion.fortigate_to_palo_alto.target_intent import apply_target_intent, export_target_intent
-from fwmigrate.conversion.fortigate_to_palo_alto.target_object_reuse import (
-    classify_target_object_reuse,
-)
 from fwmigrate.conversion.fortigate_to_palo_alto.artifact_status import classify_artifact_status
-from fwmigrate.conversion.fortigate_to_palo_alto.plan_dependencies import build_plan_dependency_index, item_key
-from fwmigrate.conversion.fortigate_to_palo_alto.target_plan_validation import (
-    assess_target_plan, validate_target_plan,
-)
-from fwmigrate.conversion.fortigate_to_palo_alto.support_guidance import build_support_guidance
-from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession, PANSSHDeployer
 from fwmigrate.collection import CollectionStatus, source_collectors
 from fwmigrate.collection.builtin import register_builtin_collectors
@@ -98,113 +101,7 @@ from fwmigrate.source_reporting import (
 )
 from fwmigrate.source_reporting.web_report import normalize_web_report
 _LOGGER = logging.getLogger(__name__)
-_DECISION_FORMAT_VERSION = 3
 _DEPLOYMENT_SESSION_TTL_SECONDS = 30 * 60
-
-
-def _decision_document(source_digest, decision_set, target_evidence=None):
-    document = {
-        "format_version": _DECISION_FORMAT_VERSION,
-        "source_vendor": "fortigate",
-        "target_vendor": "palo_alto",
-        "source_digest": source_digest,
-        "decisions": [item.to_dict() for item in decision_set.decisions],
-    }
-    if target_evidence:
-        document["target_evidence"] = target_evidence
-    return document
-
-
-def _deployment_validation_feedback(rendered, decision_document, validation):
-    if getattr(validation, 'status', None) != 'FAILED':
-        return None
-    response = str(getattr(validation, 'response', '') or '')
-    decisions = decision_document.get('decisions', ()) if isinstance(decision_document, dict) else ()
-    items = rendered.report.get('items', ())
-    matches = [item for item in items if item.get('target_name') and
-               re.search(rf'(?<![A-Za-z0-9_.-]){re.escape(item["target_name"])}(?![A-Za-z0-9_.-])', response, re.I)]
-    candidates = []
-    known_decisions = {decision.get('key') for decision in decisions if isinstance(decision, dict)}
-    for item in matches:
-        item_decisions = [key for key in item.get('decision_keys', ()) if key in known_decisions]
-        candidates.append({**{key: item.get(key) for key in
-            ('source_vdom', 'source_kind', 'source_name', 'target_name')},
-            'decision_keys': item_decisions, 'generated_commands': list(item.get('commands', ()))})
-    return {'status': 'FAILED', 'message': response,
-            'mapping_status': 'MAPPED' if len(candidates) == 1 else 'AMBIGUOUS' if candidates else 'UNMAPPED',
-            'migration_items': candidates}
-
-
-def _decision_evidence(decision_set, target_findings):
-    conflicts = {item.decision_key for item in target_findings}
-    return {
-        item.key: (
-            "CONFLICT" if item.key in conflicts else
-            item.evidence_source or (
-                "ENGINEER" if item.review_state is PANDecisionReviewState.CONFIRMED else "SOURCE"
-            )
-        )
-        for item in decision_set.decisions
-    }
-
-
-def _auto_review_results(config, derived, decisions, target, device):
-    results = classify_auto_decisions(config, derived, decisions, target, device)
-    for finding in validate_against_target(config, decisions, target, device):
-        result = results.setdefault(finding.decision_key, {})
-        result.update(status="CONFLICT", reason=finding.message)
-    return results
-
-
-def _evidence_summary(decision_set, evidence):
-    values = [evidence[item.key] for item in decision_set.decisions]
-    return {
-        "target_backed": values.count("TARGET"),
-        "source_only": values.count("SOURCE"),
-        "conflicts": values.count("CONFLICT"),
-        "required": sum(item.mode == PANDecisionMode.REQUIRED and item.review_state != PANDecisionReviewState.CONFIRMED
-                         for item in decision_set.decisions),
-        "confirmed": sum(item.review_state == PANDecisionReviewState.CONFIRMED for item in decision_set.decisions),
-    }
-
-
-def _load_decision_document(document, source_digest):
-    if not isinstance(document, dict) or document.get("format_version") not in {1, 2, _DECISION_FORMAT_VERSION}:
-        raise ValueError("Unsupported migration decision document")
-    if document.get("source_vendor") != "fortigate" or document.get("target_vendor") != "palo_alto":
-        raise ValueError("Migration decision document must be fortigate -> palo_alto")
-    if document.get("source_digest") != source_digest:
-        raise ValueError("Migration decisions belong to a different source configuration")
-    decisions = PANMigrationDecisionSet.from_dict({"decisions": document.get("decisions")})
-    if document.get("format_version") in {1, 2}:
-        decisions = bind_legacy_target_evidence(decisions, document.get("target_evidence"))
-    return decisions
-
-
-def _target_evidence_changed(document, target_context):
-    previous = document.get("target_evidence") if isinstance(document, dict) else None
-    current = target_context.metadata if target_context else None
-    return target_evidence_changed(previous, current)
-
-
-def _options_mapping(options):
-    mapping = {
-        "vdoms": {name: {key: value for key, value in asdict(item).items() if value is not None}
-                   for name, item in options.vdoms.items()},
-        "interfaces": {vdom: {name: {key: value for key, value in asdict(item).items() if value is not None}
-                              for name, item in mappings.items()}
-                       for vdom, mappings in options.interfaces.items()},
-    }
-    if options.zones is not None:
-        mapping["zones"] = {vdom: {name: {"target_zone": item.target_zone} for name, item in mappings.items()
-                                    if item.target_zone is not None}
-                            for vdom, mappings in options.zones.items()}
-    return mapping
-
-
-def _confirm_mapping_decisions(decision_set, options, config):
-    """Compatibility wrapper around the pair-specific pipeline mapping logic."""
-    return apply_explicit_options(config, decision_set, options)
 
 @dataclass(frozen=True)
 class _PreviewCacheEntry:
@@ -385,69 +282,24 @@ def _target_evidence(payload):
 
 
 def _build_migration_review_state(entry, payload, apply_deterministic=False):
-    """Build the deterministic migration review from a cached source preview."""
+    """Adapt cached HTTP previews into the pair-specific review service."""
     _require_complete_collection(entry)
     analysis = _clone_preview(entry)
-    requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
     prior = payload.get('decision_document')
-    previous = _load_decision_document(prior, entry.source_digest) if prior is not None else None
     target_context = _target_evidence(payload)
     target_metadata = target_context.metadata if target_context else None
-    decisions = build_decision_set(analysis.extracted.config, analysis.derived, requirements, previous)
-    decisions, invalidated_target_decisions = reconcile_target_evidence(decisions, target_metadata)
-    review_evidence = build_review_evidence(analysis.extracted.config, analysis.derived)
-    target = target_context.analysis if target_context else None
-    device = target_context.selected_device if target_context else None
-    target_warnings = {}
-    if target and device:
-        decisions, target_warnings = suggest_from_target(analysis.extracted.config, decisions, target, device)
-    auto = _auto_review_results(analysis.extracted.config, analysis.derived, decisions, target, device)
-    design_session = resolve_design_session_until_stable(
+    state = build_review_state(
         analysis.extracted.config,
         analysis.derived,
-        decisions,
-        target,
-        device,
-        source_digest=entry.source_digest,
-        target_evidence=target_metadata,
-        requirements=requirements,
-        enabled_policies=(
-            AutomationPolicy.AUTO_APPLY_VERIFIED,
-            AutomationPolicy.AUTO_APPLY_DERIVED,
-        ) if apply_deterministic else (),
-    )
-    decisions = design_session.decisions
-    findings = validate_against_target(analysis.extracted.config, decisions, target, device)
-    candidates = discover_target_candidates(analysis.extracted.config, decisions, target, device,
-                                            evidence=review_evidence) if target and device else {}
-    evidence = _decision_evidence(decisions, findings)
-    context = build_review_context(analysis.extracted.config, decisions, candidates=candidates,
-        target_available=target is not None, target_selected=bool(device),
+        entry.source_digest,
+        previous_document=prior,
+        target=target_context.analysis if target_context else None,
+        target_device=target_context.selected_device if target_context else None,
+        target_metadata=target_metadata,
         target_device_count=len(target_context.devices) if target_context else 0,
-        evidence=review_evidence)
-    workflow = build_review_workflow(analysis.extracted.config, decisions, candidates=candidates,
-        context=context, decision_evidence=evidence, target_warnings=target_warnings)
-    recommendations = build_recommendations(analysis.extracted.config, analysis.derived, decisions, target, device)
-    return {
-        'analysis': analysis,
-        'requirements': requirements,
-        'target_context': target_context,
-        'source_digest': entry.source_digest,
-        'target_digest': target_context.source_digest if target_context else None,
-        'target_device': device,
-        'decisions': decisions,
-        'design_session': design_session,
-        'decision_candidates': candidates,
-        'review_workflow': workflow,
-        'review_context': context,
-        'auto_decisions': auto,
-        'target_findings': findings,
-        'decision_evidence': evidence,
-        'target_warnings': target_warnings,
-        'recommendations': recommendations,
-        'target_evidence_changed': _target_evidence_changed(prior, target_context) or bool(invalidated_target_decisions),
-        'invalidated_target_decisions': invalidated_target_decisions,
-    }
+        apply_deterministic=apply_deterministic,
+    )
+    return {'analysis': analysis, 'target_context': target_context, **state}
 
 
 def _parse_bool(value, default=False):
@@ -594,7 +446,7 @@ def create_app(test_config=None):
             'success': True,
             'design_session': session.to_dict(state['design_session'].dependency_graph),
             'decisions': state['decisions'].to_dict(),
-            'decision_document': _decision_document(
+            'decision_document': build_decision_document(
                 state['source_digest'], state['decisions'],
                 state['target_context'].metadata if state['target_context'] else None,
             ),
@@ -784,7 +636,7 @@ def create_app(test_config=None):
             return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': state['requirements'],
                             'decisions': decisions.to_dict(),
                             'design_session': state['design_session'].to_dict(),
-                            'decision_document': _decision_document(entry.source_digest, decisions,
+                            'decision_document': build_decision_document(entry.source_digest, decisions,
                                                                      target_context.metadata if target_context else None),
                             'target_devices': list(target_context.devices) if target_context else [],
                             'target_device': state['target_device'],
@@ -796,7 +648,7 @@ def create_app(test_config=None):
                             'target_findings': [item.to_dict() for item in state['target_findings']],
                             'decision_evidence': state['decision_evidence'],
                             'auto_decisions': state['auto_decisions'],
-                            'evidence_summary': _evidence_summary(decisions, state['decision_evidence']),
+                            'evidence_summary': evidence_summary(decisions, state['decision_evidence']),
                             'target_evidence': target_context.metadata if target_context else None,
                             'target_evidence_changed': state['target_evidence_changed'],
                             'invalidated_target_decisions': list(state['invalidated_target_decisions']),
@@ -1029,7 +881,7 @@ def create_app(test_config=None):
                         evidence_target_digest=identity[0], evidence_target_device=identity[1],
                     )
             decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
-            document = _decision_document(entry.source_digest, decisions, state['target_context'].metadata)
+            document = build_decision_document(entry.source_digest, decisions, state['target_context'].metadata)
             updated_payload = dict(payload, decision_document=document)
             state = _build_migration_review_state(entry, updated_payload)
             audit_actions = {
@@ -1257,7 +1109,7 @@ def create_app(test_config=None):
                 'success': True,
                 'approved_count': 1,
                 'decisions': confirmed.to_dict(),
-                'decision_document': _decision_document(
+                'decision_document': build_decision_document(
                     entry.source_digest, confirmed, target_context.metadata
                 ),
             })
@@ -1301,7 +1153,7 @@ def create_app(test_config=None):
                 'success': True,
                 'approved_count': len(validated),
                 'decisions': confirmed.to_dict(),
-                'decision_document': _decision_document(
+                'decision_document': build_decision_document(
                     entry.source_digest, confirmed, target_context.metadata
                 ),
             })
@@ -1354,7 +1206,7 @@ def create_app(test_config=None):
             entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
             if entry is None:
                 raise ValueError('A valid FortiGate preview_id is required')
-            previous = _load_decision_document(payload.get('decision_document'), entry.source_digest)
+            previous = load_decision_document(payload.get('decision_document'), entry.source_digest)
             analysis = _clone_preview(entry)
             target_context = _target_evidence(payload)
             previous, invalidated_target_decisions = reconcile_target_evidence(
@@ -1363,7 +1215,7 @@ def create_app(test_config=None):
             )
             target = target_context.analysis if target_context else None
             device = target_context.selected_device if target_context else None
-            results = _auto_review_results(analysis.extracted.config, analysis.derived, previous, target, device)
+            results = auto_review_results(analysis.extracted.config, analysis.derived, previous, target, device)
             by_key = {item.key: item for item in previous.decisions}
             for key in payload['decision_keys']:
                 result = results.get(key)
@@ -1391,7 +1243,7 @@ def create_app(test_config=None):
                 )
             decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
             return jsonify({'success': True, 'approved_count': len(payload['decision_keys']),
-                'decisions': decisions.to_dict(), 'decision_document': _decision_document(entry.source_digest, decisions,
+                'decisions': decisions.to_dict(), 'decision_document': build_decision_document(entry.source_digest, decisions,
                     target_context.metadata if target_context else None),
                 'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
@@ -1413,7 +1265,7 @@ def create_app(test_config=None):
             if entry is None:
                 raise ValueError('A valid FortiGate preview_id is required')
             document = payload.get('decision_document')
-            decisions = _load_decision_document(document, entry.source_digest)
+            decisions = load_decision_document(document, entry.source_digest)
             analysis = _clone_preview(entry)
             target_context = _target_evidence(payload)
             decisions, invalidated_target_decisions = reconcile_target_evidence(
@@ -1428,7 +1280,7 @@ def create_app(test_config=None):
                 enabled_policies=enabled,
             )
             return jsonify({'success': True, 'decisions': result.decisions.to_dict(),
-                'decision_document': _decision_document(entry.source_digest, result.decisions,
+                'decision_document': build_decision_document(entry.source_digest, result.decisions,
                     target_context.metadata if target_context else None),
                 'audit': list(result.audit), 'iterations': result.iterations, 'stable': result.stable,
                 'invalidated_target_decisions': list(invalidated_target_decisions)})
@@ -1445,7 +1297,7 @@ def create_app(test_config=None):
             if entry is None:
                 raise ValueError('A valid FortiGate preview_id is required')
             document = payload.get('decision_document')
-            previous = _load_decision_document(document, entry.source_digest) if document else None
+            previous = load_decision_document(document, entry.source_digest) if document else None
             analysis = _clone_preview(entry)
             requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
             target_context = _target_evidence(payload)
@@ -1461,9 +1313,9 @@ def create_app(test_config=None):
                 enabled_policies=payload.get('enabled_policies', ()),
             )
             decisions = automation.decisions
-            auto = _auto_review_results(analysis.extracted.config, analysis.derived, decisions, target, device)
+            auto = auto_review_results(analysis.extracted.config, analysis.derived, decisions, target, device)
             return jsonify({'success': True, 'decisions': decisions.to_dict(),
-                'decision_document': _decision_document(entry.source_digest, decisions,
+                'decision_document': build_decision_document(entry.source_digest, decisions,
                     target_context.metadata if target_context else None), 'auto_decisions': auto,
                 'target_intent': export_target_intent(decisions), 'automation_audit': list(automation.audit),
                 'automation_stable': automation.stable,
@@ -1480,7 +1332,7 @@ def create_app(test_config=None):
             entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
             if entry is None:
                 raise ValueError('A valid FortiGate preview_id is required')
-            decisions = _load_decision_document(payload.get('decision_document'), entry.source_digest)
+            decisions = load_decision_document(payload.get('decision_document'), entry.source_digest)
             return jsonify({'success': True, 'yaml': export_target_intent(decisions)})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
@@ -1496,13 +1348,13 @@ def create_app(test_config=None):
                 if entry is None:
                     raise ValueError('A valid FortiGate preview_id is required')
                 document = payload.get('decision_document')
-                previous = _load_decision_document(document, entry.source_digest)
+                previous = load_decision_document(document, entry.source_digest)
                 analysis = _clone_preview(entry)
                 decisions = apply_repeated_zone_action(analysis.extracted.config, previous,
                     source_vdom=payload.get('source_vdom'), source_zone=payload.get('source_zone'),
                     value=payload.get('value'), apply_to=payload.get('apply_to'))
                 return jsonify({'success': True, 'applied_count': len(payload['apply_to']),
-                    'decision_document': _decision_document(entry.source_digest, decisions,
+                    'decision_document': build_decision_document(entry.source_digest, decisions,
                         document.get('target_evidence'))})
             try:
                 raw_rule_type = payload.get('rule_type')
@@ -1513,7 +1365,7 @@ def create_app(test_config=None):
             if entry is None:
                 raise ValueError('A valid FortiGate preview_id is required')
             document = payload.get('decision_document')
-            previous = _load_decision_document(document, entry.source_digest)
+            previous = load_decision_document(document, entry.source_digest)
             analysis = _clone_preview(entry)
             affected = rule_affected_decision_keys(analysis.extracted.config, previous, rule_type,
                                                    payload.get('source_key'))
@@ -1526,7 +1378,7 @@ def create_app(test_config=None):
                 decisions = apply_zone_to_members(analysis.extracted.config, previous,
                     source_key=payload.get('source_key'), value=payload.get('value'), apply_to=apply_to)
                 return jsonify({'success': True, 'applied_count': len(apply_to),
-                    'decision_document': _decision_document(entry.source_digest, decisions,
+                    'decision_document': build_decision_document(entry.source_digest, decisions,
                         document.get('target_evidence'))})
             target_context = _target_evidence(payload)
             results = classify_auto_decisions(analysis.extracted.config, analysis.derived, previous,
@@ -1534,7 +1386,7 @@ def create_app(test_config=None):
                 target_context.selected_device if target_context else None)
             return jsonify({'success': True, 're_evaluated_count': len(apply_to),
                 'auto_decisions': {key: results.get(key, {'status': 'MANUAL'}) for key in apply_to},
-                'decision_document': _decision_document(entry.source_digest, previous,
+                'decision_document': build_decision_document(entry.source_digest, previous,
                     target_context.metadata if target_context else document.get('target_evidence'))})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
@@ -1566,13 +1418,13 @@ def create_app(test_config=None):
                 requirements = build_mapping_requirements(analysis.extracted.config, analysis.derived)
                 decision_set = build_decision_set(analysis.extracted.config, analysis.derived, requirements)
             elif isinstance(serialized, dict) and 'format_version' in serialized:
-                decision_set = _load_decision_document(serialized, entry.source_digest)
+                decision_set = load_decision_document(serialized, entry.source_digest)
             else:
                 decision_set = PANMigrationDecisionSet.from_dict(
                     serialized if isinstance(serialized, dict) else {'decisions': serialized}
                 )
             target_evidence = serialized.get('target_evidence') if isinstance(serialized, dict) else None
-            document = _decision_document(entry.source_digest, decision_set, target_evidence)
+            document = build_decision_document(entry.source_digest, decision_set, target_evidence)
             return jsonify({'success': True, 'document': document})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
@@ -1584,10 +1436,10 @@ def create_app(test_config=None):
         if entry is None:
             return jsonify({'success': False, 'error': 'A valid preview_id is required'}), 400
         try:
-            decision_set = _load_decision_document(payload.get('document'), entry.source_digest)
+            decision_set = load_decision_document(payload.get('document'), entry.source_digest)
             target_evidence = (payload.get('document') or {}).get('target_evidence') if isinstance(payload.get('document'), dict) else None
-            return jsonify({'success': True, 'decision_document': _decision_document(entry.source_digest, decision_set, target_evidence),
-                            'decisions': decision_set.to_dict(), 'mapping': _options_mapping(decision_set.to_options())})
+            return jsonify({'success': True, 'decision_document': build_decision_document(entry.source_digest, decision_set, target_evidence),
+                            'decisions': decision_set.to_dict(), 'mapping': options_mapping(decision_set.to_options())})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
@@ -1626,7 +1478,7 @@ def create_app(test_config=None):
             options = None
             if serialized is not None:
                 if isinstance(serialized, dict) and 'format_version' in serialized:
-                    decision_set = _load_decision_document(serialized, entry.source_digest)
+                    decision_set = load_decision_document(serialized, entry.source_digest)
                 else:
                     decision_set = PANMigrationDecisionSet.from_dict(
                         serialized if isinstance(serialized, dict) else {'decisions': serialized}
@@ -1639,7 +1491,7 @@ def create_app(test_config=None):
                 options = PANMigrationOptions(**mapping)
 
             target_context = _target_evidence(payload)
-            target_evidence_changed = _target_evidence_changed(serialized, target_context)
+            target_evidence_changed = target_evidence_has_changed((serialized.get('target_evidence') if isinstance(serialized, dict) else None), (target_context.metadata if target_context else None))
             target = target_context.analysis if target_context else None
             target_device = target_context.selected_device if target_context else None
             mode_value = payload.get('automation_mode', PANAutomationMode.VERIFIED_AND_DERIVED.value)
@@ -1665,10 +1517,10 @@ def create_app(test_config=None):
             )
             target_evidence_changed = target_evidence_changed or bool(result.invalidated_target_decisions)
             decision_set = result.decisions
-            mapping = _options_mapping(result.options)
+            mapping = options_mapping(result.options)
             safe_target_evidence = target_context.metadata if target_context else None
-            decision_document = _decision_document(entry.source_digest, decision_set, safe_target_evidence)
-            decision_evidence = _decision_evidence(decision_set, result.target_findings)
+            decision_document = build_decision_document(entry.source_digest, decision_set, safe_target_evidence)
+            decision_evidence = build_decision_evidence(decision_set, result.target_findings)
 
             rendered = replace(result.rendered, report={
                 **result.rendered.report,
@@ -1681,7 +1533,7 @@ def create_app(test_config=None):
                     'target_plan_findings': [item.to_dict() for item in result.target_plan_findings],
                     'target_object_reuse': list(result.target_object_reuse),
                     'decision_evidence': decision_evidence,
-                    'evidence_summary': _evidence_summary(decision_set, decision_evidence),
+                    'evidence_summary': evidence_summary(decision_set, decision_evidence),
                     'support_guidance': [item.to_dict() for item in result.support_guidance],
                     'recommendations': [item.to_dict() for item in result.recommendations],
                     'automation_audit': list(result.automation_audit),
@@ -1762,7 +1614,7 @@ def create_app(test_config=None):
                 'target_plan_findings': [item.to_dict() for item in result.target_plan_findings],
                 'target_object_reuse': list(result.target_object_reuse),
                 'decision_evidence': decision_evidence,
-                'evidence_summary': _evidence_summary(decision_set, decision_evidence),
+                'evidence_summary': evidence_summary(decision_set, decision_evidence),
                 'support_guidance': [item.to_dict() for item in result.support_guidance],
                 'recommendations': [item.to_dict() for item in result.recommendations],
                 'coverage': result.coverage,
@@ -1902,16 +1754,15 @@ def create_app(test_config=None):
                 raise ValueError('A current validated rendered migration is required')
             if not rendered.commands:
                 raise ValueError('The migration artifact contains no renderable commands')
-            options = replace(_deployment_options(payload), validate=True, commit=False)
+            options = replace(_deployment_options(payload), validate=True)
             result = PANSSHDeployer(options).deploy(rendered)
             source = artifact_sources.get(artifact_id)
             decision_document = source[2] if source else None
-            validation_feedback = _deployment_validation_feedback(rendered, decision_document, result.validation)
+            validation_feedback = deployment_validation_feedback(rendered, decision_document, result.validation)
             succeeded = (
                 result.failure_message is None
                 and result.failed_command_index is None
                 and result.validation.status == 'SUCCESS'
-                and result.commit.status != 'FAILED'
             )
             deployment_session_id = None
             if succeeded:
@@ -1945,10 +1796,10 @@ def create_app(test_config=None):
         try:
             payload = request.get_json(silent=True) or {}
             session, rendered, options = _require_deployment_session(payload)
-            result = PANSSHDeployer(replace(options, validate=True, commit=False)).validate()
+            result = PANSSHDeployer(replace(options, validate=True)).validate()
             source = artifact_sources.get(session.artifact_id)
             decision_document = source[2] if source else None
-            validation_feedback = _deployment_validation_feedback(rendered, decision_document, result)
+            validation_feedback = deployment_validation_feedback(rendered, decision_document, result)
             if result.status == 'SUCCESS':
                 deployment_sessions[session.session_id] = replace(
                     session,
@@ -1971,7 +1822,7 @@ def create_app(test_config=None):
         try:
             payload = request.get_json(silent=True) or {}
             session, _rendered, options = _require_deployment_session(payload)
-            result = PANSSHDeployer(replace(options, validate=False, commit=False)).commit()
+            result = PANSSHDeployer(replace(options, validate=False)).commit()
             if result.status == 'SUCCESS':
                 deployment_sessions.pop(session.session_id, None)
             return jsonify({

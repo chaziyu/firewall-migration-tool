@@ -47,7 +47,7 @@ def fake_netmiko(monkeypatch, connect):
 
 
 def test_successful_candidate_push_and_validation_without_default_commit(monkeypatch):
-    connection = FakeConnection(["ok"], ["Job 42", "FIN: OK"])
+    connection = FakeConnection(["ok"], ["Job 42", "FIN: OK", "FIN: OK"])
     fake_netmiko(monkeypatch, lambda **kwargs: connection)
 
     result = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret")).deploy(rendered("set one"))
@@ -157,13 +157,18 @@ def test_config_mode_failure_disconnects(monkeypatch):
     assert connection.disconnected
 
 
-def test_explicit_commit_runs_only_after_successful_validation(monkeypatch):
+def test_deploy_never_commits_and_explicit_commit_remains_available(monkeypatch):
     connection = FakeConnection(["ok"], ["Job 42", "FIN: OK", "FIN: OK"])
     fake_netmiko(monkeypatch, lambda **kwargs: connection)
 
-    result = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret", commit=True)).deploy(rendered("set one"))
+    deployer = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret"))
+    result = deployer.deploy(rendered("set one"))
 
-    assert result.commit.status == "SUCCESS"
+    assert result.commit.status == "NOT_RUN"
+    assert result.validation.status == "SUCCESS"
+    assert connection.commits == 0
+    committed = deployer.commit()
+    assert committed.status == "SUCCESS"
     assert connection.commits == 1
     assert connection.disconnected
 

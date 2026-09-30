@@ -5,9 +5,8 @@ import re
 from dataclasses import asdict
 
 from fwmigrate.extraction.sanitize import is_sensitive_key, sanitize_raw_text, sanitize_source_attributes
-from fwmigrate.vendors.cisco_ftd.fmc.fmc_adapter import FMC_BUNDLE_FORMAT
-
 from .contracts import CollectedSource, CollectionPart, CollectionStatus
+from .registry import collected_source_sanitizers
 
 
 FORMAT = "fwmigrate-collection-snapshot-v1"
@@ -23,17 +22,10 @@ def _unsafe_keys(value) -> bool:
 
 
 def sanitize_source(vendor_id: str, source_text: str) -> str:
-    if vendor_id in {"cisco_ftd", "checkpoint"}:
-        data = json.loads(source_text)
-        if not isinstance(data, dict):
-            raise ValueError("The vendor source must be a JSON object.")
-        expected = FMC_BUNDLE_FORMAT if vendor_id == "cisco_ftd" else "checkpoint-export-v1"
-        if data.get("format") != expected:
-            raise ValueError("Unsupported vendor source format.")
-        return json.dumps(sanitize_source_attributes(data))
-    if vendor_id == "cisco_asa" or vendor_id == "juniper_srx":
-        return sanitize_raw_text(source_text)
-    raise ValueError("Snapshot vendor has no supported live source format.")
+    from .builtin import register_builtin_source_sanitizers
+
+    register_builtin_source_sanitizers()
+    return collected_source_sanitizers.get(vendor_id).sanitize(source_text)
 
 
 def make_snapshot(source: CollectedSource) -> dict:

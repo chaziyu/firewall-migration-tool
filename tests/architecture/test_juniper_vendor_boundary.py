@@ -12,7 +12,7 @@ def _imports(path):
 
 
 def test_juniper_source_model_and_relationship_layers_do_not_import_presentation():
-    paths = [VENDOR / "model.py", VENDOR / "relationships.py", VENDOR / "derived.py"]
+    paths = [*sorted((VENDOR / "model").glob("*.py")), VENDOR / "relationships.py", VENDOR / "derived.py"]
     paths.extend(sorted((VENDOR / "transforms").glob("*.py")))
     for path in paths:
         assert not any(".export" in item or ".web_report" in item for item in _imports(path)), path
@@ -25,7 +25,7 @@ def test_juniper_handlers_and_validation_do_not_import_presentation():
 
 
 def test_juniper_source_reporting_path_does_not_import_legacy_ir_or_target_generators():
-    paths = [VENDOR / "parser.py", VENDOR / "source_report.py", VENDOR / "model.py",
+    paths = [VENDOR / "parser.py", VENDOR / "source_report.py", *sorted((VENDOR / "model").glob("*.py")),
              VENDOR / "relationships.py", VENDOR / "derived.py", VENDOR / "validation.py"]
     paths.extend(sorted((VENDOR / "handlers").glob("*.py")))
     paths.extend(sorted((VENDOR / "transforms").glob("*.py")))

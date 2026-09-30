@@ -7,8 +7,8 @@ from enum import Enum
 import json
 from typing import Any, Iterable
 
-from .decisions import PANDecisionReviewState, PANMigrationDecisionSet, make_decision_key
-from .target_candidates import PANTargetCandidate, build_target_candidates, target_vsys_value
+from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANDecisionReviewState, PANMigrationDecisionSet, make_decision_key
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_candidates import PANTargetCandidate, build_target_candidates, target_vsys_value
 
 
 class PANRecommendationMethod(str, Enum):

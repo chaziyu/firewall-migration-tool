@@ -363,13 +363,13 @@ def test_malformed_route_and_empty_cli_remain_visible_without_fake_sections():
 
 
 def test_json_source_planes_do_not_run_cli_scanner_or_coverage(monkeypatch):
-    from fwmigrate.vendors.cisco_ftd import source_report
+    from fwmigrate.vendors.cisco_ftd import source_accounting
 
     def unexpected(*args, **kwargs):
         raise AssertionError("CLI scanner or coverage classifier called for JSON source")
 
-    monkeypatch.setattr(source_report, "scan_cisco_ftd_sections", unexpected)
-    monkeypatch.setattr(source_report, "classify_cisco_ftd_coverage", unexpected)
+    monkeypatch.setattr(source_accounting, "scan_cisco_ftd_sections", unexpected)
+    monkeypatch.setattr(source_accounting, "classify_cisco_ftd_coverage", unexpected)
     fmc = extract_cisco_ftd_source('{"source":"fmc-rest-api","objects":{"networks":[]}}')
     fdm = extract_cisco_ftd_source('{"format":"cisco-fdm-rest-export-v1","objects":{"networks":[]}}')
     assert fmc.source_sections[0].path == "fmc/source"

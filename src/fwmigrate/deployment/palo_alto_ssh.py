@@ -89,7 +89,7 @@ class PANSSHDeployer:
         status, result = self._poll_job(job_id)
         return PANValidationResult(job_id, status, result or response or "")
 
-    def commit_candidate(self):
+    def _commit_candidate(self):
         response = _safe_text(self.connection.commit(), self.options.password)
         if _ERROR.search(response or ""):
             return PANCommitResult(None, "FAILED", response or "")
@@ -127,18 +127,12 @@ class PANSSHDeployer:
                 validation = self.validate_candidate() if self.options.validate else PANValidationResult()
             except Exception as exc:
                 validation = PANValidationResult(None, "FAILED", _safe_text(exc, self.options.password))
-            try:
-                commit = self.commit_candidate() if self.options.commit and validation.status == "SUCCESS" else PANCommitResult()
-            except Exception as exc:
-                commit = PANCommitResult(None, "FAILED", _safe_text(exc, self.options.password))
             failure_message = pushed.failure_message
             if self.options.validate and validation.status != "SUCCESS":
                 failure_message = f"candidate validation {validation.status.lower()}"
-            elif self.options.commit and commit.status != "SUCCESS":
-                failure_message = f"candidate commit {commit.status.lower()}"
             return PANDeploymentResult(pushed.connected, pushed.commands_attempted, pushed.commands_succeeded,
                                        pushed.failed_command_index, failure_message, pushed.command_results,
-                                       validation, commit)
+                                       validation)
         finally:
             try:
                 self.connection.disconnect()
@@ -153,7 +147,7 @@ class PANSSHDeployer:
         except Exception as exc:
             return PANCommitResult(None, "FAILED", _safe_text(exc, self.options.password))
         try:
-            return self.commit_candidate()
+            return self._commit_candidate()
         except Exception as exc:
             return PANCommitResult(None, "FAILED", _safe_text(exc, self.options.password))
         finally:

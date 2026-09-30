@@ -18,7 +18,8 @@ def test_deployment_models_defaults_and_secret_repr():
 
     assert options.port == 22
     assert options.validate is True
-    assert options.commit is False
+    with pytest.raises(TypeError):
+        PANDeploymentOptions("fw", "admin", "secret", commit=True)
     assert options.job_poll_interval == 1.0
     assert options.job_poll_attempts == 60
     assert "secret" not in repr(options)

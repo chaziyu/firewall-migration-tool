@@ -5,7 +5,8 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.vendors.juniper_srx.source_report import _account, extract_juniper_source
+from fwmigrate.vendors.juniper_srx.source_accounting import _account
+from fwmigrate.vendors.juniper_srx.source_report import extract_juniper_source
 from fwmigrate.vendors.juniper_srx.tokenizer import JunosCommand, JunosOperation
 from fwmigrate.vendors.juniper_srx.validation import validate_juniper_config
 from fwmigrate.vendors.juniper_srx.web_report import build_juniper_preview

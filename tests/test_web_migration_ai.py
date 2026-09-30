@@ -26,6 +26,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.design.proposed import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.design.session import create_design_session
 from fwmigrate.conversion.fortigate_to_palo_alto.ai import orchestrator as ai_orchestrator
+import fwmigrate.conversion.fortigate_to_palo_alto.application.review as migration_review
 from fwmigrate import web
 
 
@@ -1409,12 +1410,12 @@ def test_review_state_applies_deterministic_fixed_point_before_candidates(monkey
     events = []
     monkeypatch.setattr(web, "_require_complete_collection", lambda *_: None)
     monkeypatch.setattr(web, "_clone_preview", lambda *_: analysis)
-    monkeypatch.setattr(web, "build_mapping_requirements", lambda *_: "requirements")
+    monkeypatch.setattr(migration_review, "build_mapping_requirements", lambda *_: "requirements")
     monkeypatch.setattr(web, "_target_evidence", lambda *_: target_context)
-    monkeypatch.setattr(web, "build_decision_set", lambda *_: decisions)
-    monkeypatch.setattr(web, "reconcile_target_evidence", lambda current, *_: (current, ()))
-    monkeypatch.setattr(web, "build_review_evidence", lambda *_: {})
-    monkeypatch.setattr(web, "suggest_from_target", lambda _config, current, *_: (current, {"suggestion": True}))
+    monkeypatch.setattr(migration_review, "build_decision_set", lambda *_: decisions)
+    monkeypatch.setattr(migration_review, "reconcile_target_evidence", lambda current, *_: (current, ()))
+    monkeypatch.setattr(migration_review, "build_review_evidence", lambda *_: {})
+    monkeypatch.setattr(migration_review, "suggest_from_target", lambda _config, current, *_: (current, {"suggestion": True}))
 
     def resolve(_config, _derived, current, target, device, *, enabled_policies, **kwargs):
         events.append("resolve")
@@ -1427,20 +1428,20 @@ def test_review_state_applies_deterministic_fixed_point_before_candidates(monkey
         assert kwargs["requirements"] == "requirements"
         return SimpleNamespace(decisions=resolved, dependency_graph=object())
 
-    monkeypatch.setattr(web, "resolve_design_session_until_stable", resolve)
+    monkeypatch.setattr(migration_review, "resolve_design_session_until_stable", resolve)
 
     def discover(_config, current, *_args, **_kwargs):
         events.append("candidates")
         assert current is resolved
         return {}
 
-    monkeypatch.setattr(web, "discover_target_candidates", discover)
-    monkeypatch.setattr(web, "validate_against_target", lambda *_: ())
-    monkeypatch.setattr(web, "_auto_review_results", lambda *_: {})
-    monkeypatch.setattr(web, "build_review_context", lambda *_args, **_kwargs: {})
-    monkeypatch.setattr(web, "build_review_workflow", lambda *_args, **_kwargs: {})
-    monkeypatch.setattr(web, "build_recommendations", lambda *_: [])
-    monkeypatch.setattr(web, "_target_evidence_changed", lambda *_: False)
+    monkeypatch.setattr(migration_review, "discover_target_candidates", discover)
+    monkeypatch.setattr(migration_review, "validate_against_target", lambda *_: ())
+    monkeypatch.setattr(migration_review, "auto_review_results", lambda *_: {})
+    monkeypatch.setattr(migration_review, "build_review_context", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(migration_review, "build_review_workflow", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(migration_review, "build_recommendations", lambda *_: [])
+    monkeypatch.setattr(migration_review, "target_evidence_changed", lambda *_: False)
 
     state = web._build_migration_review_state(
         SimpleNamespace(source_digest="source"), {}, apply_deterministic=True
