@@ -37,6 +37,19 @@ def test_typed_source_fields_keep_reference_identity_and_missing_state():
     assert (reference.source_id, reference.name, reference.source_type) == ("host-1", "server", "Host")
 
 
+def test_preview_keeps_object_and_literal_network_group_members():
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "objects": {"networkgroups": [{
+            "id": "group", "name": "Mixed",
+            "objects": [{"id": "host", "name": "Server", "type": "Host"}],
+            "literals": [{"value": "198.51.100.1", "type": "Host"}],
+        }]},
+    }))
+    row = build_ftd_preview(result)["sections"]["address_groups"][0]
+    assert row["members"] == ["Server", "198.51.100.1"]
+
+
 def test_device_object_override_keeps_base_and_target_identity_separate():
     config = CiscoFMCBundleParser(json.dumps({"source": "fmc-rest-api", "objects": {
         "networkaddresses": [{"id": "base", "name": "Shared", "type": "Host", "value": "10.0.0.1"}],

@@ -47,7 +47,8 @@ def _nat_row(policy: Any, rule: Any, section: str | None, kind: str) -> tuple[An
         _nat_ref(getattr(rule, "original_destination_service", None) or getattr(rule, "original_destination_port", None)),
         _nat_ref(getattr(rule, "translated_destination_service", None) or getattr(rule, "translated_destination_port", None)),
         getattr(rule, "nat_type", None), getattr(rule, "interface_pat", None), getattr(rule, "dns", None),
-        getattr(rule, "route_lookup", None), getattr(rule, "proxy_arp", None), rule.source_plane, rule.source_context,
+        getattr(rule, "route_lookup", None), getattr(rule, "no_proxy_arp", None),
+        getattr(rule, "proxy_arp", None), rule.source_plane, rule.source_context,
         rule.raw_extra, _nat_ref(getattr(rule, "service", None)),
         getattr(rule, "source_translation_mode", None), getattr(rule, "destination_translation_mode", None))
 

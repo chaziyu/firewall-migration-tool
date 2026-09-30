@@ -78,6 +78,7 @@ def test_ra_vpn_source_relationships_and_reports():
     assert profile.certificates is None and "certificates" in profile.explicit_fields
     assert group.vpn_access is False and "vpn_access" in group.explicit_fields
     assert group.split_tunnel_policy == "INCLUDE" and group.split_tunnel_networks[0].source_id == "net"
+    assert group.split_tunnel is None
     assert group.split_dns == ["internal.example.test"] and group.wins_servers == []
     nested = config.group_policies[1]
     assert nested.protocols == "SSL" and nested.dns_servers[0]["id"] == "dns"

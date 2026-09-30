@@ -188,9 +188,7 @@ class CiscoFTDParser:
                 ))
                 index += 1
                 continue
-            if re.fullmatch(r"show\s+management-interface\s+convergence", line, re.I):
-                self.config.cmi_enabled = True
-            elif len(parts) >= 7 and lower_parts[:4] == ["configure", "network", "ipv4", "manual"]:
+            if len(parts) >= 7 and lower_parts[:4] == ["configure", "network", "ipv4", "manual"]:
                 self.config.management_ipv4, self.config.management_netmask, self.config.management_gateway = parts[4:7]
             elif len(parts) >= 3 and lower_parts[:2] == ["management", "gateway"]:
                 self.config.management_gateway = parts[2]

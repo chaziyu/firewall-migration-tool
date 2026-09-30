@@ -25,6 +25,9 @@ def test_native_collections_are_visible_in_preview_and_excel():
     workbook = load_workbook(output, read_only=True)
     assert "Native Sources" in workbook.sheetnames
     assert workbook["Native Sources"].max_row > 1
+    assert result.source_sections[0].object_count_source == len(result.inventory_items)
+    assert result.source_sections[0].object_count_parsed == len(result.inventory_items)
+    assert result.source_sections[0].object_count_extracted == len(result.inventory_items)
 
 
 def test_report_preserves_ftd_source_plane_and_partial_coverage():

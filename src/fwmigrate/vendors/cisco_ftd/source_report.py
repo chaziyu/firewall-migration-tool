@@ -184,15 +184,7 @@ def extract_cisco_ftd_source(text: str, zone_mapping: dict[str, str] | None = No
     from .fmc.fmc_adapter import CiscoFMCBundleParser, is_fmc_bundle
 
     def source_count(config):
-        return sum(len(getattr(config, field)) for field in (
-            "network_addresses", "network_address_overrides", "network_groups", "protocol_port_objects", "port_object_groups", "applications",
-            "file_policies", "variable_sets", "url_categories", "vlan_objects", "security_zones", "interface_groups",
-            "intrusion_policies", "intrusion_rule_groups", "intrusion_rule_behaviors", "intrusion_rule_overrides",
-            "dhcp_servers", "dhcp_relay_settings", "access_control_default_actions",
-            "access_policy_inheritance_settings", "policy_assignments", "decryption_policies", "dns_policies",
-            "source_interfaces", "routes", "access_control_policies", "access_control_logging_settings",
-            "security_intelligence_policies", "identity_policies", "nat_policies")) + count_acp_rules(config) + count_nat_rules(config) + sum(
-                len(policy.rules or []) for policy in (*config.file_policies, *config.decryption_policies, *config.dns_policies))
+        return len(_inventory(config))
 
     if is_fmc_bundle(text):
         config = CiscoFMCBundleParser(text).parse_source()

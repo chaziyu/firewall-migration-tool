@@ -394,9 +394,19 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             resolve(owner, field_name, value, kinds, scope=owner.device_id if field_name != "networks" else None)
 
     for owner, fields in (
-        *((item, (("ike_policies", FTDReferenceKind.IKE_POLICY), ("certificates", FTDReferenceKind.CERTIFICATE)))
-          for item in config.s2s_ike_settings),
-        *((item, (("ipsec_proposals", FTDReferenceKind.IPSEC_PROPOSAL),)) for item in config.s2s_ipsec_settings),
+        *((item, (
+            ("ikev1_policies", FTDReferenceKind.IKE_POLICY),
+            ("ikev2_policies", FTDReferenceKind.IKE_POLICY),
+            ("ike_policies", FTDReferenceKind.IKE_POLICY),
+            ("ikev1_certificate", FTDReferenceKind.CERTIFICATE),
+            ("ikev2_certificate", FTDReferenceKind.CERTIFICATE),
+            ("certificates", FTDReferenceKind.CERTIFICATE),
+        )) for item in config.s2s_ike_settings),
+        *((item, (
+            ("ikev1_ipsec_proposals", FTDReferenceKind.IPSEC_PROPOSAL),
+            ("ikev2_ipsec_proposals", FTDReferenceKind.IPSEC_PROPOSAL),
+            ("ipsec_proposals", FTDReferenceKind.IPSEC_PROPOSAL),
+        )) for item in config.s2s_ipsec_settings),
         *((item, (("address_pools", FTDReferenceKind.ADDRESS_POOL),)) for item in config.ra_vpn_address_assignment_settings),
         *((item, (("realm", FTDReferenceKind.REALM),
                   ("address_pools", FTDReferenceKind.ADDRESS_POOL), ("split_tunnel_networks", network)))
