@@ -45,5 +45,6 @@ class PANServiceGroup(BaseModel):
     members: list[str] | None = None
     description: str | None = None
     tags: list[str] | None = None
+    disable_override: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
