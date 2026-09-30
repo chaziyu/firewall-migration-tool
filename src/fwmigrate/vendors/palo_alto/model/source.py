@@ -11,7 +11,7 @@ from .identity import PANGroupMapping, PANLocalUser, PANLocalUserGroup
 from .interface import PANInterface, PANInterfaceImport, PANInterfaceUnit
 from .nat import PANNATRule
 from .policy import PANDefaultSecurityRule, PANSecurityRule
-from .routing import PANLogicalRouter, PANStaticRoute, PANVirtualRouter
+from .routing import PANLogicalRouter, PANVirtualRouter
 from .schedule import PANSchedule
 from .sdwan import (
     PANSDWANErrorCorrectionProfile,
@@ -51,7 +51,6 @@ class PANOSConfig(BaseModel):
     vulnerability_profiles: list[PANVulnerabilityProfile] = Field(default_factory=list)
     security_profile_groups: list[PANSecurityProfileGroup] = Field(default_factory=list)
     zones: list[PANZone] = Field(default_factory=list)
-    static_routes: list[PANStaticRoute] = Field(default_factory=list)
     virtual_routers: list[PANVirtualRouter] = Field(default_factory=list)
     logical_routers: list[PANLogicalRouter] = Field(default_factory=list)
     dhcp_servers: list[PANDHCPServer] = Field(default_factory=list)

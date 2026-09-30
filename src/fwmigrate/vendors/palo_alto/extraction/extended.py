@@ -472,7 +472,6 @@ EXTRACTORS = {
     "sdwan_error_correction_profile": ("sdwan_error_correction_profiles", extract_sdwan_mode(PANSDWANErrorCorrectionProfile)),
     "sdwan_rule": ("sdwan_rules", extract_sdwan_rule),
     "local_user": ("local_users", extract_named(PANLocalUser, secret_fields=("password_configured",))),
-    "local_user_database_compat": ("local_users", extract_named(PANLocalUser, secret_fields=("password_configured",))),
     "local_user_group": ("local_user_groups", extract_named(PANLocalUserGroup)),
     "local_user_group_compat": ("local_user_groups", extract_named(PANLocalUserGroup)),
     "group_mapping": ("group_mappings", extract_named(PANGroupMapping)),

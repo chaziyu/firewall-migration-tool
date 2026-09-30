@@ -22,7 +22,10 @@ def _values(element: ET.Element, tag: str) -> list[str] | None:
     if child is None:
         return None
     members = child.findall("member")
-    return [_text(member) or member.get("name") or "" for member in members] if members else [_text(child) or ""]
+    if members:
+        return [_text(member) or member.get("name") or "" for member in members]
+    text = _text(child)
+    return [text] if text is not None else []
 
 
 def _nested_metadata(element: ET.Element, known: set[str], field_map: dict[str, str]) -> tuple[dict[str, Any], set[str]]:

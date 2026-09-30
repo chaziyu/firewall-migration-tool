@@ -46,7 +46,7 @@ EXPECTED_PATHS = {
     "sdwan_interface_profile_cli", "sdwan_path_quality_profile_cli",
     "sdwan_traffic_distribution_profile_cli", "sdwan_saas_quality_profile_cli",
     "sdwan_error_correction_profile_cli",
-    "local_user_group", "local_user_group_compat", "local_user_database_compat", "group_mapping",
+    "local_user_group", "local_user_group_compat", "group_mapping",
     "globalprotect_portal", "globalprotect_gateway", "globalprotect_portal_selected",
     "globalprotect_gateway_selected", "administrator_mgt_config",
 }
@@ -138,7 +138,6 @@ def test_registry_contains_only_source_shape_metadata():
         "entry_list_fields",
         "nested_fields",
         "field_map",
-        "allowed_scope_kinds",
     }
 
 
@@ -244,7 +243,7 @@ def test_routing_extracts_nested_order_and_source_shapes():
 
     integrated = build_panos_config((fixture_dir / "integrated_firewall.xml").read_text())
     assert [route.name for route in integrated.virtual_routers[0].static_routes] == ["default"]
-    assert [route.name for route in integrated.static_routes] == ["default"]
+    assert "static_routes" not in type(integrated).model_fields
 
 
 def test_nested_unknowns_stay_with_the_nearest_typed_owner():
@@ -277,3 +276,16 @@ def test_inventory_survives_typed_extractor_failure(monkeypatch):
     assert config.source_inventory[0].name == "future"
     assert "retain-me" in config.source_inventory[0].raw_xml
     assert config.unknown_paths == ["config/shared/future-policy/rules/entry"]
+
+
+def test_compatibility_suffixes_do_not_type_unrelated_user_or_gateway_entries():
+    assert match_path_spec(("config", "shared", "future-feature", "user", "entry")) is None
+    assert match_path_spec(("config", "shared", "future-feature", "gateway", "entry")) is None
+
+    local_user = match_path_spec(("config", "shared", "local-user-database", "user", "entry"))
+    portal = match_path_spec(("config", "shared", "network", "global-protect", "portal", "entry"))
+    gateway = match_path_spec(("config", "shared", "network", "global-protect", "gateway", "entry"))
+
+    assert local_user is not None and local_user.name == "local_user_database"
+    assert portal is not None and portal.name == "globalprotect_portal"
+    assert gateway is not None and gateway.name == "globalprotect_gateway"
