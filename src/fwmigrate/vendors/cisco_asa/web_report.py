@@ -99,7 +99,7 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
                 "schedule": rule.time_range, "binding": (f"{binding.scope}:{binding.interface}" if binding and binding.interface else binding.scope if binding else "unbound"),
                 "direction": binding.direction if binding else None,
                 "interface": binding.interface if binding else None,
-                "scope": rule.source_context, "inactive": rule.inactive,
+                "scope": rule.source_context, "inactive": source_value(rule, "inactive"),
                 "review": list(rule.review_reasons),
             })
     nat_rows = [{
