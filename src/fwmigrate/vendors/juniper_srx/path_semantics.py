@@ -36,14 +36,16 @@ def candidate_field_value(path: tuple[str, ...]) -> tuple[str, object]:
         if "tcp-rst" in low:
             return "tcp_rst", True
     if low[:2] == ["schedulers", "scheduler"]:
-        key = low[2] if len(low) > 2 else ""
-        value = path[3] if len(path) > 3 else None
+        key = low[3] if len(low) > 3 else ""
+        value = path[4] if len(path) > 4 else None
         if key in {"description", "start-date", "stop-date"}:
             return key.replace("-", "_"), value
         if key == "daily":
-            return "daily", " ".join(path[3:])
+            return "daily", " ".join(path[4:])
         if key in _DAYS_OF_WEEK:
-            return f"weekday:{key}", " ".join(path[3:])
+            return f"weekday:{key}", " ".join(path[4:])
+        if key == "exclude":
+            return "exclusions", tuple(path[4:])
     if low[:2] == ["security", "policies"]:
         if "scheduler-name" in low:
             i = low.index("scheduler-name")
@@ -70,6 +72,25 @@ def candidate_field_value(path: tuple[str, ...]) -> tuple[str, object]:
 
 def scalar_identity(path: tuple[str, ...]):
     low = tuple(part.lower() for part in path)
+
+    address_book_index = next(
+        (
+            index
+            for index in range(len(low) - 1)
+            if low[index:index + 2] == ("security", "address-book")
+        ),
+        None,
+    )
+    if (
+        address_book_index is not None
+        and len(low) > address_book_index + 5
+        and low[address_book_index + 3] == "address"
+    ):
+        object_path = path[:address_book_index + 5]
+        child = low[address_book_index + 5]
+        if child == "description":
+            return object_path, "description"
+        return object_path, "definition"
     if (len(low) == 7 and low[:3] == ("security", "ipsec", "vpn")
             and low[4] == "ike" and low[5] in {"gateway", "ipsec-policy"}):
         return path[:5], low[5]
