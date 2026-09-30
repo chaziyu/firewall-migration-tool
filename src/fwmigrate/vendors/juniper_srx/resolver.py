@@ -98,13 +98,6 @@ class JuniperReferenceResolver:
                 if not res.is_unresolved:
                     return res
 
-            # Check legacy zone-local book: f"zone_{zone}"
-            legacy_book_name = f"zone_{zone}"
-            if legacy_book_name in self.context.address_books:
-                res = self._resolve_in_book(legacy_book_name, reference)
-                if not res.is_unresolved:
-                    return res
-
         # 2. Fallback to global address book
         res = self._resolve_in_book("global", reference)
         if not res.is_unresolved:
