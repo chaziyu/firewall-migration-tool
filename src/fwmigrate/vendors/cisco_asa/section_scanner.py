@@ -75,6 +75,7 @@ def _path(line: str, parent: str | None = None) -> str:
         (r"^monitor-interface\b", "failover"),
         (r"^management-access\b", "management-access"),
         (r"^same-security-traffic\b", "same-security-traffic"),
+        (r"^sysopt\s+connection\s+permit-vpn$", "sysopt connection permit-vpn"),
         (r"^clock\s+(?:timezone|summer-time)\b", "timezone"),
         (r"^domain-name\b", "domain-name"),
         (r"^dns-group\b", "dns"),
