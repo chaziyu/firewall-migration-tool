@@ -188,7 +188,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "policies": len(config.security_rules),
             "default_security_rules": len(config.default_security_rules),
             "nat_rules": len(config.nat_rules),
-            "routes": len(config.static_routes),
+            "routes": len(analysis.derived.static_routes),
             "virtual_routers": len(config.virtual_routers),
             "logical_routers": len(config.logical_routers),
             "vulnerability_profiles": len(config.vulnerability_profiles),
