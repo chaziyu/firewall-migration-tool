@@ -30,7 +30,10 @@ def test_panorama_shadowing_and_effective_order_are_explicitly_ambiguous():
     assert any(item.family == "address" and item.name == "shadowed" for item in derived.shadowing)
     assert any(item.status == "AMBIGUOUS" and item.reference_name == "shadowed" for item in derived.reference_resolutions)
     child_order = [item for item in derived.policy_order if item.target_scope.endswith(":child:device:panorama")]
-    assert [item.rule_name for item in child_order[:3]] == ["shared-pre", "parent-pre", "child-pre"]
+    assert [item.rule_name for item in child_order[:6]] == [
+        "shared-pre", "parent-pre", "child-pre",
+        "child-post", "parent-post", "shared-post",
+    ]
 
 
 def test_derived_views_are_non_mutating_for_required_fixtures():
