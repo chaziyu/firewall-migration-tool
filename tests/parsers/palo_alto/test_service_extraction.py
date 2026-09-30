@@ -47,3 +47,13 @@ def test_service_contract_preserves_explicit_state_scope_inventory_and_redaction
     assert_source_contract(explicit, config)
     assert_source_contract(group, config)
     assert secret not in str(config.model_dump())
+
+
+def test_service_group_disable_override_is_typed_source_state():
+    config = build_panos_config("""<config><devices><entry name='panorama'><device-group><entry name='dg'>
+      <service-group><entry name='managed'><members><member>svc</member></members><disable-override>yes</disable-override></entry></service-group>
+    </entry></device-group></entry></devices></config>""")
+    group = config.service_groups[0]
+    assert group.disable_override == "yes"
+    assert "disable_override" in group.explicit_fields
+    assert "disable-override" not in group.raw_extra
