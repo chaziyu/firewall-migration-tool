@@ -75,24 +75,6 @@ class PANOSDerivedViews:
     relationship_issues: tuple[Any, ...] = ()
 
 
-@dataclass(frozen=True)
-class PANOSValidationIssue:
-    severity: str
-    domain: str
-    message: str
-    source_path: Optional[str] = None
-    source_name: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class PANOSValidationResult:
-    issues: tuple[PANOSValidationIssue, ...] = ()
-
-    @property
-    def errors(self) -> tuple[PANOSValidationIssue, ...]:
-        return tuple(item for item in self.issues if item.severity == "error")
-
-
 def pan_scope_identity(scope: PANScope) -> str:
     """Return a stable identity for explicit source ownership context."""
     identity = f"{scope.kind}:{scope.name}"
