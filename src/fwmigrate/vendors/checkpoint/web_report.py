@@ -89,7 +89,7 @@ def build_checkpoint_preview(result: CheckPointSourceResult) -> dict[str, Any]:
         rule = entry.source_rule
         policies.append({"policy_id": entry.rule_order, "name": entry.rule_name,
                          "source_addresses": ref_names(rule.source), "destination_addresses": ref_names(rule.destination),
-                         "services": ref_names((*rule.service, *rule.services_and_applications)),
+                         "services": ref_names((*(rule.service or ()), *(rule.services_and_applications or ()))),
                          "action": ref_names((rule.action,))[0] if rule.action is not None else None,
                          "source_order": entry.rule_order, "package": entry.package_name,
                          "layer": entry.layer_name, "section": entry.section_name,

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from .model.source import CheckPointConfig
 from .model.common import CheckPointSourceObject
 from .models import CheckPointCollectionDiagnostic
+from .policy_context import CPPolicyContextRecord
 from .relationships.identity import CPIdentityRelationships, build_identity_relationships
 from .relationships.interface_topology import CPInterfaceTopology, build_interface_topology
 from .relationships.policy_structure import CPPolicyStructure, build_policy_structure
@@ -69,10 +70,11 @@ class CheckPointDerivedViews:
 def build_checkpoint_derived_views(
     config: CheckPointConfig,
     collection: tuple[CheckPointCollectionDiagnostic, ...] = (),
+    policy_context: tuple[CPPolicyContextRecord, ...] = (),
 ) -> CheckPointDerivedViews:
     references = build_reference_index(config)
     references.memberships = build_memberships(config, references)
-    policy_structure = build_policy_structure(config, references)
+    policy_structure = build_policy_structure(config, references, policy_context)
     interface_topology = build_interface_topology(config, references)
     identity = build_identity_relationships(config, references)
     vpn_topology = build_vpn_topology(config, references, interface_topology)

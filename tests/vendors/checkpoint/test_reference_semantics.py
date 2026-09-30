@@ -63,6 +63,7 @@ def test_uid_and_domain_scoped_name_resolution():
     b = CPHost(uid="b", name="same", domain_uid="d2")
     index = build_reference_index(CheckPointConfig(hosts=[a, b]))
     assert index.resolve("a", expected_kinds=(CPReferenceKind.HOST,)).target is a
+    assert index.resolve("a", owner=CPHost(domain_uid="d2"), expected_kinds=(CPReferenceKind.HOST,)).status == "cross_scope"
     assert index.resolve("same", owner=CPHost(domain_uid="d1"), expected_kinds=(CPReferenceKind.HOST,)).target is a
     assert index.resolve("same", owner=CPHost(domain_uid="d2"), expected_kinds=(CPReferenceKind.HOST,)).target is b
     assert index.resolve("same", owner=CPHost(domain_uid="d3"), expected_kinds=(CPReferenceKind.HOST,)).status == "cross_scope"
@@ -80,3 +81,15 @@ def test_group_edges_keep_source_field_provenance():
     assert {(edge.owner.uid, edge.source_field, edge.resolved_target.uid if edge.resolved_target else None) for edge in edges} >= {
         ("g", "members", "h"), ("x", "include", "g"), ("x", "except_", "h"), ("sg", "members", "s")
     }
+
+
+def test_same_uid_in_different_domains_resolves_with_owner_scope():
+    first = CPHost(uid="shared-uid", name="first", domain_uid="d1")
+    second = CPHost(uid="shared-uid", name="second", domain_uid="d2")
+    index = build_reference_index(CheckPointConfig(hosts=[first, second]))
+
+    assert "shared-uid" not in index.by_uid
+    assert index.resolve("shared-uid", owner=CPHost(domain_uid="d1"), expected_kinds=(CPReferenceKind.HOST,)).target is first
+    assert index.resolve("shared-uid", owner=CPHost(domain_uid="d2"), expected_kinds=(CPReferenceKind.HOST,)).target is second
+    assert index.resolve("shared-uid", expected_kinds=(CPReferenceKind.HOST,)).status == "ambiguous"
+    assert not any(item.key == "shared-uid" for item in index.duplicates)

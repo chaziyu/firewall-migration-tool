@@ -41,7 +41,7 @@ class CheckPointSourceObject(ManagementDomain):
     gateway: str | None = None
     order: int | None = None
     comments: str | None = None
-    tags: list[str] = Field(default_factory=list)
+    tags: list[str] | None = None
     color: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: tuple[str, ...] = ()

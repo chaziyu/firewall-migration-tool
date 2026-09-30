@@ -15,6 +15,7 @@ from .policy import (
     extract_access_rulebase, extract_https_rulebase, extract_nat_rulebase,
     extract_threat_rulebase,
 )
+from ..policy_context import CPPolicyContextRecord
 from .result import ExtractionResult
 from .source_metadata import capture_source_metadata
 from .reconcile import reconcile_append
@@ -37,6 +38,7 @@ def extract_checkpoint_config(
     config = CheckPointConfig()
     collection: list[CheckPointCollectionDiagnostic] = []
     source_objects = []
+    policy_context: list[CPPolicyContextRecord] = []
     groups = group_response_pages(bundle)
     safety = build_rulebase_safety_map(bundle)
 
@@ -65,6 +67,9 @@ def extract_checkpoint_config(
         else:
             records = extract_object_records(response)
         for bucket, item in records:
+            if bucket == "policy_context":
+                policy_context.append(item)
+                continue
             destination = getattr(config, bucket, None)
             if destination is None:
                 source_objects.append(item)
@@ -76,6 +81,7 @@ def extract_checkpoint_config(
         collection=tuple(collection),
         source_objects=tuple(source_objects),
         source_metadata=capture_source_metadata(bundle),
+        policy_context=tuple(policy_context),
         scope=scope or ScopeSelectionResult(),
     )
 

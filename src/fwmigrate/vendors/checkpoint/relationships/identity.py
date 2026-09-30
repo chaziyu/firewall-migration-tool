@@ -29,7 +29,7 @@ def build_identity_relationships(config: CheckPointConfig, references: CPReferen
     from .references import build_reference_index
     references = references or build_reference_index(config); admins = []; memberships = []; roles = []; issues = []
     for admin in config.administrators:
-        for value in admin.permission_profiles:
+        for value in admin.permission_profiles or ():
             result = references.resolve(value, owner=admin, expected_kinds=(CPReferenceKind.PERMISSION_PROFILE,), source_field="permission_profiles")
             if isinstance(result, CPResolvedReference): admins.append(CPAdministratorPermissionRelationship(admin, result.target, result.reference))
             else: admins.append(CPAdministratorPermissionRelationship(admin, None, result.reference, result)); issues.append(result)
@@ -39,7 +39,7 @@ def build_identity_relationships(config: CheckPointConfig, references: CPReferen
         memberships.extend(_membership_edges(group, "users", group.users, references, (CPReferenceKind.USER,)))
     for role in config.access_roles:
         for field, values, kinds in (("networks", role.networks, (CPReferenceKind.HOST, CPReferenceKind.NETWORK, CPReferenceKind.ADDRESS_RANGE, CPReferenceKind.ADDRESS)), ("users", role.users, (CPReferenceKind.USER,)), ("groups", role.groups, (CPReferenceKind.USER_GROUP,))):
-            for value in values:
+            for value in values or ():
                 result = references.resolve(value, owner=role, expected_kinds=kinds, source_field=field)
                 if isinstance(result, CPResolvedReference): roles.append(CPAccessRoleRelationship(role, field, result.reference, result.target, result.kind))
                 else: roles.append(CPAccessRoleRelationship(role, field, result.reference, None, None, result)); issues.append(result)

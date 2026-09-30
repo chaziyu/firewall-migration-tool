@@ -14,11 +14,11 @@ class CPService(CheckPointSourceObject):
     ip_protocol: int | str | None = None
     match: str | None = None
     session_timeout: int | None = None
-    members: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    members: list[CheckPointObjectReference | str] | None = None
 
 
 class CPServiceGroup(CheckPointSourceObject):
-    members: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    members: list[CheckPointObjectReference | str] | None = None
 
 
 __all__ = ["CPService", "CPServiceGroup"]

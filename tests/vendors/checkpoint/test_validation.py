@@ -169,3 +169,23 @@ def test_vti_validation_checks_tunnel_constraints_and_unknown_owner():
     assert len(malformed) == 5
     assert sum(issue.code == "vti_gateway_unresolved" for issue in issues) == 3
     assert config.model_dump() == before
+
+
+def test_inline_layer_child_rule_is_not_misclassified_as_package_root_mismatch():
+    root = CPAccessLayer(uid="root", name="Root", domain_uid="d")
+    inline = CPAccessLayer(uid="inline", name="Inline", domain_uid="d")
+    package = CPPolicyPackage(uid="pkg", name="Package", domain_uid="d", access_layers=["root"])
+    parent = CPAccessRule(uid="parent", domain_uid="d", layer_uid="root", inline_layer="inline")
+    child = CPAccessRule(
+        uid="child", domain_uid="d", layer_uid="inline",
+        parent_layer_uid="root", parent_rule_uid="parent",
+    )
+    config = CheckPointConfig(
+        policy_packages=[package], access_layers=[root, inline], access_rules=[parent, child],
+    )
+
+    issues = validate_checkpoint_config(config, build_checkpoint_derived_views(config)).issues
+    codes = {issue.code for issue in issues if issue.object_uid == "child"}
+
+    assert "policy_rule_layer_mismatch" not in codes
+    assert "policy_parent_layer_invalid" not in codes

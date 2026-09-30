@@ -24,7 +24,7 @@ def evaluate_gaia_commands(tree: GaiaConfigTree) -> list[GaiaEvaluation]:
         if family is None:
             evaluations.append(GaiaEvaluation("unsupported", values={"command": " ".join((node.operation, *node.arguments))}, source_line=node.line_number))
             continue
-        if node.operation == "show":
+        if node.operation not in family.operations:
             evaluations.append(GaiaEvaluation("unsupported", values={"command": " ".join((node.operation, *node.arguments))}, source_line=node.line_number))
             continue
         evaluation = _evaluate(family.name, node, args)
@@ -51,7 +51,7 @@ def _evaluate(kind: str, node: GaiaCommandNode, args: tuple[str, ...]) -> GaiaEv
         return GaiaEvaluation(kind, identity, values, set(values), node.line_number)
     if kind.startswith("static-route"):
         identity = args[0] if args else None
-        values: dict[str, Any] = {"address_family": "ipv6" if kind.endswith("ipv6") else "ipv4", "next_hops": []}
+        values: dict[str, Any] = {"address_family": "ipv6" if kind.endswith("ipv6") else "ipv4"}
         index = 1
         while index < len(args):
             key = args[index].lower().replace("-", "_")
@@ -60,30 +60,41 @@ def _evaluate(kind: str, node: GaiaCommandNode, args: tuple[str, ...]) -> GaiaEv
                 hop: dict[str, Any] = {}
                 if index < len(args) and args[index].lower() == "gateway":
                     hop["next_hop_type"] = "gateway"; index += 1
-                    if index < len(args) and args[index].lower() == "address": index += 1
-                    if index < len(args) and args[index].lower() not in {"on", "off", "priority", "rank", "ping", "ping6", "scopelocal", "blackhole", "reject"}:
+                    if index < len(args) and args[index].lower() == "address":
+                        index += 1
+                    if index < len(args) and args[index].lower() not in {
+                        "on", "off", "priority", "rank", "ping", "ping6", "scopelocal",
+                        "monitored-ip", "monitored-ip-option", "blackhole", "reject",
+                    }:
                         hop["gateway"] = args[index]; index += 1
                 elif index < len(args) and args[index].lower() in {"logical", "interface", "device"}:
                     hop["next_hop_type"] = "interface"; index += 1
-                    if index < len(args) and args[index].lower() not in {"on", "off", "priority", "rank", "ping", "ping6", "scopelocal", "blackhole", "reject"}:
+                    if index < len(args) and args[index].lower() not in {
+                        "on", "off", "priority", "rank", "ping", "ping6", "scopelocal",
+                        "monitored-ip", "monitored-ip-option", "blackhole", "reject",
+                    }:
                         hop["interface"] = args[index]; index += 1
                 while index < len(args) and args[index].lower() != "nexthop":
                     field = args[index].lower().replace("-", "_")
-                    if field in {"blackhole", "reject", "scopelocal", "ping", "ping6"}:
+                    if field in {"on", "off"}:
+                        hop["enabled"] = field == "on"; index += 1
+                    elif field in {"blackhole", "reject"}:
                         hop[field] = True
-                        if field in {"blackhole", "reject"}: hop["next_hop_type"] = field
+                        hop["next_hop_type"] = field
                         index += 1
-                    elif field in {"priority", "rank"} and index + 1 < len(args):
+                    elif field in {"scopelocal", "ping", "ping6"}:
+                        value, index = _on_off_value(args, index)
+                        hop[field] = value
+                    elif field in {"priority", "rank", "monitored_ip", "monitored_ip_option"} and index + 1 < len(args):
                         hop[field] = args[index + 1]; index += 2
-                    elif field in {"on", "off"}:
-                        index += 1
                     else:
                         break
-                values["next_hops"].append(hop)
+                values.setdefault("next_hops", []).append(hop)
             elif key in {"blackhole", "reject"}:
-                values["next_hops"].append({"next_hop_type": key, key: True}); index += 1
+                values.setdefault("next_hops", []).append({"next_hop_type": key, key: True}); index += 1
             elif key in {"scopelocal", "ping", "ping6"}:
-                values[key] = True; index += 1
+                value, index = _on_off_value(args, index)
+                values[key] = value
             elif key in {"comment", "rank"} and index + 1 < len(args):
                 values[key] = args[index + 1]; index += 2
             elif key == "enabled" and index + 1 < len(args):
@@ -105,11 +116,7 @@ def _evaluate(kind: str, node: GaiaCommandNode, args: tuple[str, ...]) -> GaiaEv
                 values["password_configured"] = True
         return GaiaEvaluation(kind, identity, values, set(values), node.line_number)
     if kind in {"gaia-rba-role", "gaia-rba-user-assignment"}:
-        identity = args[0] if args else None
-        values = _pairs(args[1:])
-        if kind == "gaia-rba-user-assignment" and identity:
-            values.setdefault("user", identity)
-        return GaiaEvaluation(kind, identity, values, set(values), node.line_number)
+        return _evaluate_rba(kind, args, node)
     if kind == "vpn-tunnel-vti":
         identity = args[0] if args else None
         values = {"tunnel_id": identity}
@@ -125,6 +132,57 @@ def _evaluate(kind: str, node: GaiaCommandNode, args: tuple[str, ...]) -> GaiaEv
                 index += 1
         return GaiaEvaluation(kind, identity, values, set(values), node.line_number)
     return None
+
+
+
+def _on_off_value(args: tuple[str, ...], index: int) -> tuple[bool, int]:
+    if index + 1 < len(args) and args[index + 1].lower() in {"on", "off", "true", "false", "enabled", "disabled"}:
+        return args[index + 1].lower() in {"on", "true", "enabled"}, index + 2
+    return True, index + 1
+
+
+def _split_csv(value: Any) -> list[str]:
+    return [item.strip() for item in str(value).split(",") if item.strip()]
+
+
+def _evaluate_rba(kind: str, args: tuple[str, ...], node: GaiaCommandNode) -> GaiaEvaluation:
+    identity = args[0] if args else None
+    values: dict[str, Any] = {}
+    index = 1
+    aliases = {
+        "readonly_features": "read_only_features",
+        "read_only_features": "read_only_features",
+        "readwrite_features": "read_write_features",
+        "read_write_features": "read_write_features",
+        "virtual_system_access": "virtual_system_access",
+        "access_mechanism": "access_mechanisms",
+        "access_mechanisms": "access_mechanisms",
+        "role": "roles",
+        "roles": "roles",
+    }
+    list_fields = {"read_only_features", "read_write_features", "virtual_system_access", "roles", "access_mechanisms"}
+    while index < len(args):
+        raw_key = args[index].lower().replace("-", "_")
+        key = aliases.get(raw_key, raw_key)
+        if key == "all_features":
+            value, index = _on_off_value(args, index)
+            values[key] = value
+            continue
+        if index + 1 >= len(args):
+            values[key] = True
+            index += 1
+            continue
+        raw_value = args[index + 1]
+        if raw_value.lower() in {"on", "off", "true", "false", "enabled", "disabled"}:
+            values[key] = raw_value.lower() in {"on", "true", "enabled"}
+        elif key in list_fields:
+            values[key] = _split_csv(raw_value)
+        else:
+            values[key] = raw_value
+        index += 2
+    if kind == "gaia-rba-user-assignment" and identity:
+        values.setdefault("user", identity)
+    return GaiaEvaluation(kind, identity, values, set(values), node.line_number)
 
 
 def _pairs(args: tuple[str, ...]) -> dict[str, Any]:

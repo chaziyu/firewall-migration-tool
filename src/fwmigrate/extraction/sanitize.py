@@ -65,6 +65,8 @@ REDACTED_PLACEHOLDER = "[REDACTED]"
 def is_sensitive_key(key: str) -> bool:
     """Check if a dictionary key name matches sensitive prefixes/names."""
     k = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", key.strip()).lower().replace("_", "-")
+    if k in {"community-type", "vpn-community", "vpn-community-type"}:
+        return False
     if k in {item.replace("_", "-") for item in SENSITIVE_EXACT_KEYS}:
         return True
     if k.endswith(("-credential", "-credentials", "-credential-value", "-credentials-value",
