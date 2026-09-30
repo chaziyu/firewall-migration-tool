@@ -13,6 +13,34 @@ from fwmigrate.vendors.cisco_ftd.web_report import build_ftd_preview
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "cisco_ftd" / "fmc_selected_domains.json"
 
+def test_nat_fields_preserve_presence_and_native_no_proxy_arp():
+    result = extract_cisco_ftd_source(json.dumps({
+        "format": "cisco-fmc-rest-export-v1",
+        "nat_policies": [{
+            "id": "nat", "name": "NAT",
+            "manual_rules_before_auto": [{
+                "id": "rule", "name": "Rule", "enabled": False, "position": 7,
+                "identityNat": False, "noProxyArp": True,
+            }],
+        }],
+    }))
+    rule = result.config.nat_policies[0].manual_rules_before_auto[0]
+
+    assert rule.enabled is False and rule.identity_nat is False
+    assert rule.no_proxy_arp is True and rule.proxy_arp is None
+    assert {"enabled", "position", "identity_nat", "no_proxy_arp"} <= set(rule.explicit_fields)
+    assert "proxy_arp" not in rule.explicit_fields
+
+    output = BytesIO()
+    export_ftd_excel(result, output)
+    output.seek(0)
+    sheet = load_workbook(output, read_only=True)["NAT Rules"]
+    headers = [cell.value for cell in sheet[1]]
+    row = dict(zip(headers, next(sheet.iter_rows(min_row=2, max_row=2, values_only=True))))
+    assert row["No Proxy ARP"] is True
+    assert row["Proxy ARP"] is None
+
+
 def test_selected_fmc_domains_preserve_native_ownership_and_order():
     config = CiscoFMCBundleParser(FIXTURE.read_text(encoding="utf-8")).parse_source()
     assert [x.name for x in config.time_ranges] == ["business-hours"]

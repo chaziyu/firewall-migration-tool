@@ -102,11 +102,18 @@ def test_s2s_crypto_fields_keep_fmc_ownership_and_redact_manual_psk():
     assert (v1_proposal.esp_encryption, v1_proposal.esp_hash) == ("AES-256", "SHA-256")
     assert (v2_proposal.encryption_algorithms, v2_proposal.integrity_algorithms) == (["AES-GCM"], ["NULL"])
     ike_settings = config.s2s_ike_settings[0]
-    assert [ref.source_id for ref in ike_settings.ike_policies] == ["ike-v1", "ike-v2"]
+    assert [ref.source_id for ref in ike_settings.ikev1_policies] == ["ike-v1"]
+    assert [ref.source_id for ref in ike_settings.ikev2_policies] == ["ike-v2"]
+    assert ike_settings.ike_policies is None and ike_settings.certificates is None
+    assert "ike_policies" not in ike_settings.explicit_fields
+    assert {"ikev1_policies", "ikev2_policies", "ikev2_certificate"} <= set(ike_settings.explicit_fields)
     assert ike_settings.ikev1_authentication_type == "MANUAL_PRE_SHARED_KEY"
     assert ike_settings.ikev2_certificate.source_id == "cert-1"
     assert ike_settings.psk_present is True
     ipsec = config.s2s_ipsec_settings[0]
+    assert [ref.source_id for ref in ipsec.ikev1_ipsec_proposals] == ["proposal-v1"]
+    assert [ref.source_id for ref in ipsec.ikev2_ipsec_proposals] == ["proposal-v2"]
+    assert ipsec.ipsec_proposals is None and "ipsec_proposals" not in ipsec.explicit_fields
     assert (ipsec.lifetime_seconds, ipsec.lifetime_kilobytes, ipsec.pfs_enabled, ipsec.ikev2_mode) == (
         28800, 4608000, False, "TUNNEL")
     assert config.s2s_advanced_settings[0].ike_keepalive_settings["retryInterval"] == 10
@@ -114,6 +121,9 @@ def test_s2s_crypto_fields_keep_fmc_ownership_and_redact_manual_psk():
     validate_ftd_config(config, derived)
     resolved_kinds = {item["kind"] for item in derived.resolved_references}
     assert {"IKE_POLICY", "IPSEC_PROPOSAL", "CERTIFICATE", "NETWORK_ADDRESS"} <= resolved_kinds
+    resolved_fields = {item["field"] for item in derived.resolved_references}
+    assert {"ikev1_policies", "ikev2_policies", "ikev2_certificate",
+            "ikev1_ipsec_proposals", "ikev2_ipsec_proposals"} <= resolved_fields
     assert derived.vpn_relationships[0]["ike_settings"] == ["IKE"]
     assert derived.vpn_relationships[0]["ipsec_settings"] == ["IPsec"]
     preview_summary = CiscoFTDSourceReporter().build_preview(result)["summary"]

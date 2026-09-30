@@ -46,10 +46,32 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
         if family == "ipv6" and (route.route_tracking is not None or "sla_monitor" in route.explicit_fields):
             issues.append(FTDValidationIssue("warning", "ipv6-route-tracking",
                 "IPv6 route contains explicit route-tracking source state", route.source_plane, route.name))
-    issues.extend(FTDValidationIssue("warning", "intrusion-rule-group-conflict",
-        f"Intrusion rule {item.rule_id or item.source_id} differs between policy behavior and rule-group evidence",
-        item.source_plane, item.name) for item in config.intrusion_rule_behaviors
-        if item.source_attributes.get("conflicting_group_payload"))
+    groups_by_policy: dict[str | None, list] = {}
+    for group in config.intrusion_rule_groups:
+        groups_by_policy.setdefault(group.parent_policy_id, []).append(group)
+    for behavior in config.intrusion_rule_behaviors:
+        rule_id = behavior.rule_id or behavior.source_id
+        if not rule_id:
+            continue
+        conflict = False
+        for group in groups_by_policy.get(behavior.parent_policy_id, []):
+            for child in group.raw_extra.get("rules", []):
+                if not isinstance(child, dict):
+                    continue
+                child_rule_id = str(child.get("ruleId") or child.get("id") or "")
+                if child_rule_id != str(rule_id):
+                    continue
+                if any(field in behavior.explicit_fields and field in child
+                       and getattr(behavior, field) != child[field]
+                       for field in ("state", "action", "enabled")):
+                    conflict = True
+                    break
+            if conflict:
+                break
+        if conflict:
+            issues.append(FTDValidationIssue("warning", "intrusion-rule-group-conflict",
+                f"Intrusion rule {rule_id} differs between policy behavior and rule-group evidence",
+                behavior.source_plane, behavior.name))
 
     intrusion_policies_by_id = {item.source_id: item for item in config.intrusion_policies if item.source_id}
     parts = config.collection_metadata.parts
