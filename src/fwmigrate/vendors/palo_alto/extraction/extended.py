@@ -381,7 +381,7 @@ def _proxy_value(element, tag):
 def extract_ipsec(element, path, context, source_order, spec):
     item = extract_ipsec_tunnel(element, path, context, source_order, spec)
     manual = element.find("manual-key")
-    if manual is not None:
+    if manual is not None and any(node.tag == "key" for node in manual.iter()):
         item.manual_key_configured = True
         item.explicit_fields.add("manual_key_configured")
     auto_key = element.find("auto-key")
