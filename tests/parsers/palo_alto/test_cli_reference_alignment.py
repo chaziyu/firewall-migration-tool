@@ -37,7 +37,7 @@ def test_virtual_and_logical_routes_reach_validation_and_excel():
       <virtual-router><entry name='vr1'><routing-table><ip><static-route><entry name='r1'><destination>10.0.0.0/8</destination><nexthop><next-vr>vr2</next-vr></nexthop><admin-dist>10</admin-dist><bfd><profile>b1</profile></bfd><path-monitor><enable>yes</enable><monitor-destinations><entry name='target'><destination>192.0.2.1</destination></entry></monitor-destinations></path-monitor></entry></static-route></ip></routing-table></entry></virtual-router>
       <logical-router><entry name='lr1'><vrf><entry name='v1'><routing-table><ip><static-route><entry name='r2'><destination>bad-route</destination><nexthop><next-lr>lr2</next-lr></nexthop></entry></static-route></ip></routing-table></entry></vrf></entry></logical-router>
     </network></entry></devices></config>""")
-    vr_route, lr_route = analysis.config.static_routes
+    vr_route, lr_route = analysis.derived.static_routes
     assert (vr_route.nexthop_type, vr_route.nexthop, vr_route.admin_distance, vr_route.bfd_profile) == ("next-vr", "vr2", "10", "b1")
     assert vr_route.path_monitor.targets[0].destination == "192.0.2.1"
     assert (lr_route.nexthop_type, lr_route.nexthop) == ("next-lr", "lr2")
