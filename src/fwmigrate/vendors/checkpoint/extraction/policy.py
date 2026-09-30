@@ -10,7 +10,7 @@ from ..model.policy import (
 from ..model.threat import CPHTTPSInspectionRule, CPThreatLayer, CPThreatRule, CPThreatRuleException, CPThreatSection
 from ..models import CheckPointResponse
 from .common import build_source_inventory, build_typed_object
-from .result import CPPolicyContextRecord
+from ..policy_context import CPPolicyContextRecord
 
 
 def extract_access_rulebase(response: CheckPointResponse):
