@@ -60,3 +60,16 @@ def test_selected_dhcp_missing_options_stay_unknown_and_unlimited_is_explicit():
     server, = config.dhcp_servers
     assert server.lease_type == "unlimited" and server.lease_timeout is None
     assert server.gateway is None and server.subnet_mask is None and server.dns_primary is None
+
+
+def test_explicit_empty_dhcp_member_lists_remain_empty_not_blank_values():
+    config = build_panos_config(
+        "<config><shared><network><dhcp><entry name='dhcp-empty'>"
+        "<interface>ethernet1/1</interface><wins/><ntp/>"
+        "</entry></dhcp></network></shared></config>"
+    )
+    server, = config.dhcp_servers
+
+    assert server.wins == []
+    assert server.ntp == []
+    assert {"wins", "ntp"} <= server.explicit_fields
