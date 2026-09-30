@@ -35,7 +35,7 @@ class CPDomain(CheckPointSourceObject):
 
 
 class CPApplication(CheckPointSourceObject):
-    members: list[str] = Field(default_factory=list)
+    members: list[str] | None = None
 
 
 class CheckPointConfig(BaseModel):
