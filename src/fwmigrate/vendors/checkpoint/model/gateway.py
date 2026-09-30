@@ -17,7 +17,7 @@ class CPGateway(CheckPointSourceObject):
     gateway_type: str | None = None
     management_identity: str | None = None
     address: str | None = None
-    interfaces: list[CPGatewayInterface] = Field(default_factory=list)
+    interfaces: list[CPGatewayInterface] | None = None
     topology: dict | None = None
     zone: CheckPointObjectReference | str | None = None
     vpn: dict | None = None
@@ -25,7 +25,7 @@ class CPGateway(CheckPointSourceObject):
 
 
 class CPCluster(CPGateway):
-    members: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    members: list[CheckPointObjectReference | str] | None = None
     cluster_mode: str | None = None
 
 
