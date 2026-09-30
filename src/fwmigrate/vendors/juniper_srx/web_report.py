@@ -24,6 +24,12 @@ def _project(value: Any) -> Any:
     return value
 
 
+def _translated_addresses(action: dict[str, Any]) -> list[str]:
+    if action.get("type") == "static_prefix" and action.get("prefix"):
+        return [str(action["prefix"])]
+    return []
+
+
 def build_juniper_preview(result: Any) -> dict[str, Any]:
     config = result.config
     issue_index = JuniperValidationIssueIndex(result.validation.issues)
@@ -81,7 +87,8 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
             for rule_set in sets.values():
                 for item in rule_set.rules:
                     nat.append({"policy_name": item.name, "translation_type": item.nat_type,
-                                "translated_addresses": list(item.action.values()),
+                                "translated_addresses": _translated_addresses(item.action),
+                                "translation": _project(item.action),
                                 "source_addresses": item.match.source_addresses,
                                 "destination_addresses": item.match.destination_addresses,
                                 "egress_interfaces": list(rule_set.from_context.interfaces),
@@ -172,8 +179,7 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
         "validation": _project(result.validation.issues),
         "semantic_validation": _project(tuple(issue for issue in result.validation.issues
                                                if issue.category != "extraction-coverage")),
-        "extraction_review": _project(tuple(issue for issue in result.validation.issues
-                                             if issue.category == "extraction-coverage")),
+        "extraction_review": _project(result.review_required),
         "validation_summary": {"errors": len(result.validation.errors),
                                "warnings": len(result.validation.warnings)},
         "validation_by_context": {context: _project(issues)
