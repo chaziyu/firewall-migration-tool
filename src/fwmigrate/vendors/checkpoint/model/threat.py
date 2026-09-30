@@ -14,7 +14,6 @@ class CPThreatLayer(CheckPointSourceObject):
 
 
 class CPThreatSection(CheckPointSourceObject):
-    section_path: list[str] = Field(default_factory=list)
 
 
 class CPThreatPreventionRule(CheckPointSourceObject):
