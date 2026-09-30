@@ -23,8 +23,8 @@ def test_dhcp_subnets_and_rba_assignments_remain_structured_and_separate():
     values = evaluate(
         "set dhcp server state on\n"
         "set dhcp server subnet 192.0.2.0 netmask 24 enabled on\n"
-        "set rba role network-admin all-features on\n"
-        "set rba user admin role network-admin\n"
+        "add rba role network-admin all-features on\n"
+        "add rba user admin role network-admin\n"
     )
     assert values[0].kind == "dhcp-server"
     assert values[0].values["process_state"] == "on"
@@ -96,3 +96,40 @@ def test_static_route_absent_next_hops_are_not_invented():
     assert values[0].values["ipv4_destination"] == "10.0.0.0/8"
     assert "next_hops" not in values[0].values
     assert "next_hops" not in values[0].explicit_fields
+
+
+def test_static_route_boolean_path_and_monitoring_semantics_are_preserved():
+    values = evaluate(
+        "set static-route 10.0.0.0/8 nexthop gateway address 192.0.2.1 off "
+        "priority 5 ping off scopelocal on monitored-ip 192.0.2.254 monitored-ip-option fail-all\n"
+        "set ipv6 static-route 2001:db8::/32 ping6 off scopelocal off\n"
+    )
+
+    hop = values[0].values["next_hops"][0]
+    assert hop["enabled"] is False
+    assert hop["priority"] == "5"
+    assert hop["ping"] is False
+    assert hop["scopelocal"] is True
+    assert hop["monitored_ip"] == "192.0.2.254"
+    assert hop["monitored_ip_option"] == "fail-all"
+    assert values[1].values["ping6"] is False
+    assert values[1].values["scopelocal"] is False
+
+
+def test_rba_uses_add_semantics_and_preserves_granular_lists():
+    values = evaluate(
+        "set rba role rejected all-features on\n"
+        "add rba role network-admin read-only-features show,route "
+        "read-write-features interface virtual-system-access 0,1 all-features off\n"
+        "add rba user admin roles network-admin,auditor access-mechanisms cli,web\n"
+    )
+
+    assert values[0].kind == "unsupported"
+    role = values[1]
+    assignment = values[2]
+    assert role.values["read_only_features"] == ["show", "route"]
+    assert role.values["read_write_features"] == ["interface"]
+    assert role.values["virtual_system_access"] == ["0", "1"]
+    assert role.values["all_features"] is False
+    assert assignment.values["roles"] == ["network-admin", "auditor"]
+    assert assignment.values["access_mechanisms"] == ["cli", "web"]
