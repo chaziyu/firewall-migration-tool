@@ -56,7 +56,6 @@ _TYPED_COUNT_FIELDS = {
     "sdwan_rule": "sdwan_rules",
     "local_user": "local_users",
     "local_user_database": "local_users",
-    "local_user_database_compat": "local_users",
     "local_user_group": "local_user_groups",
     "local_user_group_compat": "local_user_groups",
     "group_mapping": "group_mappings",
