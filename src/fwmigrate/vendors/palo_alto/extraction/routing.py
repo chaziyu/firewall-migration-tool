@@ -102,6 +102,13 @@ def _extract_path_monitor(element: ET.Element | None) -> PANRoutePathMonitor | N
     return PANRoutePathMonitor(enabled=value(element, "enable"), failure_condition=value(element, "failure-condition"), hold_time=value(element, "hold-time"), targets=targets if element.find("monitor-destinations") is not None else None, raw_extra=extra, explicit_fields=explicit)
 
 
+def _entry_source_order(root: ET.Element, target: ET.Element, base_source_order: int) -> int | None:
+    for offset, entry in enumerate(root.iter("entry")):
+        if entry is target:
+            return base_source_order + offset
+    return None
+
+
 def _extract_static_routes(
     element: ET.Element,
     path: tuple[str, ...],
@@ -109,26 +116,55 @@ def _extract_static_routes(
     *,
     router_type: str,
     router_name: str | None,
+    source_root: ET.Element,
+    source_order_base: int,
     vrf_name: str | None = None,
 ) -> list[PANStaticRoute] | None:
-    node = element.find("routing-table/ip/static-route")
-    if node is None:
+    routing_table = element.find("routing-table")
+    if routing_table is None:
         return None
     routes: list[PANStaticRoute] = []
-    for route_order, route in enumerate(node, start=1):
-        hop = route.find("nexthop")
-        extra, explicit = typed_fields(route, {"destination", "nexthop", "interface", "metric", "admin-dist", "route-table", "bfd", "path-monitor"}, {"admin-dist": "admin_distance", "route-table": "route_table", "bfd": "bfd_profile", "path-monitor": "path_monitor"})
-        branch = next(iter(hop), None) if hop is not None else None
-        if branch is not None:
-            explicit.update({"nexthop_type", "nexthop"})
-            if branch.tag == "ip-address":
-                explicit.add("nexthop_ip_address")
-        bfd = route.find("bfd")
-        routes.append(PANStaticRoute(name=route.get("name"), source_path="/".join(path) + "/routing-table/ip/static-route/entry", scope=context.scope, source_order=route_order, router_type=router_type, router_name=router_name, vrf_name=vrf_name, destination=value(route, "destination"), address_family="ipv4", nexthop_type=branch.tag if branch is not None else None, nexthop_ip_address=value(hop, "ip-address"), nexthop=(branch.text or "").strip() if branch is not None else None, interface=value(route, "interface"), metric=value(route, "metric"), admin_distance=value(route, "admin-dist"), route_table=value(route, "route-table"), bfd_profile=value(bfd, "profile"), path_monitor=_extract_path_monitor(route.find("path-monitor")), raw_extra=extra, explicit_fields=explicit))
+    for family in routing_table:
+        if family.tag not in {"ip", "ipv6"}:
+            continue
+        node = family.find("static-route")
+        if node is None:
+            continue
+        address_family = "ipv4" if family.tag == "ip" else "ipv6"
+        for route in node.findall("entry"):
+            hop = route.find("nexthop")
+            extra, explicit = typed_fields(route, {"destination", "nexthop", "interface", "metric", "admin-dist", "route-table", "bfd", "path-monitor"}, {"admin-dist": "admin_distance", "route-table": "route_table", "bfd": "bfd_profile", "path-monitor": "path_monitor"})
+            branch = next(iter(hop), None) if hop is not None else None
+            if branch is not None:
+                explicit.update({"nexthop_type", "nexthop"})
+                if branch.tag == "ip-address":
+                    explicit.add("nexthop_ip_address")
+            bfd = route.find("bfd")
+            routes.append(PANStaticRoute(
+                name=route.get("name"),
+                source_path="/".join(path) + f"/routing-table/{family.tag}/static-route/entry",
+                scope=context.scope,
+                source_order=_entry_source_order(source_root, route, source_order_base),
+                router_type=router_type,
+                router_name=router_name,
+                vrf_name=vrf_name,
+                destination=value(route, "destination"),
+                address_family=address_family,
+                nexthop_type=branch.tag if branch is not None else None,
+                nexthop_ip_address=value(hop, "ip-address"),
+                nexthop=(branch.text or "").strip() if branch is not None else None,
+                interface=value(route, "interface"),
+                metric=value(route, "metric"),
+                admin_distance=value(route, "admin-dist"),
+                route_table=value(route, "route-table"),
+                bfd_profile=value(bfd, "profile"),
+                path_monitor=_extract_path_monitor(route.find("path-monitor")),
+                raw_extra=extra,
+                explicit_fields=explicit,
+            ))
     return routes or None
 
-
-def _extract_logical_router_vrfs(element: ET.Element, path: tuple[str, ...], context: PANWalkContext) -> list[PANVRF] | None:
+def _extract_logical_router_vrfs(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int) -> list[PANVRF] | None:
     node = element.find("vrf")
     if node is None:
         return None
@@ -141,10 +177,12 @@ def _extract_logical_router_vrfs(element: ET.Element, path: tuple[str, ...], con
             context,
             router_type="logical-router",
             router_name=element.get("name"),
+            source_root=element,
+            source_order_base=source_order,
             vrf_name=vrf.get("name"),
         )
         explicit = {"routing_protocol"} if protocol is not None else set()
-        if vrf.find("routing-table/ip/static-route") is not None:
+        if routes is not None:
             explicit.add("static_routes")
         vrfs.append(PANVRF(name=vrf.get("name"), static_routes=routes, routing_protocol=structured_xml_capture(protocol) if protocol is not None else None, raw_extra=raw_extra(vrf, {"routing-protocol", "routing-table"}), explicit_fields=explicit))
     return vrfs or None
@@ -152,7 +190,7 @@ def _extract_logical_router_vrfs(element: ET.Element, path: tuple[str, ...], con
 
 def _extract_virtual_router(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> PANVirtualRouter:
     extra, explicit = source_fields(element, spec)
-    explicit.discard("protocol")
+    explicit.difference_update({"protocol", "routing-table"})
     protocol = element.find("protocol")
     rip_node = protocol.find("rip") if protocol is not None else None
     bgp = _extract_bgp(protocol.find("bgp")) if protocol is not None and protocol.find("bgp") is not None else None
@@ -165,6 +203,8 @@ def _extract_virtual_router(element: ET.Element, path: tuple[str, ...], context:
         context,
         router_type="virtual-router",
         router_name=element.get("name"),
+        source_root=element,
+        source_order_base=source_order,
     )
     redistribution_profiles = _extract_redistribution_profiles(element)
     explicit.update(field for field, value_ in (("bgp", bgp), ("ospf", ospf), ("ospfv3", ospfv3), ("rip", rip), ("static_routes", static_routes), ("redistribution_profiles", redistribution_profiles)) if value_ is not None)
@@ -173,7 +213,7 @@ def _extract_virtual_router(element: ET.Element, path: tuple[str, ...], context:
 
 def _extract_logical_router(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> PANLogicalRouter:
     extra, explicit = source_fields(element, spec)
-    return PANLogicalRouter(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, vrfs=_extract_logical_router_vrfs(element, path, context), raw_extra=extra, explicit_fields=explicit)
+    return PANLogicalRouter(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, vrfs=_extract_logical_router_vrfs(element, path, context, source_order), raw_extra=extra, explicit_fields=explicit)
 
 
 def extract_routing(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> object | None:
