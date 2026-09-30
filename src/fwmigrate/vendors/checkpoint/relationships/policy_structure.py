@@ -68,6 +68,30 @@ def _find_layer(config: CheckPointConfig, source: CheckPointSourceObject) -> CPA
     return None
 
 
+def _context_path(source: CheckPointSourceObject, policy_context: tuple[CPPolicyContextRecord, ...]) -> tuple[str, ...]:
+    direct = next((item for item in policy_context if item.source is source), None)
+    if direct is not None:
+        return direct.section_path
+    candidates = [
+        item for item in policy_context
+        if type(item.source) is type(source)
+        and _scope(item.source) == _scope(source)
+        and (
+            (source.uid is not None and item.source.uid == source.uid)
+            or (
+                source.uid is None
+                and item.source.uid is None
+                and item.source.order == source.order
+                and item.source.name == source.name
+                and item.source.layer_uid == source.layer_uid
+                and item.source.layer == source.layer
+            )
+        )
+    ]
+    paths = {item.section_path for item in candidates}
+    return next(iter(paths)) if len(paths) == 1 else ()
+
+
 def build_policy_structure(config: CheckPointConfig, references: CPReferenceIndex | None = None, policy_context: tuple[CPPolicyContextRecord, ...] = ()) -> CPPolicyStructure:
     references = references or __import__(__package__ + ".references", fromlist=["build_reference_index"]).build_reference_index(config)
     package_layers = []; issues = []
@@ -88,20 +112,12 @@ def build_policy_structure(config: CheckPointConfig, references: CPReferenceInde
                 package = resolved.target
                 if package and not any(item.package is package and item.layer is layer for item in package_layers):
                     package_layers.append(CPPackageLayerRelationship(package, layer))
-    context_by_id = {id(item.source): item for item in policy_context}
     sections = tuple(
-        CPSectionRelationship(
-            _find_layer(config, section),
-            section,
-            context_by_id.get(id(section), CPPolicyContextRecord(section)).section_path,
-        )
+        CPSectionRelationship(_find_layer(config, section), section, _context_path(section, policy_context))
         for section in config.access_sections
     )
     rule_sections = tuple(
-        CPRuleSectionRelationship(
-            rule,
-            context_by_id.get(id(rule), CPPolicyContextRecord(rule)).section_path,
-        )
+        CPRuleSectionRelationship(rule, _context_path(rule, policy_context))
         for rule in config.access_rules
     )
     inline_layers = []
