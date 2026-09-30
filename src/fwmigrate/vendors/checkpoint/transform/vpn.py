@@ -72,6 +72,21 @@ def _unique_identity(items: tuple[Any, ...]) -> tuple[Any, ...]:
     return tuple(result)
 
 
+def _community_type(community: CPVPNCommunity | None) -> str | None:
+    if community is None:
+        return None
+    if community.community_type:
+        return community.community_type
+    command = (community.command or "").lower()
+    if command == "show-vpn-communities-star":
+        return "star"
+    if command == "show-vpn-communities-meshed":
+        return "meshed"
+    if command == "show-vpn-communities-remote-access":
+        return "remote-access"
+    return None
+
+
 def transform_vpn(topology: CPVPNTopology, references: CPReferenceIndex) -> CPVPNTransformResult:
     """Build community views from resolved relationships and explicit source records."""
     views: list[CPVPNMigrationView] = []
@@ -105,7 +120,7 @@ def transform_vpn(topology: CPVPNTopology, references: CPReferenceIndex) -> CPVP
         return CPVPNMigrationView(
             community_uid=community.uid if community else None,
             community_name=community.name if community else None,
-            community_type=community.community_type if community else None,
+            community_type=_community_type(community),
             member_gateways=member_gateways,
             member_clusters=_devices(members, CPCluster),
             member_interoperable_devices=_devices(members, CPInteroperableDevice),
