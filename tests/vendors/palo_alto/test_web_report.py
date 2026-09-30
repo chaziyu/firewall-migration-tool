@@ -81,3 +81,17 @@ def test_preview_serializes_interface_topology_rows():
     preview = PaloAltoSourceReporter().build_preview(PaloAltoSourceReporter().analyze_source(source))
     rows = preview["sections"]["interface_topology"]
     assert any(row["name"] == "ethernet1/1" and row["aggregate"] == "ae1" for row in rows)
+
+
+def test_preview_preserves_interface_address_snat_semantics():
+    source = """<config><shared><rulebase><nat><rules><entry name='snat'>
+      <from><member>trust</member></from><to><member>untrust</member></to>
+      <source><member>any</member></source><destination><member>any</member></destination>
+      <source-translation><dynamic-ip-and-port><interface-address><interface>ethernet1/1</interface><ip>192.0.2.10/32</ip></interface-address></dynamic-ip-and-port></source-translation>
+    </entry></rules></nat></rulebase></shared></config>"""
+    preview = PaloAltoSourceReporter().build_preview(PaloAltoSourceReporter().analyze_source(source))
+    row = preview["sections"]["nat"][0]
+    assert row["translation_type"] == "dynamic-ip-and-port"
+    assert row["translated_addresses"] == []
+    assert row["source_translation_interface"] == "ethernet1/1"
+    assert row["source_translation_ip"] == "192.0.2.10/32"
