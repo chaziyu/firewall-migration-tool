@@ -31,7 +31,7 @@ class CPGaiaStaticRoute(CheckPointSourceObject):
     address_family: str | None = None
     ipv4_destination: str | None = None
     ipv6_destination: str | None = None
-    next_hops: list[CPGaiaRouteNextHop] = Field(default_factory=list)
+    next_hops: list[CPGaiaRouteNextHop] | None = None
     enabled: bool | None = None
     comment: str | None = None
     rank: str | int | None = None
@@ -51,20 +51,20 @@ class CPGaiaDHCPSubnet(CheckPointSourceObject):
     netmask: str | None = None
     prefix: int | None = None
     enabled: bool | None = None
-    included_pools: list[CPGaiaDHCPPool] = Field(default_factory=list)
-    excluded_pools: list[CPGaiaDHCPPool] = Field(default_factory=list)
+    included_pools: list[CPGaiaDHCPPool] | None = None
+    excluded_pools: list[CPGaiaDHCPPool] | None = None
     lease: str | int | None = None
     default_lease: str | int | None = None
     maximum_lease: str | int | None = Field(default=None, alias="max-lease")
     gateway: str | None = None
     domain: str | None = None
-    dns_servers: list[str] = Field(default_factory=list)
+    dns_servers: list[str] | None = None
 
 
 class CPGaiaDHCPServer(CheckPointSourceObject):
     process_state: str | None = None
     enabled: bool | None = None
-    subnets: list[CPGaiaDHCPSubnet] = Field(default_factory=list)
+    subnets: list[CPGaiaDHCPSubnet] | None = None
 
 
 class CPGaiaUser(CheckPointSourceObject):
@@ -76,21 +76,21 @@ class CPGaiaUser(CheckPointSourceObject):
     force_password_change: bool | None = None
     authentication_method: str | None = None
     shell: str | None = None
-    roles: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    roles: list[CheckPointObjectReference | str] | None = None
 
 
 class CPGaiaRBARole(CheckPointSourceObject):
     domain_type: str | None = None
     all_features: bool | None = None
-    read_only_features: list[str] = Field(default_factory=list)
-    read_write_features: list[str] = Field(default_factory=list)
-    virtual_system_access: list[str] = Field(default_factory=list)
-    permissions: list[str] = Field(default_factory=list)
+    read_only_features: list[str] | None = None
+    read_write_features: list[str] | None = None
+    virtual_system_access: list[str] | None = None
+    permissions: list[str] | None = None
 
 
 class CPGaiaRBAUserAssignment(CheckPointSourceObject):
     user: CheckPointObjectReference | str | None = None
-    roles: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    roles: list[CheckPointObjectReference | str] | None = None
 
 
 class CPVTI(CheckPointSourceObject):
