@@ -88,3 +88,11 @@ def test_gaia_operation_semantics_fail_closed_for_wrong_verbs():
     assert [item.kind for item in values[:3]] == ["unsupported", "unsupported", "unsupported"]
     assert values[3].kind == "static-route-ipv4"
     assert values[4].kind == "vpn-tunnel-vti"
+
+
+def test_static_route_absent_next_hops_are_not_invented():
+    values = evaluate("set static-route 10.0.0.0/8 comment source-only\n")
+
+    assert values[0].values["ipv4_destination"] == "10.0.0.0/8"
+    assert "next_hops" not in values[0].values
+    assert "next_hops" not in values[0].explicit_fields
