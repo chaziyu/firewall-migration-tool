@@ -14,13 +14,12 @@ class CPAccessLayer(CheckPointSourceObject):
 
 
 class CPAccessSection(CheckPointSourceObject):
-    section_path: list[str] = Field(default_factory=list)
+    pass
 
 
 class _CPOrderedPolicyRule(CheckPointSourceObject):
     rule_number: int | None = Field(default=None, alias="rule-number")
     enabled: bool | None = None
-    section_path: list[str] = Field(default_factory=list)
 
 
 class CPAccessRule(_CPOrderedPolicyRule):
@@ -40,7 +39,7 @@ class CPAccessRule(_CPOrderedPolicyRule):
 
 
 class CPNATSection(CheckPointSourceObject):
-    section_path: list[str] = Field(default_factory=list)
+    pass
 
 
 class CPManualNATRule(_CPOrderedPolicyRule):
