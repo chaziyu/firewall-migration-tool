@@ -204,6 +204,7 @@ def _parse_policy_body(
         if then_act in ("permit", "deny", "reject"):
             pol.action = then_act
             record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "action", pol.action, cmd)
+            suboption_complete = len(body_toks) == 2
             if then_act == "permit" and len(body_toks) >= 4 and body_toks[2].lower() in {"tunnel", "ipsec-vpn"}:
                 pol.vpn_action = body_toks[2].lower()
                 record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "vpn_action", pol.vpn_action, cmd)
@@ -211,25 +212,28 @@ def _parse_policy_body(
                 if len(body_toks) > ref_index:
                     pol.vpn_reference = body_toks[ref_index]
                     record_scalar_candidate(pol.field_provenance, pol.field_candidate_history, "vpn_reference", pol.vpn_reference, cmd)
+                    suboption_complete = True
             if len(body_toks) > 2:
-                # permit sub-options
                 safe_body_toks = sanitize_tokens(body_toks)
                 pol.permit_option_paths.append(safe_body_toks[2:])
                 pol.permit_options["_".join(safe_body_toks[2:])] = sanitize_source_attributes(
                     {"raw": cmd.raw_sanitized}
                 )
-                if body_toks[2].lower() == "application-services":
+                if then_act == "permit" and body_toks[2].lower() == "application-services":
                     _record_application_services(pol, body_toks[3:], cmd)
-                elif body_toks[2].lower() in {"utm-policy", "idp-policy", "ssl-proxy-profile", "security-intelligence"}:
+                elif then_act == "permit" and body_toks[2].lower() in {
+                    "utm-policy", "idp-policy", "ssl-proxy-profile", "security-intelligence"
+                }:
                     ref_key = body_toks[2].lower()
                     refs = pol.security_profile_references.setdefault(ref_key, [])
                     for value in extract_value_list(body_toks[3:]):
                         record_member_candidate(pol.member_candidate_history, f"security_profile:{ref_key}", value, cmd)
                         if value not in refs:
                             refs.append(value)
+                    suboption_complete = bool(body_toks[3:])
             cmd.extraction_status = (
                 ExtractionStatus.EXTRACTED
-                if then_act in ("permit", "deny")
+                if then_act in ("permit", "deny") and suboption_complete
                 else ExtractionStatus.PARTIAL
             )
             if cmd.extraction_status == ExtractionStatus.PARTIAL:
