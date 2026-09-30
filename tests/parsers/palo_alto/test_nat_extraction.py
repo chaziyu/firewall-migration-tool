@@ -40,3 +40,21 @@ def test_nat_contract_preserves_explicit_state_scope_inventory_and_redaction(ass
     assert explicit.scope.kind == "shared"
     assert_source_contract(explicit, config)
     assert secret not in str(config.model_dump())
+
+
+def test_dynamic_destination_translation_preserves_explicit_translated_port():
+    config = build_panos_config("""<config><shared><rulebase><nat><rules>
+      <entry name='dynamic-dnat'><from><member>any</member></from><to><member>any</member></to>
+        <source><member>any</member></source><destination><member>any</member></destination>
+        <dynamic-destination-translation>
+          <translated-address><member>backend-pool</member></translated-address>
+          <translated-port>8443</translated-port>
+          <distribution><round-robin/></distribution>
+        </dynamic-destination-translation>
+      </entry>
+    </rules></nat></rulebase></shared></config>""")
+
+    translation = config.nat_rules[0].dynamic_destination_translation
+    assert translation.translated_port == "8443"
+    assert "translated_port" in translation.explicit_fields
+    assert "translated-port" not in translation.raw_extra
