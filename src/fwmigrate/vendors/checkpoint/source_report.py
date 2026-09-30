@@ -37,7 +37,7 @@ class CheckPointSourceReporter:
     def analyze_source(self, source: str, **options: Any) -> CheckPointSourceResult:
         bundle, scope = load_checkpoint_input(source)
         extracted = extract_checkpoint_config(bundle, scope)
-        derived = build_checkpoint_derived_views(extracted.config, extracted.collection)
+        derived = build_checkpoint_derived_views(extracted.config, extracted.collection, extracted.policy_context)
         return CheckPointSourceResult(
             extracted.config, derived,
             validate_checkpoint_config(
