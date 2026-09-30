@@ -50,6 +50,7 @@ def build_policy_traversal(structure: CPPolicyStructure) -> CPPolicyTraversalRes
     entries: list[CPPolicyTraversalEntry] = []
     issues: list[CPPolicyTraversalIssue] = []
     inline_by_rule = {id(item.parent_rule): item for item in structure.inline_layers}
+    section_path_by_rule = {id(item.rule): item.section_path for item in structure.rule_sections}
     represented_rules: set[int] = set()
 
     def scope(value: Any) -> str:
@@ -70,7 +71,7 @@ def build_policy_traversal(structure: CPPolicyStructure) -> CPPolicyTraversalRes
         rules = [rule for rule in structure.rules if belongs_to_layer(rule, layer)]
         for rule in rules:
             represented_rules.add(id(rule))
-            path = tuple(rule.section_path)
+            path = section_path_by_rule.get(id(rule), ())
             section = next((item.section for item in structure.sections
                             if item.layer is layer and item.section_path == path), None)
             child = inline_by_rule.get(id(rule))
@@ -123,7 +124,7 @@ def build_policy_traversal(structure: CPPolicyStructure) -> CPPolicyTraversalRes
             "unresolved_owner",
         )
         issues.append(issue)
-        path = tuple(rule.section_path)
+        path = section_path_by_rule.get(id(rule), ())
         entries.append(CPPolicyTraversalEntry(
             rule.domain_uid or rule.domain,
             rule.package_uid,
