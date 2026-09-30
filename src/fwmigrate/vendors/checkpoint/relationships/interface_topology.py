@@ -32,7 +32,7 @@ def build_interface_topology(config: CheckPointConfig, references: CPReferenceIn
     devices = (*config.gateways, *config.clusters, *config.interoperable_devices)
     for device in devices:
         kind = "cluster" if isinstance(device, CPCluster) else "interoperable_device" if isinstance(device, CPInteroperableDevice) else "gateway"
-        for interface in device.interfaces:
+        for interface in device.interfaces or ():
             if not interface.zone:
                 rows.append(CPInterfaceZoneRelationship(device, kind, interface, None, None)); continue
             result = references.resolve(interface.zone, owner=device, expected_kinds=(CPReferenceKind.SECURITY_ZONE,), source_field="zone")
@@ -50,7 +50,7 @@ def build_interface_topology(config: CheckPointConfig, references: CPReferenceIn
             issues.append(result)
             continue
         device = result.target
-        matches = [item for item in device.interfaces if interface.name and item.name == interface.name]
+        matches = [item for item in (device.interfaces or ()) if interface.name and item.name == interface.name]
         if len(matches) > 1:
             issue = CPBrokenReference(interface, "interface", interface.name or "", status="ambiguous",
                                       message="Gateway has multiple interfaces with the exact Gaia interface name.")
