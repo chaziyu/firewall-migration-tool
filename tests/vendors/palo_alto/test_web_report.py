@@ -13,6 +13,8 @@ def test_web_report_has_expected_sections():
     assert isinstance(preview["summary"]["validation"], dict)
     assert isinstance(preview["summary"]["scopes"], list)
     assert preview["summary"]["scopes"] == preview["summary"]["vdoms"]
+    assert isinstance(preview["summary"]["scope_identities"], list)
+    assert len(preview["summary"]["scope_identities"]) == preview["summary"]["scope_count"]
     assert preview["summary"]["scope_count"] >= len(preview["summary"]["scopes"])
 
 
