@@ -1,11 +1,13 @@
 import io
 import json
+from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
 from openpyxl import load_workbook
 
 from fwmigrate.web import create_app, source_reporters
+from fwmigrate.source_reporting.web_report import normalize_web_report
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
 
@@ -329,3 +331,11 @@ def test_api_preview_contract_covers_every_registered_vendor():
         assert required_sections <= set(report["sections"])
         assert all(isinstance(report["sections"][name], list) for name in required_sections)
         json.dumps(report)
+        reporter = source_reporters.get(vendor)
+        analysis = reporter.analyze_source(path.read_text(encoding="utf-8"))
+        before = deepcopy(analysis)
+        copied = normalize_web_report(reporter.build_preview(analysis), vendor)
+        owned = normalize_web_report(reporter.build_preview(analysis), vendor, copy=False)
+        assert owned == copied, vendor
+        assert json.loads(json.dumps(owned)) == {key: value for key, value in report.items() if key not in {"success", "preview_id"}}, vendor
+        assert analysis == before, vendor

@@ -15,7 +15,7 @@ from dataclasses import asdict, replace
 from copy import deepcopy
 from dataclasses import dataclass
 from time import perf_counter
-from flask import Flask, render_template, request, send_file, jsonify
+from flask import Flask, render_template, request, send_file, send_from_directory, jsonify
 
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
@@ -328,8 +328,10 @@ def create_app(test_config=None):
         base_dir = os.path.join(sys._MEIPASS, 'fwmigrate')
         if not os.path.exists(os.path.join(base_dir, 'templates')):
             base_dir = sys._MEIPASS
+        frontend_dist = os.path.join(sys._MEIPASS, 'frontend', 'dist')
     else:
         base_dir = os.path.dirname(os.path.abspath(__file__))
+        frontend_dist = os.path.join(os.path.dirname(base_dir), 'frontend', 'dist')
 
     app = Flask(
         __name__,
@@ -345,6 +347,7 @@ def create_app(test_config=None):
 
     if test_config:
         app.config.update(test_config)
+    app.config.setdefault('FRONTEND_DIST_DIR', frontend_dist)
 
     try:
         ai_config = ai_advisor.validate_static_configuration()
@@ -456,7 +459,25 @@ def create_app(test_config=None):
 
     @app.route('/')
     def index():
+        frontend_index = os.path.join(app.config['FRONTEND_DIST_DIR'], 'index.html')
+        if os.path.isfile(frontend_index):
+            return send_from_directory(app.config['FRONTEND_DIST_DIR'], 'index.html')
         return render_template('index.html')
+
+    @app.route('/legacy')
+    def legacy_index():
+        return render_template('index.html')
+
+    @app.route('/assets/<path:filename>')
+    def frontend_asset(filename):
+        return send_from_directory(os.path.join(app.config['FRONTEND_DIST_DIR'], 'assets'), filename)
+
+    @app.route('/favicon.svg')
+    def frontend_favicon():
+        frontend_icon = os.path.join(app.config['FRONTEND_DIST_DIR'], 'favicon.svg')
+        if os.path.isfile(frontend_icon):
+            return send_from_directory(app.config['FRONTEND_DIST_DIR'], 'favicon.svg')
+        return send_from_directory(app.static_folder, 'app_icon.svg')
 
     @app.route('/favicon.ico')
     def favicon():
@@ -515,7 +536,7 @@ def create_app(test_config=None):
                 analysis = preview_entry.analysis
             if metrics is not None:
                 metrics.set_metadata('analysis_cache_hit', analysis_cache_hit)
-            report = _timed(metrics, 'web_preview_construction', lambda: normalize_web_report(reporter.build_preview(analysis), source_vendor))
+            report = _timed(metrics, 'web_preview_construction', lambda: normalize_web_report(reporter.build_preview(analysis), source_vendor, copy=False))
             response = {
                 'success': True,
                 'preview_id': preview_entry.preview_id,
@@ -581,7 +602,7 @@ def create_app(test_config=None):
                 'preview_id': entry.preview_id,
                 'collection': {'vendor': source.vendor_id, 'method': source.method, 'status': source.status.value,
                                'parts': snapshot['parts'], 'warnings': snapshot['warnings']},
-                'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id),
+                'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id, copy=False),
                 'snapshot': snapshot,
             })
         except Exception:
@@ -608,7 +629,7 @@ def create_app(test_config=None):
                 analysis = entry.analysis
             return jsonify({'success': True, 'vendor_id': source.vendor_id, 'preview_id': entry.preview_id,
                             'collection': {'status': source.status.value, 'parts': [asdict(part) for part in source.parts],
-                                           'warnings': source.warnings}, 'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id)})
+                                           'warnings': source.warnings}, 'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id, copy=False)})
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid or unsupported collection snapshot.'}), 400
         except Exception:

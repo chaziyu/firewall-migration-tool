@@ -1,0 +1,21 @@
+@import './styles/tokens.css';
+@import './styles/themes.css';
+
+#root { min-height: 100vh; }
+
+* { box-sizing: border-box; }
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--canvas);
+  color: var(--text-main);
+  font: 15px/1.5 var(--font-ui);
+}
+
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+p { margin: 0; }
+:focus-visible { outline: 3px solid color-mix(in srgb, var(--color-primary) 45%, transparent); outline-offset: 2px; }

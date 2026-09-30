@@ -584,7 +584,7 @@ def test_terraform_endpoints_are_removed():
 
 def test_migration_workflow_uses_planning_terminology():
     client = create_app({"TESTING": True}).test_client()
-    response = client.get("/")
+    response = client.get("/legacy")
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)

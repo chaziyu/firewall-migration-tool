@@ -1,8 +1,14 @@
 import dataclasses
 import enum
 import io
+import re
 import shlex
 from typing import Iterator
+
+
+_COMMAND_PART = r'"[^"]*"|[^ \t"]+'
+_SIMPLE_QUOTED_COMMAND = re.compile(rf'[ \t]*(?:{_COMMAND_PART})(?:[ \t]+(?:{_COMMAND_PART}))*[ \t]*')
+_QUOTED_PARTS = re.compile(_COMMAND_PART)
 
 
 class TokenType(enum.Enum):
@@ -121,6 +127,10 @@ class FortiGateTokenizer:
         if not any(character in command for character in ('"', "'", "\\")):
             return command.split()
 
+        # Only whole-token double quotes; complex syntax keeps shlex semantics.
+        if not any(character in command for character in ("'", "\\", "\r", "\n")) and _SIMPLE_QUOTED_COMMAND.fullmatch(command):
+            return [part[1:-1] if part.startswith('"') else part for part in _QUOTED_PARTS.findall(command)]
+
         lexer = shlex.shlex(command, posix=True)
 
         lexer.whitespace_split = True
@@ -155,15 +165,6 @@ class FortiGateTokenizer:
                 quote = None
 
         return quote, escaped
-
-    @staticmethod
-    def _is_incomplete_command(
-        error: ValueError,
-    ) -> bool:
-        return str(error) in {
-            "No closing quotation",
-            "No escaped character",
-        }
 
     @staticmethod
     def _tokens_from_parts(
