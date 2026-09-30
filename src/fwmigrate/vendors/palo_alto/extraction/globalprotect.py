@@ -37,7 +37,8 @@ def _values(element: ET.Element | None, tag: str) -> list[str] | None:
     entries = child.findall("entry")
     if entries:
         return [entry.get("name") or _text(entry) or "" for entry in entries]
-    return [_text(child) or ""]
+    text = _text(child)
+    return [text] if text is not None else []
 
 
 def _entries(element: ET.Element, tag: str) -> list[ET.Element] | None:
@@ -161,9 +162,15 @@ def _remote_user_tunnel(element: ET.Element) -> PANGlobalProtectRemoteUserTunnel
     split_tunneling = element.find("split-tunneling")
     if split_tunneling is not None:
         explicit.add("split_tunneling")
+    ip_pools = _values(element, "ip-pools") if element.find("ip-pools") is not None else _values(element, "ip-pool")
+    authentication_server_ip_pools = (
+        _values(element, "authentication-server-ip-pools")
+        if element.find("authentication-server-ip-pools") is not None
+        else _values(element, "authentication-server-ip-pool")
+    )
     return PANGlobalProtectRemoteUserTunnel(
-        name=element.get("name"), ip_pools=_values(element, "ip-pools") or _values(element, "ip-pool"),
-        authentication_server_ip_pools=_values(element, "authentication-server-ip-pools") or _values(element, "authentication-server-ip-pool"),
+        name=element.get("name"), ip_pools=ip_pools,
+        authentication_server_ip_pools=authentication_server_ip_pools,
         split_tunneling=_capture(split_tunneling), no_direct_access_to_local_network=_value(element, "no-direct-access-to-local-network"),
         retrieve_framed_ip=_value(element, "retrieve-framed-ip-address") or _value(element, "retrieve-framed-ip"), raw_extra=extra, explicit_fields=explicit,
     )

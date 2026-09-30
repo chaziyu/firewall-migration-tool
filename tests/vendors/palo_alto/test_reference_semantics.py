@@ -80,7 +80,7 @@ def test_sdwan_local_user_and_globalprotect_reference_semantics():
     assert by_field[("source_user", "domain-user")].status == "SOURCE_ONLY"
     assert by_field[("application", "web-browsing")].status == "SOURCE_ONLY"
     assert by_field[("members", "local-user")].status == "RESOLVED"
-    assert by_field[("members", "external-group")].status == "SOURCE_ONLY"
+    assert by_field[("members", "external-group")].status == "UNRESOLVED"
     assert by_field[("certificate_profile", "cert")].status == "SOURCE_ONLY"
     assert by_field[("ssl_tls_service_profile", "tls")].status == "SOURCE_ONLY"
     assert by_field[("client_authentication.authentication_profile", "auth")].status == "SOURCE_ONLY"
@@ -138,3 +138,43 @@ def test_country_regions_are_source_only_and_explicit_region_source_wins():
     assert resolutions["DE"].expected_family == "region"
     assert resolutions["DE"].resolution_reason == "PAN-OS predefined country region"
     assert resolutions["XX"].status == "UNRESOLVED"
+
+
+def test_selected_reference_edges_include_direct_profiles_tags_users_and_interfaces():
+    result = PaloAltoSourceReporter().analyze_source("""<config><shared>
+      <tag><entry name='tag-a'/></tag>
+      <address-group><entry name='ag'><tag><member>tag-a</member></tag></entry></address-group>
+      <service><entry name='svc'><tag><member>tag-a</member></tag></entry></service>
+      <service-group><entry name='sg'><tag><member>tag-a</member></tag></entry></service-group>
+      <profiles><vulnerability><entry name='vuln-a'/></vulnerability></profiles>
+      <local-user-database><user><entry name='alice'/></user></local-user-database>
+      <network><interface><ethernet><entry name='ethernet1/1'/></ethernet></interface></network>
+      <zone><entry name='inside'><network><layer3><member>ethernet1/1</member></layer3><log-setting>zone-log</log-setting></network></entry></zone>
+      <rulebase>
+        <security><rules><entry name='policy'>
+          <source-user><member>alice</member></source-user><tag><member>tag-a</member></tag><log-setting>policy-log</log-setting>
+          <profile-setting><profiles><vulnerability><member>vuln-a</member></vulnerability><virus><member>av-a</member></virus></profiles></profile-setting>
+        </entry></rules></security>
+        <nat><rules><entry name='nat'>
+          <tag><member>tag-a</member></tag><to-interface>ethernet1/1</to-interface>
+          <source-translation><dynamic-ip-and-port><interface-address><interface>ethernet1/1</interface></interface-address></dynamic-ip-and-port></source-translation>
+        </entry></rules></nat>
+      </rulebase>
+    </shared></config>""")
+
+    found = {
+        (item.owner_family, item.owner_name, item.owner_field, item.reference_name): item
+        for item in result.derived.reference_resolutions
+    }
+    assert found[("address-group", "ag", "tags", "tag-a")].status == "RESOLVED"
+    assert found[("service", "svc", "tags", "tag-a")].status == "RESOLVED"
+    assert found[("service-group", "sg", "tags", "tag-a")].status == "RESOLVED"
+    assert found[("policy", "policy", "source_user", "alice")].status == "RESOLVED"
+    assert found[("policy", "policy", "profile_setting.profiles.vulnerability", "vuln-a")].status == "RESOLVED"
+    assert found[("policy", "policy", "profile_setting.profiles.virus", "av-a")].status == "SOURCE_ONLY"
+    assert found[("policy", "policy", "log_setting", "policy-log")].status == "SOURCE_ONLY"
+    assert found[("nat", "nat", "tags", "tag-a")].status == "RESOLVED"
+    assert found[("nat", "nat", "to_interface", "ethernet1/1")].status == "RESOLVED"
+    assert found[("nat", "nat", "source_translation.interface", "ethernet1/1")].status == "RESOLVED"
+    assert found[("zone", "inside", "members", "ethernet1/1")].status == "RESOLVED"
+    assert found[("zone", "inside", "log_setting", "zone-log")].status == "SOURCE_ONLY"

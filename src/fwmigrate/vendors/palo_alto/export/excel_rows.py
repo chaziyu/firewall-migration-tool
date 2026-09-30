@@ -575,7 +575,7 @@ ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], Iterable[dict[str, Any]]]] 
     "Validation": _validation_rows,
     "Tags": lambda c: _simple_rows(c, c.config.tags, "tag", {"Color": "color", "Comments": "comments"}),
     "Addresses": _address_rows, "Address Groups": _address_group_rows, "Services": _service_rows,
-    "Service Groups": lambda c: _simple_rows(c, c.config.service_groups, "service-group", {"Members": "members", "Tags": "tags", "Description": "description"}),
+    "Service Groups": lambda c: _simple_rows(c, c.config.service_groups, "service-group", {"Members": "members", "Tags": "tags", "Description": "description", "Disable Override": "disable_override"}),
     "Schedules": _schedule_rows, "Security Policies": _security_policy_rows, "NAT Rules": _nat_rows, "Interfaces": _interface_rows,
     "Security Profile Groups": lambda c: _simple_rows(c, c.config.security_profile_groups, "security-profile-group", {
         "Antivirus": "antivirus", "Anti-Spyware": "anti_spyware", "Vulnerability": "vulnerability",

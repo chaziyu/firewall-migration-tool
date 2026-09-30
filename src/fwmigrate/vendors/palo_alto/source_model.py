@@ -84,4 +84,6 @@ def pan_scope_identity(scope: PANScope) -> str:
     qualifier = scope.device_serial or scope.device_name
     if qualifier:
         identity += f":device:{qualifier}"
+    if scope.vsys and scope.kind in {"template", "template-stack"}:
+        identity += f":vsys:{scope.vsys}"
     return identity

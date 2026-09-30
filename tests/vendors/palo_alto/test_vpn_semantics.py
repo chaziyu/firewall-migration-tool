@@ -98,3 +98,12 @@ def test_ike_id_scalar_compatibility_and_unverified_subtree_preservation():
     assert scalar.local_id == "vpn-id" and scalar.peer_id == "peer-id"
     assert structured.local_id is None
     assert structured.raw_extra["local-id"]["future-identifier-leaf"] == "retain-id"
+
+
+def test_manual_key_container_without_key_material_does_not_claim_configured():
+    config = build_panos_config("""<config><shared><network><ipsec><entry name='vpn'>
+      <manual-key><esp><encryption><algorithm>aes-256-cbc</algorithm></encryption></esp></manual-key>
+    </entry></ipsec></network></shared></config>""")
+    tunnel = config.ipsec_tunnels[0]
+    assert tunnel.manual_key_configured is None
+    assert "manual_key_configured" not in tunnel.explicit_fields

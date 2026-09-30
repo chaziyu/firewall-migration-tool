@@ -68,10 +68,37 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
     policies = [{"policy_id": item.source_order, "name": item.name, "source_interfaces": item.from_zones,
                  "destination_interfaces": item.to_zones, "services": item.service, "action": item.action,
                  "nat": False, "review": review(item), "vdom": vdom(item)} for item in config.security_rules]
-    nat_rows = [{"policy_id": item.source_order, "policy_name": item.name, "translation_type": item.nat_type,
-                 "translated_addresses": getattr(item.source_translation, "translated_addresses", None) or [getattr(item.source_translation, "translated_address", None)] if item.source_translation else [],
-                 "egress_interfaces": [item.to_interface] if item.to_interface else item.to_zones,
-                 "review": review(item), "vdom": vdom(item)} for item in config.nat_rules]
+    nat_rows = []
+    for item in config.nat_rules:
+        source_translation = item.source_translation
+        translated_addresses = []
+        if source_translation is not None:
+            translated_addresses.extend(getattr(source_translation, "translated_addresses", None) or ())
+            translated_address = getattr(source_translation, "translated_address", None)
+            if translated_address:
+                translated_addresses.append(translated_address)
+        if item.destination_translation and item.destination_translation.translated_address:
+            translated_addresses.append(item.destination_translation.translated_address)
+        if item.dynamic_destination_translation:
+            translated_addresses.extend(item.dynamic_destination_translation.translated_addresses or ())
+        translation_type = (
+            getattr(source_translation, "translation_type", None)
+            or ("dynamic-destination-translation" if item.dynamic_destination_translation else None)
+            or ("destination-translation" if item.destination_translation else None)
+            or item.nat_type
+        )
+        nat_rows.append({
+            "policy_id": item.source_order,
+            "policy_name": item.name,
+            "translation_type": translation_type,
+            "nat_type": item.nat_type,
+            "translated_addresses": translated_addresses,
+            "source_translation_interface": getattr(source_translation, "interface", None),
+            "source_translation_ip": getattr(source_translation, "ip", None),
+            "egress_interfaces": [item.to_interface] if item.to_interface else item.to_zones,
+            "review": review(item),
+            "vdom": vdom(item),
+        })
     interface_by_key = {
         (_scope_id(item.scope), item.name): item
         for item in [*config.interfaces, *config.interface_units]

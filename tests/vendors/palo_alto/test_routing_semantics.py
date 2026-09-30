@@ -30,3 +30,30 @@ def test_router_kind_route_fields_and_missing_values_are_source_faithful():
     assert (lr_route.router_type, lr_route.router_name, lr_route.vrf_name) == ("logical-router", "lr-main", "production")
     assert "static_routes" not in type(config).model_fields
     assert [route.name for route in build_derived_views(config).static_routes] == ["default", "branch"]
+
+
+def test_ipv6_static_routes_are_typed_with_inventory_order_and_without_duplicate_raw_routing_table():
+    config = build_panos_config("""<config><shared><network>
+      <virtual-router><entry name='vr-main'><routing-table>
+        <ip><static-route><entry name='v4-route'><destination>192.0.2.0/24</destination></entry></static-route></ip>
+        <ipv6><static-route><entry name='v6-route'><destination>2001:db8::/32</destination><nexthop><ip-address>2001:db8::1</ip-address></nexthop></entry></static-route></ipv6>
+      </routing-table></entry></virtual-router>
+      <logical-router><entry name='lr-main'><vrf><entry name='blue'><routing-table><ipv6><static-route>
+        <entry name='lr-v6'><destination>2001:db8:1::/48</destination><nexthop><discard/></nexthop></entry>
+      </static-route></ipv6></routing-table></entry></vrf></entry></logical-router>
+    </network></shared></config>""")
+
+    vr = config.virtual_routers[0]
+    lr = config.logical_routers[0]
+    assert [(route.name, route.address_family) for route in vr.static_routes] == [
+        ("v4-route", "ipv4"), ("v6-route", "ipv6")
+    ]
+    assert lr.vrfs[0].static_routes[0].address_family == "ipv6"
+    assert vr.static_routes[1].nexthop_ip_address == "2001:db8::1"
+    assert "routing-table" not in vr.raw_extra
+
+    inventory_order = {record.name: record.source_order for record in config.source_inventory}
+    assert vr.static_routes[0].source_order == inventory_order["v4-route"]
+    assert vr.static_routes[1].source_order == inventory_order["v6-route"]
+    assert lr.vrfs[0].static_routes[0].source_order == inventory_order["lr-v6"]
+    assert [route.name for route in build_derived_views(config).static_routes] == ["v4-route", "v6-route", "lr-v6"]
