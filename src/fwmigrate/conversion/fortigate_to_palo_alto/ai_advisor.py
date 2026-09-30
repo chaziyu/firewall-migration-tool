@@ -1179,83 +1179,103 @@ def validate_proposal_set(state, proposals):
 def repair_conflicted_proposals(state, decision_keys, proposals, *, proposed_design=None):
     current = validate_proposal_set(state, proposals)
     failures = []
+    repair_scope = tuple(dict.fromkeys(decision_keys))
+    batch_size = _max_decisions()
     for repair_pass in range(1, MAX_AI_REPAIR_PASSES + 1):
         conflicts = {
             item["decision_key"]: item
             for item in current
             if item["validation_status"] == "CONFLICT"
         }
-        if not conflicts:
+        conflict_keys = tuple(key for key in repair_scope if key in conflicts)
+        if not conflict_keys:
             break
-        first = next(iter(conflicts.values()))
-        excluded = {
-            key: [item["candidate_id"]]
-            for key, item in conflicts.items()
-            if item.get("candidate_id")
-        }
-        feedback = {key: item["validation_findings"] for key, item in conflicts.items()}
-        repair_provider = ("groq" if groq_client.configured()
-                           else first.get("provider", "groq"))
-        repair_model = (groq_model("repair") if repair_provider == "groq"
-                        else first.get("model", advisor_model()))
-        mutable_ids = {hashlib.sha256(key.encode("utf-8")).hexdigest() for key in conflicts}
-        design_context = {
-            "current_proposals": [
-                {
-                    "decision_id": hashlib.sha256(item["decision_key"].encode("utf-8")).hexdigest(),
-                    "action": item["action"],
-                    "proposed_value": item.get("proposed_value"),
-                    "target_scope": item.get("target_scope"),
-                    "validation_status": item.get("validation_status"),
-                }
+        failed = False
+        for offset in range(0, len(conflict_keys), batch_size):
+            current_conflicts = {
+                item["decision_key"]: item
                 for item in current
-            ],
-            "mutable_decision_ids": sorted(mutable_ids),
-            "findings": [
-                {
-                    "decision_id": hashlib.sha256(key.encode("utf-8")).hexdigest(),
-                    "messages": conflicts[key]["validation_findings"],
-                }
-                for key in sorted(conflicts)
-            ],
-        }
-        prepared = None
-        try:
-            base_context = build_proposal_context(
-                state,
-                list(conflicts),
-                model=repair_model,
-                provider=repair_provider,
-                proposed_design=proposed_design,
-            )
-            prepared = build_proposal_context(
-                state,
-                list(conflicts),
-                model=repair_model,
-                provider=repair_provider,
-                excluded_candidate_ids=excluded,
-                repair_feedback=feedback,
-                design_context=design_context,
-                proposed_design=proposed_design,
-            )
-            repaired = request_proposals(prepared)
-            base_digests = {
-                key: base_context["by_decision"][key]["context_digest"]
-                for key in conflicts
+                if item["validation_status"] == "CONFLICT"
             }
-            repaired = [
-                dict(item, base_context_digest=base_digests[item["decision_key"]], repair_pass=repair_pass)
-                for item in repaired
-            ]
-        except AdvisorError as exc:
-            failures.append(failure_record(
-                exc, prepared, provider=repair_provider, model=repair_model
-            ))
+            batch_keys = tuple(
+                key for key in conflict_keys[offset:offset + batch_size]
+                if key in current_conflicts
+            )
+            if not batch_keys:
+                continue
+            batch_conflicts = {key: current_conflicts[key] for key in batch_keys}
+            first = batch_conflicts[batch_keys[0]]
+            excluded = {
+                key: [item["candidate_id"]]
+                for key, item in batch_conflicts.items()
+                if item.get("candidate_id")
+            }
+            feedback = {key: item["validation_findings"] for key, item in batch_conflicts.items()}
+            repair_provider = ("groq" if groq_client.configured()
+                               else first.get("provider", "groq"))
+            repair_model = (groq_model("repair") if repair_provider == "groq"
+                            else first.get("model", advisor_model()))
+            mutable_ids = {hashlib.sha256(key.encode("utf-8")).hexdigest() for key in batch_keys}
+            design_context = {
+                "current_proposals": [
+                    {
+                        "decision_id": hashlib.sha256(item["decision_key"].encode("utf-8")).hexdigest(),
+                        "action": item["action"],
+                        "proposed_value": item.get("proposed_value"),
+                        "target_scope": item.get("target_scope"),
+                        "validation_status": item.get("validation_status"),
+                    }
+                    for item in current
+                ],
+                "mutable_decision_ids": sorted(mutable_ids),
+                "findings": [
+                    {
+                        "decision_id": hashlib.sha256(key.encode("utf-8")).hexdigest(),
+                        "messages": batch_conflicts[key]["validation_findings"],
+                    }
+                    for key in batch_keys
+                ],
+            }
+            prepared = None
+            try:
+                base_context = build_proposal_context(
+                    state,
+                    list(batch_keys),
+                    model=repair_model,
+                    provider=repair_provider,
+                    proposed_design=proposed_design,
+                )
+                prepared = build_proposal_context(
+                    state,
+                    list(batch_keys),
+                    model=repair_model,
+                    provider=repair_provider,
+                    excluded_candidate_ids=excluded,
+                    repair_feedback=feedback,
+                    design_context=design_context,
+                    proposed_design=proposed_design,
+                )
+                repaired = request_proposals(prepared)
+                base_digests = {
+                    key: base_context["by_decision"][key]["context_digest"]
+                    for key in batch_keys
+                }
+                repaired = [
+                    dict(item, base_context_digest=base_digests[item["decision_key"]], repair_pass=repair_pass)
+                    for item in repaired
+                ]
+            except AdvisorError as exc:
+                failures.append(failure_record(
+                    exc, prepared, provider=repair_provider, model=repair_model
+                ))
+                failed = True
+                break
+            by_key = {item["decision_key"]: item for item in current}
+            by_key.update({item["decision_key"]: item for item in repaired})
+            proposal_keys = tuple(item["decision_key"] for item in current)
+            current = validate_proposal_set(state, [by_key[key] for key in proposal_keys if key in by_key])
+        if failed:
             break
-        by_key = {item["decision_key"]: item for item in current}
-        by_key.update({item["decision_key"]: item for item in repaired})
-        proposal_keys = tuple(dict.fromkeys(item["decision_key"] for item in current))
-        current = validate_proposal_set(state, [by_key[key] for key in proposal_keys if key in by_key])
     exhausted = any(item["validation_status"] == "CONFLICT" for item in current)
     return RepairResult(tuple(current), tuple(failures), exhausted)
 

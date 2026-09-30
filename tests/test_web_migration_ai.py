@@ -103,6 +103,35 @@ def _proposal_rows(prepared):
     return rows
 
 
+def _proposal_rows_for_values(prepared, values):
+    key_by_id = {item["decision_id"]: key for key, item in prepared["by_decision"].items()}
+    rows = []
+    for item in prepared["request"]["decisions"]:
+        key = key_by_id[item["decision_id"]]
+        candidate = next(candidate for candidate in item["candidates"] if candidate["value"] == values[key])
+        rows.append({
+            "decision_id": item["decision_id"],
+            "action": "USE_EXISTING",
+            "candidate_id": candidate["candidate_id"],
+            "rationale": "Matching interface evidence supports this target.",
+            "evidence_refs": [candidate["evidence"][0]["ref"]],
+        })
+    return rows
+
+
+def _proposal_batches(state, keys):
+    proposals = []
+    batch_size = ai_advisor._max_decisions()
+    for offset in range(0, len(keys), batch_size):
+        prepared = ai_advisor.build_proposal_context(
+            state, list(keys[offset:offset + batch_size]), provider="groq"
+        )
+        proposals.extend(ai_advisor.validate_model_output(
+            json.dumps({"proposals": _proposal_rows(prepared)}), prepared
+        ))
+    return proposals
+
+
 def _design_state(decision_count=2, *, chained=False):
     decisions = []
     candidates = {}
@@ -372,6 +401,125 @@ def test_repaired_proposal_revalidates_against_current_base_context(monkeypatch)
         ai_advisor.revalidate_stored_proposal(state, item)["proposed_value"] == item["proposed_value"]
         for item in repaired.proposals
     )
+
+
+def test_conflicted_proposals_repair_in_bounded_batches_from_latest_global_state(monkeypatch):
+    state = _design_state(4)
+    keys = tuple(item.key for item in state["decisions"].decisions)
+    current_values = ("ethernet1/1", "ethernet1/1", "ethernet1/2", "ethernet1/2")
+    alternate_values = ("ethernet1/2", "ethernet1/3", "ethernet1/4", "ethernet1/5")
+    for key, current, alternate in zip(keys, current_values, alternate_values):
+        base = state["decision_candidates"][key][0]
+        state["decision_candidates"][key] = [
+            {**base, "value": current}, {**base, "value": alternate},
+        ]
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "2")
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    initial = _proposal_batches(state, keys)
+    assert all(item["validation_status"] == "CONFLICT"
+               for item in ai_advisor.validate_proposal_set(state, initial))
+    calls = []
+
+    def repair(prepared):
+        calls.append(prepared)
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": _proposal_rows(prepared)}), prepared
+        )
+
+    monkeypatch.setattr(ai_advisor, "request_proposals", repair)
+    result = ai_advisor.repair_conflicted_proposals(state, keys, initial)
+
+    assert [tuple(item["by_decision"]) for item in calls] == [keys[:2], keys[2:]]
+    assert all(len(item["by_decision"]) <= 2 for item in calls)
+    assert all(len(item["request"]["decisions"]) <= 2 for item in calls)
+    first_context, second_context = (
+        item["request"]["decisions"][0]["design_context"] for item in calls
+    )
+    key_ids = {key: hashlib.sha256(key.encode()).hexdigest() for key in keys}
+    assert len(first_context["current_proposals"]) == 4
+    assert set(first_context["mutable_decision_ids"]) == {key_ids[key] for key in keys[:2]}
+    current_after_first_batch = {item["decision_id"]: item for item in second_context["current_proposals"]}
+    assert current_after_first_batch[key_ids[keys[0]]]["proposed_value"] == "ethernet1/2"
+    assert current_after_first_batch[key_ids[keys[0]]]["validation_status"] == "CONFLICT"
+    assert len(second_context["current_proposals"]) == 4
+    assert set(second_context["mutable_decision_ids"]) == {key_ids[key] for key in keys[2:]}
+    assert [item["decision_key"] for item in result.proposals] == list(keys)
+    assert [item["validation_status"] for item in result.proposals] == ["VALID"] * 4
+    assert result.exhausted is False
+
+
+def test_repair_scope_only_mutates_named_decisions(monkeypatch):
+    state = _design_state(4)
+    keys = tuple(item.key for item in state["decisions"].decisions)
+    for key, value, alternate in zip(
+        keys,
+        ("ethernet1/1", "ethernet1/1", "ethernet1/2", "ethernet1/2"),
+        ("ethernet1/3", "ethernet1/4", "ethernet1/5", "ethernet1/6"),
+    ):
+        base = state["decision_candidates"][key][0]
+        state["decision_candidates"][key] = [
+            {**base, "value": value}, {**base, "value": alternate},
+        ]
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "2")
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    initial = _proposal_batches(state, keys)
+    calls = []
+
+    def repair(prepared):
+        calls.append(prepared)
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": _proposal_rows(prepared)}), prepared
+        )
+
+    monkeypatch.setattr(ai_advisor, "request_proposals", repair)
+    result = ai_advisor.repair_conflicted_proposals(state, keys[:2], initial)
+
+    assert len(calls) == 1
+    assert tuple(calls[0]["by_decision"]) == keys[:2]
+    assert {item["decision_key"] for item in result.proposals
+            if item["validation_status"] == "CONFLICT"} == set(keys[2:])
+    assert [item["proposed_value"] for item in result.proposals[2:]] == ["ethernet1/2", "ethernet1/2"]
+    assert result.exhausted is True
+
+
+def test_failure_in_later_repair_batch_keeps_that_batch_and_later_proposals(monkeypatch):
+    state = _design_state(5)
+    keys = tuple(item.key for item in state["decisions"].decisions)
+    for key, value, alternate in zip(
+        keys,
+        ("ethernet1/1", "ethernet1/1", "ethernet1/2", "ethernet1/2", "ethernet1/2"),
+        ("ethernet1/3", "ethernet1/4", "ethernet1/5", "ethernet1/6", "ethernet1/7"),
+    ):
+        base = state["decision_candidates"][key][0]
+        state["decision_candidates"][key] = [
+            {**base, "value": value}, {**base, "value": alternate},
+        ]
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "2")
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    initial = _proposal_batches(state, keys)
+    calls = []
+
+    def repair(prepared):
+        batch = tuple(prepared["by_decision"])
+        calls.append(batch)
+        if len(calls) == 2:
+            raise ai_advisor.AdvisorRequestError("later batch rejected")
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": _proposal_rows(prepared)}), prepared
+        )
+
+    monkeypatch.setattr(ai_advisor, "request_proposals", repair)
+    result = ai_advisor.repair_conflicted_proposals(state, keys, initial)
+
+    assert calls == [keys[:2], keys[2:4]]
+    assert len(result.proposals) == 5
+    assert result.failures[0]["failure_category"] == "AI_REQUEST_REJECTED"
+    assert result.failures[0]["decision_keys"] == list(keys[2:4])
+    assert [item["proposed_value"] for item in result.proposals[:2]] == ["ethernet1/3", "ethernet1/4"]
+    assert [item["candidate_id"] for item in result.proposals[2:]] == [
+        item["candidate_id"] for item in initial[2:]
+    ]
+    assert result.exhausted is True
 
 
 def test_qwen_abstention_escalates_only_that_decision_to_groq(monkeypatch):
@@ -657,6 +805,54 @@ def test_ready_proposals_batch_server_side(monkeypatch):
     audit = [json.loads(line) for line in client.get("/api/migration/ai/audit/export").data.decode().splitlines()]
     assert len({item["batch_id"] for item in audit}) == 1
     assert all(item["request_duration_ms"] >= 0 for item in audit)
+
+
+def test_legacy_propose_repairs_global_conflicts_with_bounded_requests(monkeypatch):
+    state = _design_state(4)
+    keys = tuple(item.key for item in state["decisions"].decisions)
+    for key, value, alternate in zip(
+        keys,
+        ("ethernet1/1", "ethernet1/2", "ethernet1/1", "ethernet1/2"),
+        ("ethernet1/2", "ethernet1/1", "ethernet1/5", "ethernet1/6"),
+    ):
+        base = state["decision_candidates"][key][0]
+        state["decision_candidates"][key] = [
+            {**base, "value": value}, {**base, "value": alternate},
+        ]
+    initial_values = dict(zip(keys, ("ethernet1/1", "ethernet1/2", "ethernet1/1", "ethernet1/2")))
+    monkeypatch.setenv("FWMIGRATE_AI_ENABLED", "1")
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "2")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.delenv("FWMIGRATE_AI_LOCAL_URL", raising=False)
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    calls = []
+
+    def request(prepared):
+        calls.append(prepared)
+        rows = (_proposal_rows(prepared) if prepared.get("design_context")
+                else _proposal_rows_for_values(prepared, initial_values))
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": rows}), prepared
+        )
+
+    monkeypatch.setattr(ai_advisor, "request_proposals", request)
+    monkeypatch.setattr(web, "_lookup_preview", lambda *_: SimpleNamespace(source_digest="source-digest"))
+    monkeypatch.setattr(web, "_build_migration_review_state", lambda *_: state)
+    client = web.create_app({"TESTING": True}).test_client()
+    response = client.post("/api/migration/ai/propose", json={
+        "preview_id": "source-preview", "decision_keys": list(keys),
+    })
+
+    assert response.status_code == 200
+    assert [len(item["by_decision"]) for item in calls] == [2, 2, 2, 2]
+    assert all(len(item["request"]["decisions"]) <= 2 for item in calls)
+    assert [bool(item.get("design_context")) for item in calls] == [False, False, True, True]
+    proposals = response.get_json()["proposals"]
+    assert {item["decision_key"] for item in proposals} == set(keys)
+    assert all(item["validation_status"] == "VALID" for item in proposals)
+    audit = [json.loads(line) for line in client.get("/api/migration/ai/audit/export").data.decode().splitlines()]
+    assert len(audit) == 4
+    assert len({item["batch_id"] for item in audit}) == 1
 
 
 def test_complex_candidate_set_escalates_without_local_call(monkeypatch):
@@ -1137,6 +1333,53 @@ def test_proposed_design_splits_rejected_batches_and_keeps_partial_results(monke
     assert session.failure_category == "AI_REQUEST_REJECTED"
     assert session.stable is True
     assert session.summary(state["design_session"].dependency_graph)["ready_unresolved"] == 1
+
+
+def test_proposed_design_repairs_global_conflicts_in_bounded_batches(monkeypatch):
+    state = _design_state(4)
+    keys = tuple(item.key for item in state["decisions"].decisions)
+    for key, value, alternate in zip(
+        keys,
+        ("ethernet1/1", "ethernet1/2", "ethernet1/1", "ethernet1/2"),
+        ("ethernet1/2", "ethernet1/1", "ethernet1/5", "ethernet1/6"),
+    ):
+        base = state["decision_candidates"][key][0]
+        state["decision_candidates"][key] = [
+            {**base, "value": value}, {**base, "value": alternate},
+        ]
+    initial_values = dict(zip(keys, ("ethernet1/1", "ethernet1/2", "ethernet1/1", "ethernet1/2")))
+    original_candidates = state["decision_candidates"]
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_BATCH", "2")
+    monkeypatch.setenv("FWMIGRATE_AI_MAX_REQUEST_BYTES", "49152")
+    monkeypatch.setattr(ai_orchestrator, "discover_target_candidates", lambda _source, decisions, *_args, **_kwargs:
+                        {item.key: original_candidates[item.key] for item in decisions.decisions})
+    monkeypatch.setattr(ai_orchestrator, "build_review_evidence", lambda *_: {})
+    monkeypatch.setattr(ai_advisor, "validate_against_target", lambda *_: ())
+    monkeypatch.setattr(ai_advisor, "advisor_provider", lambda: "groq")
+    monkeypatch.setattr(ai_advisor, "groq_model", lambda tier="complex": f"test-{tier}")
+    monkeypatch.setattr(ai_advisor, "classify_advisor_tiers", lambda _state, decision_keys: {
+        key: "simple" for key in decision_keys
+    })
+    calls = []
+
+    def request(prepared):
+        calls.append(prepared)
+        rows = (_proposal_rows(prepared) if prepared.get("design_context")
+                else _proposal_rows_for_values(prepared, initial_values))
+        return ai_advisor.validate_model_output(
+            json.dumps({"proposals": rows}), prepared
+        )
+
+    monkeypatch.setattr(ai_advisor, "request_proposals", request)
+    session = ai_orchestrator.build_ai_proposed_design(state)
+
+    assert [len(item["by_decision"]) for item in calls] == [2, 2, 2, 2]
+    assert all(len(item["request"]["decisions"]) <= 2 for item in calls)
+    assert [bool(item.get("design_context")) for item in calls] == [False, False, True, True]
+    assert len(session.design.proposals) == 4
+    assert {item.decision_key for item in session.design.proposals} == set(keys)
+    assert all(item.validation_status == "VALID" for item in session.design.proposals)
+    assert session.failure_category is None
 
 
 def test_request_byte_budget_splits_batches_and_never_truncates_candidates(monkeypatch):
