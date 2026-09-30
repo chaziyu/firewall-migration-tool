@@ -130,3 +130,25 @@ def test_nat_preview_does_not_label_action_metadata_as_addresses():
     row = build_juniper_preview(result)["sections"]["nat"][0]
     assert row["translated_addresses"] == []
     assert row["translation"] == {"type": "interface"}
+
+
+
+def test_legacy_zone_address_book_is_preserved_without_synthetic_book():
+    result = extract_juniper_source(
+        "set security zones security-zone trust address-book address "
+        "legacy_host 192.0.2.10/32"
+    )
+
+    context = result.config.get_context()
+    assert context.address_books == {}
+    preserved = context.source_attributes["legacy_zone_address_book"][0]
+    assert preserved["zone"] == "trust"
+    assert preserved["tokens"] == [
+        "address-book",
+        "address",
+        "legacy_host",
+        "192.0.2.10/32",
+    ]
+    command = result.inventory_items[0].commands[0]
+    assert command.status == ExtractionStatus.SOURCE_ONLY
+    assert command.requires_manual_review is True
