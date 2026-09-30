@@ -11,23 +11,23 @@ class CPUser(CheckPointSourceObject):
     authentication_settings: dict | None = None
     email: str | None = None
     phone: str | None = None
-    groups: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    groups: list[CheckPointObjectReference | str] | None = None
     directory: CheckPointObjectReference | str | None = None
-    machines: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    machines: list[CheckPointObjectReference | str] | None = None
 
 
 class CPUserGroup(CheckPointSourceObject):
-    members: list[CheckPointObjectReference | str] = Field(default_factory=list)
-    users: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    members: list[CheckPointObjectReference | str] | None = None
+    users: list[CheckPointObjectReference | str] | None = None
     directory: CheckPointObjectReference | str | None = None
 
 
 class CPAccessRole(CheckPointSourceObject):
-    networks: list[CheckPointObjectReference | str] = Field(default_factory=list)
-    users: list[CheckPointObjectReference | str] = Field(default_factory=list)
-    groups: list[CheckPointObjectReference | str] = Field(default_factory=list)
-    machines: list[CheckPointObjectReference | str] = Field(default_factory=list)
-    remote_access_client_selectors: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    networks: list[CheckPointObjectReference | str] | None = None
+    users: list[CheckPointObjectReference | str] | None = None
+    groups: list[CheckPointObjectReference | str] | None = None
+    machines: list[CheckPointObjectReference | str] | None = None
+    remote_access_client_selectors: list[CheckPointObjectReference | str] | None = None
     directory: CheckPointObjectReference | str | None = None
 
 
