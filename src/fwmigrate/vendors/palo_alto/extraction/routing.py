@@ -102,7 +102,15 @@ def _extract_path_monitor(element: ET.Element | None) -> PANRoutePathMonitor | N
     return PANRoutePathMonitor(enabled=value(element, "enable"), failure_condition=value(element, "failure-condition"), hold_time=value(element, "hold-time"), targets=targets if element.find("monitor-destinations") is not None else None, raw_extra=extra, explicit_fields=explicit)
 
 
-def _extract_static_routes(element: ET.Element, path: tuple[str, ...], context: PANWalkContext) -> list[PANStaticRoute] | None:
+def _extract_static_routes(
+    element: ET.Element,
+    path: tuple[str, ...],
+    context: PANWalkContext,
+    *,
+    router_type: str,
+    router_name: str | None,
+    vrf_name: str | None = None,
+) -> list[PANStaticRoute] | None:
     node = element.find("routing-table/ip/static-route")
     if node is None:
         return None
@@ -116,7 +124,7 @@ def _extract_static_routes(element: ET.Element, path: tuple[str, ...], context: 
             if branch.tag == "ip-address":
                 explicit.add("nexthop_ip_address")
         bfd = route.find("bfd")
-        routes.append(PANStaticRoute(name=route.get("name"), source_path="/".join(path) + "/routing-table/ip/static-route/entry", scope=context.scope, source_order=route_order, destination=value(route, "destination"), address_family="ipv4", nexthop_type=branch.tag if branch is not None else None, nexthop_ip_address=value(hop, "ip-address"), nexthop=(branch.text or "").strip() if branch is not None else None, interface=value(route, "interface"), metric=value(route, "metric"), admin_distance=value(route, "admin-dist"), route_table=value(route, "route-table"), bfd_profile=value(bfd, "profile"), path_monitor=_extract_path_monitor(route.find("path-monitor")), raw_extra=extra, explicit_fields=explicit))
+        routes.append(PANStaticRoute(name=route.get("name"), source_path="/".join(path) + "/routing-table/ip/static-route/entry", scope=context.scope, source_order=route_order, router_type=router_type, router_name=router_name, vrf_name=vrf_name, destination=value(route, "destination"), address_family="ipv4", nexthop_type=branch.tag if branch is not None else None, nexthop_ip_address=value(hop, "ip-address"), nexthop=(branch.text or "").strip() if branch is not None else None, interface=value(route, "interface"), metric=value(route, "metric"), admin_distance=value(route, "admin-dist"), route_table=value(route, "route-table"), bfd_profile=value(bfd, "profile"), path_monitor=_extract_path_monitor(route.find("path-monitor")), raw_extra=extra, explicit_fields=explicit))
     return routes or None
 
 
@@ -127,7 +135,14 @@ def _extract_logical_router_vrfs(element: ET.Element, path: tuple[str, ...], con
     vrfs: list[PANVRF] = []
     for vrf in node:
         protocol = vrf.find("routing-protocol")
-        routes = _extract_static_routes(vrf, path + ("vrf", "entry"), context)
+        routes = _extract_static_routes(
+            vrf,
+            path + ("vrf", "entry"),
+            context,
+            router_type="logical-router",
+            router_name=element.get("name"),
+            vrf_name=vrf.get("name"),
+        )
         explicit = {"routing_protocol"} if protocol is not None else set()
         if vrf.find("routing-table/ip/static-route") is not None:
             explicit.add("static_routes")
@@ -144,7 +159,13 @@ def _extract_virtual_router(element: ET.Element, path: tuple[str, ...], context:
     ospf = _extract_ospf(protocol.find("ospf")) if protocol is not None and protocol.find("ospf") is not None else None
     ospfv3 = _extract_ospf(protocol.find("ospfv3"), v3=True) if protocol is not None and protocol.find("ospfv3") is not None else None
     rip = _extract_rip(rip_node) if rip_node is not None else None
-    static_routes = _extract_static_routes(element, path, context)
+    static_routes = _extract_static_routes(
+        element,
+        path,
+        context,
+        router_type="virtual-router",
+        router_name=element.get("name"),
+    )
     redistribution_profiles = _extract_redistribution_profiles(element)
     explicit.update(field for field, value_ in (("bgp", bgp), ("ospf", ospf), ("ospfv3", ospfv3), ("rip", rip), ("static_routes", static_routes), ("redistribution_profiles", redistribution_profiles)) if value_ is not None)
     return PANVirtualRouter(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, interfaces=values(element, "interface"), static_routes=static_routes, bgp=bgp, ospf=ospf, ospfv3=ospfv3, rip=rip, redistribution_profiles=redistribution_profiles, raw_extra=extra, explicit_fields=explicit)
