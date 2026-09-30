@@ -68,15 +68,17 @@ def build_policy_order(
             chain = (*reversed(ancestors), target.name)
 
             def dg_rules(position: str, names) -> list[tuple[str, object]]:
-                return [
-                    (kind, rule)
-                    for name in names
-                    for kind, rule in security
-                    if rule.scope
-                    and rule.scope.kind == "device-group"
-                    and rule.scope.name == name
-                    and rule.rulebase_position == position
-                ]
+                ordered: list[tuple[str, object]] = []
+                for name in names:
+                    ordered.extend(_ordered([
+                        (kind, rule)
+                        for kind, rule in security
+                        if rule.scope
+                        and rule.scope.kind == "device-group"
+                        and rule.scope.name == name
+                        and rule.rulebase_position == position
+                    ]))
+                return ordered
 
             shared_pre = [
                 item for item in security
@@ -103,9 +105,9 @@ def build_policy_order(
             ]
 
             selected.extend(_ordered(shared_pre))
-            selected.extend(_ordered(dg_rules("pre", chain)))
+            selected.extend(dg_rules("pre", chain))
             selected.extend(_ordered(local))
-            selected.extend(_ordered(dg_rules("post", reversed(chain))))
+            selected.extend(dg_rules("post", reversed(chain)))
             selected.extend(_ordered(shared_post))
             selected.extend(_ordered(target_defaults))
         else:
