@@ -6,6 +6,7 @@ from typing import Any
 from ..model.common import CheckPointSourceObject
 from ..model.policy import CPAccessLayer, CPAccessRule, CPAccessSection
 from ..model.source import CheckPointConfig
+from ..extraction.result import CPPolicyContextRecord
 from .references import CPBrokenReference, CPReferenceIndex, CPReferenceKind, CPResolvedReference
 
 
@@ -20,6 +21,11 @@ class CPSectionRelationship:
 
 
 @dataclass(frozen=True, slots=True)
+class CPRuleSectionRelationship:
+    rule: CPAccessRule; section_path: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class CPInlineLayerRelationship:
     parent_layer: CPAccessLayer | None; parent_rule: CPAccessRule; inline_layer: CPAccessLayer | None; issue: CPBrokenReference | None = None
 
@@ -28,6 +34,7 @@ class CPInlineLayerRelationship:
 class CPPolicyStructure:
     package_layers: tuple[CPPackageLayerRelationship, ...] = ()
     sections: tuple[CPSectionRelationship, ...] = ()
+    rule_sections: tuple[CPRuleSectionRelationship, ...] = ()
     rules: tuple[CPAccessRule, ...] = ()
     inline_layers: tuple[CPInlineLayerRelationship, ...] = ()
     issues: tuple[CPBrokenReference, ...] = ()
@@ -61,7 +68,7 @@ def _find_layer(config: CheckPointConfig, source: CheckPointSourceObject) -> CPA
     return None
 
 
-def build_policy_structure(config: CheckPointConfig, references: CPReferenceIndex | None = None) -> CPPolicyStructure:
+def build_policy_structure(config: CheckPointConfig, references: CPReferenceIndex | None = None, policy_context: tuple[CPPolicyContextRecord, ...] = ()) -> CPPolicyStructure:
     references = references or __import__(__package__ + ".references", fromlist=["build_reference_index"]).build_reference_index(config)
     package_layers = []; issues = []
     for package in config.policy_packages:
@@ -81,9 +88,21 @@ def build_policy_structure(config: CheckPointConfig, references: CPReferenceInde
                 package = resolved.target
                 if package and not any(item.package is package and item.layer is layer for item in package_layers):
                     package_layers.append(CPPackageLayerRelationship(package, layer))
+    context_by_id = {id(item.source): item for item in policy_context}
     sections = tuple(
-        CPSectionRelationship(_find_layer(config, section), section, tuple(section.section_path))
+        CPSectionRelationship(
+            _find_layer(config, section),
+            section,
+            context_by_id.get(id(section), CPPolicyContextRecord(section)).section_path,
+        )
         for section in config.access_sections
+    )
+    rule_sections = tuple(
+        CPRuleSectionRelationship(
+            rule,
+            context_by_id.get(id(rule), CPPolicyContextRecord(rule)).section_path,
+        )
+        for rule in config.access_rules
     )
     inline_layers = []
     for rule in config.access_rules:
@@ -92,7 +111,7 @@ def build_policy_structure(config: CheckPointConfig, references: CPReferenceInde
         parent = _find_layer(config, rule)
         if isinstance(resolved, CPResolvedReference): inline_layers.append(CPInlineLayerRelationship(parent, rule, resolved.target))
         else: inline_layers.append(CPInlineLayerRelationship(parent, rule, None, resolved)); issues.append(resolved)
-    return CPPolicyStructure(tuple(package_layers), sections, tuple(config.access_rules), tuple(inline_layers), tuple(issues))
+    return CPPolicyStructure(tuple(package_layers), sections, rule_sections, tuple(config.access_rules), tuple(inline_layers), tuple(issues))
 
 
-__all__ = ["CPInlineLayerRelationship", "CPPackageLayerRelationship", "CPPolicyStructure", "CPSectionRelationship", "build_policy_structure"]
+__all__ = ["CPInlineLayerRelationship", "CPPackageLayerRelationship", "CPPolicyStructure", "CPRuleSectionRelationship", "CPSectionRelationship", "build_policy_structure"]
