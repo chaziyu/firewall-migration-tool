@@ -33,6 +33,9 @@ class PANStaticRoute(BaseModel):
     source_path: str = ""
     scope: PANScope | None = None
     source_order: int | None = None
+    router_type: str | None = None
+    router_name: str | None = None
+    vrf_name: str | None = None
     destination: str | None = None
     address_family: str | None = None
     nexthop_type: str | None = None
