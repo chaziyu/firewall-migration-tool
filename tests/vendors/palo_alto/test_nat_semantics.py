@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from fwmigrate.vendors.palo_alto.native import build_derived_views
 from fwmigrate.vendors.palo_alto.source_builder import build_panos_config
 
 
@@ -21,3 +22,16 @@ def test_destination_translation_dns_rewrite_is_typed_without_inferred_enablemen
     assert destination.dns_rewrite.explicit_fields == {"direction"}
     assert destination.dns_rewrite.raw_extra["future-rewrite"] == "keep"
     assert "dns_rewrite" in destination.explicit_fields
+
+
+def test_derived_nat_retains_source_scope_and_rulebase_position():
+    config = build_panos_config("""<config><shared><pre-rulebase><nat><rules>
+      <entry name='pre-nat'><from><member>any</member></from><to><member>any</member></to>
+        <source><member>any</member></source><destination><member>any</member></destination>
+      </entry>
+    </rules></nat></pre-rulebase></shared></config>""")
+    derived, = build_derived_views(config).nat
+
+    assert derived.source_scope is not None
+    assert derived.source_scope.kind == "shared"
+    assert derived.rulebase_position == "pre"

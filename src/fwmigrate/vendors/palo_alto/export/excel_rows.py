@@ -56,7 +56,6 @@ _TYPED_COUNT_FIELDS = {
     "sdwan_rule": "sdwan_rules",
     "local_user": "local_users",
     "local_user_database": "local_users",
-    "local_user_database_compat": "local_users",
     "local_user_group": "local_user_groups",
     "local_user_group_compat": "local_user_groups",
     "group_mapping": "group_mappings",
@@ -110,7 +109,12 @@ class _PANExcelContext:
             scopes[scope].append(issue)
         self.validation_by_object = {key: tuple(value) for key, value in objects.items()}
         self.validation_by_scope = {key: tuple(value) for key, value in scopes.items()}
-        typed = (item for field in set(_TYPED_COUNT_FIELDS.values()) | {"static_routes"} for item in getattr(self.analysis.config, field))
+        typed = [
+            item
+            for field in set(_TYPED_COUNT_FIELDS.values())
+            for item in getattr(self.analysis.config, field)
+        ]
+        typed.extend(self.analysis.derived.static_routes)
         typed_by_identity: dict[tuple[str, str | None, str, int | None], list[Any]] = defaultdict(list)
         for item in typed:
             typed_by_identity[(item.source_path, getattr(item, "name", None), _scope_key(getattr(item, "scope", None)), getattr(item, "source_order", None))].append(item)
@@ -516,7 +520,7 @@ def _unsupported_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
 def _typed_counts(context: _PANExcelContext) -> dict[str, int]:
     config = context.config
     counts = {domain: sum((spec := match_path_spec(tuple(item.source_path.split("/")))) is not None and spec.name == domain for item in getattr(config, field)) for domain, field in _TYPED_COUNT_FIELDS.items()}
-    counts["static_route"] = len(config.static_routes)
+    counts["static_route"] = len(context.derived.static_routes)
     return counts
 
 

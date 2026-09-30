@@ -113,3 +113,28 @@ def test_address_nat_sdwan_and_zone_references_are_in_relationships():
     assert found[("interface", "ethernet1/1.10", "sdwan_interface_profile", "missing-profile")].status == "UNRESOLVED"
     protection = found[("zone", "inside", "zone_protection_profile", "protection")]
     assert protection.status == "SOURCE_ONLY" and protection.expected_family == "zone-protection-profile"
+
+
+def test_country_regions_are_source_only_and_explicit_region_source_wins():
+    result = PaloAltoSourceReporter().analyze_source("""<config><shared>
+      <region><entry name='US'><address><member>192.0.2.0/24</member></address></entry></region>
+      <rulebase><security><rules><entry name='region-policy'>
+        <from><member>any</member></from><to><member>any</member></to>
+        <source><member>US</member><member>DE</member><member>XX</member></source>
+        <destination><member>any</member></destination><action>allow</action>
+      </entry></rules></security></rulebase>
+    </shared></config>""")
+
+    resolutions = {
+        item.reference_name: item
+        for item in result.derived.reference_resolutions
+        if item.owner_name == "region-policy" and item.owner_field == "source"
+    }
+    assert resolutions["US"].status == "SOURCE_ONLY"
+    assert resolutions["US"].expected_family == "region"
+    assert resolutions["US"].resolution_reason == "source-only PAN-OS region object"
+    assert resolutions["US"].target_source_path is not None
+    assert resolutions["DE"].status == "SOURCE_ONLY"
+    assert resolutions["DE"].expected_family == "region"
+    assert resolutions["DE"].resolution_reason == "PAN-OS predefined country region"
+    assert resolutions["XX"].status == "UNRESOLVED"

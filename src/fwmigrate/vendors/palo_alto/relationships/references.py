@@ -12,7 +12,15 @@ from .scopes import PANDeviceGroupHierarchy, build_scope_hierarchy, visible_scop
 
 _PREDEFINED_SERVICES = {"service-http", "service-https"}
 _PREDEFINED_IP_EDLS = {"panw-highrisk-ip-list", "panw-known-ip-list"}
-_PREDEFINED_REGIONS = {"MY"}
+_PREDEFINED_REGIONS = frozenset("""
+AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ
+CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR
+GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO
+JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS
+MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU
+RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA
+UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW
+""".split())
 
 
 def _is_address_literal(name: str) -> bool:
@@ -91,25 +99,41 @@ def _resolve(index: ReferenceIndex, owner, field: str, name: str, families: tupl
         return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="PAN-OS special value", owner_family=owner_family, owner_source_path=owner_path)
     if source_only:
         return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="typed source coverage is not authoritative", owner_family=owner_family, owner_source_path=owner_path)
+
+    # Explicit visible source state takes precedence over predefined PAN-OS
+    # tokens.  This keeps custom objects source-faithful and avoids treating a
+    # same-named explicit object as an implicit vendor object.
+    candidates = tuple(candidate for family in families for candidate in index.candidates(family, name, owner.scope))
+    if len(candidates) == 1:
+        target = candidates[0]
+        return PANReferenceResolution("RESOLVED", owner.name, field, name, target.family, owner.scope, target.scope, target.source_path, "one visible candidate", owner_family, owner_path)
+    if len(candidates) > 1:
+        return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, families[0], owner.scope, resolution_reason="multiple visible candidates; precedence is not explicitly extracted", owner_family=owner_family, owner_source_path=owner_path)
+
+    source_candidates = tuple(candidate for family in families for candidate in index.source_candidates(family, name, owner.scope))
+    if len(source_candidates) == 1:
+        target = source_candidates[0]
+        reason = (
+            "source-only PAN-OS region object"
+            if target.family == "region"
+            else "EXTRACTION_INCOMPLETE: visible source object lacks typed extraction"
+        )
+        return PANReferenceResolution(
+            "SOURCE_ONLY", owner.name, field, name, target.family, owner.scope,
+            target.scope, target.source_path, reason, owner_family, owner_path,
+        )
+    if len(source_candidates) > 1:
+        return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, families[0], owner.scope, resolution_reason="multiple visible source-only candidates", owner_family=owner_family, owner_source_path=owner_path)
+
     if families[0] == "address" and _is_address_literal(name):
         return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS address literal", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "address" and name in _PREDEFINED_IP_EDLS:
         return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS predefined IP external dynamic list", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "address" and name in _PREDEFINED_REGIONS:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS predefined country region", owner_family=owner_family, owner_source_path=owner_path)
+        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "region", owner.scope, resolution_reason="PAN-OS predefined country region", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "service" and name in _PREDEFINED_SERVICES:
         return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "service", owner.scope, resolution_reason="PAN-OS predefined service", owner_family=owner_family, owner_source_path=owner_path)
-    candidates = tuple(candidate for family in families for candidate in index.candidates(family, name, owner.scope))
-    if len(candidates) == 1:
-        target = candidates[0]
-        return PANReferenceResolution("RESOLVED", owner.name, field, name, target.family, owner.scope, target.scope, target.source_path, "one visible candidate", owner_family, owner_path)
-    if not candidates:
-        source_candidates = tuple(candidate for family in families for candidate in index.source_candidates(family, name, owner.scope))
-        if source_candidates:
-            return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope,
-                                          resolution_reason="EXTRACTION_INCOMPLETE: visible source object lacks typed extraction", owner_family=owner_family, owner_source_path=owner_path)
-        return PANReferenceResolution("UNRESOLVED", owner.name, field, name, families[0], owner.scope, resolution_reason="no visible typed source object", owner_family=owner_family, owner_source_path=owner_path)
-    return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, families[0], owner.scope, resolution_reason="multiple visible candidates; precedence is not explicitly extracted", owner_family=owner_family, owner_source_path=owner_path)
+    return PANReferenceResolution("UNRESOLVED", owner.name, field, name, families[0], owner.scope, resolution_reason="no visible typed or source-only PAN-OS object", owner_family=owner_family, owner_source_path=owner_path)
 
 
 def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None) -> tuple[tuple[PANReferenceResolution, ...], tuple[PANShadowedObject, ...]]:
@@ -127,7 +151,7 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
     for rule in config.security_rules:
         for field, names, families, source_only in (
             ("from_zones", rule.from_zones, ("zone",), False), ("to_zones", rule.to_zones, ("zone",), False),
-            ("source", rule.source, ("address", "address-group"), False), ("destination", rule.destination, ("address", "address-group"), False),
+            ("source", rule.source, ("address", "address-group", "region"), False), ("destination", rule.destination, ("address", "address-group", "region"), False),
             ("service", rule.service, ("service", "service-group"), False), ("schedule", (rule.schedule,) if rule.schedule else (), ("schedule",), False),
             ("profile_setting.groups", rule.profile_setting.groups if rule.profile_setting else (), ("security-profile-group",), False),
             ("tags", rule.tags, ("tag",), False), ("application", rule.application, ("application",), True),

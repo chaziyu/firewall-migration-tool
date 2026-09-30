@@ -10,6 +10,9 @@ from .common import raw_extra, source_fields, value, values
 
 def extract_zone(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> PANZone:
     extra, explicit = source_fields(element, spec)
+    # The <network> container can hold non-membership settings.  Only an
+    # explicit network-type branch proves that interface membership exists.
+    explicit.discard("members")
     network = element.find("network")
     network_type = value(element, "network-type")
     members = None
@@ -43,7 +46,7 @@ def extract_zone(element: ET.Element, path: tuple[str, ...], context: PANWalkCon
         branch = next((child for child in network if child.tag in {"tap", "virtual-wire", "layer2", "layer3", "tunnel"}), None)
         if branch is not None:
             network_type = branch.tag
-            explicit.add("network_type")
+            explicit.update({"network_type", "members"})
             members = [(item.text or item.get("name") or "").strip() for item in branch.findall("member")]
         for tag, field in network_fields.items():
             if network.find(tag) is not None:

@@ -13,10 +13,20 @@ from .relationships import build_interface_topology, build_policy_order, build_r
 from .relationships.topology import PANRelationshipIssue
 from .relationships.references import resolve_references
 from .transform.nat import transform_nat
-from .validation import PANOSValidationIssue, PANOSValidationResult, validate_panos_config
+from .validation import validate_panos_config
 
 
 def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
+    static_routes = tuple(
+        route
+        for router in config.virtual_routers
+        for route in router.static_routes or ()
+    ) + tuple(
+        route
+        for router in config.logical_routers
+        for vrf in router.vrfs or ()
+        for route in vrf.static_routes or ()
+    )
     counts = {
         "tag": len(config.tags),
         "address": len(config.addresses),
@@ -31,7 +41,7 @@ def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
         "interface-import": len(config.interface_imports),
         "nat": len(config.nat_rules),
         "zone": len(config.zones),
-        "route": len(config.static_routes),
+        "route": len(static_routes),
         "virtual-router": len(config.virtual_routers),
         "logical-router": len(config.logical_routers),
         "vulnerability-profile": len(config.vulnerability_profiles),
@@ -75,6 +85,7 @@ def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
         reference_resolutions=resolutions,
         shadowing=shadowing,
         interface_topology=topology,
+        static_routes=static_routes,
         policy_order=policy_order,
         nat=transform_nat(config.nat_rules),
         relationship_issues=tuple(relationship_issues),

@@ -69,27 +69,10 @@ class PANOSDerivedViews:
     reference_resolutions: tuple[Any, ...] = ()
     shadowing: tuple[Any, ...] = ()
     interface_topology: tuple[Any, ...] = ()
+    static_routes: tuple[Any, ...] = ()
     policy_order: tuple[Any, ...] = ()
     nat: tuple[Any, ...] = ()
     relationship_issues: tuple[Any, ...] = ()
-
-
-@dataclass(frozen=True)
-class PANOSValidationIssue:
-    severity: str
-    domain: str
-    message: str
-    source_path: Optional[str] = None
-    source_name: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class PANOSValidationResult:
-    issues: tuple[PANOSValidationIssue, ...] = ()
-
-    @property
-    def errors(self) -> tuple[PANOSValidationIssue, ...]:
-        return tuple(item for item in self.issues if item.severity == "error")
 
 
 def pan_scope_identity(scope: PANScope) -> str:
