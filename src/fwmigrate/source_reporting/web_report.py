@@ -25,17 +25,25 @@ def _nested(report: dict[str, Any], *path: str) -> Any:
     return value
 
 
-def normalize_web_report(report: dict[str, Any], vendor_id: str) -> dict[str, Any]:
-    """Add the shared UI shape without changing vendor-native report data."""
+def normalize_web_report(report: dict[str, Any], vendor_id: str, *, copy: bool = True) -> dict[str, Any]:
+    """Add the shared UI shape. Owned HTTP reports may share read-only rows.
+
+    With copy=False the caller owns the outer report. Detach the maps we
+    update because vendor previews can still reference cached analysis data.
+    """
     if not isinstance(report, dict):
         raise TypeError("Source reporter previews must be objects")
-    result = deepcopy(report)
+    result = deepcopy(report) if copy else report
     summary = result.setdefault("summary", {})
     if not isinstance(summary, dict):
         raise TypeError("Source reporter summary must be an object")
+    if not copy:
+        summary = result["summary"] = dict(summary)
     sections = result.setdefault("sections", {})
     if not isinstance(sections, dict):
         raise TypeError("Source reporter sections must be an object")
+    if not copy:
+        sections = result["sections"] = dict(sections)
     aliases = {
         "interfaces": (("interface_topology",), ("interfaces",), ("relationships", "interfaces"), ("derived", "interfaces")),
         "addresses": (("source", "addresses"), ("source", "network_objects"), ("source", "network_addresses")),
@@ -65,15 +73,21 @@ def normalize_web_report(report: dict[str, Any], vendor_id: str) -> dict[str, An
     objects = summary.setdefault("objects", {})
     if not isinstance(objects, dict):
         objects = summary["objects"] = {}
+    elif not copy:
+        objects = summary["objects"] = dict(objects)
     for name in REPORT_SECTIONS:
         if name not in {"schedules", "validation", "unresolved_references", "vpn_phase2"}:
             objects.setdefault(name, len(sections[name]))
     validation = summary.setdefault("validation", {})
     if not isinstance(validation, dict):
         validation = summary["validation"] = {}
+    elif not copy:
+        validation = summary["validation"] = dict(validation)
     severity_counts = validation.setdefault("severity_counts", {})
     if not isinstance(severity_counts, dict):
         severity_counts = validation["severity_counts"] = {}
+    elif not copy:
+        severity_counts = validation["severity_counts"] = dict(severity_counts)
     if not severity_counts:
         for row in sections["validation"]:
             if isinstance(row, dict) and row.get("severity"):

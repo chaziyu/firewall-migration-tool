@@ -1,0 +1,41 @@
+@font-face {
+  font-family: 'DM Sans';
+  src: url('/static/fonts/dm-sans.ttf') format('truetype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/static/fonts/space-grotesk.ttf') format('truetype');
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --font-ui: 'DM Sans', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+  --canvas: #f5f6f3;
+  --surface: #fff;
+  --sidebar: #172321;
+  --text-heading: #202c29;
+  --text-main: #34423d;
+  --text-muted: #6a746e;
+  --text-dim: #7a847e;
+  --line: #e3e7e1;
+  --color-primary: #c64c24;
+  --color-primary-hover: #a93c19;
+  --color-primary-subtle: #fcf0e9;
+  --color-teal: #27755d;
+  --warning: #986817;
+  --danger: #b4413d;
+  --success: #27755d;
+  --bg-input: #fff;
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --sidebar-width: 242px;
+}

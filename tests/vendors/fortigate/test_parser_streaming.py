@@ -1,4 +1,6 @@
+import random
 import shlex
+from itertools import product
 
 import pytest
 
@@ -60,6 +62,20 @@ def test_simple_unquoted_configuration_keeps_the_same_tree_shape():
         'set comment "hello world"',
         'set comment "escaped \\\" quote"',
         'set value ""',
+        '\tset\tmember\t"a b"  "" "中文 café"\t',
+        'set comment "literal # hash" #suffix',
+        'set comment "literal\t tab"',
+        'set comment "unicode" unquoted\u00a0space',
+        'set comment "vertical" unquoted\vspace',
+        "set comment 'single quote'",
+        'set comment "double"\'single\'',
+        'set comment "prefix"suffix',
+        'set comment prefix"suffix"',
+        'set comment "one""two"',
+        'set comment "first\nsecond"',
+        'set comment "first\r\nsecond"',
+        r'set comment "escaped \\ slash"',
+        r'set comment escaped\ space',
     ],
 )
 def test_fast_and_shlex_paths_have_the_same_parts(command):
@@ -68,6 +84,60 @@ def test_fast_and_shlex_paths_have_the_same_parts(command):
     lexer.commenters = ""
 
     assert FortiGateTokenizer._split_command(command) == list(lexer)
+
+
+def _shlex_parts(command):
+    lexer = shlex.shlex(command, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    return list(lexer)
+
+
+def test_ordinary_double_quotes_skip_shlex(monkeypatch):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("ordinary double quotes should not need shlex")
+    monkeypatch.setattr("fwmigrate.vendors.fortigate.tokenizer.shlex.shlex", fail_if_called)
+    assert FortiGateTokenizer._split_command('set member "" "a b" "中文" #literal') == ['set', 'member', '', 'a b', '中文', '#literal']
+
+
+def test_quoted_fast_path_differential_combinations_and_malformed_commands():
+    fragments = ['""', '"a b"', '"中文\t#"', 'plain', '"a"b', 'a"b"', '"a""b"', "'a b'", r'"a\"b"', r'a\ b', '"first\nsecond"', '"open', '"closed"\\']
+    commands = ['set member ' + left + separator + right for left, separator, right in product(fragments, ['', ' ', '\t'], fragments)]
+    rng = random.Random(0)
+    commands += ['set value "' + ''.join(rng.choices('ab \t#é中文"\'\\\n\r', k=30)) + '"' for _ in range(500)]
+    for command in commands:
+        try:
+            expected = _shlex_parts(command)
+        except ValueError as error:
+            with pytest.raises(ValueError) as actual:
+                FortiGateTokenizer._split_command(command)
+            assert str(actual.value) == str(error)
+        else:
+            assert FortiGateTokenizer._split_command(command) == expected
+
+
+@pytest.mark.parametrize('newline', ['\n', '\r\n'])
+def test_quoted_parser_tree_and_line_provenance_match_shlex(monkeypatch, newline):
+    source = '''config vdom
+edit "branch 中文"
+config firewall addrgrp
+edit "group #1"
+set member "" "a b"
+append member "c"
+unset comment
+set comment "first
+second"
+future-command "preserve me"
+next
+end
+next
+end
+'''.replace('\n', newline)
+    actual = parse_fortigate_config(source)
+    monkeypatch.setattr(FortiGateTokenizer, '_split_command', staticmethod(_shlex_parts))
+    assert actual == parse_fortigate_config(source)
+    commands = actual.configs[0].edits[0].children[0].edits[0].commands
+    assert [(command.operation, command.line_number) for command in commands[:4]] == [('set', 5), ('append', 6), ('unset', 7), ('set', 8)]
 
 
 def test_lf_and_crlf_produce_the_same_tree():

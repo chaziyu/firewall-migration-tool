@@ -21,7 +21,7 @@ def _between(text: str, start: str, end: str) -> str:
 
 def test_source_report_html_exposes_completeness_schedules_and_references():
     client = create_app({"TESTING": True}).test_client()
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/legacy").get_data(as_text=True)
 
     assert 'id="report-source-meta"' in html
     assert 'data-report-section="schedules"' in html
@@ -105,7 +105,7 @@ def test_source_report_search_is_debounced_and_cached():
 
 def test_report_workspace_exposes_compact_source_controls_and_tab_counts():
     client = create_app({"TESTING": True}).test_client()
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/legacy").get_data(as_text=True)
 
     assert 'id="source-configuration-card"' in html
     assert 'id="btn-report-change-source"' in html
@@ -275,7 +275,7 @@ def test_report_detail_renderer_preserves_nested_structure_without_secret_fields
 
 def test_report_source_context_is_not_a_generic_live_region():
     client = create_app({"TESTING": True}).test_client()
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/legacy").get_data(as_text=True)
 
     assert '<div class="report-source-context" id="report-source-meta"></div>' in html
     assert 'id="btn-report-change-source"' in html
