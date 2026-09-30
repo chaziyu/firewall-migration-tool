@@ -10,7 +10,7 @@ from fwmigrate.extraction.sanitize import REDACTED_PLACEHOLDER, is_sensitive_key
 from ..derived import CheckPointDerivedViews
 from ..model.common import CheckPointSourceObject
 from ..model.gaia import CPGaiaStaticRoute
-from ..model.policy import CPAutoNATRule, CPNATRule
+from ..model.policy import CPNATRule
 from ..model.source import CheckPointConfig
 from ..models import CollectionStatus, ScopeSelectionResult
 from .models import CheckPointValidationIssue, CheckPointValidationResult
@@ -240,8 +240,6 @@ def _validate_nat(config, derived):
                 result.append(_issue("nat_translation_missing", "nat", "NAT method is set but translated fields are empty.", source=rule, field="translated_source"))
             if rule.order is not None and rule.order < 0:
                 result.append(_issue("nat_order_malformed", "nat", "NAT rule ordering value is invalid.", source=rule, field="order"))
-        if isinstance(rule, CPAutoNATRule) and not any((rule.translated_source, rule.translated_destination, rule.translated_service)):
-            result.append(_issue("nat_structure_incomplete", "nat", "Automatic NAT rule has no translated fields.", source=rule, field="translated_source"))
     for item in derived.nat.issues:
         result.append(_issue("nat_structure_incomplete", "nat", item.message,
             domain=item.domain, object_uid=item.source_uid, object_name=item.source_name,
