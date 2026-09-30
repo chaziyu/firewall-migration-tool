@@ -108,14 +108,63 @@ def build_interface_topology(config: PANOSConfig) -> tuple[PANInterfaceTopologyE
     entries: list[PANInterfaceTopologyEntry] = []
     for key, item in objects.items():
         path, path_issues = chain(key)
-        imports = tuple(item.scope.vsys for item in config.interface_imports if key[1] in (item.interfaces or ()) and item.scope and item.scope.vsys)
-        imported_routers = {router for import_item in config.interface_imports if import_item.scope and import_item.scope.vsys in imports for router in import_item.virtual_routers or ()}
-        zones = tuple(zone.name for zone in config.zones if key[1] in (zone.members or ()) and zone.scope and zone.scope.vsys in imports and zone.name)
-        routers = tuple(router.name for router in config.virtual_routers if key[1] in (router.interfaces or ()) and router.name and (router.name in imported_routers or scope_for(router) == key[0]))
+        device = _device_identity(item.scope)
+        interface_imports = [
+            import_item
+            for import_item in config.interface_imports
+            if import_item.scope
+            and _device_identity(import_item.scope) == device
+            and key[1] in (import_item.interfaces or ())
+        ]
+        imports = tuple(dict.fromkeys(
+            import_item.scope.vsys
+            for import_item in interface_imports
+            if import_item.scope.vsys
+        ))
+        router_imports = [
+            import_item
+            for import_item in config.interface_imports
+            if import_item.scope
+            and _device_identity(import_item.scope) == device
+            and import_item.scope.vsys in imports
+        ]
+        imported_routers = {
+            router
+            for import_item in router_imports
+            for router in import_item.virtual_routers or ()
+        }
+        zone_matches = [
+            zone
+            for zone in config.zones
+            if zone.scope
+            and _device_identity(zone.scope) == device
+            and key[1] in (zone.members or ())
+            and zone.name
+        ]
+        zones = tuple(
+            zone.name
+            for zone in zone_matches
+            if zone.scope and zone.scope.vsys in imports
+        )
+        router_matches = [
+            router
+            for router in config.virtual_routers
+            if router.scope
+            and _device_identity(router.scope) == device
+            and key[1] in (router.interfaces or ())
+            and router.name
+        ]
+        routers = tuple(
+            router.name
+            for router in router_matches
+            if router.name in imported_routers or scope_for(router) == key[0]
+        )
         issues = list(path_issues)
-        if not imports and zones:
+        if any(zone.scope and zone.scope.vsys not in imports for zone in zone_matches):
             issues.append("zone member is not imported into this VSYS")
-        if not imports and routers:
+        if imports and router_matches and not any(
+            router.name in imported_routers for router in router_matches
+        ):
             issues.append("virtual-router member is not imported into this VSYS")
         parent = path[1] if len(path) > 1 else None
         aggregate_owners_for_item = aggregate_owners(key)
