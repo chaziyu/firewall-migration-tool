@@ -5,11 +5,11 @@ from typing import Any, Callable, Type
 
 from ..model.common import CheckPointSourceObject
 from ..model.policy import (
-    CPAccessLayer, CPAccessRule, CPAccessSection, CPAutoNATRule, CPNATRule, CPNATSection,
+    CPAccessLayer, CPAccessRule, CPAccessSection, CPNATRule, CPNATSection,
 )
 from ..model.threat import CPHTTPSInspectionRule, CPThreatLayer, CPThreatRule, CPThreatRuleException, CPThreatSection
 from ..models import CheckPointResponse
-from .common import build_typed_object
+from .common import build_source_inventory, build_typed_object
 
 
 def extract_access_rulebase(response: CheckPointResponse):
@@ -43,7 +43,7 @@ def extract_policy_records(response: CheckPointResponse):
 def _extract_structured(
     response: CheckPointResponse,
     section_model: Type[CheckPointSourceObject] | None,
-    rule_model: Type[CheckPointSourceObject] | Callable[[dict[str, Any]], Type[CheckPointSourceObject]],
+    rule_model: Type[CheckPointSourceObject] | Callable[[dict[str, Any]], Type[CheckPointSourceObject] | None],
     section_bucket: str | None,
     rule_bucket: str,
 ):
@@ -111,15 +111,21 @@ def _extract_structured(
             rule_orders[str(current_layer_uid or "root")] += 1
             rule = {**entry, "_checkpoint_section_path": [part for part in path if part]}
             model = rule_model(entry) if not isinstance(rule_model, type) else rule_model
+            order = rule_orders[str(current_layer_uid or "root")]
+            if model is None:
+                results.append(("source_inventory", build_source_inventory(current_response, entry, order)))
+                continue
             bucket = "threat_rule_exceptions" if model is CPThreatRuleException else rule_bucket
-            results.append((bucket, build_typed_object(current_response, rule, model, rule_orders[str(current_layer_uid or "root")])))
+            results.append((bucket, build_typed_object(current_response, rule, model, order)))
 
     walk(payload, root_response)
     return results
 
 
 def _nat_rule(value: dict[str, Any]):
-    return CPAutoNATRule if value.get("automatic") or str(value.get("type") or "").lower() in {"automatic-nat-rule", "auto-nat-rule"} else CPNATRule
+    if value.get("automatic") or str(value.get("type") or "").lower() in {"automatic-nat-rule", "auto-nat-rule"}:
+        return None
+    return CPNATRule
 
 
 def _threat_rule(value: dict[str, Any]):
