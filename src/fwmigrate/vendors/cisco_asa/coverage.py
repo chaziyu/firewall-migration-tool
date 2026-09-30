@@ -18,6 +18,7 @@ DHCP_DNS_PARTIAL = {"dhcpd", "dhcprelay", "dns"}
 SYSTEM_MANAGEMENT_PARTIAL = {
     "domain-name", "timezone", "management-access", "same-security-traffic",
     "ssh", "http", "telnet", "snmp", "logging", "ntp", "enable", "failover",
+    "sysopt connection permit-vpn",
 }
 CONTEXT_PARTIAL = {"context", "admin-context", "allocate-interface", "config-url", "resource-class"}
 SOURCE_ONLY = {
