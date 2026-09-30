@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ..model.common import CheckPointSourceObject
 from ..model.policy import CPAccessLayer, CPAccessRule, CPAccessSection
 from ..model.source import CheckPointConfig
 from .references import CPBrokenReference, CPReferenceIndex, CPReferenceKind, CPResolvedReference
@@ -45,6 +46,21 @@ class CPPolicyStructure:
                 for item in self.inline_layers if item.inline_layer and item.parent_layer}
 
 
+def _scope(value: Any) -> str:
+    return value.domain_uid or value.domain or "global"
+
+
+def _find_layer(config: CheckPointConfig, source: CheckPointSourceObject) -> CPAccessLayer | None:
+    source_scope = _scope(source)
+    if source.layer_uid:
+        return next((layer for layer in config.access_layers
+                     if layer.uid == source.layer_uid and _scope(layer) == source_scope), None)
+    if source.layer:
+        return next((layer for layer in config.access_layers
+                     if layer.name == source.layer and _scope(layer) == source_scope), None)
+    return None
+
+
 def build_policy_structure(config: CheckPointConfig, references: CPReferenceIndex | None = None) -> CPPolicyStructure:
     references = references or __import__(__package__ + ".references", fromlist=["build_reference_index"]).build_reference_index(config)
     package_layers = []; issues = []
@@ -55,16 +71,25 @@ def build_policy_structure(config: CheckPointConfig, references: CPReferenceInde
             else: package_layers.append(CPPackageLayerRelationship(package, None, issue=resolved)); issues.append(resolved)
     for layer in config.access_layers:
         if {"package_uid", "package"} & set(layer.explicit_fields) and (layer.package_uid or layer.package):
-            package = references.by_uid.get(layer.package_uid or "")
-            if package is None:
-                package = next((item for item in config.policy_packages if item.name == layer.package and (item.domain_uid or item.domain) == (layer.domain_uid or layer.domain)), None)
-            if package and not any(item.package is package and item.layer is layer for item in package_layers): package_layers.append(CPPackageLayerRelationship(package, layer))
-    sections = tuple(CPSectionRelationship(next((layer for layer in config.access_layers if (layer.uid or layer.name) == section.layer_uid), None), section, tuple(section.section_path)) for section in config.access_sections)
+            resolved = references.resolve(
+                layer.package_uid or layer.package,
+                owner=layer,
+                expected_kinds=(CPReferenceKind.POLICY_PACKAGE,),
+                source_field="package_uid" if layer.package_uid else "package",
+            )
+            if isinstance(resolved, CPResolvedReference):
+                package = resolved.target
+                if package and not any(item.package is package and item.layer is layer for item in package_layers):
+                    package_layers.append(CPPackageLayerRelationship(package, layer))
+    sections = tuple(
+        CPSectionRelationship(_find_layer(config, section), section, tuple(section.section_path))
+        for section in config.access_sections
+    )
     inline_layers = []
     for rule in config.access_rules:
         if not rule.inline_layer: continue
         resolved = references.resolve(rule.inline_layer, owner=rule, expected_kinds=(CPReferenceKind.ACCESS_LAYER,), source_field="inline_layer")
-        parent = next((layer for layer in config.access_layers if layer.uid == (rule.layer_uid or rule.parent_layer_uid) or layer.name == rule.layer), None)
+        parent = _find_layer(config, rule)
         if isinstance(resolved, CPResolvedReference): inline_layers.append(CPInlineLayerRelationship(parent, rule, resolved.target))
         else: inline_layers.append(CPInlineLayerRelationship(parent, rule, None, resolved)); issues.append(resolved)
     return CPPolicyStructure(tuple(package_layers), sections, tuple(config.access_rules), tuple(inline_layers), tuple(issues))
