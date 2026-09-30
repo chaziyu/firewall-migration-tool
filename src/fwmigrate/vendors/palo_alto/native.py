@@ -13,7 +13,7 @@ from .relationships import build_interface_topology, build_policy_order, build_r
 from .relationships.topology import PANRelationshipIssue
 from .relationships.references import resolve_references
 from .transform.nat import transform_nat
-from .validation import PANOSValidationIssue, PANOSValidationResult, validate_panos_config
+from .validation import validate_panos_config
 
 
 def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
