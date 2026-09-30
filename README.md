@@ -1,8 +1,8 @@
 # Firewall Migration Tool
 
-![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)
+![Python](https://img.shields.io/badge/python-3.11%2B-green.svg)
 
-Vendor-native firewall configuration extraction, validation, reporting, live collection, and pair-specific migration planning for Python 3.10+.
+Vendor-native firewall configuration extraction, validation, reporting, live collection, and pair-specific migration planning for Python 3.11+.
 
 > **Project status**
 >

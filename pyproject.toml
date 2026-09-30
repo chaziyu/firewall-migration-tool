@@ -7,7 +7,7 @@ name = "firewall-migration-tool"
 version = "0.2.0"
 description = "Multi-vendor firewall configuration extraction and reporting"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0,<3.0",
     "click>=8.0",

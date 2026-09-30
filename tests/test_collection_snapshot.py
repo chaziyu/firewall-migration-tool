@@ -35,6 +35,9 @@ def test_structured_snapshot_redacts_auth_headers_and_session_cookies():
     {"status": "BROKEN"},
     {"source_text": ""},
     {"parts": [{"name": "bad", "status": "secret-value", "complete": True}]},
+    {"metadata": {"multi_context": "true"}},
+    {"metadata": {"multi_context": 1}},
+    {"vendor_id": "juniper_srx", "metadata": {"multi_context": True}},
 ])
 def test_invalid_snapshot_is_rejected(change):
     snapshot = make_snapshot(CollectedSource("cisco_asa", "hostname asa", "live-cisco-asa.cfg", "ssh"))

@@ -8,7 +8,11 @@ from .models import (PANCommitResult, PANDeploymentCommandResult, PANDeploymentO
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import RenderedMigration
 
 
-_ERROR = re.compile(r"(?:invalid|error|failed|unknown command|not valid)", re.I)
+_ERROR = re.compile(
+    r"(?im)^\s*(?:invalid\b|error\b|failed\b|server error\b|syntax error\b|"
+    r"unknown command\b|not valid\b|validation error\b)|"
+    r"\b(?:validation|commit)\s+failed\b|\bis (?:invalid|not (?:a )?valid)\b"
+)
 _JOB = re.compile(r"(?:job(?:id)?|id)\s*[:=]?\s*(\d+)", re.I)
 
 
@@ -29,7 +33,8 @@ class PANSSHDeployer:
             raise RuntimeError("SSH deployment requires optional dependency netmiko") from exc
         self.connection = ConnectHandler(device_type="paloalto_panos", host=self.options.host,
                                          port=self.options.port, username=self.options.username,
-                                         password=self.options.password)
+                                         password=self.options.password,
+                                         ssh_strict=True, system_host_keys=True)
         return self
 
     def push_candidate(self, rendered: RenderedMigration):
@@ -45,13 +50,19 @@ class PANSSHDeployer:
         for index, command in enumerate(rendered.commands):
             safe_command = _safe_text(command, self.options.password)
             try:
-                response = _safe_text(self.connection.send_config_set([command]), self.options.password)
+                response = _safe_text(self.connection.send_config_set(
+                    [command], exit_config_mode=False, strip_command=True, strip_prompt=True,
+                ), self.options.password)
             except Exception as exc:
                 response = _safe_text(str(exc), self.options.password)
                 results.append(PANDeploymentCommandResult(index, safe_command, False, response))
                 return PANDeploymentResult(True, len(results), sum(item.accepted for item in results), index,
                                            f"command {index} failed: {response}", tuple(results))
-            accepted = not bool(_ERROR.search(response))
+            # Some transports retain echo despite strip_command; discard only this command.
+            diagnostics = "\n".join(line for line in response.splitlines()
+                                    if line.strip() != safe_command
+                                    and not line.strip().endswith(("> " + safe_command, "# " + safe_command)))
+            accepted = not bool(_ERROR.search(diagnostics))
             results.append(PANDeploymentCommandResult(index, safe_command, accepted, response))
             if not accepted:
                 return PANDeploymentResult(True, len(results), sum(item.accepted for item in results), index,
@@ -81,7 +92,11 @@ class PANSSHDeployer:
         return "TIMEOUT", last or f"job {job_id} did not reach FIN"
 
     def validate_candidate(self):
-        response = _safe_text(self.connection.send_command("validate full"), self.options.password)
+        self.connection.config_mode()
+        try:
+            response = _safe_text(self.connection.send_command("validate full"), self.options.password)
+        finally:
+            self.connection.exit_config_mode()
         match = _JOB.search(response or "")
         job_id = match.group(1) if match else None
         if not job_id:

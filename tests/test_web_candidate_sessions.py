@@ -1,4 +1,5 @@
 import io
+import pytest
 
 import fwmigrate.web as web
 from fwmigrate.deployment import (
@@ -153,3 +154,66 @@ def test_failed_candidate_validation_never_creates_commit_session(monkeypatch):
     assert payload["candidate_validated"] is False
     assert payload["deployment_session_id"] is None
     assert payload["result"]["validation"]["status"] == "FAILED"
+
+
+@pytest.mark.parametrize("failed_retry", [False, True])
+def test_candidate_attempt_invalidates_all_old_sessions_for_target(monkeypatch, failed_retry):
+    monkeypatch.setattr(web, "PANSSHDeployer", _SuccessfulDeployer)
+    client = web.create_app({"TESTING": True}).test_client()
+    artifact = _ready_artifact(client)
+    old_session = client.post("/api/deploy", json={**CREDS, "artifact_id": artifact}).get_json()["deployment_session_id"]
+    next_artifact = artifact if failed_retry else _ready_artifact(client)
+    if failed_retry:
+        monkeypatch.setattr(web, "PANSSHDeployer", _FailedValidationDeployer)
+    attempted = client.post("/api/deploy", json={**CREDS, "username": "other-admin", "artifact_id": next_artifact})
+    assert attempted.status_code == (502 if failed_retry else 200)
+    commit = client.post("/api/commit", json={**CREDS, "artifact_id": artifact, "deployment_session_id": old_session})
+    assert commit.status_code == 400
+    assert "missing or expired" in commit.get_json()["error"]
+
+
+def test_commit_waits_for_candidate_write_and_rejects_stale_session(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from threading import Event
+
+    monkeypatch.setattr(web, "PANSSHDeployer", _SuccessfulDeployer)
+    app = web.create_app({"TESTING": True})
+    client = app.test_client()
+    artifact = _ready_artifact(client)
+    session = client.post("/api/deploy", json={**CREDS, "artifact_id": artifact}).get_json()["deployment_session_id"]
+    started, release, committing = Event(), Event(), Event()
+
+    class BlockingDeployer(_FailedValidationDeployer):
+        def deploy(self, rendered):
+            started.set()
+            assert release.wait(5)
+            return super().deploy(rendered)
+
+    monkeypatch.setattr(web, "PANSSHDeployer", BlockingDeployer)
+
+    def commit():
+        committing.set()
+        return app.test_client().post("/api/commit", json={**CREDS, "artifact_id": artifact, "deployment_session_id": session})
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        write = pool.submit(lambda: app.test_client().post("/api/deploy", json={**CREDS, "artifact_id": artifact}))
+        assert started.wait(5)
+        pending = pool.submit(commit)
+        assert committing.wait(5)
+        try:
+            with pytest.raises(TimeoutError):
+                pending.result(timeout=0.1)
+        finally:
+            release.set()
+        assert write.result(timeout=5).status_code == 502
+        assert pending.result(timeout=5).status_code == 400
+
+
+def test_candidate_write_to_different_target_preserves_validated_session(monkeypatch):
+    monkeypatch.setattr(web, "PANSSHDeployer", _SuccessfulDeployer)
+    client = web.create_app({"TESTING": True}).test_client()
+    artifact = _ready_artifact(client)
+    session = client.post("/api/deploy", json={**CREDS, "artifact_id": artifact}).get_json()["deployment_session_id"]
+    assert client.post("/api/deploy", json={**CREDS, "host": "192.0.2.51", "artifact_id": artifact}).status_code == 200
+    assert client.post("/api/commit", json={**CREDS, "artifact_id": artifact,
+        "deployment_session_id": session}).status_code == 200

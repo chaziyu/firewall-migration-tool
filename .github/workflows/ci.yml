@@ -52,5 +52,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+      - name: Import smoke test on supported Python
+        run: python -c "import fwmigrate.web; import fwmigrate.conversion.fortigate_to_palo_alto.pipeline"
       - name: Run test suite
         run: python -m pytest -q

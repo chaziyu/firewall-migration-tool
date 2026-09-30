@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from pydantic import ValidationError
 from typing import Any, Dict, List, Optional, Tuple, Union
 from fwmigrate.vendors.checkpoint.errors import CheckPointParseError
 from fwmigrate.vendors.checkpoint.models import (
@@ -79,7 +80,17 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
     bundle: CheckPointExportBundle
 
     if "responses" in data or data.get("format") == "checkpoint-export-v1":
-        bundle = CheckPointExportBundle.model_validate(data)
+        try:
+            bundle = CheckPointExportBundle.model_validate(data)
+        except ValidationError as exc:
+            fields = set(CheckPointExportBundle.model_fields) | set(CheckPointResponse.model_fields)
+            errors = exc.errors(include_input=False, include_context=False, include_url=False)
+            details = sorted({
+                '.'.join(str(part) if isinstance(part, int) else part if part in fields else 'field'
+                         for part in error['loc']) + f" ({error['type']})"
+                for error in errors
+            })
+            raise CheckPointParseError(f"Invalid Check Point export bundle: {', '.join(details)}") from None
         for gaia in bundle.gaia_responses:
             if not isinstance(gaia, dict):
                 continue
@@ -142,8 +153,8 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
         if access_rulebase:
             responses.append(CheckPointResponse(
                 command="show-access-rulebase",
-                package=data.get("package", "Standard"),
-                layer=data.get("layer", "Network"),
+                package=data.get("package"),
+                layer=data.get("layer"),
                 domain=domain,
                 gateway=gateway,
                 data={
@@ -159,7 +170,7 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
         if nat_rulebase:
             responses.append(CheckPointResponse(
                 command="show-nat-rulebase",
-                package=data.get("package", "Standard"),
+                package=data.get("package"),
                 domain=domain,
                 gateway=gateway,
                 data={
@@ -218,6 +229,16 @@ def _resolve_scope(bundle: CheckPointExportBundle) -> ScopeSelectionResult:
 
     ambiguous = False
     reasons: List[str] = []
+    for response in bundle.responses:
+        if response.command in {"show-access-rulebase", "show-nat-rulebase"} and response.data.get("rulebase") and collection_status_is_success(response.collection_status):
+            if not (response.package or response.package_uid or response.data.get("package") or response.data.get("package-uid")):
+                reasons.append("missing-package-ownership")
+            if response.command == "show-access-rulebase" and not (
+                response.layer or response.layer_uid or response.data.get("name") or response.data.get("uid")
+            ):
+                reasons.append("missing-access-layer-ownership")
+    reasons = list(dict.fromkeys(reasons))
+    ambiguous = bool(reasons)
 
     # Domain scope
     if not sel_domain:

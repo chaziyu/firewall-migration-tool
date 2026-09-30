@@ -11,6 +11,19 @@ from fwmigrate.source_reporting.web_report import normalize_web_report
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
 
+def test_malformed_secret_bearing_source_returns_safe_client_errors():
+    client = create_app({"TESTING": True}).test_client()
+    source = json.dumps({"format": "checkpoint-export-v1", "responses": [
+        {"data": {"password": "ERROR_SECRET_SENTINEL"}},
+    ]}).encode()
+    for route in ("/api/preview", "/api/extract/excel"):
+        response = client.post(route, data={"source_vendor": "checkpoint",
+            "file": (io.BytesIO(source), "invalid.json")}, content_type="multipart/form-data")
+        assert response.status_code == 400
+        assert b"ERROR_SECRET_SENTINEL" not in response.data
+        assert b"input_value" not in response.data
+
+
 ASA_SOURCE = (
     "hostname asa\n"
     "username admin password 0 web-secret\n"

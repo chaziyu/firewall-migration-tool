@@ -11,7 +11,7 @@ class _Connection:
     def config_mode(self):
         pass
 
-    def send_config_set(self, commands):
+    def send_config_set(self, commands, **kwargs):
         self.commands.extend(commands)
         response = next(self.responses)
         if isinstance(response, Exception):

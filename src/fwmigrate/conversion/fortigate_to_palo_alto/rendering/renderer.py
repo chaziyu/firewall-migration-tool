@@ -133,8 +133,11 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
     dispositions = dispositions or {}
     render_blockers = render_blockers or {}
     decision_keys = decision_keys or {}
-    disposition = lambda item: dispositions.get(item_key(item), PANRenderDisposition.CREATE
-        if item.status is PANMigrationStatus.SUPPORTED else PANRenderDisposition.BLOCK)
+    def disposition(item):
+        if validation is not None and _key(item) not in validation.renderable_item_keys:
+            return PANRenderDisposition.BLOCK
+        return dispositions.get(item_key(item), PANRenderDisposition.CREATE
+            if item.status is PANMigrationStatus.SUPPORTED else PANRenderDisposition.BLOCK)
     disposition_counts = {status.value: sum(disposition(item) is status
                                              for item in items) for status in PANRenderDisposition}
     command_renderable = sum(disposition(item) is PANRenderDisposition.CREATE and

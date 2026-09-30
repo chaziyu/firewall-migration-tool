@@ -20,6 +20,13 @@ def _connect(options):
     )
 
 
+def _read_command(connection, command, timeout):
+    output = connection.send_command(command, read_timeout=timeout)
+    if re.search(r"(?im)^\s*(?:%|ERROR\b|Invalid (?:input|command)\b|Command (?:authorization failed|rejected)\b|Authorization (?:failed|denied)\b|Permission denied\b|Access denied\b)", output):
+        raise CollectionError("The device rejected a collection command.")
+    return output
+
+
 class CiscoASACollector:
     vendor_id = "cisco_asa"
     method = "ssh"
@@ -42,17 +49,17 @@ class CiscoASACollector:
         sections = []
         multi_context = False
         try:
-            mode = connection.send_command("show mode", read_timeout=30)
+            mode = _read_command(connection, "show mode", 30)
             multi_context = bool(re.search(r"context\s+mode\s*:\s*multiple\b|\bmultiple\s+context\s+mode\b", mode, re.I))
             if not multi_context:
-                content = connection.send_command("show running-config", read_timeout=60)
+                content = _read_command(connection, "show running-config", 60)
                 if not content.strip():
                     raise CollectionError("The device returned an empty configuration.")
                 parts.append(CollectionPart("running-config", "SUCCESS", True, 1))
                 sections.append(content)
             else:
-                connection.send_command("changeto system", read_timeout=30)
-                system = connection.send_command("show running-config", read_timeout=60)
+                _read_command(connection, "changeto system", 30)
+                system = _read_command(connection, "show running-config", 60)
                 if not system.strip():
                     raise CollectionError("The system context returned an empty configuration.")
                 parts.append(CollectionPart("system/running-config", "SUCCESS", True, 1))
@@ -65,8 +72,8 @@ class CiscoASACollector:
                     parts.append(CollectionPart("contexts", "SUCCESS", True, len(contexts)))
                 for context in contexts:
                     try:
-                        connection.send_command(f"changeto context {context}", read_timeout=30)
-                        content = connection.send_command("show running-config", read_timeout=60)
+                        _read_command(connection, f"changeto context {context}", 30)
+                        content = _read_command(connection, "show running-config", 60)
                     except Exception:
                         warnings.append(f"Could not collect context {context}.")
                         parts.append(CollectionPart(f"context/{context}/running-config", "FAILED", False, 0))

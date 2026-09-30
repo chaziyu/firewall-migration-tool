@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { RequestError } from '../../api/client'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
 import { Button } from '../../components/common/Button'
 import type { SourcePreviewData } from '../source/types'
@@ -105,6 +106,13 @@ export function MigrationWorkflow({ preview, previewId, decisionDocument, target
       const message = cause instanceof Error ? cause.message : 'Deployment action failed'
       setError(message)
       log(`[ERROR] ${action === 'prepare' ? 'Candidate preparation' : action === 'validate' ? 'Candidate revalidation' : 'Commit'} failed: ${message}`)
+      if (cause instanceof RequestError) {
+        const feedback = cause.details.validation_feedback as { mapping_status?: string; migration_items?: Array<{ source_vdom?: string; source_name?: string; decision_keys?: string[] }> } | undefined
+        if (feedback?.mapping_status) log(`[REVIEW] Validation feedback: ${feedback.mapping_status}`)
+        for (const item of feedback?.migration_items || []) {
+          log(`[REVIEW] ${item.source_vdom || ''}/${item.source_name || ''}: ${(item.decision_keys || []).join(', ')}`)
+        }
+      }
     }
     finally {
       setBusy(false)

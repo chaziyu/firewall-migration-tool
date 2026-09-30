@@ -9,6 +9,42 @@ import fwmigrate.web as web
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationPlan, PANMigrationStatus, PlannedAddress
 
 
+def test_artifact_limit_and_expiry_remove_sources_and_deployment_sessions(monkeypatch):
+    import weakref
+    from tests.test_web_candidate_sessions import _ready_artifact, _SuccessfulDeployer, CREDS
+
+    analyses = []
+    clone = web._clone_preview
+
+    def tracked_clone(entry):
+        analysis = clone(entry)
+        analyses.append(weakref.ref(analysis.extracted.config))
+        return analysis
+
+    monkeypatch.setattr(web, "_clone_preview", tracked_clone)
+    now = [1_800_000_000.0]
+    monkeypatch.setattr(web.time, "time", lambda: now[0])
+    monkeypatch.setattr(web, "PANSSHDeployer", _SuccessfulDeployer)
+    client = create_app({"TESTING": True, "MIGRATION_ARTIFACT_MAX": 2,
+                         "MIGRATION_ARTIFACT_TTL_SECONDS": 60}).test_client()
+    first = _ready_artifact(client)
+    session = client.post("/api/deploy", json={**CREDS, "artifact_id": first}).get_json()["deployment_session_id"]
+    second, third = _ready_artifact(client), _ready_artifact(client)
+    assert analyses[0]() is None
+    assert sum(reference() is not None for reference in analyses) == 2
+    for endpoint in ("command-preview", "download", "bundle"):
+        assert client.post(f"/api/migration/{endpoint}", json={"artifact_id": first}).status_code == 400
+        assert client.post(f"/api/migration/{endpoint}", json={"artifact_id": second}).status_code == 200
+    assert client.post("/api/commit", json={**CREDS, "artifact_id": first,
+        "deployment_session_id": session}).status_code == 400
+    session = client.post("/api/deploy", json={**CREDS, "artifact_id": third}).get_json()["deployment_session_id"]
+    now[0] += 61
+    assert client.post("/api/migration/bundle", json={"artifact_id": third}).status_code == 400
+    assert client.post("/api/commit", json={**CREDS, "artifact_id": third,
+        "deployment_session_id": session}).status_code == 400
+    assert all(reference() is None for reference in analyses)
+
+
 FIXTURE = Path(__file__).parent / "fixtures" / "fortigate" / "palo_alto_mvp.conf"
 MAPPING = {
     "vdoms": {"root": {"vsys": "vsys1", "virtual_router": "default"}},

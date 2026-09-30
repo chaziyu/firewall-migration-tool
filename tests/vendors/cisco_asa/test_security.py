@@ -63,3 +63,25 @@ def test_secret_sentinels_stay_out_of_every_report_surface():
     export_asa_excel(result, output)
     workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
     assert_secret_absent([list(sheet.iter_rows(values_only=True)) for sheet in workbook], *sentinels)
+
+
+def test_snmpv3_credentials_are_redacted_in_reports_and_snapshots():
+    import json
+    from openpyxl import load_workbook
+    from fwmigrate.collection.contracts import CollectedSource
+    from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot
+    from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
+
+    secrets = ("AUTH_SENTINEL", "PRIV_SENTINEL")
+    source = f"snmp-server user monitor group v3 auth sha {secrets[0]} priv aes 128 {secrets[1]}\n"
+    result = extract_cisco_asa_source(source)
+    snapshot = make_snapshot(CollectedSource("cisco_asa", source, "asa.cfg", "ssh"))
+    imported = parse_snapshot(json.dumps(snapshot).encode())
+    output = BytesIO()
+    export_asa_excel(result, output)
+    workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
+    for surface in (result.config.model_dump(), result.inventory_items, result.unsupported_items,
+                    build_asa_preview(result), snapshot, imported.source_text,
+                    [list(sheet.iter_rows(values_only=True)) for sheet in workbook]):
+        assert_secret_absent(surface, *secrets)
+    assert "auth sha [REDACTED] priv aes 128 [REDACTED]" in imported.source_text
