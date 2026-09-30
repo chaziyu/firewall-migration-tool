@@ -5,18 +5,18 @@ from dataclasses import dataclass
 class GaiaCommandFamily:
     name: str
     prefixes: tuple[tuple[str, ...], ...]
-    operations: frozenset[str] = frozenset({"set", "add", "show", "create", "delete"})
+    operations: frozenset[str] = frozenset({"set", "add"})
 
 
 GAIA_COMMAND_FAMILIES = (
-    GaiaCommandFamily("interface", (("interface",),)),
-    GaiaCommandFamily("static-route-ipv4", (("static-route",), ("route", "static"))),
-    GaiaCommandFamily("static-route-ipv6", (("ipv6", "route", "static"), ("ipv6", "static-route"))),
-    GaiaCommandFamily("dhcp-server", (("dhcp", "server"), ("dhcp-server",))),
-    GaiaCommandFamily("gaia-user", (("user",), ("users",))),
-    GaiaCommandFamily("gaia-rba-role", (("rba", "role"), ("rba", "roles"))),
-    GaiaCommandFamily("gaia-rba-user-assignment", (("rba", "user"), ("rba", "users"))),
-    GaiaCommandFamily("vpn-tunnel-vti", (("vpn", "tunnel"), ("vpn", "tunnels"), ("vti",))),
+    GaiaCommandFamily("interface", (("interface",),), frozenset({"set"})),
+    GaiaCommandFamily("static-route-ipv4", (("static-route",), ("route", "static")), frozenset({"set"})),
+    GaiaCommandFamily("static-route-ipv6", (("ipv6", "route", "static"), ("ipv6", "static-route")), frozenset({"set"})),
+    GaiaCommandFamily("dhcp-server", (("dhcp", "server"), ("dhcp-server",)), frozenset({"set", "add"})),
+    GaiaCommandFamily("gaia-user", (("user",), ("users",)), frozenset({"set", "add"})),
+    GaiaCommandFamily("gaia-rba-role", (("rba", "role"), ("rba", "roles")), frozenset({"set", "add"})),
+    GaiaCommandFamily("gaia-rba-user-assignment", (("rba", "user"), ("rba", "users")), frozenset({"set", "add"})),
+    GaiaCommandFamily("vpn-tunnel-vti", (("vpn", "tunnel"), ("vpn", "tunnels"), ("vti",)), frozenset({"add"})),
 )
 
 
