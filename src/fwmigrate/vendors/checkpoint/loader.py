@@ -140,16 +140,6 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
         # Handle explicit access-rulebase
         access_rulebase = data.get("access-rulebase")
         if access_rulebase:
-            # Legacy synthetic input defines omitted VPN as unrestricted. Make
-            # that compatibility convention explicit before transformation.
-            legacy_access_rulebase = []
-            for rule in access_rulebase:
-                if isinstance(rule, dict):
-                    explicit_rule = dict(rule)
-                    explicit_rule.setdefault("vpn", "Any")
-                    legacy_access_rulebase.append(explicit_rule)
-                else:
-                    legacy_access_rulebase.append(rule)
             responses.append(CheckPointResponse(
                 command="show-access-rulebase",
                 package=data.get("package", "Standard"),
@@ -157,7 +147,7 @@ def load_checkpoint_input(content: str) -> Tuple[CheckPointExportBundle, ScopeSe
                 domain=domain,
                 gateway=gateway,
                 data={
-                    "rulebase": legacy_access_rulebase,
+                    "rulebase": access_rulebase,
                     "from": 1,
                     "to": len(access_rulebase),
                     "total": len(access_rulebase),
