@@ -32,3 +32,16 @@ def test_selected_zone_without_network_type_does_not_infer_one():
     zone, = config.zones
     assert zone.network_type is None and zone.members is None
     assert zone.zone_protection_profile == "protect"
+
+
+def test_zone_network_container_does_not_imply_explicit_membership():
+    config = build_panos_config(
+        "<config><shared><zone><entry name='protected'><network>"
+        "<zone-protection-profile>protect</zone-protection-profile>"
+        "</network></entry></zone></shared></config>"
+    )
+    zone, = config.zones
+
+    assert zone.members is None
+    assert "members" not in zone.explicit_fields
+    assert "zone_protection_profile" in zone.explicit_fields
