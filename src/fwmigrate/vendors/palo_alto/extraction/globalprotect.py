@@ -37,7 +37,8 @@ def _values(element: ET.Element | None, tag: str) -> list[str] | None:
     entries = child.findall("entry")
     if entries:
         return [entry.get("name") or _text(entry) or "" for entry in entries]
-    return [_text(child) or ""]
+    text = _text(child)
+    return [text] if text is not None else []
 
 
 def _entries(element: ET.Element, tag: str) -> list[ET.Element] | None:
