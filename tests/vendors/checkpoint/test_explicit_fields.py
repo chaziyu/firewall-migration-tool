@@ -52,5 +52,21 @@ def test_legacy_input_does_not_invent_omitted_vpn_state():
     }))
 
     rule = result.config.access_rules[0]
-    assert rule.vpn == []
+    assert rule.vpn is None
     assert "vpn" not in rule.explicit_fields
+
+
+def test_absent_and_explicit_empty_source_collections_stay_distinct():
+    config = extract_checkpoint_config(CheckPointExportBundle.model_validate({"responses": [{
+        "command": "show-groups",
+        "data": {"objects": [
+            {"uid": "missing", "name": "missing", "type": "group"},
+            {"uid": "empty", "name": "empty", "type": "group", "members": []},
+        ]},
+    }]})).config
+
+    missing, empty = config.groups
+    assert missing.members is None
+    assert "members" not in missing.explicit_fields
+    assert empty.members == []
+    assert "members" in empty.explicit_fields
