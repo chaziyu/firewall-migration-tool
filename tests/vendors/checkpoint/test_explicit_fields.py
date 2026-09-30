@@ -39,7 +39,10 @@ def test_policy_context_is_not_source_data_or_input_mutation():
 
     assert rulebase == original
     rule = result.config.access_rules[0]
-    assert rule.section_path == ["Web"]
+    context = next(item for item in result.policy_context if item.source is rule)
+    assert context.section_path == ("Web",)
+    assert "section_path" not in type(rule).model_fields
+    assert "section_path" not in rule.model_dump()
     assert rule.source[0].uid == "h1"
     assert "_checkpoint_section_path" not in rule.raw_extra
     assert "_checkpoint_section_path" not in rule.explicit_fields
