@@ -6,7 +6,7 @@ from typing import Any
 from ..model.common import CheckPointSourceObject
 from ..model.policy import CPAccessLayer, CPAccessRule, CPAccessSection
 from ..model.source import CheckPointConfig
-from ..extraction.result import CPPolicyContextRecord
+from ..policy_context import CPPolicyContextRecord
 from .references import CPBrokenReference, CPReferenceIndex, CPReferenceKind, CPResolvedReference
 
 
