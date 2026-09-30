@@ -516,7 +516,7 @@ def _unsupported_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
 def _typed_counts(context: _PANExcelContext) -> dict[str, int]:
     config = context.config
     counts = {domain: sum((spec := match_path_spec(tuple(item.source_path.split("/")))) is not None and spec.name == domain for item in getattr(config, field)) for domain, field in _TYPED_COUNT_FIELDS.items()}
-    counts["static_route"] = len(config.static_routes)
+    counts["static_route"] = len(context.derived.static_routes)
     return counts
 
 
