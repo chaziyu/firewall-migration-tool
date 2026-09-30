@@ -76,6 +76,16 @@ route
     assert analysis.config == before_export
 
 
+def test_ftd_cli_show_command_does_not_manufacture_management_state():
+    result = extract_cisco_ftd_source("show management-interface convergence\n")
+
+    assert result.config.cmi_enabled is None
+    assert len(result.config.management_settings) == 1
+    assert result.config.management_settings[0].source_attributes["raw_command"] == (
+        "show management-interface convergence"
+    )
+
+
 def test_ftd_cli_models_do_not_supply_route_family_defaults():
     from fwmigrate.vendors.cisco_ftd.model import CiscoFTDStaticRoute
 

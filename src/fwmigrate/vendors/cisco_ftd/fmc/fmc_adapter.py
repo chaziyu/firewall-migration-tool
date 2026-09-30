@@ -297,38 +297,38 @@ class CiscoFMCBundleParser:
                             psk_values = [block[field] for block in (v1, v2, item) for field in key_fields if field in block]
                             values.update(
                                 ikev1_policies=v1_policies, ikev2_policies=v2_policies,
-                                ike_policies=[*(v1_policies or []), *(v2_policies or [])]
-                                    if v1_policies is not None or v2_policies is not None else legacy_policies,
+                                ike_policies=legacy_policies,
                                 ikev1_authentication_type=v1.get("authenticationType"),
                                 ikev2_authentication_type=v2.get("authenticationType"),
                                 ikev1_certificate=v1_cert, ikev2_certificate=v2_cert,
-                                certificates=[ref for ref in (v1_cert, v2_cert) if ref] or legacy_certificates,
+                                certificates=legacy_certificates,
                                 ikev1_automatic_psk_length=v1.get("automaticPreSharedKeyLength"),
                                 ikev2_automatic_psk_length=v2.get("automaticPreSharedKeyLength"),
                                 ikev2_hex_psk_only=v2.get("enforceHexBasedPreSharedKeyOnly"),
                                 psk_present=True if any(bool(value) for value in psk_values) else None,
-                                explicit_fields=[field for field in (
-                                    "ikev1_authentication_type", "ikev2_authentication_type",
-                                    "ikev1_automatic_psk_length", "ikev2_automatic_psk_length",
-                                    "ikev2_hex_psk_only") if field in {
-                                        "ikev1_authentication_type" if "authenticationType" in v1 else "",
-                                        "ikev2_authentication_type" if "authenticationType" in v2 else "",
-                                        "ikev1_automatic_psk_length" if "automaticPreSharedKeyLength" in v1 else "",
-                                        "ikev2_automatic_psk_length" if "automaticPreSharedKeyLength" in v2 else "",
-                                        "ikev2_hex_psk_only" if "enforceHexBasedPreSharedKeyOnly" in v2 else ""}],
                             )
-                            values["explicit_fields"] = [field for field, value in values.items()
-                                                          if field != "explicit_fields" and value is not None]
+                            values["explicit_fields"] = [field for field, present in (
+                                ("ikev1_policies", "policies" in v1),
+                                ("ikev2_policies", "policies" in v2),
+                                ("ike_policies", any(key in item for key in ("ikePolicies", "ikePolicy"))),
+                                ("ikev1_authentication_type", "authenticationType" in v1),
+                                ("ikev2_authentication_type", "authenticationType" in v2),
+                                ("ikev1_certificate", "certificateAuth" in v1),
+                                ("ikev2_certificate", "certificateAuth" in v2),
+                                ("certificates", any(key in item for key in ("certificates", "certificate"))),
+                                ("ikev1_automatic_psk_length", "automaticPreSharedKeyLength" in v1),
+                                ("ikev2_automatic_psk_length", "automaticPreSharedKeyLength" in v2),
+                                ("ikev2_hex_psk_only", "enforceHexBasedPreSharedKeyOnly" in v2),
+                            ) if present]
                         elif cls is CiscoFTDS2SIPsecSettings:
                             v1_refs = refs_field(item, "ikeV1IpsecProposal")
                             v2_refs = refs_field(item, "ikeV2IpsecProposal")
+                            legacy_refs = refs_field(item, "ipsecProposals", "ipsecProposal", "proposals")
                             pfs = item.get("perfectForwardSecrecy")
                             pfs = pfs if isinstance(pfs, dict) else {}
                             values.update(
                                 ikev1_ipsec_proposals=v1_refs, ikev2_ipsec_proposals=v2_refs,
-                                ipsec_proposals=[*(v1_refs or []), *(v2_refs or [])]
-                                    if v1_refs is not None or v2_refs is not None
-                                    else refs_field(item, "ipsecProposals", "ipsecProposal", "proposals"),
+                                ipsec_proposals=legacy_refs,
                                 pfs_enabled=pfs.get("enabled"), pfs_group=pfs.get("modulusGroup"),
                                 lifetime_seconds=item.get("lifetimeSeconds"),
                                 lifetime_kilobytes=item.get("lifetimeKilobytes"),
@@ -339,8 +339,22 @@ class CiscoFMCBundleParser:
                                 tfc_packets=item.get("tfcPackets") if isinstance(item.get("tfcPackets"), dict) else None,
                                 validate_incoming_icmp_error_message=item.get("validateIncomingIcmpErrorMessage"),
                             )
-                            values["explicit_fields"] = [field for field, value in values.items()
-                                                          if field != "explicit_fields" and value is not None]
+                            values["explicit_fields"] = [field for field, present in (
+                                ("ikev1_ipsec_proposals", "ikeV1IpsecProposal" in item),
+                                ("ikev2_ipsec_proposals", "ikeV2IpsecProposal" in item),
+                                ("ipsec_proposals", any(key in item for key in ("ipsecProposals", "ipsecProposal", "proposals"))),
+                                ("pfs_enabled", "enabled" in pfs),
+                                ("pfs_group", "modulusGroup" in pfs),
+                                ("lifetime_seconds", "lifetimeSeconds" in item),
+                                ("lifetime_kilobytes", "lifetimeKilobytes" in item),
+                                ("ikev2_mode", "ikeV2Mode" in item),
+                                ("crypto_map_type", "cryptoMapType" in item),
+                                ("do_not_fragment_policy", "doNotFragmentPolicy" in item),
+                                ("enable_rri", "enableRRI" in item),
+                                ("enable_sa_strength_enforcement", "enableSaStrengthEnforcement" in item),
+                                ("tfc_packets", "tfcPackets" in item),
+                                ("validate_incoming_icmp_error_message", "validateIncomingIcmpErrorMessage" in item),
+                            ) if present]
                         elif cls is CiscoFTDS2SAdvancedSettings:
                             ike = item.get("advancedIkeSetting") if isinstance(item.get("advancedIkeSetting"), dict) else {}
                             tunnel = item.get("advancedTunnelSetting") if isinstance(item.get("advancedTunnelSetting"), dict) else {}
@@ -628,12 +642,22 @@ class CiscoFMCBundleParser:
             ownership = {"policy_id": policy.get("id"), "policy_name": policy.get("name")}
 
             def common_rule(item: dict, rule_index: int, rule_section: str | None = None):
-                section = item.get("section") or rule_section
+                section = item["section"] if "section" in item else rule_section
                 return dict(
-                    source_interface=reference(item["sourceInterface"]) if item.get("sourceInterface") else None,
-                    destination_interface=reference(item["destinationInterface"]) if item.get("destinationInterface") else None,
+                    source_interface=reference(item["sourceInterface"])
+                        if "sourceInterface" in item and item["sourceInterface"] is not None else None,
+                    destination_interface=reference(item["destinationInterface"])
+                        if "destinationInterface" in item and item["destinationInterface"] is not None else None,
                     nat_type=item.get("natType"), enabled=item.get("enabled"), section=section,
                     position=item.get("position", item.get("order")), observed_collection_order=rule_index,
+                    explicit_fields=[field for field, present in (
+                        ("source_interface", "sourceInterface" in item),
+                        ("destination_interface", "destinationInterface" in item),
+                        ("nat_type", "natType" in item),
+                        ("enabled", "enabled" in item),
+                        ("section", "section" in item),
+                        ("position", "position" in item or "order" in item),
+                    ) if present],
                     source_attributes={**ownership, "observed_collection_order": rule_index},
                 )
 
@@ -663,8 +687,29 @@ class CiscoFMCBundleParser:
                         original_destination_service=item.get("originalDestinationService"),
                         translated_destination_service=item.get("translatedDestinationService"),
                         identity_nat=item.get("identityNat"), interface_pat=item.get("interfacePat"),
-                        dns=item.get("dns"), route_lookup=item.get("routeLookup"), proxy_arp=item.get("noProxyArp") is False if "noProxyArp" in item else item.get("proxyArp"),
+                        dns=item.get("dns"), route_lookup=item.get("routeLookup"),
+                        no_proxy_arp=item.get("noProxyArp"), proxy_arp=item.get("proxyArp"),
                     )
+                    values["explicit_fields"].extend(field for field, present in (
+                        ("original_source", "originalSource" in item or "source" in item),
+                        ("translated_source", "translatedSource" in item),
+                        ("original_destination", "originalDestination" in item or "destination" in item),
+                        ("translated_destination", "translatedDestination" in item),
+                        ("original_source_port", "originalSourcePort" in item),
+                        ("translated_source_port", "translatedSourcePort" in item),
+                        ("original_destination_port", "originalDestinationPort" in item),
+                        ("translated_destination_port", "translatedDestinationPort" in item),
+                        ("original_source_service", "originalSourceService" in item),
+                        ("translated_source_service", "translatedSourceService" in item),
+                        ("original_destination_service", "originalDestinationService" in item),
+                        ("translated_destination_service", "translatedDestinationService" in item),
+                        ("identity_nat", "identityNat" in item),
+                        ("interface_pat", "interfacePat" in item),
+                        ("dns", "dns" in item),
+                        ("route_lookup", "routeLookup" in item),
+                        ("no_proxy_arp", "noProxyArp" in item),
+                        ("proxy_arp", "proxyArp" in item),
+                    ) if present)
                     parsed.append(record(item, rule_index, CiscoFTDManualNATRule, **values))
                 return parsed
 
@@ -672,14 +717,27 @@ class CiscoFMCBundleParser:
             for rule_index, item in enumerate(_items(policy.get("auto_rules")), 1):
                 values = common_rule(item, rule_index)
                 values.pop("section", None)
+                values["explicit_fields"] = [field for field in values["explicit_fields"] if field != "section"]
                 original_network = item.get("originalNetwork")
+                values["explicit_fields"].extend(field for field, present in (
+                    ("original_network", "originalNetwork" in item),
+                    ("translated_network", "translatedNetwork" in item),
+                    ("owning_network", "originalNetwork" in item),
+                    ("interface_pat", "interfaceInTranslatedNetwork" in item or "interfacePat" in item),
+                    ("identity_nat", "identityNat" in item),
+                    ("dns", "dns" in item),
+                    ("route_lookup", "routeLookup" in item),
+                    ("no_proxy_arp", "noProxyArp" in item),
+                    ("proxy_arp", "proxyArp" in item),
+                ) if present)
                 auto_rules.append(record(item, rule_index, CiscoFTDAutoNATRule,
                     **values, original_network=original_network,
                     translated_network=item.get("translatedNetwork"),
                     owning_network=item.get("originalNetwork"),
                     interface_pat=item.get("interfaceInTranslatedNetwork", item.get("interfacePat")),
                     identity_nat=item.get("identityNat"), dns=item.get("dns"),
-                    route_lookup=item.get("routeLookup"), proxy_arp=item.get("proxyArp")))
+                    route_lookup=item.get("routeLookup"), no_proxy_arp=item.get("noProxyArp"),
+                    proxy_arp=item.get("proxyArp")))
 
             before = manual_rules("manual_rules_before_auto", "BEFORE_AUTO")
             unclassified = manual_rules("manual_rules")
@@ -868,49 +926,19 @@ class CiscoFMCBundleParser:
             policy_id = str(policy.get("id")) if policy.get("id") is not None else None
             policy_name = policy.get("name")
             groups = _items(policy.get("rule_groups"))
-            memberships: dict[str, list[dict[str, Any]]] = {}
-            membership_keys: set[tuple[str, str]] = set()
             for group_index, group in enumerate(groups, 1):
-                group_id = str(group.get("id")) if group.get("id") is not None else None
-                group_name = str(group.get("name") or group_id or group_index)
                 intrusion_rule_groups.append(record(group, group_index, CiscoFTDIntrusionRuleGroup,
                     parent_policy_id=policy_id, parent_policy_name=policy_name,
                     description=group.get("description"),
                     explicit_fields=[field for field in ("description",) if field in group],
                     source_attributes={"parent_policy_id": policy_id, "parent_policy_name": policy_name}))
-                for child in _items(group.get("rules")):
-                    rule_key = str(child.get("ruleId") or child.get("id") or "")
-                    if not rule_key:
-                        continue
-                    membership_key = (group_id or group_name, rule_key)
-                    if membership_key in membership_keys:
-                        continue
-                    membership_keys.add(membership_key)
-                    evidence = {"rule_group_id": group_id, "rule_group_name": group_name,
-                                "rule_id": rule_key, "payload": sanitize_source_attributes(child)}
-                    memberships.setdefault(rule_key, []).append(evidence)
 
             for rule_index, item in enumerate(_items(policy.get("rules")), 1):
-                rule_key = str(item.get("ruleId") or item.get("id") or "")
-                evidence = memberships.get(rule_key, [])
-                conflicts = []
-                for membership in evidence:
-                    group_payload = membership["payload"]
-                    differing = {key: {"behavior": item[key], "group": group_payload[key]}
-                                 for key in ("state", "action", "enabled")
-                                 if key in item and key in group_payload and item[key] != group_payload[key]}
-                    if differing:
-                        conflicts.append({**membership, "conflicting_fields": differing})
-                attributes = {"parent_policy_id": policy_id, "parent_policy_name": policy_name}
-                if evidence:
-                    attributes["group_membership_evidence"] = evidence
-                if conflicts:
-                    attributes["conflicting_group_payload"] = conflicts
                 values = {field: item[field] for field in ("state", "action", "enabled") if field in item}
                 values.update(parent_policy_id=policy_id, parent_policy_name=policy_name,
                     rule_id=str(item["ruleId"]) if item.get("ruleId") is not None else None,
                     explicit_fields=[*values.keys(), *( ["rule_id"] if "ruleId" in item else [])],
-                    source_attributes=attributes)
+                    source_attributes={"parent_policy_id": policy_id, "parent_policy_name": policy_name})
                 intrusion_rule_behaviors.append(record(item, rule_index, CiscoFTDIntrusionRuleBehavior, **values))
             for override_index, item in enumerate(_items(policy.get("overrides")), 1):
                 values = {field: item[key] for field, key in (("state", "state"), ("action", "action")) if key in item}
@@ -1080,7 +1108,6 @@ class CiscoFMCBundleParser:
             elif isinstance(split, list) and "split_tunnel_networks" not in result.explicit_fields:
                 result.split_tunnel_networks = refs(split)
                 result.explicit_fields.append("split_tunnel_networks")
-            result.split_tunnel = result.split_tunnel_networks
             return result
 
         def adapt_ra_profile(item: dict, index: int, vpn: dict):

@@ -438,6 +438,7 @@ class CiscoFTDManualNATRule(CiscoFTDSourceRecord):
     interface_pat: Optional[bool] = None
     dns: Optional[bool] = None
     route_lookup: Optional[bool] = None
+    no_proxy_arp: Optional[bool] = None
     proxy_arp: Optional[bool] = None
 
 
@@ -454,6 +455,7 @@ class CiscoFTDAutoNATRule(CiscoFTDSourceRecord):
     interface_pat: Optional[bool] = None
     dns: Optional[bool] = None
     route_lookup: Optional[bool] = None
+    no_proxy_arp: Optional[bool] = None
     proxy_arp: Optional[bool] = None
     identity_nat: Optional[bool] = None
 

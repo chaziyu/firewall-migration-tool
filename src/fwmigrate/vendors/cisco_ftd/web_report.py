@@ -42,7 +42,8 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
     addresses = [{"name": item.name, "value": value(item.value), "type": item.address_type,
                   "address_family": item.address_family, "scope": scope(item), "source_plane": item.source_plane}
                  for item in config.network_addresses]
-    address_groups = [{"name": item.name, "members": [ref(value) for value in (item.members or item.literal_members or ())],
+    address_groups = [{"name": item.name,
+                       "members": [ref(value) for value in (*(item.members or ()), *(item.literal_members or ()))],
                        "scope": scope(item), "source_plane": item.source_plane} for item in config.network_groups]
     services = [{"name": item.name, "protocol": item.protocol,
                  "port": item.ports or item.port or item.end_port,
