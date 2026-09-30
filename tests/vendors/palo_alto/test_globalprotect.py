@@ -64,3 +64,15 @@ def test_selected_globalprotect_roots_and_nested_shapes_are_typed():
     assert tunnel.retrieve_framed_ip == "yes" and tunnel.no_direct_access_to_local_network == "no"
     assert tunnel.split_tunneling["include-domains"]["member"] == "example.com"
     assert gateway.raw_extra["local-address"]["future-address"] == "keep-address"
+
+
+def test_globalprotect_explicit_empty_pool_lists_remain_empty():
+    config = build_panos_config("""<config><shared><global-protect><global-protect-gateway><entry name='gateway'>
+      <remote-user-tunnel-configs><entry name='remote'>
+        <ip-pools/><authentication-server-ip-pools/>
+      </entry></remote-user-tunnel-configs>
+    </entry></global-protect-gateway></global-protect></shared></config>""")
+    tunnel = config.globalprotect_gateways[0].remote_user_tunnels[0]
+    assert tunnel.ip_pools == []
+    assert tunnel.authentication_server_ip_pools == []
+    assert {"ip_pools", "authentication_server_ip_pools"} <= tunnel.explicit_fields
