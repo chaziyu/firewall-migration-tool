@@ -24,7 +24,7 @@ def evaluate_gaia_commands(tree: GaiaConfigTree) -> list[GaiaEvaluation]:
         if family is None:
             evaluations.append(GaiaEvaluation("unsupported", values={"command": " ".join((node.operation, *node.arguments))}, source_line=node.line_number))
             continue
-        if node.operation == "show":
+        if node.operation not in family.operations:
             evaluations.append(GaiaEvaluation("unsupported", values={"command": " ".join((node.operation, *node.arguments))}, source_line=node.line_number))
             continue
         evaluation = _evaluate(family.name, node, args)
