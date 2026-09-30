@@ -74,3 +74,17 @@ def test_dhcp_subnet_pools_and_dns_merge_without_losing_explicit_values():
     assert subnet["excluded_pools"] == [{"start": "192.0.2.15", "end": "192.0.2.16"}]
     assert subnet["default_lease"] == "3600" and subnet["maximum_lease"] == "7200"
     assert subnet["dns_servers"] == ["192.0.2.53", "192.0.2.54"]
+
+
+def test_gaia_operation_semantics_fail_closed_for_wrong_verbs():
+    values = evaluate(
+        "add static-route 10.0.0.0/8 nexthop gateway address 192.0.2.1 on\n"
+        "delete static-route 10.0.0.0/8\n"
+        "set vpn tunnel 7 type numbered local 192.0.2.2 remote 192.0.2.3 peer branch\n"
+        "set static-route 192.0.2.0/24 nexthop gateway address 192.0.2.1 on\n"
+        "add vpn tunnel 8 type unnumbered peer branch dev eth1\n"
+    )
+
+    assert [item.kind for item in values[:3]] == ["unsupported", "unsupported", "unsupported"]
+    assert values[3].kind == "static-route-ipv4"
+    assert values[4].kind == "vpn-tunnel-vti"
