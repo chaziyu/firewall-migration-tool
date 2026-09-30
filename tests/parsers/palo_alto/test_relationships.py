@@ -92,3 +92,39 @@ def test_vsys_interface_imports_use_device_ownership_and_report_real_missing_imp
     warnings = [item for item in validation.warnings if item.source_name == "ethernet1/99"]
     assert len(warnings) == 1
     assert warnings[0].scope_identity.endswith(":device:fw")
+
+
+def test_interface_topology_does_not_cross_managed_device_boundaries():
+    config = build_panos_config("""<config><devices>
+      <entry name='fw-a'><network><interface><ethernet><entry name='ethernet1/1'/></ethernet></interface></network>
+        <vsys><entry name='vsys1'><import><network><interface><member>ethernet1/1</member></interface></network></import>
+          <zone><entry name='zone-a'><network><layer3><member>ethernet1/1</member></layer3></network></entry></zone>
+        </entry></vsys></entry>
+      <entry name='fw-b'><network><interface><ethernet><entry name='ethernet1/1'/></ethernet></interface></network>
+        <vsys><entry name='vsys1'><import><network><interface><member>ethernet1/1</member></interface></network></import>
+          <zone><entry name='zone-b'><network><layer3><member>ethernet1/1</member></layer3></network></entry></zone>
+        </entry></vsys></entry>
+    </devices></config>""")
+    derived = build_derived_views(config)
+
+    fw_a = next(item for item in derived.interface_topology if item.scope == "device:fw-a:device:fw-a")
+    fw_b = next(item for item in derived.interface_topology if item.scope == "device:fw-b:device:fw-b")
+
+    assert fw_a.imported_vsys == ("vsys1",)
+    assert fw_b.imported_vsys == ("vsys1",)
+    assert fw_a.zones == ("zone-a",)
+    assert fw_b.zones == ("zone-b",)
+
+
+def test_zone_membership_without_same_device_vsys_import_is_reported():
+    config = build_panos_config("""<config><devices><entry name='fw'>
+      <network><interface><ethernet><entry name='ethernet1/1'/></ethernet></interface></network>
+      <vsys><entry name='vsys1'><zone><entry name='trust'>
+        <network><layer3><member>ethernet1/1</member></layer3></network>
+      </entry></zone></entry></vsys>
+    </entry></devices></config>""")
+    derived = build_derived_views(config)
+
+    interface = next(item for item in derived.interface_topology if item.interface == "ethernet1/1")
+    assert interface.zones == ()
+    assert "zone member is not imported into this VSYS" in interface.issues
