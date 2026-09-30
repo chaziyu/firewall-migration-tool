@@ -16,6 +16,18 @@ def _safe_key(key: str, value: Any) -> bool:
     return not any(word in key.casefold() for word in _SENSITIVE)
 
 
+def source_value(record: Any, field_name: str) -> Any:
+    """Return explicit ASA source state without presenting model defaults as configured."""
+    value = getattr(record, field_name, None)
+    explicit_fields = getattr(record, "explicit_fields", None)
+    if explicit_fields is None or field_name in explicit_fields:
+        return value
+    model_field = getattr(type(record), "model_fields", {}).get(field_name)
+    if model_field is not None and model_field.default is False and value is False:
+        return None
+    return value
+
+
 def safe_value(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: safe_value(item) for key, item in value.items()
@@ -25,8 +37,8 @@ def safe_value(value: Any) -> Any:
         return tuple(safe_value(item) for item in value)
     model_fields = getattr(type(value), "model_fields", None)
     if model_fields:
-        return {key: safe_value(getattr(value, key)) for key in model_fields
-                if _safe_key(key, getattr(value, key))
+        return {key: safe_value(source_value(value, key)) for key in model_fields
+                if _safe_key(key, source_value(value, key))
                 and key not in {"raw_extra", "source_attributes"}}
     if is_dataclass(value):
         return {field.name: safe_value(getattr(value, field.name)) for field in fields(value)

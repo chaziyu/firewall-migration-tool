@@ -329,8 +329,10 @@ class CiscoASAParser:
             if record is None:
                 record = CiscoCryptoMap(name=name, map_name=name, source_order=line_number,
                                         raw_lines=[], source_attributes={"raw_command": line})
+                _mark_explicit(record, "map_name", "source_order")
                 self.config.crypto_maps.append(self._with_source_context(record, line_number))
             record.interface_attachment = interface
+            _mark_explicit(record, "interface_attachment")
             record.raw_lines.append(sanitize_raw_text(line))
             return
         if len(parts) <= offset + 1 or not parts[offset + 1].isdigit():
@@ -344,6 +346,7 @@ class CiscoASAParser:
             record = CiscoCryptoMap(name=name, map_name=name, sequence=sequence, is_dynamic=dynamic,
                                     map_type="dynamic" if dynamic else "static", source_order=line_number,
                                     raw_lines=[], source_attributes={"raw_command": line})
+            _mark_explicit(record, "map_name", "sequence", "is_dynamic", "map_type", "source_order")
             self.config.crypto_maps.append(self._with_source_context(record, line_number))
         safe_line = sanitize_raw_text(line)
         record.raw_lines.append(safe_line)
@@ -351,18 +354,25 @@ class CiscoASAParser:
         lowered = [token.lower() for token in tokens]
         if len(tokens) >= 3 and lowered[:2] == ["match", "address"]:
             record.acl_name = tokens[2]
+            _mark_explicit(record, "acl_name")
         elif lowered[:2] == ["set", "peer"] and len(tokens) >= 3:
             self._append_unique(record.peers, [tokens[2]])
             record.peer = tokens[2]
+            _mark_explicit(record, "peers", "peer")
         elif lowered[:2] == ["set", "transform-set"]:
             self._append_unique(record.transform_sets, tokens[2:])
+            _mark_explicit(record, "transform_sets")
         elif lowered[:2] == ["set", "ikev2"] and len(tokens) >= 4 and lowered[2] in {"ipsec-proposal", "ipsec-proposals"}:
             self._append_unique(record.ikev2_proposals, tokens[3:])
+            _mark_explicit(record, "ikev2_proposals")
         elif lowered[:2] == ["set", "pfs"] and len(tokens) >= 3:
             record.pfs_group = tokens[2] if tokens[2].lower() != "none" else None
+            _mark_explicit(record, "pfs_group")
         elif lowered[:3] == ["set", "security-association", "lifetime"]:
             if len(tokens) >= 5 and lowered[3] in {"seconds", "kilobytes"} and tokens[4].isdigit():
-                setattr(record, f"security_association_lifetime_{lowered[3]}", int(tokens[4]))
+                field_name = f"security_association_lifetime_{lowered[3]}"
+                setattr(record, field_name, int(tokens[4]))
+                _mark_explicit(record, field_name)
             else:
                 record.raw_options.append(safe_line)
                 record.extraction_status = "PARSE_ERROR"
@@ -371,10 +381,12 @@ class CiscoASAParser:
             record.raw_options.append(safe_line)
         elif lowered[:1] == ["interface"] and len(tokens) >= 2:
             record.interface_attachment = tokens[1]
+            _mark_explicit(record, "interface_attachment")
         else:
             lowered = [token.lower() for token in tokens]
             if "dynamic" in lowered and lowered.index("dynamic") + 1 < len(tokens):
                 record.dynamic_map = tokens[lowered.index("dynamic") + 1]
+                _mark_explicit(record, "dynamic_map")
             elif tokens:
                 record.raw_options.append(safe_line)
                 record.extraction_status = "PARTIAL"
@@ -392,6 +404,7 @@ class CiscoASAParser:
                       "integrity": "integrity", "prf": "prf"}.get(key)
             if target:
                 setattr(record, target, value)
+                _mark_explicit(record, target)
                 list_target = {
                     "encryption": record.encryption_algorithms,
                     "hash": record.hash_algorithms,
@@ -400,11 +413,19 @@ class CiscoASAParser:
                 }.get(key)
                 if list_target is not None:
                     self._append_unique(list_target, values)
+                    _mark_explicit(record, {
+                        "encryption": "encryption_algorithms",
+                        "hash": "hash_algorithms",
+                        "integrity": "integrity_algorithms",
+                        "prf": "prf_algorithms",
+                    }[key])
             elif key == "group":
                 record.dh_group = value
                 self._append_unique(record.dh_groups, values)
+                _mark_explicit(record, "dh_group", "dh_groups")
             elif key == "lifetime" and len(parts) == 2 and parts[1].isdigit():
                 record.lifetime_seconds = int(parts[1])
+                _mark_explicit(record, "lifetime_seconds")
             elif key == "lifetime":
                 record.extraction_status = "PARSE_ERROR"
                 record.requires_manual_review = True
@@ -684,6 +705,7 @@ class CiscoASAParser:
                 self.config.ike_policies.append(self._with_source_context(CiscoIKEPolicy(
                     name=f"{match.group(1)}:{match.group(2)}", version=match.group(1),
                     number=int(match.group(2)), raw_lines=[line, *children],
+                    explicit_fields={"version", "number"},
                     source_attributes={"raw_command": line, "subcommands": children},
                 ), index + 1))
                 self._parse_ike_child(self.config.ike_policies[-1], children, index + 1)
@@ -730,10 +752,16 @@ class CiscoASAParser:
                         for pos, target in positions:
                             end = next((next_pos for next_pos, _ in positions if next_pos > pos), len(parts))
                             self._append_unique(target, parts[pos + 1:end])
+                            _mark_explicit(record, {
+                                "encryption": "encryption_algorithms",
+                                "integrity": "integrity_algorithms",
+                                "prf": "prf_algorithms",
+                            }[parts[pos].lower()])
                         if positions:
                             continue
                     if parts and parts[0].lower() == "group" and len(parts) > 1:
                         self._append_unique(record.dh_groups, parts[1:])
+                        _mark_explicit(record, "dh_groups")
                         continue
                     record.extraction_status = "PARTIAL"
                     record.review_reasons.append("Unsupported IKEv2 proposal child syntax")
@@ -748,11 +776,14 @@ class CiscoASAParser:
                 self.config.ipsec_transform_sets.append(self._with_source_context(CiscoIPsecTransformSet(
                     name=match.group(1), encryption=values[0] if values else None,
                     authentication=" ".join(values[1:]) or None, raw_line=sanitize_raw_text(line),
-                    raw_lines=[sanitize_raw_text(line)], source_attributes={"raw_command": line}), index + 1))
+                    raw_lines=[sanitize_raw_text(line)],
+                    explicit_fields=({"encryption"} if values else set()) | ({"authentication"} if len(values) > 1 else set()),
+                    source_attributes={"raw_command": line}), index + 1))
                 record = self.config.ipsec_transform_sets[-1]
                 for child in children:
                     if child.lower().startswith("mode "):
                         record.mode = child.split(maxsplit=1)[1]
+                        _mark_explicit(record, "mode")
                     else:
                         record.raw_extra.setdefault("unmodeled_lines", []).append(sanitize_raw_text(child))
                 if not values:
@@ -768,8 +799,10 @@ class CiscoASAParser:
                 range_parts = parts[4].split("-", 1) if len(parts) > 4 else []
                 if len(range_parts) == 2 and range_parts[0] and range_parts[1]:
                     record.start, record.end = range_parts
+                    _mark_explicit(record, "start", "end")
                     if len(parts) == 7 and parts[5].lower() == "mask":
                         record.mask = parts[6]
+                        _mark_explicit(record, "mask")
                     elif len(parts) != 5:
                         record.extraction_status = "PARSE_ERROR"
                         record.requires_manual_review = True
@@ -803,6 +836,7 @@ class CiscoASAParser:
                 record.source_attributes.setdefault("raw_commands", []).append(line)
                 if len(parts) > 2 and parts[2].lower() == "type":
                     record.group_type = parts[3] if len(parts) > 3 else None
+                    _mark_explicit(record, "group_type")
                 section = " ".join(parts[2:]).lower() if len(parts) > 2 and parts[2].lower() in {"general-attributes", "ipsec-attributes", "webvpn-attributes"} else None
                 for child in children:
                     child_parts = child.split()
@@ -813,6 +847,7 @@ class CiscoASAParser:
                              record.ipsec_attributes if section == "ipsec-attributes" else record.webvpn_attributes)
                     if "pre-shared-key" in child_parts:
                         record.ikev1_psk_present = True
+                        _mark_explicit(record, "ikev1_psk_present")
                         attrs["has_pre_shared_key"] = True
                         attrs.setdefault("raw_subcommands", []).append(re.sub(r"(?i)(pre-shared-key)\s+\S+", r"\1 [REDACTED]", child))
                     elif child_parts and child_parts[0].lower() == "default-group-policy" and len(child_parts) > 1:
@@ -827,10 +862,12 @@ class CiscoASAParser:
                         _mark_explicit(record, "general_attributes")
                     elif child_parts and child_parts[0].lower() == "trust-point" and len(child_parts) > 1:
                         record.trustpoint = child_parts[1]
+                        _mark_explicit(record, "trustpoint")
                     elif child_parts and child_parts[0].lower() in {"ikev1", "ikev2"} and len(child_parts) > 2:
                         setattr(record, f"{child_parts[0].lower()}_{child_parts[1].lower().replace('-', '_')}", " ".join(child_parts[2:]))
                     elif child_parts and child_parts[0].lower() in {"authentication", "ikev1-authentication", "ikev2-authentication"}:
                         record.authentication_method = " ".join(child_parts[1:])
+                        _mark_explicit(record, "authentication_method")
                         if section == "webvpn-attributes":
                             record.webvpn_attributes[child_parts[0].lower()] = " ".join(child_parts[1:])
                             _mark_explicit(record, "webvpn_attributes")
@@ -852,6 +889,7 @@ class CiscoASAParser:
                     self.config.group_policies.append(self._with_source_context(record, index + 1))
                 if len(parts) > 2 and parts[2].lower() in {"internal", "external"}:
                     record.policy_type = parts[2].lower()
+                    _mark_explicit(record, "policy_type")
                 if len(parts) > 4 and parts[3].lower() == "from":
                     record.parent = parts[4]
                     _mark_explicit(record, "parent")
@@ -877,8 +915,8 @@ class CiscoASAParser:
                         _mark_explicit(record, "split_tunnel_acl")
                         self._record_acl_consumer(record.split_tunnel_acl, "vpn-split-tunnel", index + 1, child)
                     elif key == "vpn-tunnel-protocol": self._append_unique(record.vpn_protocols, values); _mark_explicit(record, "vpn_protocols")
-                    elif key == "vpn-idle-timeout": record.idle_timeout = " ".join(values)
-                    elif key == "vpn-session-timeout": record.session_timeout = " ".join(values)
+                    elif key == "vpn-idle-timeout": record.idle_timeout = " ".join(values); _mark_explicit(record, "idle_timeout")
+                    elif key == "vpn-session-timeout": record.session_timeout = " ".join(values); _mark_explicit(record, "session_timeout")
                     elif key == "default-domain": record.default_domain = " ".join(values); _mark_explicit(record, "default_domain")
                     elif key == "vpn-access-hours": record.vpn_access_hours = values[-1]; _mark_explicit(record, "vpn_access_hours")
                     elif key == "vpn-filter":
@@ -891,7 +929,7 @@ class CiscoASAParser:
                     elif key == "wins-server":
                         self._append_unique(record.wins_servers, values[1:] if values[0].lower() == "value" else values)
                         _mark_explicit(record, "wins_servers")
-                    elif key == "group-policy": record.parent = values[-1]
+                    elif key == "group-policy": record.parent = values[-1]; _mark_explicit(record, "parent")
                     elif child_parts[0].lower() in {"group-alias", "group-url", "anyconnect", "url-entry", "customization", "activex", "activex-relay", "keep-installer", "port-forward", "tunnel-group-list"}:
                         record.webvpn_attributes.setdefault(child_parts[0].lower(), []).append(" ".join(values))
                     elif in_webvpn:
@@ -1224,6 +1262,25 @@ class CiscoASAParser:
             # no is stateful Cisco syntax, not a textual inverse. Only forms
             # with an unambiguous final-state meaning are applied here.
             if line.lower().startswith("no "):
+                if line.lower().startswith("no vpn-addr-assign "):
+                    # Parsed in the source-only VPN pass below. Do not also
+                    # classify a supported explicit negation as unsupported.
+                    i += 1
+                    continue
+                if line.lower() == "no sysopt connection permit-vpn":
+                    record = CiscoManagementSetting(
+                        name=f"sysopt-connection-permit-vpn:{line_number}",
+                        setting="sysopt connection permit-vpn",
+                        enabled=False,
+                        raw_lines=[sanitize_raw_text(line)],
+                        explicit_fields={"setting", "enabled"},
+                        source_attributes={"raw_command": sanitize_raw_text(line)},
+                    )
+                    self.config.management_settings.append(
+                        self._with_source_context(record, line_number)
+                    )
+                    i += 1
+                    continue
                 if line.lower() in {"no failover", "no logging enable"}:
                     (self._parse_failover_command if line.lower() == "no failover" else self._parse_management_command)(line, line_number)
                     i += 1
@@ -1263,6 +1320,21 @@ class CiscoASAParser:
                         i += 1
                         continue
                 self._record_unsupported(line_number, line, "Negated Cisco ASA command is preserved as source-only state")
+                i += 1
+                continue
+
+            if line.lower() == "sysopt connection permit-vpn":
+                record = CiscoManagementSetting(
+                    name=f"sysopt-connection-permit-vpn:{line_number}",
+                    setting="sysopt connection permit-vpn",
+                    enabled=True,
+                    raw_lines=[sanitize_raw_text(line)],
+                    explicit_fields={"setting", "enabled"},
+                    source_attributes={"raw_command": sanitize_raw_text(line)},
+                )
+                self.config.management_settings.append(
+                    self._with_source_context(record, line_number)
+                )
                 i += 1
                 continue
 

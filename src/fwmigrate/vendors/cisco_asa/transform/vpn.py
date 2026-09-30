@@ -92,6 +92,10 @@ def build_vpn_topology(config: Any, relationships: Any, interface_topology: Any)
     interfaces = {(row.source_context, row.name): row for row in interface_topology.interfaces}
     entries, issues = [], []
     for source in config.crypto_maps:
+        if source.sequence is None:
+            # The map/interface command is an attachment, not a policy entry.
+            # It participates through relationships only.
+            continue
         rel = by_source.get(id(source)); targets = {}
         if rel:
             for key, value in rel.targets: targets.setdefault(key, []).append(value)

@@ -270,7 +270,11 @@ def build_asa_reference_index(config: Any) -> ASAReferenceIndex:
         ("ike_policies", ASAReferenceKind.IKE_POLICY), ("ikev2_proposals", ASAReferenceKind.IKEV2_PROPOSAL),
         ("ipsec_transform_sets", ASAReferenceKind.IPSEC_TRANSFORM_SET), ("ipsec_profiles", ASAReferenceKind.IPSEC_PROFILE),
         ("vpn_address_pools", ASAReferenceKind.VPN_ADDRESS_POOL),
-        ("crypto_maps", ASAReferenceKind.CRYPTO_MAP), ("tunnel_groups", ASAReferenceKind.TUNNEL_GROUP),
+        # Crypto-map entries are keyed by map name + sequence. Registering each
+        # entry by map name alone makes normal multi-sequence maps look like
+        # duplicate source objects. Dynamic-map families are resolved in the
+        # VPN relationship layer instead.
+        ("tunnel_groups", ASAReferenceKind.TUNNEL_GROUP),
         ("group_policies", ASAReferenceKind.GROUP_POLICY), ("class_maps", ASAReferenceKind.CLASS_MAP),
         ("tcp_maps", ASAReferenceKind.TCP_MAP), ("dns_server_groups", ASAReferenceKind.DNS_SERVER_GROUP),
         ("aaa_server_groups", ASAReferenceKind.AAA_SERVER_GROUP), ("local_users", ASAReferenceKind.LOCAL_USER),
