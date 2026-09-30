@@ -43,7 +43,7 @@ def build_vpn_topology(config: CheckPointConfig, references: CPReferenceIndex | 
     references = references or build_reference_index(config); communities = []; issues = []
     device_kinds = (CPReferenceKind.GATEWAY, CPReferenceKind.CLUSTER, CPReferenceKind.INTEROPERABLE_DEVICE)
     for community in config.vpn_communities:
-        members, bad = _resolve_many(community, (*community.participating_gateways,), references, device_kinds, "participating_gateways")
+        members, bad = _resolve_many(community, community.participating_gateways, references, device_kinds, "participating_gateways")
         centers, bad_center = _resolve_many(community, community.center, references, device_kinds, "center")
         satellites, bad_sat = _resolve_many(community, community.satellites, references, device_kinds, "satellites")
         issues.extend((*bad, *bad_center, *bad_sat)); communities.append(CPVPNCommunityTopology(community, community.community_type, members, centers, satellites, (*bad, *bad_center, *bad_sat), (*bad, *bad_center, *bad_sat)))
