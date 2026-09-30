@@ -85,6 +85,17 @@ def handle_schedulers_command(cmd: JunosCommand, context: JuniperContextConfig) 
                     sched.weekday_windows[sub].append({"values": toks[i + 1:]})
                 handled_any = True
                 break
+            elif sub == "exclude" and i + 1 < len(toks):
+                exclusion = sanitize_source_attributes(
+                    {"values": sanitize_tokens(toks[i + 1:]), "raw": cmd.raw_sanitized}
+                )
+                if exclusion not in sched.exclusions:
+                    sched.exclusions.append(exclusion)
+                record_member_candidate(
+                    sched.member_candidate_history, "exclusions", exclusion, cmd
+                )
+                cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
+                return True
             else:
                 safe_toks = sanitize_tokens(toks)
                 sched.source_attributes["_".join(safe_toks[i:])] = sanitize_source_attributes(

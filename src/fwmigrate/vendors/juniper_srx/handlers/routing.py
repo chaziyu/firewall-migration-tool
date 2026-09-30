@@ -32,8 +32,7 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
         cmd.handler = "routing"
 
         if len(toks) >= 7 and toks[2].lower() == "rib" and toks[4].lower() == "static" and toks[5].lower() == "route":
-            route = _get_or_create_route(context, toks[6], routing_instance=None)
-            route.rib = toks[3]
+            route = _get_or_create_route(context, toks[6], routing_instance=None, rib=toks[3])
             return _parse_route_settings(cmd, toks[7:], route) if len(toks) > 7 else _normalized(cmd)
         if len(toks) >= 5 and toks[2].lower() == "static" and toks[3].lower() == "route":
             dst = toks[4]
@@ -66,8 +65,7 @@ def handle_routing_command(cmd: JunosCommand, context: JuniperContextConfig) -> 
             and toks[7].lower() == "route"
         ):
             dst = toks[8]
-            route = _get_or_create_route(context, dst, routing_instance=inst_name)
-            route.rib = toks[5]
+            route = _get_or_create_route(context, dst, routing_instance=inst_name, rib=toks[5])
             if len(toks) == 9:
                 cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
@@ -125,14 +123,21 @@ def _get_or_create_routing_instance(
 
 
 def _get_or_create_route(
-    context: JuniperContextConfig, dst: str, routing_instance: str | None
+    context: JuniperContextConfig,
+    dst: str,
+    routing_instance: str | None,
+    rib: str | None = None,
 ) -> JuniperRoute:
-    for r in context.routes:
-        if r.destination == dst and r.routing_instance == routing_instance:
-            return r
-    new_r = JuniperRoute(destination=dst, routing_instance=routing_instance)
-    context.routes.append(new_r)
-    return new_r
+    for route in context.routes:
+        if (
+            route.destination == dst
+            and route.routing_instance == routing_instance
+            and route.rib == rib
+        ):
+            return route
+    new_route = JuniperRoute(destination=dst, routing_instance=routing_instance, rib=rib)
+    context.routes.append(new_route)
+    return new_route
 
 
 def _normalized(cmd: JunosCommand) -> bool:
@@ -196,9 +201,17 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
                     )
                     i += 1
                 else:
-                    i += 1
+                    nh.source_attributes.setdefault("unknown_children", []).append(
+                        sanitize_source_attributes(
+                            {"tokens": sanitize_tokens(toks[i:]), "raw": cmd.raw_sanitized}
+                        )
+                    )
+                    cmd.extraction_status = ExtractionStatus.PARTIAL
+                    cmd.requires_manual_review = True
+                    break
         _append_next_hop(route, nh)
-        cmd.extraction_status = ExtractionStatus.EXTRACTED
+        if cmd.extraction_status != ExtractionStatus.PARTIAL:
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "qualified-next-hop" and len(toks) >= 2:
         nh_val = toks[1]
@@ -249,9 +262,17 @@ def _parse_route_settings(cmd: JunosCommand, toks: list[str], route: JuniperRout
                     )
                     i += 1
                 else:
-                    i += 1
+                    nh.source_attributes.setdefault("unknown_children", []).append(
+                        sanitize_source_attributes(
+                            {"tokens": sanitize_tokens(toks[i:]), "raw": cmd.raw_sanitized}
+                        )
+                    )
+                    cmd.extraction_status = ExtractionStatus.PARTIAL
+                    cmd.requires_manual_review = True
+                    break
         _append_next_hop(route, nh)
-        cmd.extraction_status = ExtractionStatus.EXTRACTED
+        if cmd.extraction_status != ExtractionStatus.PARTIAL:
+            cmd.extraction_status = ExtractionStatus.EXTRACTED
         return True
     elif key == "discard":
         _record_action(route, "discard", cmd)
