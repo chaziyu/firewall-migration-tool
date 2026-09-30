@@ -10,6 +10,7 @@ from ..model.policy import (
 from ..model.threat import CPHTTPSInspectionRule, CPThreatLayer, CPThreatRule, CPThreatRuleException, CPThreatSection
 from ..models import CheckPointResponse
 from .common import build_source_inventory, build_typed_object
+from .result import CPPolicyContextRecord
 
 
 def extract_access_rulebase(response: CheckPointResponse):
@@ -89,8 +90,11 @@ def _extract_structured(
             if section_model is not None and (kind.endswith("-section") or kind == "section"):
                 section_order += 1
                 section_path = (*path, str(entry.get("name") or ""))
-                section = {**entry, "_checkpoint_section_path": [part for part in section_path if part]}
-                results.append((section_bucket, build_typed_object(current_response, section, section_model, section_order)))
+                section = build_typed_object(current_response, entry, section_model, section_order)
+                results.append((section_bucket, section))
+                results.append(("policy_context", CPPolicyContextRecord(
+                    section, tuple(part for part in section_path if part)
+                )))
                 if isinstance(nested, list):
                     walk(nested, current_response, section_path, current_layer_uid, parent_rule_uid)
                 continue
@@ -109,14 +113,17 @@ def _extract_structured(
                 walk(nested, layer_response, path, layer_uid, parent_rule_uid)
                 continue
             rule_orders[str(current_layer_uid or "root")] += 1
-            rule = {**entry, "_checkpoint_section_path": [part for part in path if part]}
             model = rule_model(entry) if not isinstance(rule_model, type) else rule_model
             order = rule_orders[str(current_layer_uid or "root")]
             if model is None:
                 results.append(("source_inventory", build_source_inventory(current_response, entry, order)))
                 continue
             bucket = "threat_rule_exceptions" if model is CPThreatRuleException else rule_bucket
-            results.append((bucket, build_typed_object(current_response, rule, model, order)))
+            rule = build_typed_object(current_response, entry, model, order)
+            results.append((bucket, rule))
+            results.append(("policy_context", CPPolicyContextRecord(
+                rule, tuple(part for part in path if part)
+            )))
 
     walk(payload, root_response)
     return results
