@@ -63,6 +63,7 @@ def test_uid_and_domain_scoped_name_resolution():
     b = CPHost(uid="b", name="same", domain_uid="d2")
     index = build_reference_index(CheckPointConfig(hosts=[a, b]))
     assert index.resolve("a", expected_kinds=(CPReferenceKind.HOST,)).target is a
+    assert index.resolve("a", owner=CPHost(domain_uid="d2"), expected_kinds=(CPReferenceKind.HOST,)).status == "cross_scope"
     assert index.resolve("same", owner=CPHost(domain_uid="d1"), expected_kinds=(CPReferenceKind.HOST,)).target is a
     assert index.resolve("same", owner=CPHost(domain_uid="d2"), expected_kinds=(CPReferenceKind.HOST,)).target is b
     assert index.resolve("same", owner=CPHost(domain_uid="d3"), expected_kinds=(CPReferenceKind.HOST,)).status == "cross_scope"
