@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from .model.source import CheckPointConfig
 from .model.common import CheckPointSourceObject
 from .models import CheckPointCollectionDiagnostic
-from .extraction.result import CPPolicyContextRecord
+from .policy_context import CPPolicyContextRecord
 from .relationships.identity import CPIdentityRelationships, build_identity_relationships
 from .relationships.interface_topology import CPInterfaceTopology, build_interface_topology
 from .relationships.policy_structure import CPPolicyStructure, build_policy_structure
