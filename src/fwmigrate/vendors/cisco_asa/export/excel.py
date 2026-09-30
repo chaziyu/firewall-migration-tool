@@ -5,7 +5,7 @@ from typing import Any
 
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 from ..presentation_schema import DERIVED_SECTIONS, SOURCE_SECTIONS
-from ..presentation import excel_value, has_source_evidence
+from ..presentation import excel_value, has_source_evidence, source_value
 
 
 def _name(value: Any) -> Any:
@@ -162,8 +162,10 @@ def export_asa_excel(result: Any, output: Any) -> Any:
                           rule.destination_mode, rule.original_service, rule.translated_service,
                           rule.service_protocol, rule.service_operand_1, rule.service_operand_2,
                           rule.owning_object, rule.access_list, rule.pat_pool,
-                          rule.pat_pool_options, rule.identity_nat, rule.nat_exemption, rule.dns,
-                          rule.no_proxy_arp, rule.route_lookup, rule.unidirectional, rule.inactive,
+                          rule.pat_pool_options, source_value(rule, "identity_nat"),
+                          source_value(rule, "nat_exemption"), source_value(rule, "dns"),
+                          source_value(rule, "no_proxy_arp"), source_value(rule, "route_lookup"),
+                          source_value(rule, "unidirectional"), source_value(rule, "inactive"),
                           rule.options, item.issues, rule.raw_line)
                 sheet.append(tuple(excel_value(value) for value in values))
             continue
@@ -179,7 +181,7 @@ def export_asa_excel(result: Any, output: Any) -> Any:
             fields = SOURCE_SECTIONS[name][1].split()
             for item in config.interfaces:
                 view = topology.get((item.source_context, item.name.casefold()))
-                values = (*(getattr(item, field, None) for field in fields), getattr(view, "kind", None),
+                values = (*(source_value(item, field) for field in fields), getattr(view, "kind", None),
                           _name(getattr(view, "parent", None)), _name(getattr(view, "aggregate", None)),
                           tuple(_name(value) for value in getattr(view, "physical_interfaces", ())),
                           getattr(view, "issues", ()))
@@ -253,7 +255,7 @@ def export_asa_excel(result: Any, output: Any) -> Any:
                 values = (item for item in values if any(getattr(item, key, None)
                           for key in ("policy_route_maps", "policy_route_cost", "policy_route_path_monitors")))
             for item in values:
-                sheet.append(tuple(excel_value(getattr(item, field, None)) for field in fields))
+                sheet.append(tuple(excel_value(source_value(item, field)) for field in fields))
             continue
         if name in DERIVED_SECTIONS:
             sheet.append(SHEET_HEADERS[name])
