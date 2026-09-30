@@ -1,3 +1,4 @@
+import json
 from fwmigrate.vendors.checkpoint.extraction import extract_checkpoint_config
 from fwmigrate.vendors.checkpoint.models import CheckPointExportBundle
 
@@ -42,3 +43,14 @@ def test_policy_context_is_not_source_data_or_input_mutation():
     assert rule.source[0].uid == "h1"
     assert "_checkpoint_section_path" not in rule.raw_extra
     assert "_checkpoint_section_path" not in rule.explicit_fields
+from fwmigrate.vendors.checkpoint.source_report import extract_checkpoint_source
+
+
+def test_legacy_input_does_not_invent_omitted_vpn_state():
+    result = extract_checkpoint_source(json.dumps({
+        "access-rulebase": [{"uid": "r1", "type": "access-rule", "name": "rule"}],
+    }))
+
+    rule = result.config.access_rules[0]
+    assert rule.vpn == []
+    assert "vpn" not in rule.explicit_fields
