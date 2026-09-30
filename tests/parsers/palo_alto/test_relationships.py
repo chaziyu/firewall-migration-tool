@@ -128,3 +128,30 @@ def test_zone_membership_without_same_device_vsys_import_is_reported():
     interface = next(item for item in derived.interface_topology if item.interface == "ethernet1/1")
     assert interface.zones == ()
     assert "zone member is not imported into this VSYS" in interface.issues
+
+
+def test_panorama_policy_order_uses_hierarchy_not_device_group_xml_position():
+    config = build_panos_config("""<config><shared>
+      <pre-rulebase><security><rules><entry name='shared-pre'/></rules></security></pre-rulebase>
+      <post-rulebase><security><rules><entry name='shared-post'/></rules></security></post-rulebase>
+      <devices><entry name='panorama'><device-group>
+        <entry name='child'><parent-dg>parent</parent-dg>
+          <pre-rulebase><security><rules><entry name='child-pre'/></rules></security></pre-rulebase>
+          <post-rulebase><security><rules><entry name='child-post'/></rules></security></post-rulebase>
+        </entry>
+        <entry name='parent'>
+          <pre-rulebase><security><rules><entry name='parent-pre'/></rules></security></pre-rulebase>
+          <post-rulebase><security><rules><entry name='parent-post'/></rules></security></post-rulebase>
+        </entry>
+      </device-group></entry></devices>
+    </shared></config>""")
+    derived = build_derived_views(config)
+
+    child = [
+        item.rule_name for item in derived.policy_order
+        if item.target_scope.startswith("device-group:child")
+    ]
+    assert child[:6] == [
+        "shared-pre", "parent-pre", "child-pre",
+        "child-post", "parent-post", "shared-post",
+    ]
