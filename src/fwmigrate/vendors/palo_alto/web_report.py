@@ -179,6 +179,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "objects": object_counts,
             "vdoms": vdoms,
             "scopes": vdoms,
+            "scope_identities": list(analysis.derived.scope_identities),
             "scope_count": len(config.scopes),
             "records": len(records),
             "interfaces": len(config.interfaces),
