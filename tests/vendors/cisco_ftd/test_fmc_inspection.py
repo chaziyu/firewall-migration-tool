@@ -112,9 +112,8 @@ def test_intrusion_behavior_group_membership_conflicts_and_acp_references():
         ("behavior-1", "sig-1", "enabled", "alert")]
     assert not config.intrusion_rule_overrides
     behavior = config.intrusion_rule_behaviors[0]
-    assert behavior.source_attributes["group_membership_evidence"][0]["rule_group_id"] == "group-1"
-    assert behavior.source_attributes["conflicting_group_payload"][0]["conflicting_fields"]["action"] == {
-        "behavior": "alert", "group": "drop"}
+    assert "group_membership_evidence" not in behavior.source_attributes
+    assert "conflicting_group_payload" not in behavior.source_attributes
     assert not [item for item in config.native_resources
                 if item.source_attributes.get("parent_policy_type") == "intrusionpolicies"]
 

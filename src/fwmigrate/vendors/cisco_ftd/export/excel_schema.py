@@ -27,7 +27,7 @@ SHEET_HEADERS = {
         "Source Interface", "Destination Interface", "Original Source", "Translated Source",
         "Original Destination", "Translated Destination", "Original Source Service", "Translated Source Service",
         "Original Destination Service", "Translated Destination Service", "NAT Type", "Interface PAT",
-          "DNS", "Route Lookup", "Proxy ARP", "Source Plane", "Source Context", "Additional Settings",
+          "DNS", "Route Lookup", "No Proxy ARP", "Proxy ARP", "Source Plane", "Source Context", "Additional Settings",
           "FDM Service", "Source Translation Mode", "Destination Translation Mode"),
     "Inspection Policies": ("Policy Type", "Policy", "Policy ID", "Rule", "Rule ID", "Rules Collection",
         "Position", "Collection Order", "Enabled", "Action", "Conditions and Settings", "Policy Behavior",
