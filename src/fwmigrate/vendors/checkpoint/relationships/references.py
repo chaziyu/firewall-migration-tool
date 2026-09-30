@@ -96,9 +96,15 @@ class CPReferenceIndex:
         if not key or key.casefold() in {"any", "original"}:
             return CPResolvedReference(key or "", None, None, scope, "source_only", source_field)
         exact = self.by_uid.get(key)
-        if exact is not None and (not expected or self.kind_of(exact) in expected): candidates = [exact]
-        elif exact is not None: return CPBrokenReference(owner, source_field or "", key, expected, "wrong_type", scope)
-        else: candidates = [item for item in self.by_name.get((scope, key), ()) if not expected or self.kind_of(item) in expected]
+        if exact is not None:
+            exact_scope = _scope(exact)
+            if scope is not None and exact_scope != scope:
+                return CPBrokenReference(owner, source_field or "", key, expected, "cross_scope", scope)
+            if expected and self.kind_of(exact) not in expected:
+                return CPBrokenReference(owner, source_field or "", key, expected, "wrong_type", scope)
+            candidates = [exact]
+        else:
+            candidates = [item for item in self.by_name.get((scope, key), ()) if not expected or self.kind_of(item) in expected]
         if len(candidates) == 1:
             target = candidates[0]; return CPResolvedReference(key, target, self.kind_of(target), scope, "resolved", source_field)
         status = "ambiguous" if candidates else "cross_scope" if any(name == key for _, name in self.by_name) else "missing"
