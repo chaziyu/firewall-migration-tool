@@ -253,7 +253,7 @@ def build_ai_proposed_design(state, existing_session=None) -> PANProposedDesignS
                 proposal_map[proposal["decision_key"]] = proposal
                 prepared_by_key[proposal["decision_key"]] = prepared
             whole = ai_advisor.validate_proposal_set(working, list(proposal_map.values()))
-            conflicts = {item["decision_key"] for item in whole if item["validation_status"] == "CONFLICT"}
+            conflicts = tuple(item["decision_key"] for item in whole if item["validation_status"] == "CONFLICT")
             if conflicts:
                 repair_base = design.with_state(proposals=tuple(
                     item for item in design.proposals if item.decision_key not in conflicts
