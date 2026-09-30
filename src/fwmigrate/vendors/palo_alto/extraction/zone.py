@@ -46,7 +46,7 @@ def extract_zone(element: ET.Element, path: tuple[str, ...], context: PANWalkCon
         branch = next((child for child in network if child.tag in {"tap", "virtual-wire", "layer2", "layer3", "tunnel"}), None)
         if branch is not None:
             network_type = branch.tag
-            explicit.add("network_type")
+            explicit.update({"network_type", "members"})
             members = [(item.text or item.get("name") or "").strip() for item in branch.findall("member")]
         for tag, field in network_fields.items():
             if network.find(tag) is not None:
