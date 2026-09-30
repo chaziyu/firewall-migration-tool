@@ -8,7 +8,7 @@ from fwmigrate.vendors.checkpoint.model.address import CPGroup, CPGroupWithExclu
 from fwmigrate.vendors.checkpoint.model.administration import CPAdministrator, CPPermissionProfile
 from fwmigrate.vendors.checkpoint.model.gaia import CPGaiaRBARole, CPGaiaUser, CPVTI
 from fwmigrate.vendors.checkpoint.model.gateway import CPCluster, CPGateway, CPInteroperableDevice
-from fwmigrate.vendors.checkpoint.model.policy import CPAutoNATRule, CPNATRule, CPPolicyPackage
+from fwmigrate.vendors.checkpoint.model.policy import CPNATRule, CPPolicyPackage
 from fwmigrate.vendors.checkpoint.model.service import CPService, CPServiceGroup
 from fwmigrate.vendors.checkpoint.model.schedule import CPTime, CPTimeGroup
 from fwmigrate.vendors.checkpoint.model.threat import CPHTTPSInspectionRule, CPThreatProfile, CPThreatRule, CPThreatRuleException
@@ -52,7 +52,7 @@ def test_management_and_gaia_families_do_not_cross_types():
     assert not isinstance(admin, CPGaiaUser)
     assert not isinstance(profile, CPGaiaRBARole)
 
-    bundle, _ = load_checkpoint_input("set user admin shell /bin/bash\nset vti vti1 state on\n")
+    bundle, _ = load_checkpoint_input("set user admin shell /bin/bash\nadd vpn tunnel 1 type unnumbered peer branch dev eth0\n")
     config = extract_checkpoint_config(bundle).config
     assert type(config.gaia_users[0]) is CPGaiaUser
     assert type(config.vtis[0]) is CPVTI
@@ -68,9 +68,14 @@ def test_r81_security_zone_field_is_typed_on_gateway_interface():
 
 def test_policy_gateway_threat_and_vpn_families_remain_distinct():
     nat = _extract("show-nat-rulebase", [{"type": "nat-rule", "name": "nat"}], "rulebase").nat_rules[0]
-    auto_nat = _extract("show-nat-rulebase", [{"type": "automatic-nat-rule", "name": "auto", "automatic": True}], "rulebase").nat_rules[0]
+    automatic = extract_checkpoint_config(CheckPointExportBundle.model_validate({
+        "responses": [{"command": "show-nat-rulebase", "data": {
+            "rulebase": [{"type": "automatic-nat-rule", "name": "auto", "automatic": True}],
+        }}],
+    }))
     assert type(nat) is CPNATRule
-    assert type(auto_nat) is CPAutoNATRule
+    assert not automatic.config.nat_rules
+    assert automatic.source_inventory[0].object_type == "automatic-nat-rule"
 
     gateway = _extract("show-gateways-and-servers", [{"type": "gateway", "name": "gw"}]).gateways[0]
     cluster = _extract("show-clusters", [{"type": "cluster", "name": "cluster"}]).clusters[0]
