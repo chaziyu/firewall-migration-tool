@@ -17,10 +17,13 @@ class CPAccessSection(CheckPointSourceObject):
     section_path: list[str] = Field(default_factory=list)
 
 
-class CPAccessRule(CheckPointSourceObject):
+class _CPOrderedPolicyRule(CheckPointSourceObject):
     rule_number: int | None = Field(default=None, alias="rule-number")
     enabled: bool | None = None
     section_path: list[str] = Field(default_factory=list)
+
+
+class CPAccessRule(_CPOrderedPolicyRule):
     source: list[CheckPointObjectReference | str] = Field(default_factory=list)
     destination: list[CheckPointObjectReference | str] = Field(default_factory=list)
     service: list[CheckPointObjectReference | str] = Field(default_factory=list)
@@ -40,16 +43,22 @@ class CPNATSection(CheckPointSourceObject):
     section_path: list[str] = Field(default_factory=list)
 
 
-class CPManualNATRule(CPAccessRule):
+class CPManualNATRule(_CPOrderedPolicyRule):
     original_source: list[CheckPointObjectReference | str] = Field(default_factory=list)
     original_destination: list[CheckPointObjectReference | str] = Field(default_factory=list)
     original_service: list[CheckPointObjectReference | str] = Field(default_factory=list)
     translated_source: list[CheckPointObjectReference | str] = Field(default_factory=list)
     translated_destination: list[CheckPointObjectReference | str] = Field(default_factory=list)
     translated_service: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    install_on: list[CheckPointObjectReference | str] = Field(default_factory=list, alias="install-on")
 
 
-class CPAutoNATRule(CheckPointSourceObject):
+class CPAutoNATRule(_CPOrderedPolicyRule):
+    """Compatibility model for returned generated Automatic NAT evidence.
+
+    Live/source extraction does not place this type in CheckPointConfig.
+    """
+
     original_source: list[CheckPointObjectReference | str] = Field(default_factory=list)
     original_destination: list[CheckPointObjectReference | str] = Field(default_factory=list)
     original_service: list[CheckPointObjectReference | str] = Field(default_factory=list)
