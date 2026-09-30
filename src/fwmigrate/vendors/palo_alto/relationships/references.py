@@ -139,6 +139,41 @@ def _resolve(index: ReferenceIndex, owner, field: str, name: str, families: tupl
     return PANReferenceResolution("UNRESOLVED", owner.name, field, name, families[0], owner.scope, resolution_reason="no visible typed or source-only PAN-OS object", owner_family=owner_family, owner_source_path=owner_path)
 
 
+def _scope_device(scope: PANScope | None) -> str | None:
+    if scope is None:
+        return None
+    provenance = scope.template_provenance or {}
+    return (
+        scope.device_serial or scope.device_name
+        or provenance.get("managed_device_serial") or provenance.get("managed_device")
+    )
+
+
+def _resolve_interface(index: ReferenceIndex, owner, field: str, name: str, *, owner_family: str) -> PANReferenceResolution:
+    owner_path = getattr(owner, "source_path", None)
+    if name == "any":
+        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "interface", owner.scope, resolution_reason="PAN-OS special value", owner_family=owner_family, owner_source_path=owner_path)
+    direct = index.candidates("interface", name, owner.scope)
+    if len(direct) == 1:
+        target = direct[0]
+        return PANReferenceResolution("RESOLVED", owner.name, field, name, "interface", owner.scope, target.scope, target.source_path, "one visible candidate", owner_family, owner_path)
+    if len(direct) > 1:
+        return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, "interface", owner.scope, resolution_reason="multiple visible interface candidates", owner_family=owner_family, owner_source_path=owner_path)
+    device = _scope_device(owner.scope)
+    if device is None:
+        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "interface", owner.scope, resolution_reason="interface ownership requires explicit device context", owner_family=owner_family, owner_source_path=owner_path)
+    candidates = tuple(
+        item for item in index.objects
+        if item.family == "interface" and item.name == name and _scope_device(item.scope) == device
+    )
+    if len(candidates) == 1:
+        target = candidates[0]
+        return PANReferenceResolution("RESOLVED", owner.name, field, name, "interface", owner.scope, target.scope, target.source_path, "one interface candidate on the same explicit device", owner_family, owner_path)
+    if len(candidates) > 1:
+        return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, "interface", owner.scope, resolution_reason="multiple same-device interface candidates; effective template precedence is not extracted", owner_family=owner_family, owner_source_path=owner_path)
+    return PANReferenceResolution("UNRESOLVED", owner.name, field, name, "interface", owner.scope, resolution_reason="no interface with this name exists on the explicit source device", owner_family=owner_family, owner_source_path=owner_path)
+
+
 _PROFILE_FAMILIES = {
     "virus": ("antivirus-profile", True),
     "spyware": ("anti-spyware-profile", True),
@@ -221,11 +256,13 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
             result.append(_resolve(index, rule, "log_setting", rule.log_setting, ("log-setting",), owner_family="default-security-rule", source_only=True))
         _append_profile_setting_references(result, index, rule, "default-security-rule")
     for rule in config.nat_rules:
-        for field, names, families in (("from_zones", rule.from_zones, ("zone",)), ("to_zones", rule.to_zones, ("zone",)), ("source", rule.source, ("address", "address-group")), ("destination", rule.destination, ("address", "address-group")), ("service", (rule.service,) if rule.service else (), ("service", "service-group")), ("tags", rule.tags, ("tag",)), ("to_interface", (rule.to_interface,) if rule.to_interface else (), ("interface",))):
+        for field, names, families in (("from_zones", rule.from_zones, ("zone",)), ("to_zones", rule.to_zones, ("zone",)), ("source", rule.source, ("address", "address-group")), ("destination", rule.destination, ("address", "address-group")), ("service", (rule.service,) if rule.service else (), ("service", "service-group")), ("tags", rule.tags, ("tag",))):
             for name in names or ():
                 result.append(_resolve(index, rule, field, name, families, owner_family="nat"))
+        if rule.to_interface:
+            result.append(_resolve_interface(index, rule, "to_interface", rule.to_interface, owner_family="nat"))
         if rule.source_translation and getattr(rule.source_translation, "interface", None):
-            result.append(_resolve(index, rule, "source_translation.interface", rule.source_translation.interface, ("interface",), owner_family="nat"))
+            result.append(_resolve_interface(index, rule, "source_translation.interface", rule.source_translation.interface, owner_family="nat"))
         for branch, field in ((rule.source_translation, "source_translation"), (rule.destination_translation, "destination_translation"), (rule.dynamic_destination_translation, "dynamic_destination_translation")):
             for attr in ("translated_address", "translated_addresses"):
                 names = getattr(branch, attr, None) if branch else None
@@ -236,7 +273,7 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
             result.append(_resolve(index, owner, "sdwan_interface_profile", owner.sdwan_interface_profile, ("sdwan-interface-profile",), owner_family="interface"))
     for zone in config.zones:
         for name in zone.members or ():
-            result.append(_resolve(index, zone, "members", name, ("interface",), owner_family="zone"))
+            result.append(_resolve_interface(index, zone, "members", name, owner_family="zone"))
         if zone.zone_protection_profile:
             result.append(_resolve(index, zone, "zone_protection_profile", zone.zone_protection_profile, ("zone-protection-profile",), owner_family="zone", source_only=True))
         if zone.log_setting:
@@ -254,14 +291,14 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
             result.append(_resolve(index, administrator, "authentication_profile", administrator.authentication_profile, ("authentication-profile",), owner_family="administrator", source_only=True))
     for tunnel in config.ipsec_tunnels:
         if tunnel.tunnel_interface:
-            result.append(_resolve(index, tunnel, "tunnel_interface", tunnel.tunnel_interface, ("interface",), owner_family="ipsec-tunnel"))
+            result.append(_resolve_interface(index, tunnel, "tunnel_interface", tunnel.tunnel_interface, owner_family="ipsec-tunnel"))
         for name in tunnel.ike_gateways or ():
             result.append(_resolve(index, tunnel, "ike_gateways", name, ("ike-gateway",), owner_family="ipsec-tunnel"))
         if tunnel.ipsec_crypto_profile:
             result.append(_resolve(index, tunnel, "ipsec_crypto_profile", tunnel.ipsec_crypto_profile, ("ipsec-crypto-profile",), owner_family="ipsec-tunnel"))
     for gateway in config.ike_gateways:
         if gateway.local_interface:
-            result.append(_resolve(index, gateway, "local_interface", gateway.local_interface, ("interface",), owner_family="ike-gateway"))
+            result.append(_resolve_interface(index, gateway, "local_interface", gateway.local_interface, owner_family="ike-gateway"))
         for field in ("ikev1_crypto_profile", "ikev2_crypto_profile"):
             name = getattr(gateway, field)
             if name:
@@ -289,7 +326,7 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
             result.append(_resolve(index, group, "members", name, ("local-user",), owner_family="local-user-group"))
     for route in _static_routes(config):
         if route.interface:
-            result.append(_resolve(index, route, "interface", route.interface, ("interface",), owner_family="static-route"))
+            result.append(_resolve_interface(index, route, "interface", route.interface, owner_family="static-route"))
         if route.bfd_profile:
             result.append(_resolve(index, route, "bfd_profile", route.bfd_profile, ("bfd-profile",), owner_family="static-route", source_only=True))
         if route.nexthop and route.nexthop_type == "next-vr":
@@ -298,9 +335,9 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
             result.append(_resolve(index, route, "nexthop", route.nexthop, ("logical-router",), owner_family="static-route"))
     for server in config.dhcp_servers:
         if server.interface:
-            result.append(_resolve(index, server, "interface", server.interface, ("interface",), owner_family="dhcp-server"))
+            result.append(_resolve_interface(index, server, "interface", server.interface, owner_family="dhcp-server"))
         if server.inheritance_source:
-            result.append(_resolve(index, server, "inheritance_source", server.inheritance_source, ("interface",), owner_family="dhcp-server"))
+            result.append(_resolve_interface(index, server, "inheritance_source", server.inheritance_source, owner_family="dhcp-server"))
     for owner_family, objects in (("globalprotect-portal", config.globalprotect_portals), ("globalprotect-gateway", config.globalprotect_gateways)):
         for owner in objects:
             for field in ("authentication_profile", "certificate_profile", "ssl_tls_service_profile"):
@@ -309,7 +346,7 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
                     result.append(_resolve(index, owner, field, name, (field.replace("_", "-"),), owner_family=owner_family, source_only=True))
             if owner_family == "globalprotect-gateway":
                 if owner.local_interface:
-                    result.append(_resolve(index, owner, "local_interface", owner.local_interface, ("interface",), owner_family=owner_family))
+                    result.append(_resolve_interface(index, owner, "local_interface", owner.local_interface, owner_family=owner_family))
                 for client_auth in owner.client_authentication or ():
                     if client_auth.authentication_profile:
                         result.append(_resolve(index, owner, "client_authentication.authentication_profile", client_auth.authentication_profile, ("authentication-profile",), owner_family=owner_family, source_only=True))
