@@ -157,3 +157,67 @@ def test_policy_vpn_chain_resolves_to_context_local_source_objects():
     assert dict(tunnel_group.targets)["group-policy"].name == "GP"
     assert not relationships.issues
     assert crypto.source.name == "VPN"
+
+def test_crypto_map_sequence_entries_and_interface_binding_have_distinct_roles():
+    result = extract_cisco_asa_source(
+        "access-list VPN10 extended permit ip any any\n"
+        "access-list VPN20 extended permit ip any any\n"
+        "crypto map VPN 10 match address VPN10\n"
+        "crypto map VPN 20 match address VPN20\n"
+        "crypto map VPN interface outside\n"
+        "interface Ethernet0/0\n nameif outside\n"
+    )
+
+    entries = [item for item in result.config.crypto_maps if item.sequence is not None]
+    bindings = [item for item in result.config.crypto_maps if item.sequence is None]
+    assert [item.sequence for item in entries] == [10, 20]
+    assert len(bindings) == 1 and bindings[0].interface_attachment == "outside"
+    assert not any(
+        issue.reference_kind is ASAReferenceKind.CRYPTO_MAP
+        and "Duplicate" in issue.reason
+        for issue in result.derived.relationship_issues
+    )
+    policy_topologies = [
+        item for item in result.derived.vpn.ipsec_topologies
+        if item.topology_type == "policy-based"
+    ]
+    assert [item.crypto_map_sequence for item in policy_topologies] == [10, 20]
+
+
+def test_dynamic_crypto_map_family_resolves_all_sequence_entries_without_ambiguity():
+    result = extract_cisco_asa_source(
+        "crypto dynamic-map DYN 10 set transform-set TS\n"
+        "crypto dynamic-map DYN 20 set transform-set TS\n"
+        "crypto map OUT 100 ipsec-isakmp dynamic DYN\n"
+        "crypto map OUT interface outside\n"
+        "interface Ethernet0/0\n nameif outside\n"
+        "crypto ipsec ikev1 transform-set TS esp-aes esp-sha-hmac\n"
+    )
+
+    parent = next(
+        row for row in result.derived.vpn_relationships.relationships
+        if row.source.name == "OUT" and row.source.sequence == 100
+    )
+    dynamic_targets = [
+        target for key, target in parent.targets if key == "dynamic-map"
+    ]
+    assert [item.sequence for item in dynamic_targets] == [10, 20]
+    assert not any(issue.reference_kind is ASAReferenceKind.CRYPTO_MAP for issue in parent.issues)
+
+
+def test_crypto_and_ike_source_fields_record_explicit_provenance():
+    result = extract_cisco_asa_source(
+        "access-list CRYPTO extended permit ip any any\n"
+        "crypto ikev1 policy 10\n authentication pre-share\n encryption aes\n hash sha\n group 14\n lifetime 86400\n"
+        "crypto map VPN 10 match address CRYPTO\n"
+        "crypto map VPN 10 set peer 192.0.2.1\n"
+        "crypto map VPN 10 set transform-set TS\n"
+    )
+
+    policy = result.config.ike_policies[0]
+    assert {
+        "version", "number", "authentication", "encryption", "encryption_algorithms",
+        "hash_algorithm", "hash_algorithms", "dh_group", "dh_groups", "lifetime_seconds",
+    } <= policy.explicit_fields
+    crypto = next(item for item in result.config.crypto_maps if item.sequence == 10)
+    assert {"map_name", "sequence", "acl_name", "peer", "peers", "transform_sets"} <= crypto.explicit_fields
