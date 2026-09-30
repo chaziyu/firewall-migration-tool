@@ -15,6 +15,8 @@ from dataclasses import asdict, replace
 from copy import deepcopy
 from dataclasses import dataclass
 from time import perf_counter
+from functools import wraps
+from pydantic import ValidationError
 from flask import Flask, render_template, request, send_file, send_from_directory, jsonify
 
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
@@ -344,6 +346,8 @@ def create_app(test_config=None):
     app.jinja_env.auto_reload = True
     app.config.setdefault('AI_DESIGN_SESSION_TTL_SECONDS', 30 * 60)
     app.config.setdefault('AI_DESIGN_SESSION_MAX', 32)
+    app.config.setdefault('MIGRATION_ARTIFACT_TTL_SECONDS', 30 * 60)
+    app.config.setdefault('MIGRATION_ARTIFACT_MAX', 32)
 
     if test_config:
         app.config.update(test_config)
@@ -365,6 +369,40 @@ def create_app(test_config=None):
     ai_audit_by_id = {}
     artifact_sources = {}
     deployment_sessions: dict[str, PANDeploymentSession] = {}
+    artifact_created_at = {}
+    # ponytail: serialize candidate operations globally; use per-target locks if throughput matters.
+    candidate_lock = threading.RLock()
+
+    def _candidate_operation(function):
+        @wraps(function)
+        def locked(*args, **kwargs):
+            with candidate_lock:
+                return function(*args, **kwargs)
+        return locked
+
+    def _expire_artifacts(*, reserve=0):
+        now = time.time()
+        expired = {key for key, created in artifact_created_at.items()
+                   if now - created >= app.config['MIGRATION_ARTIFACT_TTL_SECONDS']}
+        remaining = [key for key in artifact_created_at if key not in expired]
+        limit = max(1, int(app.config['MIGRATION_ARTIFACT_MAX']))
+        expired.update(remaining[:max(0, len(remaining) + reserve - limit)])
+        for key in expired:
+            rendered_artifacts.pop(key, None)
+            artifact_sources.pop(key, None)
+            artifact_created_at.pop(key, None)
+        for key, session in tuple(deployment_sessions.items()):
+            if session.artifact_id in expired or now - session.validated_at >= _DEPLOYMENT_SESSION_TTL_SECONDS:
+                deployment_sessions.pop(key, None)
+
+    @app.before_request
+    def _prune_artifacts():
+        with candidate_lock:
+            _expire_artifacts()
+
+    @app.errorhandler(ValidationError)
+    def _invalid_model(_error):
+        return jsonify({'success': False, 'error': 'Invalid configuration fields'}), 400
 
     def _sync_ai_design_audit(rows):
         by_id = {row.get('audit_id'): row for row in ai_audit if row.get('audit_id')}
@@ -551,8 +589,10 @@ def create_app(test_config=None):
             return jsonify({'success': False, 'error': str(e), 'stage': 'decode'}), 400
         except KeyError as e:
             return jsonify({'success': False, 'error': str(e)}), 400
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid source configuration'}), 400
         except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return jsonify({'success': False, 'error': 'Source preview failed'}), 500
 
     def collection_options():
         payload = request.get_json(silent=True) or {}
@@ -1562,8 +1602,11 @@ def create_app(test_config=None):
             })
             plan_status = result.artifact_status
             artifact_id = uuid.uuid4().hex
-            rendered_artifacts[artifact_id] = rendered
-            artifact_sources[artifact_id] = (analysis, mapping, decision_document, entry.source_name)
+            with candidate_lock:
+                _expire_artifacts(reserve=1)
+                rendered_artifacts[artifact_id] = rendered
+                artifact_sources[artifact_id] = (analysis, mapping, decision_document, entry.source_name)
+                artifact_created_at[artifact_id] = time.time()
 
             counts = rendered.report['counts']
             render_counts = rendered.report['render_dispositions']
@@ -1766,6 +1809,7 @@ def create_app(test_config=None):
         return session, rendered, options
 
     @app.route('/api/deploy', methods=['POST'])
+    @_candidate_operation
     def deploy_candidate():
         try:
             payload = request.get_json(silent=True) or {}
@@ -1776,6 +1820,9 @@ def create_app(test_config=None):
             if not rendered.commands:
                 raise ValueError('The migration artifact contains no renderable commands')
             options = replace(_deployment_options(payload), validate=True)
+            for session_id, session in tuple(deployment_sessions.items()):
+                if (session.host.casefold(), session.port) == (options.host.casefold(), options.port):
+                    deployment_sessions.pop(session_id, None)
             result = PANSSHDeployer(options).deploy(rendered)
             source = artifact_sources.get(artifact_id)
             decision_document = source[2] if source else None
@@ -1787,9 +1834,6 @@ def create_app(test_config=None):
             )
             deployment_session_id = None
             if succeeded:
-                for session_id, session in tuple(deployment_sessions.items()):
-                    if session.artifact_id == artifact_id:
-                        deployment_sessions.pop(session_id, None)
                 deployment_session_id = uuid.uuid4().hex
                 deployment_sessions[deployment_session_id] = PANDeploymentSession(
                     session_id=deployment_session_id,
@@ -1804,6 +1848,7 @@ def create_app(test_config=None):
                 )
             return jsonify({
                 'success': succeeded,
+                'error': None if succeeded else result.failure_message or result.validation.response or 'Candidate preparation failed',
                 'result': asdict(result),
                 'validation_feedback': validation_feedback,
                 'deployment_session_id': deployment_session_id,
@@ -1813,6 +1858,7 @@ def create_app(test_config=None):
             return jsonify({'success': False, 'error': str(exc)}), 400
 
     @app.route('/api/validate-candidate', methods=['POST'])
+    @_candidate_operation
     def validate_candidate():
         try:
             payload = request.get_json(silent=True) or {}
@@ -1831,6 +1877,7 @@ def create_app(test_config=None):
                 deployment_sessions.pop(session.session_id, None)
             return jsonify({
                 'success': result.status == 'SUCCESS',
+                'error': None if result.status == 'SUCCESS' else result.response or 'Candidate validation failed',
                 'result': asdict(result),
                 'deployment_session_id': session.session_id if result.status == 'SUCCESS' else None,
                 'validation_feedback': validation_feedback,
@@ -1839,6 +1886,7 @@ def create_app(test_config=None):
             return jsonify({'success': False, 'error': str(exc)}), 400
 
     @app.route('/api/commit', methods=['POST'])
+    @_candidate_operation
     def commit_candidate():
         try:
             payload = request.get_json(silent=True) or {}
@@ -1848,6 +1896,7 @@ def create_app(test_config=None):
                 deployment_sessions.pop(session.session_id, None)
             return jsonify({
                 'success': result.status == 'SUCCESS',
+                'error': None if result.status == 'SUCCESS' else result.response or 'Candidate commit failed',
                 'result': asdict(result),
                 'deployment_session_id': session.session_id if result.status != 'SUCCESS' else None,
             }), (200 if result.status == 'SUCCESS' else 502)
@@ -1957,8 +2006,10 @@ def create_app(test_config=None):
             return jsonify({'error': str(e), 'stage': 'decode'}), 400
         except KeyError as e:
             return jsonify({'error': f'Vendor-native Excel is not available: {e}'}), 422
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid source configuration'}), 400
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            return jsonify({'error': 'Source Excel export failed'}), 500
 
     @app.route('/api/diagnostics', methods=['POST'])
     def run_diagnostics():

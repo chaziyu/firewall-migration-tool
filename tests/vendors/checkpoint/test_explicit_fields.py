@@ -3,6 +3,34 @@ from fwmigrate.vendors.checkpoint.extraction import extract_checkpoint_config
 from fwmigrate.vendors.checkpoint.models import CheckPointExportBundle
 
 
+def test_legacy_rulebases_keep_missing_ownership_and_report_scope():
+    from fwmigrate.vendors.checkpoint.loader import load_checkpoint_input
+    from fwmigrate.vendors.checkpoint.source_report import extract_checkpoint_source
+
+    source = json.dumps({"access-rulebase": [{"uid": "a", "type": "access-rule"}],
+                         "nat-rulebase": [{"uid": "n", "type": "nat-rule"}]})
+    bundle, scope = load_checkpoint_input(source)
+    assert all(response.package is None and response.layer is None for response in bundle.responses)
+    assert scope.ambiguous
+    assert {"missing-package-ownership", "missing-access-layer-ownership"} <= set(scope.reasons)
+    result = extract_checkpoint_source(source)
+    for rule in (*result.config.access_rules, *result.config.nat_rules):
+        assert rule.package is None and rule.layer is None
+    assert any(issue.code == "scope_ambiguous" for issue in result.validation.issues)
+
+
+def test_bundle_validation_errors_contain_only_safe_paths_and_codes():
+    import pytest
+    from fwmigrate.vendors.checkpoint.loader import load_checkpoint_input
+    from fwmigrate.vendors.checkpoint.errors import CheckPointParseError
+
+    with pytest.raises(CheckPointParseError) as error:
+        load_checkpoint_input(json.dumps({"responses": [{"data": {"password": "ERROR_SECRET_SENTINEL"}}]}))
+    assert "responses.0.command (missing)" in str(error.value)
+    assert "ERROR_SECRET_SENTINEL" not in str(error.value)
+    assert "input_value" not in str(error.value)
+
+
 def test_explicit_fields_and_unknown_leaves_are_source_faithful():
     config = extract_checkpoint_config(CheckPointExportBundle.model_validate({"responses": [{
         "command": "show-hosts",

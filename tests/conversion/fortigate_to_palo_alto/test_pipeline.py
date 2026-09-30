@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import pytest
 
 from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANAutomationMode,
@@ -16,6 +17,79 @@ from fwmigrate.vendors.palo_alto.source_model import PANScope, pan_scope_identit
 
 def _empty_derived():
     return SimpleNamespace()
+
+
+def test_validation_exclusions_and_dependents_block_artifact_and_deployment():
+    from fwmigrate.vendors.fortigate.model.address import FGAddressGroup
+    from fwmigrate.deployment import PANSSHDeployer, PANDeploymentOptions
+
+    source = FGConfig(addresses=[FGAddress(name="valid", subnet="192.0.2.1 255.255.255.255")],
+                      address_groups=[FGAddressGroup(name="broken", members=["missing"]),
+                                      FGAddressGroup(name="dependent", members=["broken"])])
+    result = run_migration_pipeline(source, _empty_derived(), options=PANMigrationOptions(
+        vdoms={"root": {"vsys": "vsys1"}},
+    ))
+    assert result.artifact_status == "PARTIAL"
+    assert result.rendered.report["render_dispositions"] == {"CREATE": 1, "REUSE": 0, "BLOCK": 2}
+    assert result.rendered.report["satisfied"] == 1
+    assert all(item["render_disposition"] == "BLOCK" for item in result.rendered.report["items"]
+               if item["source_name"] in {"broken", "dependent"})
+    assert not any("address-group" in command for command in result.rendered.commands)
+    deployed = PANSSHDeployer(PANDeploymentOptions("fw", "u", "p")).deploy(result.rendered)
+    assert not deployed.connected and "READY" in deployed.failure_message
+
+
+@pytest.mark.parametrize("setting,blocked", [
+    ('set internet-service-src enable\nset internet-service-src-name "Google-Gmail"', True),
+    ('set match-vip-only enable', True),
+    ('set future-match-option enable', True),
+    ('set internet-service disable\nset utm-status disable', False),
+])
+def test_explicit_policy_options_reach_fail_closed_rendering(setting, blocked):
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+
+    source = f'''config system interface
+edit "lan"
+set type physical
+set ip 192.0.2.1 255.255.255.0
+next
+edit "wan"
+set type physical
+set ip 198.51.100.1 255.255.255.0
+next
+end
+config firewall policy
+edit 1
+set srcintf "trust"
+set dstintf "untrust"
+set srcaddr "all"
+set dstaddr "all"
+set service "ALL"
+set schedule "always"
+set action accept
+{setting}
+next
+end
+config system zone
+edit "trust"
+set interface "lan"
+next
+edit "untrust"
+set interface "wan"
+next
+end
+'''
+    analysis = FortiGateSourceReporter().analyze_source(source)
+    result = run_migration_pipeline(analysis.extracted.config, analysis.derived, options=PANMigrationOptions(
+        vdoms={"root": {"vsys": "vsys1", "virtual_router": "default"}},
+        interfaces={"root": {"lan": {"target_interface": "ethernet1/1", "target_zone": "trust"},
+                             "wan": {"target_interface": "ethernet1/2", "target_zone": "untrust"}}},
+        zones={"root": {"trust": {"target_zone": "trust"}, "untrust": {"target_zone": "untrust"}}},
+    ))
+    rule = next(item for item in result.rendered.report["items"] if item["source_object_type"] == "security_rule")
+    assert (rule["render_disposition"] == "BLOCK") == blocked, rule
+    assert bool([command for command in result.rendered.commands if "rules 1 " in command]) != blocked
+    assert (result.artifact_status == "READY") != blocked
 
 
 def _target_interface(name, ip, *, virtual_router="vr-main"):

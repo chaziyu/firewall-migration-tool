@@ -66,7 +66,12 @@ def parse_snapshot(raw: bytes) -> CollectedSource:
         if not all(isinstance(item, str) and 0 < len(item) < 256 for item in (vendor, name, method)) or not re.fullmatch(r"[A-Za-z0-9_.-]+", name) or name in {".", ".."}:
             raise ValueError("Snapshot identity is invalid.")
         metadata, parts, warnings = data.get("metadata", {}), data.get("parts", []), data.get("warnings", [])
-        if not isinstance(metadata, dict) or set(metadata) - {"domain", "package"} or _unsafe_keys(metadata) or any(value is not None and (not isinstance(value, str) or len(value) > 256) for value in metadata.values()):
+        allowed_metadata = {"domain", "package"} | ({"multi_context"} if vendor == "cisco_asa" else set())
+        if not isinstance(metadata, dict) or set(metadata) - allowed_metadata or _unsafe_keys(metadata) or any(
+            not isinstance(value, bool) if key == "multi_context" else
+            value is not None and (not isinstance(value, str) or len(value) > 256)
+            for key, value in metadata.items()
+        ):
             raise ValueError("Snapshot metadata is unsafe.")
         if not isinstance(parts, list) or len(parts) > 500 or not isinstance(warnings, list) or len(warnings) > 100:
             raise ValueError("Snapshot parts or warnings are invalid.")

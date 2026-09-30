@@ -30,6 +30,18 @@ def test_juniper_empty_output_disconnects(monkeypatch):
     assert calls == [1]
 
 
+@pytest.mark.parametrize("response", ["error: permission denied", "syntax error.", "unknown command: display"])
+def test_juniper_command_errors_fail_acquisition(monkeypatch, response):
+    from fwmigrate.collection.contracts import CollectionError
+
+    calls = []
+    monkeypatch.setitem(sys.modules, "netmiko", SimpleNamespace(ConnectHandler=lambda **kwargs:
+        SimpleNamespace(send_command=lambda *args, **kwargs: response, disconnect=lambda: calls.append(1))))
+    with pytest.raises(CollectionError):
+        JuniperSRXCollector().collect({"host": "h", "port": 22, "username": "u", "password": "p"})
+    assert calls == [1]
+
+
 def test_juniper_collection_preserves_ntp_key_id_and_redacts_secrets(monkeypatch):
     content = "\n".join([
         "set system ntp server 192.0.2.10 key 10",

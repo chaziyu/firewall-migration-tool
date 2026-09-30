@@ -42,12 +42,28 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
             warnings.append("service negation is unsupported")
         if policy.users or policy.groups:
             warnings.append("user and group matching requires manual review")
-        if policy.internet_service or policy.internet_service_name or policy.internet_service_group or policy.internet_service_custom:
+        if any(getattr(policy, field) not in {None, "disable"}
+               for field in ("internet_service", "internet_service_src")) or any(
+            getattr(policy, field) for field in (
+                "internet_service_name", "internet_service_group", "internet_service_custom",
+                "internet_service_src_name", "internet_service_src_group", "internet_service_src_custom",
+            )
+        ):
             warnings.append("Internet Service matching is unsupported")
         if policy.vpntunnel:
             warnings.append("VPN policy action requires manual review")
-        if any(getattr(policy, field, None) for field in ("utm_status", "profile_group", "av_profile", "ips_sensor", "webfilter_profile", "ssl_ssh_profile")):
+        if policy.utm_status not in {None, "disable"} or any(getattr(policy, field, None) for field in (
+            "profile_group", "av_profile", "ips_sensor", "webfilter_profile", "ssl_ssh_profile",
+            "inspection_mode", "profile_type", "profile_protocol_options", "application_list", "dnsfilter_profile",
+        )):
             warnings.append("FortiGate inspection settings are not mapped")
+        if policy.per_ip_shaper:
+            warnings.append("FortiGate traffic shaping is not mapped")
+        if policy.srcaddr6_negate not in {None, "disable"} or policy.dstaddr6_negate not in {None, "disable"}:
+            warnings.append("IPv6 address negation requires manual review")
+        for key in policy.raw_extra:
+            if key not in {"uuid", "global-label", "label"}:
+                warnings.append(f"unclassified policy setting {key!r} requires manual review")
         action = {"accept": "allow", "deny": "deny"}.get((policy.action or "").lower())
         if action is None:
             warnings.append("unsupported or missing policy action")

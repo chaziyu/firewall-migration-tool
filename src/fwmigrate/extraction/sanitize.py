@@ -115,6 +115,17 @@ def sanitize_raw_text(text: str) -> str:
     if not text:
         return text
 
+    # ASA SNMPv3 credentials follow algorithm names rather than secret keys.
+    token = r'(?:"[^"]*"|\'[^\']*\'|[^\s\r\n]+)'
+    text = re.sub(
+        rf"(?im)^(\s*snmp-server\s+user\s+[^\r\n]*?\bauth\s+(?:md5|sha(?:-?\d+)?)\s+)({token})",
+        rf"\1{REDACTED_PLACEHOLDER}", text,
+    )
+    text = re.sub(
+        rf"(?im)^(\s*snmp-server\s+user\s+[^\r\n]*?\bpriv\s+(?:des|3des|aes(?:\s+(?:128|192|256))?)\s+)({token})",
+        rf"\1{REDACTED_PLACEHOLDER}", text,
+    )
+
     text = re.sub(r"(?im)^(\s*(?:authorization|cookie|set-cookie|x-chkp-sid)\s*:\s*).+$",
                   rf"\1{REDACTED_PLACEHOLDER}", text)
 

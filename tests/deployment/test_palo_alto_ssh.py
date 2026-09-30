@@ -17,18 +17,26 @@ class FakeConnection:
         self.config_error = config_error
         self.disconnected = False
         self.commits = 0
+        self.in_config_mode = False
 
     def config_mode(self):
         if self.config_error:
             raise self.config_error
+        self.in_config_mode = True
 
-    def send_config_set(self, commands):
+    def exit_config_mode(self):
+        self.in_config_mode = False
+
+    def send_config_set(self, commands, **kwargs):
+        assert self.in_config_mode
+        assert kwargs == {"exit_config_mode": False, "strip_command": True, "strip_prompt": True}
         response = next(self.command_responses)
         if isinstance(response, Exception):
             raise response
         return response
 
     def send_command(self, command):
+        assert self.in_config_mode == (command == "validate full")
         response = next(self.validation_responses)
         if isinstance(response, Exception):
             raise response
@@ -176,3 +184,43 @@ def test_deploy_never_commits_and_explicit_commit_remains_available(monkeypatch)
 def test_deploy_rejects_arbitrary_commands(monkeypatch):
     with pytest.raises(TypeError, match="RenderedMigration"):
         PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret")).deploy(["set one"])
+
+
+@pytest.mark.parametrize("name", ["error-server", "invalid-server", "failed-server"])
+def test_echoed_object_names_are_not_device_errors(name):
+    command = f"set address {name} ip-netmask 192.0.2.1"
+    deployer = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret"))
+    deployer.connection = FakeConnection([f"admin@fw# {command}\nadmin@fw#"])
+    deployer.connection.config_mode()
+    result = deployer.push_candidate(rendered(command))
+    assert result.commands_succeeded == 1
+    assert result.failure_message is None
+
+
+def test_standalone_validation_enters_config_mode_and_polls_in_operational_mode(monkeypatch):
+    connection = FakeConnection(validation_responses=["Job 4", "FIN OK"])
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+    assert PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret")).validate().status == "SUCCESS"
+    assert not connection.in_config_mode and connection.disconnected
+
+
+@pytest.mark.parametrize("diagnostic", ["Server error : invalid address", "Invalid syntax.", "name is not a valid address"])
+def test_real_device_diagnostics_still_reject_echoed_commands(diagnostic):
+    command = "set address error-server ip-netmask bad"
+    deployer = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret"))
+    deployer.connection = FakeConnection([f"{command}\n{diagnostic}"])
+    result = deployer.push_candidate(rendered(command))
+    assert result.failed_command_index == 0
+    assert result.commands_succeeded == 0
+
+
+def test_deployment_rejects_untrusted_host_keys_before_writing(monkeypatch):
+    def connect(**options):
+        assert options["ssh_strict"] is True
+        assert options["system_host_keys"] is True
+        raise RuntimeError("Host key not trusted")
+
+    fake_netmiko(monkeypatch, connect)
+    result = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret")).deploy(rendered("set one"))
+    assert not result.connected and result.commands_attempted == 0
+    assert "Host key not trusted" in result.failure_message
