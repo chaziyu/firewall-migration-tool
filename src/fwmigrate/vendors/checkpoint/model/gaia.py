@@ -18,11 +18,14 @@ class CPGaiaRouteNextHop(CheckPointSourceObject):
     next_hop_type: str | None = None
     gateway: str | None = None
     interface: str | None = None
+    enabled: bool | None = None
     priority: str | int | None = None
     ping: bool | None = None
     ping6: bool | None = None
     rank: str | int | None = None
     scopelocal: bool | None = None
+    monitored_ip: str | None = None
+    monitored_ip_option: str | None = None
     blackhole: bool | None = None
     reject: bool | None = None
 
@@ -36,6 +39,8 @@ class CPGaiaStaticRoute(CheckPointSourceObject):
     comment: str | None = None
     rank: str | int | None = None
     scopelocal: bool | None = None
+    ping: bool | None = None
+    ping6: bool | None = None
     default: bool | None = None
 
 
@@ -77,6 +82,7 @@ class CPGaiaUser(CheckPointSourceObject):
     authentication_method: str | None = None
     shell: str | None = None
     roles: list[CheckPointObjectReference | str] | None = None
+    access_mechanisms: list[str] | None = None
 
 
 class CPGaiaRBARole(CheckPointSourceObject):
@@ -91,6 +97,7 @@ class CPGaiaRBARole(CheckPointSourceObject):
 class CPGaiaRBAUserAssignment(CheckPointSourceObject):
     user: CheckPointObjectReference | str | None = None
     roles: list[CheckPointObjectReference | str] | None = None
+    access_mechanisms: list[str] | None = None
 
 
 class CPVTI(CheckPointSourceObject):
