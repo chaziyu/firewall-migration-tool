@@ -65,7 +65,7 @@ def build_policy_structure(config: CheckPointConfig, references: CPReferenceInde
     references = references or __import__(__package__ + ".references", fromlist=["build_reference_index"]).build_reference_index(config)
     package_layers = []; issues = []
     for package in config.policy_packages:
-        for value in package.access_layers:
+        for value in package.access_layers or ():
             resolved = references.resolve(value, owner=package, expected_kinds=(CPReferenceKind.ACCESS_LAYER,), source_field="access_layers")
             if isinstance(resolved, CPResolvedReference): package_layers.append(CPPackageLayerRelationship(package, resolved.target))
             else: package_layers.append(CPPackageLayerRelationship(package, None, issue=resolved)); issues.append(resolved)
