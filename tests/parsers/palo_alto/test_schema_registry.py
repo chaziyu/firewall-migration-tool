@@ -244,7 +244,7 @@ def test_routing_extracts_nested_order_and_source_shapes():
 
     integrated = build_panos_config((fixture_dir / "integrated_firewall.xml").read_text())
     assert [route.name for route in integrated.virtual_routers[0].static_routes] == ["default"]
-    assert [route.name for route in integrated.static_routes] == ["default"]
+    assert "static_routes" not in type(integrated).model_fields
 
 
 def test_nested_unknowns_stay_with_the_nearest_typed_owner():
