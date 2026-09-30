@@ -130,3 +130,51 @@ def test_absent_and_explicit_no_values_remain_distinct_in_source():
     assert explicit_no.security_level is None and "security_level" in explicit_no.explicit_fields
     assert explicit_no.ip is None and "ip" in explicit_no.explicit_fields
     assert [route.administrative_distance for route in result.config.static_routes] == [None, 10]
+
+def test_nat_optional_flags_remain_absent_in_preview_and_excel():
+    result = extract_cisco_asa_source(
+        "nat (inside,outside) source static REAL MAPPED\n"
+        "nat (inside,outside) source static REAL2 MAPPED2 dns no-proxy-arp route-lookup unidirectional inactive\n"
+    )
+
+    preview = build_asa_preview(result)["source"]["nat_rules"]
+    for field in ("dns", "no_proxy_arp", "route_lookup", "unidirectional", "inactive"):
+        assert preview[0][field] is None
+        assert preview[1][field] is True
+
+    output = BytesIO()
+    export_asa_excel(result, output)
+    sheet = load_workbook(BytesIO(output.getvalue()), read_only=True)["NAT Rules"]
+    rows = list(sheet.iter_rows(values_only=True))
+    headers = rows[0]
+    absent, explicit = (dict(zip(headers, row)) for row in rows[1:3])
+    for header in ("Dns", "No Proxy Arp", "Route Lookup", "Unidirectional", "Inactive"):
+        assert absent[header] is None
+        assert explicit[header] is True
+
+
+def test_negated_vpn_address_assignment_is_structured_without_unsupported_duplicate():
+    result = extract_cisco_asa_source("no vpn-addr-assign local\n")
+
+    assignment = result.config.vpn_address_assignments[0]
+    assert assignment.local_enabled is False
+    assert "local_enabled" in assignment.explicit_fields
+    assert not any(
+        getattr(item, "raw_capture", None) == "no vpn-addr-assign local"
+        for item in result.unsupported_items
+    )
+
+
+def test_sysopt_permit_vpn_preserves_explicit_positive_and_negative_source_state():
+    result = extract_cisco_asa_source(
+        "sysopt connection permit-vpn\n"
+        "no sysopt connection permit-vpn\n"
+    )
+
+    settings = [
+        item for item in result.config.management_settings
+        if item.setting == "sysopt connection permit-vpn"
+    ]
+    assert [item.enabled for item in settings] == [True, False]
+    assert all({"setting", "enabled"} <= item.explicit_fields for item in settings)
+    assert not result.unsupported_items
