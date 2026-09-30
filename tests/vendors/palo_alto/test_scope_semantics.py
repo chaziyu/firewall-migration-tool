@@ -41,3 +41,18 @@ def test_same_named_vsys_on_different_devices_have_distinct_scope_identity():
     assert resolutions["rule-a"].status == resolutions["rule-b"].status == "RESOLVED"
     assert resolutions["rule-a"].resolved_target_scope.device_serial == "serial-a"
     assert resolutions["rule-b"].resolved_target_scope.device_serial == "serial-b"
+
+
+def test_template_vsys_scope_identity_includes_vsys():
+    config = build_panos_config("""<config><devices><entry name='panorama'><template><entry name='template-a'><config><devices>
+      <entry name='fw-a' serial='SER-A'><vsys>
+        <entry name='vsys1'><address><entry name='same'><ip-netmask>192.0.2.1</ip-netmask></entry></address></entry>
+        <entry name='vsys2'><address><entry name='same'><ip-netmask>192.0.2.2</ip-netmask></entry></address></entry>
+      </vsys></entry>
+    </devices></config></entry></template></entry></devices></config>""")
+    addresses = config.addresses
+    assert len(addresses) == 2
+    assert {item.scope.vsys for item in addresses} == {"vsys1", "vsys2"}
+    assert len({pan_scope_identity(item.scope) for item in addresses}) == 2
+    scoped = [scope for scope in config.scopes if scope.kind == "template" and scope.vsys]
+    assert {scope.vsys for scope in scoped} == {"vsys1", "vsys2"}
