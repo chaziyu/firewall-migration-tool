@@ -18,6 +18,22 @@ def _recurring(element: ET.Element | None) -> PANScheduleRecurring | None:
 
 
 def extract_schedule(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> object | None:
-    extra, explicit = source_fields(element, spec, {"schedule-type/non-recurring": "non_recurring"})
+    extra, explicit = source_fields(element, spec)
     node = element.find("schedule-type")
-    return PANSchedule(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, recurring=_recurring(node.find("recurring") if node is not None else None), non_recurring=values(node, "non-recurring"), raw_extra=extra, explicit_fields=explicit)
+    recurring = node.find("recurring") if node is not None else None
+    non_recurring = node.find("non-recurring") if node is not None else None
+    explicit.discard("recurring")
+    if recurring is not None:
+        explicit.add("recurring")
+    if non_recurring is not None:
+        explicit.add("non_recurring")
+    return PANSchedule(
+        name=element.get("name"),
+        source_path="/".join(path),
+        scope=context.scope,
+        source_order=source_order,
+        recurring=_recurring(recurring),
+        non_recurring=values(node, "non-recurring"),
+        raw_extra=extra,
+        explicit_fields=explicit,
+    )
