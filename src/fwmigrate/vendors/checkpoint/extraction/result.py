@@ -3,16 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..models import CheckPointCollectionDiagnostic, ScopeSelectionResult
-from ..model.common import CheckPointSourceObject
 from ..model.source import CheckPointConfig
 from .source_inventory import CheckPointSourceRecord
 from .source_metadata import CheckPointSourceMetadata
-
-
-@dataclass(frozen=True, slots=True)
-class CPPolicyContextRecord:
-    source: CheckPointSourceObject
-    section_path: tuple[str, ...] = ()
+from ..policy_context import CPPolicyContextRecord
 
 
 @dataclass(frozen=True)
