@@ -31,6 +31,10 @@ def _lex(content: str) -> list[_Token]:
         if char == "\n":
             line += 1
         if quote:
+            if char == "\\" and i + 1 < len(content):
+                buf.append(content[i + 1])
+                i += 2
+                continue
             if char == quote:
                 quote = None
             else:
@@ -72,6 +76,9 @@ def normalize_hierarchy(content: str) -> str:
     output: list[str] = []
     index = 0
 
+    def render(path: list[str]) -> str:
+        return " ".join(shlex.quote(part) for part in path)
+
     def clean(tokens: list[str]) -> tuple[list[str], bool]:
         inactive = any(token.lower() == "inactive:" or token.lower().startswith("inactive:") for token in tokens)
         return ([token[len("inactive:"):] if token.lower().startswith("inactive:") else token
@@ -89,7 +96,7 @@ def normalize_hierarchy(content: str) -> str:
                 child_prefix, inactive = clean([t.value for t in statement])
                 path = prefix + child_prefix
                 if inactive and path:
-                    directive = "deactivate " + " ".join(path)
+                    directive = "deactivate " + render(path)
                     if directive not in output:
                         output.append(directive)
                 parse_block(path, "}")
@@ -110,10 +117,10 @@ def normalize_hierarchy(content: str) -> str:
             return
         path = [p for p in path if p not in ("[", "]")]
         if inactive:
-            directive = "deactivate " + " ".join(path)
+            directive = "deactivate " + render(path)
             if directive not in output:
                 output.append(directive)
-        output.append("set " + " ".join(path))
+        output.append("set " + render(path))
 
     parse_block([])
     return "\n".join(output)
