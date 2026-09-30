@@ -174,16 +174,28 @@ def _validate_policy_structure(config, derived):
                 "Section layer ownership conflicts with its resolved layer.", source=section,
                 field="layer_uid", reference=section.layer_uid))
     for rule in derived.policy_structure.rules:
-        owner_layer = next((item.layer for item in derived.policy_structure.package_layers if item.layer and
-                            (item.layer.uid == (rule.layer_uid or rule.parent_layer_uid) if rule.layer_uid or rule.parent_layer_uid else item.layer.name == rule.layer)), None)
-        if rule.layer_uid and not owner_layer:
+        rule_scope = _domain(rule)
+        owner_layer = next((
+            layer for layer in config.access_layers
+            if _domain(layer) == rule_scope and (
+                (rule.layer_uid and layer.uid == rule.layer_uid)
+                or (not rule.layer_uid and rule.layer and layer.name == rule.layer)
+            )
+        ), None)
+        if (rule.layer_uid or rule.layer) and not owner_layer:
             result.append(_issue("policy_rule_layer_mismatch", "policy_structure",
-                "Rule layer ownership does not resolve to a package layer.", source=rule,
-                field="layer_uid", reference=rule.layer_uid))
-        if rule.parent_layer_uid and owner_layer and owner_layer.uid != rule.parent_layer_uid:
-            result.append(_issue("policy_parent_layer_invalid", "policy_structure",
-                "Rule parent layer UID does not match its owning layer.", source=rule,
-                field="parent_layer_uid", reference=rule.parent_layer_uid))
+                "Rule layer ownership does not resolve to an access layer.", source=rule,
+                field="layer_uid" if rule.layer_uid else "layer", reference=rule.layer_uid or rule.layer))
+        if rule.parent_layer_uid and owner_layer:
+            inline_relation = next((
+                item for item in derived.policy_structure.inline_layers
+                if item.inline_layer is owner_layer
+                and (not rule.parent_rule_uid or item.parent_rule.uid == rule.parent_rule_uid)
+            ), None)
+            if inline_relation and inline_relation.parent_layer and inline_relation.parent_layer.uid != rule.parent_layer_uid:
+                result.append(_issue("policy_parent_layer_invalid", "policy_structure",
+                    "Rule parent layer UID conflicts with the resolved inline-layer parent.", source=rule,
+                    field="parent_layer_uid", reference=rule.parent_layer_uid))
     for issue in derived.policy_traversal.issues:
         result.append(_issue("policy_traversal_cycle" if "cycle" in issue.message.lower() else "policy_traversal_invalid",
             "policy_structure", issue.message, object_type="CPAccessRule", object_uid=issue.rule_uid,
