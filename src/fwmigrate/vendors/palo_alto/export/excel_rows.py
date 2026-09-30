@@ -109,7 +109,12 @@ class _PANExcelContext:
             scopes[scope].append(issue)
         self.validation_by_object = {key: tuple(value) for key, value in objects.items()}
         self.validation_by_scope = {key: tuple(value) for key, value in scopes.items()}
-        typed = (item for field in set(_TYPED_COUNT_FIELDS.values()) | {"static_routes"} for item in getattr(self.analysis.config, field))
+        typed = [
+            item
+            for field in set(_TYPED_COUNT_FIELDS.values())
+            for item in getattr(self.analysis.config, field)
+        ]
+        typed.extend(self.analysis.derived.static_routes)
         typed_by_identity: dict[tuple[str, str | None, str, int | None], list[Any]] = defaultdict(list)
         for item in typed:
             typed_by_identity[(item.source_path, getattr(item, "name", None), _scope_key(getattr(item, "scope", None)), getattr(item, "source_order", None))].append(item)
