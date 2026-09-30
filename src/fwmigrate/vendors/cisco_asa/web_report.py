@@ -5,12 +5,11 @@ from __future__ import annotations
 from typing import Any
 from .source_report import ASASourceResult
 from .presentation_schema import SOURCE_SECTIONS
-from .presentation import safe_value
-from .presentation import has_source_evidence
+from .presentation import has_source_evidence, safe_value, source_value
 
 
 def _source_record(item: Any, allowed: str) -> dict[str, Any]:
-    return {field: safe_value(getattr(item, field, None)) for field in allowed.split()}
+    return {field: safe_value(source_value(item, field)) for field in allowed.split()}
 
 
 def _name(value: Any) -> Any:
@@ -100,7 +99,7 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
                 "schedule": rule.time_range, "binding": (f"{binding.scope}:{binding.interface}" if binding and binding.interface else binding.scope if binding else "unbound"),
                 "direction": binding.direction if binding else None,
                 "interface": binding.interface if binding else None,
-                "scope": rule.source_context, "inactive": rule.inactive,
+                "scope": rule.source_context, "inactive": source_value(rule, "inactive"),
                 "review": list(rule.review_reasons),
             })
     nat_rows = [{
