@@ -148,7 +148,7 @@ def test_nat_optional_flags_remain_absent_in_preview_and_excel():
     rows = list(sheet.iter_rows(values_only=True))
     headers = rows[0]
     absent, explicit = (dict(zip(headers, row)) for row in rows[1:3])
-    for header in ("Dns", "No Proxy Arp", "Route Lookup", "Unidirectional", "Inactive"):
+    for header in ("DNS", "No Proxy ARP", "Route Lookup", "Unidirectional", "Inactive"):
         assert absent[header] is None
         assert explicit[header] is True
 
