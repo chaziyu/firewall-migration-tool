@@ -276,3 +276,16 @@ def test_inventory_survives_typed_extractor_failure(monkeypatch):
     assert config.source_inventory[0].name == "future"
     assert "retain-me" in config.source_inventory[0].raw_xml
     assert config.unknown_paths == ["config/shared/future-policy/rules/entry"]
+
+
+def test_compatibility_suffixes_do_not_type_unrelated_user_or_gateway_entries():
+    assert match_path_spec(("config", "shared", "future-feature", "user", "entry")) is None
+    assert match_path_spec(("config", "shared", "future-feature", "gateway", "entry")) is None
+
+    local_user = match_path_spec(("config", "shared", "local-user-database", "user", "entry"))
+    portal = match_path_spec(("config", "shared", "network", "global-protect", "portal", "entry"))
+    gateway = match_path_spec(("config", "shared", "network", "global-protect", "gateway", "entry"))
+
+    assert local_user is not None and local_user.name == "local_user_database"
+    assert portal is not None and portal.name == "globalprotect_portal"
+    assert gateway is not None and gateway.name == "globalprotect_gateway"
