@@ -14,8 +14,8 @@ GAIA_COMMAND_FAMILIES = (
     GaiaCommandFamily("static-route-ipv6", (("ipv6", "route", "static"), ("ipv6", "static-route")), frozenset({"set"})),
     GaiaCommandFamily("dhcp-server", (("dhcp", "server"), ("dhcp-server",)), frozenset({"set", "add"})),
     GaiaCommandFamily("gaia-user", (("user",), ("users",)), frozenset({"set", "add"})),
-    GaiaCommandFamily("gaia-rba-role", (("rba", "role"), ("rba", "roles")), frozenset({"set", "add"})),
-    GaiaCommandFamily("gaia-rba-user-assignment", (("rba", "user"), ("rba", "users")), frozenset({"set", "add"})),
+    GaiaCommandFamily("gaia-rba-role", (("rba", "role"), ("rba", "roles")), frozenset({"add"})),
+    GaiaCommandFamily("gaia-rba-user-assignment", (("rba", "user"), ("rba", "users")), frozenset({"add"})),
     GaiaCommandFamily("vpn-tunnel-vti", (("vpn", "tunnel"), ("vpn", "tunnels"), ("vti",)), frozenset({"add"})),
 )
 
