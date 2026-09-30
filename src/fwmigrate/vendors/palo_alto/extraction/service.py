@@ -41,5 +41,5 @@ def extract_service(element: ET.Element, path: tuple[str, ...], context: PANWalk
         return PANService(**common, tcp=_protocol(protocol, "tcp"), udp=_protocol(protocol, "udp"), description=value(element, "description"), tags=values(element, "tag"), raw_extra=extra, explicit_fields=explicit)
     if spec.name == "service_group":
         extra, explicit = source_fields(element, spec)
-        return PANServiceGroup(**common, members=values(element, "members"), description=value(element, "description"), tags=values(element, "tag"), raw_extra=extra, explicit_fields=explicit)
+        return PANServiceGroup(**common, members=values(element, "members"), description=value(element, "description"), tags=values(element, "tag"), disable_override=value(element, "disable-override"), raw_extra=extra, explicit_fields=explicit)
     return None
