@@ -10,13 +10,13 @@ class CPManagementAccess(CheckPointSourceObject):
 
 
 class CPPermissionProfile(CheckPointSourceObject):
-    permissions: list[str] = Field(default_factory=list)
+    permissions: list[str] | None = None
 
 
 class CPAdministrator(CheckPointSourceObject):
     authentication_method: str | None = None
-    permission_profiles: list[CheckPointObjectReference | str] = Field(default_factory=list)
-    domains: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    permission_profiles: list[CheckPointObjectReference | str] | None = None
+    domains: list[CheckPointObjectReference | str] | None = None
     email: str | None = None
 
 
