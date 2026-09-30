@@ -36,24 +36,25 @@ def handle_address_book_command(cmd: JunosCommand, context: JuniperContextConfig
     if toks[1].lower() != "security":
         return False
 
-    # Check case 3: legacy zone address book
+    # Legacy zone-local address-book syntax is outside the selected Junos
+    # address-book reference. Preserve it without inventing a named book.
     if len(toks) >= 6 and toks[2].lower() == "zones" and toks[3].lower() == "security-zone":
         zone_name = toks[4]
         if toks[5].lower() == "address-book":
-            # Book name can be treated as zone-local book: f"zone_{zone_name}"
-            book_name = f"zone_{zone_name}"
-            if book_name not in context.address_books:
-                context.address_books[book_name] = JuniperAddressBook(
-                    name=book_name, attached_zones=[zone_name]
+            context.source_attributes.setdefault("legacy_zone_address_book", []).append(
+                sanitize_source_attributes(
+                    {
+                        "zone": zone_name,
+                        "tokens": sanitize_tokens(toks[5:]),
+                        "raw": cmd.raw_sanitized,
+                    }
                 )
-            book = context.address_books[book_name]
-            book.provenance = JuniperSourceProvenance(
-                kind=JuniperProvenanceKind.INHERITED_GROUP if cmd.source_group else JuniperProvenanceKind.LOCAL,
-                context=context.context, group_name=cmd.source_group,
             )
             cmd.consumed = True
             cmd.handler = "address_book"
-            return _parse_address_book_body(cmd, toks[6:], book, zone_name=zone_name)
+            cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
+            cmd.requires_manual_review = True
+            return True
         return False
 
     # Check cases 1 & 2: security address-book <book_name> ...
