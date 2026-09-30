@@ -17,7 +17,7 @@ from .gaia import (
 )
 from .identity import CPAccessRole, CPUser, CPUserGroup
 from .policy import (
-    CPAccessLayer, CPAccessRule, CPAccessSection, CPAutoNATRule, CPNATRule,
+    CPAccessLayer, CPAccessRule, CPAccessSection, CPNATRule,
     CPNATSection, CPPolicyPackage,
 )
 from .schedule import CPTime, CPTimeGroup
@@ -74,7 +74,7 @@ class CheckPointConfig(BaseModel):
     access_sections: list[CPAccessSection] = Field(default_factory=list)
     access_rules: list[CPAccessRule] = Field(default_factory=list)
     nat_sections: list[CPNATSection] = Field(default_factory=list)
-    nat_rules: list[CPNATRule | CPAutoNATRule] = Field(default_factory=list)
+    nat_rules: list[CPNATRule] = Field(default_factory=list)
     threat_profiles: list[CPThreatProfile] = Field(default_factory=list)
     threat_layers: list[CPThreatLayer] = Field(default_factory=list)
     threat_sections: list[CPThreatSection] = Field(default_factory=list)
