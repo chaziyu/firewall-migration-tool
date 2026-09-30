@@ -319,7 +319,7 @@ def _validate_gaia(config, inventory):
             result.append(_issue("gaia_route_malformed", "gaia", "Static route destination is missing.", source=route, field="destination"))
         if not route.next_hops:
             result.append(_issue("gaia_route_malformed", "gaia", "Static route has no explicit next-hop type.", source=route, field="next_hops"))
-        for hop in route.next_hops:
+        for hop in route.next_hops or ():
             if hop.next_hop_type not in {"gateway", "interface", "blackhole", "reject"}:
                 result.append(_issue("gaia_route_malformed", "gaia", "Static route next-hop type is missing or unsupported.", source=hop, field="type"))
             if hop.blackhole is True and hop.reject is True:
@@ -353,7 +353,7 @@ def _validate_gaia(config, inventory):
 
 def _dhcp_issues(server):
     result = []
-    for subnet in server.subnets:
+    for subnet in server.subnets or ():
         if not subnet.subnet:
             result.append(_issue("gaia_dhcp_malformed", "gaia", "DHCP subnet identity is missing.", source=subnet, field="subnet"))
         try:
@@ -367,7 +367,7 @@ def _dhcp_issues(server):
         except (ValueError, TypeError):
             result.append(_issue("gaia_dhcp_malformed", "gaia", "DHCP subnet address or prefix is malformed.", source=subnet, field="subnet"))
         for group_name in ("included_pools", "excluded_pools"):
-            for pool in getattr(subnet, group_name):
+            for pool in getattr(subnet, group_name) or ():
                 if bool(pool.start) != bool(pool.end):
                     result.append(_issue("gaia_dhcp_malformed", "gaia", "DHCP pool must provide both start and end.", source=pool, field=group_name))
                 elif pool.start and pool.end:
