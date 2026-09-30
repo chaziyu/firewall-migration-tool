@@ -28,6 +28,22 @@ def build_vpn_relationships(config: Any, references: ASAReferenceIndex) -> ASAVP
         for kind, names, field in fields:
             for name in names if isinstance(names, (list, tuple)) else (names,):
                 if not name: continue
+                if kind is ASAReferenceKind.CRYPTO_MAP:
+                    candidates = [
+                        candidate for candidate in config.crypto_maps
+                        if getattr(candidate, "source_context", None) == ctx
+                        and getattr(candidate, "name", None) == str(name)
+                        and getattr(candidate, "is_dynamic", False)
+                        and getattr(candidate, "sequence", None) is not None
+                    ]
+                    if candidates:
+                        targets.extend((field, candidate) for candidate in candidates)
+                        continue
+                    issues.append(ASAReferenceIssue(
+                        ctx, kind, source.name, str(name), ASAReferenceStatus.UNRESOLVED,
+                        "Unresolved dynamic crypto-map family reference", field,
+                    ))
+                    continue
                 result = references.resolve(ctx, kind, str(name))
                 if result.status is ASAReferenceStatus.RESOLVED:
                     targets.append((field, result.target)); continue
