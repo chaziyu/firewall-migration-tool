@@ -1,3 +1,4 @@
+from fwmigrate.vendors.palo_alto.native import build_derived_views
 from fwmigrate.vendors.palo_alto.source_builder import build_panos_config
 
 
@@ -25,3 +26,7 @@ def test_router_kind_route_fields_and_missing_values_are_source_faithful():
     assert (lr_route.interface, lr_route.metric, lr_route.path_monitor.targets[0].destination) == (None, None, "192.0.2.2")
     assert lr_route.raw_extra["future-route-leaf"] == "keep"
     assert vr_route.metric is not None and vr_route.path_monitor is None
+    assert (vr_route.router_type, vr_route.router_name, vr_route.vrf_name) == ("virtual-router", "vr-main", None)
+    assert (lr_route.router_type, lr_route.router_name, lr_route.vrf_name) == ("logical-router", "lr-main", "production")
+    assert "static_routes" not in type(config).model_fields
+    assert [route.name for route in build_derived_views(config).static_routes] == ["default", "branch"]
