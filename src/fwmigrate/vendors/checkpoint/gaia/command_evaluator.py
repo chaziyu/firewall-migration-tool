@@ -51,7 +51,7 @@ def _evaluate(kind: str, node: GaiaCommandNode, args: tuple[str, ...]) -> GaiaEv
         return GaiaEvaluation(kind, identity, values, set(values), node.line_number)
     if kind.startswith("static-route"):
         identity = args[0] if args else None
-        values: dict[str, Any] = {"address_family": "ipv6" if kind.endswith("ipv6") else "ipv4", "next_hops": []}
+        values: dict[str, Any] = {"address_family": "ipv6" if kind.endswith("ipv6") else "ipv4"}
         index = 1
         while index < len(args):
             key = args[index].lower().replace("-", "_")
@@ -79,9 +79,9 @@ def _evaluate(kind: str, node: GaiaCommandNode, args: tuple[str, ...]) -> GaiaEv
                         index += 1
                     else:
                         break
-                values["next_hops"].append(hop)
+                values.setdefault("next_hops", []).append(hop)
             elif key in {"blackhole", "reject"}:
-                values["next_hops"].append({"next_hop_type": key, key: True}); index += 1
+                values.setdefault("next_hops", []).append({"next_hop_type": key, key: True}); index += 1
             elif key in {"scopelocal", "ping", "ping6"}:
                 values[key] = True; index += 1
             elif key in {"comment", "rank"} and index + 1 < len(args):
