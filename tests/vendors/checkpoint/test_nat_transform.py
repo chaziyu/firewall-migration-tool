@@ -3,7 +3,7 @@ import pytest
 from fwmigrate.vendors.checkpoint.derived import build_checkpoint_derived_views
 from fwmigrate.vendors.checkpoint.model.address import CPAddressRange, CPHost, CPNetwork
 from fwmigrate.vendors.checkpoint.model.gateway import CPGateway
-from fwmigrate.vendors.checkpoint.model.policy import CPAutoNATRule, CPNATRule
+from fwmigrate.vendors.checkpoint.model.policy import CPNATRule
 from fwmigrate.vendors.checkpoint.model.source import CheckPointConfig
 from fwmigrate.vendors.checkpoint.extraction import extract_checkpoint_config
 from fwmigrate.vendors.checkpoint.models import CheckPointExportBundle
@@ -28,10 +28,9 @@ def test_manual_nat_keeps_source_references_order_and_resolved_metadata():
         translated_source=["public"], translated_destination=["public-vip"], translated_service=["https-translated"],
         method="static", install_on=["gw"],
     )
-    returned_auto = CPAutoNATRule(uid="auto", name="automatic", order=8, automatic=True)
     config = CheckPointConfig(
         hosts=[source], services=[], gateways=[CPGateway(uid="gateway", name="gw")],
-        nat_rules=[rule, returned_auto],
+        nat_rules=[rule],
     )
 
     result = build_checkpoint_derived_views(config)
@@ -50,10 +49,29 @@ def test_manual_nat_keeps_source_references_order_and_resolved_metadata():
     assert view.translation_method == "static"
     assert view.install_on[0].reference == "gw"
     assert len(view.install_on) == 1
-    assert result.nat.views[1].source_kind == "returned_automatic_rule"
-    assert result.nat.views[1].owner_uid is None
+    assert not hasattr(rule, "vpn")
+    assert not hasattr(rule, "source")
     with pytest.raises(FrozenInstanceError):
         view.rule_order = 8
+
+def test_returned_automatic_nat_rule_is_preserved_as_source_inventory_only():
+    result = extract_checkpoint_config(CheckPointExportBundle.model_validate({"responses": [{
+        "command": "show-nat-rulebase",
+        "package": "Standard",
+        "data": {"rulebase": [{
+            "uid": "auto", "name": "automatic", "type": "automatic-nat-rule",
+            "automatic": True, "original-source": "inside",
+        }]},
+    }]}))
+
+    assert not result.config.nat_rules
+    assert len(result.source_inventory) == 1
+    record = result.source_inventory[0]
+    assert record.object_type == "automatic-nat-rule"
+    assert record.package == "Standard"
+    assert record.values["automatic"] is True
+    assert record.values["original-source"] == "inside"
+
 
 def test_automatic_nat_settings_are_traceable_and_unknown_when_incomplete():
     host = CPHost(uid="host", name="Web", nat_settings={"auto-rule": True})

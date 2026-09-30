@@ -49,7 +49,7 @@ class CPUpdatableObject(CPAddress):
 
 
 class CPGroup(CheckPointSourceObject):
-    members: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    members: list[CheckPointObjectReference | str] | None = None
 
 
 class CPGroupWithExclusion(CheckPointSourceObject):

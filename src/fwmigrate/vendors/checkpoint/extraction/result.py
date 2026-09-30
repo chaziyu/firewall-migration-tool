@@ -6,6 +6,7 @@ from ..models import CheckPointCollectionDiagnostic, ScopeSelectionResult
 from ..model.source import CheckPointConfig
 from .source_inventory import CheckPointSourceRecord
 from .source_metadata import CheckPointSourceMetadata
+from ..policy_context import CPPolicyContextRecord
 
 
 @dataclass(frozen=True)
@@ -14,6 +15,7 @@ class ExtractionResult:
     collection: tuple[CheckPointCollectionDiagnostic, ...] = ()
     source_objects: tuple[CheckPointSourceRecord, ...] = ()
     source_metadata: CheckPointSourceMetadata = field(default_factory=CheckPointSourceMetadata)
+    policy_context: tuple[CPPolicyContextRecord, ...] = ()
     scope: ScopeSelectionResult = field(default_factory=ScopeSelectionResult)
 
     @property

@@ -10,7 +10,7 @@ from fwmigrate.extraction.sanitize import REDACTED_PLACEHOLDER, is_sensitive_key
 from ..derived import CheckPointDerivedViews
 from ..model.common import CheckPointSourceObject
 from ..model.gaia import CPGaiaStaticRoute
-from ..model.policy import CPAutoNATRule, CPNATRule
+from ..model.policy import CPNATRule
 from ..model.source import CheckPointConfig
 from ..models import CollectionStatus, ScopeSelectionResult
 from .models import CheckPointValidationIssue, CheckPointValidationResult
@@ -174,16 +174,28 @@ def _validate_policy_structure(config, derived):
                 "Section layer ownership conflicts with its resolved layer.", source=section,
                 field="layer_uid", reference=section.layer_uid))
     for rule in derived.policy_structure.rules:
-        owner_layer = next((item.layer for item in derived.policy_structure.package_layers if item.layer and
-                            (item.layer.uid == (rule.layer_uid or rule.parent_layer_uid) if rule.layer_uid or rule.parent_layer_uid else item.layer.name == rule.layer)), None)
-        if rule.layer_uid and not owner_layer:
+        rule_scope = _domain(rule)
+        owner_layer = next((
+            layer for layer in config.access_layers
+            if _domain(layer) == rule_scope and (
+                (rule.layer_uid and layer.uid == rule.layer_uid)
+                or (not rule.layer_uid and rule.layer and layer.name == rule.layer)
+            )
+        ), None)
+        if (rule.layer_uid or rule.layer) and not owner_layer:
             result.append(_issue("policy_rule_layer_mismatch", "policy_structure",
-                "Rule layer ownership does not resolve to a package layer.", source=rule,
-                field="layer_uid", reference=rule.layer_uid))
-        if rule.parent_layer_uid and owner_layer and owner_layer.uid != rule.parent_layer_uid:
-            result.append(_issue("policy_parent_layer_invalid", "policy_structure",
-                "Rule parent layer UID does not match its owning layer.", source=rule,
-                field="parent_layer_uid", reference=rule.parent_layer_uid))
+                "Rule layer ownership does not resolve to an access layer.", source=rule,
+                field="layer_uid" if rule.layer_uid else "layer", reference=rule.layer_uid or rule.layer))
+        if rule.parent_layer_uid and owner_layer:
+            inline_relation = next((
+                item for item in derived.policy_structure.inline_layers
+                if item.inline_layer is owner_layer
+                and (not rule.parent_rule_uid or item.parent_rule.uid == rule.parent_rule_uid)
+            ), None)
+            if inline_relation and inline_relation.parent_layer and inline_relation.parent_layer.uid != rule.parent_layer_uid:
+                result.append(_issue("policy_parent_layer_invalid", "policy_structure",
+                    "Rule parent layer UID conflicts with the resolved inline-layer parent.", source=rule,
+                    field="parent_layer_uid", reference=rule.parent_layer_uid))
     for issue in derived.policy_traversal.issues:
         result.append(_issue("policy_traversal_cycle" if "cycle" in issue.message.lower() else "policy_traversal_invalid",
             "policy_structure", issue.message, object_type="CPAccessRule", object_uid=issue.rule_uid,
@@ -240,8 +252,6 @@ def _validate_nat(config, derived):
                 result.append(_issue("nat_translation_missing", "nat", "NAT method is set but translated fields are empty.", source=rule, field="translated_source"))
             if rule.order is not None and rule.order < 0:
                 result.append(_issue("nat_order_malformed", "nat", "NAT rule ordering value is invalid.", source=rule, field="order"))
-        if isinstance(rule, CPAutoNATRule) and not any((rule.translated_source, rule.translated_destination, rule.translated_service)):
-            result.append(_issue("nat_structure_incomplete", "nat", "Automatic NAT rule has no translated fields.", source=rule, field="translated_source"))
     for item in derived.nat.issues:
         result.append(_issue("nat_structure_incomplete", "nat", item.message,
             domain=item.domain, object_uid=item.source_uid, object_name=item.source_name,
@@ -321,7 +331,7 @@ def _validate_gaia(config, inventory):
             result.append(_issue("gaia_route_malformed", "gaia", "Static route destination is missing.", source=route, field="destination"))
         if not route.next_hops:
             result.append(_issue("gaia_route_malformed", "gaia", "Static route has no explicit next-hop type.", source=route, field="next_hops"))
-        for hop in route.next_hops:
+        for hop in route.next_hops or ():
             if hop.next_hop_type not in {"gateway", "interface", "blackhole", "reject"}:
                 result.append(_issue("gaia_route_malformed", "gaia", "Static route next-hop type is missing or unsupported.", source=hop, field="type"))
             if hop.blackhole is True and hop.reject is True:
@@ -355,7 +365,7 @@ def _validate_gaia(config, inventory):
 
 def _dhcp_issues(server):
     result = []
-    for subnet in server.subnets:
+    for subnet in server.subnets or ():
         if not subnet.subnet:
             result.append(_issue("gaia_dhcp_malformed", "gaia", "DHCP subnet identity is missing.", source=subnet, field="subnet"))
         try:
@@ -369,7 +379,7 @@ def _dhcp_issues(server):
         except (ValueError, TypeError):
             result.append(_issue("gaia_dhcp_malformed", "gaia", "DHCP subnet address or prefix is malformed.", source=subnet, field="subnet"))
         for group_name in ("included_pools", "excluded_pools"):
-            for pool in getattr(subnet, group_name):
+            for pool in getattr(subnet, group_name) or ():
                 if bool(pool.start) != bool(pool.end):
                     result.append(_issue("gaia_dhcp_malformed", "gaia", "DHCP pool must provide both start and end.", source=pool, field=group_name))
                 elif pool.start and pool.end:

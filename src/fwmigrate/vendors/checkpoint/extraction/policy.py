@@ -5,11 +5,12 @@ from typing import Any, Callable, Type
 
 from ..model.common import CheckPointSourceObject
 from ..model.policy import (
-    CPAccessLayer, CPAccessRule, CPAccessSection, CPAutoNATRule, CPNATRule, CPNATSection,
+    CPAccessLayer, CPAccessRule, CPAccessSection, CPNATRule, CPNATSection,
 )
 from ..model.threat import CPHTTPSInspectionRule, CPThreatLayer, CPThreatRule, CPThreatRuleException, CPThreatSection
 from ..models import CheckPointResponse
-from .common import build_typed_object
+from .common import build_source_inventory, build_typed_object
+from ..policy_context import CPPolicyContextRecord
 
 
 def extract_access_rulebase(response: CheckPointResponse):
@@ -43,7 +44,7 @@ def extract_policy_records(response: CheckPointResponse):
 def _extract_structured(
     response: CheckPointResponse,
     section_model: Type[CheckPointSourceObject] | None,
-    rule_model: Type[CheckPointSourceObject] | Callable[[dict[str, Any]], Type[CheckPointSourceObject]],
+    rule_model: Type[CheckPointSourceObject] | Callable[[dict[str, Any]], Type[CheckPointSourceObject] | None],
     section_bucket: str | None,
     rule_bucket: str,
 ):
@@ -58,8 +59,6 @@ def _extract_structured(
     root_response = response.model_copy(update={
         "layer": response.layer or response.data.get("name"),
         "layer_uid": root_layer_uid,
-        "package": None,
-        "package_uid": None,
         "parent_layer_uid": response.parent_layer_uid or response.data.get("parent-layer-uid"),
         "parent_rule_uid": response.parent_rule_uid or response.data.get("parent-rule-uid"),
     })
@@ -91,8 +90,11 @@ def _extract_structured(
             if section_model is not None and (kind.endswith("-section") or kind == "section"):
                 section_order += 1
                 section_path = (*path, str(entry.get("name") or ""))
-                section = {**entry, "_checkpoint_section_path": [part for part in section_path if part]}
-                results.append((section_bucket, build_typed_object(current_response, section, section_model, section_order)))
+                section = build_typed_object(current_response, entry, section_model, section_order)
+                results.append((section_bucket, section))
+                results.append(("policy_context", CPPolicyContextRecord(
+                    section, tuple(part for part in section_path if part)
+                )))
                 if isinstance(nested, list):
                     walk(nested, current_response, section_path, current_layer_uid, parent_rule_uid)
                 continue
@@ -101,8 +103,6 @@ def _extract_structured(
                 layer_response = current_response.model_copy(update={
                     "layer": entry.get("name") or current_response.layer,
                     "layer_uid": layer_uid,
-                    "package": None,
-                    "package_uid": None,
                     "parent_layer_uid": current_layer_uid,
                     "parent_rule_uid": parent_rule_uid,
                 })
@@ -113,17 +113,26 @@ def _extract_structured(
                 walk(nested, layer_response, path, layer_uid, parent_rule_uid)
                 continue
             rule_orders[str(current_layer_uid or "root")] += 1
-            rule = {**entry, "_checkpoint_section_path": [part for part in path if part]}
             model = rule_model(entry) if not isinstance(rule_model, type) else rule_model
+            order = rule_orders[str(current_layer_uid or "root")]
+            if model is None:
+                results.append(("source_inventory", build_source_inventory(current_response, entry, order)))
+                continue
             bucket = "threat_rule_exceptions" if model is CPThreatRuleException else rule_bucket
-            results.append((bucket, build_typed_object(current_response, rule, model, rule_orders[str(current_layer_uid or "root")])))
+            rule = build_typed_object(current_response, entry, model, order)
+            results.append((bucket, rule))
+            results.append(("policy_context", CPPolicyContextRecord(
+                rule, tuple(part for part in path if part)
+            )))
 
     walk(payload, root_response)
     return results
 
 
 def _nat_rule(value: dict[str, Any]):
-    return CPAutoNATRule if value.get("automatic") or str(value.get("type") or "").lower() in {"automatic-nat-rule", "auto-nat-rule"} else CPNATRule
+    if value.get("automatic") or str(value.get("type") or "").lower() in {"automatic-nat-rule", "auto-nat-rule"}:
+        return None
+    return CPNATRule
 
 
 def _threat_rule(value: dict[str, Any]):

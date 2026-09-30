@@ -42,11 +42,8 @@ def build_typed_object(
     order: int | None = None,
 ) -> CheckPointSourceObject:
     context = dict(value)
-    section_path = context.pop("_checkpoint_section_path", None)
     inline_layer_context = context.pop("_checkpoint_inline_layer_context", None)
     source_values, raw_extra, explicit_fields = build_source_fields(model, context)
-    if section_path is not None and "section_path" in model.model_fields:
-        source_values["section_path"] = list(section_path)
     if inline_layer_context is not None and "inline_layer" in model.model_fields:
         source_values["inline_layer"] = inline_layer_context
     values = {

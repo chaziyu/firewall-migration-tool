@@ -31,8 +31,14 @@ def test_live_community_commands_enter_derived_vpn_topology():
     star = next(item for item in result.derived.vpn_topology.communities if item.community.uid == "star")
     assert star.centers[0].uid == "g"
     assert star.community.command == "show-vpn-communities-star"
+    assert star.community.community_type is None
     mesh = next(item for item in result.derived.vpn_topology.communities if item.community.uid == "mesh")
+    assert mesh.community.community_type == "mesh"
     assert {item.uid for item in mesh.members} == {"g", "c"}
+    derived_types = {item.community_uid: item.community_type for item in result.derived.vpn_views.views}
+    assert derived_types["star"] == "star"
+    assert derived_types["mesh"] == "mesh"
+    assert derived_types["ra"] == "remote-access"
 
 def test_vpn_migration_view_retains_checkpoint_sources_and_shared_relationships():
     gateway = CPGateway(uid="g", name="gateway", vpn={"ike": "source setting"})

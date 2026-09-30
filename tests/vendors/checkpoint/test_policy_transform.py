@@ -6,6 +6,7 @@ from fwmigrate.vendors.checkpoint.model.policy import (
     CPPolicyPackage,
 )
 from fwmigrate.vendors.checkpoint.model.source import CheckPointConfig
+from fwmigrate.vendors.checkpoint.policy_context import CPPolicyContextRecord
 
 
 def test_traversal_follows_package_layers_and_inline_rules_without_reordering_source():
@@ -13,10 +14,10 @@ def test_traversal_follows_package_layers_and_inline_rules_without_reordering_so
     root_b = CPAccessLayer(uid="root-b", name="Root B", package_uid="pkg")
     inline = CPAccessLayer(uid="inline", name="Inline")
     package = CPPolicyPackage(uid="pkg", name="Package", access_layers=["root-a", "root-b"])
-    section = CPAccessSection(uid="section", name="Section", layer_uid="root-a", section_path=["Section"])
+    section = CPAccessSection(uid="section", name="Section", layer_uid="root-a")
     parent = CPAccessRule(
         uid="parent", name="Parent", layer_uid="root-a", order=6,
-        section_path=["Section"], inline_layer="inline",
+        inline_layer="inline",
     )
     child = CPAccessRule(uid="child", name="Child", layer_uid="inline", order=4)
     later = CPAccessRule(uid="later", name="Later", layer_uid="root-a", order=2)
@@ -27,8 +28,12 @@ def test_traversal_follows_package_layers_and_inline_rules_without_reordering_so
     )
     before = config.model_dump()
 
-    result = build_checkpoint_derived_views(config).policy_traversal
-    repeated = build_checkpoint_derived_views(config).policy_traversal
+    policy_context = (
+        CPPolicyContextRecord(section, ("Section",)),
+        CPPolicyContextRecord(parent, ("Section",)),
+    )
+    result = build_checkpoint_derived_views(config, policy_context=policy_context).policy_traversal
+    repeated = build_checkpoint_derived_views(config, policy_context=policy_context).policy_traversal
 
     assert [entry.rule_uid for entry in result.entries] == ["parent", "child", "later", "other"]
     assert [entry.traversal_position for entry in result.entries] == [1, 2, 3, 4]

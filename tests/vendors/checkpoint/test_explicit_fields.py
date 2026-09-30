@@ -1,3 +1,4 @@
+import json
 from fwmigrate.vendors.checkpoint.extraction import extract_checkpoint_config
 from fwmigrate.vendors.checkpoint.models import CheckPointExportBundle
 
@@ -38,7 +39,37 @@ def test_policy_context_is_not_source_data_or_input_mutation():
 
     assert rulebase == original
     rule = result.config.access_rules[0]
-    assert rule.section_path == ["Web"]
+    context = next(item for item in result.policy_context if item.source is rule)
+    assert context.section_path == ("Web",)
+    assert "section_path" not in type(rule).model_fields
+    assert "section_path" not in rule.model_dump()
     assert rule.source[0].uid == "h1"
     assert "_checkpoint_section_path" not in rule.raw_extra
     assert "_checkpoint_section_path" not in rule.explicit_fields
+from fwmigrate.vendors.checkpoint.source_report import extract_checkpoint_source
+
+
+def test_legacy_input_does_not_invent_omitted_vpn_state():
+    result = extract_checkpoint_source(json.dumps({
+        "access-rulebase": [{"uid": "r1", "type": "access-rule", "name": "rule"}],
+    }))
+
+    rule = result.config.access_rules[0]
+    assert rule.vpn is None
+    assert "vpn" not in rule.explicit_fields
+
+
+def test_absent_and_explicit_empty_source_collections_stay_distinct():
+    config = extract_checkpoint_config(CheckPointExportBundle.model_validate({"responses": [{
+        "command": "show-groups",
+        "data": {"objects": [
+            {"uid": "missing", "name": "missing", "type": "group"},
+            {"uid": "empty", "name": "empty", "type": "group", "members": []},
+        ]},
+    }]})).config
+
+    missing, empty = config.groups
+    assert missing.members is None
+    assert "members" not in missing.explicit_fields
+    assert empty.members == []
+    assert "members" in empty.explicit_fields
