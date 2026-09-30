@@ -10,7 +10,7 @@ class CPThreatProfile(CheckPointSourceObject):
 
 
 class CPThreatLayer(CheckPointSourceObject):
-    profiles: list[CheckPointObjectReference | str] = Field(default_factory=list)
+    profiles: list[CheckPointObjectReference | str] | None = None
 
 
 class CPThreatSection(CheckPointSourceObject):
@@ -22,9 +22,9 @@ class CPThreatPreventionRule(CheckPointSourceObject):
     rule_number: int | None = Field(default=None, alias="rule-number")
     enabled: bool | None = None
     profile: str | None = None
-    source: list[CheckPointObjectReference | str] = Field(default_factory=list)
-    destination: list[CheckPointObjectReference | str] = Field(default_factory=list)
-    install_on: list[CheckPointObjectReference | str] = Field(default_factory=list, alias="install-on")
+    source: list[CheckPointObjectReference | str] | None = None
+    destination: list[CheckPointObjectReference | str] | None = None
+    install_on: list[CheckPointObjectReference | str] | None = Field(default=None, alias="install-on")
 
 
 class CPThreatRule(CPThreatPreventionRule):
@@ -40,9 +40,9 @@ class CPHTTPSInspectionRule(CheckPointSourceObject):
     rule_number: int | None = Field(default=None, alias="rule-number")
     enabled: bool | None = None
     profile: str | None = None
-    source: list[CheckPointObjectReference | str] = Field(default_factory=list)
-    destination: list[CheckPointObjectReference | str] = Field(default_factory=list)
-    install_on: list[CheckPointObjectReference | str] = Field(default_factory=list, alias="install-on")
+    source: list[CheckPointObjectReference | str] | None = None
+    destination: list[CheckPointObjectReference | str] | None = None
+    install_on: list[CheckPointObjectReference | str] | None = Field(default=None, alias="install-on")
 
 
 __all__ = [
