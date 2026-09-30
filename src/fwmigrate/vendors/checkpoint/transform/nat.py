@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from ..model.common import CheckPointObjectReference, CheckPointSourceObject
-from ..model.policy import CPAutoNATRule, CPNATRule
+from ..model.policy import CPNATRule
 from ..model.source import CheckPointConfig
 from ..relationships.references import CPReferenceIndex, CPReferenceKind, CPResolvedReference
 
@@ -131,22 +131,6 @@ def transform_nat(config: CheckPointConfig, references: CPReferenceIndex) -> CPN
             view = replace(view, issues=view_issues)
             views.append(view)
             issues.extend(view_issues)
-        elif isinstance(rule, CPAutoNATRule):
-            view = CPNATMigrationView(
-                "returned_automatic_rule", rule.uid, rule.name, rule.domain_uid or rule.domain,
-                rule.order, getattr(rule, "enabled", None),
-                _references(rule.original_source, rule, "original_source", references),
-                _references(rule.original_destination, rule, "original_destination", references),
-                _references(rule.original_service, rule, "original_service", references),
-                _references(rule.translated_source, rule, "translated_source", references),
-                _references(rule.translated_destination, rule, "translated_destination", references),
-                _references(rule.translated_service, rule, "translated_service", references),
-            )
-            view_issues = _reference_issues(view)
-            view = replace(view, issues=view_issues)
-            views.append(view)
-            issues.extend(view_issues)
-
     owners = (*config.hosts, *config.networks, *config.address_ranges, *config.gateways, *config.clusters)
     for owner in owners:
         settings = owner.nat_settings
