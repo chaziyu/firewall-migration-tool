@@ -14,10 +14,10 @@ class CPThreatLayer(CheckPointSourceObject):
 
 
 class CPThreatSection(CheckPointSourceObject):
+    pass
 
 
 class CPThreatPreventionRule(CheckPointSourceObject):
-    section_path: list[str] = Field(default_factory=list)
     rule_number: int | None = Field(default=None, alias="rule-number")
     enabled: bool | None = None
     profile: str | None = None
