@@ -142,7 +142,7 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
             text = value if isinstance(value, str) else getattr(value, "address", None)
             if text and not _validate_ip(text.split("/")[0], ranges=False):
                 _issue(issues, "error", "interface", f"malformed IPv6 address: {text!r}", item, "ipv6_addresses")
-    for route in config.static_routes:
+    for route in derived.static_routes:
         if route.destination and not _validate_ip(route.destination):
             _issue(issues, "error", "route", f"malformed route destination: {route.destination!r}", route, "destination")
         if route.nexthop_ip_address and not _validate_ip(route.nexthop_ip_address, ranges=False):
