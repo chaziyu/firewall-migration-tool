@@ -134,7 +134,7 @@ def test_panorama_policy_order_uses_hierarchy_not_device_group_xml_position():
     config = build_panos_config("""<config><shared>
       <pre-rulebase><security><rules><entry name='shared-pre'/></rules></security></pre-rulebase>
       <post-rulebase><security><rules><entry name='shared-post'/></rules></security></post-rulebase>
-      <devices><entry name='panorama'><device-group>
+    </shared><devices><entry name='panorama'><device-group>
         <entry name='child'><parent-dg>parent</parent-dg>
           <pre-rulebase><security><rules><entry name='child-pre'/></rules></security></pre-rulebase>
           <post-rulebase><security><rules><entry name='child-post'/></rules></security></post-rulebase>
@@ -144,7 +144,7 @@ def test_panorama_policy_order_uses_hierarchy_not_device_group_xml_position():
           <post-rulebase><security><rules><entry name='parent-post'/></rules></security></post-rulebase>
         </entry>
       </device-group></entry></devices>
-    </shared></config>""")
+    </config>""")
     derived = build_derived_views(config)
 
     child = [
