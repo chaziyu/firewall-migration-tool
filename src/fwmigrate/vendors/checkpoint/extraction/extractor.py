@@ -15,7 +15,8 @@ from .policy import (
     extract_access_rulebase, extract_https_rulebase, extract_nat_rulebase,
     extract_threat_rulebase,
 )
-from .result import CPPolicyContextRecord, ExtractionResult
+from ..policy_context import CPPolicyContextRecord
+from .result import ExtractionResult
 from .source_metadata import capture_source_metadata
 from .reconcile import reconcile_append
 
