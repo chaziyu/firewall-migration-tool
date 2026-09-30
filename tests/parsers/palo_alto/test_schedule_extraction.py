@@ -16,7 +16,10 @@ def test_recurring_and_non_recurring_schedules_are_extracted_from_source():
         "monday": ["08:00-12:00"],
         "tuesday": ["14:00-18:00"],
     }
-    assert schedules[("vsys1", "Once-One")].non_recurring == ["2026/09/01@08:00-2026/09/01@17:00"]
+    once = schedules[("vsys1", "Once-One")]
+    assert once.non_recurring == ["2026/09/01@08:00-2026/09/01@17:00"]
+    assert "non_recurring" in once.explicit_fields
+    assert "recurring" not in once.explicit_fields
     assert schedules[("vsys1", "Unknown-Schedule")].raw_extra["future-setting"] == "retain-me"
 
 
