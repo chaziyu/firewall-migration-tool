@@ -1,6 +1,6 @@
 """Collector lookup without vendor semantics in the web host."""
 
-from .contracts import SourceCollector
+from .contracts import CollectedSourceSanitizer, SourceCollector
 
 
 class SourceCollectorRegistry:
@@ -24,3 +24,23 @@ class SourceCollectorRegistry:
 
 
 source_collectors = SourceCollectorRegistry()
+
+
+class CollectedSourceSanitizerRegistry:
+    def __init__(self) -> None:
+        self._sanitizers: dict[str, CollectedSourceSanitizer] = {}
+
+    def register(self, sanitizer: CollectedSourceSanitizer) -> None:
+        key = sanitizer.vendor_id.casefold()
+        if key in self._sanitizers and self._sanitizers[key] is not sanitizer:
+            raise ValueError(f"Collected source sanitizer already registered: {key}")
+        self._sanitizers[key] = sanitizer
+
+    def get(self, vendor_id: str) -> CollectedSourceSanitizer:
+        try:
+            return self._sanitizers[vendor_id.casefold()]
+        except (AttributeError, KeyError) as exc:
+            raise ValueError("Snapshot vendor has no supported live source format.") from exc
+
+
+collected_source_sanitizers = CollectedSourceSanitizerRegistry()

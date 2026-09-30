@@ -97,7 +97,6 @@ def test_prepare_candidate_forces_validation_and_commit_requires_bound_session(m
     assert payload["candidate_validated"] is True
     assert payload["result"]["validation"]["status"] == "SUCCESS"
     assert _SuccessfulDeployer.options_seen[-1].validate is True
-    assert _SuccessfulDeployer.options_seen[-1].commit is False
 
     wrong_target = client.post("/api/validate-candidate", json={
         **CREDS,

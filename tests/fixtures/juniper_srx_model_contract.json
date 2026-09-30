@@ -1,0 +1,1372 @@
+{
+  "models": {
+    "JuniperContextType": {
+      "kind": "enum"
+    },
+    "JuniperConfigContext": {
+      "kind": "other"
+    },
+    "JuniperProvenanceKind": {
+      "kind": "enum"
+    },
+    "JuniperSourceProvenance": {
+      "kind": "other"
+    },
+    "JuniperEffectiveProvenance": {
+      "kind": "other"
+    },
+    "JuniperResolutionStatus": {
+      "kind": "enum"
+    },
+    "JuniperGroupApplication": {
+      "fields": [
+        "target_context",
+        "target_path",
+        "ordered_groups",
+        "excluded_groups",
+        "source_order",
+        "group_list_priority",
+        "group_application_depth",
+        "hierarchy_depth",
+        "active",
+        "source_metadata"
+      ],
+      "sha256": "72beca33ec4a246dccfaac52752ef481efa3caa3fef50ff9f4889a74ff758cf0"
+    },
+    "JuniperEffectiveCandidate": {
+      "fields": [
+        "value",
+        "target_path",
+        "field_key",
+        "provenance",
+        "status",
+        "effective",
+        "shadowed",
+        "excluded",
+        "inactive",
+        "reason",
+        "group_list_priority",
+        "group_application_depth",
+        "group_recursion_depth",
+        "hierarchy_depth",
+        "source_order"
+      ],
+      "sha256": "be97238e4d04dd027325cad800e8b04f68f7c709681c74211d0134ad09b10bea"
+    },
+    "JuniperEffectiveModel": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history"
+      ],
+      "sha256": "7d9919f6fd911c2b4f02efcd8db6cae72d2550c65a3871c4bdceeddd528f10ef"
+    },
+    "JuniperGroupStatement": {
+      "fields": [
+        "hierarchy_path",
+        "leaf_keyword",
+        "leaf_values",
+        "active",
+        "source_order",
+        "source_metadata",
+        "referenced_group_name",
+        "source_group_name",
+        "source_path"
+      ],
+      "sha256": "5232898237e99b7927b904c33e5078b232ca06d8239e3f60a8d526911c575c92"
+    },
+    "JuniperGroupNode": {
+      "fields": [
+        "path_component",
+        "wildcard",
+        "children",
+        "statements",
+        "apply_groups",
+        "apply_groups_except",
+        "source_metadata",
+        "apply_group_provenance",
+        "applications"
+      ],
+      "sha256": "23bdf4d317f0c663865c69bb629880986821bc317fc40fde3cbadee4898e1de0"
+    },
+    "JuniperConfigurationGroup": {
+      "fields": [
+        "name",
+        "root_node",
+        "context_type",
+        "context_name",
+        "source_metadata"
+      ],
+      "sha256": "e4ac16659adcb0a171398d27377bcdf7aad98a9ff4fbafc67e9ed26971b49029"
+    },
+    "JuniperInterfaceAddress": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "family",
+        "address",
+        "primary",
+        "preferred",
+        "source_attributes",
+        "provenance",
+        "candidate_history"
+      ],
+      "sha256": "e7c165aff8f29639f53e9f717d60e7074f40038caa1a29a98556a32dbc69062b"
+    },
+    "JuniperInterfaceUnit": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "unit",
+        "description",
+        "mtu",
+        "vlan_id",
+        "encapsulation",
+        "family_attributes",
+        "filters",
+        "vrrp",
+        "addresses",
+        "disabled",
+        "source_attributes"
+      ],
+      "sha256": "d98011b25688c4cd721ef63bfcf298b95bd01a4e1744f3ab76fe6c4d3ce85dce"
+    },
+    "JuniperScreenOption": {
+      "fields": [
+        "path",
+        "values"
+      ],
+      "sha256": "252cc8fd4d3b0281f10297e982abeb28fed66b934b5ffc0871d7783c40fe34c7"
+    },
+    "JuniperScreenProfile": {
+      "fields": [
+        "name",
+        "options",
+        "source_attributes"
+      ],
+      "sha256": "f9563217e99c235dfba75ef840590770f676cdc2c45f34dae06c8c14728dcb79"
+    },
+    "JuniperFirewallFilterTerm": {
+      "fields": [
+        "name",
+        "source_order",
+        "matches",
+        "actions",
+        "from_conditions",
+        "source_attributes"
+      ],
+      "sha256": "ae121bf371e2dfb3dcdea0034939d85622979eac37d0730a32c31caff81a605d"
+    },
+    "JuniperFirewallFilter": {
+      "fields": [
+        "name",
+        "family",
+        "terms",
+        "source_attributes"
+      ],
+      "sha256": "6035439e25143fb62eb17abf2dd0e6c549554199b24731b27675973cf08222bc"
+    },
+    "JuniperInterface": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "description",
+        "disabled",
+        "mtu",
+        "speed",
+        "link_mode",
+        "encapsulation",
+        "physical_link",
+        "aggregate_parent",
+        "aggregate_options",
+        "redundant_parent",
+        "redundancy_group",
+        "units",
+        "source_attributes"
+      ],
+      "sha256": "514ca68e4acedb494fb178a22fd614c7701197cc5c6ec43311c89cf4028af487"
+    },
+    "JuniperZone": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "description",
+        "interfaces",
+        "screen",
+        "host_inbound_system_services",
+        "host_inbound_system_services_exclusions",
+        "host_inbound_protocols",
+        "host_inbound_protocol_exclusions",
+        "interface_host_inbound",
+        "disabled_host_inbound",
+        "tcp_rst",
+        "source_attributes"
+      ],
+      "sha256": "46b3c4d59ddbd8b64567595ed44c43361f253d25a5ebf768d35ab27a30c638dc"
+    },
+    "JuniperAddress": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "address_book",
+        "zone",
+        "type",
+        "prefix",
+        "fqdn",
+        "range_start",
+        "range_end",
+        "wildcard",
+        "description",
+        "source_attributes",
+        "provenance"
+      ],
+      "sha256": "6240af751104ddf90c2b8909aa05ae0acaee3c3a52a74bdf54bffa805d626b9d"
+    },
+    "JuniperAddressSetMember": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "member_type",
+        "source_path"
+      ],
+      "sha256": "87831d1bf4478922e1aab887e4307a0110df0d9cca9abce9073d77be767809b0"
+    },
+    "JuniperAddressSet": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "address_book",
+        "zone",
+        "members",
+        "description",
+        "source_attributes",
+        "provenance"
+      ],
+      "sha256": "ad152ce61c79f2b74948c7993453ea059a89ccd2d97eb1ff33bd29610ba5fb60"
+    },
+    "JuniperAddressBook": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "attached_zones",
+        "addresses",
+        "address_sets",
+        "description",
+        "source_attributes",
+        "provenance"
+      ],
+      "sha256": "c3edb6fd494a0227b73c293873435e95895f1645a13da124840b48957be3fa32"
+    },
+    "JuniperApplicationTerm": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "protocol",
+        "protocol_number",
+        "source_ports",
+        "destination_ports",
+        "icmp_type",
+        "icmp_code",
+        "application_protocol",
+        "inactivity_timeout",
+        "source_attributes"
+      ],
+      "sha256": "9245c9c595d35c098851d846b7d728c30740bb91d945058ae4c1f2b2b9457d04"
+    },
+    "JuniperApplication": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "description",
+        "terms",
+        "source_attributes",
+        "provenance"
+      ],
+      "sha256": "4050ad3918c0c3d9e46c3beac7dfc4890e8927da725af1b7189ca4ab4a4f3a55"
+    },
+    "JuniperApplicationSet": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "applications",
+        "description",
+        "source_attributes",
+        "provenance"
+      ],
+      "sha256": "65f6a038c236725918be12163dff01805e8e474137de0cbb2d9c7029cc400ddc"
+    },
+    "JuniperPolicy": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "policy_scope",
+        "from_zones",
+        "to_zones",
+        "source_addresses",
+        "destination_addresses",
+        "applications",
+        "source_address_excluded",
+        "destination_address_excluded",
+        "dynamic_applications",
+        "source_identities",
+        "source_end_user_profiles",
+        "scheduler_name",
+        "action",
+        "log_session_init",
+        "log_session_close",
+        "logging_options",
+        "count",
+        "description",
+        "permit_options",
+        "unknown_match_conditions",
+        "unknown_then_options",
+        "sequence",
+        "source_attributes",
+        "parsed_match_fields",
+        "from_zone",
+        "to_zone",
+        "policy_key",
+        "permit_option_paths",
+        "vpn_action",
+        "vpn_reference",
+        "application_services",
+        "security_profile_references",
+        "provenance"
+      ],
+      "sha256": "0f3b56ef2dc73e546a57f959bb8546ed189812d76b641d9f6b0a2acc06eb7503"
+    },
+    "JuniperIDPRule": {
+      "fields": [
+        "name",
+        "match",
+        "exceptions",
+        "action",
+        "severity",
+        "source_attributes"
+      ],
+      "sha256": "a819178af4f8a068551e02b426b4e860a499b24630f7156e529bada4b8c1db5f"
+    },
+    "JuniperIDPPolicy": {
+      "fields": [
+        "name",
+        "rulebase",
+        "source_attributes"
+      ],
+      "sha256": "70e7f91acd18394cb1853828f47aea512825f020d4224eedc692401088c593b2"
+    },
+    "JuniperSSLProxyProfile": {
+      "fields": [
+        "name",
+        "references",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "381f09261da9e783860737c143940c99a0ff77f24559ec996e7500f42211ef8c"
+    },
+    "JuniperSecurityIntelligenceFeed": {
+      "fields": [
+        "name",
+        "references",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "381f09261da9e783860737c143940c99a0ff77f24559ec996e7500f42211ef8c"
+    },
+    "JuniperSecurityIntelligenceProfile": {
+      "fields": [
+        "name",
+        "feeds",
+        "actions",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "23b976aaa8ae38df289443e0073d199eb15fc449cb0c8f14c7dda47fba87eb11"
+    },
+    "JuniperRPMTest": {
+      "fields": [
+        "owner",
+        "name",
+        "target",
+        "test_type",
+        "probe_count",
+        "probe_interval",
+        "thresholds",
+        "traps",
+        "source_attributes"
+      ],
+      "sha256": "e1f076328692485678bee50617e9b21dd696c8290f8f695bc7661f0a375b0585"
+    },
+    "JuniperRPMProbe": {
+      "fields": [
+        "owner",
+        "name",
+        "tests",
+        "source_attributes"
+      ],
+      "sha256": "1e539f47107fe0962b27915da1bfa8e41e9069c4cf4d2b1c068d3edc884b61dd"
+    },
+    "JuniperChassisItem": {
+      "fields": [
+        "hierarchy",
+        "values",
+        "source_attributes"
+      ],
+      "sha256": "e3ba1c561d9a9fedccffd8ec8974fcb7d7ed7761f4c17900c80432f483c66863"
+    },
+    "JuniperScheduler": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "description",
+        "start_date",
+        "stop_date",
+        "daily",
+        "weekdays",
+        "daily_windows",
+        "weekday_windows",
+        "exclusions",
+        "source_attributes",
+        "provenance"
+      ],
+      "sha256": "bd5d0217dc67c43b988285198cb014033587711b153ea685abf44510146b316d"
+    },
+    "JuniperRouteNextHop": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "value",
+        "qualified",
+        "preference",
+        "metric",
+        "tag",
+        "source_attributes"
+      ],
+      "sha256": "58fbe13465355763a33ecd09704cae26a3924dc54d0cc68a7169d75c50ea3579"
+    },
+    "JuniperRoute": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "destination",
+        "routing_instance",
+        "next_hops",
+        "next_table",
+        "preference",
+        "metric",
+        "tag",
+        "disabled",
+        "retain",
+        "installation",
+        "action",
+        "rib",
+        "source_attributes"
+      ],
+      "sha256": "c320131a635dcd9c579dfd3a2755b80550d176d1f79f1ca7fddde4a85331c9fa"
+    },
+    "JuniperNATPool": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "nat_type",
+        "routing_instance",
+        "addresses",
+        "ports",
+        "address_ranges",
+        "options",
+        "source_attributes"
+      ],
+      "sha256": "aa6adab15f5cf3fe4f7f321d6a14cf9cac026de2fd6df084577175bf92485b3f"
+    },
+    "JuniperPersistentNAT": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "address_mapping",
+        "inactivity_timeout",
+        "max_session_number",
+        "permit",
+        "source_attributes"
+      ],
+      "sha256": "d5e314f2e812e0f3b0f50e157be1c9202e532e39b28c325b2edc9085a6382d26"
+    },
+    "JuniperNATContext": {
+      "fields": [
+        "zones",
+        "interfaces",
+        "routing_instances"
+      ],
+      "sha256": "71d4b9d2df2502402e2816c5b63f688342d4923b8b0b1612bf7d41a4b954eac4"
+    },
+    "JuniperNATMatch": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "source_addresses",
+        "destination_addresses",
+        "source_address_names",
+        "destination_address_names",
+        "source_ports",
+        "destination_ports",
+        "protocols",
+        "applications",
+        "unknown_match_conditions",
+        "source_attributes"
+      ],
+      "sha256": "46002f5cebdb4d539eacb6be32e40ba9966215b1cb952a3fd1f0c2aea0989498"
+    },
+    "JuniperNATRule": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "nat_type",
+        "match",
+        "action",
+        "description",
+        "disabled",
+        "sequence",
+        "source_attributes"
+      ],
+      "sha256": "81d444abe532728185a1007736938056b8976bab473972a1f0d94c0a00388ac9"
+    },
+    "JuniperNATRuleSet": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "nat_type",
+        "from_context",
+        "to_context",
+        "rules",
+        "description",
+        "source_attributes"
+      ],
+      "sha256": "fc56d9af20e98d7ea3a5a2605ed2c6452389f92965f8327f18d23ab9b29fe724"
+    },
+    "JuniperNATConfig": {
+      "fields": [
+        "source_pools",
+        "destination_pools",
+        "source_rule_sets",
+        "destination_rule_sets",
+        "static_rule_sets",
+        "proxy_arp",
+        "proxy_ndp",
+        "source_attributes"
+      ],
+      "sha256": "87d375778ee0429cf41f378872f5a2941725ef33d189c4eae3a3d0f8ceba855a"
+    },
+    "JuniperIKEProposal": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "description",
+        "authentication_method",
+        "dh_group",
+        "authentication_algorithm",
+        "encryption_algorithm",
+        "digital_signature_scheme",
+        "prf_algorithm",
+        "signature_hash_algorithm",
+        "lifetime_seconds",
+        "source_attributes"
+      ],
+      "sha256": "3caf5e0c21df92b6cd91e81bc569eee6a2cbbd85fc311a4fe4e38e423fc73661"
+    },
+    "JuniperIKEPolicy": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "mode",
+        "proposal_set",
+        "proposals",
+        "has_pre_shared_key",
+        "certificate_reference",
+        "local_certificate",
+        "source_attributes"
+      ],
+      "sha256": "ba9c3a6086e46fbc2676f1d32c68a975b1d6972b43021b1619e928553ad3c1e3"
+    },
+    "JuniperIKEGateway": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "ike_policy",
+        "address",
+        "external_interface",
+        "version",
+        "local_address",
+        "local_identity",
+        "remote_identity",
+        "nat_traversal",
+        "dpd",
+        "certificate_reference",
+        "source_attributes"
+      ],
+      "sha256": "de1e165f594b9e31597d1b3c4f67efd5e005067f04ceb8b62765bcab36eaf8d1"
+    },
+    "JuniperIPSecProposal": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "description",
+        "protocol",
+        "authentication_algorithm",
+        "encryption_algorithm",
+        "lifetime_seconds",
+        "lifetime_kilobytes",
+        "source_attributes"
+      ],
+      "sha256": "fc1ddf2bf3153cf078799145495da1fc0266172409fe696aec4deaed185e3854"
+    },
+    "JuniperIPSecPolicy": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "proposal_set",
+        "proposals",
+        "pfs_group",
+        "source_attributes"
+      ],
+      "sha256": "1263ec3542f61376fd7445b4f66bbdcfb4779c08bbc719d7562240d9b67ce044"
+    },
+    "JuniperTrafficSelectorTerm": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "local_ip",
+        "remote_ip",
+        "protocol",
+        "local_port",
+        "remote_port",
+        "source_attributes"
+      ],
+      "sha256": "f721667dba871d5ae1b67f06f49ae4b2fdd94ff184a2e3d3974d046580c655da"
+    },
+    "JuniperTrafficSelector": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "local_ip",
+        "remote_ip",
+        "protocol",
+        "local_port",
+        "remote_port",
+        "terms",
+        "source_attributes"
+      ],
+      "sha256": "590120a4ed041a84faf1ccf677df4c83f0bd7473c6c0f84090aebcfe658d8204"
+    },
+    "JuniperVPNMonitor": {
+      "fields": [
+        "destination_ip",
+        "source_interface",
+        "options"
+      ],
+      "sha256": "e907bff0aba25879ed68e949bb408422c8b9e54df3f65ad54836bfddb56905ae"
+    },
+    "JuniperIPSecVPN": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "bind_interface",
+        "ike_gateway",
+        "ipsec_policy",
+        "establish_tunnels",
+        "traffic_selectors",
+        "vpn_monitor",
+        "source_attributes"
+      ],
+      "sha256": "e1805ebc397bde23415a5545bb277627aa9c15aaf416ad44c150267785c96b07"
+    },
+    "JuniperVPNConfig": {
+      "fields": [
+        "ike_proposals",
+        "ike_policies",
+        "ike_gateways",
+        "ipsec_proposals",
+        "ipsec_policies",
+        "ipsec_vpns",
+        "source_attributes"
+      ],
+      "sha256": "35b7b65b086ccc23d41fad6e0694dfdf4753c8b46ae5577131b9cba686db4f16"
+    },
+    "JuniperSourceHierarchyItem": {
+      "fields": [
+        "name",
+        "settings"
+      ],
+      "sha256": "e36b6f7a4bb19b72c2227379d7e3447af8402e4a70f00c36df1fc0894534e34b"
+    },
+    "JuniperUTMAntivirusProfile": {
+      "fields": [
+        "name",
+        "engine_type",
+        "scan_behavior",
+        "fallback_behavior",
+        "file_controls",
+        "mime_types",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "f43c7d8dcf943bdf1b514c5a52914d17dfe841e964b08ddc1ca2bb5ab13ed69e"
+    },
+    "JuniperUTMWebFilteringProfile": {
+      "fields": [
+        "name",
+        "url_categories",
+        "custom_url_lists",
+        "actions",
+        "logging",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "38e941d419fb14cb4d388d63c974510dc8afcec9ad21fde0655e944a2fd0d803"
+    },
+    "JuniperUTMContentFilteringProfile": {
+      "fields": [
+        "name",
+        "syntax_variant",
+        "content_types",
+        "actions",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "7a27bf7090f825ea3642b6897791dff8b8d6a6664d81f5e9c3841569cdb3af00"
+    },
+    "JuniperUTMAntiSpamProfile": {
+      "fields": [
+        "name",
+        "servers",
+        "actions",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "35905dcd5833005be339d65e3787e12f8f0b15a88892c54b1624171206791f7d"
+    },
+    "JuniperAppSecureRule": {
+      "fields": [
+        "name",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "ce314a0dd9d2046c5ca1da509c9751b3a2ec133dd00541844f52ce90e2fc1125"
+    },
+    "JuniperAppSecureRuleSet": {
+      "fields": [
+        "name",
+        "rules",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "33673bb2da7f8d438fa8bcd98d5e39a472f19d0cdc871176a4277b3876abfa4d"
+    },
+    "JuniperPolicer": {
+      "fields": [
+        "name",
+        "bandwidth_limit",
+        "burst_limit",
+        "action",
+        "source_attributes"
+      ],
+      "sha256": "15728821501e5763e0886a962979f61f8a993e0b00e954fe3b44bf2a96623612"
+    },
+    "JuniperPrefixList": {
+      "fields": [
+        "name",
+        "entries",
+        "source_attributes"
+      ],
+      "sha256": "c7aa11eb5065afed7c7e7b0caa358f487a37cb5767edbb85a6dd7326dc55fc49"
+    },
+    "JuniperCoSScheduler": {
+      "fields": [
+        "name",
+        "transmit_rate",
+        "shaping_rate",
+        "priority",
+        "references",
+        "source_attributes"
+      ],
+      "sha256": "2ebab959f2352513d23d38cba50957ed6b5cbc877f82ccd07ef98b879710ec55"
+    },
+    "JuniperVLAN": {
+      "fields": [
+        "name",
+        "vlan_id",
+        "l3_interface",
+        "members",
+        "source_attributes"
+      ],
+      "sha256": "728d529c3e18bd3c8cdef49b0db7e99d1da6d0ec8978158937ea8f819d0424e8"
+    },
+    "JuniperRoutingInstance": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "name",
+        "instance_type",
+        "interfaces",
+        "route_distinguisher",
+        "import_policies",
+        "export_policies",
+        "routing_options",
+        "source_attributes"
+      ],
+      "sha256": "39238339e93cf61c201f595956446f11a61c8b9ec8c3cb2d3b86398ee2d11de0"
+    },
+    "JuniperDNSNameServer": {
+      "fields": [
+        "server",
+        "routing_instance",
+        "source_interface"
+      ],
+      "sha256": "fdd6ac1a617139b353e8a32d212eca4c5d42f7f0a426b21af2627f6d08b16a7a"
+    },
+    "JuniperNTPServer": {
+      "fields": [
+        "address",
+        "role",
+        "preferred",
+        "routing_instance",
+        "authentication_key_reference"
+      ],
+      "sha256": "f7a33525cdd23c4c72c4616263be92e6b7d63cf1089cc386263dcefb69a5acc7"
+    },
+    "JuniperNTPSettings": {
+      "fields": [
+        "servers",
+        "source_address",
+        "source_interface",
+        "routing_instance",
+        "authentication_keys",
+        "source_attributes"
+      ],
+      "sha256": "557204cde452dbbfaaeb67683e9837ad792864e23a98b80d43be82a5b340da74"
+    },
+    "JuniperLoginClass": {
+      "fields": [
+        "name",
+        "settings"
+      ],
+      "sha256": "e36b6f7a4bb19b72c2227379d7e3447af8402e4a70f00c36df1fc0894534e34b"
+    },
+    "JuniperAdminUser": {
+      "fields": [
+        "name",
+        "settings",
+        "login_class"
+      ],
+      "sha256": "651b3cd9c2eb8bbb8f2ebc37eeb9c6ba3b3ba0a1d25d430a17f5cf33b47f5484"
+    },
+    "JuniperSSHSettings": {
+      "fields": [
+        "enabled",
+        "options",
+        "source_attributes"
+      ],
+      "sha256": "6678cbb50dcff56f49560e2b6623f25e16d5d9a3ce2d94c23c15166309d855eb"
+    },
+    "JuniperNETCONFSettings": {
+      "fields": [
+        "enabled",
+        "options",
+        "source_attributes"
+      ],
+      "sha256": "6678cbb50dcff56f49560e2b6623f25e16d5d9a3ce2d94c23c15166309d855eb"
+    },
+    "JuniperWebManagementSettings": {
+      "fields": [
+        "http_enabled",
+        "https_enabled",
+        "http_options",
+        "https_options",
+        "interfaces",
+        "certificate_references",
+        "source_attributes"
+      ],
+      "sha256": "9a2743b709a75e9ea0bbefa200f97cb13bb3a10d5e6543d9697812af83949fbe"
+    },
+    "JuniperSNMPSettings": {
+      "fields": [
+        "communities",
+        "trap_groups",
+        "options",
+        "source_attributes"
+      ],
+      "sha256": "5c8a75a4c75d6eb344b09bf296f352fce86a0a1c61b0dfd0c11b20bdaaa451bd"
+    },
+    "JuniperSyslogSettings": {
+      "fields": [
+        "destinations",
+        "files",
+        "source_address",
+        "source_interface",
+        "routing_instance",
+        "source_attributes"
+      ],
+      "sha256": "a5ac3eeb8f4b861981d4a6bfbc60d217dd00de371ac4de1c354e8ee017dc93c6"
+    },
+    "JuniperCertificate": {
+      "fields": [
+        "name",
+        "certificate_id",
+        "ca_profile",
+        "references",
+        "source_attributes"
+      ],
+      "sha256": "428a356546cbbbb1e3ff28763ecc756e8fe28259831314564cf52de79758189a"
+    },
+    "JuniperPKISettings": {
+      "fields": [
+        "certificates",
+        "ca_profiles",
+        "references",
+        "source_attributes"
+      ],
+      "sha256": "d65f8a9012745e0e0fdd7f6a2970e75bfdc71a4e913c5bf59b081aba9bf94116"
+    },
+    "JuniperSecurityFlowSettings": {
+      "fields": [
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "cb796e5f2a48d5007a1bd46607d93e3c7a54126c3dbc315c59d7993696efaa85"
+    },
+    "JuniperClusterIPMonitorTarget": {
+      "fields": [
+        "address",
+        "weight",
+        "interface",
+        "secondary_ip_address",
+        "source_attributes"
+      ],
+      "sha256": "3d81fbb0e448ee6ad957cc197ea01a567ac60d433fef742b48b76facf1183021"
+    },
+    "JuniperClusterIPMonitoring": {
+      "fields": [
+        "global_threshold",
+        "global_weight",
+        "retry_count",
+        "retry_interval",
+        "targets",
+        "source_attributes"
+      ],
+      "sha256": "cd7e5eac6898feaafc78e88c14e58370dec7fe4f5e2c28221af58dd1abc963a5"
+    },
+    "JuniperClusterPreempt": {
+      "fields": [
+        "delay",
+        "limit",
+        "period",
+        "source_attributes"
+      ],
+      "sha256": "838122102b90af28fd7e64a75d9a15a2ec1da268f5ae15612883d32bd9e64bc5"
+    },
+    "JuniperRedundancyGroup": {
+      "fields": [
+        "group_id",
+        "nodes",
+        "interface_monitors",
+        "ip_monitoring",
+        "preempt",
+        "hold_down_interval",
+        "gratuitous_arp_count",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "a9cc95664aeb622be7107cf5c69b77244f5b7e3b64e8bbfff465fa627e21aec7"
+    },
+    "JuniperChassisCluster": {
+      "fields": [
+        "cluster_id",
+        "nodes",
+        "redundancy_groups",
+        "fabric_interfaces",
+        "control_links",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "75e92c31ad32262c83d4d9699a8545c03bcde392cbcb4aa73677b6b8080abbb8"
+    },
+    "JuniperDHCPRange": {
+      "fields": [
+        "name",
+        "low",
+        "high",
+        "source_attributes"
+      ],
+      "sha256": "b686aba95355d4b0c63d8bdb45ff1a8fe2cb6257909c166f65dce2d21dcf5fe3"
+    },
+    "JuniperDHCPHostReservation": {
+      "fields": [
+        "name",
+        "hardware_address",
+        "ip_address",
+        "source_attributes"
+      ],
+      "sha256": "d8be4a5bd05dbced5a36472a67218c1c73db7f979edf5d2676752c8f5282cf03"
+    },
+    "JuniperDHCPAttributes": {
+      "fields": [
+        "router",
+        "name_servers",
+        "lease_time",
+        "source_attributes"
+      ],
+      "sha256": "e67ff4df7c9a0502e3759815b446555025cd0bdf3935b283ee15186941004454"
+    },
+    "JuniperAddressAssignmentFamily": {
+      "fields": [
+        "name",
+        "ranges",
+        "hosts",
+        "dhcp_attributes",
+        "source_attributes"
+      ],
+      "sha256": "3eafadef571e566800c8d822c481026685c5f1ca5b16ac1816f42c1da4f0b4db"
+    },
+    "JuniperAddressAssignmentPool": {
+      "fields": [
+        "name",
+        "routing_instance",
+        "families",
+        "linked_pool",
+        "source_attributes"
+      ],
+      "sha256": "b920f6895eff45c6048ba93e884e8baf36237bfd4a7f8504add854968c2ff687"
+    },
+    "JuniperDHCPLocalServerGroup": {
+      "fields": [
+        "name",
+        "routing_instance",
+        "family",
+        "interfaces",
+        "options",
+        "source_attributes"
+      ],
+      "sha256": "16c0f4e8a8639cf65fff7993d9fcf67bef5915d19958eba4dd1db796b902c51d"
+    },
+    "JuniperDHCPRelayGroup": {
+      "fields": [
+        "name",
+        "routing_instance",
+        "interfaces",
+        "server_groups",
+        "source_attributes"
+      ],
+      "sha256": "7492e763db19c18c777ac42cf3378d6b6ed52bfc0d4736eb4b9db6e95376e80a"
+    },
+    "JuniperLegacyDHCPConfig": {
+      "fields": [
+        "commands"
+      ],
+      "sha256": "ef03c9fd33f0dfa041cefe0e35544335f127590ce636cebdbd4980351597b2a3"
+    },
+    "JuniperDHCPConfig": {
+      "fields": [
+        "local_servers",
+        "address_assignment_pools",
+        "relay_groups",
+        "legacy"
+      ],
+      "sha256": "6e097b7eb95369a1e8fcc78a714bc6f14467e7c37b31cb0a269dd56aeee907df"
+    },
+    "JuniperAccessFirewallUser": {
+      "fields": [
+        "name",
+        "password_configured",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "db94187df3e9b20f9584fff66dc7246c8acba1c93a114453979d433d2746d3fb"
+    },
+    "JuniperAccessClient": {
+      "fields": [
+        "name",
+        "client_groups",
+        "firewall_user",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "8f5a0042aae4f5187173464a086d0d7aac9ec524d7de5e82a899b6c5f52f6a6f"
+    },
+    "JuniperAccessProfile": {
+      "fields": [
+        "name",
+        "clients",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "d84b7ab905322ec71420205c3da0199ef61ba05ee50bace85cba856447770174"
+    },
+    "JuniperAPBRMetricsProfile": {
+      "fields": [
+        "name",
+        "jitter",
+        "packet_loss",
+        "round_trip_delay",
+        "source_attributes"
+      ],
+      "sha256": "b4da2c75164ff0eff9c5f7db4f220132384a7acfdb4e5cd61c64d81cdc37e7e8"
+    },
+    "JuniperAPBRProbeParams": {
+      "fields": [
+        "name",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "ce314a0dd9d2046c5ca1da509c9751b3a2ec133dd00541844f52ce90e2fc1125"
+    },
+    "JuniperAPBRActiveProbeParams": {
+      "fields": [
+        "name",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "ce314a0dd9d2046c5ca1da509c9751b3a2ec133dd00541844f52ce90e2fc1125"
+    },
+    "JuniperAPBRPassiveProbeParams": {
+      "fields": [
+        "name",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "ce314a0dd9d2046c5ca1da509c9751b3a2ec133dd00541844f52ce90e2fc1125"
+    },
+    "JuniperAPBROverlayPath": {
+      "fields": [
+        "name",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "ce314a0dd9d2046c5ca1da509c9751b3a2ec133dd00541844f52ce90e2fc1125"
+    },
+    "JuniperAPBRDestinationPathGroup": {
+      "fields": [
+        "name",
+        "probe_routing_instance",
+        "overlay_paths",
+        "source_attributes"
+      ],
+      "sha256": "102b5512ae3120a3a16854a856997d81b86d22df8fc6766425a7bd5d7505468d"
+    },
+    "JuniperAPBRMultipathRule": {
+      "fields": [
+        "name",
+        "bandwidth_limit",
+        "applications",
+        "application_groups",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "af21c61ab25ac4450751f364dc5b7a74dede090ed4f85464e46013ca2721aab0"
+    },
+    "JuniperAPBRSLARule": {
+      "fields": [
+        "name",
+        "metrics_profile",
+        "active_probe_params",
+        "passive_probe_params",
+        "multipath_rule",
+        "switch_idle_time",
+        "source_attributes"
+      ],
+      "sha256": "a2d8c3f96ed734b048ac26b73d191df0381a5d03aa7b5c63ff490fbe37e7d4da"
+    },
+    "JuniperAPBRConfig": {
+      "fields": [
+        "metrics_profiles",
+        "active_probe_params",
+        "passive_probe_params",
+        "overlay_paths",
+        "destination_path_groups",
+        "multipath_rules",
+        "sla_rules",
+        "source_attributes"
+      ],
+      "sha256": "519377c20d6e76e9220c563049fa5bc599745904c97b4fa76c75499b0b1b4083"
+    },
+    "JuniperRemoteAccessApplicationBypassTerm": {
+      "fields": [
+        "name",
+        "description",
+        "domain_names",
+        "protocols",
+        "source_attributes"
+      ],
+      "sha256": "7b1320cd9ad74b24f27128b8482fb6c40d0c64e0e3454580fb312fe9478ba12a"
+    },
+    "JuniperRemoteAccessClientConfig": {
+      "fields": [
+        "name",
+        "application_bypass_terms",
+        "settings",
+        "source_attributes"
+      ],
+      "sha256": "cc421535baf6cc3d07545485aa6eff467fd2f27602b9a106040beb02077e18e7"
+    },
+    "JuniperRemoteAccessProfile": {
+      "fields": [
+        "name",
+        "access_profile",
+        "client_config",
+        "ipsec_vpn",
+        "multi_access",
+        "source_attributes"
+      ],
+      "sha256": "c1e323e0b54144eeae0f5e73c1751da7edc2bc5e4152e38f30cfcfe0bfde8d06"
+    },
+    "JuniperRemoteAccessConfig": {
+      "fields": [
+        "profiles",
+        "client_configs",
+        "source_attributes"
+      ],
+      "sha256": "3536bed4572d11051c7f9463dc6eb5cbd778f49a0ed054643eb53abb3f61cfd4"
+    },
+    "JuniperContextConfig": {
+      "fields": [
+        "name",
+        "context_type",
+        "interfaces",
+        "vlans",
+        "zones",
+        "screens",
+        "address_books",
+        "applications",
+        "application_sets",
+        "policies",
+        "global_policies",
+        "schedulers",
+        "routes",
+        "routing_instances",
+        "firewall_filters",
+        "policers",
+        "prefix_lists",
+        "cos_schedulers",
+        "dhcp",
+        "apbr",
+        "remote_access",
+        "nat",
+        "vpn",
+        "system_syslog",
+        "access_profiles",
+        "dynamic_vpns",
+        "user_identification",
+        "utm_policies",
+        "antivirus_profiles",
+        "web_filtering_profiles",
+        "content_filtering_profiles",
+        "anti_spam_profiles",
+        "appsecure_rule_sets",
+        "idp_policies",
+        "ssl_proxy_profiles",
+        "security_intelligence_feeds",
+        "security_intelligence_profiles",
+        "non_effective_candidate_history",
+        "rpm_probes",
+        "chassis",
+        "security_flow",
+        "chassis_cluster",
+        "management_interfaces",
+        "security_profile",
+        "source_attributes"
+      ],
+      "sha256": "8e5d126ba7febc4bb3cb4df25396b4d0b0f0675191868e21a7fe7eb8b9e34144"
+    },
+    "JuniperActivationDirective": {
+      "fields": [
+        "operation",
+        "hierarchy_path",
+        "context_type",
+        "context_name",
+        "source_order",
+        "line_number"
+      ],
+      "sha256": "8c39b8fc4ab022e8ecbf3204a07016b1929ece66ebeea42eb054d5e0e245b2d6"
+    },
+    "JuniperSRXConfig": {
+      "fields": [
+        "hostname",
+        "version",
+        "time_zone",
+        "name_servers",
+        "domain_name",
+        "domain_search",
+        "login_classes",
+        "admin_users",
+        "radius_servers",
+        "tacplus_servers",
+        "authentication_order",
+        "ntp",
+        "ssh",
+        "netconf",
+        "web_management",
+        "snmp",
+        "syslog",
+        "pki",
+        "services",
+        "contexts",
+        "activation_directives",
+        "unsupported_commands",
+        "configuration_groups",
+        "applied_groups",
+        "applied_group_exceptions",
+        "field_provenance",
+        "field_candidate_history"
+      ],
+      "sha256": "d8cf1c5fbf377e225f259da07541a427501f8ae425776b40bea6a8df6607006c"
+    }
+  },
+  "serialized_config_sha256": "ddbe96e67e2d124fcfc245b23e32f47b0b8c5deabe8a625714a8b93a2e5d5c96"
+}

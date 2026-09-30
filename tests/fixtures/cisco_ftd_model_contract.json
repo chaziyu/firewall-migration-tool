@@ -1,0 +1,1716 @@
+{
+  "models": {
+    "CiscoFTDManagementSetting": {
+      "fields": [
+        "name",
+        "setting",
+        "values",
+        "raw_lines",
+        "source_attributes"
+      ],
+      "sha256": "84b7d78e7498001a9507c0e654c97c728154d2085781c354d231621c96885a68"
+    },
+    "CiscoFTDInterface": {
+      "fields": [
+        "name",
+        "interface_type",
+        "parent_interface",
+        "vlan_id",
+        "etherchannel_id",
+        "etherchannel_mode",
+        "bridge_group",
+        "nameif",
+        "management_only",
+        "security_level",
+        "ip",
+        "mask",
+        "standby_ip",
+        "ipv6_addresses",
+        "description",
+        "mtu",
+        "shutdown",
+        "explicit_fields",
+        "raw_lines",
+        "source_attributes"
+      ],
+      "sha256": "c44b3869f6f66c309321de95741e8c834df7d35a28ae89d1990ce4fb63890acd"
+    },
+    "CiscoFTDIPv6Address": {
+      "fields": [
+        "address",
+        "prefix_length",
+        "standby",
+        "eui64",
+        "link_local",
+        "raw"
+      ],
+      "sha256": "595c78042ea463cf2559c6d438ef2dd18f108b5b5d20cb5326b1c2f003814d36"
+    },
+    "CiscoFTDStaticRoute": {
+      "fields": [
+        "name",
+        "interface",
+        "destination",
+        "mask",
+        "gateway",
+        "address_family",
+        "administrative_distance",
+        "raw_line",
+        "source_attributes"
+      ],
+      "sha256": "aa48b1f46c8b6dbad194bbc1f4347ad6379cc8404d609481aadfd08600ec2144"
+    },
+    "CiscoFTDSourceRecord": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDReference": {
+      "fields": [
+        "source_id",
+        "name",
+        "source_type",
+        "value",
+        "source_attributes"
+      ],
+      "sha256": "56149f79bc89e256a38f2b9f9128ca0b44f99e41d80cc21f4c135d2ab7561672"
+    },
+    "CiscoFTDNetworkAddress": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "address_type",
+        "value",
+        "description",
+        "fqdn_lookup_type",
+        "address_family",
+        "override_metadata"
+      ],
+      "sha256": "a6acd483e4416e10b73c99a2e73577a216655a04741580ef5282a30ef881b4c6"
+    },
+    "CiscoFTDNetworkAddressOverride": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "parent",
+        "target",
+        "address_type",
+        "value",
+        "overridable"
+      ],
+      "sha256": "dec85614bddd53aaa4646098fdee9dac56ff277dd60e276864032a398558b67e"
+    },
+    "CiscoFTDNetworkGroup": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "members",
+        "literal_members",
+        "description",
+        "override_metadata"
+      ],
+      "sha256": "2b0918125fd1d8d30ff146e90fa405ab6e825db660c8e7e01a9c405c4f4858a2"
+    },
+    "CiscoFTDProtocolPortObject": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "protocol",
+        "ports",
+        "port",
+        "end_port",
+        "icmp_type",
+        "icmp_code",
+        "description",
+        "override_metadata"
+      ],
+      "sha256": "0ab122eb8d20654e67cb5c3382746c91cab31a3c00372b86e43830521b151644"
+    },
+    "CiscoFTDPortObjectGroup": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "members",
+        "description",
+        "override_metadata"
+      ],
+      "sha256": "84352bc6e06daf6a1e56638955d5a550e7eeb1e663254ea146adc3bbeadaad53"
+    },
+    "CiscoFTDSecurityZone": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "interfaces"
+      ],
+      "sha256": "0a22d8aa59fc5601b74e34d027d2fa65e81a84b8376290db8fffed8bc3d74749"
+    },
+    "CiscoFTDInterfaceGroup": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "interfaces"
+      ],
+      "sha256": "0a22d8aa59fc5601b74e34d027d2fa65e81a84b8376290db8fffed8bc3d74749"
+    },
+    "CiscoFTDDeviceInterface": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "interface_type",
+        "address",
+        "zone"
+      ],
+      "sha256": "e98bddea763c7531ee08b5e9303b9b08a0f05f9f782853cd29b0de500042e20a"
+    },
+    "CiscoFTDInterfaceSource": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "interface_type",
+        "address",
+        "zone",
+        "management_only",
+        "shutdown",
+        "ipv6_addresses"
+      ],
+      "sha256": "cf29d205aee53a2dbd7867ce4b66c17b9e35bb9dd3b2841d4bfa12acd2e7e9fc"
+    },
+    "CiscoFTDRoute": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "interface",
+        "destination",
+        "selected_networks",
+        "gateway",
+        "address_family",
+        "metric",
+        "virtual_router",
+        "virtual_router_ref",
+        "sla_monitor",
+        "route_tracking",
+        "tunneled"
+      ],
+      "sha256": "2371cdfe5bb06afe2e05b49ae4281d4dec313257230e2155a46e4d4bf66b0540"
+    },
+    "CiscoFTDApplication": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDSLAMonitor": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDVirtualRouter": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "interfaces"
+      ],
+      "sha256": "0a22d8aa59fc5601b74e34d027d2fa65e81a84b8376290db8fffed8bc3d74749"
+    },
+    "CiscoFTDPolicyBasedRoute": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "virtual_router",
+        "ingress_interface",
+        "egress_interface",
+        "path_interface",
+        "networks",
+        "sla_monitor",
+        "position"
+      ],
+      "sha256": "ccc926b8b890f1e3235c1c0afb4c4f38ef03490eea5579a93645c22fac95aba6"
+    },
+    "CiscoFTDECMPZone": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "interfaces"
+      ],
+      "sha256": "0a22d8aa59fc5601b74e34d027d2fa65e81a84b8376290db8fffed8bc3d74749"
+    },
+    "CiscoFTDCertificate": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "certificate_type",
+        "source_collection",
+        "issuer",
+        "subject",
+        "validity",
+        "certificate_metadata",
+        "private_key_present"
+      ],
+      "sha256": "9515fabbf63714230b0341e084a90552f4884a68be983d127f38161e44939640"
+    },
+    "CiscoFTDCertificateMap": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "conditions",
+        "connection_profile",
+        "group_policy"
+      ],
+      "sha256": "e43739b76662a077e00bd00cd8893f54f035b6157f3fe2ae0e41369b1f55fba4"
+    },
+    "CiscoFTDCertificateEnrollment": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDAddressPool": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "address_family",
+        "source_representation",
+        "start_address",
+        "end_address",
+        "override_metadata",
+        "address_reuse_delay"
+      ],
+      "sha256": "88a737f2c32a7bf20ea21d773aded2a56550625f579a7a30caff6a855b05b11a"
+    },
+    "CiscoFTDGroupPolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "vpn_access",
+        "protocols",
+        "connection_settings",
+        "dns_servers",
+        "wins_servers",
+        "domain_name",
+        "realm",
+        "aaa_server_group",
+        "address_pools",
+        "split_tunnel",
+        "split_tunnel_policy",
+        "split_tunnel_networks",
+        "split_dns",
+        "split_tunnel_acl",
+        "secure_client",
+        "session_settings",
+        "simultaneous_logins"
+      ],
+      "sha256": "6e4838b5375dd2b117c9a87c65824bd58c21a24197745b257633f750ada1161c"
+    },
+    "CiscoFTDS2SIKESettings": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "ike_policies",
+        "ikev1_policies",
+        "ikev2_policies",
+        "ikev1_authentication_type",
+        "ikev2_authentication_type",
+        "ikev1_certificate",
+        "ikev2_certificate",
+        "ikev1_automatic_psk_length",
+        "ikev2_automatic_psk_length",
+        "ikev2_hex_psk_only",
+        "certificates",
+        "psk_present"
+      ],
+      "sha256": "bd622978ebd6273892489da1e52e9015d7aa36fa9f96c69eb233da107721d0ac"
+    },
+    "CiscoFTDS2SIPsecSettings": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "ipsec_proposals",
+        "ikev1_ipsec_proposals",
+        "ikev2_ipsec_proposals",
+        "pfs_enabled",
+        "pfs_group",
+        "lifetime_seconds",
+        "lifetime_kilobytes",
+        "ikev2_mode",
+        "crypto_map_type",
+        "do_not_fragment_policy",
+        "enable_rri",
+        "enable_sa_strength_enforcement",
+        "tfc_packets",
+        "validate_incoming_icmp_error_message"
+      ],
+      "sha256": "e08d98da532b97bbce47a3d85cfd718ec1d579ed2dd151e4cacd5a2664945c1f"
+    },
+    "CiscoFTDS2SAdvancedSettings": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "ike_keepalive_settings",
+        "advanced_ike_settings",
+        "advanced_ipsec_settings",
+        "advanced_tunnel_settings"
+      ],
+      "sha256": "9e4881b53844b840bebe2fad5ba49ac9394b9c0afc0c54d11234928624880945"
+    },
+    "CiscoFTDRAVPNIPsecSettings": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "ikev2_settings",
+        "ipsec_settings",
+        "nat_keepalive"
+      ],
+      "sha256": "70f8526c61999cf96488bbc1b741d8cef564ecddd6f370215d59955383014dcc"
+    },
+    "CiscoFTDLDAPAttributeMap": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDRAVPNLoadBalanceSettings": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDRAVPNAddressAssignmentSettings": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "address_pools",
+        "assignment_method",
+        "allow_reuse",
+        "reuse_delay",
+        "external_assignment",
+        "use_authorization_server_for_ipv4",
+        "use_authorization_server_for_ipv6",
+        "use_dhcp",
+        "use_internal_address_pool_for_ipv4",
+        "use_internal_address_pool_for_ipv6"
+      ],
+      "sha256": "f39f5e8735ccdeb6581de4b4e4ccf1a77f76e9d60160bbf487ee4b6faf6e497a"
+    },
+    "CiscoFTDSecureClientSettings": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "packages",
+        "profiles"
+      ],
+      "sha256": "eca38fb8d75a23933d2899ee74a107d5640d9cdd1e798d574c082e54f218b7eb"
+    },
+    "CiscoFTDRAVPNIPsecCryptoMap": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDPrefilterPolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDPrefilterRule": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "position",
+        "action",
+        "conditions",
+        "references"
+      ],
+      "sha256": "6356f8f57a649417641e2bbb682ce06c36538fd7a708d49b528587f65d4d4f04"
+    },
+    "CiscoFTDPrefilterDefaultAction": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDNetworkAnalysisPolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDInspectorConfig": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDInspectorOverrideConfig": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDFileRule": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "parent_policy_id",
+        "parent_policy_name",
+        "position",
+        "collection_order",
+        "enabled",
+        "action",
+        "application_protocols",
+        "transfer_direction",
+        "file_types",
+        "malware_inspection",
+        "file_store"
+      ],
+      "sha256": "17834e1feb07845e558e3656276944389164c630a18054bb4897d7156e7cc1ec"
+    },
+    "CiscoFTDFilePolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "description",
+        "rules"
+      ],
+      "sha256": "c434b9a8c7332e50ae3ee1ed82e94616908ce1f8296dcd0728943e0321066bfe"
+    },
+    "CiscoFTDVariableSet": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDURLCategory": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDVLANObject": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDAccessControlRule": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "policy_id",
+        "policy_name",
+        "enabled",
+        "position",
+        "collection_order",
+        "section",
+        "category",
+        "action",
+        "comments",
+        "source_zones",
+        "destination_zones",
+        "source_networks",
+        "destination_networks",
+        "source_ports",
+        "destination_ports",
+        "source_dynamic_objects",
+        "destination_dynamic_objects",
+        "vlan_tags",
+        "source_security_group_tags",
+        "destination_security_group_tags",
+        "realm",
+        "realm_users",
+        "users",
+        "user_groups",
+        "applications",
+        "application_filters",
+        "inline_application_filters",
+        "urls",
+        "url_categories",
+        "time_range",
+        "intrusion_policy",
+        "variable_set",
+        "file_policy",
+        "log_begin",
+        "log_end",
+        "logging"
+      ],
+      "sha256": "bb16f8c904e6fb2de1bfb8a31de05a8f8ee1e39ce169d8be3fbedb7ef950490a"
+    },
+    "CiscoFTDAccessControlPolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "rules",
+        "description",
+        "inherit",
+        "base_policy",
+        "default_action",
+        "prefilter_policy",
+        "network_analysis_policy",
+        "decryption_policy",
+        "dns_policy",
+        "identity_policy",
+        "logging_settings"
+      ],
+      "sha256": "e0b60531fa0c6f11de557168ca1d7802831b48da8e44ff7b9562595c5756a907"
+    },
+    "CiscoFTDAccessControlLoggingSetting": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "policy_id",
+        "policy_name"
+      ],
+      "sha256": "8a939d383e0481f3e90f5e05d2003f7731e7d9cda9fd13249c16c335c6675a4d"
+    },
+    "CiscoFTDSecurityIntelligencePolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "policy_id",
+        "policy_name"
+      ],
+      "sha256": "8a939d383e0481f3e90f5e05d2003f7731e7d9cda9fd13249c16c335c6675a4d"
+    },
+    "CiscoFTDIdentityPolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDAccessControlDefaultAction": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "policy_id",
+        "action"
+      ],
+      "sha256": "53c6760a3c51216a1b974d0cce6c09671f8b4748bdc8c4d4534e3522b89dae3b"
+    },
+    "CiscoFTDAccessPolicyInheritanceSettings": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "policy_id",
+        "base_policy",
+        "description"
+      ],
+      "sha256": "66e89b1ca223836a1fe902ed91f4fb1829cccb4b89a95b22c098ed9759fbe409"
+    },
+    "CiscoFTDPolicyAssignment": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "policy",
+        "targets"
+      ],
+      "sha256": "004478504646d04b10ecba832d64b682c197d1ca28feb1e79c9f04eca2ab5097"
+    },
+    "CiscoFTDFDMNATRule": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "source_interface",
+        "destination_interface",
+        "original_source",
+        "translated_source",
+        "original_destination",
+        "translated_destination",
+        "service",
+        "rule_type",
+        "sequence",
+        "observed_collection_order",
+        "enabled",
+        "source_translation_mode",
+        "destination_translation_mode"
+      ],
+      "sha256": "27139dd86fa23a11ff7bb9bb322b24d899effb8342935659766109c2ce933d55"
+    },
+    "CiscoFTDManualNATRule": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "source_interface",
+        "destination_interface",
+        "original_source",
+        "translated_source",
+        "original_destination",
+        "translated_destination",
+        "original_source_port",
+        "translated_source_port",
+        "original_destination_port",
+        "translated_destination_port",
+        "original_source_service",
+        "translated_source_service",
+        "original_destination_service",
+        "translated_destination_service",
+        "nat_type",
+        "enabled",
+        "section",
+        "position",
+        "observed_collection_order",
+        "identity_nat",
+        "interface_pat",
+        "dns",
+        "route_lookup",
+        "no_proxy_arp",
+        "proxy_arp"
+      ],
+      "sha256": "6c3c3c37f6bc2fbdccf3c106d1180cf9eb1bc3466d797344fc8904ab6aa0ebd4"
+    },
+    "CiscoFTDAutoNATRule": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "source_interface",
+        "destination_interface",
+        "original_network",
+        "translated_network",
+        "owning_network",
+        "nat_type",
+        "enabled",
+        "position",
+        "observed_collection_order",
+        "interface_pat",
+        "dns",
+        "route_lookup",
+        "no_proxy_arp",
+        "proxy_arp",
+        "identity_nat"
+      ],
+      "sha256": "9f2f4f44a2d04cb8e0950c8147adb851f5806e6a7529f511e887fd5b6b32ae3d"
+    },
+    "CiscoFTDNATPolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "manual_rules_before_auto",
+        "auto_rules",
+        "manual_rules_after_auto",
+        "unclassified_manual_rules",
+        "rules"
+      ],
+      "sha256": "35275a872ba651a28476a8f5dd03cceef0791f221c59ad03404d6fd9b04cdca0"
+    },
+    "CiscoFTDRecurringTimeRangeEntry": {
+      "fields": [
+        "recurrence_type",
+        "days",
+        "daily_start_time",
+        "daily_end_time",
+        "range_start_day",
+        "range_start_time",
+        "range_end_day",
+        "range_end_time",
+        "explicit_fields",
+        "raw_extra"
+      ],
+      "sha256": "b2c9784447976c52a98647e69f8c15db2c9dbe9fd688ec321e1d4ff224276ead"
+    },
+    "CiscoFTDTimeRange": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "description",
+        "absolute_start_date_time",
+        "absolute_end_date_time",
+        "recurrence_entries"
+      ],
+      "sha256": "2ff6fb5ebece119106f7dd065cc1b473779651f1234366ad31981856d1ba7364"
+    },
+    "CiscoFTDIntrusionPolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "description",
+        "variable_set",
+        "base_policy",
+        "snort_version"
+      ],
+      "sha256": "6eb7558feec87c9c7c828d654366f676d6d6e59f4c47f7352ff54195b9399410"
+    },
+    "CiscoFTDIntrusionRuleGroup": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "parent_policy_id",
+        "parent_policy_name",
+        "description"
+      ],
+      "sha256": "fac8e0552fe26f7f6b16cec3f23c2aef5e3db0146bec89bb0ca3cbfd835f4214"
+    },
+    "CiscoFTDIntrusionRuleBehavior": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "parent_policy_id",
+        "parent_policy_name",
+        "rule_id",
+        "rule_reference",
+        "rule_group",
+        "state",
+        "action",
+        "enabled"
+      ],
+      "sha256": "28b1990f953ff8ecac9a3579b86ce8c757eb758bbc3739ae025ac517738a9d31"
+    },
+    "CiscoFTDIntrusionRuleOverride": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "parent_policy_id",
+        "parent_policy_name",
+        "rule_id",
+        "rule_reference",
+        "state",
+        "action"
+      ],
+      "sha256": "78aa51c91583c428a14cdae14e254f4931e5d5bf58d5c03652ef068d4b385278"
+    },
+    "CiscoFTDDecryptionRule": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "parent_policy_id",
+        "parent_policy_name",
+        "position",
+        "collection_order",
+        "enabled",
+        "action",
+        "source_networks",
+        "destination_networks",
+        "source_ports",
+        "destination_ports",
+        "certificates",
+        "tls_conditions",
+        "certificate_status_conditions"
+      ],
+      "sha256": "acd0d028d91b680fe02b9c95ba60c58502ebda9d420309f63e2c6cd3eebdb783"
+    },
+    "CiscoFTDDecryptionPolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "description",
+        "rules",
+        "default_action",
+        "undecryptable_action",
+        "advanced_settings"
+      ],
+      "sha256": "cd4e0a1f628c322b6e639ab12942ea224a6eae688f302986ab7e957db66e040e"
+    },
+    "CiscoFTDDNSRule": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "parent_policy_id",
+        "parent_policy_name",
+        "position",
+        "collection_order",
+        "enabled",
+        "action",
+        "source_zones",
+        "destination_zones",
+        "source_networks",
+        "destination_networks",
+        "networks",
+        "vlan_tags",
+        "lists_feeds"
+      ],
+      "sha256": "41004e81c9f5315b7e9d7b7d6bef432ac59b1281258a41d247459a3a13878c77"
+    },
+    "CiscoFTDDNSPolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "description",
+        "rules",
+        "default_action",
+        "umbrella_settings"
+      ],
+      "sha256": "5f547be7894e7f50786277aee9b116984fffcdf330bce838a878f6a79a60a83f"
+    },
+    "CiscoFTDFMCUserRole": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "description",
+        "predefined",
+        "custom",
+        "menu_permissions",
+        "system_permissions",
+        "role_escalation",
+        "other_permissions"
+      ],
+      "sha256": "b1dd65f6f58f38dd148ca7930d745bce7df87015f36f16369697776f3613e2c1"
+    },
+    "CiscoFTDFMCUser": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "username",
+        "enabled",
+        "authentication_type",
+        "authentication_source",
+        "roles",
+        "external_identity"
+      ],
+      "sha256": "ba3d4ac882b9886d5893b1f6376b17a7a57ec417aafdbaafebfd6734778b8974"
+    },
+    "CiscoFTDDHCPServer": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "interface"
+      ],
+      "sha256": "e8f932ac624bfd5cc6a0fd8a6f76fd76a9b5296ed31114c905dc26a3ee86a678"
+    },
+    "CiscoFTDDHCPRelaySettings": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "relay_agents",
+        "relay_servers",
+        "ipv4_timeout_seconds",
+        "ipv6_timeout_seconds",
+        "trust_all_information"
+      ],
+      "sha256": "542738ff12330620a4c7bb665f862a7b81a87c1408959bee5cd27bf031d0010c"
+    },
+    "CiscoFTDRealm": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "realm_type",
+        "enabled",
+        "description",
+        "directory_configurations",
+        "base_dn",
+        "group_dn",
+        "group_attribute",
+        "ad_primary_domain",
+        "included_users",
+        "excluded_users",
+        "included_groups",
+        "excluded_groups",
+        "identity_provider",
+        "idp_settings",
+        "synchronization_settings"
+      ],
+      "sha256": "eea91ab38ceb23fca113d0caa35f7a5c83e4f430f0e211c461bfe4b58750b3c2"
+    },
+    "CiscoFTDRealmUserGroup": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "realm",
+        "external_id",
+        "distinguished_name",
+        "synchronized",
+        "resolved",
+        "for_policy",
+        "last_synced"
+      ],
+      "sha256": "11076cd1fcd0a5b412ab2269a70b81f0d43efd8413faacc12aae4ab48524dc16"
+    },
+    "CiscoFTDRealmUser": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "realm",
+        "username",
+        "external_id",
+        "distinguished_name",
+        "synchronized",
+        "resolved",
+        "for_policy",
+        "last_synced",
+        "groups"
+      ],
+      "sha256": "9afacd5828fb11b28d4c84dce3f2c810b6a80f870d0fa745e7de89138afe970d"
+    },
+    "CiscoFTDLocalRealmUser": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "username",
+        "realm",
+        "enabled",
+        "groups",
+        "password_configured"
+      ],
+      "sha256": "427ed50c2939e91767f10bdc736b74c9f8e14567e33a5b28853c09d7b25ca0be"
+    },
+    "CiscoFTDS2SVPNTopology": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDS2SVPNEndpoint": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "device",
+        "interface",
+        "vti",
+        "protected_networks",
+        "peer_type",
+        "connection_type",
+        "extranet",
+        "extranet_info",
+        "peer_ip_address",
+        "local_identity_type",
+        "local_identity",
+        "local_identity_enabled"
+      ],
+      "sha256": "8c9e7cbf1dd0a36f23c8d4e55e357fdd6b9601e7471bae1985972c2b38ba72f7"
+    },
+    "CiscoFTDIKEPolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "ike_version",
+        "priority",
+        "lifetime_in_seconds",
+        "authentication_method",
+        "encryption",
+        "hash",
+        "diffie_hellman_group",
+        "encryption_algorithms",
+        "integrity_algorithms",
+        "prf_integrity_algorithms",
+        "diffie_hellman_groups"
+      ],
+      "sha256": "937ee94fefece974808cb78b2b1974d53b771897320af6c8d22d56e1837eec0d"
+    },
+    "CiscoFTDIPsecProposal": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "ike_version",
+        "esp_encryption",
+        "esp_hash",
+        "encryption_algorithms",
+        "integrity_algorithms"
+      ],
+      "sha256": "d2e5aebfa30ce4264efd0c7b0f3bf8612fea25bd5708107fdb5646cd71e31761"
+    },
+    "CiscoFTDRAVPNPolicy": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "target_devices",
+        "access_interfaces",
+        "certificates",
+        "certificate_maps",
+        "certificate_map_settings",
+        "connection_profiles",
+        "group_policies",
+        "address_pools",
+        "realms",
+        "ssl_tls_settings",
+        "dtls_settings",
+        "session_settings"
+      ],
+      "sha256": "5b22e423f8b089e7c0c39c2fc5f200c2059621cb86f98ca8efda9c4c156ad1bd"
+    },
+    "CiscoFTDRAVPNConnectionProfile": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra",
+        "parent_policy_id",
+        "parent_policy_name",
+        "alias",
+        "group_url",
+        "enabled",
+        "authentication_method",
+        "realm",
+        "authentication_server",
+        "authorization",
+        "accounting_server",
+        "address_assignment",
+        "address_pools",
+        "default_group_policy",
+        "certificates",
+        "certificate_maps",
+        "connection_settings"
+      ],
+      "sha256": "e50033ee8a280696969e337a92ad030b1ecedff1aa7a1347252e04c68adda5ef"
+    },
+    "CiscoFTDNativeResource": {
+      "fields": [
+        "name",
+        "source_id",
+        "source_plane",
+        "source_context",
+        "domain_id",
+        "device_id",
+        "explicit_fields",
+        "source_attributes",
+        "raw_extra"
+      ],
+      "sha256": "2f5239fe83a5e0601d39c9f83bd68a951ba2f6e06a4406dda70414f32d953cf2"
+    },
+    "CiscoFTDCollectionPart": {
+      "fields": [
+        "name",
+        "status",
+        "complete",
+        "count"
+      ],
+      "sha256": "362f3e6d1d1fa1a39cae342f9fb445db79630a9712fd0827c669643586dda4b7"
+    },
+    "CiscoFTDCollectionMetadata": {
+      "fields": [
+        "status",
+        "provided",
+        "parts"
+      ],
+      "sha256": "bd8938ded55d5ead06db141b9ba1ddb4e1eb11d8aba2bfd7b836d4349c6647fd"
+    },
+    "CiscoFTDConfig": {
+      "fields": [
+        "source_vendor",
+        "source_product",
+        "version",
+        "cmi_enabled",
+        "management_ipv4",
+        "management_netmask",
+        "management_gateway",
+        "management_dns_servers",
+        "ssh_access_list",
+        "diagnostic_interface",
+        "interfaces",
+        "static_routes",
+        "management_settings",
+        "input_source_type",
+        "source_plane",
+        "source_metadata",
+        "collection_metadata",
+        "network_addresses",
+        "network_address_overrides",
+        "network_groups",
+        "protocol_port_objects",
+        "port_object_groups",
+        "applications",
+        "sla_monitors",
+        "virtual_routers",
+        "policy_based_routes",
+        "ecmp_zones",
+        "certificates",
+        "certificate_maps",
+        "certificate_enrollments",
+        "address_pools",
+        "group_policies",
+        "s2s_ike_settings",
+        "s2s_ipsec_settings",
+        "s2s_advanced_settings",
+        "ra_vpn_ipsec_settings",
+        "ldap_attribute_maps",
+        "ra_vpn_load_balance_settings",
+        "ra_vpn_address_assignment_settings",
+        "secure_client_settings",
+        "ra_vpn_ipsec_crypto_maps",
+        "prefilter_policies",
+        "prefilter_rules",
+        "prefilter_default_actions",
+        "network_analysis_policies",
+        "inspector_configs",
+        "inspector_override_configs",
+        "variable_sets",
+        "url_categories",
+        "vlan_objects",
+        "security_zones",
+        "interface_groups",
+        "device_interfaces",
+        "source_interfaces",
+        "routes",
+        "access_control_policies",
+        "access_control_logging_settings",
+        "security_intelligence_policies",
+        "identity_policies",
+        "access_control_default_actions",
+        "access_policy_inheritance_settings",
+        "policy_assignments",
+        "nat_policies",
+        "time_ranges",
+        "intrusion_policies",
+        "intrusion_rule_groups",
+        "intrusion_rule_behaviors",
+        "intrusion_rule_overrides",
+        "file_policies",
+        "decryption_policies",
+        "dns_policies",
+        "fmc_user_roles",
+        "fmc_users",
+        "dhcp_servers",
+        "dhcp_relay_settings",
+        "realms",
+        "realm_user_groups",
+        "realm_users",
+        "local_realm_users",
+        "s2s_vpn_topologies",
+        "s2s_vpn_endpoints",
+        "ike_policies",
+        "ipsec_proposals",
+        "ra_vpn_policies",
+        "ra_vpn_connection_profiles",
+        "native_resources",
+        "unsupported_evidence"
+      ],
+      "sha256": "d5b7c97cd6616229dd054651a488cc82109eca67b3e89f6a1cb4157ddfd7498a"
+    }
+  },
+  "serialized_config_sha256": "aba7131a8f29408c6606ed1c8f3a5cf13c659158c902e73a856e86354cf4c1eb"
+}

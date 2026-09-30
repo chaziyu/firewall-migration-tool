@@ -54,7 +54,6 @@ class PANDeploymentOptions:
     username: str
     password: str = field(repr=False)
     validate: bool = True
-    commit: bool = False
     port: int = 22
     job_poll_interval: float = 1.0
     job_poll_attempts: int = 60

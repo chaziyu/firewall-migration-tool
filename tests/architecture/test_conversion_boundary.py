@@ -47,3 +47,14 @@ def test_planning_boundary_does_not_depend_on_target_config_or_shared_ir():
         names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
         attributes = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
         assert not forbidden & (names | attributes), path
+
+
+def test_pair_package_keeps_legacy_imports_after_internal_grouping():
+    from fwmigrate.conversion.fortigate_to_palo_alto import addresses, renderer, target_candidates
+    from fwmigrate.conversion.fortigate_to_palo_alto.planning import addresses as planned_addresses
+    from fwmigrate.conversion.fortigate_to_palo_alto.rendering import renderer as rendering
+    from fwmigrate.conversion.fortigate_to_palo_alto.target import target_candidates as target
+
+    assert addresses.plan_addresses is planned_addresses.plan_addresses
+    assert renderer.PANSetRenderer is rendering.PANSetRenderer
+    assert target_candidates.build_target_candidates is target.build_target_candidates

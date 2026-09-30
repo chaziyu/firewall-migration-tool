@@ -2,7 +2,8 @@ import io
 import json
 import zipfile
 from types import SimpleNamespace
-from fwmigrate.web import _deployment_validation_feedback, create_app
+from fwmigrate.web import create_app
+from fwmigrate.conversion.fortigate_to_palo_alto.application import deployment_validation_feedback
 from tests.fixture_paths import CISCO_ASA_FIXTURE
 from pathlib import Path
 
@@ -561,7 +562,7 @@ def test_candidate_validation_failure_maps_to_rendered_migration_item_when_uniqu
     document = {"decisions": [{"source_vdom": "root", "source_name": "web-https", "key": "decision-1"},
                               {"source_vdom": "root", "source_name": "web-https", "key": "wrong-kind-decision"}]}
     validation = SimpleNamespace(status="FAILED", response="validation error: service web-https is invalid")
-    feedback = _deployment_validation_feedback(rendered, document, validation)
+    feedback = deployment_validation_feedback(rendered, document, validation)
     assert feedback["mapping_status"] == "MAPPED"
     assert feedback["migration_items"][0]["decision_keys"] == ["decision-1"]
     assert feedback["migration_items"][0]["generated_commands"][0].endswith("port 443")

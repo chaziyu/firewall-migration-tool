@@ -23,7 +23,7 @@ def test_legacy_parser_path_is_removed():
 
 
 def test_generic_source_model_buckets_are_removed():
-    model = (ROOT / "model.py").read_text(encoding="utf-8")
+    model = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "model").glob("*.py"))
     assert "managed_objects:" not in model
     assert "\n    object_groups:" not in model
     assert "class CiscoFTDObject" not in model
