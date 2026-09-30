@@ -50,7 +50,7 @@ def test_multiple_static_route_next_hops_and_gaia_route_forms_are_preserved():
     )
     route = values[0]
     assert len(route.values["next_hops"]) == 2
-    assert route.values["next_hops"][0] == {"next_hop_type": "gateway", "gateway": "192.0.2.1", "priority": "1"}
+    assert route.values["next_hops"][0] == {"next_hop_type": "gateway", "gateway": "192.0.2.1", "enabled": True, "priority": "1"}
     assert route.values["next_hops"][1]["interface"] == "eth0"
     assert values[1].values["default"] is True and values[1].values["next_hops"][0]["next_hop_type"] == "blackhole"
     assert values[2].values["next_hops"][0]["next_hop_type"] == "reject"
