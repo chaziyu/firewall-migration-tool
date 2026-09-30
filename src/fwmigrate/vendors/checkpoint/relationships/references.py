@@ -84,6 +84,7 @@ _FIELDS = {
 class CPReferenceIndex:
     objects: dict[CPReferenceKind, tuple[CheckPointSourceObject, ...]] = field(default_factory=dict)
     by_uid: dict[str, CheckPointSourceObject] = field(default_factory=dict)
+    by_scoped_uid: dict[tuple[str | None, str], tuple[CheckPointSourceObject, ...]] = field(default_factory=dict)
     by_name: dict[tuple[str | None, str], tuple[CheckPointSourceObject, ...]] = field(default_factory=dict)
     kinds_by_object: dict[int, CPReferenceKind] = field(default_factory=dict)
     duplicates: list[CPDuplicateObject] = field(default_factory=list)
@@ -95,20 +96,44 @@ class CPReferenceIndex:
         key = _key(value); expected = tuple(expected_kinds); scope = _scope(owner) if isinstance(owner, CheckPointSourceObject) else None
         if not key or key.casefold() in {"any", "original"}:
             return CPResolvedReference(key or "", None, None, scope, "source_only", source_field)
+
+        def resolve_candidates(candidates: tuple[CheckPointSourceObject, ...] | list[CheckPointSourceObject]):
+            typed = [item for item in candidates if not expected or self.kind_of(item) in expected]
+            if len(typed) == 1:
+                target = typed[0]
+                return CPResolvedReference(key, target, self.kind_of(target), scope, "resolved", source_field)
+            if candidates and not typed:
+                return CPBrokenReference(owner, source_field or "", key, expected, "wrong_type", scope)
+            if len(typed) > 1:
+                return CPBrokenReference(owner, source_field or "", key, expected, "ambiguous", scope)
+            return None
+
+        if scope is not None:
+            uid_result = resolve_candidates(self.by_scoped_uid.get((scope, key), ()))
+            if uid_result is not None:
+                return uid_result
+            name_result = resolve_candidates(self.by_name.get((scope, key), ()))
+            if name_result is not None:
+                return name_result
+            exists_other_scope = any(uid == key and candidate_scope != scope for candidate_scope, uid in self.by_scoped_uid)
+            exists_other_scope = exists_other_scope or any(name == key and candidate_scope != scope for candidate_scope, name in self.by_name)
+            return CPBrokenReference(owner, source_field or "", key, expected, "cross_scope" if exists_other_scope else "missing", scope)
+
         exact = self.by_uid.get(key)
         if exact is not None:
-            exact_scope = _scope(exact)
-            if scope is not None and exact_scope != scope:
-                return CPBrokenReference(owner, source_field or "", key, expected, "cross_scope", scope)
             if expected and self.kind_of(exact) not in expected:
                 return CPBrokenReference(owner, source_field or "", key, expected, "wrong_type", scope)
-            candidates = [exact]
-        else:
-            candidates = [item for item in self.by_name.get((scope, key), ()) if not expected or self.kind_of(item) in expected]
-        if len(candidates) == 1:
-            target = candidates[0]; return CPResolvedReference(key, target, self.kind_of(target), scope, "resolved", source_field)
-        status = "ambiguous" if candidates else "cross_scope" if any(name == key for _, name in self.by_name) else "missing"
-        return CPBrokenReference(owner, source_field or "", key, expected, status, scope)
+            return CPResolvedReference(key, exact, self.kind_of(exact), scope, "resolved", source_field)
+        uid_candidates = [item for (candidate_scope, uid), items in self.by_scoped_uid.items() if uid == key for item in items]
+        if uid_candidates:
+            result = resolve_candidates(uid_candidates)
+            if result is not None:
+                return result
+        global_name_candidates = [item for (candidate_scope, name), items in self.by_name.items() if name == key for item in items]
+        result = resolve_candidates(global_name_candidates)
+        if result is not None:
+            return result
+        return CPBrokenReference(owner, source_field or "", key, expected, "missing", scope)
 
 
 def _records(config: CheckPointConfig):
@@ -118,16 +143,31 @@ def _records(config: CheckPointConfig):
 
 
 def build_reference_index(config: CheckPointConfig) -> CPReferenceIndex:
-    index = CPReferenceIndex(); by_name: dict[tuple[str | None, str], list[CheckPointSourceObject]] = {}; by_uid: dict[str, list[CheckPointSourceObject]] = {}; by_kind = {}
+    index = CPReferenceIndex()
+    by_name: dict[tuple[str | None, str], list[CheckPointSourceObject]] = {}
+    by_uid: dict[str, list[CheckPointSourceObject]] = {}
+    by_scoped_uid: dict[tuple[str | None, str], list[CheckPointSourceObject]] = {}
+    by_kind = {}
     for kind, item in _records(config):
         by_kind.setdefault(kind, []).append(item); index.kinds_by_object[id(item)] = kind
-        if item.uid: by_uid.setdefault(item.uid, []).append(item)
-        if item.name: by_name.setdefault((_scope(item), item.name), []).append(item)
+        scope = _scope(item)
+        if item.uid:
+            by_uid.setdefault(item.uid, []).append(item)
+            by_scoped_uid.setdefault((scope, item.uid), []).append(item)
+        if item.name:
+            by_name.setdefault((scope, item.name), []).append(item)
     index.objects = {kind: tuple(items) for kind, items in by_kind.items()}
     index.by_uid = {uid: items[0] for uid, items in by_uid.items() if len(items) == 1}
+    index.by_scoped_uid = {key: tuple(items) for key, items in by_scoped_uid.items()}
     index.by_name = {key: tuple(items) for key, items in by_name.items()}
-    index.duplicates = [CPDuplicateObject(uid, index.kind_of(items[0]), _scope(items[0]), tuple(items)) for uid, items in by_uid.items() if len(items) > 1]
-    index.duplicates += [CPDuplicateObject(name, index.kind_of(items[0]), scope, tuple(items)) for (scope, name), items in by_name.items() if len(items) > 1]
+    index.duplicates = [
+        CPDuplicateObject(uid, index.kind_of(items[0]), scope, tuple(items))
+        for (scope, uid), items in by_scoped_uid.items() if len(items) > 1
+    ]
+    index.duplicates += [
+        CPDuplicateObject(name, index.kind_of(items[0]), scope, tuple(items))
+        for (scope, name), items in by_name.items() if len(items) > 1
+    ]
     return index
 
 
