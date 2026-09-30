@@ -69,6 +69,7 @@ class PANOSDerivedViews:
     reference_resolutions: tuple[Any, ...] = ()
     shadowing: tuple[Any, ...] = ()
     interface_topology: tuple[Any, ...] = ()
+    static_routes: tuple[Any, ...] = ()
     policy_order: tuple[Any, ...] = ()
     nat: tuple[Any, ...] = ()
     relationship_issues: tuple[Any, ...] = ()
