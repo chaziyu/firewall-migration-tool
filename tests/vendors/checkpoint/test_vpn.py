@@ -32,6 +32,7 @@ def test_live_community_commands_enter_derived_vpn_topology():
     assert star.centers[0].uid == "g"
     assert star.community.command == "show-vpn-communities-star"
     mesh = next(item for item in result.derived.vpn_topology.communities if item.community.uid == "mesh")
+    assert mesh.community.community_type == "mesh"
     assert {item.uid for item in mesh.members} == {"g", "c"}
 
 def test_vpn_migration_view_retains_checkpoint_sources_and_shared_relationships():
