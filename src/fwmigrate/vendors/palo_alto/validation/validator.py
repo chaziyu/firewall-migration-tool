@@ -86,9 +86,13 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
         _issue(issues, "warning", "scope", "PAN-OS XML contains no explicit device, VSYS, or device-group scope.")
 
     families = {
+        "tag": config.tags,
         "address": config.addresses, "address-group": config.address_groups,
         "service": config.services, "service-group": config.service_groups,
         "schedule": config.schedules, "zone": config.zones,
+        "interface": config.interfaces, "interface-unit": config.interface_units,
+        "nat": config.nat_rules, "default-security-rule": config.default_security_rules,
+        "virtual-router": config.virtual_routers, "logical-router": config.logical_routers,
         "vulnerability-profile": config.vulnerability_profiles, "security-profile-group": config.security_profile_groups,
         "dhcp-server": config.dhcp_servers, "sdwan-interface-profile": config.sdwan_interface_profiles,
         "sdwan-path-quality-profile": config.sdwan_path_quality_profiles,
@@ -99,6 +103,8 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
         "ike-gateway": config.ike_gateways, "ike-crypto-profile": config.ike_crypto_profiles,
         "ipsec-crypto-profile": config.ipsec_crypto_profiles, "ipsec-tunnel": config.ipsec_tunnels,
         "globalprotect-portal": config.globalprotect_portals, "globalprotect-gateway": config.globalprotect_gateways,
+        "local-user": config.local_users, "local-user-group": config.local_user_groups,
+        "group-mapping": config.group_mappings,
     }
     for family, items in families.items():
         seen: dict[tuple[str, str | None], Any] = {}
@@ -142,7 +148,19 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
             text = value if isinstance(value, str) else getattr(value, "address", None)
             if text and not _validate_ip(text.split("/")[0], ranges=False):
                 _issue(issues, "error", "interface", f"malformed IPv6 address: {text!r}", item, "ipv6_addresses")
+    route_names: dict[tuple[str | None, str | None, str | None, str], Any] = {}
     for route in derived.static_routes:
+        if route.name:
+            key = (route.router_type, route.router_name, route.vrf_name, route.name)
+            if key in route_names:
+                owner = "/".join(value for value in key[:3] if value) or "<unknown-router>"
+                _issue(
+                    issues, "error", "identity",
+                    f"duplicate static route name {route.name!r} in {owner}",
+                    route, "name", object_type="route",
+                )
+            else:
+                route_names[key] = route
         if route.destination and not _validate_ip(route.destination):
             _issue(issues, "error", "route", f"malformed route destination: {route.destination!r}", route, "destination")
         if route.nexthop_ip_address and not _validate_ip(route.nexthop_ip_address, ranges=False):
