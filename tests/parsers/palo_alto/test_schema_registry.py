@@ -306,3 +306,19 @@ def test_unknown_wrapper_does_not_reinterpret_nested_known_suffix_as_typed_sourc
     assert config.addresses == []
     record = next(item for item in config.source_inventory if item.name == "unexpected")
     assert record.source_path.endswith("future-feature/address/entry")
+
+
+def test_ha_path_monitoring_virtual_router_entry_is_not_typed_as_network_router():
+    from fwmigrate.vendors.palo_alto.source_builder import build_panos_config
+
+    config = build_panos_config(
+        """<config><devices><entry name='fw'><deviceconfig><high-availability>
+          <monitoring><path-monitoring><path-group><virtual-router>
+            <entry name='ha-monitor-vr'><failure-condition>any</failure-condition></entry>
+          </virtual-router></path-group></path-monitoring></monitoring>
+        </high-availability></deviceconfig></entry></devices></config>"""
+    )
+
+    assert config.virtual_routers == []
+    record = next(item for item in config.source_inventory if item.name == "ha-monitor-vr")
+    assert "high-availability/monitoring/path-monitoring/path-group/virtual-router/entry" in record.source_path
