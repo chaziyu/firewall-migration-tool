@@ -94,8 +94,13 @@ jobs:
         run: |
           set -euo pipefail
           container=firewall-migration-tool-ci
+          username=fwmigrate-ci
+          password="ci-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           trap 'docker rm --force "$container" >/dev/null 2>&1 || true' EXIT
-          docker run --detach --name "$container" --publish 5000:5000 firewall-migration-tool:ci
+          docker run --detach --name "$container" --publish 5000:5000 \
+            --env FWMIGRATE_WEB_USERNAME="$username" \
+            --env FWMIGRATE_WEB_PASSWORD="$password" \
+            firewall-migration-tool:ci
           for attempt in {1..60}; do
             status=$(docker inspect --format='{{.State.Health.Status}}' "$container")
             if [ "$status" = healthy ]; then break; fi
@@ -104,10 +109,10 @@ jobs:
           done
           status=$(docker inspect --format='{{.State.Health.Status}}' "$container")
           if [ "$status" != healthy ]; then docker logs "$container"; exit 1; fi
-          curl --fail --silent --show-error http://127.0.0.1:5000/api/vendors
-          asset=$(curl --fail --silent --show-error http://127.0.0.1:5000/ | sed -n 's/.*src="\(\/assets\/[^" ]*\)".*/\1/p')
+          curl --fail --silent --show-error --user "$username:$password" http://127.0.0.1:5000/api/vendors
+          asset=$(curl --fail --silent --show-error --user "$username:$password" http://127.0.0.1:5000/ | sed -n 's/.*src="\(\/assets\/[^" ]*\)".*/\1/p')
           test -n "$asset"
-          curl --fail --silent --show-error "http://127.0.0.1:5000$asset" >/dev/null
+          curl --fail --silent --show-error --user "$username:$password" "http://127.0.0.1:5000$asset" >/dev/null
 
 
   desktop:
