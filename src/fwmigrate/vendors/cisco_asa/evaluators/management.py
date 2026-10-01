@@ -62,7 +62,7 @@ class ManagementEvaluator:
         if self._parse_ntp_authentication_command(line, line_number):
             return
         self._legacy_management(line)
-        system = self.config.system_settings
+        system = self._ensure_system_settings()
         system.raw_lines.append(sanitize_raw_text(line))
         system.source_attributes.setdefault("raw_commands", []).append(sanitize_raw_text(line))
         if command == "hostname" and len(parts) == 2:
@@ -72,7 +72,7 @@ class ManagementEvaluator:
             return
         if lower.startswith("domain-name ") and len(parts) == 2:
             system.domain_name = parts[1]
-            self.config.dns_settings.domain_name = parts[1]
+            self._ensure_dns_settings().domain_name = parts[1]
             return
         if lower.startswith("clock timezone ") and len(parts) >= 4:
             system.timezone_name = parts[2]
@@ -196,9 +196,10 @@ class ManagementEvaluator:
         parts = line.split(maxsplit=1)
         if len(parts) == 2:
             self.config.hostname = parts[1]
-            self.config.system_settings.hostname = parts[1]
+            system = self._ensure_system_settings()
+            system.hostname = parts[1]
             _mark_explicit(self.config, "hostname")
-            _mark_explicit(self.config.system_settings, "hostname")
+            _mark_explicit(system, "hostname")
 
     def _parse_sysopt_permit_vpn(self, line, line_number, enabled):
         record = CiscoManagementSetting(
@@ -267,5 +268,6 @@ class ManagementEvaluator:
         self.config.management_settings[-1].source_attributes["raw_command"] = sanitize_raw_text(line)
 
     def _parse_dns_group_selection(self, line):
-        self.config.dns_settings.default_server_group = line.split()[1]
-        self.config.dns_settings.command_history.append(sanitize_raw_text(line))
+        dns_settings = self._ensure_dns_settings()
+        dns_settings.default_server_group = line.split()[1]
+        dns_settings.command_history.append(sanitize_raw_text(line))
