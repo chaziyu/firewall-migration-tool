@@ -17,6 +17,7 @@ from fwmigrate.vendors.juniper_srx.provenance import build_candidate
 from fwmigrate.vendors.juniper_srx.path_semantics import candidate_field_value as _candidate_field_value
 
 MAX_GROUP_RECURSION_DEPTH = 64
+MAX_GROUP_EXPANSIONS = 10_000
 _APPLY = {"apply-groups", "apply-groups-except"}
 
 
@@ -35,7 +36,7 @@ def _context_prefix(path: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _render(path: tuple[str, ...], base: tuple[str, ...], target: tuple[str, ...],
-            commands: List[JunosCommand]) -> list[tuple[str, ...]]:
+            commands: List[JunosCommand], application: JunosCommand | None = None) -> list[tuple[str, ...]]:
     """Render one relative path, expanding wildcards only to real targets."""
     values = [list(base)]
     for offset, component in enumerate(path):
@@ -53,6 +54,11 @@ def _render(path: tuple[str, ...], base: tuple[str, ...], target: tuple[str, ...
             candidates = [target[absolute]]
         else:
             candidates = [component]
+        if len(values) * len(candidates) > MAX_GROUP_EXPANSIONS:
+            if application is not None:
+                application.group_resolution = "GROUP_EXPANSION_LIMIT_EXCEEDED"
+                application.requires_manual_review = True
+            return []
         values = [current + [value] for current in values for value in candidates]
     return [tuple(value) for value in values]
 
@@ -169,7 +175,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
         # Actual nested applications create a new point; no fabricated prefixes.
         for node_path, nested_name, excluded, source, nested_priority in sorted(
                 nested_refs, key=lambda item: item[3].line_number):
-            nested_points = _render(node_path, apply_at, target, commands)
+            nested_points = _render(node_path, apply_at, target, commands, application)
             for nested_at in nested_points:
                 if target and tuple(target[:len(nested_at)]) != nested_at:
                     continue
@@ -199,7 +205,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
             relative_path = path
             if apply_at and tuple(path[:len(apply_at)]) == apply_at:
                 relative_path = path[len(apply_at):]
-            for rendered in _render(relative_path, apply_at, target, commands):
+            for rendered in _render(relative_path, apply_at, target, commands, application):
                 if target and tuple(target[:len(rendered)]) != rendered[:len(target)]:
                     continue
                 inherited.append(JunosCommand(
@@ -250,7 +256,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
             owners = list(dict.fromkeys((_group_key(_context_prefix(target), name), _group_key((), name))))
             for owner in owners:
                 for path, source in sorted(inactive_groups.get(owner, []), key=lambda item: item[1].line_number):
-                    for rendered in _render(path, (), target, commands):
+                    for rendered in _render(path, (), target, commands, application):
                         _record_non_effective_definition(
                             application, name, rendered, source,
                             JuniperResolutionStatus.INACTIVE, "inactive", rendered,
