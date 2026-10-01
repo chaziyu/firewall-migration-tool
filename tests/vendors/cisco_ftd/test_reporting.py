@@ -26,6 +26,7 @@ def test_native_collections_are_visible_in_preview_and_excel():
     assert "Native Sources" in workbook.sheetnames
     assert "Source Inventory" in workbook.sheetnames
     assert "Collection Completeness" in workbook.sheetnames
+    assert "Semantic Completeness" in workbook.sheetnames
     assert workbook["Native Sources"].max_row > 1
     assert workbook["Source Inventory"].max_row > 1
     assert result.source_sections[0].object_count_source == len(result.inventory_items)
@@ -115,3 +116,45 @@ def test_device_only_fmc_bundle_uses_fmc_adapter():
     }))
     assert result.config.source_plane == "fmc-rest-bundle"
     assert result.config.source_interfaces[0].source_id == "if-1"
+
+
+def test_preview_keeps_parent_policy_and_rule_identity_distinct():
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "access_policies": [{
+            "id": "acp-1", "name": "Corporate ACP",
+            "rules": [{"id": "rule-1", "name": "Allow DNS", "position": 7, "action": "ALLOW"}],
+        }],
+        "nat_policies": [{
+            "id": "nat-1", "name": "Edge NAT",
+            "manual_rules_before_auto": [
+                {"id": "nat-rule-1", "name": "Static NAT", "position": 3, "section": "BEFORE_AUTO"}
+            ],
+        }],
+    }))
+    preview = build_ftd_preview(result)
+    policy = preview["sections"]["policies"][0]
+    assert (policy["policy_id"], policy["policy_name"], policy["rule_id"], policy["position"]) == (
+        "acp-1", "Corporate ACP", "rule-1", 7,
+    )
+    nat = preview["sections"]["nat"][0]
+    assert (nat["policy_id"], nat["policy_name"], nat["rule_id"], nat["position"]) == (
+        "nat-1", "Edge NAT", "nat-rule-1", 3,
+    )
+
+
+def test_excel_source_inventory_exposes_structured_ownership_columns():
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "domain": {"id": "domain-1", "name": "Global"},
+        "devices": [{"id": "device-1", "name": "FTD-A", "resources": {
+            "virtual_routers": [{"id": "vr-1", "name": "VR-A", "resources": {}}]
+        }}],
+    }))
+    output = BytesIO()
+    CiscoFTDSourceReporter().export_excel(result, output)
+    output.seek(0)
+    workbook = load_workbook(output, read_only=True)
+    headers = [cell.value for cell in workbook["Source Inventory"][1]]
+    assert {"Domain", "Device", "Device Name", "Virtual Router ID", "Virtual Router",
+            "Parent Policy ID", "Parent Policy"} <= set(headers)
