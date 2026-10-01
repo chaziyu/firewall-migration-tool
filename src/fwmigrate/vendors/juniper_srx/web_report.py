@@ -73,10 +73,11 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                                        "address_book": book.name, "zone": item.zone,
                                        "provenance": _project(getattr(item, "provenance", None))})
         for item in context.applications.values():
-            for term in item.terms or (None,):
-                services.append({"name": item.name, "protocol": term.protocol if term else None,
-                                 "port": term.destination_ports if term else [], "source_port": term.source_ports if term else None,
-                                 "scope": scope, "term": term.name if term else None,
+            settings = item.terms or (item.top_level,)
+            for term in settings:
+                services.append({"name": item.name, "protocol": term.protocol,
+                                 "port": term.destination_ports, "source_port": term.source_ports,
+                                 "scope": scope, "term": getattr(term, "name", None),
                                  "provenance": _project(getattr(item, "provenance", None))})
         for item in context.application_sets.values():
             service_groups.append({"name": item.name, "members": item.applications, "scope": scope,
