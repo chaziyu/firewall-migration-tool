@@ -103,9 +103,9 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                                 "from_interfaces": list(rule_set.from_context.interfaces),
                                 "from_zones": list(rule_set.from_context.zones),
                                 "from_routing_instances": list(rule_set.from_context.routing_instances),
-                                "to_interfaces": list(rule_set.to_context.interfaces),
-                                "to_zones": list(rule_set.to_context.zones),
-                                "to_routing_instances": list(rule_set.to_context.routing_instances),
+                                "to_interfaces": list(rule_set.to_context.interfaces) if rule_set.to_context else [],
+                                "to_zones": list(rule_set.to_context.zones) if rule_set.to_context else [],
+                                "to_routing_instances": list(rule_set.to_context.routing_instances) if rule_set.to_context else [],
                                 "scope": scope, "rule_set": rule_set.name,
                                 "provenance": _project(getattr(item, "provenance", None))})
         for item in context.routes:
