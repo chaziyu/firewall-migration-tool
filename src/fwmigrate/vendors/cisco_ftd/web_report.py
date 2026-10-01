@@ -112,17 +112,37 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
                                  "source_kind": collection, "source_plane": rule.source_plane,
                                  "source_order": getattr(rule, "observed_collection_order", None), "scope": scope(rule),
                                  "scope_details": scope_details(rule), **scope_details(rule)})
-    routes = [{"route_id": item.source_name, "destination": item.normalized_destination or item.configured_destination,
-               "configured_destination": item.configured_destination, "gateway": item.gateway,
-               "device": item.device_id or item.virtual_router, "distance": None,
-               "status": "EXTRACTED" if item.normalized_destination else "REVIEW",
-               "review": [item.issue] if item.issue else [], "scope": item.device_id or item.virtual_router}
-              for item in result.derived.normalized_routes]
-    vpn_tunnels = [{"kind": "Site-to-site", "name": item.name, "peer": value(item),
-                    "source_plane": item.source_plane, "scope": scope(item), "scope_details": scope_details(item)}
+    route_sources = {
+        (route.source_id, route.device_id, route.virtual_router): route
+        for route in config.routes if route.source_id is not None
+    }
+    routes = []
+    for item in result.derived.normalized_routes:
+        source_route = route_sources.get((item.source_id, item.device_id, item.virtual_router))
+        details = scope_details(source_route) if source_route is not None else {
+            "source_context": None, "domain_id": None, "device_id": item.device_id,
+            "device_name": None, "virtual_router_id": None, "virtual_router_name": item.virtual_router,
+            "parent_policy_id": None, "parent_policy_name": None,
+        }
+        routes.append({
+            "route_id": item.source_id or item.source_name,
+            "source_id": item.source_id,
+            "name": source_name(source_route) if source_route is not None else item.source_name,
+            "destination": item.normalized_destination or item.configured_destination,
+            "configured_destination": item.configured_destination, "gateway": item.gateway,
+            "device": item.device_id or item.virtual_router, "distance": None,
+            "status": "EXTRACTED" if item.normalized_destination else "REVIEW",
+            "review": [item.issue] if item.issue else [],
+            "scope": scope(source_route) if source_route is not None else item.device_id or item.virtual_router,
+            "scope_details": details, **details,
+        })
+    vpn_tunnels = [{"kind": "Site-to-site", "name": source_name(item), "peer": value(item),
+                    "source_plane": item.source_plane, "scope": scope(item), "scope_details": scope_details(item),
+                    **scope_details(item)}
                    for item in config.s2s_vpn_topologies]
-    vpn_tunnels.extend({"kind": "Site-to-site endpoint", "name": item.name, "peer": value(item),
-                        "source_plane": item.source_plane, "scope": scope(item), "scope_details": scope_details(item)}
+    vpn_tunnels.extend({"kind": "Site-to-site endpoint", "name": source_name(item), "peer": value(item),
+                        "source_plane": item.source_plane, "scope": scope(item), "scope_details": scope_details(item),
+                        **scope_details(item)}
                        for item in config.s2s_vpn_endpoints)
     validation = [{"severity": item.severity, "domain": item.category, "object_name": item.source_object,
                    "source_id": item.source_id, "field": None, "message": item.message,
