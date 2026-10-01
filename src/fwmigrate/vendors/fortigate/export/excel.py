@@ -41,6 +41,7 @@ from .excel_schema import (
     SHEET_ORDER,
 )
 from .excel_common import (
+    _POLICY_ACTION_NOTE,
     _VISIBLE_MODEL_FIELDS_BY_SHEET,
     _additional_source_settings,
     _additional_settings,
