@@ -44,6 +44,11 @@ def test_model_package_preserves_public_schema_and_serialization():
             for key, field in fields.items()
         ]
         assert list(fields) == snapshot["fields"], name
+        if expected.get("nullable_source_record_name") and issubclass(cls, model.CiscoFTDSourceRecord):
+            name_field = fields["name"]
+            assert not name_field.is_required() and name_field.default is None
+            assert type(None) in typing.get_args(name_field.annotation)
+            metadata[0] = ("name", "str", True, None, None, None)
         assert _digest(metadata) == snapshot["sha256"], name
     config = model.CiscoFTDConfig(network_addresses=[model.CiscoFTDNetworkAddress(name="host", source_plane="fmc-rest-bundle", value="192.0.2.1")])
     assert _digest(config.model_dump(mode="json")) == expected["serialized_config_sha256"]
