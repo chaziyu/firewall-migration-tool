@@ -1711,7 +1711,7 @@
         "reason",
         "extraction_effect"
       ],
-      "sha256": "0663e0f64d306bc6ad445f2f99432065f73ce84868c9f997ab022a67c377be85"
+      "sha256": "4d5028c4e56f696bc8c6138fe26a1110fd7debf356c2b45407dda3f5f80fa7b6"
     },
     "CiscoASAConfig": {
       "fields": [
@@ -1789,8 +1789,8 @@
         "parse_errors",
         "diagnostics"
       ],
-      "sha256": "895e174db48dbd188b92949938b425f6607e7610dac0930675ad653d86fdb94d"
+      "sha256": "05018f93fe982adf1a5191be9b7555a1e072ebc26937e54390f1ba6449902892"
     }
   },
-  "serialized_config_sha256": "e5d1e148001a87398e2ef6e737c941bb7b5e6e2c93214b4aa479297b6debb8cd"
+  "serialized_config_sha256": "a7a5d3615a87b9055cdf72bd42fd858ba70237bf7ed1761908b3277b9432ddd9"
 }
