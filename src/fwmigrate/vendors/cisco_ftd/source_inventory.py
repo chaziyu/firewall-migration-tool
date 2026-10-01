@@ -20,11 +20,31 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
         identity = f"id={record.source_id}" if record.source_id else f"index={index}"
         return "/".join([config.source_plane, *[item for item in scope if item], path, identity])
 
-    def source_type(record) -> str:
-        native_type = record.source_attributes.get("resource_type")
-        if native_type:
-            return str(native_type)
-        return type(record).__name__.removeprefix("CiscoFTD")
+    irregular_source_types = {
+        "network_addresses": "network_address",
+        "access_control_policies": "access_control_policy",
+        "security_intelligence_policies": "security_intelligence_policy",
+        "identity_policies": "identity_policy",
+        "intrusion_policies": "intrusion_policy",
+        "file_policies": "file_policy",
+        "decryption_policies": "decryption_policy",
+        "dns_policies": "dns_policy",
+        "group_policies": "group_policy",
+        "s2s_vpn_topologies": "s2s_vpn_topology",
+        "ike_policies": "ike_policy",
+        "ra_vpn_policies": "ra_vpn_policy",
+        "prefilter_policies": "prefilter_policy",
+        "network_analysis_policies": "network_analysis_policy",
+        "url_categories": "url_category",
+    }
+
+    def source_type(attribute: str, record) -> str:
+        if attribute == "native_resources":
+            native_type = record.source_attributes.get("resource_type")
+            if native_type:
+                return str(native_type)
+        return irregular_source_types.get(
+            attribute, attribute[:-1] if attribute.endswith("s") else attribute)
 
     def nat_rules(policy):
         for rules in (policy.manual_rules_before_auto, policy.auto_rules, policy.manual_rules_after_auto,
@@ -113,9 +133,9 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
             ):
                 return False
         for key, actual in (
-            ("source_context", record.source_context),
-            ("domain_id", record.domain_id),
-            ("device_id", record.device_id or record.source_attributes.get("device_id")),
+            ("source_context", getattr(record, "source_context", None)),
+            ("domain_id", getattr(record, "domain_id", None)),
+            ("device_id", getattr(record, "device_id", None) or record.source_attributes.get("device_id")),
         ):
             if evidence.get(key) is not None and str(evidence[key]) != str(actual):
                 return False
@@ -127,7 +147,7 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
             items.append(SourceInventoryItem(
                 domain="cisco_ftd", source_path=f"{config.source_plane}/{path}",
                 source_id=record.source_id, source_record_id=record_id(path, index, record), name=source_name(record),
-                source_type=source_type(record), source_context=record.source_context,
+                source_type=source_type(attribute, record), source_context=record.source_context,
                 source_attributes={"source_plane": record.source_plane, "device_id": record.device_id,
                     "device_name": record.source_attributes.get("device_name"), "domain_id": record.domain_id,
                     "explicit_fields": list(record.explicit_fields),
