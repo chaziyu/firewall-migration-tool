@@ -7,6 +7,7 @@ from typing import List
 
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.vendors.juniper_srx.extraction import sanitize_tokens
+from fwmigrate.vendors.juniper_srx.group_syntax import apply_group_index, group_definition_index
 from fwmigrate.vendors.juniper_srx.tokenizer import (
     JunosActivationState, JunosCommand, JunosOperation, extract_value_list,
 )
@@ -105,13 +106,13 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
         if command.operation != JunosOperation.SET:
             continue
         tokens = command.tokens[1:]
-        group_index = next((i for i, t in enumerate(tokens) if t.lower() == "groups"), None)
+        group_index = group_definition_index(tokens)
         if group_index is not None and len(tokens) > group_index + 2:
             scope = tuple(tokens[:group_index])
             group_name = tokens[group_index + 1]
             path = tuple(tokens[group_index + 2:])
             owner = _group_key(scope, group_name)
-            marker = next((i for i, t in enumerate(path) if t.lower() in _APPLY), None)
+            marker = apply_group_index(path)
             if marker is None and _inactive(tuple(t.lower() for t in tokens), inactive_paths):
                 inactive_groups[owner].append((path, command))
             elif marker is None:
@@ -125,7 +126,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
             command.extraction_status = ExtractionStatus.SOURCE_ONLY
             continue
 
-        marker = next((i for i, t in enumerate(tokens) if t.lower() in _APPLY), None)
+        marker = apply_group_index(tokens)
         if marker is None:
             continue
         target = tuple(tokens[:marker])
