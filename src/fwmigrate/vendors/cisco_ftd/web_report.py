@@ -53,7 +53,8 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
                        "status": "EXTRACTED", "scope": scope(item), "scope_details": scope_details(item), "source_plane": item.source_plane}
                       for item in (*config.device_interfaces, *config.source_interfaces))
     addresses = [{"name": item.name, "value": value(item.value), "type": item.address_type,
-                  "address_family": item.address_family, "scope": scope(item), "source_plane": item.source_plane}
+                  "address_family": item.address_family, "scope": scope(item),
+                  "scope_details": scope_details(item), "source_plane": item.source_plane}
                  for item in config.network_addresses]
     address_groups = [{"name": item.name,
                        "members": [ref(value) for value in (*(item.members or ()), *(item.literal_members or ()))],
