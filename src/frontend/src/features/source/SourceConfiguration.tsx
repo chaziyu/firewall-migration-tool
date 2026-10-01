@@ -1,3 +1,5 @@
+import { restoreWorkspace, saveWorkspace } from '../../storage/workspaceStore'
+import type { SourceEvidence } from '../../storage/workspaceTypes'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../components/common/Button'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
@@ -26,9 +28,10 @@ export function SourceConfiguration({ view, onViewChange }: {
   const [vendorsError, setVendorsError] = useState<string | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<SourcePreviewData | null>(null)
-  const previewId = preview?.preview_id || ''
+  const previewId = preview?.source_digest || (preview?.source_evidence ? JSON.stringify(preview.source_evidence) : '')
   const [decisionDocument, setDecisionDocument] = useState<MigrationDecisionDocument | null>(null)
-  const [targetPreviewId, setTargetPreviewId] = useState('')
+  const [targetSource, setTargetSource] = useState<SourceEvidence | null>(null)
+  const [workspaceReady, setWorkspaceReady] = useState(false)
   const [targetDevice, setTargetDevice] = useState('')
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -54,6 +57,20 @@ export function SourceConfiguration({ view, onViewChange }: {
       .finally(() => setVendorsLoading(false))
   }, [])
 
+  useEffect(() => {
+    let active = true
+    restoreWorkspace().then((saved) => {
+      if (!active) return
+      if (saved.preview) { setPreview(saved.preview); setVendor(saved.preview.vendor || ''); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice) }
+    }).catch((cause) => { if (active) setError(`Workspace restore failed: ${String(cause)}`) })
+      .finally(() => { if (active) setWorkspaceReady(true) })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    if (workspaceReady) void saveWorkspace({ preview, decisionDocument, targetSource, targetDevice }).catch((cause) => setError(`Workspace save failed: ${String(cause)}`))
+  }, [workspaceReady, preview, decisionDocument, targetSource, targetDevice])
+
   async function analyse(sourceFile = file) {
     if (!sourceFile) return
     const request = ++analysisRequest.current
@@ -64,7 +81,7 @@ export function SourceConfiguration({ view, onViewChange }: {
       if (request !== analysisRequest.current) return
       setPreview({ ...result, vendor: result.vendor || vendor, acquisition: 'Uploaded configuration' })
       setDecisionDocument(null)
-      setTargetPreviewId('')
+      setTargetSource(null)
       setTargetDevice('')
     } catch (cause) {
       if (request !== analysisRequest.current) return
@@ -76,13 +93,14 @@ export function SourceConfiguration({ view, onViewChange }: {
 
   function clearAnalysis() {
     analysisRequest.current++
+    void saveWorkspace({ designSession: null, artifact: null }).catch((cause) => setError(String(cause)))
     setLoading(false)
     setMigrationVisited(false)
     setMigrationView('mappings')
     setRequestedDecision(null)
     setPreview(null)
     setDecisionDocument(null)
-    setTargetPreviewId('')
+    setTargetSource(null)
     setTargetDevice('')
   }
 
@@ -106,7 +124,7 @@ export function SourceConfiguration({ view, onViewChange }: {
     setError(null)
     const collectedVendor = result.vendor_id || result.collection.vendor || vendor
     setVendor(collectedVendor)
-    setPreview({ ...result.preview, preview_id: result.preview_id, vendor: collectedVendor, collection: result.collection, acquisition: 'Live collection' })
+    setPreview({ ...result.preview, source_evidence: result.snapshot, vendor: collectedVendor, collection: result.collection, acquisition: 'Live collection' })
     setFile(null)
     onViewChange('report')
   }
@@ -116,7 +134,7 @@ export function SourceConfiguration({ view, onViewChange }: {
     setExporting(true)
     setError(null)
     try {
-      const blob = await downloadSourceWorkbook(vendor, previewId, excelProfile)
+      const blob = await downloadSourceWorkbook(vendor, preview!.source_evidence!, excelProfile)
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -141,7 +159,7 @@ export function SourceConfiguration({ view, onViewChange }: {
       if (request !== analysisRequest.current) return
       setVendor(result.vendor_id)
       setFile(null)
-      setPreview({ ...result.preview, preview_id: result.preview_id, vendor: result.vendor_id, collection: result.collection, acquisition: 'Imported collection snapshot' })
+      setPreview({ ...result.preview, source_evidence: result.snapshot, vendor: result.vendor_id, collection: result.collection, acquisition: 'Imported collection snapshot' })
     } catch (cause) {
       if (request !== analysisRequest.current) return
       setError(cause instanceof Error ? cause.message : 'Snapshot import failed')
@@ -152,6 +170,7 @@ export function SourceConfiguration({ view, onViewChange }: {
 
   const selectedVendor = vendors.find((item) => item.vendor_id === vendor)
 
+  if (!workspaceReady) return <LoadingState label="Restoring browser workspace…" />
   return <main className="feature-content">
     <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview)} aria-labelledby="source-title">
       <h2 id="source-title"><span className="step-num">01</span> Source configuration</h2>
@@ -199,12 +218,12 @@ export function SourceConfiguration({ view, onViewChange }: {
         <section hidden={view !== 'migration' || migrationView !== 'mappings'}>
         <MigrationReview key={previewId} preview={preview} vendor={vendor} requestedDecision={requestedDecision}
           onDecisionDocument={setDecisionDocument}
-          onContextChange={(nextPreviewId, nextDevice) => { setTargetPreviewId(nextPreviewId); setTargetDevice(nextDevice) }} />
+          onContextChange={(nextSource, nextDevice) => { setTargetSource(nextSource); setTargetDevice(nextDevice) }} />
         </section>
         <div hidden={view === 'migration' && migrationView !== 'plan'}>
-        {decisionDocument && <MigrationWorkflow key={`${previewId}:${targetPreviewId}:${targetDevice}:${JSON.stringify(decisionDocument)}`}
-          preview={preview} previewId={previewId} decisionDocument={decisionDocument}
-          targetPreviewId={targetPreviewId} targetDevice={targetDevice} activeSection={view === 'live' ? 'live' : 'plan'}
+        {decisionDocument && <MigrationWorkflow key={`${previewId}:${JSON.stringify(targetSource)}:${targetDevice}:${JSON.stringify(decisionDocument)}`}
+          preview={preview} decisionDocument={decisionDocument}
+          targetSource={targetSource} targetDevice={targetDevice} activeSection={view === 'live' ? 'live' : 'plan'}
           onReviewDecision={(key) => { setRequestedDecision({ key, request: Date.now() }); setMigrationView('mappings'); onViewChange('migration'); requestAnimationFrame(() => document.getElementById('migration-review-title')?.scrollIntoView({ block: 'start' })) }}
           onViewChange={onViewChange} />}
         </div>

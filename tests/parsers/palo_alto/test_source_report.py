@@ -38,7 +38,7 @@ def test_palo_alto_source_preview_and_excel_are_registered():
         "/api/extract/excel",
         data={
             "source_vendor": "palo_alto",
-            "preview_id": payload["preview_id"],
+            "source": __import__("json").dumps(payload["source_evidence"]),
         },
         content_type="multipart/form-data",
     )

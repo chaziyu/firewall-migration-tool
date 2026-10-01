@@ -59,11 +59,12 @@ function ValidationSummary({ rows, activeGroup, onGroupChange }: {
   </section>
 }
 
-function ValidationFilters({ rows, search, scope, severity, onSearch, onScope, onSeverity, onClear }: {
+function ValidationFilters({ rows, search, scope, severity, activeGroup, onSearch, onScope, onSeverity, onClear }: {
   rows: Finding[]
   search: string
   scope: string
   severity: string
+  activeGroup: string
   onSearch: (value: string) => void
   onScope: (value: string) => void
   onSeverity: (value: string) => void
@@ -74,7 +75,7 @@ function ValidationFilters({ rows, search, scope, severity, onSearch, onScope, o
     <label>Search findings<input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search findings" /></label>
     <label>Severity<select value={severity} onChange={(event) => onSeverity(event.target.value)}><option value="">All severities</option>{[...new Set(['error', 'warning', ...rows.map((row) => String(row.severity ?? '').toLowerCase()).filter(Boolean)])].map((item) => <option key={item} value={item}>{fieldLabel(item)}</option>)}</select></label>
     <label>Scope<select value={scope} onChange={(event) => onScope(event.target.value)}><option value="">All scopes</option>{scopes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-    <button type="button" className="filter-clear" onClick={onClear}>Clear filters</button>
+    <button type="button" className="filter-clear" disabled={!search && !scope && !severity && !activeGroup} onClick={onClear}>Clear filters</button>
   </div>
 }
 
@@ -138,8 +139,9 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
     })
   }, [allRows, scope, severity, search])
   const group = findingGroups(matchingRows).find((item) => item.key === activeGroup)
-  const filteredRows = useMemo(() => matchingRows.filter((row) => !group
-    || findingGroupKey(row) === group.key), [matchingRows, group])
+  const groupKey = group?.key
+  const filteredRows = useMemo(() => matchingRows.filter((row) => !groupKey
+    || findingGroupKey(row) === groupKey), [matchingRows, groupKey])
   const { visibleRows, loadMoreRef } = useScrollRows(filteredRows, active)
 
   function clearFilters() {
@@ -159,7 +161,7 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
 
   return <div className="validation-report">
     <h3>Validation findings</h3>
-    <ValidationFilters rows={allRows} search={search} scope={scope} severity={severity} onSearch={(value) => { setSearch(value); setSelected(null) }} onScope={(value) => { onReportScope(value); setSelected(null) }} onSeverity={(value) => { setSeverity(value); setSelected(null) }} onClear={() => { clearFilters(); setSelected(null) }} />
+    <ValidationFilters rows={allRows} search={search} scope={scope} severity={severity} activeGroup={group?.key ?? ''} onSearch={(value) => { setSearch(value); setSelected(null) }} onScope={(value) => { onReportScope(value); setSelected(null) }} onSeverity={(value) => { setSeverity(value); setSelected(null) }} onClear={() => { clearFilters(); setSelected(null) }} />
     <ValidationSummary rows={matchingRows} activeGroup={group?.key ?? ''} onGroupChange={(key) => { setActiveGroup(key); setSelected(null) }} />
     {group && <p className="validation-group-explanation"><strong>{group.count} affected findings</strong> · {text(group.row.message)}</p>}
     <div className={`validation-workspace${selected && visibleRows.includes(selected) ? ' has-details' : ''}`}>

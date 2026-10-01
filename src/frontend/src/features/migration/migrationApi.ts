@@ -1,3 +1,4 @@
+import type { SourceEvidence } from '../../storage/workspaceTypes'
 import { postBlob, postJson } from '../../api/client'
 
 export type Decision = {
@@ -37,7 +38,9 @@ export type AIDesignSession = { design_session_id: string; proposals: AIProposal
 export type PlanArtifact = {
   artifact_id: string
   plan_status: string
-  commands: number
+  commands: string[]
+  command_count: number
+  artifact: { commands: string[]; command_count: number; command_sha256: string; signature: string; [key: string]: unknown }
   counts: Record<string, number>
   render_summary: Record<string, number>
   blocking_reasons: Array<Record<string, unknown>>
@@ -47,69 +50,28 @@ export type PlanArtifact = {
   decision_document: DecisionDocument
 }
 
-export const loadRequirements = (previewId: string, document?: unknown, targetPreviewId?: string, targetDevice?: string) =>
-  postJson<ReviewData>('/api/migration/requirements', {
-    preview_id: previewId,
-    ...(document ? { decision_document: document } : {}),
-    ...(targetPreviewId ? { target_preview_id: targetPreviewId } : {}),
-    ...(targetDevice ? { target_device: targetDevice } : {}),
-  })
-
-export const importTargetIntent = (previewId: string, document: DecisionDocument, yaml: string, targetPreviewId?: string, targetDevice?: string) =>
-  postJson<{ decision_document: DecisionDocument }>('/api/migration/target-intent/import', {
-    preview_id: previewId,
-    decision_document: document,
-    yaml,
-    ...(targetPreviewId ? { target_preview_id: targetPreviewId, target_device: targetDevice } : {}),
-  })
-
-export const exportTargetIntent = (previewId: string, document: DecisionDocument) =>
-  postJson<{ yaml: string }>('/api/migration/target-intent/export', { preview_id: previewId, decision_document: document })
-
-export const buildAIDesign = (previewId: string, document: DecisionDocument, targetPreviewId: string, targetDevice: string) =>
-  postJson<{ design_session: AIDesignSession }>('/api/migration/ai/design', {
-    preview_id: previewId,
-    decision_document: document,
-    target_preview_id: targetPreviewId,
-    target_device: targetDevice,
-  })
-
-export const approveAIProposal = (sessionId: string, previewId: string, document: DecisionDocument, targetPreviewId: string, targetDevice: string, decisionKey: string) =>
-  postJson<{ decision_document: DecisionDocument }>(`/api/migration/ai/design/${encodeURIComponent(sessionId)}/approve`, {
-    preview_id: previewId,
-    decision_document: document,
-    target_preview_id: targetPreviewId,
-    target_device: targetDevice,
-    decision_keys: [decisionKey],
-  })
-
-export const buildPlan = (previewId: string, document: unknown, targetPreviewId?: string, targetDevice?: string) =>
+export const buildPlan = (source: SourceEvidence, document: unknown, targetSource?: SourceEvidence | null, targetDevice?: string) =>
   postJson<PlanArtifact>('/api/migrate', {
-    preview_id: previewId,
+    source,
     source_vendor: 'fortigate',
     target_vendor: 'palo_alto',
     decision_document: document,
-    ...(targetPreviewId ? { target_preview_id: targetPreviewId } : {}),
+    ...(targetSource ? { target_source: targetSource } : {}),
     ...(targetDevice ? { target_device: targetDevice } : {}),
   })
 
-export const loadCommandPreview = (artifactId: string) =>
-  postJson<{ command_text: string; command_count: number; command_sha256: string; review_summary: Record<string, number> }>(
-    '/api/migration/command-preview', { artifact_id: artifactId },
-  )
+export const downloadBundle = (artifact: PlanArtifact, source: SourceEvidence) => postBlob('/api/migration/bundle', { artifact: artifact.artifact, source })
+export const downloadCommands = (artifact: PlanArtifact) => Promise.resolve(new Blob([artifact.artifact.commands.join('\n')], { type: 'text/plain' }))
 
-export const downloadBundle = (artifactId: string) => postBlob('/api/migration/bundle', { artifact_id: artifactId })
-export const downloadCommands = (artifactId: string) => postBlob('/api/migration/download', { artifact_id: artifactId })
-
-export const deployArtifact = (artifactId: string, connection: Record<string, unknown>) =>
-  postJson<Record<string, unknown>>('/api/deploy', { ...connection, artifact_id: artifactId })
-export const validateCandidate = (artifactId: string, sessionId: string, connection: Record<string, unknown>) =>
+export const deployArtifact = (artifact: PlanArtifact, connection: Record<string, unknown>) =>
+  postJson<Record<string, unknown>>('/api/deploy', { ...connection, artifact: artifact.artifact })
+export const validateCandidate = (artifact: PlanArtifact, sessionId: string, connection: Record<string, unknown>) =>
   postJson<Record<string, unknown>>('/api/validate-candidate', {
-    ...connection, artifact_id: artifactId, deployment_session_id: sessionId,
+    ...connection, artifact: artifact.artifact, deployment_session_id: sessionId,
   })
-export const commitCandidate = (artifactId: string, sessionId: string, connection: Record<string, unknown>) =>
+export const commitCandidate = (artifact: PlanArtifact, sessionId: string, connection: Record<string, unknown>) =>
   postJson<Record<string, unknown>>('/api/commit', {
-    ...connection, artifact_id: artifactId, deployment_session_id: sessionId,
+    ...connection, artifact: artifact.artifact, deployment_session_id: sessionId,
   })
 
 export function downloadFile(blob: Blob, filename: string) {

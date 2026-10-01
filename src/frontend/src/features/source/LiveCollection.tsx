@@ -5,11 +5,10 @@ import { ErrorBanner } from '../../components/common/ErrorBanner'
 import type { CollectionField, SourcePreviewData, SourceVendorOption } from './types'
 
 export type CollectionResult = {
-  preview_id: string
   vendor_id?: string
   preview: SourcePreviewData
   collection: { status: string; warnings?: string[]; method?: string; vendor?: string }
-  snapshot?: unknown
+  snapshot: import('../../storage/workspaceTypes').SourceEvidence
 }
 
 export function LiveCollection({ vendor, onCollected }: {

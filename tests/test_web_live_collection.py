@@ -4,7 +4,7 @@ import json
 from openpyxl import load_workbook
 
 from fwmigrate.collection import CollectedSource, CollectionStatus, source_collectors
-from fwmigrate.web import create_app, _cache_preview, _lookup_preview
+from fwmigrate.web import create_app
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
 
@@ -42,14 +42,14 @@ def test_asa_collection_snapshot_preview_and_excel(monkeypatch):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["collection"]["status"] == "SUCCESS"
-    assert payload["preview_id"]
+    assert payload["snapshot"]
     assert "do-not-save" not in str(payload)
     assert "do-not-persist" not in str(payload)
 
     imported = client.post("/api/collection/snapshot/import", data={"file": (io.BytesIO(json.dumps(payload["snapshot"]).encode()), "snapshot.json")})
     assert imported.status_code == 200
-    assert imported.get_json()["preview_id"] == payload["preview_id"]
-    workbook = client.post("/api/extract/excel", data={"source_vendor": "cisco_asa", "preview_id": payload["preview_id"]})
+    assert imported.get_json()["snapshot"] == payload["snapshot"]
+    workbook = client.post("/api/extract/excel", json={"source_vendor": "cisco_asa", "source": payload["snapshot"]})
     assert workbook.status_code == 200
     assert "Interfaces" in load_workbook(io.BytesIO(workbook.data), read_only=True).sheetnames
     assert b"do-not-save" not in workbook.data
@@ -73,27 +73,21 @@ def test_partial_collection_keeps_preview(monkeypatch):
     response = client.post("/api/collection/collect", json=_payload())
     assert response.status_code == 200
     assert response.get_json()["collection"]["status"] == "PARTIAL"
-    entry = _lookup_preview(response.get_json()["preview_id"], "cisco_asa")
-    assert entry.collection_status is CollectionStatus.PARTIAL
-    assert entry.collection_warnings == ("Some source unavailable",)
+    assert response.get_json()['snapshot']['status'] == 'PARTIAL'
+    assert response.get_json()['snapshot']['warnings'] == ['Some source unavailable']
 
 
-def test_partial_fortigate_cache_blocks_migration_but_manual_upload_is_allowed():
-    # FortiGate has no live collector yet; exercise the shared cache-to-migration boundary.
+def test_partial_fortigate_snapshot_blocks_migration_but_manual_upload_is_allowed():
+    from fwmigrate.collection.snapshot import make_snapshot
     source = 'config system interface\n edit "port1"\n next\nend\n'
-    client = create_app({"TESTING": True}).test_client()
-    analysis = FortiGateSourceReporter().analyze_source(source)
-    entry = _cache_preview("fortigate", source.encode(), analysis, "partial.conf",
-                           collection_status=CollectionStatus.PARTIAL,
-                           collection_warnings=("Interface command failed",), collection_method="ssh")
-    for path in ("/api/migration/requirements", "/api/migrate"):
-        response = client.post(path, json={"preview_id": entry.preview_id})
+    client = create_app({'TESTING': True}).test_client()
+    snapshot = make_snapshot(CollectedSource('fortigate', source, 'partial.conf', 'ssh', CollectionStatus.PARTIAL))
+    for path in ('/api/migration/requirements', '/api/migrate'):
+        response = client.post(path, json={'source': snapshot})
         assert response.status_code == 400
-        assert "complete live collection" in response.get_json()["error"]
-    manual = client.post("/api/migration/requirements", data={"file": (io.BytesIO(source.encode()), "manual.conf")})
+        assert 'complete live collection' in response.get_json()['error']
+    manual = client.post('/api/migration/requirements', data={'file': (io.BytesIO(source.encode()), 'manual.conf')})
     assert manual.status_code == 200
-    assert manual.get_json()["preview_id"] != entry.preview_id
-    assert _lookup_preview(manual.get_json()["preview_id"], "fortigate").collection_status is None
 
 
 def test_failed_collection_is_rejected(monkeypatch):
@@ -118,7 +112,7 @@ def test_native_collectors_reach_preview_and_excel(monkeypatch):
         response = client.post("/api/collection/collect", json=payload)
         assert response.status_code == 200, (vendor, response.get_json())
         data = response.get_json()
-        assert data["preview_id"] and data["snapshot"]["vendor_id"] == vendor
-        excel = client.post("/api/extract/excel", data={"source_vendor": vendor, "preview_id": data["preview_id"]})
+        assert data["snapshot"] and data["snapshot"]["vendor_id"] == vendor
+        excel = client.post("/api/extract/excel", json={"source_vendor": vendor, "source": data["snapshot"]})
         assert excel.status_code == 200, vendor
         assert load_workbook(io.BytesIO(excel.data), read_only=True).sheetnames

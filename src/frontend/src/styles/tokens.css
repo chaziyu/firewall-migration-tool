@@ -28,8 +28,8 @@
   --palette-sage: #a2b29f;
   --palette-olive: #798777;
 
-  --canvas: var(--palette-cream);
-  --surface: #fffaf5;
+  --canvas: #edf2eb;
+  --surface: #fafcf9;
   --surface-muted: color-mix(in srgb, var(--palette-soft-sage) 18%, var(--surface));
   --surface-hover: color-mix(in srgb, var(--palette-soft-sage) 32%, var(--surface));
   --sidebar: color-mix(in srgb, var(--surface) 60%, var(--canvas));
@@ -53,7 +53,7 @@
   --warning: #85591b;
   --danger: #a64438;
   --success: #496343;
-  --bg-input: #fffcf8;
+  --bg-input: #fcfdfb;
   --focus-ring: var(--color-primary);
   --shadow-panel: 0 3px 16px #3f4c3b08, 0 1px 3px #3f4c3b05;
   --shadow-popover: 0 12px 32px #2f3d2e24;

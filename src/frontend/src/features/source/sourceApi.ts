@@ -29,10 +29,10 @@ export function previewSource(file: File, vendor: SourceVendor) {
   return postForm<SourcePreviewData>('/api/preview', formData)
 }
 
-export function downloadSourceWorkbook(vendor: SourceVendor, previewId: string, profile: 'fast' | 'full') {
+export function downloadSourceWorkbook(vendor: SourceVendor, source: import('../../storage/workspaceTypes').SourceEvidence, profile: 'fast' | 'full') {
   return postBlob('/api/extract/excel', {
     source_vendor: vendor,
-    preview_id: previewId,
+    source,
     excel_profile: profile,
   })
 }
@@ -41,7 +41,7 @@ export function importCollectionSnapshot(file: File) {
   const formData = new FormData()
   formData.append('file', file)
   return postForm<{
-    preview_id: string
+    snapshot: import('../../storage/workspaceTypes').SourceEvidence
     vendor_id: SourceVendor
     preview: SourcePreviewData
     collection: { status: string; warnings: string[] }

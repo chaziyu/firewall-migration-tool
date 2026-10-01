@@ -1,3 +1,6 @@
+import { workspace } from '../../../storage/workspaceStore'
+import { download } from '../download'
+import type { SourceEvidence } from '../../../storage/workspaceTypes'
 import type { Dispatch, SetStateAction } from 'react'
 import type { Proposal } from '../reviewTypes'
 
@@ -6,7 +9,7 @@ type RunAction = (action: () => Promise<void>, done?: string) => Promise<void>
 export function MigrationAIReview({
   advisorStatus,
   busy,
-  targetPreviewId,
+  targetSource,
   targetDevice,
   designSessionId,
   validProposalKeys,
@@ -21,7 +24,7 @@ export function MigrationAIReview({
 }: {
   advisorStatus: string
   busy: boolean
-  targetPreviewId: string
+  targetSource: SourceEvidence | null
   targetDevice: string
   designSessionId: string
   validProposalKeys: string[]
@@ -42,11 +45,11 @@ export function MigrationAIReview({
             <p role="status" aria-live="polite">{advisorStatus}</p>
             <div className="migration-toolbar">
               <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(testAdvisor)}>Test advisor</button>
-              {targetPreviewId && targetDevice && <>
+              {targetSource && targetDevice && <>
                 <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(() => buildProposals(Boolean(designSessionId)), 'Ready proposals refreshed.')}>{designSessionId ? 'Retry ready proposals' : 'Propose ready mappings'}</button>
                 <button className="secondary-button" type="button" disabled={busy || !validProposalKeys.length} onClick={() => void run(() => approveProposals(validProposalKeys), 'Valid proposals approved by engineer.')}>Approve valid proposals ({validProposalKeys.length})</button>
               </>}
-              <a className="secondary-button" href="/api/migration/ai/audit/export">Download AI review audit</a>
+              <button className="secondary-button" type="button" onClick={() => download(JSON.stringify(workspace().designSession?.audit ?? [], null, 2), 'migration-ai-audit.json', 'application/json')}>Download AI review audit</button>
             </div>
             {proposals.map((proposal) => <article className="ai-proposal" key={proposal.decision_key}>
               <strong>{proposal.proposed_value ?? 'No safe proposal'}</strong><p>{proposal.target_scope || proposal.action} · {proposal.rationale || proposal.validation_status}</p>

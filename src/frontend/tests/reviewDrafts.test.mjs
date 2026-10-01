@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { candidateLabel, interfaceMappingRows, reconcileReviewDrafts } from '../src/features/migration/reviewDrafts.ts'
+import { candidateLabel, confirmationEvidenceType, decisionLabel, interfaceMappingRows, reconcileReviewDrafts } from '../src/features/migration/reviewDrafts.ts'
 
 test('review refresh preserves unrelated edits but resets changed decisions and target context', () => {
   const previous = [{ key: 'root:port1', value: null, suggested_value: 'ethernet1/1' }, { key: 'other:port1', value: null }]
@@ -23,4 +23,33 @@ test('interface selection excludes draft collisions, reserved and competing sugg
   candidates.root[0].contested = true
   assert.equal(interfaceMappingRows(decisions, {}, candidates)[0].ready, false)
   assert.equal(candidateLabel({ value: 'ethernet1/4', supporting_evidence: ['INTERFACE_FAMILY_MATCH', 'physical interface family'] }), 'Available interface')
+})
+
+test('prefill preserves engineer edits across impact refreshes and resets stale evidence', () => {
+  const decision = { key: 'lan', value: null, suggested_value: 'trust', mode: 'SUGGESTED', review_state: 'PENDING', evidence_source: 'TARGET', evidence_type: 'TARGET_ZONE_ASSIGNMENT' }
+  assert.deepEqual(reconcileReviewDrafts({}, [], [decision], false), { lan: 'trust' })
+  const refreshed = { ...decision, affected_count: 10, reason: 'Updated impact' }
+  assert.deepEqual(reconcileReviewDrafts({ lan: 'edited' }, [decision], [refreshed], false), { lan: 'edited' })
+  assert.deepEqual(reconcileReviewDrafts({ lan: 'edited' }, [decision], [refreshed], true), { lan: 'trust' })
+  assert.deepEqual(reconcileReviewDrafts({ lan: 'edited' }, [decision], [{ ...refreshed, value: 'confirmed', review_state: 'CONFIRMED' }], false), { lan: 'confirmed' })
+})
+
+test('suggestion acceptance records provenance and edits remain manual', () => {
+  for (const source of ['TARGET', 'DERIVED', 'SOURCE']) {
+    const decision = { suggested_value: 'trust', evidence_source: source }
+    assert.equal(confirmationEvidenceType(decision, 'trust'), `ENGINEER_${source}_SUGGESTION`)
+    assert.equal(confirmationEvidenceType(decision, 'custom'), 'MANUAL')
+  }
+  assert.equal(confirmationEvidenceType({ suggested_value: null }, 'trust'), 'MANUAL')
+})
+
+test('review labels distinguish pending suggestions, candidates and confirmation', () => {
+  const decision = { suggested_value: 'trust', evidence_source: 'DERIVED', review_state: 'PENDING' }
+  assert.equal(decisionLabel(decision), 'Derived suggestion')
+  assert.equal(decisionLabel({ ...decision, evidence_source: 'TARGET', evidence_type: 'REVIEW_DERIVED_SUGGESTION' }), 'Derived suggestion')
+  assert.equal(decisionLabel({ ...decision, evidence_source: 'SOURCE' }), 'Suggested')
+  assert.equal(decisionLabel({ ...decision, review_state: 'CONFIRMED' }), 'Confirmed')
+  assert.equal(decisionLabel(decision, [], true), 'Conflict')
+  assert.equal(decisionLabel({ ...decision, suggested_value: null }, [{ value: 'trust' }]), 'Candidate available')
+  assert.equal(decisionLabel({ ...decision, suggested_value: null }, [{ value: 'trust', available: false }]), 'Needs input')
 })

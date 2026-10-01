@@ -10,11 +10,14 @@ from fwmigrate.vendors.cisco_asa.collection_source import CiscoASACollectedSourc
 from fwmigrate.vendors.cisco_ftd.collection_source import CiscoFTDCollectedSourceSanitizer
 from fwmigrate.vendors.checkpoint.collection_source import CheckPointCollectedSourceSanitizer
 from fwmigrate.vendors.juniper_srx.collection_source import JuniperCollectedSourceSanitizer
+from fwmigrate.vendors.fortigate.collection_source import FortiGateCollectedSourceSanitizer
+from fwmigrate.vendors.palo_alto.collection_source import PANOSCollectedSourceSanitizer
 
 
 _BUILTIN_COLLECTORS = (CiscoASACollector(), JuniperSRXCollector(), CiscoFTDCollector(), CheckPointCollector())
 _BUILTIN_SANITIZERS = (CiscoASACollectedSourceSanitizer(), JuniperCollectedSourceSanitizer(),
-                       CiscoFTDCollectedSourceSanitizer(), CheckPointCollectedSourceSanitizer())
+                       CiscoFTDCollectedSourceSanitizer(), CheckPointCollectedSourceSanitizer(),
+                       FortiGateCollectedSourceSanitizer(), PANOSCollectedSourceSanitizer())
 
 
 def register_builtin_source_sanitizers() -> None:

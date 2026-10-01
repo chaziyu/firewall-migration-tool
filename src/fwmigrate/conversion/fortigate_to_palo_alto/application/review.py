@@ -11,6 +11,7 @@ from ..requirements import build_mapping_requirements
 from ..review_context import build_review_context
 from ..review_evidence import build_review_evidence
 from ..review_workflow import build_review_workflow
+from ..review.review_suggestions import apply_review_suggestions
 from ..target_evidence import reconcile_target_evidence, target_evidence_changed
 from ..target_suggestions import discover_target_candidates, suggest_from_target
 from ..target_validation import validate_against_target
@@ -66,9 +67,11 @@ def confirm_interface_mappings(config, derived, source_digest, *, previous_docum
                 [{'decision_key': key, 'code': 'TARGET_INTERFACE_AMBIGUOUS', 'target_object': value,
                   'evidence': matching}])
         target_backed = bool(target_metadata)
+        accepted_suggestion = value == decision.suggested_value and decision.evidence_source in {'TARGET', 'DERIVED', 'SOURCE'}
         replacements[key] = replace(decision, value=value, review_state=PANDecisionReviewState.CONFIRMED,
             mode=PANDecisionMode.REQUIRED if decision.mode is PANDecisionMode.AUTO else decision.mode,
-            evidence_source='ENGINEER', evidence_type='ENGINEER_TARGET_SELECTION' if target_backed else 'MANUAL',
+            evidence_source='ENGINEER', evidence_type=(f'ENGINEER_{decision.evidence_source}_SUGGESTION' if accepted_suggestion
+                else 'ENGINEER_TARGET_SELECTION' if target_backed else 'MANUAL'),
             evidence_value=value, target_object=value,
             evidence_target_digest=target_metadata['config_digest'] if target_backed else None,
             evidence_target_device=target_metadata['device'] if target_backed else None)
@@ -134,6 +137,9 @@ def build_review_state(config, derived, source_digest, *, previous_document=None
     if target is not None and target_device:
         decisions, target_warnings = suggest_from_target(config, decisions, target, target_device)
     auto = auto_review_results(config, derived, decisions, target, target_device)
+    candidates = discover_target_candidates(config, decisions, target, target_device,
+        evidence=review_evidence) if target is not None and target_device else {}
+    decisions = apply_review_suggestions(decisions, auto, candidates=candidates)
     design_session = resolve_design_session_until_stable(
         config,
         derived,
@@ -149,9 +155,16 @@ def build_review_state(config, derived, source_digest, *, previous_document=None
         ),
     )
     decisions = design_session.decisions
-    findings = validate_against_target(config, decisions, target, target_device)
-    candidates = discover_target_candidates(config, decisions, target, target_device,
+    if apply_deterministic:
+        if target is not None and target_device:
+            decisions, target_warnings = suggest_from_target(config, decisions, target, target_device)
+        auto = auto_review_results(config, derived, decisions, target, target_device)
+        candidates = discover_target_candidates(config, decisions, target, target_device,
                                             evidence=review_evidence) if target is not None and target_device else {}
+        decisions = apply_review_suggestions(decisions, auto, candidates=candidates)
+        if decisions != design_session.decisions:
+            design_session = replace(design_session, decisions=decisions)
+    findings = validate_against_target(config, decisions, target, target_device)
     evidence = decision_evidence(decisions, findings)
     context = build_review_context(config, decisions, candidates=candidates,
         target_available=target is not None, target_selected=bool(target_device),

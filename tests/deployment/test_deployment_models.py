@@ -28,7 +28,7 @@ def test_deployment_models_defaults_and_secret_repr():
     assert PANCommitResult().status == "NOT_RUN"
     assert PANDeploymentCommandResult(0, "set x", True).accepted
     session = PANDeploymentSession(
-        "session-1", "artifact-1", 2, "abc123", "fw", 22, "admin", "7", 123.0,
+        "session-1", "artifact-1", 2, "abc123", "fw", 22, "7", 123.0,
     )
     assert session.artifact_id == "artifact-1"
     assert session.command_count == 2
@@ -40,5 +40,5 @@ def test_deployment_models_are_immutable():
         PANDeploymentOptions("fw", "admin", "secret").port = 23
     with pytest.raises(FrozenInstanceError):
         PANDeploymentSession(
-            "session-1", "artifact-1", 1, "abc", "fw", 22, "admin", "7", 123.0,
+            "session-1", "artifact-1", 1, "abc", "fw", 22, "7", 123.0,
         ).artifact_id = "artifact-2"

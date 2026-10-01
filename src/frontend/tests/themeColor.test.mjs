@@ -33,6 +33,11 @@ test('custom themes keep readable text and buttons for bright, dark, and saturat
       for (const bg of ['--color-primary', '--color-primary-hover']) {
         assert.ok(contrastRatio(theme['--color-on-primary'], theme[bg]) >= 4.5, `${seed}/${mode}: button on ${bg}`)
       }
+      if (mode === 'dark') for (const fg of ['--line', '--line-divider', '--line-strong']) {
+        for (const bg of ['--canvas', '--surface', '--surface-muted', '--surface-hover', '--bg-input', '--color-primary-subtle']) {
+          assert.ok(contrastRatio(theme[fg], theme[bg]) >= 3, `${seed}/${mode}: ${fg} on ${bg}`)
+        }
+      }
       for (const semantic of ['--danger', '--warning', '--success', '--terminal-error', '--terminal-success']) assert.equal(theme[semantic], undefined)
     }
   }

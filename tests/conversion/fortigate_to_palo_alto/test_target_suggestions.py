@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import pytest
 
 from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANDecisionReviewState, PANMigrationDecision, PANMigrationDecisionSet,
@@ -9,6 +10,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import (
 from fwmigrate.conversion.fortigate_to_palo_alto.interface_candidates import candidate_evidence
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.source import FGConfig
+from fwmigrate.vendors.fortigate.model.zone import FGZone
 from fwmigrate.vendors.palo_alto.relationships.topology import PANInterfaceTopologyEntry
 from fwmigrate.vendors.palo_alto.source_model import PANScope, pan_scope_identity
 from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import _compatible
@@ -33,6 +35,7 @@ def test_reservations_release_and_competing_strong_suggestions_stay_pending():
     assert all(options[0]["available"] and options[0]["contested"] for options in candidates.values())
     updated, warnings = suggest_from_target(source, pending, target, "dev")
     assert len(warnings) == 2
+    assert all(item.suggested_value is None for item in updated.decisions)
     assert all(item.value is None and item.review_state == PANDecisionReviewState.PENDING for item in updated.decisions)
     from fwmigrate.conversion.fortigate_to_palo_alto.auto_decisions import classify_auto_decisions
     auto = classify_auto_decisions(source, None, pending, target, "dev")
@@ -272,3 +275,73 @@ def test_scope_and_zone_candidates_keep_target_scope_and_confirmed_vsys():
     assert [item["value"] for item in candidates[router_key]] == ["vr-2"]
     assert [item["value"] for item in candidates[zone_key]] == ["inside"]
     assert candidates[zone_key][0]["target_scope"] == pan_scope_identity(scopes[1])
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_greenfield_explicit_architecture_prefills_only_unique_choices(count):
+    scopes = [PANScope(kind="vsys", name=f"vsys{index}", device_name="dev", vsys=f"vsys{index}")
+              for index in range(1, count + 1)]
+    source = FGConfig(interfaces=[FGInterface(name="lan", type="physical")])
+    decisions = PANMigrationDecisionSet((
+        PANMigrationDecision("root", "vdom", "root", "vsys"),
+        PANMigrationDecision("root", "vdom", "root", "virtual_router"),
+        PANMigrationDecision("root", "interface", "lan", "target_interface"),
+    ))
+    target = SimpleNamespace(config=SimpleNamespace(scopes=scopes, interfaces=[], interface_units=[], zones=[],
+        virtual_routers=[SimpleNamespace(name=f"vr{index}", scope=scope) for index, scope in enumerate(scopes, 1)]),
+        derived=SimpleNamespace(interface_topology=[]))
+    updated, _ = suggest_from_target(source, decisions, target, "dev")
+    by_field = {item.target_field: item for item in updated.decisions}
+    assert by_field["vsys"].suggested_value == ("vsys1" if count == 1 else None)
+    assert by_field["virtual_router"].suggested_value == ("vr1" if count == 1 else None)
+    assert by_field["target_interface"].suggested_value is None
+    assert all(item.value is None and item.review_state == PANDecisionReviewState.PENDING for item in updated.decisions)
+    assert updated.to_options().vdoms == {}
+    assert len(discover_target_candidates(source, updated, target, "dev")[decisions.decisions[0].key]) == count
+
+
+@pytest.mark.parametrize("router_count", [1, 2])
+def test_greenfield_router_prefill_respects_confirmed_vsys_and_ambiguity(router_count):
+    scopes = [PANScope(kind="vsys", name=name, device_name="dev", vsys=name) for name in ("vsys1", "vsys2")]
+    decisions = PANMigrationDecisionSet((
+        PANMigrationDecision("root", "vdom", "root", "vsys").confirm("vsys2"),
+        PANMigrationDecision("root", "vdom", "root", "virtual_router"),
+    ))
+    routers = [SimpleNamespace(name="other", scope=scopes[0]),
+        *(SimpleNamespace(name=f"vr{index}", scope=scopes[1]) for index in range(1, router_count + 1))]
+    target = SimpleNamespace(config=SimpleNamespace(scopes=scopes, interfaces=[], interface_units=[], zones=[],
+        virtual_routers=routers), derived=SimpleNamespace(interface_topology=[]))
+    updated, _ = suggest_from_target(FGConfig(), decisions, target, "dev")
+    assert updated.decisions[0] == decisions.decisions[0]
+    assert updated.decisions[1].suggested_value == ("vr1" if router_count == 1 else None)
+    assert updated.decisions[1].review_state == PANDecisionReviewState.PENDING
+
+
+def test_same_name_target_zone_prefill_is_limited_to_confirmed_vsys():
+    scopes = [PANScope(kind="vsys", name=name, device_name="dev", vsys=name) for name in ("vsys1", "vsys2")]
+    source = FGConfig(zones=[FGZone(name="inside", vdom="root", members=[])])
+    decisions = PANMigrationDecisionSet((
+        PANMigrationDecision("root", "vdom", "root", "vsys").confirm("vsys2"),
+        PANMigrationDecision("root", "zone", "inside", "target_zone"),
+    ))
+    target = SimpleNamespace(config=SimpleNamespace(scopes=scopes, interfaces=[], interface_units=[],
+        zones=[SimpleNamespace(name="inside", scope=scope) for scope in scopes], virtual_routers=[]),
+        derived=SimpleNamespace(interface_topology=[]))
+    updated, _ = suggest_from_target(source, decisions, target, "dev")
+    assert updated.decisions[1].suggested_value == "inside" and updated.decisions[1].evidence_source == "TARGET"
+    target.config.zones = target.config.zones[:1]
+    updated, _ = suggest_from_target(source, decisions, target, "dev")
+    assert updated.decisions[1].suggested_value is None
+
+
+def test_one_compatible_interface_without_strong_evidence_does_not_prefill():
+    scope = PANScope(kind="device", name="dev", device_name="dev")
+    source = FGConfig(interfaces=[FGInterface(name="lan", type="physical")])
+    target = SimpleNamespace(config=SimpleNamespace(interfaces=[SimpleNamespace(name="ethernet1/7", scope=scope,
+        interface_family="ethernet", tag=None, parent=None, ipv4_addresses=[], comment=None)], interface_units=[], zones=[]),
+        derived=SimpleNamespace(interface_topology=[]))
+    decision = PANMigrationDecision("root", "interface", "lan", "target_interface")
+    decisions = PANMigrationDecisionSet((decision,))
+    updated, _ = suggest_from_target(source, decisions, target, "dev")
+    assert updated.decisions[0].suggested_value is None
+    assert discover_target_candidates(source, decisions, target, "dev")[decision.key][0]["class"] == "POSSIBLE"

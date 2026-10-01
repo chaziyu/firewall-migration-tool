@@ -84,7 +84,7 @@ def _compatible(source, target):
 
 
 def discover_target_candidates(source, decisions: PANMigrationDecisionSet, target, device: str, *, evidence=None,
-                              proposed_design=None):
+                              proposed_design=None, review_vsys=None):
     """Return current target evidence, separate from the persisted decision document."""
     from .target_validation import interface_assignment_index
 
@@ -167,6 +167,8 @@ def discover_target_candidates(source, decisions: PANMigrationDecisionSet, targe
             continue
         candidates = []
         vsys = target_vsys_value(decisions, decision.source_vdom, proposed_design=proposed_design)
+        if not vsys and proposed_design is None:
+            vsys = (review_vsys or {}).get(decision.source_vdom)
         if decision.source_kind == "vdom" and decision.target_field == "vsys":
             candidates.extend(_candidate(scope.vsys, scope, supporting=("explicit target VSYS",))
                               for scope in scopes if scope.vsys)
@@ -293,6 +295,7 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
             warnings[key] = f"Target interface {value} is contested by " + ", ".join(f"{v} / {n}" for v, n in owners) + ". Choose manually."
             if (vdom, name) not in confirmed_mapped:
                 mapped.pop((vdom, name))
+                proposed.pop(key, None)
 
     assignments = {}
     for (vdom, name), target_name in mapped.items():
@@ -338,7 +341,8 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
             put(vdom, "zone", zone.name, "target_zone", value,
                 f"Target XML: all mapped members belong to zone {value}",
                 "TARGET_ZONE_ASSIGNMENT", value, zone.name)
-        elif len([item for item in target.config.zones if item.name == zone.name and _device(item) == device]) == 1:
+        elif len([item for item in target.config.zones if item.name == zone.name and _device(item) == device
+                  and (not target_vsys_value(decisions, vdom) or item.scope.vsys == target_vsys_value(decisions, vdom))]) == 1:
             put(vdom, "zone", zone.name, "target_zone", zone.name,
                 f"Target XML: same-name zone {zone.name} exists",
                 "TARGET_ZONE_ASSIGNMENT", zone.name, zone.name)
@@ -355,9 +359,33 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
                     "TARGET_VSYS_ASSIGNMENT" if field == "vsys" else "TARGET_VIRTUAL_ROUTER_ASSIGNMENT",
                     values[0], values[0])
 
+    # A single explicit architecture choice is review prefill, never planner input.
+    architecture = discover_target_candidates(source, decisions, target, device)
+    review_vsys = {}
+    for decision in decisions.decisions:
+        if decision.source_kind != "vdom" or decision.target_field != "vsys":
+            continue
+        options = architecture.get(decision.key, ())
+        if decision.key not in proposed and len(options) == 1:
+            put(decision.source_vdom, "vdom", decision.source_name, "vsys", options[0]["value"],
+                "Target XML: one eligible explicit VSYS; review before confirming.",
+                "TARGET_VSYS_CANDIDATE", options[0]["value"], options[0]["value"])
+        selected = target_vsys_value(decisions, decision.source_vdom)
+        if selected or decision.key in proposed:
+            review_vsys[decision.source_vdom] = selected or proposed[decision.key][0]
+    architecture = discover_target_candidates(source, decisions, target, device, review_vsys=review_vsys)
+    for decision in decisions.decisions:
+        if (decision.source_kind == "vdom" and decision.target_field == "virtual_router"
+                and decision.source_vdom in review_vsys and decision.key not in proposed):
+            options = architecture.get(decision.key, ())
+            if len(options) == 1:
+                put(decision.source_vdom, "vdom", decision.source_name, "virtual_router", options[0]["value"],
+                    "Target XML: one eligible virtual router in the review VSYS; review before confirming.",
+                    "TARGET_VIRTUAL_ROUTER_CANDIDATE", options[0]["value"], options[0]["value"])
+
     updated = []
     for decision in decisions.decisions:
-        if decision.review_state == PANDecisionReviewState.CONFIRMED:
+        if decision.review_state == PANDecisionReviewState.CONFIRMED or decision.mode in {PANDecisionMode.AUTO, PANDecisionMode.UNSUPPORTED}:
             updated.append(decision)
         elif decision.key in proposed:
             value, reason, evidence_type, evidence_value, target_object = proposed[decision.key]

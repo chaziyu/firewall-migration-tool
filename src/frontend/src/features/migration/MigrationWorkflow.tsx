@@ -1,3 +1,5 @@
+import { saveWorkspace, workspace } from '../../storage/workspaceStore'
+import type { SourceEvidence } from '../../storage/workspaceTypes'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { RequestError } from '../../api/client'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
@@ -6,16 +8,16 @@ import type { SourcePreviewData } from '../source/types'
 import type { MigrationDecisionDocument } from './types'
 import {
   buildPlan, commitCandidate, deployArtifact, downloadBundle, downloadCommands, downloadFile,
-  loadCommandPreview, validateCandidate,
+  validateCandidate,
 } from './migrationApi'
 import type { PlanArtifact } from './migrationApi'
 import { PlanReview } from './PlanReview'
 
-type Props = { preview: SourcePreviewData; previewId: string; decisionDocument: MigrationDecisionDocument | null; targetPreviewId: string; targetDevice: string; activeSection: 'plan' | 'live'; onViewChange: (view: 'live') => void; onReviewDecision: (key: string) => void }
+type Props = { preview: SourcePreviewData; decisionDocument: MigrationDecisionDocument | null; targetSource: SourceEvidence | null; targetDevice: string; activeSection: 'plan' | 'live'; onViewChange: (view: 'live') => void; onReviewDecision: (key: string) => void }
 
-export function MigrationWorkflow({ preview, previewId, decisionDocument, targetPreviewId, targetDevice, activeSection, onViewChange, onReviewDecision }: Props) {
-  const [artifact, setArtifact] = useState<PlanArtifact | null>(null)
-  const [commandText, setCommandText] = useState('')
+export function MigrationWorkflow({ preview, decisionDocument, targetSource, targetDevice, activeSection, onViewChange, onReviewDecision }: Props) {
+  const [artifact, setArtifact] = useState<PlanArtifact | null>(workspace().artifact)
+  const [commandText, setCommandText] = useState(workspace().artifact?.artifact.commands.join('\n') || '')
   const [connection, setConnection] = useState({ host: '', port: '22', username: '', password: '' })
   const [sessionId, setSessionId] = useState('')
   const [candidateValidated, setCandidateValidated] = useState(false)
@@ -37,16 +39,15 @@ export function MigrationWorkflow({ preview, previewId, decisionDocument, target
     setBusy(true); setError(null); setStatus('Building migration plan…'); setSessionId(''); setCandidateValidated(false)
     setActivityLog((lines) => [...lines, '[PLAN] Building a plan from the current confirmed decisions.'])
     try {
-      const result = await buildPlan(previewId, decisionDocument, targetPreviewId || undefined, targetDevice || undefined)
+      const result = await buildPlan(preview.source_evidence!, decisionDocument, targetSource, targetDevice || undefined)
       if (request !== buildRequest.current) return
       setArtifact(result)
-      if (result.commands > 0 || result.plan_status === 'READY_NO_CHANGES') {
-        const commands = await loadCommandPreview(result.artifact_id)
-        if (request !== buildRequest.current) return
-        setCommandText(commands.command_text)
+      await saveWorkspace({ artifact: result })
+      if (result.artifact.command_count > 0 || result.plan_status === 'READY_NO_CHANGES') {
+        setCommandText(result.artifact.commands.join('\n'))
       }
       setStatus(`Plan status: ${result.plan_status}`)
-      setActivityLog((lines) => [...lines, `[PLAN] ${result.plan_status}: ${result.commands} commands rendered.`])
+      setActivityLog((lines) => [...lines, `[PLAN] ${result.plan_status}: ${result.artifact.command_count} commands rendered.`])
     } catch (cause) {
       if (request !== buildRequest.current) return
       const message = cause instanceof Error ? cause.message : 'Migration planning failed'
@@ -55,7 +56,7 @@ export function MigrationWorkflow({ preview, previewId, decisionDocument, target
       setActivityLog((lines) => [...lines, `[ERROR] Plan generation failed: ${message}`])
     }
     finally { if (request === buildRequest.current) setBusy(false) }
-  }, [decisionDocument, preview.vendor, previewId, targetPreviewId, targetDevice])
+  }, [decisionDocument, preview.source_evidence, preview.vendor, targetSource, targetDevice])
 
   useEffect(() => {
     if (preview.vendor === 'fortigate' && decisionDocument && !autoBuildStarted.current) {
@@ -79,7 +80,7 @@ export function MigrationWorkflow({ preview, previewId, decisionDocument, target
     try {
       if (action === 'prepare') {
         log('[PREPARE] Pushing reviewed commands to the candidate configuration.')
-        const result = await deployArtifact(artifact.artifact_id, credentials) as { deployment_session_id?: string; candidate_validated?: boolean; result?: { commands_succeeded?: number; validation?: { status?: string; response?: string } } }
+        const result = await deployArtifact(artifact, credentials) as { deployment_session_id?: string; candidate_validated?: boolean; result?: { commands_succeeded?: number; validation?: { status?: string; response?: string } } }
         setSessionId(result.deployment_session_id || '')
         const validation = result.result?.validation
         const validated = result.candidate_validated === true && validation?.status === 'SUCCESS'
@@ -90,14 +91,14 @@ export function MigrationWorkflow({ preview, previewId, decisionDocument, target
         if (!validated) throw new Error('Candidate preparation did not validate successfully.')
       } else if (action === 'validate' && sessionId) {
         log('[REVALIDATE] Checking the current candidate configuration.')
-        const result = await validateCandidate(artifact.artifact_id, sessionId, credentials) as { deployment_session_id?: string; result?: { status?: string; response?: string } }
+        const result = await validateCandidate(artifact, sessionId, credentials) as { deployment_session_id?: string; result?: { status?: string; response?: string } }
         setSessionId(result.deployment_session_id || '')
         const validated = Boolean(result.deployment_session_id && result.result?.status === 'SUCCESS')
         setCandidateValidated(validated)
         setStatus(validated ? 'Candidate validation succeeded.' : 'Candidate validation failed.')
         log(`[REVALIDATE] Candidate ${String(result.result?.status || 'unknown').toLowerCase()}: ${result.result?.response || ''}`)
       } else if (action === 'commit' && sessionId && window.confirm('Commit the validated candidate configuration?')) {
-        const result = await commitCandidate(artifact.artifact_id, sessionId, credentials) as { result?: { job_id?: string } }
+        const result = await commitCandidate(artifact, sessionId, credentials) as { result?: { job_id?: string } }
         setSessionId(''); setCandidateValidated(false); setStatus('Commit submitted.')
         log(`[COMMIT] Commit completed (job ${result.result?.job_id || 'unknown'}).`)
       }
@@ -124,7 +125,7 @@ export function MigrationWorkflow({ preview, previewId, decisionDocument, target
     if (!artifact) return
     setBusy(true); setError(null)
     try {
-      const blob = await (kind === 'bundle' ? downloadBundle(artifact.artifact_id) : downloadCommands(artifact.artifact_id))
+      const blob = await (kind === 'bundle' ? downloadBundle(artifact, preview.source_evidence!) : downloadCommands(artifact))
       downloadFile(blob, kind === 'bundle' ? 'migration_fortigate_to_palo_alto.zip' : 'palo_alto_config.set')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Download failed') }
     finally { setBusy(false) }
@@ -138,15 +139,15 @@ export function MigrationWorkflow({ preview, previewId, decisionDocument, target
     {artifact && <div className="artifact-summary">
       <h3>04 Review migration plan</h3>
       <p><strong>Plan status: {artifact.plan_status}</strong></p>
-      <p>{artifact.render_summary.create || 0} to create · {artifact.render_summary.reuse || 0} to reuse · {artifact.render_summary.blocked || 0} blocked · {artifact.commands} commands</p>
+      <p>{artifact.render_summary.create || 0} to create · {artifact.render_summary.reuse || 0} to reuse · {artifact.render_summary.blocked || 0} blocked · {artifact.artifact.command_count} commands</p>
       <p className="artifact-identity">Artifact: {artifact.artifact_id} · SHA-256: {artifact.report.command_sha256 ?? 'Not reported'}</p>
       <PlanReview key={artifact.artifact_id} artifact={artifact} onReviewDecision={onReviewDecision} />
       <h3>Generated commands</h3>
-      {artifact.commands > 0 ? <label className="field">Command preview<textarea readOnly value={commandText} rows={10} /></label> : <div className="review-work-card">
+      {artifact.artifact.command_count > 0 ? <label className="field">Command preview<textarea readOnly value={commandText} rows={10} /></label> : <div className="review-work-card">
         <p>{artifact.plan_status === 'READY_NO_CHANGES' ? 'The reviewed plan requires no changes.' : artifact.plan_status === 'NEEDS_MAPPING' ? 'Complete required target mappings to render commands.' : 'Review blockers and support guidance before commands can be rendered.'}</p>
         {artifact.plan_status === 'NEEDS_MAPPING' && <Button onClick={() => onReviewDecision(String(decisionDocument?.decisions.find((item) => item.mode !== 'AUTO' && item.mode !== 'UNSUPPORTED' && item.review_state !== 'CONFIRMED')?.key ?? artifact.support_guidance?.find((item) => item.decision_key)?.decision_key ?? ''))}>Review required mappings</Button>}
       </div>}
-      <div className="action-row"><Button disabled={busy || (!artifact.commands && artifact.plan_status !== 'READY_NO_CHANGES')} onClick={() => void saveArtifact('bundle')}>Download migration bundle</Button><Button disabled={busy || !artifact.commands} onClick={() => void saveArtifact('commands')}>Download .set</Button></div>
+      <div className="action-row"><Button disabled={busy || (!artifact.artifact.command_count && artifact.plan_status !== 'READY_NO_CHANGES')} onClick={() => void saveArtifact('bundle')}>Download migration bundle</Button><Button disabled={busy || !artifact.artifact.command_count} onClick={() => void saveArtifact('commands')}>Download .set</Button></div>
       <Button className="text-button" onClick={() => onViewChange('live')}>Open live migration</Button>
     </div>}
     {error && <ErrorBanner message={error} />}
@@ -163,10 +164,10 @@ export function MigrationWorkflow({ preview, previewId, decisionDocument, target
     </section>
     <section className="panel" aria-labelledby="deployment-title">
       <h2 id="deployment-title"><span className="step-num">03</span> Review &amp; deploy</h2>
-      <p aria-live="polite">{artifact ? `${artifact.commands} reviewed commands · ${artifact.plan_status} · ${sessionId ? 'Candidate session active' : 'No deployment session'}` : 'No current reviewed artifact. Build and review a migration plan first.'}</p>
+      <p aria-live="polite">{artifact ? `${artifact.artifact.command_count} reviewed commands · ${artifact.plan_status} · ${sessionId ? 'Candidate session active' : 'No deployment session'}` : 'No current reviewed artifact. Build and review a migration plan first.'}</p>
       <div className="workflow-stepper">
         {[
-          ['1', 'Prepare candidate', 'Push the reviewed artifact and validate the candidate automatically.', 'prepare', !artifact || busy || artifact.plan_status !== 'READY' || !artifact.commands],
+          ['1', 'Prepare candidate', 'Push the reviewed artifact and validate the candidate automatically.', 'prepare', !artifact || busy || artifact.plan_status !== 'READY' || !artifact.artifact.command_count],
           ['2', 'Validation', 'Revalidate the artifact-bound candidate session.', 'validate', busy || !sessionId],
           ['3', 'Commit configuration', 'Submit an explicit commit after successful validation.', 'commit', busy || !sessionId || !candidateValidated],
         ].map(([number, title, description, action, disabled]) => <div className="step-box" key={number as string}>

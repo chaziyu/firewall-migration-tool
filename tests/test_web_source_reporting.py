@@ -107,7 +107,7 @@ def test_source_preview_and_excel_use_opaque_cached_asa_analysis():
     assert "vpn_phase2" in payload["sections"]
     assert "canonical_ir" not in str(payload)
 
-    workbook = _post(client, "/api/extract/excel", preview_id=payload["preview_id"])
+    workbook = client.post("/api/extract/excel", json={"source_vendor": "cisco_asa", "source": payload["source_evidence"]})
     assert workbook.status_code == 200
     assert workbook.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     sheets = load_workbook(io.BytesIO(workbook.data), read_only=True).sheetnames
@@ -115,117 +115,22 @@ def test_source_preview_and_excel_use_opaque_cached_asa_analysis():
     assert "web-secret" not in workbook.data.decode("latin1", errors="ignore")
 
 
-def test_fast_excel_uses_cached_analysis_without_deepcopy():
-    client = create_app({"TESTING": True}).test_client()
-    preview = client.post(
-        "/api/preview",
-        data={"source_vendor": "fortigate", "file": (io.BytesIO(FORTIGATE_SOURCE.encode()), "fortigate.conf")},
-        content_type="multipart/form-data",
-    )
-    preview_id = preview.get_json()["preview_id"]
-
-    with patch("fwmigrate.web._clone_preview", side_effect=AssertionError("FAST must reuse cached analysis")):
-        workbook = client.post(
-            "/api/extract/excel",
-            data={"source_vendor": "fortigate", "preview_id": preview_id},
-            content_type="multipart/form-data",
-        )
-
-    assert workbook.status_code == 200
-
-
-def test_source_preview_reuses_cached_analysis_by_vendor_and_bytes(monkeypatch):
-    client = create_app({"TESTING": True}).test_client()
-    reporter = source_reporters.get("fortigate")
-    analyze = reporter.analyze_source
-    calls = 0
-
-    def counted(source, **options):
-        nonlocal calls
-        calls += 1
-        return analyze(source, **options)
-
-    monkeypatch.setattr(reporter, "analyze_source", counted)
-    source = "config system global\nset hostname cache-probe-unique-1\nend\n"
-
-    def preview(content):
-        return client.post("/api/preview", data={
-            "source_vendor": "fortigate",
-            "collect_metrics": "true",
-            "file": (io.BytesIO(content.encode()), "cache-probe.conf"),
-        }, content_type="multipart/form-data")
-
-    first = preview(source)
-    second = preview(source)
-    assert first.status_code == second.status_code == 200
-    first_payload, second_payload = first.get_json(), second.get_json()
-    assert first_payload["preview_id"] == second_payload["preview_id"]
-    assert calls == 1
-    assert second_payload["diagnostics"]["metrics"]["metadata"]["analysis_cache_hit"] is True
-    assert {stage["stage"] for stage in second_payload["diagnostics"]["metrics"]["stages"]}.isdisjoint(
-        {"decode", "extraction"}
-    )
-
-    changed = preview(source.replace("unique-1", "unique-2"))
-    assert changed.status_code == 200
-    assert changed.get_json()["preview_id"] != first_payload["preview_id"]
-    assert calls == 2
-
-
-def test_source_preview_cache_does_not_cross_vendors():
-    client = create_app({"TESTING": True}).test_client()
-    source = "hostname cache-vendor-isolation-unique\n"
-    previews = []
-    for vendor in ("cisco_asa", "fortigate"):
-        response = client.post("/api/preview", data={
-            "source_vendor": vendor,
-            "file": (io.BytesIO(source.encode()), "same-bytes.cfg"),
-        }, content_type="multipart/form-data")
-        assert response.status_code == 200
-        previews.append(response.get_json()["preview_id"])
-    assert previews[0] != previews[1]
-
-
-def test_excel_upload_reuses_cached_analysis_without_preview_id(monkeypatch):
-    client = create_app({"TESTING": True}).test_client()
-    reporter = source_reporters.get("fortigate")
-    source = "config system global\nset hostname cache-excel-unique\nend\n"
-    preview = client.post("/api/preview", data={
-        "source_vendor": "fortigate", "file": (io.BytesIO(source.encode()), "cache-excel.conf")
-    }, content_type="multipart/form-data")
-    assert preview.status_code == 200
-
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("cached source analysis should be reused")
-
-    monkeypatch.setattr(reporter, "analyze_source", fail_if_called)
-    workbook = client.post("/api/extract/excel", data={
-        "source_vendor": "fortigate", "file": (io.BytesIO(source.encode()), "cache-excel.conf")
-    }, content_type="multipart/form-data")
-    assert workbook.status_code == 200
-
-
-def test_requirements_and_migration_upload_fallbacks_reuse_preview_analysis(monkeypatch):
-    client = create_app({"TESTING": True}).test_client()
-    reporter = source_reporters.get("fortigate")
-    source = "config system global\nset hostname cache-migration-unique\nend\n"
-    preview = client.post("/api/preview", data={
-        "source_vendor": "fortigate", "file": (io.BytesIO(source.encode()), "cache-migration.conf")
-    }, content_type="multipart/form-data")
-    assert preview.status_code == 200
-
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("cached source analysis should be reused")
-
-    monkeypatch.setattr(reporter, "analyze_source", fail_if_called)
-    requirements = client.post("/api/migration/requirements", data={
-        "file": (io.BytesIO(source.encode()), "cache-migration.conf")
-    }, content_type="multipart/form-data")
-    assert requirements.status_code == 200
-    migration = client.post("/api/migrate", data={
-        "file": (io.BytesIO(source.encode()), "cache-migration.conf"), "mapping": "{}"
-    }, content_type="multipart/form-data")
-    assert migration.status_code == 200
+def test_source_is_reanalyzed_for_each_request_and_survives_restart(monkeypatch):
+    client = create_app({'TESTING': True}).test_client()
+    reporter = source_reporters.get('fortigate')
+    original = reporter.analyze_source
+    calls = []
+    def analyze(source, **options):
+        calls.append(source)
+        return original(source, **options)
+    monkeypatch.setattr(reporter, 'analyze_source', analyze)
+    preview = client.post('/api/preview', data={'file': (io.BytesIO(FORTIGATE_SOURCE.encode()), 'source.conf')}).get_json()
+    assert 'preview_id' not in preview
+    restarted = create_app({'TESTING': True}).test_client()
+    response = restarted.post('/api/extract/excel', json={'source_vendor': 'fortigate', 'source': preview['source_evidence']})
+    assert response.status_code == 200
+    assert len(calls) == 2
+    assert restarted.post('/api/migration/requirements', json={'source': preview['source_evidence']}).status_code == 200
 
 
 def test_source_excel_rejects_missing_input_and_unknown_vendor():
@@ -244,7 +149,7 @@ def test_source_excel_vendor_mismatch_does_not_use_cached_preview():
 
     response = client.post(
         "/api/extract/excel",
-        data={"source_vendor": "unknown", "preview_id": preview["preview_id"]},
+        data={"source_vendor": "unknown", "source": preview["source_evidence"]},
         content_type="multipart/form-data",
     )
     assert response.status_code == 422
@@ -255,7 +160,7 @@ def test_palo_alto_upload_cached_preview_and_excel_redact_secrets():
     response = client.post("/api/preview", data={"source_vendor": "palo_alto", "file": (io.BytesIO(PALO_SOURCE.encode()), "pan.xml")}, content_type="multipart/form-data")
     assert response.status_code == 200
     payload = response.get_json()
-    workbook = client.post("/api/extract/excel", data={"source_vendor": "palo_alto", "preview_id": payload["preview_id"]}, content_type="multipart/form-data")
+    workbook = client.post("/api/extract/excel", json={"source_vendor": "palo_alto", "source": payload["source_evidence"]})
     assert workbook.status_code == 200
     assert b"palo-web-secret" not in response.data + workbook.data
 
@@ -265,7 +170,7 @@ def test_check_point_upload_cached_preview_and_excel_redact_secrets():
     response = client.post("/api/preview", data={"source_vendor": "checkpoint", "file": (io.BytesIO(CHECKPOINT_SOURCE.encode()), "cp.json")}, content_type="multipart/form-data")
     assert response.status_code == 200
     payload = response.get_json()
-    workbook = client.post("/api/extract/excel", data={"source_vendor": "checkpoint", "preview_id": payload["preview_id"]}, content_type="multipart/form-data")
+    workbook = client.post("/api/extract/excel", json={"source_vendor": "checkpoint", "source": payload["source_evidence"]})
     assert workbook.status_code == 200
     assert b"checkpoint-web-secret" not in response.data + workbook.data
 
@@ -350,5 +255,5 @@ def test_api_preview_contract_covers_every_registered_vendor():
         copied = normalize_web_report(reporter.build_preview(analysis), vendor)
         owned = normalize_web_report(reporter.build_preview(analysis), vendor, copy=False)
         assert owned == copied, vendor
-        assert json.loads(json.dumps(owned)) == {key: value for key, value in report.items() if key not in {"success", "preview_id"}}, vendor
+        assert json.loads(json.dumps(owned)) == {key: value for key, value in report.items() if key not in {"success", "source_evidence", "source_digest"}}, vendor
         assert analysis == before, vendor

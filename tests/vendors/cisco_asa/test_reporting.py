@@ -264,11 +264,11 @@ def test_asa_shared_web_flow_uses_vendor_preview_and_excel():
     )
 
     assert preview.status_code == 200
-    preview_id = preview.get_json()["preview_id"]
+    preview_id = preview.get_json()["source_evidence"]
 
     workbook = client.post(
         "/api/extract/excel",
-        data={"source_vendor": "cisco_asa", "preview_id": preview_id},
+        data={"source_vendor": "cisco_asa", "source": __import__("json").dumps(preview_id)},
     )
 
     assert workbook.status_code == 200

@@ -21,12 +21,7 @@ from fwmigrate.source_reporting import (
     source_reporters,
 )
 from fwmigrate.source_reporting.web_report import normalize_web_report
-from fwmigrate.web_support.preview_cache import (
-    _cache_preview,
-    _clone_preview,
-    _lookup_preview,
-    _lookup_source_preview,
-)
+from fwmigrate.web_support.request_source import analyze_request_source
 from fwmigrate.web_support.reporting import (
     ConfigurationDecodeError,
     _decode_configuration,
@@ -82,31 +77,15 @@ def register_source_routes(app) -> None:
             metrics = SourceReportMetrics() if _parse_bool(request.form.get('collect_metrics')) else None
             started = perf_counter()
             file = request.files['file']
-            raw_content = file.read()
             reporter = source_reporters.get(source_vendor)
             source_vendor = reporter.vendor_id
-            preview_entry = _timed(
-                metrics, 'analysis cache lookup',
-                lambda: _lookup_source_preview(source_vendor, raw_content),
-            )
-            analysis_cache_hit = preview_entry is not None
-            if preview_entry is None:
-                file_content = _timed(metrics, 'decode', lambda: _decode_configuration(raw_content))
-                analysis = _timed(
-                    metrics,
-                    'extraction',
-                    lambda: reporter.analyze_source(file_content, metrics=metrics),
-                )
-                preview_entry = _cache_preview(source_vendor, raw_content, analysis, os.path.basename(file.filename))
-            else:
-                analysis = preview_entry.analysis
-            if metrics is not None:
-                metrics.set_metadata('analysis_cache_hit', analysis_cache_hit)
+            entry = analyze_request_source({}, source_vendor)
+            analysis = entry.analysis
             report = _timed(metrics, 'web_preview_construction', lambda: normalize_web_report(reporter.build_preview(analysis), source_vendor, copy=False))
             response = {
                 'success': True,
-                'preview_id': preview_entry.preview_id,
                 **report,
+                'source_evidence': entry.evidence, 'source_digest': entry.source_digest,
             }
             if metrics is not None:
                 metrics.total_duration_ms = (perf_counter() - started) * 1000
@@ -152,22 +131,10 @@ def register_source_routes(app) -> None:
             if source.status == CollectionStatus.FAILED or not source.source_text.strip():
                 return jsonify({'success': False, 'error': 'Collection returned no usable source.'}), 502
             snapshot = make_snapshot(source)
-            raw = snapshot['source_text'].encode('utf-8')
             reporter = source_reporters.get(source.vendor_id)
-            collection_warnings = tuple(snapshot['warnings'])
-            entry = _lookup_source_preview(source.vendor_id, raw, collection_status=source.status,
-                                           collection_warnings=collection_warnings,
-                                           collection_method=source.method)
-            if entry is None:
-                analysis = reporter.analyze_source(snapshot['source_text'])
-                entry = _cache_preview(source.vendor_id, raw, analysis, source.source_name,
-                                       collection_status=source.status,
-                                       collection_warnings=collection_warnings, collection_method=source.method)
-            else:
-                analysis = entry.analysis
+            analysis = reporter.analyze_source(snapshot['source_text'])
             return jsonify({
                 'success': True,
-                'preview_id': entry.preview_id,
                 'collection': {'vendor': source.vendor_id, 'method': source.method, 'status': source.status.value,
                                'parts': snapshot['parts'], 'warnings': snapshot['warnings']},
                 'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id, copy=False),
@@ -183,19 +150,9 @@ def register_source_routes(app) -> None:
             raw = uploaded.read(MAX_BYTES + 1) if uploaded else request.stream.read(MAX_BYTES + 1)
             source = parse_snapshot(raw)
             reporter = source_reporters.get(source.vendor_id)
-            source_bytes = source.source_text.encode('utf-8')
-            collection_warnings = tuple(source.warnings)
-            entry = _lookup_source_preview(source.vendor_id, source_bytes, collection_status=source.status,
-                                           collection_warnings=collection_warnings,
-                                           collection_method=source.method)
-            if entry is None:
-                analysis = reporter.analyze_source(source.source_text)
-                entry = _cache_preview(source.vendor_id, source_bytes, analysis, source.source_name,
-                                       collection_status=source.status, collection_warnings=collection_warnings,
-                                       collection_method=source.method)
-            else:
-                analysis = entry.analysis
-            return jsonify({'success': True, 'vendor_id': source.vendor_id, 'preview_id': entry.preview_id,
+            snapshot = make_snapshot(source)
+            analysis = reporter.analyze_source(snapshot['source_text'])
+            return jsonify({'success': True, 'vendor_id': source.vendor_id, 'snapshot': snapshot,
                             'collection': {'status': source.status.value, 'parts': [asdict(part) for part in source.parts],
                                            'warnings': source.warnings}, 'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id, copy=False)})
         except ValueError:
@@ -207,9 +164,8 @@ def register_source_routes(app) -> None:
     def extract_excel():
         """Parse a source configuration and download its vendor-native report."""
         try:
-            payload = request.get_json(silent=True) or {}
+            payload = request.get_json(silent=True) or request.form.to_dict()
             source_vendor = request.form.get('source_vendor') or payload.get('source_vendor') or 'fortigate'
-            preview_id = request.form.get('preview_id') or payload.get('preview_id') or ''
             metrics = (
                 SourceReportMetrics()
                 if _parse_bool(request.form.get('collect_metrics') or payload.get('collect_metrics'))
@@ -225,50 +181,11 @@ def register_source_routes(app) -> None:
             reporter = source_reporters.get(source_vendor)
             source_vendor = reporter.vendor_id
 
-            uploaded_file = request.files.get('file')
-            raw_content = (
-                _timed(metrics, 'request decode', uploaded_file.read)
-                if uploaded_file is not None and uploaded_file.filename != ''
-                else None
-            )
-            preview_entry = (
-                _timed(
-                    metrics,
-                    'cache lookup',
-                    lambda: _lookup_preview(preview_id, source_vendor, raw_content),
-                )
-                if preview_id
-                else None
-            )
-            if preview_entry is None and raw_content is not None:
-                preview_entry = _timed(
-                    metrics,
-                    'cache lookup',
-                    lambda: _lookup_source_preview(source_vendor, raw_content),
-                )
-            if preview_entry is not None:
-                analysis = (
-                    preview_entry.analysis
-                    if profile is ExcelExportProfile.FAST or source_vendor == "fortigate"
-                    else _clone_preview(preview_entry)
-                )
-            else:
-                if raw_content is None:
-                    return jsonify({'error': 'A configuration file or valid preview_id is required for Excel extraction'}), 400
-                file_content = _timed(
-                    metrics,
-                    'decode',
-                    lambda: _decode_configuration(raw_content),
-                )
-                analysis = _timed(
-                    metrics,
-                    'extraction/fallback extraction',
-                    lambda: _extract_source_config(source_vendor, file_content),
-                )
-
+            entry = analyze_request_source(payload, source_vendor)
+            analysis = entry.analysis
             workbook = io.BytesIO()
             export_started = perf_counter()
-            source_name = os.path.basename(uploaded_file.filename) if uploaded_file is not None and uploaded_file.filename else (preview_entry.source_name if preview_entry else None)
+            source_name = entry.source_name
             export_metrics = (
                 ExcelExportMetrics()
                 if metrics is not None and profile is ExcelExportProfile.FAST and source_vendor == 'fortigate'
@@ -295,7 +212,7 @@ def register_source_routes(app) -> None:
                 metrics.total_duration_ms = (perf_counter() - total_started) * 1000
                 _LOGGER.debug(
                     "Excel endpoint metrics: cache_hit=%s profile=%s %s",
-                    bool(preview_entry),
+                    False,
                     profile.value,
                     metrics.as_dict(),
                 )

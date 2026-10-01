@@ -89,14 +89,8 @@ from fwmigrate.desktop import DesktopAPI, run_desktop
 from fwmigrate.web_support.frontend import register_frontend_routes
 from fwmigrate.web_support.reporting import _decode_configuration, _parse_bool
 from fwmigrate.web_api.source import register_source_routes
-from fwmigrate.web_support.preview_cache import (
-    _PreviewCacheEntry,
-    _cache_preview,
-    _clone_preview,
-    _lookup_preview,
-    _lookup_source_preview,
-    _require_complete_collection,
-)
+from fwmigrate.web_support.request_source import analyze_request_source, _clone_preview, _require_complete_collection
+from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope, verify_artifact
 
 try:
     from dotenv import load_dotenv
@@ -133,12 +127,9 @@ class _TargetEvidenceContext:
 
 
 def _target_evidence(payload):
-    preview_id = payload.get('target_preview_id')
-    if not preview_id:
+    if not payload.get('target_source') and not request.files.get('target_file'):
         return None
-    entry = _lookup_preview(preview_id, 'palo_alto')
-    if entry is None:
-        raise ValueError('A valid PAN-OS target preview_id is required')
+    entry = analyze_request_source(payload, 'palo_alto', target=True)
     analysis = _clone_preview(entry)
     devices = target_devices(analysis)
     selected = payload.get('target_device') or (devices[0] if len(devices) == 1 else None)
@@ -148,7 +139,7 @@ def _target_evidence(payload):
 
 
 def _build_migration_review_state(entry, payload, apply_deterministic=False):
-    """Adapt cached HTTP previews into the pair-specific review service."""
+    """Adapt request-owned evidence into the pair-specific review service."""
     _require_complete_collection(entry)
     analysis = _clone_preview(entry)
     prior = payload.get('decision_document')
@@ -183,10 +174,6 @@ def create_app(test_config=None):
     )
 
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
-    app.config.setdefault('AI_DESIGN_SESSION_TTL_SECONDS', 30 * 60)
-    app.config.setdefault('AI_DESIGN_SESSION_MAX', 32)
-    app.config.setdefault('MIGRATION_ARTIFACT_TTL_SECONDS', 30 * 60)
-    app.config.setdefault('MIGRATION_ARTIFACT_MAX', 32)
 
     if test_config:
         app.config.update(test_config)
@@ -200,57 +187,68 @@ def create_app(test_config=None):
     except ai_advisor.AdvisorError as exc:
         _LOGGER.warning('AI advisor configuration error category=%s', exc.code)
 
-    rendered_artifacts = {}
-    ai_proposals = {}
-    ai_design_sessions = {}
-    ai_proposal_lock = threading.Lock()
-    ai_audit = []
-    ai_audit_by_id = {}
-    artifact_sources = {}
-    deployment_sessions: dict[str, PANDeploymentSession] = {}
-    artifact_created_at = {}
-    # ponytail: serialize candidate operations globally; use per-target locks if throughput matters.
-    candidate_lock = threading.RLock()
+    signing_key = app.config.get('WORKSPACE_SIGNING_KEY') or os.environ.get('FWMIGRATE_WORKSPACE_SIGNING_KEY')
+    if signing_key:
+        signing_key = signing_key.encode() if isinstance(signing_key, str) else signing_key
+        if len(signing_key) < 32:
+            raise ValueError('Workspace signing key must contain at least 32 bytes')
+    else:
+        signing_key = os.urandom(32)
+        _LOGGER.warning('Temporary workspace signing key: signed artifacts expire on server restart')
+    deployment_sessions = {}
+    target_locks = {}
+    coordination_lock = threading.RLock()
 
     def _candidate_operation(function):
         @wraps(function)
         def locked(*args, **kwargs):
-            with candidate_lock:
-                return function(*args, **kwargs)
+            payload = request.get_json(silent=True) or {}
+            try:
+                if request.path == '/api/deploy':
+                    rendered = _request_artifact(payload)
+                    if not rendered.commands:
+                        raise ValueError('The migration artifact contains no renderable commands')
+                options = _deployment_options(payload)
+            except ValueError as exc:
+                return jsonify({'success': False, 'error': str(exc)}), 400
+            key = (options.host.casefold(), options.port)
+            with coordination_lock:
+                lock, users = target_locks.get(key, (threading.RLock(), 0))
+                target_locks[key] = (lock, users + 1)
+            try:
+                with lock:
+                    return function(*args, **kwargs)
+            finally:
+                with coordination_lock:
+                    lock, users = target_locks[key]
+                    if users == 1:
+                        target_locks.pop(key)
+                    else:
+                        target_locks[key] = (lock, users - 1)
         return locked
 
-    def _expire_artifacts(*, reserve=0):
-        now = time.time()
-        expired = {key for key, created in artifact_created_at.items()
-                   if now - created >= app.config['MIGRATION_ARTIFACT_TTL_SECONDS']}
-        remaining = [key for key in artifact_created_at if key not in expired]
-        limit = max(1, int(app.config['MIGRATION_ARTIFACT_MAX']))
-        expired.update(remaining[:max(0, len(remaining) + reserve - limit)])
-        for key in expired:
-            rendered_artifacts.pop(key, None)
-            artifact_sources.pop(key, None)
-            artifact_created_at.pop(key, None)
-        for key, session in tuple(deployment_sessions.items()):
-            if session.artifact_id in expired or now - session.validated_at >= _DEPLOYMENT_SESSION_TTL_SECONDS:
-                deployment_sessions.pop(key, None)
-
     @app.before_request
-    def _prune_artifacts():
-        with candidate_lock:
-            _expire_artifacts()
+    def _prune_deployment_sessions():
+        with coordination_lock:
+            for key, session in tuple(deployment_sessions.items()):
+                if time.time() - session.validated_at >= _DEPLOYMENT_SESSION_TTL_SECONDS:
+                    deployment_sessions.pop(key, None)
+
+    def _migration_source(payload):
+        entry = analyze_request_source(payload, 'fortigate')
+        _require_complete_collection(entry)
+        return entry
+
+    def _request_artifact(payload):
+        return verify_artifact(payload.get('artifact'), signing_key)
+
+    @app.errorhandler(ValueError)
+    def _invalid_request(error):
+        return jsonify({'success': False, 'error': str(error)}), 400
 
     @app.errorhandler(ValidationError)
     def _invalid_model(_error):
         return jsonify({'success': False, 'error': 'Invalid configuration fields'}), 400
-
-    def _sync_ai_design_audit(rows):
-        by_id = {row.get('audit_id'): row for row in ai_audit if row.get('audit_id')}
-        for row in rows:
-            stored = by_id.get(row.get('audit_id'))
-            if stored:
-                for field in ('engineer_action', 'final_value', 'failure_category'):
-                    if field in row:
-                        stored[field] = row[field]
 
     def _design_audit_actions(session, actions):
         return tuple(
@@ -260,56 +258,27 @@ def create_app(test_config=None):
             for row in session.audit
         )
 
-    def _expire_ai_design_sessions(now=None):
-        now = time.time() if now is None else now
-        ttl = max(1, int(app.config['AI_DESIGN_SESSION_TTL_SECONDS']))
-        limit = max(1, int(app.config['AI_DESIGN_SESSION_MAX']))
-        with ai_proposal_lock:
-            expired = [key for key, value in ai_design_sessions.items() if now - value.created_at > ttl]
-            for key in expired:
-                session = ai_design_sessions.pop(key)
-                for row in session.audit:
-                    if row.get('engineer_action') is None:
-                        row['engineer_action'] = 'UNRESOLVED'
-                _sync_ai_design_audit(session.audit)
-            while len(ai_design_sessions) > limit:
-                oldest = min(ai_design_sessions, key=lambda key: ai_design_sessions[key].created_at)
-                session = ai_design_sessions.pop(oldest)
-                for row in session.audit:
-                    if row.get('engineer_action') is None:
-                        row['engineer_action'] = 'UNRESOLVED'
-                _sync_ai_design_audit(session.audit)
-
-    def _store_ai_design_session(session, previous=None):
-        _expire_ai_design_sessions()
-        for failure in session.failures:
-            _LOGGER.warning(
-                'AI design failed provider=%s model=%s category=%s reason=%s status=%s request_id=%s batch_size=%s candidate_count=%s request_bytes=%s',
-                failure.get('provider'), failure.get('model'), failure.get('failure_category'),
-                failure.get('safe_reason'), failure.get('status'), failure.get('request_id'),
-                failure.get('batch_size'), failure.get('candidate_count'), failure.get('request_bytes'),
-            )
-        with ai_proposal_lock:
-            if previous and ai_design_sessions.get(previous.session_id) is not previous:
-                raise ValueError('This AI design session changed; reload and retry')
-            old_rows = previous.audit if previous and previous.session_id == session.session_id else ()
-            _sync_ai_design_audit(session.audit[:len(old_rows)])
-            for row in session.audit[len(old_rows):]:
-                ai_audit.append(row)
-            ai_design_sessions[session.session_id] = session
-            while len(ai_audit) > 5000:
-                removed = ai_audit.pop(0)
-                ai_audit_by_id.pop(removed.get('proposal_id'), None)
-
     def _lookup_ai_design_session(session_id):
-        _expire_ai_design_sessions()
-        with ai_proposal_lock:
-            return ai_design_sessions.get(session_id)
+        payload = request.get_json(silent=True) or {}
+        value = payload.get('design_session')
+        if value is None:
+            return None
+        verify_envelope(value, signing_key)
+        if value.get('design_session_id') != session_id:
+            raise ValueError('AI design session identity does not match')
+        entry, state = _ai_design_state(payload)
+        from fwmigrate.conversion.fortigate_to_palo_alto.design.proposed import PANProposedDesign
+        from fwmigrate.conversion.fortigate_to_palo_alto.ai.models import PANAIProposal
+        design = PANProposedDesign(value['source_digest'], value['target_digest'], value['target_device'],
+                                  state['decisions'], tuple(PANAIProposal.from_dict(item) for item in value['proposals']))
+        return PANProposedDesignSession(session_id, value['created_at'], design,
+            stable=value['stable'], iterations=value['iterations'], audit=tuple(value['audit']),
+            failure_category=value.get('failure_category'), failures=tuple(value.get('failures', ())),
+            ai_eligible_decision_keys=tuple(value.get('ai_eligible_decision_keys', ())),
+            dependency_graph=state['design_session'].dependency_graph)
 
     def _ai_design_state(payload):
-        entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-        if entry is None:
-            raise ValueError('A valid FortiGate preview_id is required')
+        entry = _migration_source(payload)
         state = _build_migration_review_state(entry, payload, True)
         if not state.get('target_digest') or not state.get('target_device'):
             raise ValueError('Upload PAN-OS target XML and select a target device before AI design review')
@@ -324,7 +293,8 @@ def create_app(test_config=None):
     def _ai_design_response(session, state, **extra):
         result = {
             'success': True,
-            'design_session': session.to_dict(state['design_session'].dependency_graph),
+            'design_session': sign_envelope({**session.to_dict(state['design_session'].dependency_graph),
+                'ai_eligible_decision_keys': list(session.ai_eligible_decision_keys)}, signing_key),
             'decisions': state['decisions'].to_dict(),
             'decision_document': build_decision_document(
                 state['source_digest'], state['decisions'],
@@ -341,7 +311,7 @@ def create_app(test_config=None):
         target_context = state['target_context']
         target = target_context.analysis if target_context else None
         decisions = state['decisions']
-        return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': state['requirements'],
+        return jsonify({'success': True, 'source_digest': entry.source_digest, 'requirements': state['requirements'],
                         'decisions': decisions.to_dict(),
                         'design_session': state['design_session'].to_dict(),
                         'decision_document': build_decision_document(entry.source_digest, decisions,
@@ -366,17 +336,7 @@ def create_app(test_config=None):
     def migration_requirements():
         payload = request.get_json(silent=True) or request.form
         try:
-            preview_id = payload.get('preview_id')
-            entry = _lookup_preview(preview_id, 'fortigate') if preview_id else None
-            if entry is None:
-                uploaded = request.files.get('file')
-                if uploaded is None or not uploaded.filename:
-                    return jsonify({'success': False, 'error': 'A valid preview_id or configuration file is required'}), 400
-                raw = uploaded.read()
-                entry = _lookup_source_preview('fortigate', raw)
-                if entry is None:
-                    analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
-                    entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
+            entry = _migration_source(payload)
             state = _build_migration_review_state(entry, payload)
             return _migration_review_response(entry, state)
         except (ValueError, KeyError, TypeError) as exc:
@@ -390,9 +350,7 @@ def create_app(test_config=None):
         try:
             if not isinstance(payload, dict):
                 raise ValueError('An interface confirmation request is required')
-            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-            if entry is None:
-                raise ValueError('A valid FortiGate preview_id is required')
+            entry = _migration_source(payload)
             _require_complete_collection(entry)
             analysis = _clone_preview(entry)
             target_context = _target_evidence(payload)
@@ -424,51 +382,9 @@ def create_app(test_config=None):
             diagnostic.get('batch_size', batch_size), diagnostic.get('candidate_count'),
             diagnostic.get('request_bytes'), duration_ms, cause.__class__.__name__,
         )
-        if batch_id:
-            with ai_proposal_lock:
-                ai_audit.append({
-                    'event': 'AI_REQUEST_FAILED', 'batch_id': batch_id,
-                    'created_at': time.time(), 'request_duration_ms': duration_ms, **diagnostic,
-                })
-                if len(ai_audit) > 5000:
-                    ai_audit_by_id.pop(ai_audit.pop(0).get('proposal_id'), None)
         status = 503 if error.code in {'AI_DISABLED', 'AI_UNAVAILABLE', 'AI_AUTH_FAILED', 'AI_RATE_LIMITED'} else 502
         return jsonify({'success': False, 'code': error.code, 'error': error.message,
                         'failure': diagnostic}), status
-
-    def _record_repair_failures(result, batch_id):
-        records = [dict(item) for item in result.failures]
-        if result.exhausted:
-            conflicts = [item["decision_key"] for item in result.proposals
-                         if item.get("validation_status") == "CONFLICT"]
-            if conflicts:
-                proposal = result.proposals[0]
-                records.append({
-                    "failure_category": "AI_REPAIR_EXHAUSTED",
-                    "provider": proposal.get("provider", "groq"),
-                    "model": ai_advisor.groq_model("repair"),
-                    "safe_reason": "Conflicts remained after the configured repair passes.",
-                    "decision_keys": conflicts,
-                    "batch_size": len(conflicts),
-                    "candidate_count": 0,
-                    "request_bytes": 0,
-                })
-        if records:
-            now = time.time()
-            with ai_proposal_lock:
-                ai_audit.extend({"event": "AI_REPAIR_FAILED", "batch_id": batch_id,
-                                 "created_at": now, **item} for item in records)
-                while len(ai_audit) > 5000:
-                    removed = ai_audit.pop(0)
-                    ai_audit_by_id.pop(removed.get('proposal_id'), None)
-            for failure in records:
-                _LOGGER.warning(
-                    'AI repair failed provider=%s model=%s category=%s reason=%s status=%s request_id=%s batch_size=%s candidate_count=%s request_bytes=%s',
-                    failure.get('provider'), failure.get('model'), failure.get('failure_category'),
-                    failure.get('safe_reason'), failure.get('status'), failure.get('request_id'),
-                    failure.get('batch_size'), failure.get('candidate_count'), failure.get('request_bytes'),
-                )
-        return records
 
     @app.route('/api/migration/ai/status', methods=['GET'])
     def migration_ai_status():
@@ -511,20 +427,15 @@ def create_app(test_config=None):
                                      and item.action.value == 'USE_EXISTING')
                     previous = replace(stored_previous, design=stored_previous.design.with_state(proposals=retained))
             session = build_ai_proposed_design(state, previous)
-            _store_ai_design_session(session, stored_previous)
+            for failure in session.failures:
+                _LOGGER.warning('AI design failed category=%s request_id=%s reason=%s',
+                    failure.get('failure_category'), failure.get('request_id'), failure.get('safe_reason'))
             return jsonify(_ai_design_response(session, state))
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception as exc:
             return _ai_failure(exc, provider=ai_advisor.advisor_provider(), model=ai_advisor.advisor_model(),
                                batch_size=0, duration_ms=0)
-
-    @app.route('/api/migration/ai/design/<session_id>', methods=['GET'])
-    def get_migration_ai_design(session_id):
-        session = _lookup_ai_design_session(session_id)
-        if session is None:
-            return jsonify({'success': False, 'error': 'This AI design session expired; start a new review.'}), 404
-        return jsonify({'success': True, 'design_session': session.to_dict(None)})
 
     @app.route('/api/migration/ai/design/<session_id>/approve', methods=['POST'])
     def approve_migration_ai_design(session_id):
@@ -583,7 +494,6 @@ def create_app(test_config=None):
                 session, design=design.with_state(decisions=confirmed, proposals=remaining),
                 audit=_design_audit_actions(session, audit_actions),
             )
-            _store_ai_design_session(updated, session)
             state = dict(state, decisions=confirmed)
             return jsonify(_ai_design_response(updated, state, approved_count=len(validated)))
         except (ValueError, KeyError, TypeError) as exc:
@@ -643,7 +553,6 @@ def create_app(test_config=None):
             }
             build_session = replace(session, audit=_design_audit_actions(session, audit_actions))
             rebuilt = build_ai_proposed_design(state, build_session)
-            _store_ai_design_session(rebuilt, session)
             return jsonify(_ai_design_response(rebuilt, state, decisions=state['decisions'].to_dict(),
                                               decision_document=document))
         except (ValueError, KeyError, TypeError) as exc:
@@ -677,276 +586,9 @@ def create_app(test_config=None):
                 session, design=session.design.with_state(proposals=proposals),
                 audit=_design_audit_actions(session, {key: ('REJECTED', None) for key in keys}),
             )
-            _store_ai_design_session(updated, session)
             return jsonify(_ai_design_response(updated, state))
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 409
-
-    @app.route('/api/migration/ai/propose', methods=['POST'])
-    def propose_migration_ai():
-        payload = request.get_json(silent=True)
-        if not ai_advisor.advisor_enabled():
-            return jsonify({'success': False, 'code': 'AI_DISABLED', 'error': 'AI advisor is disabled.'}), 503
-        try:
-            if not isinstance(payload, dict):
-                raise ValueError('A JSON object is required')
-            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-            if entry is None:
-                raise ValueError('A valid FortiGate preview_id is required')
-            state = _build_migration_review_state(entry, payload)
-            decision_keys = payload.get('decision_keys')
-            if decision_keys is None:
-                decision_keys = list(ai_advisor.ready_proposal_keys(state))
-            if not isinstance(decision_keys, list):
-                raise ValueError('decision_keys must be an array')
-            if decision_keys:
-                ai_advisor.build_proposal_context(
-                    state, decision_keys[:ai_advisor._max_decisions()],
-                    model=ai_advisor.model_for_decisions(
-                        state, decision_keys[:ai_advisor._max_decisions()],
-                        provider=ai_advisor.advisor_provider(),
-                    ),
-                    provider=ai_advisor.advisor_provider(),
-                )
-        except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
-
-        started = perf_counter()
-        batch_id = uuid.uuid4().hex
-        proposals = []
-        failure_code = None
-        failure_details = []
-        for offset in range(0, len(decision_keys), ai_advisor._max_decisions()):
-            batch = decision_keys[offset:offset + ai_advisor._max_decisions()]
-            try:
-                prepared = ai_advisor.build_proposal_context(
-                    state, batch,
-                    model=ai_advisor.model_for_decisions(state, batch, provider=ai_advisor.advisor_provider()),
-                    provider=ai_advisor.advisor_provider(),
-                )
-                current = ai_advisor.request_proposals(prepared)
-                repaired = ai_advisor.repair_conflicted_proposals(state, batch, current)
-                proposals.extend(repaired.proposals)
-                failure_details.extend(_record_repair_failures(repaired, batch_id))
-                if failure_details:
-                    failure_code = failure_details[0]["failure_category"]
-            except Exception as exc:
-                failure = _ai_failure(exc, provider=ai_advisor.advisor_provider(), model=ai_advisor.advisor_model(),
-                                      batch_size=len(batch), duration_ms=round((perf_counter() - started) * 1000),
-                                      batch_id=batch_id)
-                if not proposals:
-                    return failure
-                failed_response = failure[0].get_json()
-                failure_code = failed_response['code']
-                if failed_response.get('failure'):
-                    failure_details.append(failed_response['failure'])
-                break
-        if proposals:
-            proposal_keys = tuple(item['decision_key'] for item in proposals)
-            repaired = ai_advisor.repair_conflicted_proposals(state, proposal_keys, proposals)
-            proposals = list(repaired.proposals)
-            failure_details.extend(_record_repair_failures(repaired, batch_id))
-            if failure_details:
-                failure_code = failure_code or failure_details[0]["failure_category"]
-            failure_code = failure_code or next(
-                (item.get('escalation_failure_category') for item in proposals
-                 if item.get('escalation_failure_category')), None)
-
-        now = time.time()
-        duration_ms = round((perf_counter() - started) * 1000)
-        result = []
-        with ai_proposal_lock:
-            for proposal_id, (created, _) in list(ai_proposals.items()):
-                if now - created > 15 * 60:
-                    ai_proposals.pop(proposal_id, None)
-                    audit = ai_audit_by_id.get(proposal_id)
-                    if audit and audit['engineer_action'] is None:
-                        audit['engineer_action'] = 'UNRESOLVED'
-            while len(ai_proposals) + len(proposals) > 256:
-                oldest = min(ai_proposals, key=lambda item: ai_proposals[item][0])
-                ai_proposals.pop(oldest, None)
-                audit = ai_audit_by_id.get(oldest)
-                if audit and audit['engineer_action'] is None:
-                    audit['engineer_action'] = 'UNRESOLVED'
-            for proposal in proposals:
-                proposal_id = uuid.uuid4().hex
-                ai_proposals[proposal_id] = (now, proposal)
-                proposal_context = ai_advisor.build_proposal_context(
-                    state,
-                    [proposal['decision_key']],
-                    model=proposal['model'],
-                    provider=proposal.get('provider', 'groq'),
-                )
-                audit = {
-                    'proposal_id': proposal_id,
-                    'batch_id': batch_id,
-                    'request_duration_ms': duration_ms,
-                    'failure_category': failure_code or proposal.get('escalation_failure_category'),
-                    'response_mode': proposal.get('response_mode', 'STRICT_SCHEMA'),
-                    'repair_pass': proposal.get('repair_pass', 0),
-                    'created_at': now,
-                    'provider': proposal.get('provider', 'groq'),
-                    'escalated_from': proposal.get('escalated_from'),
-                    'escalation_failure_category': proposal.get('escalation_failure_category'),
-                    'model': proposal['model'],
-                    'prompt_version': proposal['prompt_version'],
-                    'source_digest': proposal['source_digest'],
-                    'target_digest': proposal['target_digest'],
-                    'target_device': proposal['target_device'],
-                    'state_digest': proposal['state_digest'],
-                    'context_digest': proposal['context_digest'],
-                    'base_context_digest': proposal.get('base_context_digest', proposal['context_digest']),
-                    'decision_key': proposal['decision_key'],
-                    'target_field': proposal_context['request']['decisions'][0].get('target_field'),
-                    'candidate_count': len(proposal_context['request']['decisions'][0].get('candidates', ())),
-                    'request_bytes': proposal_context.get('request_bytes', 0),
-                    'review_context': proposal_context['request']['decisions'][0],
-                    'proposal': {
-                        'action': proposal['action'],
-                        'proposed_value': proposal['proposed_value'],
-                        'target_scope': proposal['target_scope'],
-                        'evidence_refs': proposal['evidence_refs'],
-                    },
-                    'validation_result': {
-                        'status': proposal.get('validation_status', 'VALID'),
-                        'findings': proposal.get('validation_findings', []),
-                    },
-                    'engineer_action': None,
-                    'final_value': None,
-                }
-                ai_audit.append(audit)
-                ai_audit_by_id[proposal_id] = audit
-                while len(ai_audit) > 5000:
-                    removed = ai_audit.pop(0)
-                    ai_audit_by_id.pop(removed.get('proposal_id'), None)
-                result.append({**proposal, 'proposal_id': proposal_id})
-        return jsonify({'success': True, 'proposals': result, 'failure_category': failure_code,
-                        'failures': failure_details})
-
-    @app.route('/api/migration/ai/approve', methods=['POST'])
-    def approve_migration_ai_proposal():
-        payload = request.get_json(silent=True)
-        if not isinstance(payload, dict):
-            return jsonify({'success': False, 'error': 'A JSON object is required'}), 400
-        proposal_id = payload.get('proposal_id')
-        with ai_proposal_lock:
-            record = ai_proposals.get(proposal_id) if isinstance(proposal_id, str) else None
-        if record is None:
-            return jsonify({'success': False, 'error': 'This AI proposal expired; request a new proposal.'}), 409
-        if time.time() - record[0] > 15 * 60:
-            with ai_proposal_lock:
-                if ai_proposals.get(proposal_id) is record:
-                    ai_proposals.pop(proposal_id, None)
-                    audit = ai_audit_by_id.get(proposal_id)
-                    if audit and audit['engineer_action'] is None:
-                        audit['engineer_action'] = 'UNRESOLVED'
-            return jsonify({'success': False, 'error': 'This AI proposal expired; request a new proposal.'}), 409
-        try:
-            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-            if entry is None:
-                raise ValueError('A valid FortiGate preview_id is required')
-            state = _build_migration_review_state(entry, payload)
-            proposal = record[1]
-            confirmed, validated = ai_advisor.approve_proposals_as_engineer(state, [proposal])
-            validated = validated[0]
-            target_context = state['target_context']
-            with ai_proposal_lock:
-                if ai_proposals.get(proposal_id) is not record:
-                    raise ValueError('This AI proposal has already been used')
-                ai_proposals.pop(proposal_id, None)
-                audit = ai_audit_by_id.get(proposal_id)
-                if audit:
-                    audit['engineer_action'] = 'APPROVED'
-                    audit['final_value'] = validated['proposed_value']
-            return jsonify({
-                'success': True,
-                'approved_count': 1,
-                'decisions': confirmed.to_dict(),
-                'decision_document': build_decision_document(
-                    entry.source_digest, confirmed, target_context.metadata
-                ),
-            })
-        except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 409
-
-    @app.route('/api/migration/ai/approve-bulk', methods=['POST'])
-    def approve_migration_ai_proposals():
-        payload = request.get_json(silent=True)
-        try:
-            if not isinstance(payload, dict):
-                raise ValueError('A JSON object is required')
-            proposal_ids = payload.get('proposal_ids')
-            if (not isinstance(proposal_ids, list) or not proposal_ids or len(proposal_ids) > 64
-                    or any(not isinstance(item, str) or not item for item in proposal_ids)
-                    or len(set(proposal_ids)) != len(proposal_ids)):
-                raise ValueError('proposal_ids must contain 1 to 64 unique proposal IDs')
-            with ai_proposal_lock:
-                records = {key: ai_proposals.get(key) for key in proposal_ids}
-            now = time.time()
-            if any(record is None or now - record[0] > 15 * 60 for record in records.values()):
-                raise ValueError('One or more AI proposals expired; request current proposals.')
-            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-            if entry is None:
-                raise ValueError('A valid FortiGate preview_id is required')
-            state = _build_migration_review_state(entry, payload)
-            proposals = [records[key][1] for key in proposal_ids]
-            confirmed, validated = ai_advisor.approve_proposals_as_engineer(state, proposals)
-            target_context = state['target_context']
-            with ai_proposal_lock:
-                if any(ai_proposals.get(key) is not record for key, record in records.items()):
-                    raise ValueError('One or more AI proposals have already been used')
-                for key in proposal_ids:
-                    ai_proposals.pop(key, None)
-                    audit = ai_audit_by_id.get(key)
-                    if audit:
-                        item = next(value for value in validated if value['decision_key'] == audit['decision_key'])
-                        audit['engineer_action'] = 'APPROVED'
-                        audit['final_value'] = item['proposed_value']
-            return jsonify({
-                'success': True,
-                'approved_count': len(validated),
-                'decisions': confirmed.to_dict(),
-                'decision_document': build_decision_document(
-                    entry.source_digest, confirmed, target_context.metadata
-                ),
-            })
-        except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 409
-
-    @app.route('/api/migration/ai/outcome', methods=['POST'])
-    def record_migration_ai_outcome():
-        payload = request.get_json(silent=True)
-        if not isinstance(payload, dict):
-            return jsonify({'success': False, 'error': 'A JSON object is required'}), 400
-        proposal_id = payload.get('proposal_id')
-        action = payload.get('engineer_action')
-        final_value = payload.get('final_value')
-        if not isinstance(action, str) or action not in {'MODIFIED', 'REJECTED', 'UNRESOLVED'}:
-            return jsonify({'success': False, 'error': 'engineer_action must be MODIFIED, REJECTED, or UNRESOLVED'}), 400
-        if action == 'MODIFIED' and (not isinstance(final_value, str) or not final_value.strip()):
-            return jsonify({'success': False, 'error': 'A final_value is required for a modified proposal'}), 400
-        with ai_proposal_lock:
-            audit = ai_audit_by_id.get(proposal_id) if isinstance(proposal_id, str) else None
-            if audit is None:
-                return jsonify({'success': False, 'error': 'This AI proposal is no longer available for audit.'}), 404
-            if audit['engineer_action'] is not None:
-                return jsonify({'success': False, 'error': 'This AI proposal already has a recorded outcome.'}), 409
-            audit['engineer_action'] = action
-            audit['final_value'] = final_value.strip() if action == 'MODIFIED' else None
-            ai_proposals.pop(proposal_id, None)
-        return jsonify({'success': True})
-
-    @app.route('/api/migration/ai/audit/export', methods=['GET'])
-    def export_migration_ai_audit():
-        with ai_proposal_lock:
-            rows = list(ai_audit)
-        content = ''.join(json.dumps(item, separators=(',', ':')) + '\n' for item in rows)
-        return send_file(
-            io.BytesIO(content.encode('utf-8')),
-            mimetype='application/x-ndjson',
-            as_attachment=True,
-            download_name='migration_ai_audit.jsonl',
-        )
 
     @app.route('/api/migration/decisions/approve', methods=['POST'])
     def approve_migration_decisions():
@@ -956,9 +598,7 @@ def create_app(test_config=None):
                 raise ValueError('decision_keys must be a non-empty array')
             if any(not isinstance(key, str) for key in payload['decision_keys']) or len(set(payload['decision_keys'])) != len(payload['decision_keys']):
                 raise ValueError('decision_keys must contain unique strings')
-            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-            if entry is None:
-                raise ValueError('A valid FortiGate preview_id is required')
+            entry = _migration_source(payload)
             previous = load_decision_document(payload.get('decision_document'), entry.source_digest)
             analysis = _clone_preview(entry)
             target_context = _target_evidence(payload)
@@ -1014,9 +654,7 @@ def create_app(test_config=None):
             enabled = tuple(AutomationPolicy(item) for item in enabled)
             if len(set(enabled)) != len(enabled):
                 raise ValueError('enabled_policies must contain unique policy names')
-            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-            if entry is None:
-                raise ValueError('A valid FortiGate preview_id is required')
+            entry = _migration_source(payload)
             document = payload.get('decision_document')
             decisions = load_decision_document(document, entry.source_digest)
             analysis = _clone_preview(entry)
@@ -1046,9 +684,7 @@ def create_app(test_config=None):
         try:
             if not isinstance(payload, dict):
                 raise ValueError('A JSON object is required')
-            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-            if entry is None:
-                raise ValueError('A valid FortiGate preview_id is required')
+            entry = _migration_source(payload)
             document = payload.get('decision_document')
             previous = load_decision_document(document, entry.source_digest) if document else None
             analysis = _clone_preview(entry)
@@ -1082,9 +718,7 @@ def create_app(test_config=None):
         try:
             if not isinstance(payload, dict):
                 raise ValueError('A JSON object is required')
-            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-            if entry is None:
-                raise ValueError('A valid FortiGate preview_id is required')
+            entry = _migration_source(payload)
             decisions = load_decision_document(payload.get('decision_document'), entry.source_digest)
             return jsonify({'success': True, 'yaml': export_target_intent(decisions)})
         except (ValueError, KeyError, TypeError) as exc:
@@ -1097,9 +731,7 @@ def create_app(test_config=None):
             if not isinstance(payload, dict):
                 raise ValueError('A JSON object is required')
             if payload.get('rule_type') == 'REPEATED_ZONE_ACTION':
-                entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-                if entry is None:
-                    raise ValueError('A valid FortiGate preview_id is required')
+                entry = _migration_source(payload)
                 document = payload.get('decision_document')
                 previous = load_decision_document(document, entry.source_digest)
                 analysis = _clone_preview(entry)
@@ -1114,9 +746,7 @@ def create_app(test_config=None):
                 rule_type = MigrationRuleType.ZONE_TO_MEMBERS if raw_rule_type == 'APPLY_ZONE_TO_MEMBERS' else MigrationRuleType(raw_rule_type)
             except ValueError as exc:
                 raise ValueError('Unsupported migration rule') from exc
-            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-            if entry is None:
-                raise ValueError('A valid FortiGate preview_id is required')
+            entry = _migration_source(payload)
             document = payload.get('decision_document')
             previous = load_decision_document(document, entry.source_digest)
             analysis = _clone_preview(entry)
@@ -1161,9 +791,7 @@ def create_app(test_config=None):
     @app.route('/api/migration/decisions/export', methods=['POST'])
     def export_migration_decisions():
         payload = request.get_json(silent=True) or {}
-        entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-        if entry is None:
-            return jsonify({'success': False, 'error': 'A valid preview_id is required'}), 400
+        entry = _migration_source(payload)
         try:
             serialized = payload.get('decision_document', payload.get('decisions'))
             if serialized is None:
@@ -1185,9 +813,7 @@ def create_app(test_config=None):
     @app.route('/api/migration/decisions/import', methods=['POST'])
     def import_migration_decisions():
         payload = request.get_json(silent=True) or {}
-        entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
-        if entry is None:
-            return jsonify({'success': False, 'error': 'A valid preview_id is required'}), 400
+        entry = _migration_source(payload)
         try:
             decision_set = load_decision_document(payload.get('document'), entry.source_digest)
             target_evidence = (payload.get('document') or {}).get('target_evidence') if isinstance(payload.get('document'), dict) else None
@@ -1209,21 +835,8 @@ def create_app(test_config=None):
 
         uploaded = request.files.get('file')
         try:
-            preview_id = payload.get('preview_id')
-            entry = _lookup_preview(preview_id, 'fortigate') if preview_id else None
-            if uploaded is not None and uploaded.filename:
-                raw = uploaded.read()
-                uploaded_entry = _lookup_source_preview('fortigate', raw)
-                if uploaded_entry is not None:
-                    entry = uploaded_entry
-                    analysis = _clone_preview(entry)
-                else:
-                    analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
-                    entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
-            elif entry is not None:
-                analysis = _clone_preview(entry)
-            else:
-                return jsonify({'success': False, 'error': 'A valid preview_id or configuration file is required'}), 400
+            entry = _migration_source(payload)
+            analysis = entry.analysis
 
             _require_complete_collection(entry)
             serialized = payload.get('decision_document', payload.get('decisions', payload.get('decision_set')))
@@ -1294,11 +907,11 @@ def create_app(test_config=None):
             })
             plan_status = result.artifact_status
             artifact_id = uuid.uuid4().hex
-            with candidate_lock:
-                _expire_artifacts(reserve=1)
-                rendered_artifacts[artifact_id] = rendered
-                artifact_sources[artifact_id] = (analysis, mapping, decision_document, entry.source_name)
-                artifact_created_at[artifact_id] = time.time()
+            artifact = sign_envelope({
+                'artifact_id': artifact_id, 'commands': list(rendered.commands),
+                'command_count': len(rendered.commands), 'command_sha256': rendered.report['command_sha256'],
+                'report': rendered.report, 'decision_document': decision_document, 'mapping': mapping,
+            }, signing_key)
 
             counts = rendered.report['counts']
             render_counts = rendered.report['render_dispositions']
@@ -1358,7 +971,10 @@ def create_app(test_config=None):
                 'success': True,
                 'artifact_id': artifact_id,
                 'plan_status': plan_status,
-                'commands': len(rendered.commands),
+                'commands': list(rendered.commands),
+                'command_count': len(rendered.commands),
+                'command_sha256': artifact['command_sha256'],
+                'artifact': artifact,
                 'counts': {**counts, 'renderable': rendered.report['command_renderable']},
                 'render_dispositions': render_counts,
                 'render_summary': render_summary,
@@ -1390,16 +1006,19 @@ def create_app(test_config=None):
     @app.route('/api/migration/bundle', methods=['POST'])
     def migration_bundle():
         payload = request.get_json(silent=True) or {}
-        artifact_id = payload.get('artifact_id')
-        rendered = rendered_artifacts.get(artifact_id)
+        artifact_id = (payload.get('artifact') or {}).get('artifact_id')
+        rendered = _request_artifact(payload)
         if rendered is None:
             return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
         if not rendered.commands and rendered.report.get('plan_status') != 'READY_NO_CHANGES':
             return jsonify({'success': False, 'error': 'No PAN-OS commands are currently renderable. Complete the required target mappings first.'}), 422
-        source = artifact_sources.get(artifact_id)
-        if source is None:
-            return jsonify({'success': False, 'error': 'The migration source has expired'}), 400
-        analysis, mapping, decision_document, source_name = source
+        entry = _migration_source(payload)
+        _require_complete_collection(entry)
+        if entry.source_digest != rendered.report['source']['digest']:
+            raise ValueError('Bundle source does not match the signed artifact')
+        analysis, source_name = entry.analysis, entry.source_name
+        mapping = payload['artifact']['mapping']
+        decision_document = payload['artifact']['decision_document']
         bundle = io.BytesIO()
         workbook = io.BytesIO()
         try:
@@ -1418,16 +1037,13 @@ def create_app(test_config=None):
     @app.route('/api/migration/command-preview', methods=['POST'])
     def migration_command_preview():
         payload = request.get_json(silent=True) or {}
-        artifact_id = payload.get('artifact_id')
-        rendered = rendered_artifacts.get(artifact_id)
+        artifact_id = (payload.get('artifact') or {}).get('artifact_id')
+        rendered = _request_artifact(payload)
         if rendered is None:
             return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
         if not rendered.commands and rendered.report.get('plan_status') != 'READY_NO_CHANGES':
             return jsonify({'success': False, 'error': 'No PAN-OS commands are currently renderable. Complete the required target mappings first.'}), 422
-        source = artifact_sources.get(artifact_id)
-        if source is None:
-            return jsonify({'success': False, 'error': 'The migration source has expired'}), 400
-        _, _, decision_document, _ = source
+        decision_document = payload['artifact']['decision_document']
         decisions = decision_document['decisions']
         return jsonify({
             'success': True,
@@ -1446,7 +1062,7 @@ def create_app(test_config=None):
     @app.route('/api/migration/download', methods=['POST'])
     def migration_download():
         payload = request.get_json(silent=True) or {}
-        rendered = rendered_artifacts.get(payload.get('artifact_id'))
+        rendered = _request_artifact(payload)
         if rendered is None:
             return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
         if not rendered.commands and rendered.report.get('plan_status') != 'READY_NO_CHANGES':
@@ -1482,10 +1098,10 @@ def create_app(test_config=None):
         if time.time() - session.validated_at > _DEPLOYMENT_SESSION_TTL_SECONDS:
             deployment_sessions.pop(session_id, None)
             raise ValueError('The validated candidate deployment session has expired; prepare the candidate again')
-        artifact_id = payload.get('artifact_id')
+        artifact_id = (payload.get('artifact') or {}).get('artifact_id')
         if artifact_id != session.artifact_id:
             raise ValueError('The deployment session belongs to a different migration artifact')
-        rendered = rendered_artifacts.get(session.artifact_id)
+        rendered = _request_artifact(payload)
         if rendered is None:
             deployment_sessions.pop(session_id, None)
             raise ValueError('The migration artifact for this deployment session has expired')
@@ -1496,7 +1112,7 @@ def create_app(test_config=None):
             deployment_sessions.pop(session_id, None)
             raise ValueError('The migration artifact changed after candidate validation')
         options = _deployment_options(payload)
-        if (options.host, options.port, options.username) != (session.host, session.port, session.username):
+        if (options.host.casefold(), options.port) != (session.host.casefold(), session.port):
             raise ValueError('The deployment session belongs to a different PAN-OS target identity')
         return session, rendered, options
 
@@ -1505,8 +1121,8 @@ def create_app(test_config=None):
     def deploy_candidate():
         try:
             payload = request.get_json(silent=True) or {}
-            artifact_id = payload.get('artifact_id')
-            rendered = rendered_artifacts.get(artifact_id)
+            artifact_id = (payload.get('artifact') or {}).get('artifact_id')
+            rendered = _request_artifact(payload)
             if rendered is None:
                 raise ValueError('A current validated rendered migration is required')
             if not rendered.commands:
@@ -1516,8 +1132,7 @@ def create_app(test_config=None):
                 if (session.host.casefold(), session.port) == (options.host.casefold(), options.port):
                     deployment_sessions.pop(session_id, None)
             result = PANSSHDeployer(options).deploy(rendered)
-            source = artifact_sources.get(artifact_id)
-            decision_document = source[2] if source else None
+            decision_document = payload['artifact']['decision_document']
             validation_feedback = deployment_validation_feedback(rendered, decision_document, result.validation)
             succeeded = (
                 result.failure_message is None
@@ -1534,7 +1149,6 @@ def create_app(test_config=None):
                     command_sha256=rendered.report['command_sha256'],
                     host=options.host,
                     port=options.port,
-                    username=options.username,
                     validation_job_id=result.validation.job_id,
                     validated_at=time.time(),
                 )
@@ -1556,8 +1170,7 @@ def create_app(test_config=None):
             payload = request.get_json(silent=True) or {}
             session, rendered, options = _require_deployment_session(payload)
             result = PANSSHDeployer(replace(options, validate=True)).validate()
-            source = artifact_sources.get(session.artifact_id)
-            decision_document = source[2] if source else None
+            decision_document = payload['artifact']['decision_document']
             validation_feedback = deployment_validation_feedback(rendered, decision_document, result)
             if result.status == 'SUCCESS':
                 deployment_sessions[session.session_id] = replace(

@@ -248,7 +248,13 @@ The environment file supplies server settings and secrets at runtime. For a comp
 
 The container listens on port `5000` and runs as the non-root `fwmigrate` user. SSH collection and deployment use strict host-key checking, so mount the company's trusted `known_hosts` file at `/home/fwmigrate/.ssh/known_hosts`. Allow outbound access from the container to firewall management interfaces, FMC/Check Point APIs as used, and the company AI endpoint.
 
-Gunicorn uses one worker because previews, rendered artifacts, AI design sessions, and deployment sessions are held in process memory. A container restart loses those in-memory sessions and artifacts. Keep the single-worker setting until that state is moved to shared storage.
+Workflow state belongs to each browser profile in native IndexedDB. It contains sanitized vendor-native evidence, previews, decisions, advisory AI state, and signed rendered artifacts. Connection usernames and passwords stay in React memory. **New workspace** clears local workflow data and resets the UI. Workspaces expire after 24 hours of inactivity; profiles on a shared computer share local browser storage.
+
+Set `FWMIGRATE_WORKSPACE_SIGNING_KEY` to a stable random secret of at least 32 bytes in the runtime environment file. Use the same key for every server handling the workspace. This keeps browser-held artifacts and AI designs valid across restarts. Without this setting, a temporary key is generated and existing signed artifacts must be rebuilt after restart. Key rotation also requires rebuilding signed artifacts. Never bake the key into the image or expose it to the browser.
+
+Source preview, Excel, migration review, planning, and AI approval reconstruct analysis from request-carried source evidence. The backend retains no preview, source, rendered artifact, or AI workflow cache. API clients must send `source` (sanitized native evidence or collection snapshot), optional `target_source`, decisions, and target device; opaque preview IDs are no longer accepted. `/api/migrate` returns a signed `artifact` envelope. Export and deployment requests carry that envelope. Bundle export also carries the matching source. AI actions carry the signed `design_session`; audit export is local to the current browser workspace.
+
+Gunicorn still uses one worker for candidate deployment coordination. Only transient target host/port, artifact identity/count/hash, validation job/time, and session nonce remain server-side. Same-target operations serialize; different targets can run concurrently. A restart invalidates candidate sessions and requires another prepare/validate step. Commit remains explicit. Multiple deployment workers or replicas require shared candidate coordination before they are supported.
 
 The source-reporting workflow is:
 

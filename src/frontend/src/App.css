@@ -273,6 +273,8 @@
 .validation-filters label { display: grid; gap: 4px; color: var(--text-muted); font-size: 13px; }
 .validation-filters input, .validation-filters select { min-width: 145px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-main); }
 .filter-clear, .finding-inline-link, .finding-object-link, .finding-inspector-header button { border: 0; background: none; color: var(--color-primary); font: inherit; cursor: pointer; }
+.filter-clear:not(:disabled) { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border-radius: var(--radius-sm); padding: 8px 10px; }
+.filter-clear:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 18%, var(--surface)); }
 .validation-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .validation-table-wrap { min-width: 0; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .finding-severity { display: inline-block; padding: 2px 7px; border-radius: 999px; background: var(--canvas); color: var(--text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }

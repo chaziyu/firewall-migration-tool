@@ -9,42 +9,6 @@ import fwmigrate.web as web
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationPlan, PANMigrationStatus, PlannedAddress
 
 
-def test_artifact_limit_and_expiry_remove_sources_and_deployment_sessions(monkeypatch):
-    import weakref
-    from tests.test_web_candidate_sessions import _ready_artifact, _SuccessfulDeployer, CREDS
-
-    analyses = []
-    clone = web._clone_preview
-
-    def tracked_clone(entry):
-        analysis = clone(entry)
-        analyses.append(weakref.ref(analysis.extracted.config))
-        return analysis
-
-    monkeypatch.setattr(web, "_clone_preview", tracked_clone)
-    now = [1_800_000_000.0]
-    monkeypatch.setattr(web.time, "time", lambda: now[0])
-    monkeypatch.setattr(web, "PANSSHDeployer", _SuccessfulDeployer)
-    client = create_app({"TESTING": True, "MIGRATION_ARTIFACT_MAX": 2,
-                         "MIGRATION_ARTIFACT_TTL_SECONDS": 60}).test_client()
-    first = _ready_artifact(client)
-    session = client.post("/api/deploy", json={**CREDS, "artifact_id": first}).get_json()["deployment_session_id"]
-    second, third = _ready_artifact(client), _ready_artifact(client)
-    assert analyses[0]() is None
-    assert sum(reference() is not None for reference in analyses) == 2
-    for endpoint in ("command-preview", "download", "bundle"):
-        assert client.post(f"/api/migration/{endpoint}", json={"artifact_id": first}).status_code == 400
-        assert client.post(f"/api/migration/{endpoint}", json={"artifact_id": second}).status_code == 200
-    assert client.post("/api/commit", json={**CREDS, "artifact_id": first,
-        "deployment_session_id": session}).status_code == 400
-    session = client.post("/api/deploy", json={**CREDS, "artifact_id": third}).get_json()["deployment_session_id"]
-    now[0] += 61
-    assert client.post("/api/migration/bundle", json={"artifact_id": third}).status_code == 400
-    assert client.post("/api/commit", json={**CREDS, "artifact_id": third,
-        "deployment_session_id": session}).status_code == 400
-    assert all(reference() is None for reference in analyses)
-
-
 FIXTURE = Path(__file__).parent / "fixtures" / "fortigate" / "palo_alto_mvp.conf"
 MAPPING = {
     "vdoms": {"root": {"vsys": "vsys1", "virtual_router": "default"}},
@@ -62,12 +26,12 @@ def test_duplicate_interface_imports_cannot_reach_reviewed_artifact_commands():
 
     client = create_app({"TESTING": True}).test_client()
     preview_id = client.post('/api/preview', data={'source_vendor': 'fortigate',
-        'file': (io.BytesIO(FIXTURE.read_bytes()), FIXTURE.name)}, content_type='multipart/form-data').get_json()['preview_id']
+        'file': (io.BytesIO(FIXTURE.read_bytes()), FIXTURE.name)}, content_type='multipart/form-data').get_json()['source_evidence']
     mapping = deepcopy(MAPPING)
     mapping['interfaces']['root']['wan']['target_interface'] = 'ethernet1/1'
-    result = client.post('/api/migrate', json={'preview_id': preview_id, 'mapping': mapping}).get_json()
+    result = client.post('/api/migrate', json={'source': preview_id, 'mapping': mapping}).get_json()
     assert len([item for item in result['target_findings'] if item['code'] == 'TARGET_INTERFACE_ALREADY_ASSIGNED']) == 2
-    artifact = {'artifact_id': result['artifact_id']}
+    artifact = {'artifact': result['artifact'], 'source': preview_id}
     command_preview = client.post('/api/migration/command-preview', json=artifact).get_json()
     command_download = client.post('/api/migration/download', json=artifact).data.decode()
     assert 'set network interface' not in command_download
@@ -88,20 +52,20 @@ def test_preview_download_and_bundle_share_one_rendered_artifact():
         "file": (io.BytesIO(FIXTURE.read_bytes()), FIXTURE.name),
     }, content_type="multipart/form-data").get_json()
     plan = client.post("/api/migrate", json={
-        "preview_id": preview["preview_id"], "mapping": MAPPING,
+        "source": preview["source_evidence"], "mapping": MAPPING,
     }).get_json()
-    assert plan["commands"] > 0
+    assert plan["command_count"] > 0
     assert set(plan["render_dispositions"]) == {"CREATE", "REUSE", "BLOCK"}
     assert all(item["decision_keys"] and "render_disposition" in item for item in plan["report"]["items"])
 
-    payload = {"artifact_id": plan["artifact_id"]}
+    payload = {"artifact": plan["artifact"], "source": preview["source_evidence"]}
     command_preview = client.post("/api/migration/command-preview", json=payload)
     download = client.post("/api/migration/download", json=payload)
     bundle_response = client.post("/api/migration/bundle", json=payload)
 
     assert command_preview.status_code == download.status_code == bundle_response.status_code == 200
     preview_data = command_preview.get_json()
-    assert preview_data["command_count"] == plan["commands"]
+    assert preview_data["command_count"] == plan["command_count"]
     assert hashlib.sha256("\n".join(preview_data["commands"]).encode()).hexdigest() == preview_data["command_sha256"]
     assert preview_data["command_sha256"] == plan["report"]["command_sha256"]
     assert plan["report"]["summary"]["render_dispositions"] == plan["render_dispositions"]
@@ -116,8 +80,8 @@ def test_preview_and_download_block_empty_migration_artifact():
     preview = client.post("/api/preview", data={
         "file": (io.BytesIO(FIXTURE.read_bytes()), FIXTURE.name),
     }, content_type="multipart/form-data").get_json()
-    plan = client.post("/api/migrate", json={"preview_id": preview["preview_id"], "mapping": {}}).get_json()
-    payload = {"artifact_id": plan["artifact_id"]}
+    plan = client.post("/api/migrate", json={"source": preview["source_evidence"], "mapping": {}}).get_json()
+    payload = {"artifact": plan["artifact"], "source": preview["source_evidence"]}
 
     assert client.post("/api/migration/command-preview", json=payload).status_code == 422
     assert client.post("/api/migration/download", json=payload).status_code == 422
@@ -141,8 +105,8 @@ def test_all_reuse_migration_is_ready_with_an_empty_artifact(monkeypatch):
     preview = client.post("/api/preview", data={
         "file": (io.BytesIO(FIXTURE.read_bytes()), FIXTURE.name),
     }, content_type="multipart/form-data").get_json()
-    result = client.post("/api/migrate", json={"preview_id": preview["preview_id"], "mapping": MAPPING}).get_json()
-    payload = {"artifact_id": result["artifact_id"]}
+    result = client.post("/api/migrate", json={"source": preview["source_evidence"], "mapping": MAPPING}).get_json()
+    payload = {"artifact": result["artifact"], "source": preview["source_evidence"]}
     command_preview = client.post("/api/migration/command-preview", json=payload)
     download = client.post("/api/migration/download", json=payload)
     bundle = client.post("/api/migration/bundle", json=payload)
@@ -163,14 +127,14 @@ def test_artifact_report_contains_safe_target_review_provenance():
     client = create_app({"TESTING": True}).test_client()
     preview = client.post("/api/preview", data={
         "file": (io.BytesIO(FIXTURE.read_bytes()), FIXTURE.name),
-    }, content_type="multipart/form-data").get_json()["preview_id"]
+    }, content_type="multipart/form-data").get_json()["source_evidence"]
     target = client.post("/api/preview", data={
         "source_vendor": "palo_alto",
         "file": (io.BytesIO((Path(__file__).parent / "fixtures" / "palo_alto" / "integrated_firewall.xml").read_bytes()), "target.xml"),
-    }, content_type="multipart/form-data").get_json()["preview_id"]
+    }, content_type="multipart/form-data").get_json()["source_evidence"]
     result = client.post("/api/migrate", json={
-        "preview_id": preview, "mapping": MAPPING,
-        "target_preview_id": target, "target_device": "integrated-fw",
+        "source": preview, "mapping": MAPPING,
+        "target_source": target, "target_device": "integrated-fw",
     }).get_json()
     report = result["report"]
     assert report["target_evidence"]["vendor"] == "palo_alto"

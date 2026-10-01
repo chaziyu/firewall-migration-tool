@@ -15,7 +15,7 @@ function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string,
     <div className="migration-toolbar">
       <label className="field">Search {kind}<input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} /></label>
       {!!statuses.length && <label className="field">Support status<select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1) }}><option value="">All statuses</option>{statuses.map((value) => <option key={value}>{value}</option>)}</select></label>}
-      <button type="button" className="filter-clear" onClick={() => { setSearch(''); setStatus(''); setPage(1) }}>Clear filters</button>
+      <button type="button" className="filter-clear" disabled={!search && !status} onClick={() => { setSearch(''); setStatus(''); setPage(1) }}>Clear filters</button>
     </div>
     {!filtered.length && <p>No {kind} match the current filters.</p>}
     {filtered.slice((currentPage - 1) * 50, currentPage * 50).map((row, index) => {
