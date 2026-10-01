@@ -139,6 +139,14 @@ def _extract_static_routes(
                 explicit.update({"nexthop_type", "nexthop"})
                 if branch.tag == "ip-address":
                     explicit.add("nexthop_ip_address")
+            if hop is not None:
+                hop_extra = raw_extra(hop, {branch.tag} if branch is not None else set())
+                if branch is not None:
+                    branch_extra = raw_extra(branch, set())
+                    if branch_extra:
+                        hop_extra[branch.tag] = branch_extra
+                if hop_extra:
+                    extra["nexthop"] = hop_extra
             bfd = route.find("bfd")
             routes.append(PANStaticRoute(
                 name=route.get("name"),

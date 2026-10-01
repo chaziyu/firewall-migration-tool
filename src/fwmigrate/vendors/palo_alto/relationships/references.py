@@ -54,8 +54,6 @@ class ReferenceIndex:
                 return False
             if item.scope.kind == "shared":
                 return "shared:shared" in allowed
-            if item.scope.kind == "device-group":
-                return f"device-group:{item.scope.name}" in allowed
             return pan_scope_identity(item.scope) in allowed
         return tuple(item for item in objects if item.family == family and item.name == name and visible(item))
 

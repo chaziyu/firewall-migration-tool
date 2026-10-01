@@ -15,9 +15,9 @@
 
 ## 1. Extraction Principles
 
-### 1.1 Prefer set-format configuration output
+### 1.1 CLI hierarchy is the semantic reference; project source input is XML
 
-The PAN-OS guide documents this workflow:
+The PAN-OS guide documents a set-format CLI workflow:
 
 ```text
 set cli config-output-format set
@@ -32,7 +32,7 @@ admin@fw1> set cli config-output-format set
 admin@fw1# show deviceconfig system snmp-setting
 ```
 
-This produces full `set ...` commands and is the preferred source form for deterministic parsing.
+Use that hierarchy as the semantic authority for PAN-OS configuration structure. The current project source-reporting pipeline accepts PAN-OS / Panorama XML configuration only. PAN-OS `set` commands are migration output and are not a supported source-input format. Do not add set-format source parsing merely because the official CLI hierarchy is used as a reference.
 
 ### 1.2 Preserve source scope
 

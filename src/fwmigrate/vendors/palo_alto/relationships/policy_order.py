@@ -64,18 +64,18 @@ def build_policy_order(
         selected: list[tuple[str, object]] = []
 
         if target.kind == "device-group":
-            ancestors = dict(hierarchy.ancestors).get(target.name, ())
-            chain = (*reversed(ancestors), target.name)
+            ancestors = dict(hierarchy.ancestors).get(target_id, ())
+            chain = (*reversed(ancestors), target_id)
 
-            def dg_rules(position: str, names) -> list[tuple[str, object]]:
+            def dg_rules(position: str, identities) -> list[tuple[str, object]]:
                 ordered: list[tuple[str, object]] = []
-                for name in names:
+                for identity in identities:
                     ordered.extend(_ordered([
                         (kind, rule)
                         for kind, rule in security
                         if rule.scope
                         and rule.scope.kind == "device-group"
-                        and rule.scope.name == name
+                        and pan_scope_identity(rule.scope) == identity
                         and rule.rulebase_position == position
                     ]))
                 return ordered

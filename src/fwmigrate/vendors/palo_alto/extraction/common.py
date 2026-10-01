@@ -16,7 +16,11 @@ def values(element: ET.Element | None, tag: str) -> list[str] | None:
     child = element.find(tag) if element is not None else None
     if child is None:
         return None
-    return [(item.text or item.get("name") or "").strip() for item in child]
+    return [
+        (item.text or item.get("name") or "").strip()
+        for item in child
+        if item.tag == "member"
+    ]
 
 
 def raw_extra(element: ET.Element, known: set[str]) -> dict[str, Any]:
@@ -49,7 +53,15 @@ def source_fields(
     explicit.update(
         target for source, target in (handled_nested or {}).items() if element.find(source) is not None
     )
-    return raw_extra(element, set(known)), explicit
+    extra = raw_extra(element, set(known))
+    for source in spec.member_list_fields:
+        container = element.find(source)
+        if container is None:
+            continue
+        nested_extra = raw_extra(container, {"member"})
+        if nested_extra:
+            extra.setdefault("nested", {})[source] = nested_extra
+    return extra, explicit
 
 
 def source_scalar(element: ET.Element | None, tag: str) -> str | None:
@@ -61,7 +73,14 @@ def source_members(element: ET.Element | None, tag: str) -> list[str] | None:
 
 
 def source_entry_names(element: ET.Element | None, tag: str) -> list[str] | None:
-    return values(element, tag)
+    child = element.find(tag) if element is not None else None
+    if child is None:
+        return None
+    return [
+        (item.get("name") or item.text or "").strip()
+        for item in child
+        if item.tag == "entry"
+    ]
 
 
 def source_model_metadata(element: ET.Element, spec: PANPathSpec) -> tuple[dict[str, Any], set[str]]:
