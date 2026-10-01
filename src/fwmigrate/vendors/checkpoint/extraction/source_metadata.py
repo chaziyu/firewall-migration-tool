@@ -14,6 +14,12 @@ class CheckPointSourceMetadata:
     management_server: str | None = None
     selected_scope: dict[str, Any] = field(default_factory=dict)
     collection_scope: str | None = None
+    collector_version: str | None = None
+    collection_timestamp: str | None = None
+    successful_command_count: int | None = None
+    failed_command_count: int | None = None
+    unsupported_command_count: int | None = None
+    permission_denied_count: int | None = None
 
 
 def capture_source_metadata(bundle: CheckPointExportBundle) -> CheckPointSourceMetadata:
@@ -35,6 +41,12 @@ def capture_source_metadata(bundle: CheckPointExportBundle) -> CheckPointSourceM
         management_server=bundle.management_server,
         selected_scope=selected_scope,
         collection_scope=bundle.collection_scope,
+        collector_version=bundle.collector_version,
+        collection_timestamp=bundle.collection_timestamp,
+        successful_command_count=bundle.successful_command_count,
+        failed_command_count=bundle.failed_command_count,
+        unsupported_command_count=bundle.unsupported_command_count,
+        permission_denied_count=bundle.permission_denied_count,
     )
 
 
