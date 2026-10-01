@@ -13,7 +13,7 @@ SHEET_ORDER = (
     "Access Profiles", "Firewall Users", "APBR", "Remote Access",
     "Policy Relationships", "Policy Reference Relationships",
     "NAT Usage", "NAT Pool Usage", "VPN Relationships", "Secure Connect",
-    "APBR Relationships", "Inheritance",
+    "APBR Relationships", "Inheritance", "Effective Objects",
 )
 
 SHEET_HEADERS = {
