@@ -98,7 +98,12 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
 
     def _record_unsupported(self, line_number: int, line: str, reason: str) -> None:
         self.config.unsupported_commands.append(
-            {"line_number": line_number, "raw_line": sanitize_raw_text(line), "reason": reason}
+            {
+                "line_number": line_number,
+                "raw_line": sanitize_raw_text(line),
+                "reason": reason,
+                "source_context": self._line_contexts.get(line_number),
+            }
         )
 
     def _record_diagnostic(
@@ -107,6 +112,7 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
     ) -> None:
         diagnostic = CiscoDiagnostic(
             line_number=line_number, section=section, object_name=object_name,
+            source_context=self._line_contexts.get(line_number),
             raw_line=sanitize_raw_text(line), reason=reason, extraction_effect=extraction_effect,
             severity="error" if extraction_effect == "PARSE_ERROR" else "warning",
         )
