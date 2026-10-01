@@ -191,7 +191,7 @@ def test_acl_consumer_bookkeeping_does_not_mutate_vendor_source_config():
         "access-group OUT in interface outside\n"
     )
 
-    assert result.config.acl_consumers == {}
+    assert not hasattr(result.config, "acl_consumers")
     assert len(result.derived.acl_relationships.bindings) == 1
     binding = result.derived.acl_relationships.bindings[0]
     assert binding.acl_name == "OUT"
