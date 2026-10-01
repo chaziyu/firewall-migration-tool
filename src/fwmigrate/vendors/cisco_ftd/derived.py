@@ -3,70 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any
 
 from .model import CiscoFTDConfig
 from .relationships.interface_topology import FTDInterfaceTopology, build_ftd_interface_topology
+from .relationships.references import FTDReferenceIssue, FTDReferenceKind, FTDReferenceResolver
 from .transform.routes import NormalizedFTDRoute, normalize_ftd_routes
-
-
-class FTDReferenceKind(str, Enum):
-    NETWORK_ADDRESS = "NETWORK_ADDRESS"
-    NETWORK_GROUP = "NETWORK_GROUP"
-    SERVICE_OBJECT = "SERVICE_OBJECT"
-    SERVICE_GROUP = "SERVICE_GROUP"
-    SECURITY_ZONE = "SECURITY_ZONE"
-    INTERFACE = "INTERFACE"
-    TIME_RANGE = "TIME_RANGE"
-    REALM = "REALM"
-    REALM_USER = "REALM_USER"
-    REALM_USER_GROUP = "REALM_USER_GROUP"
-    LOCAL_REALM_USER = "LOCAL_REALM_USER"
-    FMC_USER_ROLE = "FMC_USER_ROLE"
-    INTRUSION_POLICY = "INTRUSION_POLICY"
-    FILE_POLICY = "FILE_POLICY"
-    DECRYPTION_POLICY = "DECRYPTION_POLICY"
-    DNS_POLICY = "DNS_POLICY"
-    SECURITY_INTELLIGENCE_SOURCE = "SECURITY_INTELLIGENCE_SOURCE"
-    VARIABLE_SET = "VARIABLE_SET"
-    SLA_MONITOR = "SLA_MONITOR"
-    VPN_ENDPOINT = "VPN_ENDPOINT"
-    IKE_POLICY = "IKE_POLICY"
-    IPSEC_PROPOSAL = "IPSEC_PROPOSAL"
-    APPLICATION = "APPLICATION"
-    URL_CATEGORY = "URL_CATEGORY"
-    VLAN_OBJECT = "VLAN_OBJECT"
-    VIRTUAL_ROUTER = "VIRTUAL_ROUTER"
-    ADDRESS_POOL = "ADDRESS_POOL"
-    CERTIFICATE = "CERTIFICATE"
-    CERTIFICATE_MAP = "CERTIFICATE_MAP"
-    GROUP_POLICY = "GROUP_POLICY"
-    PREFILTER_POLICY = "PREFILTER_POLICY"
-    NETWORK_ANALYSIS_POLICY = "NETWORK_ANALYSIS_POLICY"
-    RAVPN_CONNECTION_PROFILE = "RAVPN_CONNECTION_PROFILE"
-    INTRUSION_RULE_GROUP = "INTRUSION_RULE_GROUP"
-    INTRUSION_RULE_BEHAVIOR = "INTRUSION_RULE_BEHAVIOR"
-    ACCESS_CONTROL_POLICY = "ACCESS_CONTROL_POLICY"
-    IDENTITY_POLICY = "IDENTITY_POLICY"
-    ACCESS_CONTROL_DEFAULT_ACTION = "ACCESS_CONTROL_DEFAULT_ACTION"
-
-
-@dataclass(frozen=True)
-class FTDReferenceIssue:
-    owner: str
-    field: str
-    reference: str
-    source_plane: str
-    source_context: str | None = None
-    domain_id: str | None = None
-    status: str = "UNRESOLVED"
-    reference_id: str | None = None
-    reference_name: str | None = None
-    expected_kinds: tuple[str, ...] = ()
-    found_kinds: tuple[str, ...] = ()
-    scope: str | None = None
-    reason: str = "unresolved"
 
 
 @dataclass(frozen=True)
@@ -88,18 +30,7 @@ class FTDDerivedViews:
 
 
 def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
-    by_id: dict[tuple[str | None, FTDReferenceKind, str], list[Any]] = {}
-    by_name: dict[tuple[str | None, FTDReferenceKind, str], list[Any]] = {}
-
-    def key_scope(record: Any) -> str:
-        return record.domain_id or f"{record.source_plane}:{record.source_context or ''}"
-
-    def register(kind: FTDReferenceKind, records: Any) -> None:
-        for item in records:
-            domain = key_scope(item)
-            if item.source_id:
-                by_id.setdefault((domain, kind, str(item.source_id)), []).append(item)
-            by_name.setdefault((domain, kind, item.name), []).append(item)
+    resolver = FTDReferenceResolver()
 
     for kind, records in (
         (FTDReferenceKind.NETWORK_ADDRESS, config.network_addresses),
@@ -139,68 +70,16 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
         (FTDReferenceKind.NETWORK_ANALYSIS_POLICY, config.network_analysis_policies),
         (FTDReferenceKind.RAVPN_CONNECTION_PROFILE, config.ra_vpn_connection_profiles),
     ):
-        register(kind, records)
+        resolver.register(kind, records)
     si_families = {"customsiurllists", "customsiiplists", "siurllists", "siurlfeeds", "siiplists", "siipfeeds"}
-    register(FTDReferenceKind.SECURITY_INTELLIGENCE_SOURCE,
-             [item for item in config.native_resources if item.source_attributes.get("resource_type") in si_families])
+    resolver.register(FTDReferenceKind.SECURITY_INTELLIGENCE_SOURCE,
+                      [item for item in config.native_resources
+                       if item.source_attributes.get("resource_type") in si_families])
 
-    issues: list[FTDReferenceIssue] = []
-    resolved: list[dict[str, str | None]] = []
-    identity_relationships: list[dict[str, Any]] = []
-
-    def identity(value: Any) -> tuple[str | None, str | None]:
-        if isinstance(value, dict):
-            return (str(value["id"]) if value.get("id") is not None else None,
-                    str(value["name"]) if value.get("name") is not None else None)
-        if hasattr(value, "source_id"):
-            return (str(value.source_id) if value.source_id else None, str(value.name) if value.name else None)
-        return (None, str(value)) if value is not None else (None, None)
-
-    def resolve(owner: Any, field_name: str, value: Any, kinds: tuple[FTDReferenceKind, ...], *,
-                special: frozenset[str] = frozenset(), scope: str | None = None,
-                relationship_type: str | None = None) -> None:
-        ref_id, ref_name = identity(value)
-        if ref_id is None and ref_name is None:
-            return
-        if ref_id is None and ref_name and ref_name.casefold() in special:
-            return
-        domain = key_scope(owner)
-        source_type = getattr(value, "source_type", None)
-        if source_type and source_type.casefold() in {"securityzone", "security-zone"}:
-            kinds = tuple(dict.fromkeys((*kinds, FTDReferenceKind.SECURITY_ZONE)))
-        elif source_type and source_type.casefold().replace("_", "").replace("-", "") in {"localrealmuser", "localuser"}:
-            kinds = (FTDReferenceKind.LOCAL_REALM_USER,)
-        found = ([item for kind in kinds for item in by_id.get((domain, kind, ref_id), ())] if ref_id else
-                 [item for kind in kinds for item in by_name.get((domain, kind, ref_name), ())])
-        if scope:
-            found = [item for item in found if item.device_id == scope]
-        if len(found) == 1:
-            match = found[0]
-            actual_kind = next(kind for kind in kinds if match in by_id.get((domain, kind, str(match.source_id)), ())
-                               or match in by_name.get((domain, kind, match.name), ()))
-            resolved.append({"owner": owner.name, "field": field_name, "reference_id": ref_id,
-                "reference_name": ref_name, "kind": actual_kind.value, "target_id": match.source_id,
-                "target_name": match.name})
-            if relationship_type:
-                identity_relationships.append({"relationship_type": relationship_type,
-                    "owner_id": owner.source_id, "owner_name": owner.name,
-                    "target_id": match.source_id, "target_name": match.name,
-                    "source_plane": owner.source_plane})
-            return
-        reason, status = "unresolved", "UNRESOLVED"
-        if len(found) > 1:
-            reason, status = "ambiguous", "AMBIGUOUS"
-        else:
-            other = [item for kind in FTDReferenceKind if kind not in kinds
-                     for item in (by_id.get((domain, kind, ref_id), ()) if ref_id else
-                                  by_name.get((domain, kind, ref_name), ()))]
-            if other:
-                reason, status = "wrong-kind", "WRONG_KIND"
-        found_kinds = tuple(kind.value for kind in FTDReferenceKind if
-            bool(by_id.get((domain, kind, ref_id), ())) or bool(by_name.get((domain, kind, ref_name), ())))
-        issues.append(FTDReferenceIssue(owner.name, field_name, ref_id or ref_name or "", owner.source_plane,
-            owner.source_context, owner.domain_id, status, ref_id, ref_name,
-            tuple(kind.value for kind in kinds), found_kinds, scope or owner.source_context or owner.source_plane, reason))
+    issues = resolver.issues
+    resolved = resolver.resolved
+    identity_relationships = resolver.identity_relationships
+    resolve = resolver.resolve
 
     for collection, relationship_type in ((config.realm_users, "realm-user-to-realm"),
         (config.realm_user_groups, "realm-group-to-realm"),
