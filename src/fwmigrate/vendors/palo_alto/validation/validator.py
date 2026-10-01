@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from collections import defaultdict
+from datetime import datetime
 from typing import Any
 
 from ..model.source import PANOSConfig
@@ -10,6 +11,10 @@ from ..source_model import PANOSDerivedViews, pan_scope_identity
 from .models import PANOSValidationIssue, PANOSValidationResult
 
 _PORT = re.compile(r"^(\d+)(?:\s*-\s*(\d+))?$")
+_SCHEDULE_TIME_RANGE = re.compile(r"^(\d{2}:\d{2})-(\d{2}:\d{2})$")
+_NON_RECURRING_RANGE = re.compile(
+    r"^(\d{4}/\d{2}/\d{2}@\d{2}:\d{2})-(\d{4}/\d{2}/\d{2}@\d{2}:\d{2})$"
+)
 
 
 def _issue(issues, severity, domain, message, item=None, field=None, *, scope=None, object_type=None, source_name=None, source_path=None):
@@ -43,6 +48,38 @@ def _validate_ip(value: str, *, ranges: bool = True) -> bool:
             return True
         except ValueError:
             return False
+
+
+def _validate_interface_address(value: str, version: int) -> bool:
+    try:
+        parsed = ipaddress.ip_interface(value)
+    except ValueError:
+        return False
+    return parsed.version == version
+
+
+def _validate_schedule_time_range(value: str) -> bool:
+    match = _SCHEDULE_TIME_RANGE.fullmatch(value)
+    if not match:
+        return False
+    try:
+        for item in match.groups():
+            datetime.strptime(item, "%H:%M")
+    except ValueError:
+        return False
+    return True
+
+
+def _validate_non_recurring_range(value: str) -> bool:
+    match = _NON_RECURRING_RANGE.fullmatch(value)
+    if not match:
+        return False
+    try:
+        for item in match.groups():
+            datetime.strptime(item, "%Y/%m/%d@%H:%M")
+    except ValueError:
+        return False
+    return True
 
 
 def _validate_ip_wildcard(value: str) -> bool:
@@ -135,25 +172,45 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
                scope=item.source_scope, source_name=item.source_name, object_type=item.category)
 
     for address in config.addresses:
+        explicit_types = [
+            field for field in ("ip_netmask", "ip_range", "ip_wildcard", "fqdn")
+            if field in address.explicit_fields
+        ]
+        if len(explicit_types) > 1:
+            _issue(
+                issues, "error", "address",
+                f"address has multiple explicit value types: {', '.join(explicit_types)}",
+                address, "type",
+            )
         for field in ("ip_netmask", "ip_range", "ip_wildcard"):
             value = getattr(address, field)
             valid = (_validate_ip_wildcard(value) if field == "ip_wildcard" else _validate_ip(value)) if value is not None else True
             if value is not None and field in address.explicit_fields and not valid:
                 _issue(issues, "error", "address", f"malformed {field}: {value!r}", address, field)
+
+    for group in config.address_groups:
+        if {"static_members", "dynamic_filter"} <= group.explicit_fields:
+            _issue(
+                issues, "error", "address-group",
+                "address group has both static and dynamic source branches",
+                group, "group_type",
+            )
+
     for item in (*config.interfaces, *config.interface_units):
         for value in getattr(item, "ipv4_addresses", ()) or ():
-            if not _validate_ip(value.split("/")[0], ranges=False):
+            if not _validate_interface_address(value, 4):
                 _issue(issues, "error", "interface", f"malformed IPv4 address: {value!r}", item, "ipv4_addresses")
         for value in getattr(item, "ipv6_addresses", ()) or ():
             text = value if isinstance(value, str) else getattr(value, "address", None)
-            if text and not _validate_ip(text.split("/")[0], ranges=False):
+            if text and not _validate_interface_address(text, 6):
                 _issue(issues, "error", "interface", f"malformed IPv6 address: {text!r}", item, "ipv6_addresses")
-    route_names: dict[tuple[str | None, str | None, str | None, str], Any] = {}
+
+    route_names: dict[tuple[str, str | None, str | None, str | None, str], Any] = {}
     for route in derived.static_routes:
         if route.name:
-            key = (route.router_type, route.router_name, route.vrf_name, route.name)
+            key = (_scope_key(route), route.router_type, route.router_name, route.vrf_name, route.name)
             if key in route_names:
-                owner = "/".join(value for value in key[:3] if value) or "<unknown-router>"
+                owner = "/".join(value for value in key[1:4] if value) or "<unknown-router>"
                 _issue(
                     issues, "error", "identity",
                     f"duplicate static route name {route.name!r} in {owner}",
@@ -167,11 +224,30 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
             _issue(issues, "error", "route", f"malformed next-hop IP: {route.nexthop_ip_address!r}", route, "nexthop_ip_address")
 
     for service in config.services:
+        if {"tcp", "udp"} <= service.explicit_fields:
+            _issue(
+                issues, "error", "service",
+                "service has both TCP and UDP protocol branches",
+                service, "protocol",
+            )
         for protocol in (service.tcp, service.udp):
             if protocol and protocol.port and not _validate_ports(protocol.port, minimum=0):
                 _issue(issues, "error", "service", f"malformed port expression: {protocol.port!r}", service, "port")
             if protocol and protocol.source_port and not _validate_ports(protocol.source_port, minimum=0):
                 _issue(issues, "error", "service", f"malformed source port expression: {protocol.source_port!r}", service, "source_port")
+
+    for schedule in config.schedules:
+        recurring = schedule.recurring
+        for value in recurring.daily or () if recurring else ():
+            if not _validate_schedule_time_range(value):
+                _issue(issues, "error", "schedule", f"malformed daily schedule range: {value!r}", schedule, "recurring.daily")
+        for day, values in (recurring.weekly or {}).items() if recurring else ():
+            for value in values:
+                if not _validate_schedule_time_range(value):
+                    _issue(issues, "error", "schedule", f"malformed weekly schedule range for {day}: {value!r}", schedule, f"recurring.weekly.{day}")
+        for value in schedule.non_recurring or ():
+            if not _validate_non_recurring_range(value):
+                _issue(issues, "error", "schedule", f"malformed non-recurring schedule range: {value!r}", schedule, "non_recurring")
 
     for tunnel in config.ipsec_tunnels:
         for proxy in tunnel.proxy_ids or ():
@@ -190,9 +266,21 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
             port = getattr(translation, "translated_port", None) if translation else None
             if port and not _validate_ports(port, minimum=1):
                 _issue(issues, "error", "nat", f"malformed translated port: {port!r}", rule, "translated_port")
-        if rule.disabled in {"yes", "true"} and not rule.source_translation and not rule.destination_translation:
+        unknown_source_translation = bool(rule.raw_extra.get("source-translation"))
+        if unknown_source_translation:
+            _issue(
+                issues, "warning", "nat",
+                "NAT rule contains unsupported source-translation source configuration",
+                rule, "translation",
+            )
+        if rule.disabled in {"yes", "true"} and not rule.source_translation and not rule.destination_translation and not rule.dynamic_destination_translation:
             continue
-        if rule.source_translation is None and rule.destination_translation is None and rule.dynamic_destination_translation is None:
+        if (
+            rule.source_translation is None
+            and rule.destination_translation is None
+            and rule.dynamic_destination_translation is None
+            and not unknown_source_translation
+        ):
             _issue(issues, "warning", "nat", "NAT rule has no explicit translation branch", rule, "translation")
     return PANOSValidationResult(tuple(issues))
 
