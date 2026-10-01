@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from fwmigrate.collection.contracts import CollectionStatus
 from fwmigrate.collection.juniper_srx import JuniperSRXCollector
 from fwmigrate.vendors.juniper_srx.source_report import JuniperSRXSourceReporter
 
@@ -57,3 +58,23 @@ def test_juniper_collection_preserves_ntp_key_id_and_redacts_secrets(monkeypatch
     assert "pre-shared-key ascii-text [REDACTED]" in source.source_text
     assert "REAL_SECRET" not in source.source_text
     assert JuniperSRXSourceReporter().analyze_source(source.source_text)
+
+
+
+def test_juniper_access_denied_placeholder_marks_collection_partial(monkeypatch):
+    content = "\n".join([
+        "set system host-name branch",
+        "set system login user admin authentication encrypted-password ACCESS-DENIED",
+    ])
+    connection = SimpleNamespace(send_command=lambda *args, **kwargs: content, disconnect=lambda: None)
+    monkeypatch.setitem(sys.modules, "netmiko", SimpleNamespace(ConnectHandler=lambda **kwargs: connection))
+
+    source = JuniperSRXCollector().collect(
+        {"host": "h", "port": 22, "username": "u", "password": "p"}
+    )
+
+    assert source.status == CollectionStatus.PARTIAL
+    assert source.parts[0].status == "PERMISSION_DENIED"
+    assert source.parts[0].complete is False
+    assert source.warnings
+    assert "ACCESS-DENIED" in source.source_text
