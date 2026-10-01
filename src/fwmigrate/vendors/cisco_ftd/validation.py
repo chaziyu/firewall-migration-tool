@@ -170,6 +170,8 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
         if realm is None or not (realm.source_id or realm.name):
             continue
         identity_name = getattr(item, "username", None) or item.name
+        if not identity_name:
+            continue
         key = (item.domain_id, type(item), realm.source_id or realm.name, identity_name.casefold())
         if key in by_realm_name:
             issues.append(FTDValidationIssue("warning", "ambiguous-identity-name",
