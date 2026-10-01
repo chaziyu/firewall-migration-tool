@@ -152,3 +152,16 @@ def test_legacy_zone_address_book_is_preserved_without_synthetic_book():
     command = result.inventory_items[0].commands[0]
     assert command.status == ExtractionStatus.SOURCE_ONLY
     assert command.requires_manual_review is True
+
+
+
+def test_configuration_groups_are_modeled_explicit_source_not_source_only():
+    result = extract_juniper_source(
+        """set groups G interfaces ge-0/0/0 description inherited
+set apply-groups G
+"""
+    )
+    commands = [command for item in result.inventory_items for command in item.commands]
+    assert commands
+    assert all(command.status == ExtractionStatus.EXTRACTED for command in commands)
+    assert not result.review_required
