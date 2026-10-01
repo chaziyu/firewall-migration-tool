@@ -2,7 +2,7 @@ import { saveWorkspace, workspace } from '../../storage/workspaceStore'
 import type { SourceEvidence } from '../../storage/workspaceTypes'
 import { useEffect, useRef, useState } from 'react'
 import type { SetStateAction } from 'react'
-import { postForm, postJson as requestJson, RequestError } from '../../api/client'
+import { apiFetch, postForm, postJson as requestJson, RequestError } from '../../api/client'
 import { FileUpload } from '../source/FileUpload'
 import type { SourcePreviewData } from '../source/types'
 import type { MigrationDecisionDocument } from './types'
@@ -401,7 +401,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   async function testAdvisor() {
     try {
-      const response = await fetch('/api/migration/ai/status')
+      const response = await apiFetch('/api/migration/ai/status')
       const config = await response.json() as { enabled?: boolean; provider?: string; model?: string; groq_configured?: boolean; local_configured?: boolean; error?: string }
       setAdvisorStatus(config.enabled ? `${config.provider === 'qwen_local' ? 'Local Qwen' : 'Groq'} · ${config.model} · ${(config.provider === 'qwen_local' ? config.local_configured : config.groq_configured) ? 'Ready' : 'Configuration error'}` : 'AI advisor disabled.')
       const result = await postJson<{ provider: string; model: string; checks?: Array<{ name: string; success: boolean }> }>('/api/migration/ai/test', {})

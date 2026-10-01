@@ -1,8 +1,8 @@
-import { postBlob, postForm } from '../../api/client'
+import { apiFetch, postBlob, postForm } from '../../api/client'
 import type { SourcePreviewData, SourceVendor, SourceVendorOption } from './types'
 
 export async function loadSourceVendors(): Promise<SourceVendorOption[]> {
-  const response = await fetch('/api/vendors')
+  const response = await apiFetch('/api/vendors')
   const data: unknown = await response.json()
   if (!response.ok || !isVendorResponse(data)) {
     const message = typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string'
