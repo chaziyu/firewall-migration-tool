@@ -62,11 +62,19 @@ _STRUCTURAL_CONTEXT_SEGMENTS = frozenset({
 
 
 def _known_context_segments() -> frozenset[str]:
-    return _STRUCTURAL_CONTEXT_SEGMENTS | frozenset(
+    suffix_segments = {
         segment
         for spec in _REGISTRY.values()
         for segment in spec.path_suffix
-    )
+    }
+    nested_segments = {
+        segment
+        for spec in _REGISTRY.values()
+        for nested_path in spec.nested_fields
+        for segment in nested_path.split("/")
+        if segment and segment != "*"
+    }
+    return _STRUCTURAL_CONTEXT_SEGMENTS | frozenset(suffix_segments | nested_segments)
 
 
 def _context_is_supported(path: tuple[str, ...], spec: PANPathSpec) -> bool:
