@@ -40,3 +40,27 @@ def test_absent_security_rule_fields_are_not_reported_as_invalid_explicit_source
     )
 
     assert not any("missing explicitly configured field" in message for message in messages)
+
+
+def test_security_rule_names_conflict_across_panorama_ancestor_descendant_only():
+    analysis = PaloAltoSourceReporter().analyze_source(
+        """<config><devices><entry name='panorama'><device-group>
+          <entry name='parent'><pre-rulebase><security><rules>
+            <entry name='Allow-Web'/>
+          </rules></security></pre-rulebase></entry>
+          <entry name='child'><parent-dg>parent</parent-dg><pre-rulebase><security><rules>
+            <entry name='Allow-Web'/>
+          </rules></security></pre-rulebase></entry>
+          <entry name='sibling'><pre-rulebase><security><rules>
+            <entry name='Allow-Web'/>
+          </rules></security></pre-rulebase></entry>
+        </device-group></entry></devices></config>"""
+    )
+
+    hierarchy_issues = [
+        issue
+        for issue in analysis.validation.errors
+        if "conflicts across Panorama device-group hierarchy" in issue.message
+    ]
+    assert len(hierarchy_issues) == 1
+    assert hierarchy_issues[0].source_scope.device_group == "child"
