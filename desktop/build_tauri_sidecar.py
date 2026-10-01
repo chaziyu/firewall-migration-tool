@@ -14,8 +14,21 @@ BINARIES = ROOT / "src" / "frontend" / "src-tauri" / "binaries"
 
 
 def main() -> None:
+    dist_path = ROOT / "dist"
+    work_path = ROOT / "build" / "tauri-sidecar"
     subprocess.run(
-        [sys.executable, "-m", "PyInstaller", "--clean", "--noconfirm", str(SPEC)],
+        [
+            sys.executable,
+            "-m",
+            "PyInstaller",
+            "--clean",
+            "--noconfirm",
+            "--distpath",
+            str(dist_path),
+            "--workpath",
+            str(work_path),
+            str(SPEC),
+        ],
         cwd=ROOT,
         check=True,
     )
@@ -28,7 +41,7 @@ def main() -> None:
         raise RuntimeError("rustc did not report a host target triple")
 
     extension = ".exe" if os.name == "nt" else ""
-    source = ROOT / "dist" / f"fwmigrate-backend{extension}"
+    source = dist_path / f"fwmigrate-backend{extension}"
     if not source.is_file():
         raise FileNotFoundError(source)
 
