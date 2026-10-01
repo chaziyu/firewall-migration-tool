@@ -7,7 +7,7 @@ from importlib.metadata import PackageNotFoundError, version
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
 from fwmigrate.vendors.checkpoint.models import (
     CheckPointExportBundle, CheckPointResponse, CollectionCompletenessRecord,
-    CollectionStatus as CPStatus,
+    CollectionStatus as CPStatus, collection_status_is_success,
 )
 from fwmigrate.vendors.checkpoint.r81_commands import R81_COMMAND_REGISTRY
 from fwmigrate.vendors.checkpoint.loader import validate_pagination
@@ -130,6 +130,12 @@ class CheckPointCollector:
                 self._collect_gaia(options, bundle, parts)
         finally:
             self._close(session, base)
+        stats = _collection_stats(bundle)
+        bundle.successful_command_count = stats["successful"]
+        bundle.failed_command_count = stats["failed"]
+        bundle.unsupported_command_count = stats["unsupported"]
+        bundle.permission_denied_count = stats["permission_denied"]
+
         usable = any(part.count for part in parts)
         failed = any(not part.complete and self.command_registry.get(part.name, None) and self.command_registry[part.name].required for part in parts)
         failed = failed or any(part.status in (CPStatus.API_ERROR.value, CPStatus.PERMISSION_DENIED.value, CPStatus.TRANSPORT_ERROR.value) for part in parts)
@@ -406,6 +412,27 @@ def _collector_version():
         return version("firewall-migration-tool")
     except PackageNotFoundError:
         return None
+
+
+def _collection_stats(bundle):
+    management = tuple(bundle.collection_completeness.values())
+    gaia = tuple(bundle.gaia_responses)
+    statuses = [item.status for item in management]
+    statuses.extend(item.get("collection_status") for item in gaia)
+    normalized = []
+    for status in statuses:
+        try:
+            normalized.append(CPStatus(status))
+        except (TypeError, ValueError):
+            continue
+    return {
+        "successful": sum(collection_status_is_success(status) for status in normalized),
+        "failed": sum(status in {
+            CPStatus.API_ERROR, CPStatus.TRANSPORT_ERROR, CPStatus.ERROR,
+        } for status in normalized),
+        "unsupported": sum(status == CPStatus.UNSUPPORTED_COMMAND for status in normalized),
+        "permission_denied": sum(status == CPStatus.PERMISSION_DENIED for status in normalized),
+    }
 
 
 def _discovered_domains(bundle):
