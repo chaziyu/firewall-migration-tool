@@ -80,6 +80,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   useEffect(() => {
     if (vendor === 'fortigate' && previewId) {
+      // Invalidate the previous decision document immediately; local state updates follow the awaited API response.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadReview().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not load migration review'))
     }
     return () => {
