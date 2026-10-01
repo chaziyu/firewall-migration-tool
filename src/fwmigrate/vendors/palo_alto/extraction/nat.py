@@ -94,4 +94,13 @@ def _dynamic_destination(element: ET.Element):
 
 def extract_nat(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> object | None:
     extra, explicit = source_fields(element, spec)
-    return PANNATRule(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, rulebase_position=context.rulebase_position, from_zones=values(element, "from"), to_zones=values(element, "to"), source=values(element, "source"), destination=values(element, "destination"), service=value(element, "service"), disabled=value(element, "disabled"), active_active_device_binding=value(element, "active-active-device-binding"), nat_type=value(element, "nat-type"), to_interface=value(element, "to-interface"), tags=values(element, "tag"), description=value(element, "description"), source_translation=_source(element), destination_translation=_destination(element), dynamic_destination_translation=_dynamic_destination(element), raw_extra=extra, explicit_fields=explicit)
+    source_translation = _source(element)
+    source_node = element.find("source-translation")
+    if source_node is not None:
+        wrapper_extra = raw_extra(
+            source_node,
+            {"dynamic-ip-and-port", "persistent-dynamic-ip-and-port", "dynamic-ip", "static-ip"},
+        )
+        if wrapper_extra:
+            extra["source-translation"] = wrapper_extra
+    return PANNATRule(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, rulebase_position=context.rulebase_position, from_zones=values(element, "from"), to_zones=values(element, "to"), source=values(element, "source"), destination=values(element, "destination"), service=value(element, "service"), disabled=value(element, "disabled"), active_active_device_binding=value(element, "active-active-device-binding"), nat_type=value(element, "nat-type"), to_interface=value(element, "to-interface"), tags=values(element, "tag"), description=value(element, "description"), source_translation=source_translation, destination_translation=_destination(element), dynamic_destination_translation=_dynamic_destination(element), raw_extra=extra, explicit_fields=explicit)
