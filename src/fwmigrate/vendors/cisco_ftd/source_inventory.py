@@ -76,12 +76,28 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
         ("ipsec_proposals", "ipsec-proposals"), ("ra_vpn_policies", "ra-vpn-policies"),
         ("ra_vpn_connection_profiles", "ra-vpn-connection-profiles"), ("native_resources", "native-resources"),
     )
+    review_records = [
+        record
+        for attribute, _path in collections
+        for record in getattr(config, attribute)
+    ]
+    review_records.extend(
+        rule
+        for policies in (config.file_policies, config.decryption_policies, config.dns_policies)
+        for policy in policies
+        for rule in (policy.rules or ())
+    )
+    review_records.extend(
+        rule for policy in config.access_control_policies for rule in (policy.rules or ())
+    )
+    review_records.extend(
+        rule for policy in config.nat_policies for rule in nat_rules(policy)
+    )
     name_counts: dict[str, int] = {}
-    for attribute, _path in collections:
-        for record in getattr(config, attribute):
-            explicit_name = source_name(record)
-            if explicit_name:
-                name_counts[explicit_name] = name_counts.get(explicit_name, 0) + 1
+    for record in review_records:
+        explicit_name = source_name(record)
+        if explicit_name:
+            name_counts[explicit_name] = name_counts.get(explicit_name, 0) + 1
 
     def evidence_matches(record, evidence: dict) -> bool:
         evidence_id = evidence.get("source_id") or evidence.get("id")
@@ -133,7 +149,8 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
                     source_context=rule.source_context,
                     source_attributes={"source_plane": rule.source_plane, "domain_id": rule.domain_id,
                         "policy_id": rule.parent_policy_id, "policy_name": rule.parent_policy_name,
-                        "position": rule.position, "collection_order": rule.collection_order}))
+                        "position": rule.position, "collection_order": rule.collection_order},
+                    requires_manual_review=any(evidence_matches(rule, item) for item in config.unsupported_evidence)))
     if config.source_plane == "ftd-text-evidence":
         for path, records, kind in (("interfaces", config.interfaces, "interface"),
                                     ("routes", config.static_routes, "static-route")):
@@ -156,7 +173,8 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
                     source_type="rule", source_context=record.source_context,
                     source_attributes={"source_plane": record.source_plane, "policy_id": policy.source_id,
                         "policy_name": policy.name, "section": getattr(record, "section", None), **record.source_attributes},
-                    status=ExtractionStatus.SOURCE_ONLY if config.source_plane == "ftd-text-evidence" else ExtractionStatus.EXTRACTED))
+                    status=ExtractionStatus.SOURCE_ONLY if config.source_plane == "ftd-text-evidence" else ExtractionStatus.EXTRACTED,
+                    requires_manual_review=any(evidence_matches(record, item) for item in config.unsupported_evidence)))
     for policy_index, policy in enumerate(config.nat_policies, 1):
         policy_record_id = record_id("nat-policies", policy_index, policy)
         if not policy.source_attributes.get("synthetic_container"):
@@ -187,7 +205,8 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
                 source_attributes={"source_plane": record.source_plane, "policy_id": policy.source_id,
                     "policy_name": policy.name, "section": getattr(record, "section", None) or section,
                     **record.source_attributes},
-                status=ExtractionStatus.SOURCE_ONLY if config.source_plane == "ftd-text-evidence" else ExtractionStatus.EXTRACTED))
+                status=ExtractionStatus.SOURCE_ONLY if config.source_plane == "ftd-text-evidence" else ExtractionStatus.EXTRACTED,
+                requires_manual_review=any(evidence_matches(record, item) for item in config.unsupported_evidence)))
     return items
 
 
