@@ -24,7 +24,10 @@ def test_native_collections_are_visible_in_preview_and_excel():
     CiscoFTDSourceReporter().export_excel(result, output)
     workbook = load_workbook(output, read_only=True)
     assert "Native Sources" in workbook.sheetnames
+    assert "Source Inventory" in workbook.sheetnames
+    assert "Collection Completeness" in workbook.sheetnames
     assert workbook["Native Sources"].max_row > 1
+    assert workbook["Source Inventory"].max_row > 1
     assert result.source_sections[0].object_count_source == len(result.inventory_items)
     assert result.source_sections[0].object_count_parsed == len(result.inventory_items)
     assert result.source_sections[0].object_count_extracted == len(result.inventory_items)
@@ -53,3 +56,38 @@ def test_excel_formula_like_source_text_is_literal():
     row = next(sheet.iter_rows(min_row=2, max_row=2))
     assert row[0].value == "'=1+1"
     assert row[0].data_type != "f"
+
+def test_fmc_missing_name_uses_id_only_as_internal_fallback():
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "domain": {"id": "domain-1", "name": "Global"},
+        "objects": {"networkaddresses": [
+            {"id": "host-without-name", "type": "Host", "value": "192.0.2.10"}
+        ]},
+    }))
+
+    record = result.config.network_addresses[0]
+    inventory = next(item for item in result.inventory_items if item.source_id == "host-without-name")
+    assert record.name == "host-without-name"
+    assert record.source_attributes["source_name_explicit"] is False
+    assert record.source_attributes["source_name_fallback"] == "source_id"
+    assert inventory.name is None
+    assert inventory.source_id == "host-without-name"
+    assert inventory.source_record_id is not None
+
+
+def test_preview_preserves_structured_fmc_scope():
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "domain": {"id": "domain-1", "name": "Global"},
+        "objects": {},
+        "devices": [{"id": "device-1", "name": "FTD-A", "resources": {
+            "ftd_interfaces": [{"id": "if-1", "name": "GigabitEthernet0/0"}]
+        }}],
+    }))
+
+    preview = build_ftd_preview(result)
+    row = preview["sections"]["interfaces"][0]
+    assert row["scope_details"]["domain_id"] == "domain-1"
+    assert row["scope_details"]["device_id"] == "device-1"
+    assert row["scope_details"]["device_name"] == "FTD-A"

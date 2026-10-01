@@ -142,8 +142,10 @@ def test_intrusion_behavior_group_membership_conflicts_and_acp_references():
     export_ftd_excel(analysis, workbook_bytes)
     workbook_bytes.seek(0)
     native_rows = list(load_workbook(workbook_bytes, read_only=True)["Native Sources"].values)
-    assert {tuple(row[:2]) for row in native_rows[1:]} >= {
-        ("intrusion_rule_groups", "Group"), ("intrusion_rule_behaviors", "behavior-1")}
+    assert ("intrusion_rule_groups", "Group") in {tuple(row[:2]) for row in native_rows[1:]}
+    behavior_row = next(row for row in native_rows[1:] if row[0] == "intrusion_rule_behaviors")
+    assert behavior_row[1] is None
+    assert behavior_row[2] == "behavior-1"
 
 def test_intrusion_group_only_and_missing_vs_empty_child_collections():
     payload = {"format": "cisco-fmc-rest-export-v1", "domain": {"id": "d", "name": "Global"},
