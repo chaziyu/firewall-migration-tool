@@ -15,14 +15,14 @@ FIXTURE = Path(__file__).parents[2] / "fixtures" / "cisco_ftd" / "fmc_selected_d
 
 def test_failed_override_collection_is_not_reported_as_known_empty_or_capability_missing():
     payload = {"format": "cisco-fmc-rest-export-v1", "domain": {"id": "d1"}, "objects": {},
-        "coverage": {"network_address_overrides": {"status": "AVAILABLE"}},
+        "coverage": {"network_address_overrides": {"status": "SUPPORTED"}},
         "collection": {"status": "PARTIAL", "parts": [
             {"name": "network_address_overrides", "status": "FAILED", "complete": False, "count": 0}]}}
     result = extract_cisco_ftd_source(json.dumps(payload))
     preview = build_ftd_preview(result)
     assert result.config.network_address_overrides == []
     assert result.derived.source_plane_completeness["network_address_overrides"] == "failed"
-    assert preview["capability_coverage"]["network_address_overrides"]["status"] == "AVAILABLE"
+    assert preview["capability_coverage"]["network_address_overrides"]["status"] == "SUPPORTED"
 
 def test_failed_pbr_collection_remains_failed_when_typed_collection_is_empty():
     payload = {
