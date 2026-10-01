@@ -164,13 +164,15 @@ def commit(host, port, username, password):
 
 @cli.command()
 @click.option('--port', default=5000, help='Port to run the web server on')
-def serve(port):
+@click.option('--host', default='127.0.0.1', show_default=True,
+              help='Interface to bind. Remote live collection remains disabled unless explicitly enabled.')
+def serve(port, host):
     """Start the migration web interface."""
     try:
         from fwmigrate.web_live import create_app
         app = create_app()
-        click.echo(f"Starting web server on http://localhost:{port}")
-        app.run(host='0.0.0.0', port=port, debug=False)
+        click.echo(f"Starting web server on http://{host}:{port}")
+        app.run(host=host, port=port, debug=False)
     except ImportError:
         click.echo("Flask is required to run the web server. Install with: pip install flask", err=True)
         sys.exit(1)
