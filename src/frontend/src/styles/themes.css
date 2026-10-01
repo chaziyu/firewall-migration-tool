@@ -2,21 +2,26 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --canvas: #111916;
-  --surface: #1b2420;
-  --sidebar: #0d1512;
-  --text-heading: #f4f7f5;
-  --text-main: #d6ddd9;
-  --text-muted: #b9c3be;
-  --text-dim: #a5b0aa;
-  --line: #68786e;
-  --line-divider: #526158;
-  --color-primary: #dc7c4e;
-  --color-primary-hover: #ea9366;
-  --color-primary-subtle: #423024;
-  --color-teal: #749e57;
-  --warning: #d7b574;
-  --danger: #e19d87;
-  --success: #a1c47e;
-  --bg-input: #16201b;
+  --canvas: #1e261f;
+  --surface: #29332a;
+  --surface-muted: #303b30;
+  --surface-hover: #3a4738;
+  --text-heading: var(--palette-cream);
+  --text-main: #e1e5d9;
+  --text-muted: #bbc5b5;
+  --line: #62725e;
+  --line-divider: #4b5a49;
+  --line-strong: var(--palette-olive);
+  --color-primary: var(--palette-soft-sage);
+  --color-primary-hover: #d0e1c9;
+  --color-on-primary: #253222;
+  --color-primary-subtle: #3d4f38;
+  --color-accent: var(--palette-sage);
+  --warning: #e2be84;
+  --danger: #efb3a0;
+  --success: var(--palette-soft-sage);
+  --bg-input: #222d23;
+  --shadow-panel: 0 3px 16px #10191024;
+  --shadow-popover: 0 12px 32px #10191066;
+  --backdrop: #101910a6;
 }
