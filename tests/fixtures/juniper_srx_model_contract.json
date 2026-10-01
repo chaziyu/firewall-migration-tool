@@ -271,12 +271,11 @@
       ],
       "sha256": "c3edb6fd494a0227b73c293873435e95895f1645a13da124840b48957be3fa32"
     },
-    "JuniperApplicationTerm": {
+    "JuniperApplicationSettings": {
       "fields": [
         "field_provenance",
         "field_candidate_history",
         "member_candidate_history",
-        "name",
         "protocol",
         "protocol_number",
         "source_ports",
@@ -287,7 +286,25 @@
         "inactivity_timeout",
         "source_attributes"
       ],
-      "sha256": "9245c9c595d35c098851d846b7d728c30740bb91d945058ae4c1f2b2b9457d04"
+      "sha256": "fd12aebb9cdccdeeff5050b993559dc98d5ee5559cef7a7cd0c32fa801e4eed9"
+    },
+    "JuniperApplicationTerm": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "protocol",
+        "protocol_number",
+        "source_ports",
+        "destination_ports",
+        "icmp_type",
+        "icmp_code",
+        "application_protocol",
+        "inactivity_timeout",
+        "source_attributes",
+        "name"
+      ],
+      "sha256": "5e09909526aa9f5411bde94e3326ed03fce786b541e92ccfc91e5b9a056f49bf"
     },
     "JuniperApplication": {
       "fields": [
@@ -296,11 +313,12 @@
         "member_candidate_history",
         "name",
         "description",
+        "top_level",
         "terms",
         "source_attributes",
         "provenance"
       ],
-      "sha256": "4050ad3918c0c3d9e46c3beac7dfc4890e8927da725af1b7189ca4ab4a4f3a55"
+      "sha256": "4e4531e146f7ea22967f77d558918e633abcd9abef3d437c3867927e8e9bfc87"
     },
     "JuniperApplicationSet": {
       "fields": [
