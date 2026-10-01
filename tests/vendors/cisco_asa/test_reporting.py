@@ -308,9 +308,71 @@ def test_preview_separates_source_relationship_and_derived_and_redacts_secrets()
     assert "nat" in preview["derived"]
     assert "inventory" in preview and "unsupported" in preview and "coverage" in preview
     assert preview["summary"]["objects"]["policies"] == len(result.config.access_rules)
-    assert preview["summary"]["scopes"] == ["root"]
+    assert preview["summary"]["scopes"] == []
     assert {"interfaces", "addresses", "policies", "nat", "routes", "vpn_tunnels", "vpn_phase2",
             "validation", "unresolved_references"} <= set(preview["sections"])
     acl_row = preview["sections"]["policies"][0]
     assert acl_row["acl_name"] == "OUT" and acl_row["interface"] == "outside"
     assert acl_row["source_order"] is not None
+
+def test_group_reporting_preserves_native_inline_members_without_synthetic_names():
+    result = extract_cisco_asa_source(
+        "object-group network NETS\n"
+        " network-object host 192.0.2.10\n"
+        " network-object 198.51.100.0 255.255.255.0\n"
+        " group-object NESTED\n"
+        "object-group service WEB tcp\n"
+        " port-object eq 443\n"
+        " service-object tcp destination eq 8443\n"
+        " service-object object NAMED\n"
+    )
+
+    network_group = result.config.network_groups[0]
+    service_group = result.config.service_groups[0]
+    assert network_group.members == ["NESTED"]
+    assert service_group.members == ["NAMED"]
+
+    preview = build_asa_preview(result)
+    assert preview["sections"]["address_groups"][0]["members"] == [
+        "192.0.2.10", "198.51.100.0/24", "NESTED",
+    ]
+    assert preview["sections"]["service_groups"][0]["members"] == [
+        "port-object eq 443", "service-object tcp destination eq 8443", "NAMED",
+    ]
+    assert "member_entries" in preview["source"]["address_groups"][0]
+    assert "member_entries" in preview["source"]["service_groups"][0]
+    assert "asa_inline_" not in str(preview)
+
+    output = BytesIO()
+    export_asa_excel(result, output)
+    workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
+    network_row = dict(zip(
+        SHEET_HEADERS["Network Groups"],
+        next(workbook["Network Groups"].iter_rows(min_row=2, values_only=True)),
+    ))
+    service_row = dict(zip(
+        SHEET_HEADERS["Service Groups"],
+        next(workbook["Service Groups"].iter_rows(min_row=2, values_only=True)),
+    ))
+    assert "192.0.2.10" in network_row["Member Entries"]
+    assert "198.51.100.0/24" in network_row["Member Entries"]
+    assert "asa_inline_" not in network_row["Member Entries"]
+    assert "port-object eq 443" in service_row["Member Entries"]
+    assert "service-object tcp destination eq 8443" in service_row["Member Entries"]
+
+
+def test_nat_source_preview_does_not_mix_in_derived_translation_semantics():
+    result = extract_cisco_asa_source(
+        "nat (inside,outside) source static REAL MAPPED\n"
+    )
+
+    source_row = build_asa_preview(result)["source"]["nat_rules"][0]
+    assert "translation_semantics" not in source_row
+
+    output = BytesIO()
+    export_asa_excel(result, output)
+    headers = next(
+        load_workbook(BytesIO(output.getvalue()), read_only=True)["NAT Rules"].iter_rows(values_only=True)
+    )
+    assert "Translation Semantics" in headers
+

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import ipaddress
 import re
 import shlex
@@ -43,19 +42,6 @@ from .evaluators.interfaces import InterfaceEvaluator, _parse_interface_header
 def mask_to_cidr(mask: str) -> Optional[int]:
     """Backward-compatible strict mask helper. Invalid masks return ``None``."""
     return parse_ipv4_netmask(mask)
-
-
-def _safe_name(prefix: str, expression: str) -> str:
-    clean = re.sub(r"[^A-Za-z0-9_]+", "_", expression).strip("_").lower()
-    clean = clean[:48] or "value"
-    digest = hashlib.sha1(expression.encode("utf-8")).hexdigest()[:8]
-    return f"{prefix}_{clean}_{digest}"
-
-
-
-
-
-
 
 
 def _pbr_acl_match_evidence(acl_names: List[str], rules: Iterable[CiscoAccessRule]) -> List[Dict[str, Any]]:
@@ -129,10 +115,10 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
             self.config.parse_errors.append(diagnostic.model_dump())
 
     def _record_acl_consumer(self, acl_name: str, consumer_type: str, line_number: int, line: str) -> None:
-        self.config.acl_consumers.setdefault(acl_name, []).append({
-            "consumer_type": consumer_type, "line_number": line_number, "raw_line": line,
-            "source_context": self._line_contexts.get(line_number),
-        })
+        # ACL consumers are relationship state. Source-native records already
+        # retain the ACL reference, so downstream relationship builders own
+        # resolution and consumer indexing.
+        return None
 
 
 
@@ -716,7 +702,6 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                                     type="host", value=str(address), address_family=f"ipv{address.version}",
                                     raw=sub,
                                 )
-                                group.members.append(_safe_name("asa_inline_host", str(address)))
                             except ValueError:
                                 error = f"Invalid host IP: {parts[2]}"
                         elif len(parts) == 3 and parts[1].lower() == "object":
@@ -729,7 +714,6 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                                     type="inline_network", value=str(network), address_family="ipv6",
                                     raw=sub,
                                 )
-                                group.members.append(_safe_name("asa_inline_net", str(network)))
                             except ValueError:
                                 error = f"Invalid IPv6 prefix: {parts[1]}"
                         elif len(parts) == 3:
@@ -749,7 +733,6 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                                             type="inline_network", value=value, address_family="ipv4",
                                             raw=sub,
                                         )
-                                        group.members.append(_safe_name("asa_inline_net", value))
                         else:
                             error = "Invalid network-object operand count or syntax"
                     elif lower.startswith("group-object"):
@@ -1096,21 +1079,22 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
             self._record_unsupported(line_number, line, "No Cisco ASA extraction handler")
             i += 1
         self._parse_source_only_records(lines)
-        handled = set()
+        handled_line_numbers = set()
         in_webvpn = False
-        for raw in lines:
+        for handled_line_number, raw in enumerate(lines, start=1):
             line = raw.strip().lower()
             if line == "webvpn":
                 in_webvpn = True
-                handled.add(line)
+                handled_line_numbers.add(handled_line_number)
             elif raw[:1].isspace() and in_webvpn:
-                handled.add(line)
+                handled_line_numbers.add(handled_line_number)
             else:
                 in_webvpn = False
                 if line.startswith(("vpn-addr-assign ", "no vpn-addr-assign ", "privilege ")):
-                    handled.add(line)
+                    handled_line_numbers.add(handled_line_number)
         self.config.unsupported_commands = [item for item in self.config.unsupported_commands
-            if not (item.get("reason") == "No Cisco ASA extraction handler" and item.get("raw_line", "").lower() in handled)]
+            if not (item.get("reason") == "No Cisco ASA extraction handler"
+                    and item.get("line_number") in handled_line_numbers)]
         for command in pending_global_mtu:
             candidates = [item for item in self.config.interfaces
                           if getattr(item, "source_context", None) == command["source_context"]

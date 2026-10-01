@@ -16,6 +16,13 @@ def _name(value: Any) -> Any:
     return getattr(value, "name", value)
 
 
+def _source_group_members(item: Any) -> list[Any]:
+    entries = getattr(item, "member_entries", ()) or ()
+    if not entries:
+        return list(getattr(item, "members", ()) or ())
+    return [getattr(entry, "value", None) or getattr(entry, "raw", None) for entry in entries]
+
+
 def _webvpn_attribute_names(value: Any) -> tuple[str, ...]:
     if hasattr(value, "explicit_fields"):
         return tuple(sorted(value.explicit_fields))
@@ -143,14 +150,14 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
         "status": issue.status.value, "scope": issue.source_context,
         "expected_kinds": [issue.reference_kind.value],
     } for issue in derived.relationship_issues]
-    scopes = sorted({item.source_context for item in (*config.interfaces, *config.access_rules, *config.nat_rules, *config.static_routes) if item.source_context}) or ["root"]
+    scopes = sorted({item.source_context for item in (*config.interfaces, *config.access_rules, *config.nat_rules, *config.static_routes) if item.source_context})
     sections = {
         "interfaces": interfaces,
         "interface_topology": interfaces,
         "addresses": [{"name": item.name, "value": item.value, "type": item.type,
                        "address_family": item.address_family, "review": [], "scope": item.source_context}
                       for item in config.network_objects],
-        "address_groups": [{"name": item.name, "members": item.members,
+        "address_groups": [{"name": item.name, "members": _source_group_members(item),
                              "address_family": item.address_family, "review": item.review_reasons,
                              "scope": item.source_context} for item in config.network_groups],
         "services": [{"name": item.name, "protocol": port.protocol if port else None,
@@ -158,7 +165,7 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
                        "source_port": port.source.values if port and port.source else None,
                        "review": item.review_reasons, "scope": item.source_context}
                       for item in config.service_objects for port in (item.ports or (None,))],
-        "service_groups": [{"name": item.name, "members": item.members,
+        "service_groups": [{"name": item.name, "members": _source_group_members(item),
                             "protocol": item.protocol, "review": item.review_reasons,
                             "scope": item.source_context} for item in config.service_groups],
         "schedules": [{"name": item.name, "clauses": safe_value(item.clauses),
