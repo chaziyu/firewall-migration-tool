@@ -30,11 +30,11 @@ test('ordinary API errors and success keep their contract', async (context) => {
   assert.deepEqual(await postJson('/api/deploy', {}), { success: true })
 })
 
-
 test('API transport stays relative in web mode and uses authenticated loopback in desktop mode', async (context) => {
   delete globalThis.__FWMIGRATE_DESKTOP__
   assert.equal(apiUrl('/api/vendors'), '/api/vendors')
 
+  context.after(() => { delete globalThis.__FWMIGRATE_DESKTOP__ })
   globalThis.__FWMIGRATE_DESKTOP__ = { apiBase: 'http://127.0.0.1:54321', token: 'desktop-secret' }
   assert.equal(apiUrl('/api/vendors'), 'http://127.0.0.1:54321/api/vendors')
 
@@ -45,5 +45,4 @@ test('API transport stays relative in web mode and uses authenticated loopback i
   })
 
   await apiFetch('/api/vendors')
-  delete globalThis.__FWMIGRATE_DESKTOP__
 })
