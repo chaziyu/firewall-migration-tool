@@ -35,9 +35,12 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
         f"in domain/scope {item.domain_id or item.scope or 'source'}",
         item.source_plane, item.owner, source_id=item.owner_id, source_context=item.source_context,
         domain_id=item.domain_id, device_id=item.device_id) for item in derived.unresolved_references]
-    issues.extend(FTDValidationIssue("warning", "unsupported", str(item.get("reason", "Unsupported source evidence")),
-                                     config.source_plane, str(item.get("source_path", "")))
-                  for item in config.unsupported_evidence)
+    issues.extend(FTDValidationIssue(
+        "warning", "unsupported", str(item.get("reason", "Unsupported source evidence")),
+        config.source_plane, str(item.get("source_name") or item.get("source_path", "")),
+        source_id=str(item["source_id"]) if item.get("source_id") is not None else None,
+        source_context=item.get("source_context"), domain_id=item.get("domain_id"), device_id=item.get("device_id"),
+    ) for item in config.unsupported_evidence)
     issues.extend(FTDValidationIssue("warning", item.category, item.message, config.source_plane, item.interface)
                   for item in derived.interface_topology.issues)
     for item in derived.normalized_routes:
@@ -112,7 +115,8 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
             if len(rules) > 1:
                 issues.append(FTDValidationIssue("warning", "duplicate-acp-position",
                     f"Access control rules share explicit position {position} within policy {policy.name}",
-                    rules[0].source_plane, policy.name))
+                    policy.source_plane, policy.name, source_id=policy.source_id,
+                    source_context=policy.source_context, domain_id=policy.domain_id, device_id=policy.device_id))
 
     for policy in config.nat_policies:
         for section, rules in (
@@ -129,7 +133,8 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
                 if len(positioned_rules) > 1:
                     issues.append(FTDValidationIssue("warning", "duplicate-nat-position",
                         f"NAT rules share explicit position {position} within {section} of policy {policy.name}",
-                        positioned_rules[0].source_plane, policy.name))
+                        policy.source_plane, policy.name, source_id=policy.source_id,
+                        source_context=policy.source_context, domain_id=policy.domain_id, device_id=policy.device_id))
 
     positions = {}
     for route in config.policy_based_routes:
@@ -140,9 +145,12 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
         positions.setdefault(key, []).append(route)
     for (_, _, position), routes in positions.items():
         if len(routes) > 1:
+            record = routes[0]
             issues.append(FTDValidationIssue("warning", "duplicate-pbr-position",
                 f"Policy-based routes share explicit position {position} within one device/virtual router",
-                routes[0].source_plane, routes[0].name))
+                record.source_plane, record.name, source_id=record.source_id,
+                source_context=record.source_context, domain_id=record.domain_id,
+                device_id=record.device_id or record.source_attributes.get("device_id")))
 
     servers_by_device = {item.device_id or item.source_attributes.get("device_id") for item in config.dhcp_servers}
     relay_devices = {item.device_id or item.source_attributes.get("device_id") for item in config.dhcp_relay_settings}
