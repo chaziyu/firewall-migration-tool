@@ -116,3 +116,33 @@ def test_native_collectors_reach_preview_and_excel(monkeypatch):
         excel = client.post("/api/extract/excel", json={"source_vendor": vendor, "source": data["snapshot"]})
         assert excel.status_code == 200, vendor
         assert load_workbook(io.BytesIO(excel.data), read_only=True).sheetnames
+
+
+def test_remote_live_collection_is_disabled_without_explicit_opt_in(monkeypatch):
+    client = create_app({"TESTING": True}).test_client()
+    called = False
+
+    def test_connection(_options):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(source_collectors.get("cisco_asa"), "test_connection", test_connection)
+    remote = {"REMOTE_ADDR": "198.51.100.20"}
+
+    sources = {item["vendor_id"]: item for item in client.get("/api/vendors", environ_base=remote).get_json()["sources"]}
+    assert sources["cisco_asa"]["live_collection"] is False
+
+    response = client.post("/api/collection/test", json=_payload(), environ_base=remote)
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "Remote live collection is disabled on this server."
+    assert called is False
+
+
+def test_remote_live_collection_requires_explicit_server_opt_in(monkeypatch):
+    client = create_app({"TESTING": True, "ALLOW_REMOTE_COLLECTION": True}).test_client()
+    monkeypatch.setattr(source_collectors.get("cisco_asa"), "test_connection", lambda _options: None)
+    remote = {"REMOTE_ADDR": "198.51.100.20"}
+
+    sources = {item["vendor_id"]: item for item in client.get("/api/vendors", environ_base=remote).get_json()["sources"]}
+    assert sources["cisco_asa"]["live_collection"] is True
+    assert client.post("/api/collection/test", json=_payload(), environ_base=remote).status_code == 200
