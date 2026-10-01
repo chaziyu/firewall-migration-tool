@@ -11,7 +11,7 @@ from ..path_semantics import scalar_identity
 
 _GROUP_FAILURES = {
     "GROUP_NOT_FOUND", "GROUP_CYCLE", "GROUP_RECURSION_DEPTH_EXCEEDED",
-    "GROUP_HIERARCHY_INCOMPATIBLE",
+    "GROUP_HIERARCHY_INCOMPATIBLE", "GROUP_EXPANSION_LIMIT_EXCEEDED",
 }
 def _safe_candidate(candidate):
     result = dict(candidate)
