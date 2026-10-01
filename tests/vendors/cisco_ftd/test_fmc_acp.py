@@ -63,3 +63,20 @@ def test_acp_child_collections_and_explicit_inheritance_are_source_safe():
     assert any(row[0] == "access_control_logging_settings" and row[2] == "log-1" for row in native)
     assert any(row[0] == "security_intelligence_policies" and row[2] == "si-1" for row in native)
     assert not any(secret in json.dumps(native) for secret in ("logging-secret", "logging-token", "si-secret"))
+
+
+def test_duplicate_acp_positions_are_reported_without_reordering():
+    import json
+    from fwmigrate.vendors.cisco_ftd.source_report import extract_cisco_ftd_source
+
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "access_policies": [{"id": "p1", "name": "Policy", "rules": [
+            {"id": "r1", "name": "First", "position": 4, "action": "ALLOW"},
+            {"id": "r2", "name": "Second", "position": 4, "action": "BLOCK"},
+        ]}],
+    }))
+
+    policy = result.config.access_control_policies[0]
+    assert [rule.name for rule in policy.rules] == ["First", "Second"]
+    assert any(issue.category == "duplicate-acp-position" for issue in result.validation.issues)
