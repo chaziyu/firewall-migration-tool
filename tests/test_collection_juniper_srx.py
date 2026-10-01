@@ -77,4 +77,4 @@ def test_juniper_access_denied_placeholder_marks_collection_partial(monkeypatch)
     assert source.parts[0].status == "PERMISSION_DENIED"
     assert source.parts[0].complete is False
     assert source.warnings
-    assert "ACCESS-DENIED" in source.source_text
+    assert "ACCESS-DENIED" not in source.source_text
