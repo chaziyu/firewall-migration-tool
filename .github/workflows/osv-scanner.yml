@@ -32,16 +32,16 @@ jobs:
     if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
     uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@1f1242919d8a60496dd1874b24b62b2370ed4c78" # v1.7.1
     with:
-      # Example of specifying custom arguments
+      # Scan the exact dependency sets used by artifact-producing builds.
       scan-args: |-
-        -r
-        --skip-git
-        ./
+        --lockfile=requirements.txt:./requirements/constraints-python312.txt
+        --lockfile=./src/frontend/package-lock.json
   scan-pr:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
     uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@1f1242919d8a60496dd1874b24b62b2370ed4c78" # v1.7.1
     with:
-      # Example of specifying custom arguments
+      # Differential PR scanning stays recursive so the base commit remains
+      # scannable while this constraints file is first introduced.
       scan-args: |-
         -r
         --skip-git
