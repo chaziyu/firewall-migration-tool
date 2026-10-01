@@ -28,7 +28,14 @@ class JuniperSRXSourceReporter:
 
     def export_excel(self, analysis: JuniperSourceResult, output: Any, profile: ExcelExportProfile | str = ExcelExportProfile.FULL, **options: Any) -> Any:
         from .export.excel import export_juniper_excel
-        return export_juniper_excel(analysis, output, profile=profile)
+        return export_juniper_excel(
+            analysis,
+            output,
+            profile=profile,
+            collection_status=options.get("collection_status"),
+            collection_parts=options.get("collection_parts"),
+            collection_warnings=options.get("collection_warnings"),
+        )
 
 
 __all__ = ["JuniperSourceResult", "JuniperSRXSourceReporter", "extract_juniper_source"]
