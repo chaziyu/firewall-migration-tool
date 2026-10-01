@@ -12,7 +12,7 @@ import { LiveCollection, type CollectionResult } from './LiveCollection'
 import { MigrationWorkflow } from '../migration/MigrationWorkflow'
 import { MigrationReview } from '../migration/MigrationReview'
 import type { MigrationDecisionDocument } from '../migration/types'
-import { asRecord, reportCounts } from '../report/reportPresentation'
+import { asRecord } from '../report/reportPresentation'
 
 export type WorkflowView = 'report' | 'collect' | 'migration' | 'live'
 
@@ -149,7 +149,6 @@ export function SourceConfiguration({ view, onViewChange }: {
   }
 
   const selectedVendor = vendors.find((item) => item.vendor_id === vendor)
-  const sourceCounts = preview ? reportCounts(preview) : null
 
   return <main className="feature-content">
     <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview)} aria-labelledby="source-title">
@@ -185,13 +184,12 @@ export function SourceConfiguration({ view, onViewChange }: {
 
     <div className="workflow-panel" hidden={view !== 'migration' && view !== 'live'}>
       {preview && previewId && vendor === 'fortigate' ? migrationVisited && <>
-        <div className="report-source-context">
+        {view === 'live' && <div className="report-source-context">
           <strong>{selectedVendor?.display_name ?? vendor} → PAN-OS</strong>
           {file && <span className="report-source-item report-source-filename">{file.name}</span>}
           <span>{String(preview.acquisition ?? 'Uploaded configuration')}</span>
-          <span>Parsed · {sourceCounts?.errors} errors · {sourceCounts?.warnings} warnings</span>
           {preview.collection != null && <span>Collection: {String(asRecord(preview.collection).status ?? 'Unknown')}</span>}
-        </div>
+        </div>}
         <section hidden={view !== 'migration'}>
         <MigrationReview key={previewId} preview={preview} vendor={vendor} requestedDecision={requestedDecision}
           onDecisionDocument={setDecisionDocument}

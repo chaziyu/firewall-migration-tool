@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { postForm, postJson } from '../../api/client'
+import { FileUpload } from '../source/FileUpload'
 import type { SourcePreviewData } from '../source/types'
 import type { MigrationDecisionDocument } from './types'
 import type { Decision, DecisionDocument, Proposal, ReviewData, ReviewGroup } from './reviewTypes'
@@ -17,6 +18,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 }) {
   const previewId = typeof preview.preview_id === 'string' ? preview.preview_id : ''
   const [targetPreviewId, setTargetPreviewId] = useState('')
+  const [targetFilename, setTargetFilename] = useState('')
   const [targetDevices, setTargetDevices] = useState<string[]>([])
   const [targetDevice, setTargetDevice] = useState('')
   const [review, setReview] = useState<ReviewData | null>(null)
@@ -145,6 +147,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       setProposals([])
       setDesignSessionId('')
       await loadReview(review ? currentDocument() : undefined, nextTargetId, '')
+      setTargetFilename(file.name)
       setStatus('Target evidence loaded. Review each suggested mapping before confirming it.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not read target PAN-OS XML')
@@ -405,11 +408,13 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       <p className="report-count-note">FortiGate → PAN-OS · Review VDOM, VSYS, and virtual router decisions before dependent mappings.</p>
 
       <div className="migration-toolbar">
-        <label className="field">Optional PAN-OS target XML
-          <input type="file" accept=".xml,application/xml,text/xml" disabled={busy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void uploadTarget(file) }} />
-        </label>
+        <div className="target-xml-upload">
+          <h3>Optional PAN-OS target XML</h3>
+          <FileUpload file={null} accept=".xml,application/xml,text/xml" disabled={busy} title="Drop your target XML here" helpText="Optional · Supports .xml files" onChange={(file) => { if (file) void uploadTarget(file) }} />
+          {targetFilename && <p className="report-count-note">Loaded target: {targetFilename}</p>}
+        </div>
         {targetPreviewId && <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => {
-          setTargetPreviewId(''); setTargetDevices([]); setTargetDevice(''); setProposals([]); setDesignSessionId('')
+          setTargetPreviewId(''); setTargetFilename(''); setTargetDevices([]); setTargetDevice(''); setProposals([]); setDesignSessionId('')
           onContextChange?.('', '')
           await loadReview(currentDocument(), '', '')
         }, 'Target evidence removed.')}>Remove target</button>}
