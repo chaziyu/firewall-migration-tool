@@ -314,7 +314,7 @@ def _get_or_create_nat_rule(rs: JuniperNATRuleSet, name: str, nat_type: str) -> 
     for rule in rs.rules:
         if rule.name == name:
             return rule
-    new_rule = JuniperNATRule(name=name, nat_type=nat_type, sequence=len(rs.rules) + 1)
+    new_rule = JuniperNATRule(name=name, nat_type=nat_type)
     rs.rules.append(new_rule)
     return new_rule
 
