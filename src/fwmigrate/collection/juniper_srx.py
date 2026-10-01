@@ -3,8 +3,16 @@
 import re
 
 from fwmigrate.vendors.juniper_srx.extraction import sanitize_junos_source_text
+from fwmigrate.vendors.juniper_srx.tokenizer import JuniperSetTokenizer
 
-from .contracts import CollectedSource, CollectionError, SSH_FIELDS, validate_connection
+from .contracts import (
+    CollectedSource,
+    CollectionError,
+    CollectionPart,
+    CollectionStatus,
+    SSH_FIELDS,
+    validate_connection,
+)
 
 
 class JuniperSRXCollector:
@@ -44,4 +52,26 @@ class JuniperSRXCollector:
             raise CollectionError("The device rejected the configuration collection command.")
         if len(content.encode("utf-8")) > 25_000_000:
             raise CollectionError("The device configuration exceeds the size limit.")
-        return CollectedSource(self.vendor_id, sanitize_junos_source_text(content), "live-juniper-srx.set", self.method)
+
+        commands = JuniperSetTokenizer().tokenize(content)
+        access_denied = any(command.access_denied for command in commands)
+        status = CollectionStatus.PARTIAL if access_denied else CollectionStatus.SUCCESS
+        part = CollectionPart(
+            name="configuration",
+            status="PERMISSION_DENIED" if access_denied else "SUCCESS_WITH_DATA",
+            complete=not access_denied,
+            count=len(commands),
+        )
+        warnings = (
+            ("Configuration contains ACCESS-DENIED placeholders; collection is incomplete.",)
+            if access_denied else ()
+        )
+        return CollectedSource(
+            self.vendor_id,
+            sanitize_junos_source_text(content),
+            "live-juniper-srx.set",
+            self.method,
+            status=status,
+            parts=(part,),
+            warnings=warnings,
+        )

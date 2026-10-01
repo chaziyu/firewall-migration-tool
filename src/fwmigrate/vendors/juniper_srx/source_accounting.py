@@ -34,6 +34,24 @@ def _context_label(command: JunosCommand) -> str | None:
     return f"{command.context_type} {command.context_name}"
 
 
+def _section_status(statuses: list[ExtractionStatus]) -> ExtractionStatus:
+    """Summarize mixed command coverage without overstating section failure."""
+    distinct = set(statuses)
+    if len(distinct) == 1:
+        return statuses[0]
+    if distinct & {ExtractionStatus.EXTRACTED, ExtractionStatus.PARTIAL, ExtractionStatus.SOURCE_ONLY}:
+        return ExtractionStatus.PARTIAL
+    for candidate in (
+        ExtractionStatus.PARSE_ERROR,
+        ExtractionStatus.UNSUPPORTED,
+        ExtractionStatus.UNKNOWN,
+        ExtractionStatus.IGNORED,
+    ):
+        if candidate in distinct:
+            return candidate
+    return ExtractionStatus.UNKNOWN
+
+
 def _account(commands: list[JunosCommand]) -> tuple[list[SourceSectionResult], list[SourceInventoryItem], list[UnsupportedItem]]:
     grouped: dict[str, list[JunosCommand]] = {}
     for command in commands:
@@ -42,11 +60,7 @@ def _account(commands: list[JunosCommand]) -> tuple[list[SourceSectionResult], l
     for path, items in grouped.items():
         statuses = [item.extraction_status or (ExtractionStatus.EXTRACTED if item.consumed else ExtractionStatus.UNSUPPORTED)
                     for item in items]
-        distinct = set(statuses)
-        status = next((candidate for candidate in (ExtractionStatus.PARSE_ERROR, ExtractionStatus.UNSUPPORTED,
-                                                     ExtractionStatus.PARTIAL, ExtractionStatus.SOURCE_ONLY,
-                                                     ExtractionStatus.UNKNOWN, ExtractionStatus.IGNORED)
-                       if candidate in distinct), ExtractionStatus.EXTRACTED)
+        status = _section_status(statuses)
         commands_out = []
         for item in items:
             safe = item.to_sanitized_copy()
