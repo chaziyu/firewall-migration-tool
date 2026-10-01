@@ -19,6 +19,12 @@ from .transform.interface import CPInterfaceTransformResult, transform_interface
 from .transform.vpn import CPVPNTransformResult, transform_vpn
 
 
+@dataclass(frozen=True, slots=True)
+class DerivedSourceCompleteness:
+    complete: bool = True
+    incomplete_commands: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class CheckPointDerivedViews:
     references: CPReferenceIndex = field(default_factory=CPReferenceIndex)
@@ -31,6 +37,10 @@ class CheckPointDerivedViews:
     policy_traversal: CPPolicyTraversalResult = field(default_factory=CPPolicyTraversalResult)
     interface_views: CPInterfaceTransformResult = field(default_factory=CPInterfaceTransformResult)
     vpn_views: CPVPNTransformResult = field(default_factory=CPVPNTransformResult)
+    nat_completeness: DerivedSourceCompleteness = field(default_factory=DerivedSourceCompleteness)
+    policy_completeness: DerivedSourceCompleteness = field(default_factory=DerivedSourceCompleteness)
+    interface_completeness: DerivedSourceCompleteness = field(default_factory=DerivedSourceCompleteness)
+    vpn_completeness: DerivedSourceCompleteness = field(default_factory=DerivedSourceCompleteness)
     collection_incomplete: tuple[CheckPointCollectionDiagnostic, ...] = ()
 
     @property
@@ -90,6 +100,23 @@ def build_checkpoint_derived_views(
     policy_traversal = build_policy_traversal(policy_structure)
     interface_views = transform_interfaces(config, interface_topology)
     vpn_views = transform_vpn(vpn_topology, references)
+    nat_completeness = _derived_completeness(collection, {
+        "show-nat-rulebase", "show-hosts", "show-networks", "show-address-ranges",
+        "show-groups", "show-groups-with-exclusion",
+    })
+    policy_completeness = _derived_completeness(collection, {
+        "show-packages", "show-access-layers", "show-access-rulebase",
+    })
+    interface_completeness = _derived_completeness(collection, {
+        "show-gateways-and-servers", "show-simple-gateways", "show-simple-clusters",
+        "show-security-zones", "gaia/show-configuration",
+    })
+    vpn_completeness = _derived_completeness(collection, {
+        "show-vpn-communities-star", "show-vpn-communities-meshed",
+        "show-vpn-communities-remote-access", "show-simple-gateways",
+        "show-simple-clusters", "show-interoperable-devices",
+        "gaia/show-configuration",
+    })
     return CheckPointDerivedViews(
         references=references,
         broken_references=broken_references,
@@ -101,8 +128,28 @@ def build_checkpoint_derived_views(
         policy_traversal=policy_traversal,
         interface_views=interface_views,
         vpn_views=vpn_views,
+        nat_completeness=nat_completeness,
+        policy_completeness=policy_completeness,
+        interface_completeness=interface_completeness,
+        vpn_completeness=vpn_completeness,
         collection_incomplete=tuple(item for item in collection if not item.complete),
     )
 
 
-__all__ = ["CheckPointDerivedViews", "build_checkpoint_derived_views"]
+def _derived_completeness(
+    collection: tuple[CheckPointCollectionDiagnostic, ...],
+    dependencies: set[str],
+) -> DerivedSourceCompleteness:
+    incomplete = tuple(sorted({
+        item.command
+        for item in collection
+        if not item.complete and item.command in dependencies
+    }))
+    return DerivedSourceCompleteness(not incomplete, incomplete)
+
+
+__all__ = [
+    "CheckPointDerivedViews",
+    "DerivedSourceCompleteness",
+    "build_checkpoint_derived_views",
+]

@@ -1,16 +1,32 @@
 """Check Point Management API and optional Gaia SSH collection."""
 
 import json
+from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
 from fwmigrate.vendors.checkpoint.models import (
     CheckPointExportBundle, CheckPointResponse, CollectionCompletenessRecord,
-    CollectionStatus as CPStatus,
+    CollectionStatus as CPStatus, collection_status_is_success,
 )
 from fwmigrate.vendors.checkpoint.r81_commands import R81_COMMAND_REGISTRY
 from fwmigrate.vendors.checkpoint.loader import validate_pagination
 
 from .contracts import CollectedSource, CollectionError, CollectionPart, CollectionStatus, validate_connection
+
+
+_GAIA_EVIDENCE_COMMANDS = (
+    ("gaia/show-route-static-all", "show route static all"),
+    ("gaia/show-ipv6-route-static-all", "show ipv6 route static all"),
+    ("gaia/show-dhcp-server-all", "show dhcp server all"),
+    ("gaia/show-dhcp-server-status", "show dhcp server status"),
+    ("gaia/show-dhcp-server-subnets", "show dhcp server subnets"),
+    ("gaia/show-users", "show users"),
+    ("gaia/show-rba-all", "show rba all"),
+    ("gaia/show-rba-roles", "show rba roles"),
+    ("gaia/show-rba-users", "show rba users"),
+    ("gaia/show-vpn-tunnels", "show vpn tunnels"),
+)
 
 
 class CheckPointCollector:
@@ -62,10 +78,12 @@ class CheckPointCollector:
         try:
             response = session.post(base + "login", json=payload, timeout=(15, 60), allow_redirects=False)
             response.raise_for_status()
-            sid = response.json().get("sid")
+            login_data = response.json()
+            sid = login_data.get("sid")
             if not sid:
                 raise CollectionError("Check Point login did not return a session ID.")
             session.headers["X-chkp-sid"] = sid
+            session._fwmigrate_api_version = login_data.get("api-server-version")
             return session, base
         except Exception as exc:
             session.close()
@@ -91,6 +109,9 @@ class CheckPointCollector:
                                        selected_access_layer=options["layer"] or None,
                                        selected_gateway=options["gateway"] or None,
                                        management_server=options["host"],
+                                       api_version=getattr(session, "_fwmigrate_api_version", None),
+                                       collector_version=_collector_version(),
+                                       collection_timestamp=datetime.now(timezone.utc).isoformat(),
                                        requested_scope={key: options[key] or None for key in ("domain", "package", "layer", "gateway")})
         parts = []
         try:
@@ -98,13 +119,31 @@ class CheckPointCollector:
                 selectors = self._plan_selectors(command, spec, bundle, options)
                 for selector in selectors:
                     self._collect_command(session, base, command, spec, selector, bundle, parts, options)
+                if command == "show-domains" and not options["domain"]:
+                    domains = _discovered_domains(bundle)
+                    if len(domains) > 1:
+                        raise CollectionError(
+                            "Multiple Check Point management Domains were discovered. "
+                            "Select a Domain explicitly before collection."
+                        )
             if options["gaia_host"]:
                 self._collect_gaia(options, bundle, parts)
         finally:
             self._close(session, base)
+        stats = _collection_stats(bundle)
+        bundle.successful_command_count = stats["successful"]
+        bundle.failed_command_count = stats["failed"]
+        bundle.unsupported_command_count = stats["unsupported"]
+        bundle.permission_denied_count = stats["permission_denied"]
+
         usable = any(part.count for part in parts)
         failed = any(not part.complete and self.command_registry.get(part.name, None) and self.command_registry[part.name].required for part in parts)
-        failed = failed or any(part.status in (CPStatus.API_ERROR.value, CPStatus.PERMISSION_DENIED.value, CPStatus.TRANSPORT_ERROR.value) for part in parts)
+        failed = failed or any(part.status in (
+            CPStatus.API_ERROR.value,
+            CPStatus.PERMISSION_DENIED.value,
+            CPStatus.TRANSPORT_ERROR.value,
+            CPStatus.UNSUPPORTED_COMMAND.value,
+        ) for part in parts)
         status = CollectionStatus.PARTIAL if failed and usable else CollectionStatus.FAILED if failed else CollectionStatus.SUCCESS
         if status == CollectionStatus.FAILED:
             raise CollectionError("Check Point returned no usable source configuration.")
@@ -218,10 +257,17 @@ class CheckPointCollector:
                 offset = to_index
             except Exception as exc:
                 status = _classify_management_error(exc)
-                bundle.responses.append(CheckPointResponse(command=command, data={}, collection_status=status,
-                                                            error="Collection request failed.", **scope))
+                error_code = _management_error_code(exc)
+                bundle.responses.append(CheckPointResponse(
+                    command=command, data={}, collection_status=status,
+                    collection_error_code=error_code,
+                    error="Collection request failed.", **scope,
+                ))
                 parts.append(CollectionPart(command, status.value, False))
-                bundle.collection_completeness[operation_key] = CollectionCompletenessRecord(command=command, status=status, complete=False, error_message="Collection request failed.", **scope)
+                bundle.collection_completeness[operation_key] = CollectionCompletenessRecord(
+                    command=command, status=status, complete=False,
+                    error_code=error_code, error_message="Collection request failed.", **scope,
+                )
                 return
         parts.append(CollectionPart(command, CPStatus.API_ERROR.value, False))
         bundle.collection_completeness[operation_key] = CollectionCompletenessRecord(command=command, status=CPStatus.API_ERROR, complete=False, error_message="Pagination page limit exceeded.", **scope)
@@ -275,26 +321,79 @@ class CheckPointCollector:
     def _collect_gaia(self, options, bundle, parts):
         connection = None
         try:
-            connection = self.gaia_connection_factory(device_type="checkpoint_gaia", host=options["gaia_host"], port=options["gaia_port"],
-                                        username=options["gaia_username"], password=options["gaia_password"],
-                                        conn_timeout=15, auth_timeout=15, banner_timeout=15,
-                                        ssh_strict=True, system_host_keys=True)
-            content = connection.send_command("show configuration", read_timeout=60)
-            if len(content.encode("utf-8")) > 25_000_000:
-                raise CollectionError("Gaia configuration exceeds the size limit.")
-            bundle.gaia_responses.append({"command": "gaia/show-configuration", "data": {"cli_text": sanitize_raw_text(content)},
-                                          "gateway": options["gateway"] or None,
-                                          "collection_status": CPStatus.SUCCESS_WITH_DATA.value if content.strip() else CPStatus.SUCCESS_EMPTY.value})
-            parts.append(CollectionPart("gaia/show-configuration", "SUCCESS" if content.strip() else "EMPTY", True, 1 if content.strip() else 0))
+            connection = self.gaia_connection_factory(
+                device_type="checkpoint_gaia",
+                host=options["gaia_host"],
+                port=options["gaia_port"],
+                username=options["gaia_username"],
+                password=options["gaia_password"],
+                conn_timeout=15,
+                auth_timeout=15,
+                banner_timeout=15,
+                ssh_strict=True,
+                system_host_keys=True,
+            )
         except Exception:
-            bundle.gaia_responses.append({"command": "gaia/show-configuration", "data": {"cli_text": ""},
-                                          "gateway": options["gateway"] or None,
-                                          "collection_status": CPStatus.TRANSPORT_ERROR.value,
-                                          "error": "Gaia SSH collection failed."})
+            bundle.gaia_responses.append({
+                "command": "gaia/show-configuration",
+                "data": {"cli_text": ""},
+                "gateway": options["gateway"] or None,
+                "collection_status": CPStatus.TRANSPORT_ERROR.value,
+                "error": "Gaia SSH collection failed.",
+            })
             parts.append(CollectionPart("gaia/show-configuration", CPStatus.TRANSPORT_ERROR.value, False))
+            return
+
+        try:
+            if not self._collect_gaia_command(
+                connection, "gaia/show-configuration", "show configuration",
+                bundle, parts, options, data_key="cli_text",
+            ):
+                return
+            for source_command, cli_command in _GAIA_EVIDENCE_COMMANDS:
+                self._collect_gaia_command(
+                    connection, source_command, cli_command,
+                    bundle, parts, options, data_key="command_output",
+                )
         finally:
-            if connection is not None:
-                connection.disconnect()
+            connection.disconnect()
+
+    @staticmethod
+    def _collect_gaia_command(
+        connection, source_command, cli_command, bundle, parts, options, *, data_key,
+    ):
+        try:
+            content = connection.send_command(cli_command, read_timeout=60)
+            if len(content.encode("utf-8")) > 25_000_000:
+                raise CollectionError("Gaia command output exceeds the size limit.")
+            status = CPStatus.SUCCESS_WITH_DATA if content.strip() else CPStatus.SUCCESS_EMPTY
+            bundle.gaia_responses.append({
+                "command": source_command,
+                "data": {data_key: sanitize_raw_text(content)},
+                "gateway": options["gateway"] or None,
+                "scope_type": "gateway",
+                "parser_consumer": "gaia-config" if data_key == "cli_text" else "source-inventory",
+                "expected_response_shape": data_key,
+                "collection_status": status.value,
+                "object_count": 1 if content.strip() else 0,
+            })
+            parts.append(CollectionPart(
+                source_command, status.value, True, 1 if content.strip() else 0,
+            ))
+            return True
+        except Exception:
+            bundle.gaia_responses.append({
+                "command": source_command,
+                "data": {data_key: ""},
+                "gateway": options["gateway"] or None,
+                "scope_type": "gateway",
+                "parser_consumer": "gaia-config" if data_key == "cli_text" else "source-inventory",
+                "expected_response_shape": data_key,
+                "collection_status": CPStatus.TRANSPORT_ERROR.value,
+                "error": "Gaia command collection failed.",
+            })
+            parts.append(CollectionPart(source_command, CPStatus.TRANSPORT_ERROR.value, False))
+            return False
 
 
 def _default_api_session_factory():
@@ -313,10 +412,81 @@ def _default_gaia_connection_factory(**kwargs):
     return ConnectHandler(**kwargs)
 
 
+def _collector_version():
+    try:
+        return version("firewall-migration-tool")
+    except PackageNotFoundError:
+        return None
+
+
+def _collection_stats(bundle):
+    management = tuple(bundle.collection_completeness.values())
+    gaia = tuple(bundle.gaia_responses)
+    statuses = [item.status for item in management]
+    statuses.extend(item.get("collection_status") for item in gaia)
+    normalized = []
+    for status in statuses:
+        try:
+            normalized.append(CPStatus(status))
+        except (TypeError, ValueError):
+            continue
+    return {
+        "successful": sum(collection_status_is_success(status) for status in normalized),
+        "failed": sum(status in {
+            CPStatus.API_ERROR, CPStatus.TRANSPORT_ERROR, CPStatus.ERROR,
+        } for status in normalized),
+        "unsupported": sum(status == CPStatus.UNSUPPORTED_COMMAND for status in normalized),
+        "permission_denied": sum(status == CPStatus.PERMISSION_DENIED for status in normalized),
+    }
+
+
+def _discovered_domains(bundle):
+    result = []
+    for response in bundle.responses:
+        if response.command != "show-domains":
+            continue
+        for item in response.data.get("objects", []):
+            if not isinstance(item, dict):
+                continue
+            identity = item.get("name") or item.get("uid")
+            if identity and identity not in result:
+                result.append(str(identity))
+    return tuple(result)
+
+
+def _management_error_payload(error):
+    response = getattr(error, "response", None)
+    if response is None:
+        return {}
+    try:
+        payload = response.json()
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _management_error_code(error):
+    payload = _management_error_payload(error)
+    value = payload.get("code")
+    return sanitize_raw_text(str(value)) if value is not None else None
+
+
 def _classify_management_error(error):
-    code = getattr(getattr(error, "response", None), "status_code", None)
+    response = getattr(error, "response", None)
+    code = getattr(response, "status_code", None)
     if code == 403:
         return CPStatus.PERMISSION_DENIED
+
+    payload = _management_error_payload(error)
+    capability_evidence = " ".join(
+        str(payload.get(key) or "") for key in ("code", "message")
+    ).lower().replace("-", "_").replace(" ", "_")
+    if any(token in capability_evidence for token in (
+        "command_not_found", "unknown_command", "unsupported_command",
+        "command_is_not_supported", "not_supported",
+    )):
+        return CPStatus.UNSUPPORTED_COMMAND
+
     if code is not None or isinstance(error, (CollectionError, ValueError, TypeError)):
         return CPStatus.API_ERROR
     return CPStatus.TRANSPORT_ERROR
