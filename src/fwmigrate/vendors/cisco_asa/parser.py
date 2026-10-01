@@ -514,6 +514,14 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                     self._parse_no_http_server(line, line_number)
                     i += 1
                     continue
+                if line.lower().startswith((
+                    "no ntp authenticate",
+                    "no ntp trusted-key ",
+                    "no ntp authentication-key ",
+                )):
+                    self._parse_management_command(line, line_number)
+                    i += 1
+                    continue
                 if line.lower() == "no monitor-interface" or line.lower().startswith("no monitor-interface "):
                     parts = line.split()
                     name = parts[2] if len(parts) > 2 else ""
@@ -555,7 +563,7 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                     self._context_definition(switch.group(1), line).source_attributes["execution_space_marker"] = True
                 i += 1
                 continue
-            if lower.startswith(("clock timezone ", "ntp server ", "ssh ", "http ", "telnet ",
+            if lower.startswith(("clock timezone ", "ntp ", "ssh ", "http ", "telnet ",
                                  "snmp-server ", "logging ", "management-access ", "domain-name ",
                                  "same-security-traffic ", "enable ", "no logging enable")) or lower == "enable":
                 self._parse_management_command(line, line_number)
