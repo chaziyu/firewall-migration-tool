@@ -423,6 +423,10 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership():
 
     analysis = CiscoFTDSourceReporter().analyze_source(source.source_text)
     assert analysis.config.routes[0].virtual_router == "blue"
+    route_inventory = next(item for item in analysis.inventory_items if item.source_id == "route-1")
+    assert route_inventory.source_attributes["virtual_router_id"] == "vr-1"
+    assert route_inventory.source_attributes["virtual_router_name"] == "blue"
+    assert "virtual-router=vr-1" in route_inventory.source_record_id
     assert any(item.source_attributes.get("parent_policy_id") == "ra-1"
                for item in analysis.config.ra_vpn_address_assignment_settings)
     assert any(item.source_attributes.get("parent_policy_id") == "acp-1"
