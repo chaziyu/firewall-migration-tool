@@ -12,7 +12,8 @@ def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
         return False
     cmd.consumed = True
     cmd.handler = "groups"
-    cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
+    cmd.extraction_status = ExtractionStatus.PARTIAL
+    cmd.requires_manual_review = True
     group_index = next((i for i, token in enumerate(tokens) if token.lower() == "groups"), None)
     apply_index = next((i for i, token in enumerate(tokens) if token.lower() in {"apply-groups", "apply-groups-except"}), None)
     if group_index is not None and len(tokens) > group_index + 2:
@@ -67,6 +68,8 @@ def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
                 source_metadata={"line_number": cmd.line_number},
             ))
         cmd.context_type, cmd.context_name = context_type, context_name
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
+        cmd.requires_manual_review = False
     elif apply_index is not None and len(tokens) > apply_index + 1:
         key = " ".join(tokens[:apply_index]) or "root"
         values = tokens[apply_index + 1:]
@@ -79,4 +82,6 @@ def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
             cmd.context_name = tokens[1]
         else:
             cmd.context_type, cmd.context_name = "root", None
+        cmd.extraction_status = ExtractionStatus.EXTRACTED
+        cmd.requires_manual_review = False
     return True

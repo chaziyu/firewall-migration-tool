@@ -68,3 +68,108 @@ def test_report_projection_keeps_logical_system_and_address_book_scope():
     assert any(row["scope"] == scope and row["address_book"] == "global" for row in preview["sections"]["addresses"])
     assert any(row["scope"] == scope and row["name"] == "LS_P1" for row in preview["sections"]["policies"])
     assert all("provenance" in row for row in preview["sections"]["policies"])
+
+
+
+def test_mixed_section_coverage_is_partial_not_unsupported():
+    commands = [
+        JunosCommand(
+            operation=JunosOperation.SET,
+            tokens=["set", "security", "policies", "known"],
+            raw_sanitized="set security policies known",
+            line_number=1,
+            consumed=True,
+            extraction_status=ExtractionStatus.EXTRACTED,
+        ),
+        JunosCommand(
+            operation=JunosOperation.SET,
+            tokens=["set", "security", "policies", "unknown"],
+            raw_sanitized="set security policies unknown",
+            line_number=2,
+            extraction_status=ExtractionStatus.UNSUPPORTED,
+        ),
+    ]
+    sections, inventory, unsupported = _account(commands)
+    assert sections[0].status == ExtractionStatus.PARTIAL
+    assert inventory[0].status == ExtractionStatus.PARTIAL
+    assert len(unsupported) == 1
+
+
+def test_excel_exports_native_junos_detail_sheets_and_command_inventory():
+    result = extract_juniper_source(
+        """set security address-book global address A 192.0.2.1/32
+set security address-book global address-set G address A
+set applications application APP protocol tcp
+set applications application APP destination-port 443
+set applications application-set APPS application APP
+set schedulers scheduler WORK daily start-time 09:00 stop-time 17:00
+set security policies from-zone trust to-zone untrust policy P match source-address A
+set security policies from-zone trust to-zone untrust policy P match destination-address any
+set security policies from-zone trust to-zone untrust policy P match application APP
+set security policies from-zone trust to-zone untrust policy P then permit
+set security nat source pool SNAT address 198.51.100.10/32
+set security nat source rule-set RS from zone trust
+set security nat source rule-set RS to zone untrust
+set security nat source rule-set RS rule R match source-address 192.0.2.0/24
+set security nat source rule-set RS rule R then source-nat pool SNAT
+set routing-options static route 203.0.113.0/24 qualified-next-hop 192.0.2.254 preference 7
+set security ike proposal IKE encryption-algorithm aes-256-cbc
+set security ike policy IKP proposals IKE
+set security ike gateway GW ike-policy IKP
+set security ipsec proposal IPSEC encryption-algorithm aes-256-gcm
+set security ipsec policy IPP proposals IPSEC
+set security ipsec vpn VPN bind-interface st0.0
+set security ipsec vpn VPN ike gateway GW
+set security ipsec vpn VPN ike ipsec-policy IPP
+set security ipsec vpn VPN traffic-selector TS local-ip 10.0.0.0/24
+set security ipsec vpn VPN traffic-selector TS remote-ip 10.1.0.0/24
+"""
+    )
+    output = BytesIO()
+    export_juniper_excel(result, output)
+    output.seek(0)
+    workbook = load_workbook(output, read_only=True)
+
+    expected = {
+        "Addresses", "Address Sets", "Application Sets", "Schedulers", "Policy Details",
+        "NAT Pools", "NAT Rules", "Static Routes", "IKE Proposals", "IKE Policies",
+        "IKE Gateways", "IPsec Proposals", "IPsec Policies", "IPsec VPNs", "Traffic Selectors",
+    }
+    assert expected <= set(workbook.sheetnames)
+    assert workbook["Addresses"].max_row >= 2
+    assert workbook["Static Routes"].max_row >= 2
+    assert workbook["IPsec VPNs"].max_row >= 2
+
+    inventory = workbook["Source Inventory"]
+    headers = [cell.value for cell in next(inventory.iter_rows(min_row=1, max_row=1))]
+    assert headers == [
+        "Domain", "Source Path", "Context", "Line", "Operation", "Key",
+        "Values", "Status", "Handler", "Review Required",
+    ]
+    assert inventory.max_row > len(result.inventory_items)
+
+
+def test_preview_uses_junos_zone_and_nat_context_names_without_inferred_active_state():
+    result = extract_juniper_source(
+        """set interfaces ge-0/0/0 unit 0 family inet address 192.0.2.1/24
+set security policies from-zone trust to-zone untrust policy P then permit
+set security nat source rule-set RS from interface ge-0/0/0.0
+set security nat source rule-set RS to zone untrust
+set security nat source rule-set RS rule R then source-nat interface
+set routing-options static route 203.0.113.0/24 next-hop 192.0.2.254
+"""
+    )
+    preview = build_juniper_preview(result)
+    policy = preview["sections"]["policies"][0]
+    nat = preview["sections"]["nat"][0]
+    interface = preview["sections"]["interfaces"][0]
+    route = preview["sections"]["routes"][0]
+
+    assert policy["source_zones"] == ["trust"]
+    assert policy["destination_zones"] == ["untrust"]
+    assert "source_interfaces" not in policy
+    assert nat["from_interfaces"] == ["ge-0/0/0.0"]
+    assert nat["to_zones"] == ["untrust"]
+    assert "egress_interfaces" not in nat
+    assert interface["status"] is None
+    assert route["status"] is None

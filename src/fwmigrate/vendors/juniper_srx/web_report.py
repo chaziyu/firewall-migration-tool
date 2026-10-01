@@ -50,12 +50,21 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                                    "zone": [zone_by_interface[name]] if name in zone_by_interface else [],
                                    "parent": interface.name if unit else interface.redundant_parent,
                                    "aggregate": interface.aggregate_parent, "physical_interfaces": [],
-                                   "status": "EXTRACTED", "scope": scope,
+                                   "status": ("INACTIVE" if getattr(unit, "disabled", None) is True else
+                                              "ACTIVE" if getattr(unit, "disabled", None) is False else
+                                              "INACTIVE" if unit is None and interface.disabled is True else
+                                              "ACTIVE" if unit is None and interface.disabled is False else None),
+                                   "scope": scope,
                                    "provenance": _project(getattr(unit, "field_provenance", None) or interface.field_provenance)})
         for book in context.address_books.values():
             for item in book.addresses.values():
-                addresses.append({"name": item.name, "value": item.prefix or item.fqdn or item.range_start,
-                                  "type": item.type, "address_family": "IPv6" if ":" in (item.prefix or "") else "IPv4" if item.prefix else None,
+                addresses.append({"name": item.name,
+                                  "value": item.prefix or item.fqdn or item.range_start or item.wildcard,
+                                  "type": item.type,
+                                  "prefix": item.prefix, "fqdn": item.fqdn,
+                                  "range_start": item.range_start, "range_end": item.range_end,
+                                  "wildcard": item.wildcard,
+                                  "address_family": "IPv6" if ":" in (item.prefix or "") else "IPv4" if item.prefix else None,
                                   "associated_interface": item.zone, "scope": scope, "address_book": book.name,
                                   "provenance": _project(getattr(item, "provenance", None))})
             for item in book.address_sets.values():
@@ -78,7 +87,7 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                          for item in context.schedulers.values())
         for index, item in enumerate((*context.policies, *context.global_policies), 1):
             policies.append({"policy_id": item.sequence or index, "name": item.name,
-                             "source_interfaces": item.from_zones, "destination_interfaces": item.to_zones,
+                             "source_zones": item.from_zones, "destination_zones": item.to_zones,
                              "source_addresses": item.source_addresses, "destination_addresses": item.destination_addresses,
                              "services": [*item.applications, *item.dynamic_applications], "schedule": item.scheduler_name,
                              "action": item.action, "nat": False, "policy_scope": item.policy_scope,
@@ -91,15 +100,20 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                                 "translation": _project(item.action),
                                 "source_addresses": item.match.source_addresses,
                                 "destination_addresses": item.match.destination_addresses,
-                                "egress_interfaces": list(rule_set.from_context.interfaces),
+                                "from_interfaces": list(rule_set.from_context.interfaces),
+                                "from_zones": list(rule_set.from_context.zones),
+                                "from_routing_instances": list(rule_set.from_context.routing_instances),
+                                "to_interfaces": list(rule_set.to_context.interfaces) if rule_set.to_context else [],
+                                "to_zones": list(rule_set.to_context.zones) if rule_set.to_context else [],
+                                "to_routing_instances": list(rule_set.to_context.routing_instances) if rule_set.to_context else [],
                                 "scope": scope, "rule_set": rule_set.name,
-                                "routing_instance": ", ".join(rule_set.from_context.routing_instances),
                                 "provenance": _project(getattr(item, "provenance", None))})
         for item in context.routes:
             for hop in item.next_hops or (None,):
                 routes.append({"route_id": item.destination, "destination": item.destination,
                                "gateway": hop.value if hop else item.next_table,
-                               "device": None, "distance": item.preference, "status": "INACTIVE" if item.disabled else "EXTRACTED",
+                               "device": None, "distance": item.preference,
+                               "status": "INACTIVE" if item.disabled is True else "ACTIVE" if item.disabled is False else None,
                                "routing_instance": item.routing_instance, "scope": scope,
                                "provenance": _project(getattr(item, "provenance", None))})
         for item in context.vpn.ipsec_vpns.values():
