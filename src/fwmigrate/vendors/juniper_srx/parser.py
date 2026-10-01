@@ -38,6 +38,18 @@ class JuniperSRXParser:
         validate_input_mode(commands)
 
         for cmd in commands:
+            if cmd.access_denied:
+                _, effective_cmd = self._normalize_context(cmd)
+                if effective_cmd.parse_error:
+                    self._record_context_parse_error(cmd, effective_cmd)
+                    continue
+                cmd.consumed = True
+                cmd.handler = "access-denied"
+                cmd.extraction_status = ExtractionStatus.UNSUPPORTED
+                cmd.requires_manual_review = True
+                self.config.unsupported_commands.append(cmd.to_sanitized_copy())
+                continue
+
             if cmd.operation in (JunosOperation.ACTIVATE, JunosOperation.DEACTIVATE):
                 context, effective_cmd = self._normalize_context(cmd)
                 if effective_cmd.parse_error:
@@ -127,6 +139,8 @@ class JuniperSRXParser:
             normalized_tokens=list(stripped_tokens),
             context_type=context.context_type,
             context_name=context.name,
+            access_denied=cmd.access_denied,
+            requires_manual_review=cmd.requires_manual_review,
             source_group=cmd.source_group,
             source_group_path=cmd.source_group_path,
             source_group_chain=list(cmd.source_group_chain),
