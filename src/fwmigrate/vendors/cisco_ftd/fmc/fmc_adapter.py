@@ -107,12 +107,10 @@ class CiscoFMCBundleParser:
             ) for part in _items(collection.get("parts"))],
         )
 
-        def name(item: dict, index: int) -> str:
-            # name remains a required legacy model field. For FMC records
-            # where the API did not return a name, keep it empty rather than
-            # manufacturing a UUID/index as configured source state.
+        def name(item: dict, index: int) -> str | None:
+            del index
             configured_name = item.get("name")
-            return str(configured_name) if configured_name is not None else ""
+            return str(configured_name) if configured_name is not None else None
 
         def reference(value: Any) -> CiscoFTDReference:
             if isinstance(value, dict):
@@ -1190,7 +1188,7 @@ class CiscoFMCBundleParser:
                 for index, item in enumerate(_items(items), 1))
         for device in _items(self.payload.get("devices")):
             device_id = str(device.get("id") or "")
-            device_name = str(device.get("name") or device_id)
+            device_name = str(device["name"]) if device.get("name") is not None else None
             resources = device.get("resources") if isinstance(device.get("resources"), dict) else {}
             interfaces.extend(record(item, index, CiscoFTDInterfaceSource,
                 interface_type=item.get("interfaceType", item.get("type")), address=item.get("address"), device_id=device_id,
@@ -1210,7 +1208,7 @@ class CiscoFMCBundleParser:
                     collection_family=family) for index, item in enumerate(_items(family_items), 1))
             for vr in _items(resources.get("virtual_routers")):
                 vr_id = str(vr.get("id") or "")
-                vr_name = str(vr.get("name") or vr_id)
+                vr_name = str(vr["name"]) if vr.get("name") is not None else None
                 vr_resources = vr.get("resources") if isinstance(vr.get("resources"), dict) else {}
                 virtual_routers.append(record(vr, 1, CiscoFTDVirtualRouter,
                     interfaces=refs_field(vr, "interfaces", "interfaceNames"), device_id=device_id,
