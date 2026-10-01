@@ -6,8 +6,8 @@ binaries = []
 hiddenimports = ['clr', 'clr_loader', 'pythonnet']
 
 tmp_ret = collect_all('fwmigrate')
-datas += [item for item in tmp_ret[0] if not item[1].replace('\\\\', '/').startswith('fwmigrate/ai_runtime/')]
-binaries += [item for item in tmp_ret[1] if not item[1].replace('\\\\', '/').startswith('fwmigrate/ai_runtime/')]
+datas += [item for item in tmp_ret[0] if not item[1].replace('\\', '/').startswith('fwmigrate/ai_runtime/')]
+binaries += [item for item in tmp_ret[1] if not item[1].replace('\\', '/').startswith('fwmigrate/ai_runtime/')]
 hiddenimports += tmp_ret[2]
 
 a = Analysis(
