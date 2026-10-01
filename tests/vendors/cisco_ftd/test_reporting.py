@@ -68,9 +68,9 @@ def test_fmc_missing_name_uses_id_only_as_internal_fallback():
 
     record = result.config.network_addresses[0]
     inventory = next(item for item in result.inventory_items if item.source_id == "host-without-name")
-    assert record.name == "host-without-name"
+    assert record.name is None
     assert record.source_attributes["source_name_explicit"] is False
-    assert record.source_attributes["source_name_fallback"] == "source_id"
+    assert record.source_attributes["internal_record_key"] == "id:host-without-name"
     assert inventory.name is None
     assert inventory.source_id == "host-without-name"
     assert inventory.source_record_id is not None
@@ -91,3 +91,27 @@ def test_preview_preserves_structured_fmc_scope():
     assert row["scope_details"]["domain_id"] == "domain-1"
     assert row["scope_details"]["device_id"] == "device-1"
     assert row["scope_details"]["device_name"] == "FTD-A"
+
+
+def test_fmc_missing_domain_name_is_not_inferred_as_global():
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "domain": {"id": "domain-1"},
+        "objects": {"networkaddresses": [
+            {"id": "host-1", "name": "Host", "type": "Host", "value": "192.0.2.10"}
+        ]},
+    }))
+    assert result.config.source_metadata["domain_name"] is None
+    assert result.config.network_addresses[0].source_context is None
+    assert result.config.network_addresses[0].domain_id == "domain-1"
+
+
+def test_device_only_fmc_bundle_uses_fmc_adapter():
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "devices": [{"id": "device-1", "name": "FTD-A", "resources": {
+            "ftd_interfaces": [{"id": "if-1", "name": "GigabitEthernet0/0"}]
+        }}],
+    }))
+    assert result.config.source_plane == "fmc-rest-bundle"
+    assert result.config.source_interfaces[0].source_id == "if-1"
