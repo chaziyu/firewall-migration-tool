@@ -452,3 +452,11 @@ def test_hostname_uses_only_unambiguous_device_owned_source_path():
         "</entry></template></entry></devices></config>"
     )
     assert direct_and_template.hostname == "panorama"
+
+    multiple_devices = load_pan_source(
+        "<config><devices>"
+        "<entry name='fw-a'><deviceconfig><system><hostname>fw-a</hostname></system></deviceconfig></entry>"
+        "<entry name='fw-b'/>"
+        "</devices></config>"
+    )
+    assert multiple_devices.hostname is None
