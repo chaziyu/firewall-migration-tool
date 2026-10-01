@@ -108,3 +108,39 @@ jobs:
           asset=$(curl --fail --silent --show-error http://127.0.0.1:5000/ | sed -n 's/.*src="\(\/assets\/[^" ]*\)".*/\1/p')
           test -n "$asset"
           curl --fail --silent --show-error "http://127.0.0.1:5000$asset" >/dev/null
+
+
+  desktop:
+    needs: [lint, test, frontend]
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install sidecar dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[ai,collection,deployment]" "pyinstaller>=6.0"
+      - name: Install frontend dependencies
+        working-directory: src/frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: src/frontend
+        run: npm run build
+      - name: Build Python sidecar
+        run: python desktop/build_tauri_sidecar.py
+      - name: Check Tauri desktop shell
+        run: cargo check --manifest-path src/frontend/src-tauri/Cargo.toml
