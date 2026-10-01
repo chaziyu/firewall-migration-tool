@@ -73,7 +73,7 @@ def test_checkpoint_bundle_keeps_command_status_and_gaia_separate():
 
     def handle(command, kwargs):
         commands.append(command)
-        if command == "login": return Response({"sid": "do-not-save"})
+        if command == "login": return Response({"sid": "do-not-save", "api-server-version": "1.8.1"})
         if command == "logout": return Response({})
         shape = "rulebase" if command.endswith("rulebase") else "objects"
         items = [{"uid": "uid-1", "name": "obj"}] if command == "show-hosts" else []
@@ -111,6 +111,9 @@ def test_checkpoint_bundle_keeps_command_status_and_gaia_separate():
     assert nat["package"] == "P" and nat.get("layer") is None
     assert layer["layer"] == "L" and layer.get("package") is None
     assert bundle["management_server"] == "mgmt"
+    assert bundle["api_version"] == "1.8.1"
+    assert bundle["collection_timestamp"]
+    assert bundle["successful_command_count"] > 0
     assert bundle["requested_scope"] == {"domain": "D", "package": "P", "layer": "L", "gateway": "G"}
     assert commands[0] == "login" and commands[-1] == "logout"
     assert set(commands[1:-1]).isdisjoint({"publish", "install-policy", "delete"})
