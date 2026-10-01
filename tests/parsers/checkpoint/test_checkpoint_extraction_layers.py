@@ -12,3 +12,18 @@ def test_gaia_cli_is_extracted_by_the_gaia_front_end():
     assert [item.object_type for item in config.gaia_interfaces] == ["interface"]
     assert [item.object_type for item in config.gaia_static_routes] == ["static-route"]
     assert all(item.source_plane == "gaia" for item in config.gaia_interfaces + config.gaia_static_routes)
+
+
+
+def test_gaia_dhcp_nested_fields_do_not_inherit_management_scope():
+    bundle, _ = load_checkpoint_input(
+        "set dhcp server subnet 192.0.2.0 netmask 255.255.255.0 "
+        "default-gateway 192.0.2.1 domain branch.example\n"
+    )
+    config = extract_checkpoint_config(bundle).config
+
+    subnet = config.gaia_dhcp_servers[0].subnets[0]
+    assert subnet.gateway == "192.0.2.1"
+    assert subnet.domain == "branch.example"
+    assert not hasattr(subnet, "source_plane")
+    assert not hasattr(subnet, "package")
