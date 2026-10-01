@@ -33,7 +33,7 @@ class CheckPointSourceResult:
 
 class CheckPointSourceReporter:
     vendor_id = "checkpoint"
-    display_name = "Check Point R80/R81"
+    display_name = "Check Point R81"
     supported_extensions = (".json", ".txt", ".cfg")
 
     def analyze_source(self, source: str, **options: Any) -> CheckPointSourceResult:
