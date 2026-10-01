@@ -247,3 +247,28 @@ def test_unsupported_evidence_does_not_cross_associate_duplicate_scoped_names():
              if item.source_path.endswith("/network-addresses")]
     assert [item.requires_manual_review for item in items] == [False, True]
     assert len({item.source_record_id for item in items}) == 2
+
+
+def test_fmc_unnamed_policy_does_not_manufacture_child_policy_name():
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "domain": {"id": "domain-1", "name": "Global"},
+        "access_policies": [{
+            "id": "policy-without-name",
+            "rules": [{"id": "rule-1", "name": "Rule", "action": "ALLOW"}],
+        }],
+    }))
+    policy = result.config.access_control_policies[0]
+    rule = policy.rules[0]
+    assert policy.name is None
+    assert rule.policy_id == "policy-without-name"
+    assert rule.policy_name is None
+    assert rule.source_attributes["policy_name"] is None
+
+    preview = build_ftd_preview(result)["sections"]["policies"][0]
+    assert preview["policy_id"] == "policy-without-name"
+    assert preview["policy_name"] is None
+
+    inventory = next(item for item in result.inventory_items if item.source_id == "rule-1")
+    assert inventory.source_attributes["policy_id"] == "policy-without-name"
+    assert inventory.source_attributes["policy_name"] is None
