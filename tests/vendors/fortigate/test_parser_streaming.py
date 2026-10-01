@@ -100,6 +100,30 @@ def test_ordinary_double_quotes_skip_shlex(monkeypatch):
     assert FortiGateTokenizer._split_command('set member "" "a b" "中文" #literal') == ['set', 'member', '', 'a b', '中文', '#literal']
 
 
+@pytest.mark.parametrize('newline', ['', '\n', '\r\n'])
+def test_complete_quoted_lines_skip_scanning_and_keep_tokens(monkeypatch, newline):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("complete simple quoted lines should not need scanning or shlex")
+
+    monkeypatch.setattr(FortiGateTokenizer, '_scan_lexical_state', fail_if_called)
+    monkeypatch.setattr('fwmigrate.vendors.fortigate.tokenizer.shlex.shlex', fail_if_called)
+    tokens = list(FortiGateTokenizer('set member "" "a b" "中文" #literal' + newline).tokenize())
+    assert [(token.type, token.value, token.line_number) for token in tokens] == [
+        (TokenType.SET, 'set', 1),
+        *[(TokenType.STRING, value, 1) for value in ['member', '', 'a b', '中文', '#literal']],
+    ]
+
+
+@pytest.mark.parametrize('keyword', [member.value for member in TokenType] + ['future-command'])
+def test_keyword_lookup_preserves_enum_members_and_unknown_text(keyword):
+    tokens = list(FortiGateTokenizer(keyword.upper() + ' value\n').tokenize())
+    expected_type = TokenType(keyword) if keyword != 'future-command' else TokenType.UNKNOWN
+    assert [(token.type, token.value, token.line_number) for token in tokens] == [
+        (expected_type, keyword.upper(), 1),
+        (TokenType.STRING, 'value', 1),
+    ]
+
+
 def test_quoted_fast_path_differential_combinations_and_malformed_commands():
     fragments = ['""', '"a b"', '"中文\t#"', 'plain', '"a"b', 'a"b"', '"a""b"', "'a b'", r'"a\"b"', r'a\ b', '"first\nsecond"', '"open', '"closed"\\']
     commands = ['set member ' + left + separator + right for left, separator, right in product(fragments, ['', ' ', '\t'], fragments)]
@@ -134,6 +158,7 @@ next
 end
 '''.replace('\n', newline)
     actual = parse_fortigate_config(source)
+    monkeypatch.setattr(FortiGateTokenizer, '_split_simple_quoted_command', staticmethod(lambda command: None))
     monkeypatch.setattr(FortiGateTokenizer, '_split_command', staticmethod(_shlex_parts))
     assert actual == parse_fortigate_config(source)
     commands = actual.configs[0].edits[0].children[0].edits[0].commands
@@ -216,3 +241,14 @@ def test_peek_is_repeatable_and_next_token_consumes_one_token():
     assert first == parser.peek()
     assert parser.next_token() == first
     assert parser.peek().type is TokenType.STRING
+
+
+def test_next_token_handles_direct_consumption_lookahead_and_eof():
+    parser = FortiGateParser(FortiGateTokenizer('set hostname edge\nend\n'))
+    assert parser.next_token().type is TokenType.SET
+    assert parser.read_line_values(line_number=1) == ['hostname', 'edge']
+    assert parser.peek().type is TokenType.END
+    assert parser.next_token().type is TokenType.END
+    assert parser.next_token() is None
+    assert parser.peek() is None
+    assert parser.next_token() is None

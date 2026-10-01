@@ -49,9 +49,7 @@ class FortiGateParser:
     def parse(self) -> FortiGateConfigTree:
         tree = FortiGateConfigTree()
 
-        while self.peek() is not None:
-            token = self.peek()
-
+        while (token := self.peek()) is not None:
             if token.type == TokenType.COMMENT:
                 comment = self.consume(TokenType.COMMENT)
 
@@ -102,9 +100,7 @@ class FortiGateParser:
             start_line_number=config_token.line_number,
         )
 
-        while self.peek() is not None:
-            token = self.peek()
-
+        while (token := self.peek()) is not None:
             if token.type == TokenType.END:
                 node.end_line_number = self.consume(
                     TokenType.END
@@ -174,9 +170,7 @@ class FortiGateParser:
             start_line_number=edit_token.line_number,
         )
 
-        while self.peek() is not None:
-            token = self.peek()
-
+        while (token := self.peek()) is not None:
             if token.type == TokenType.NEXT:
                 node.end_line_number = self.consume(
                     TokenType.NEXT
@@ -297,7 +291,7 @@ class FortiGateParser:
         return self._lookahead
 
     def next_token(self) -> Token | None:
-        token = self.peek()
+        token = self._lookahead if self._has_lookahead else next(self.tokens, None)
 
         self._lookahead = None
         self._has_lookahead = False
