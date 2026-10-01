@@ -67,3 +67,14 @@ def test_nat_transform_is_exposed_in_preview_and_excel():
     row = next(sheet.iter_rows(min_row=2, values_only=True))
     assert row[headers.index("Source Kind")] == "automatic_object_settings"
     assert row[headers.index("Resolved Translation")] in (None, "")
+
+
+
+def test_vpn_community_name_is_not_redacted_in_preview():
+    result = extract_checkpoint_source(
+        '{"responses":[{"command":"show-vpn-communities-star","data":{"objects":[{"uid":"vpn1","name":"Partner VPN","participating-gateways":[]}]}}]}'
+    )
+    preview = build_checkpoint_preview(result)
+
+    assert preview["derived"]["vpn"][0]["vpn_community"] == "Partner VPN"
+    assert preview["sections"]["vpn_tunnels"][0]["vpn_community"] == "Partner VPN"
