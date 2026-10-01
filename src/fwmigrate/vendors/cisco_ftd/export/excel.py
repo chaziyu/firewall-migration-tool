@@ -221,12 +221,12 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.inventory_items:
                 attrs = item.source_attributes
-                append_report_row(sheet, (
+                append_report_row(sheet, tuple(_text(value) for value in (
                     item.source_path, item.name, item.source_id, item.source_record_id, item.source_type,
                     item.source_context, attrs.get("domain_id"), attrs.get("device_id"),
                     attrs.get("device_name"), item.status.value, item.requires_manual_review,
                     attrs.get("explicit_fields"),
-                ))
+                )))
         elif name == "Collection Completeness":
             append_report_row(sheet, SHEET_HEADERS[name])
             completeness = getattr(result.derived, "source_plane_completeness", {})
@@ -247,7 +247,8 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             append_report_row(sheet, SHEET_HEADERS[name])
             for collection in native_collections:
                 for item in getattr(config, collection):
-                    append_report_row(sheet, (collection, item.name, item.source_id, item.source_context,
+                    display_name = item.name if item.source_attributes.get("source_name_explicit", True) else None
+                    append_report_row(sheet, (collection, display_name, item.source_id, item.source_context,
                         json.dumps(item.source_attributes, default=str), json.dumps(item.raw_extra, default=str)))
         else:
             append_report_row(sheet, SHEET_HEADERS[name])
