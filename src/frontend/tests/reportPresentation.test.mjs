@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { activeSubsection, matchingSourceRows, reportSections, reportSectionRowCount, reportCounts, reportSearchText, compactValue, rowColumns, safeValue, defaultColumns, cellSummary, detailGroups, findingGroups, findingGroupKey } from '../src/features/report/reportPresentation.ts'
+import { activeSubsection, interfaceTopologyRows, matchingSourceRows, reportSections, reportSectionRowCount, reportCounts, reportSearchText, compactValue, rowColumns, safeValue, defaultColumns, cellSummary, detailGroups, findingGroups, findingGroupKey } from '../src/features/report/reportPresentation.ts'
 
 test('each section is reachable once; inventory, topology, plural policies, and VPN retain their boundaries', () => {
   const sections = { policies: [{ policy_id: 1 }, { policy_id: 1 }], security_policies: [], interfaces: [{ name: 'same', vdom: 'a' }, { name: 'same', vdom: 'b' }], interface_topology: [{ name: 'same' }], policy_vpn_phase1: [{}], unknown_section: [null, 'unsupported', { unknown: [] }], metadata: { complete: false }, validation: [] }
@@ -34,6 +34,37 @@ test('combined interface views retain separate rows and counts, including empty 
   assert.equal(reportSectionRowCount(reportSections({ 'Interface Topology': [], Interfaces: [] })[0]), 0)
   assert.equal(reportSectionRowCount(reportSections({ routes: [{}] })[0]), 1)
   assert.deepEqual(sections, before)
+})
+
+test('interface topology rows retain topology relationships and enrich only unique scope-aware matches', () => {
+  const inventory = [
+    { name: 'port1', vdom: 'root', ip: '192.0.2.1/24', kind: null, status: false, 'Source section': 'interfaces' },
+    { name: 'same', vdom: 'branch' },
+    { name: 'ambiguous', status: true },
+  ]
+  const topology = [
+    { name: 'port1', vdom: 'root', kind: 'physical', parent: null, physical_interfaces: ['port1'], path: ['port1'] },
+    { name: 'port1', vdom: 'other', kind: 'physical' },
+    { name: 'same', vdom: 'root', kind: 'aggregate' },
+    { name: 'same', vdom: 'branch', kind: 'physical' },
+    { name: 'ambiguous', vdom: 'one', kind: 'physical' },
+    { name: 'ambiguous', vdom: 'two', kind: 'physical' },
+    { name: 'topology-only', vdom: 'root', kind: 'vpn' },
+  ]
+  const before = structuredClone(inventory)
+  const rows = interfaceTopologyRows(inventory, topology)
+  assert.equal(rows.length, topology.length)
+  assert.equal(rows[0].kind, null)
+  assert.equal(rows[0].status, false)
+  assert.equal(rows[0].ip, '192.0.2.1/24')
+  assert.equal(rows[0].parent, null)
+  assert.deepEqual(rows[0].physical_interfaces, ['port1'])
+  assert.equal(rows[1].kind, 'physical')
+  assert.equal(rows[3].kind, 'physical')
+  assert.equal(rows[4].status, undefined)
+  assert.equal(rows[6].name, 'topology-only')
+  assert.deepEqual(inventory, before)
+  assert.ok(defaultColumns(rows, 'interface_topology').includes('physical_interfaces'))
 })
 
 test('finding navigation preserves duplicate names across scopes and resolves NAT policy and route identities', () => {

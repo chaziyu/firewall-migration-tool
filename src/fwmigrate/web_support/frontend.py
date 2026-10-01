@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from flask import jsonify, send_file, send_from_directory
+from flask import jsonify, send_from_directory
 
 
 def register_frontend_routes(app) -> None:
@@ -25,11 +25,8 @@ def register_frontend_routes(app) -> None:
 
     @app.route("/favicon.svg")
     def frontend_favicon():
-        frontend_icon = os.path.join(app.config["FRONTEND_DIST_DIR"], "favicon.svg")
-        if os.path.isfile(frontend_icon):
-            return send_from_directory(app.config["FRONTEND_DIST_DIR"], "favicon.svg")
-        return send_from_directory(app.static_folder, "app_icon.svg")
+        return send_from_directory(app.config["FRONTEND_DIST_DIR"], "favicon.svg")
 
     @app.route("/favicon.ico")
     def favicon():
-        return send_file(os.path.join(app.static_folder, "app_icon.ico"), mimetype="image/vnd.microsoft.icon")
+        return frontend_favicon()

@@ -65,6 +65,23 @@ export function reportSectionRowCount(section: ReturnType<typeof reportSections>
   return section.rows.length
 }
 
+export function interfaceTopologyRows(inventory: ReportRow[], topology: ReportRow[]) {
+  return topology.map((row) => {
+    if (row.name == null) return row
+    const rowScope = row.vdom ?? row.scope
+    const topologyNameRows = topology.filter((item) => item.name === row.name)
+    const inventoryNameRows = inventory.filter((item) => item.name === row.name)
+    const matches = inventory.filter((item) => {
+      if (item.name !== row.name) return false
+      const itemScope = item.vdom ?? item.scope
+      if (rowScope != null && itemScope != null) return rowScope === itemScope
+      return topologyNameRows.length === 1 && inventoryNameRows.length === 1
+    })
+    if (matches.length !== 1) return row
+    return { ...row, ...Object.fromEntries(Object.entries(matches[0]).filter(([key]) => key !== 'Source section')), 'Source section': row['Source section'] }
+  })
+}
+
 export function reportCounts(data: { summary?: ReportRow; sections?: ReportRow }) {
   const summary = asRecord(data.summary)
   const objects = asRecord(summary.objects)
@@ -123,13 +140,14 @@ export function columnWidth(key: string) {
   return 'content'
 }
 export function rowColumns(rows: ReportRow[], subsection = '', vendor = '') {
-  const keys = [...new Set(rows.flatMap(Object.keys))].filter((key) => key !== 'Source section' && !SENSITIVE_KEY.test(key))
+  const keys = [...new Set(rows.flatMap(Object.keys))].filter((key) => key !== 'Source section' && !(subsection === 'interface_topology' && key === 'display_name') && !SENSITIVE_KEY.test(key))
   if (!keys.length && rows.length) return ['Source section']
-  const identity = vendor === 'fortigate' && FORTIGATE_COLUMNS[subsection] || ['name', 'policy_id', 'route_id', 'display_name', 'policy_name', 'vdom', 'scope']
+  const identity = subsection === 'interface_topology' ? ['name', 'display_name', 'vdom', 'scope', 'kind', 'ip', 'prefix', 'parent', 'members', 'aggregate', 'physical_interfaces', 'path', 'topology_path', 'issues'] : vendor === 'fortigate' && FORTIGATE_COLUMNS[subsection] || ['name', 'policy_id', 'route_id', 'display_name', 'policy_name', 'vdom', 'scope']
   return [...identity.filter((key) => keys.includes(key)), ...keys.filter((key) => !identity.includes(key))]
 }
 export function defaultColumns(rows: ReportRow[], subsection = '', vendor = '') {
   const columns = rowColumns(rows, subsection, vendor)
+  if (subsection === 'interface_topology') return columns.filter((key) => !['parent', 'members', 'aggregate', 'path', 'topology_path'].includes(key))
   const preferred = vendor === 'fortigate' ? FORTIGATE_COLUMNS[subsection] : undefined
   const selected = preferred ? columns.filter((key) => preferred.includes(key)) : []
   return selected.length ? selected : columns.slice(0, 8)
