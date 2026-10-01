@@ -82,6 +82,16 @@ from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession, PAN
 from fwmigrate.collection import CollectionStatus, source_collectors
 from fwmigrate.collection.builtin import register_builtin_collectors
 from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot, MAX_BYTES
+from fwmigrate.desktop import DesktopAPI, run_desktop
+from fwmigrate.web_support.frontend import register_frontend_routes
+from fwmigrate.web_support.preview_cache import (
+    _PreviewCacheEntry,
+    _cache_preview,
+    _clone_preview,
+    _lookup_preview,
+    _lookup_source_preview,
+    _require_complete_collection,
+)
 
 try:
     from dotenv import load_dotenv
@@ -104,25 +114,6 @@ from fwmigrate.source_reporting import (
 from fwmigrate.source_reporting.web_report import normalize_web_report
 _LOGGER = logging.getLogger(__name__)
 _DEPLOYMENT_SESSION_TTL_SECONDS = 30 * 60
-
-@dataclass(frozen=True)
-class _PreviewCacheEntry:
-    preview_id: str
-    source_vendor: str
-    source_digest: str
-    created_at: float
-    analysis: object
-    source_name: str | None = None
-    collection_status: CollectionStatus | None = None
-    collection_warnings: tuple[str, ...] = ()
-    collection_method: str | None = None
-
-
-_PREVIEW_CACHE: dict[str, _PreviewCacheEntry] = {}
-_PREVIEW_CACHE_LOCK = threading.RLock()
-_PREVIEW_CACHE_MAX_ENTRIES = 16
-_PREVIEW_CACHE_TTL_SECONDS = 15 * 60
-
 
 class ConfigurationDecodeError(ValueError):
     """Raised when an uploaded configuration cannot be decoded losslessly."""
@@ -155,105 +146,6 @@ def _extract_source_result(source_vendor: str, content: str):
 def _extract_source_config(source_vendor: str, content: str):
     """Compatibility name for source-report analysis extraction."""
     return _extract_source_result(source_vendor, content)
-
-
-def _source_digest(source_vendor: str, raw: bytes) -> str:
-    digest = hashlib.sha256()
-    digest.update(raw)
-    digest.update(b"\0")
-    digest.update(source_vendor.encode("utf-8"))
-    return digest.hexdigest()
-
-
-def _cleanup_preview_cache(now: float | None = None) -> None:
-    now = time.monotonic() if now is None else now
-    expired = [
-        preview_id
-        for preview_id, entry in _PREVIEW_CACHE.items()
-        if now - entry.created_at >= _PREVIEW_CACHE_TTL_SECONDS
-    ]
-    for preview_id in expired:
-        _PREVIEW_CACHE.pop(preview_id, None)
-
-
-def _find_source_preview(source_vendor: str, source_digest: str, *,
-                         collection_status: CollectionStatus | None = None,
-                         collection_warnings: tuple[str, ...] = (),
-                         collection_method: str | None = None) -> _PreviewCacheEntry | None:
-    return next((entry for entry in _PREVIEW_CACHE.values()
-                 if entry.source_vendor == source_vendor
-                 and entry.source_digest == source_digest
-                 and entry.collection_status == collection_status
-                 and entry.collection_warnings == collection_warnings
-                 and entry.collection_method == collection_method), None)
-
-
-def _lookup_source_preview(source_vendor: str, raw: bytes, *,
-                           collection_status: CollectionStatus | None = None,
-                           collection_warnings: tuple[str, ...] = (),
-                           collection_method: str | None = None) -> _PreviewCacheEntry | None:
-    source_digest = _source_digest(source_vendor, raw)
-    with _PREVIEW_CACHE_LOCK:
-        _cleanup_preview_cache()
-        return _find_source_preview(source_vendor, source_digest,
-                                    collection_status=collection_status,
-                                    collection_warnings=collection_warnings,
-                                    collection_method=collection_method)
-
-
-def _cache_preview(source_vendor: str, raw: bytes, analysis, source_name: str | None = None,
-                   *, collection_status: CollectionStatus | None = None,
-                   collection_warnings: tuple[str, ...] = (), collection_method: str | None = None) -> _PreviewCacheEntry:
-    now = time.monotonic()
-    source_digest = _source_digest(source_vendor, raw)
-    with _PREVIEW_CACHE_LOCK:
-        _cleanup_preview_cache(now)
-        entry = _find_source_preview(source_vendor, source_digest,
-                                     collection_status=collection_status,
-                                     collection_warnings=collection_warnings,
-                                     collection_method=collection_method)
-        if entry is not None:
-            return entry
-        while len(_PREVIEW_CACHE) >= _PREVIEW_CACHE_MAX_ENTRIES:
-            oldest_id = min(_PREVIEW_CACHE, key=lambda key: _PREVIEW_CACHE[key].created_at)
-            _PREVIEW_CACHE.pop(oldest_id, None)
-        entry = _PreviewCacheEntry(
-            preview_id=uuid.uuid4().hex,
-            source_vendor=source_vendor,
-            source_digest=source_digest,
-            created_at=now,
-            analysis=analysis,
-            source_name=source_name,
-            collection_status=collection_status,
-            collection_warnings=collection_warnings,
-            collection_method=collection_method,
-        )
-        _PREVIEW_CACHE[entry.preview_id] = entry
-        return entry
-
-
-def _lookup_preview(
-    preview_id: str,
-    source_vendor: str,
-    raw: bytes | None = None,
-) -> _PreviewCacheEntry | None:
-    with _PREVIEW_CACHE_LOCK:
-        _cleanup_preview_cache()
-        entry = _PREVIEW_CACHE.get(str(preview_id or "").strip())
-        if entry is None or entry.source_vendor != source_vendor:
-            return None
-        if raw is not None and entry.source_digest != _source_digest(source_vendor, raw):
-            return None
-        return entry
-
-
-def _clone_preview(entry: _PreviewCacheEntry):
-    return deepcopy(entry.analysis)
-
-
-def _require_complete_collection(entry: _PreviewCacheEntry) -> None:
-    if entry.collection_status is not None and entry.collection_status != CollectionStatus.SUCCESS:
-        raise ValueError("Migration requires a complete live collection; this source is PARTIAL or FAILED.")
 
 
 @dataclass(frozen=True)
@@ -490,27 +382,7 @@ def create_app(test_config=None):
         result.update(extra)
         return result
 
-    @app.route('/')
-    def index():
-        frontend_index = os.path.join(app.config['FRONTEND_DIST_DIR'], 'index.html')
-        if os.path.isfile(frontend_index):
-            return send_from_directory(app.config['FRONTEND_DIST_DIR'], 'index.html')
-        return jsonify({'error': 'Frontend build is unavailable'}), 503
-
-    @app.route('/assets/<path:filename>')
-    def frontend_asset(filename):
-        return send_from_directory(os.path.join(app.config['FRONTEND_DIST_DIR'], 'assets'), filename)
-
-    @app.route('/favicon.svg')
-    def frontend_favicon():
-        frontend_icon = os.path.join(app.config['FRONTEND_DIST_DIR'], 'favicon.svg')
-        if os.path.isfile(frontend_icon):
-            return send_from_directory(app.config['FRONTEND_DIST_DIR'], 'favicon.svg')
-        return send_from_directory(app.static_folder, 'app_icon.svg')
-
-    @app.route('/favicon.ico')
-    def favicon():
-        return send_file(os.path.join(app.static_folder, 'app_icon.ico'), mimetype='image/vnd.microsoft.icon')
+    register_frontend_routes(app)
 
     @app.route('/api/vendors', methods=['GET'])
     def list_vendors():
@@ -2008,83 +1880,3 @@ def create_app(test_config=None):
         return _conversion_unavailable()
 
     return app
-
-
-class DesktopAPI:
-    """JS bridge API exposed to the pywebview desktop frontend."""
-    def __init__(self, window=None):
-        self._window = window
-
-    def set_window(self, window):
-        self._window = window
-
-    def save_file_dialog(self, filename: str, base64_data: str) -> dict:
-        """Prompts the user with a native Windows Save File dialog and writes the file."""
-        import base64
-        import os
-        from pathlib import Path
-        try:
-            import webview
-            raw_bytes = base64.b64decode(base64_data)
-            ext = Path(filename).suffix.lower()
-            if ext == '.zip':
-                file_types = ('Zip Archive (*.zip)', 'All files (*.*)')
-            elif ext == '.xlsx':
-                file_types = ('Excel Workbook (*.xlsx)', 'All files (*.*)')
-            elif ext == '.json':
-                file_types = ('JSON (*.json)', 'All files (*.*)')
-            elif ext == '.md':
-                file_types = ('Markdown (*.md)', 'All files (*.*)')
-            else:
-                file_types = ('All files (*.*)',)
-
-            default_dir = str(Path.home() / "Downloads")
-            if not os.path.exists(default_dir):
-                default_dir = str(Path.home() / "Desktop")
-
-            save_path = None
-            if self._window:
-                dialog_type = getattr(webview, 'FileDialog', None)
-                save_enum = webview.FileDialog.SAVE if (dialog_type and hasattr(dialog_type, 'SAVE')) else getattr(webview, 'SAVE_DIALOG', 30)
-                res = self._window.create_file_dialog(
-                    dialog_type=save_enum,
-                    directory=default_dir,
-                    save_filename=filename,
-                    file_types=file_types
-                )
-                if res:
-                    save_path = res[0] if isinstance(res, (list, tuple)) else res
-
-            if not save_path:
-                return {'success': False, 'cancelled': True}
-
-            with open(save_path, 'wb') as f:
-                f.write(raw_bytes)
-
-            return {'success': True, 'path': str(save_path)}
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
-
-
-def run_desktop(port: int = 5000):
-    """Launch the app inside a dedicated native desktop window via pywebview."""
-    app = create_app()
-    try:
-        import webview
-        api = DesktopAPI()
-        window = webview.create_window(
-            title="Firewall Migration Tool",
-            url=app,
-            width=1360,
-            height=880,
-            min_size=(960, 640),
-            text_select=True,
-            js_api=api
-        )
-        api.set_window(window)
-        webview.start(gui='edgechromium')
-    except ImportError:
-        import webbrowser
-        print(f"pywebview is not installed. Opening in default browser at http://localhost:{port}")
-        webbrowser.open(f"http://localhost:{port}")
-        app.run(host='127.0.0.1', port=port, debug=False)
