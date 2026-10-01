@@ -52,7 +52,7 @@ def build_ftd_interface_topology(interfaces: list[CiscoFTDInterface | CiscoFTDIn
         if explicit_parent and name_parent and explicit_parent != name_parent:
             issues.append(FTDInterfaceTopologyIssue("conflicting-parent", "Explicit parent conflicts with name-derived parent", identity))
         vlan_id = getattr(interface, "vlan_id", None)
-        if parent and vlan_id is not None:
+        if name_parent and vlan_id is not None:
             suffix = source_name.rsplit(".", 1)[1]
             if suffix.isdigit() and int(suffix) != vlan_id:
                 issues.append(FTDInterfaceTopologyIssue("vlan-evidence-conflict", f"Explicit VLAN {vlan_id} differs from subinterface suffix {suffix}", identity))
