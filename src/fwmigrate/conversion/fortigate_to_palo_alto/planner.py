@@ -29,7 +29,7 @@ class FortiGateToPaloAltoPlanner:
         **kwargs: Any,
     ) -> PANMigrationPlan:
         """Build the supported portion of a pair-specific migration plan."""
-        del kwargs
+        include_configuration = kwargs.get("include_configuration", False)
         if options is None:
             options = PANMigrationOptions()
         elif isinstance(options, dict):
@@ -38,8 +38,9 @@ class FortiGateToPaloAltoPlanner:
         services, service_groups = plan_services(derived, options, source)
         schedules = plan_schedules(source, options)
         interfaces = plan_interfaces(source, options)
-        requirements = build_mapping_requirements(source, derived)
-        zones = plan_topology(source, derived, options, requirements["required_zone_keys"])
+        requirements = build_mapping_requirements(source, derived, include_configuration=include_configuration)
+        zones = plan_topology(source, derived, options, requirements["required_zone_keys"],
+                              include_configuration=include_configuration)
         routes = plan_routes(source, options, derived)
         dhcp_servers = plan_dhcp(source, options)
         policies = plan_policies(source, options, derived)

@@ -1,4 +1,29 @@
 import type { Candidate, Decision } from './reviewTypes'
+import type { DraftRow } from './types'
+
+export const draftRowKey = (row: DraftRow) => row.decision_key || row.group_key!
+
+export function draftDependencies(rows: DraftRow[], keys: string[], approvedItems: string[] = []): string[] {
+  const byKey = new Map(rows.map((row) => [draftRowKey(row), row]))
+  const result = new Set(keys)
+  for (const key of result) for (const parent of byKey.get(key)?.dependencies || []) {
+    const row = byKey.get(parent)
+    if (row && !row.approved && !(row.item_key && approvedItems.includes(row.item_key))) result.add(parent)
+  }
+  return [...result]
+}
+
+export function portExceptionGroups(rows: DraftRow[]): Map<string, DraftRow[]> {
+  const ports = rows.filter((row) => row.target_field === 'target_interface' && ['NEEDS_INPUT', 'CONFLICT'].includes(row.status))
+  const groups = new Map<string, DraftRow[]>()
+  for (const port of ports) {
+    if (draftDependencies(rows, port.dependencies).some((key) => ports.some((parent) => draftRowKey(parent) === key))) continue
+    const affected = rows.filter((row) => row !== port && row.status === 'NEEDS_INPUT'
+      && draftDependencies(rows, row.dependencies).includes(draftRowKey(port)))
+    groups.set(draftRowKey(port), affected)
+  }
+  return groups
+}
 
 export function candidateLabel(candidate: Candidate) {
   if (candidate.available === false) return `Already assigned to ${candidate.assigned_to?.map((owner) => `${owner.source_vdom} / ${owner.source_name}`).join(', ')}`

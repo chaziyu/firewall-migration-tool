@@ -9,11 +9,12 @@ from fwmigrate.conversion.fortigate_to_palo_alto.plan_dependencies import PANPla
 
 class PANRenderDisposition(StrEnum):
     CREATE = "CREATE"
+    CONFIGURE = "CONFIGURE"
     REUSE = "REUSE"
     BLOCK = "BLOCK"
 
 
-_REUSABLE = {"interface", "address", "address_group", "service", "service_group", "schedule", "dhcp_server"}
+_REUSABLE = {"interface", "zone", "address", "address_group", "service", "service_group", "schedule", "dhcp_server"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +108,16 @@ def assess_target_plan(plan: PANMigrationPlan, classifications, target_findings,
             status = result.get("status")
             if status == "EXACT_MATCH" and family in _REUSABLE:
                 dispositions[item_key(item)] = PANRenderDisposition.REUSE
+            elif status == "ADDITIVE":
+                field = "target_interface" if family == "interface" else "target_zone"
+                approved = any(decision.source_vdom == (item.source_vdom or "root")
+                    and decision.source_kind == item.source_kind and decision.source_name == item.source_name
+                    and decision.target_field == field and decision.value == item.target_name
+                    and decision.review_state.value == "CONFIRMED" and decision.approved_operation == "CONFIGURE"
+                    for decision in decisions.decisions)
+                dispositions[item_key(item)] = PANRenderDisposition.CONFIGURE if approved else PANRenderDisposition.BLOCK
+                if not approved:
+                    blockers[item_key(item)].append("ADDITIVE_CONFIGURATION_REQUIRES_APPROVAL")
             elif status in {"NAME_CONFLICT", "AMBIGUOUS", "EXACT_MATCH"}:
                 dispositions[item_key(item)] = PANRenderDisposition.BLOCK
                 blockers[item_key(item)].append(_reuse_code(status))

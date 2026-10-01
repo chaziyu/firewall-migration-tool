@@ -84,7 +84,7 @@ def _compatible(source, target):
 
 
 def discover_target_candidates(source, decisions: PANMigrationDecisionSet, target, device: str, *, evidence=None,
-                              proposed_design=None, review_vsys=None):
+                              proposed_design=None, review_vsys=None, draft_values=None):
     """Return current target evidence, separate from the persisted decision document."""
     from .target_validation import interface_assignment_index
 
@@ -96,12 +96,16 @@ def discover_target_candidates(source, decisions: PANMigrationDecisionSet, targe
     by_source = {(item.vdom or "root", item.name): item for item in source.interfaces if item.name}
     mapped = {}
     confirmed_zones = {}
+    def draft_vsys(vdom):
+        key = make_decision_key(vdom, "vdom", vdom, "vsys")
+        return (draft_values or {}).get(key) or target_vsys_value(decisions, vdom, proposed_design=proposed_design)
     for decision in decisions.decisions:
         if decision.source_kind != "interface" or decision.target_field not in {"target_interface", "target_zone"}:
             continue
-        value = (proposed_design.provisional_value(decision.key) if proposed_design is not None
+        value = ((draft_values or {}).get(decision.key) or
+                 (proposed_design.provisional_value(decision.key) if proposed_design is not None
                  else decision.value if decision.mode is PANDecisionMode.AUTO
-                 or decision.review_state is PANDecisionReviewState.CONFIRMED else None)
+                 or decision.review_state is PANDecisionReviewState.CONFIRMED else None))
         if value and decision.target_field == "target_interface":
             mapped[(decision.source_vdom, decision.source_name)] = value
         elif value and decision.target_field == "target_zone":
@@ -110,7 +114,7 @@ def discover_target_candidates(source, decisions: PANMigrationDecisionSet, targe
     for (vdom, name), item in by_source.items():
         key = make_decision_key(vdom, "interface", name, "target_interface")
         parent = mapped.get((vdom, item.interface)) if item.interface else None
-        target_vsys = target_vsys_value(decisions, vdom, proposed_design=proposed_design)
+        target_vsys = draft_vsys(vdom)
         found = []
         for target_item, topo in scoped:
             if not _compatible(item, target_item):
@@ -166,7 +170,7 @@ def discover_target_candidates(source, decisions: PANMigrationDecisionSet, targe
         if decision.key in result:
             continue
         candidates = []
-        vsys = target_vsys_value(decisions, decision.source_vdom, proposed_design=proposed_design)
+        vsys = draft_vsys(decision.source_vdom)
         if not vsys and proposed_design is None:
             vsys = (review_vsys or {}).get(decision.source_vdom)
         if decision.source_kind == "vdom" and decision.target_field == "vsys":

@@ -1,6 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { candidateLabel, confirmationEvidenceType, decisionLabel, interfaceMappingRows, reconcileReviewDrafts } from '../src/features/migration/reviewDrafts.ts'
+import { candidateLabel, confirmationEvidenceType, decisionLabel, interfaceMappingRows, reconcileReviewDrafts, draftDependencies, portExceptionGroups } from '../src/features/migration/reviewDrafts.ts'
+
+test('one unresolved parent groups dependent VLAN and route exceptions without blocking unrelated objects', () => {
+  const rows = [
+    { decision_key: 'scope', status: 'READY', dependencies: [], approved: true },
+    { decision_key: 'port', target_field: 'target_interface', status: 'NEEDS_INPUT', dependencies: ['scope'] },
+    { decision_key: 'vlan', target_field: 'target_interface', status: 'NEEDS_INPUT', dependencies: ['port'] },
+    { group_key: 'route', status: 'NEEDS_INPUT', dependencies: ['vlan', 'scope'] },
+    { group_key: 'address', status: 'READY', dependencies: ['scope'] },
+  ]
+  const original = structuredClone(rows)
+  assert.deepEqual([...portExceptionGroups(rows).keys()], ['port'])
+  assert.deepEqual(portExceptionGroups(rows).get('port').map((row) => row.decision_key || row.group_key), ['vlan', 'route'])
+  assert.deepEqual(draftDependencies(rows, ['route']), ['route', 'vlan', 'port'])
+  assert.deepEqual(draftDependencies(rows, ['address']), ['address'])
+  assert.deepEqual(rows, original)
+})
 
 test('single usable interface candidate prefills only a pending draft', () => {
   const decision = { key: 'root:port1', source_kind: 'interface', target_field: 'target_interface', value: null, suggested_value: null, mode: 'REQUIRED', review_state: 'PENDING' }

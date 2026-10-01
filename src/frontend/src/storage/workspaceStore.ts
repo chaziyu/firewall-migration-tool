@@ -1,7 +1,7 @@
 import type { Workspace } from './workspaceTypes'
 
 const TTL = 24 * 60 * 60 * 1000
-const empty = (): Workspace => ({ updatedAt: Date.now(), preview: null, targetSource: null, targetDevice: '', decisionDocument: null, designSession: null, artifact: null })
+const empty = (): Workspace => ({ updatedAt: Date.now(), preview: null, targetSource: null, targetDevice: '', decisionDocument: null, designSession: null, deterministicDraft: null, referenceRole: 'DESTINATION', artifact: null })
 let current = empty()
 let writes = Promise.resolve()
 let generation = 0
@@ -35,7 +35,7 @@ export function workspaceExpired(): boolean { return Boolean(current.preview) &&
 
 export async function restoreWorkspace(): Promise<Workspace> {
   const saved = await transact(false)
-  if (saved && Date.now() - saved.updatedAt < TTL) current = saved
+  if (saved && Date.now() - saved.updatedAt < TTL) current = { ...empty(), ...saved }
   else await clearWorkspace()
   return current
 }
@@ -45,13 +45,16 @@ export function saveWorkspace(update: Partial<Workspace>): Promise<void> {
   const contextChanged = (update.preview !== undefined && update.preview !== current.preview)
     || (update.targetSource !== undefined && update.targetSource !== current.targetSource)
     || (update.targetDevice !== undefined && update.targetDevice !== current.targetDevice)
-  const decisionsChanged = update.decisionDocument != null
+    || (update.referenceRole !== undefined && update.referenceRole !== current.referenceRole)
+  const decisionsChanged = update.decisionDocument !== undefined
     && JSON.stringify(update.decisionDocument) !== JSON.stringify(current.decisionDocument)
   current = { updatedAt: Date.now(), preview: update.preview === undefined ? current.preview : update.preview,
     targetSource: update.targetSource === undefined ? current.targetSource : update.targetSource,
     targetDevice: update.targetDevice ?? current.targetDevice,
+    referenceRole: update.referenceRole ?? current.referenceRole,
     decisionDocument: update.decisionDocument === undefined ? current.decisionDocument : update.decisionDocument,
     designSession: update.designSession === undefined ? contextChanged ? null : current.designSession : update.designSession,
+    deterministicDraft: update.deterministicDraft === undefined ? contextChanged || decisionsChanged ? null : current.deterministicDraft : update.deterministicDraft,
     artifact: update.artifact === undefined ? contextChanged || decisionsChanged ? null : current.artifact : update.artifact }
   const snapshot = current
   const version = generation

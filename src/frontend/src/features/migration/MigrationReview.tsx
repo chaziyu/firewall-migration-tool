@@ -6,6 +6,8 @@ import { postForm, postJson as requestJson, RequestError } from '../../api/clien
 import { FileUpload } from '../source/FileUpload'
 import type { SourcePreviewData } from '../source/types'
 import type { MigrationDecisionDocument } from './types'
+import type { MigrationDraft, ReferenceRole } from './types'
+import { MigrationDesignReview } from './components/MigrationDesignReview'
 import type { Decision, DecisionDocument, Proposal, ReviewData, ReviewGroup } from './reviewTypes'
 import { download } from './download'
 import { MigrationReviewQueues } from './components/MigrationReviewQueues'
@@ -27,6 +29,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const [targetFilename, setTargetFilename] = useState('')
   const [targetDevices, setTargetDevices] = useState<string[]>([])
   const [targetDevice, setTargetDevice] = useState(workspace().targetDevice)
+  const [referenceRole, setReferenceRole] = useState<ReferenceRole>(workspace().referenceRole)
+  const [deterministicDraft, setDeterministicDraft] = useState<MigrationDraft | null>(workspace().deterministicDraft)
   const [review, setReview] = useState<ReviewData | null>(null)
   const [drafts, updateDrafts] = useState<Record<string, string>>({})
   const [proposals, setProposals] = useState<Proposal[]>((workspace().designSession?.proposals as Proposal[]) || [])
@@ -59,7 +63,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       ...(designSession ? { design_session: designSession } : {}), ...payload })
     if (version !== requestVersion.current) return result
     const response = result as { design_session?: Record<string, unknown> }
-    if (response.design_session) { setDesignSession(response.design_session); await saveWorkspace({ designSession: response.design_session }) }
+    if (response.design_session?.design_session_id) { setDesignSession(response.design_session); await saveWorkspace({ designSession: response.design_session }) }
     return result
   }
 
@@ -84,18 +88,27 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     setDesignSession(null); void saveWorkspace({ designSession: null })
   }
 
-  async function loadReview(document?: DecisionDocument, targetId = targetSource, device = targetDevice) {
+  async function loadReview(document?: DecisionDocument, targetId = targetSource, device = targetDevice,
+                            role = referenceRole, overrides = deterministicDraft?.context.overrides) {
     if (!previewId) return
     const request = ++requestVersion.current
     onDecisionDocument?.(null)
-    const result = await postJson<ReviewData>('/api/migration/requirements', {
+    setDeterministicDraft(null)
+    void saveWorkspace({ deterministicDraft: null, artifact: null })
+    const result = await postJson<ReviewData & { draft: MigrationDraft }>('/api/migration/design/prepare', {
       source,
+      target_source: targetId, target_device: device, reference_role: role,
+      ...(overrides ? { draft_overrides: overrides } : {}),
       ...(document ? { decision_document: document } : {}),
       ...(targetId ? { target_source: targetId } : {}),
       ...(device ? { target_device: device } : {}),
     })
     if (request !== requestVersion.current) return
     setReview(result)
+    setDeterministicDraft(result.draft)
+    await saveWorkspace({ targetSource: targetId, targetDevice: result.target_device || device || '',
+      referenceRole: role, decisionDocument: result.decision_document as unknown as MigrationDecisionDocument,
+      deterministicDraft: result.draft })
     const currentGroupKey = selectedGroupKey || review?.review_groups.find((group) => group.queue === activeQueue)?.decision_keys[0]
     const selected = result.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
     const previousSelected = review?.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
@@ -178,6 +191,17 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     await loadReview(currentDocument(decisions))
     setProposals([])
     setDesignSession(null); void saveWorkspace({ designSession: null })
+  }
+
+  async function approveDesign(groups: string[]) {
+    if (!deterministicDraft) return
+    const version = requestVersion.current
+    const result = await postJson<{ decision_document: DecisionDocument }>('/api/migration/design/approve', {
+      decision_document: currentDocument(), draft: deterministicDraft, draft_digest: deterministicDraft.digest,
+      reference_role: referenceRole, draft_overrides: deterministicDraft.context.overrides, selected_groups: groups,
+    })
+    if (version !== requestVersion.current) return
+    await loadReview(result.decision_document)
   }
 
   async function uploadTarget(file: File | undefined) {
@@ -455,8 +479,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   return (
     <section className="panel migration-review" aria-labelledby="migration-review-title">
-      <h2 id="migration-review-title" tabIndex={-1}>Review target mappings</h2>
-      <p className="migration-review-intro">Target XML is optional. Suggestions stay pending until you confirm them.</p>
+      <h2 id="migration-review-title" tabIndex={-1}>Review migration design</h2>
+      <p className="migration-review-intro">Review the proposed configuration, resolve exceptions, then approve the ready groups.</p>
       <p className="report-count-note">FortiGate → PAN-OS · Review VDOM, VSYS, and virtual router decisions before dependent mappings.</p>
 
       <details className="migration-target-evidence" open={targetSource ? undefined : true}>
@@ -479,6 +503,10 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
             {devices.map((device) => <option key={device} value={device}>{device}</option>)}
           </select>
         </label>}
+        {targetSource && <label className="field">Reference role<select value={referenceRole} disabled={busy}
+          onChange={(event) => { const role = event.target.value as ReferenceRole; setReferenceRole(role); void run(() => loadReview(currentDocument(), targetSource, targetDevice, role)) }}>
+          <option value="DESTINATION">Destination configuration</option><option value="TEMPLATE">Architecture template</option>
+        </select></label>}
       </div>
 
       </details>
@@ -486,6 +514,11 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       {error && <div className="error-banner" role="alert">{error}</div>}
       {(status || busy) && <p role="status" aria-live="polite" className="migration-status">{busy ? 'Updating migration review…' : status}</p>}
       {review && <>
+        {deterministicDraft && <MigrationDesignReview key={deterministicDraft.digest} draft={deterministicDraft} busy={busy}
+          approvedItems={Object.keys((review.decision_document.design_approval as { configuration?: Record<string, unknown> } | undefined)?.configuration || {})}
+          onPrepare={(overrides) => void run(() => loadReview(currentDocument(), targetSource, targetDevice, referenceRole, overrides), 'Draft updated. Review the changed configuration.')}
+          onApprove={(groups) => void run(() => approveDesign(groups), 'Selected design groups approved.')} />}
+        <details className="migration-review-tools"><summary>Advanced manual mapping tools</summary>
         <p className="migration-counts"><strong>{reviewGroups.filter((item) => item.queue !== 'COMPLETE').length} mapping groups remaining · {reviewGroups.filter((item) => item.queue === 'CONFLICT').length} conflict groups</strong></p>
         {review.architecture_questions?.[0] && <button className="secondary-button" type="button" onClick={() => {
           const question = review.architecture_questions![0]
@@ -521,6 +554,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           applyGroupAction={applyGroupAction}
           confirmGroup={confirmGroup}
         />
+        </details>
         <details className="migration-review-tools"><summary>Import / export target intent</summary><div className="migration-toolbar">
           <label className="field">Import target intent YAML
             <input type="file" accept=".yaml,.yml,text/yaml" disabled={busy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void run(() => importIntent(file), 'Target intent imported.') }} />
@@ -530,6 +564,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
         </div>
 
         </details>
+        <details className="migration-review-tools"><summary>Optional AI assistance</summary>
         <p className="report-count-note">AI assistance requires target XML and a selected target device. Proposals need your approval.</p>
         <MigrationAIReview
           advisorStatus={advisorStatus}
@@ -547,6 +582,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           rejectProposals={rejectProposals}
           setDrafts={setDrafts}
         />
+        </details>
         <details className="migration-review-tools">
           <summary>Mapping files and explicit automation</summary>
           <div className="migration-toolbar">

@@ -27,13 +27,13 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   const [activityLog, setActivityLog] = useState(['[SYSTEM] Candidate workflow is ready. Prepare (push + validate) → explicit commit.'])
   const [autoScroll, setAutoScroll] = useState(true)
   const activityRef = useRef<HTMLDivElement>(null)
-  const autoBuildStarted = useRef(false)
   const buildRequest = useRef(0)
 
   useEffect(() => () => { buildRequest.current++ }, [])
 
   const generatePlan = useCallback(async () => {
-    if (!decisionDocument || preview.vendor !== 'fortigate') return
+    if (!decisionDocument || preview.vendor !== 'fortigate'
+        || (decisionDocument.draft_required && !decisionDocument.design_approval)) return
     const request = ++buildRequest.current
     setArtifact(null); setCommandText('')
     setBusy(true); setError(null); setStatus('Building migration plan…'); setSessionId(''); setCandidateValidated(false)
@@ -59,11 +59,14 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   }, [decisionDocument, preview.source_evidence, preview.vendor, targetSource, targetDevice])
 
   useEffect(() => {
-    if (preview.vendor === 'fortigate' && decisionDocument && !autoBuildStarted.current) {
-      autoBuildStarted.current = true
-      void generatePlan()
-    }
-  }, [preview.vendor, decisionDocument, generatePlan])
+    buildRequest.current++
+    // Context changes immediately revoke displayed commands and candidate eligibility.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setArtifact(null); setCommandText(''); setSessionId(''); setCandidateValidated(false)
+    setBusy(false)
+    void saveWorkspace({ artifact: null })
+    if (decisionDocument && (!decisionDocument.draft_required || decisionDocument.design_approval)) void generatePlan()
+  }, [decisionDocument, targetSource, targetDevice, preview.source_digest, generatePlan])
 
   useEffect(() => {
     if (autoScroll && activityRef.current) activityRef.current.scrollTop = activityRef.current.scrollHeight
@@ -134,12 +137,12 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   return activeSection === 'plan' ? <section className="panel migration-workflow" aria-labelledby="migration-title">
     <h2 id="migration-title"><span className="step-num">03</span> Migration plan</h2>
     <p>The plan updates as source, target evidence, or confirmed decisions change.</p>
-    <Button disabled={busy || !decisionDocument} onClick={() => void generatePlan()}>Rebuild now</Button>
+    <Button disabled={busy || !decisionDocument || Boolean(decisionDocument.draft_required && !decisionDocument.design_approval)} onClick={() => void generatePlan()}>Build approved artifact</Button>
     {status && <p role="status" aria-live="polite">{status}</p>}
     {artifact && <div className="artifact-summary">
       <h3>04 Review migration plan</h3>
       <p><strong>Plan status: {artifact.plan_status}</strong></p>
-      <p>{artifact.render_summary.create || 0} to create · {artifact.render_summary.reuse || 0} to reuse · {artifact.render_summary.blocked || 0} blocked · {artifact.artifact.command_count} commands</p>
+      <p>{artifact.render_summary.create || 0} to create · {artifact.render_summary.configure || 0} to configure · {artifact.render_summary.reuse || 0} to reuse · {artifact.render_summary.blocked || 0} blocked · {artifact.artifact.command_count} commands</p>
       <p className="artifact-identity">Artifact: {artifact.artifact_id} · SHA-256: {artifact.report.command_sha256 ?? 'Not reported'}</p>
       <PlanReview key={artifact.artifact_id} artifact={artifact} onReviewDecision={onReviewDecision} />
       <h3>Generated commands</h3>

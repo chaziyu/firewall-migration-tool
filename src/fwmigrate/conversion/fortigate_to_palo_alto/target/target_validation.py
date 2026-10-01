@@ -80,6 +80,14 @@ def validate_against_target(source, decisions: PANMigrationDecisionSet, target, 
             records = _records(target, device, decision.value)
             scopes = {pan_scope_identity(item.scope) for item in records if item.scope}
             if not records:
+                if (decision.approved_operation == "CREATE" and source_item is not None
+                        and source_item.vlanid is not None and source_item.interface):
+                    parent = confirmed_names.get((decision.source_vdom, source_item.interface))
+                    parent_records = _records(target, device, parent) if parent else []
+                    if (parent and decision.value == f"{parent}.{source_item.vlanid}"
+                            and len(parent_records) == 1 and parent_records[0].interface_family == "ethernet"
+                            and getattr(parent_records[0], "mode", None) in (None, "layer3")):
+                        continue
                 findings.append(_finding(decision, "TARGET_INTERFACE_NOT_FOUND", "error",
                                          f"Confirmed target interface {decision.value!r} was not found on device {device!r}.", decision.value))
                 continue
@@ -146,10 +154,10 @@ def validate_against_target(source, decisions: PANMigrationDecisionSet, target, 
             if not values and decision.target_field == "virtual_router":
                 routers = [router for router in getattr(target.config, "virtual_routers", ())
                            if router.name == decision.value and _device(router) == device]
-                if not routers:
+                if not routers and decision.approved_operation != "CREATE":
                     findings.append(_finding(decision, "TARGET_VIRTUAL_ROUTER_CONFLICT", "error",
                                              f"Confirmed target virtual router {decision.value!r} was not found on device {device!r}.", decision.value))
-                elif len({pan_scope_identity(router.scope) for router in routers if router.scope}) > 1:
+                elif len(routers) > 1 or len({pan_scope_identity(router.scope) for router in routers if router.scope}) > 1:
                     findings.append(_finding(decision, "TARGET_SCOPE_AMBIGUOUS", "error",
                                              f"Confirmed target virtual router {decision.value!r} has ambiguous scope.", decision.value))
                 continue

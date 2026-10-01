@@ -43,8 +43,14 @@ class PANMigrationDecision:
     target_object: str | None = None
     evidence_target_digest: str | None = None
     evidence_target_device: str | None = None
+    approved_operation: str | None = None
+    approval_context: dict | None = None
 
     def __post_init__(self) -> None:
+        if self.approved_operation not in {None, "CREATE", "REUSE", "CONFIGURE"}:
+            raise ValueError("invalid approved operation")
+        if self.approval_context is not None and not isinstance(self.approval_context, dict):
+            raise ValueError("approval_context must be an object or null")
         if not all(isinstance(value, str) and value for value in (self.source_vdom, self.source_kind, self.source_name, self.target_field)):
             raise ValueError("decision identity fields must be non-empty strings")
         allowed = {"vdom": {"vsys", "virtual_router"}, "interface": {"target_interface", "target_zone"}, "zone": {"target_zone"}}
@@ -183,6 +189,8 @@ def build_decision_set(config, derived, requirements, previous=None) -> PANMigra
                 target_object=old.target_object,
                 evidence_target_digest=old.evidence_target_digest,
                 evidence_target_device=old.evidence_target_device,
+                approved_operation=old.approved_operation,
+                approval_context=old.approval_context,
             )
         decisions.append(decision)
 

@@ -93,7 +93,7 @@ export function SourceConfiguration({ view, onViewChange }: {
 
   function clearAnalysis() {
     analysisRequest.current++
-    void saveWorkspace({ designSession: null, artifact: null }).catch((cause) => setError(String(cause)))
+    void saveWorkspace({ designSession: null, deterministicDraft: null, artifact: null }).catch((cause) => setError(String(cause)))
     setLoading(false)
     setMigrationVisited(false)
     setMigrationView('mappings')
@@ -212,7 +212,7 @@ export function SourceConfiguration({ view, onViewChange }: {
           {preview.collection != null && <span>Collection: {String(asRecord(preview.collection).status ?? 'Unknown')}</span>}
         </div>}
         {view === 'migration' && <nav className="migration-view-nav" aria-label="Migration workspace">
-          <button className={migrationView === 'mappings' ? 'active' : ''} type="button" onClick={() => setMigrationView('mappings')}>Mappings</button>
+          <button className={migrationView === 'mappings' ? 'active' : ''} type="button" onClick={() => setMigrationView('mappings')}>Design review</button>
           <button className={migrationView === 'plan' ? 'active' : ''} type="button" disabled={!decisionDocument} onClick={() => setMigrationView('plan')}>Review plan</button>
         </nav>}
         <section hidden={view !== 'migration' || migrationView !== 'mappings'}>

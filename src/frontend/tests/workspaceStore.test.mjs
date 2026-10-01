@@ -64,3 +64,19 @@ test('TTL removes expired workspaces and changes invalidate the previous rendere
     assert.equal(saved, undefined)
   } finally { Date.now = now }
 })
+
+test('old workspaces keep AI sessions separate and role or cleared decisions invalidate deterministic state', async () => {
+  saved = { updatedAt: Date.now(), preview: { vendor: 'fortigate' }, designSession: { design_session_id: 'ai-only' } }
+  const restored = await restoreWorkspace()
+  assert.equal(restored.referenceRole, 'DESTINATION')
+  assert.equal(restored.deterministicDraft, null)
+  assert.equal(restored.designSession.design_session_id, 'ai-only')
+  await saveWorkspace({ deterministicDraft: { digest: 'draft' }, artifact: { artifact_id: 'approved' }, decisionDocument: { design_approval: {} } })
+  await saveWorkspace({ referenceRole: 'TEMPLATE' })
+  assert.equal(workspace().deterministicDraft, null)
+  assert.equal(workspace().artifact, null)
+  await saveWorkspace({ deterministicDraft: { digest: 'draft' }, artifact: { artifact_id: 'approved' } })
+  await saveWorkspace({ decisionDocument: null })
+  assert.equal(workspace().deterministicDraft, null)
+  assert.equal(workspace().artifact, null)
+})

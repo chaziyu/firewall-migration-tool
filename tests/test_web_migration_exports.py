@@ -157,7 +157,7 @@ def test_migrate_returns_authoritative_automated_decision_document():
     })
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload["decision_document"]["format_version"] == 3
+    assert payload["decision_document"]["format_version"] == 4
     assert payload["decisions"]["decisions"] == payload["decision_document"]["decisions"]
     assert payload["automation_audit"]
     assert any(
@@ -505,7 +505,7 @@ def test_complete_mappings_create_zip_for_same_plan_artifact():
         report = json.loads(archive.read("migration_report.json"))
         decisions = json.loads(archive.read("migration_decisions.json"))
         assert report["commands"] == plan["command_count"]
-        assert decisions["format_version"] == 3
+        assert decisions["format_version"] == 4
         assert decisions["source_vendor"] == "fortigate"
         root_vsys = next(item for item in decisions["decisions"] if item["source_kind"] == "vdom" and item["target_field"] == "vsys")
         assert root_vsys["value"] == "vsys1"

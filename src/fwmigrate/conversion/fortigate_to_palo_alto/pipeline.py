@@ -153,6 +153,7 @@ def run_migration_pipeline(
     source_digest: str | None = None,
     planner: FortiGateToPaloAltoPlanner | None = None,
     target_object_reuse_classifier=None,
+    approved_item_keys=None,
 ) -> PANMigrationPipelineResult:
     """Run the complete supported FortiGate -> PAN-OS planning pipeline.
 
@@ -161,7 +162,8 @@ def run_migration_pipeline(
     regenerated from the final decision set to prevent stale mappings.
     """
     mode = PANAutomationMode(automation_mode)
-    requirements = build_mapping_requirements(source, derived)
+    from .plan_dependencies import item_key
+    requirements = build_mapping_requirements(source, derived, include_configuration=approved_item_keys is not None)
     # Rebuild from current requirements so stale decision documents cannot keep
     # obsolete pending mappings alive. Confirmed values for still-relevant keys
     # are carried forward by build_decision_set.
@@ -196,10 +198,13 @@ def run_migration_pipeline(
     target_findings = validate_against_target(source, current, target, target_device)
     final_options = current.to_options()
     actual_planner = planner or FortiGateToPaloAltoPlanner()
-    plan = actual_planner.plan(source, derived, options=final_options)
+    plan = actual_planner.plan(source, derived, options=final_options,
+                               **({"include_configuration": True} if approved_item_keys is not None else {}))
 
     reuse_classifier = target_object_reuse_classifier or classify_target_object_reuse
     target_object_reuse = reuse_classifier(plan, target, target_device)
+    if any(item.approved_operation == "CONFIGURE" for item in current.decisions):
+        target_object_reuse = classify_target_object_reuse(plan, target, target_device, allow_additive=True)
     dependencies = build_plan_dependency_index(plan, current)
     target_plan_findings = validate_target_plan(
         plan, target_object_reuse, target_findings, current, dependencies
@@ -207,6 +212,13 @@ def run_migration_pipeline(
     dispositions, render_blockers = assess_target_plan(
         plan, target_object_reuse, target_findings, current, dependencies
     )
+    if approved_item_keys is not None:
+        from .target.target_plan_validation import PANRenderDisposition, _items
+        from .plan_dependencies import expand_plan_dependents
+        unapproved = [item_key(item) for item in _items(plan) if item_key(item) not in approved_item_keys]
+        for key in expand_plan_dependents(dependencies, unapproved):
+            dispositions[key] = PANRenderDisposition.BLOCK
+            render_blockers.setdefault(key, []).append("DESIGN_GROUP_NOT_APPROVED")
     validation = validate_plan(plan)
     support_guidance = build_support_guidance(plan, validation, current, target_findings)
     recommendations = build_recommendations(source, derived, current, target, target_device)
@@ -217,6 +229,14 @@ def run_migration_pipeline(
         dispositions=dispositions,
         render_blockers=render_blockers,
         decision_keys=dependencies.decision_keys_by_item,
+        configure_paths={item_key(item): row.get("configure_paths", ()) for item in
+            (*plan.interfaces, *plan.zones) for row in target_object_reuse
+            if row.get("family") == item.source_object_type and row.get("source_vdom") == (item.source_vdom or "root")
+            and row.get("source_kind") == item.source_kind and row.get("source_name") == item.source_name},
+        virtual_router_names=tuple(item.value for item in current.decisions
+            if item.target_field == "virtual_router" and item.approved_operation == "CREATE"
+            and item.review_state is PANDecisionReviewState.CONFIRMED
+            and not any(finding.decision_key == item.key and finding.severity == "error" for finding in target_findings)),
     )
 
     unresolved = tuple(

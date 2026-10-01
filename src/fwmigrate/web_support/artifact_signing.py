@@ -23,6 +23,8 @@ def verify_envelope(value, key):
 
 def verify_artifact(value, key):
     value = verify_envelope(value, key)
+    if not isinstance(value.get('artifact_id'), str) or value.get('envelope_type') is not None:
+        raise ValueError('A signed migration artifact is required')
     commands = value.get('commands')
     if not isinstance(commands, list) or any(not isinstance(item, str) for item in commands):
         raise ValueError('Artifact commands must be an array of strings')
