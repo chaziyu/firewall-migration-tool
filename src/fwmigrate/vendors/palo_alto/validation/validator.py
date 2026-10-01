@@ -256,11 +256,9 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
                 if port and not _validate_ports(port, minimum=0):
                     _issue(issues, "error", "ipsec-tunnel", f"malformed proxy {field.replace('_', '-')} expression: {port!r}", tunnel, field)
 
-    for rule in config.security_rules:
-        explicit = rule.explicit_fields
-        for field in ("action", "source", "destination", "from_zones", "to_zones"):
-            if field not in explicit:
-                _issue(issues, "error", "policy", f"security rule is missing explicitly configured field {field!r}", rule, field)
+    # PANOSConfig preserves explicit source only.  Several security-rule fields
+    # have PAN-OS defaults/effective values when omitted from source, so absence
+    # must not be converted into a validation error or synthetic explicit state.
     for rule in config.nat_rules:
         for translation in (rule.destination_translation, rule.dynamic_destination_translation):
             port = getattr(translation, "translated_port", None) if translation else None

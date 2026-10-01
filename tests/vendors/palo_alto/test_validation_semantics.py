@@ -30,3 +30,13 @@ def test_ipsec_proxy_port_zero_is_allowed():
       <entry name='proxy'><protocol><tcp><local-port>0</local-port><remote-port>0</remote-port></tcp></protocol></entry>
     </proxy-id></auto-key></entry></ipsec></network></shared></config>""")
     assert not any("proxy local-port" in message or "proxy remote-port" in message for message in messages)
+
+
+def test_absent_security_rule_fields_are_not_reported_as_invalid_explicit_source():
+    messages = _messages(
+        "<config><shared><rulebase><security><rules>"
+        "<entry name='defaults-only'/>"
+        "</rules></security></rulebase></shared></config>"
+    )
+
+    assert not any("missing explicitly configured field" in message for message in messages)
