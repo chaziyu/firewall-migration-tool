@@ -36,6 +36,7 @@ export function SourceConfiguration({ view, onViewChange }: {
   const [ingestMode, setIngestMode] = useState<'config' | 'snapshot'>('config')
   const [error, setError] = useState<string | null>(null)
   const [migrationVisited, setMigrationVisited] = useState(false)
+  const [migrationView, setMigrationView] = useState<'mappings' | 'plan'>('mappings')
   const [requestedDecision, setRequestedDecision] = useState<{ key: string; request: number } | null>(null)
   const analysisRequest = useRef(0)
 
@@ -77,6 +78,7 @@ export function SourceConfiguration({ view, onViewChange }: {
     analysisRequest.current++
     setLoading(false)
     setMigrationVisited(false)
+    setMigrationView('mappings')
     setRequestedDecision(null)
     setPreview(null)
     setDecisionDocument(null)
@@ -190,16 +192,22 @@ export function SourceConfiguration({ view, onViewChange }: {
           <span>{String(preview.acquisition ?? 'Uploaded configuration')}</span>
           {preview.collection != null && <span>Collection: {String(asRecord(preview.collection).status ?? 'Unknown')}</span>}
         </div>}
-        <section hidden={view !== 'migration'}>
+        {view === 'migration' && <nav className="migration-view-nav" aria-label="Migration workspace">
+          <button className={migrationView === 'mappings' ? 'active' : ''} type="button" onClick={() => setMigrationView('mappings')}>Mappings</button>
+          <button className={migrationView === 'plan' ? 'active' : ''} type="button" disabled={!decisionDocument} onClick={() => setMigrationView('plan')}>Review plan</button>
+        </nav>}
+        <section hidden={view !== 'migration' || migrationView !== 'mappings'}>
         <MigrationReview key={previewId} preview={preview} vendor={vendor} requestedDecision={requestedDecision}
           onDecisionDocument={setDecisionDocument}
           onContextChange={(nextPreviewId, nextDevice) => { setTargetPreviewId(nextPreviewId); setTargetDevice(nextDevice) }} />
         </section>
+        <div hidden={view === 'migration' && migrationView !== 'plan'}>
         {decisionDocument && <MigrationWorkflow key={`${previewId}:${targetPreviewId}:${targetDevice}:${JSON.stringify(decisionDocument)}`}
           preview={preview} previewId={previewId} decisionDocument={decisionDocument}
           targetPreviewId={targetPreviewId} targetDevice={targetDevice} activeSection={view === 'live' ? 'live' : 'plan'}
-          onReviewDecision={(key) => { setRequestedDecision({ key, request: Date.now() }); onViewChange('migration'); requestAnimationFrame(() => document.getElementById('migration-review-title')?.scrollIntoView({ block: 'start' })) }}
+          onReviewDecision={(key) => { setRequestedDecision({ key, request: Date.now() }); setMigrationView('mappings'); onViewChange('migration'); requestAnimationFrame(() => document.getElementById('migration-review-title')?.scrollIntoView({ block: 'start' })) }}
           onViewChange={onViewChange} />}
+        </div>
         {!decisionDocument && view === 'live' && <section className="panel"><h2>Migration plan required</h2><p>Review source mappings and generate a plan before preparing a target candidate.</p><Button onClick={() => onViewChange('migration')}>Open plan migration</Button></section>}
       </> : <section className="panel"><h2>Migration source required</h2><p>Load a FortiGate source configuration in Configuration report before planning migration.</p><Button onClick={() => onViewChange('report')}>Open configuration report</Button></section>}
     </div>

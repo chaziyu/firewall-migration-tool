@@ -383,9 +383,12 @@ def _fast_cell(
 def _write_fast_summary(workbook: Workbook, context: _ExcelContext) -> None:
     sheet = workbook.create_sheet("Summary")
     sheet.freeze_panes = "A5"
-    sheet.sheet_view.showGridLines = False
-    for column, width in (("A", 42), ("B", 52), ("C", 20), ("D", 4), ("E", 38), ("F", 18)):
+    sheet.sheet_view.showGridLines = True
+    sheet.sheet_view.zoomScale = 90
+    for column, width in (("A", 42), ("B", 60), ("C", 20), ("D", 4), ("E", 38), ("F", 18)):
         sheet.column_dimensions[column].width = width
+    sheet.row_dimensions[1].height = 24
+    sheet.row_dimensions[10].height = 45
 
     width = 6
     band = lambda value, end: [
@@ -435,7 +438,7 @@ def _write_fast_summary(workbook: Workbook, context: _ExcelContext) -> None:
     for index, (label, value) in enumerate(metadata):
         row = [
             _fast_cell(sheet, label, font=Font(bold=True, color="41504C")),
-            _excel_safe(value),
+            _fast_cell(sheet, _excel_safe(value), alignment=Alignment(wrap_text=True, vertical="top")),
             None,
             None,
         ]
