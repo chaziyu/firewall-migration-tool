@@ -121,7 +121,7 @@ def test_native_collectors_reach_preview_and_excel(monkeypatch):
 
 
 def test_remote_live_collection_is_disabled_without_explicit_opt_in(monkeypatch):
-    client = create_app({"TESTING": True}).test_client()
+    client = create_app({"TESTING": True, "ALLOW_REMOTE_COLLECTION": False}).test_client()
     called = False
 
     def test_connection(_options):
