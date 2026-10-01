@@ -115,6 +115,19 @@ export function compactValue(value: unknown): string {
   return String(value)
 }
 
+const CISCO_FTD_COLUMNS: Record<string, string[]> = {
+  policies: ['policy_id', 'policy_name', 'rule_id', 'name', 'position', 'domain_id', 'device_name', 'source_interfaces', 'source_addresses', 'destination_interfaces', 'destination_addresses', 'services', 'action'],
+  nat: ['policy_id', 'policy_name', 'rule_id', 'name', 'position', 'sequence', 'domain_id', 'device_name', 'translation_type', 'egress_interfaces', 'translated_addresses'],
+  interfaces: ['name', 'device_name', 'device_id', 'domain_id', 'kind', 'ip', 'zone', 'status'],
+  interface_topology: ['display_name', 'name', 'device_name', 'device_id', 'domain_id', 'kind', 'ip', 'parent', 'physical_interfaces'],
+  addresses: ['name', 'domain_id', 'device_name', 'type', 'value', 'address_family'],
+  address_groups: ['name', 'domain_id', 'device_name', 'members'],
+  services: ['name', 'domain_id', 'device_name', 'protocol', 'port'],
+  service_groups: ['name', 'domain_id', 'device_name', 'members'],
+  schedules: ['name', 'domain_id', 'device_name', 'value'],
+  vpn_tunnels: ['name', 'domain_id', 'device_name', 'parent_policy_name', 'kind', 'peer'],
+}
+
 const FORTIGATE_COLUMNS: Record<string, string[]> = {
   policies: ['policy_id', 'name', 'vdom', 'source_interfaces', 'source_addresses', 'destination_interfaces', 'destination_addresses', 'services', 'action', 'status'],
   interfaces: ['name', 'vdom', 'kind', 'ip', 'parent', 'members', 'role', 'status'],
@@ -131,7 +144,11 @@ const FORTIGATE_COLUMNS: Record<string, string[]> = {
   schedules: ['name', 'vdom', 'type', 'days', 'start', 'end'],
 }
 export function fieldLabel(key: string) {
-  const labels: Record<string, string> = { policy_id: 'Policy ID', route_id: 'Route ID', vdom: 'VDOM', ip: 'IP / prefix', nat: 'NAT', ike_version: 'IKE version', vpn_tunnels: 'VPN tunnels', vpn_phase2: 'VPN phase 2', ssl_vpn_bookmarks: 'SSL VPN bookmarks', status: 'Reported status', review: 'Review' }
+  const labels: Record<string, string> = { policy_id: 'Policy ID', rule_id: 'Rule ID', route_id: 'Route ID',
+    domain_id: 'Domain ID', device_id: 'Device ID', device_name: 'Device', virtual_router_name: 'Virtual Router',
+    parent_policy_name: 'Parent Policy', vdom: 'VDOM', ip: 'IP / prefix', nat: 'NAT',
+    ike_version: 'IKE version', vpn_tunnels: 'VPN tunnels', vpn_phase2: 'VPN phase 2',
+    ssl_vpn_bookmarks: 'SSL VPN bookmarks', status: 'Reported status', review: 'Review' }
   return labels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 export function columnWidth(key: string) {
@@ -142,13 +159,19 @@ export function columnWidth(key: string) {
 export function rowColumns(rows: ReportRow[], subsection = '', vendor = '') {
   const keys = [...new Set(rows.flatMap(Object.keys))].filter((key) => key !== 'Source section' && !(subsection === 'interface_topology' && key === 'display_name') && !SENSITIVE_KEY.test(key))
   if (!keys.length && rows.length) return ['Source section']
-  const identity = subsection === 'interface_topology' ? ['name', 'display_name', 'vdom', 'scope', 'kind', 'ip', 'prefix', 'parent', 'members', 'aggregate', 'physical_interfaces', 'path', 'topology_path', 'issues'] : vendor === 'fortigate' && FORTIGATE_COLUMNS[subsection] || ['name', 'policy_id', 'route_id', 'display_name', 'policy_name', 'vdom', 'scope']
+  const identity = subsection === 'interface_topology'
+    ? ['name', 'display_name', 'vdom', 'domain_id', 'device_name', 'device_id', 'scope', 'kind', 'ip', 'prefix', 'parent', 'members', 'aggregate', 'physical_interfaces', 'path', 'topology_path', 'issues']
+    : vendor === 'fortigate' && FORTIGATE_COLUMNS[subsection]
+      || vendor === 'cisco_ftd' && CISCO_FTD_COLUMNS[subsection]
+      || ['name', 'policy_id', 'rule_id', 'route_id', 'display_name', 'policy_name', 'domain_id', 'device_name', 'device_id', 'vdom', 'scope']
   return [...identity.filter((key) => keys.includes(key)), ...keys.filter((key) => !identity.includes(key))]
 }
 export function defaultColumns(rows: ReportRow[], subsection = '', vendor = '') {
   const columns = rowColumns(rows, subsection, vendor)
   if (subsection === 'interface_topology') return columns.filter((key) => !['type', 'parent', 'members', 'aggregate', 'path', 'topology_path'].includes(key))
-  const preferred = vendor === 'fortigate' ? FORTIGATE_COLUMNS[subsection] : undefined
+  const preferred = vendor === 'fortigate' ? FORTIGATE_COLUMNS[subsection]
+    : vendor === 'cisco_ftd' ? CISCO_FTD_COLUMNS[subsection]
+    : undefined
   const selected = preferred ? columns.filter((key) => preferred.includes(key)) : []
   return selected.length ? selected : columns.slice(0, 8)
 }
@@ -181,7 +204,9 @@ const FORTIGATE_DETAILS: Record<string, Array<[string, string[]]>> = {
 }
 export function detailGroups(row: ReportRow, subsection = '', vendor = '') {
   const definitions: Array<[string, string[]]> = [
-    ['Identity', ['name', 'policy_id', 'route_id', 'policy_name', 'display_name', 'object_name', 'source_name', 'vdom', 'scope', 'Source section']],
+    ['Identity', ['name', 'policy_id', 'rule_id', 'source_id', 'route_id', 'policy_name', 'display_name', 'object_name', 'source_name', 'vdom', 'scope', 'Source section']],
+    ...(vendor === 'cisco_ftd' ? [['Source scope', ['source_context', 'domain_id', 'device_id', 'device_name',
+        'virtual_router_id', 'virtual_router_name', 'parent_policy_id', 'parent_policy_name']]] as Array<[string, string[]]> : []),
     ...(vendor === 'fortigate' && FORTIGATE_DETAILS[subsection] || [['Reported fields', defaultColumns([row], subsection, vendor)]] as Array<[string, string[]]>),
     ['Additional fields', Object.keys(row)],
   ]
