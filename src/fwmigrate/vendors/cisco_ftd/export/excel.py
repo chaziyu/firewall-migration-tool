@@ -89,6 +89,10 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
         workbook.remove(workbook.active)
     config = result.config
     derived = getattr(result, "derived", None)
+    inventory_items = getattr(result, "inventory_items", None)
+    if inventory_items is None:
+        from ..source_inventory import build_ftd_source_inventory
+        inventory_items = build_ftd_source_inventory(config)
     topologies = {(item.device_id or "", item.name): item for item in getattr(getattr(derived, "interface_topology", None), "interfaces", ())}
     normalized_routes = {}
     for item in getattr(derived, "normalized_routes", ()):
@@ -219,7 +223,7 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
                 append_report_row(sheet, (key, _text(value)))
         elif name == "Source Inventory":
             append_report_row(sheet, SHEET_HEADERS[name])
-            for item in result.inventory_items:
+            for item in inventory_items:
                 attrs = item.source_attributes
                 append_report_row(sheet, tuple(_text(value) for value in (
                     item.source_path, item.name, item.source_id, item.source_record_id, item.source_type,
@@ -229,7 +233,7 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
                 )))
         elif name == "Collection Completeness":
             append_report_row(sheet, SHEET_HEADERS[name])
-            completeness = getattr(result.derived, "source_plane_completeness", {})
+            completeness = getattr(derived, "source_plane_completeness", {})
             for part in config.collection_metadata.parts:
                 append_report_row(sheet, (
                     part.name, part.status, part.complete, part.count,
