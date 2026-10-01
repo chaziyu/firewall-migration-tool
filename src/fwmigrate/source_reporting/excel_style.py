@@ -8,6 +8,13 @@ _HEADER_FILL = PatternFill("solid", fgColor="0F766E")
 _HEADER_FONT = Font(color="FFFFFF", bold=True, size=10)
 
 
+def _safe_cell_value(value):
+    """Prevent untrusted source strings from being interpreted as Excel formulas."""
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
 def style_fast_sheet(sheet, *, header_row: int = 1) -> None:
     """Style headers only; leave body cells on Excel's native grid."""
     sheet.sheet_view.showGridLines = True
@@ -24,6 +31,7 @@ def style_fast_sheet(sheet, *, header_row: int = 1) -> None:
 
 def append_report_row(sheet, values) -> None:
     """Append vendor-owned values to either a normal or streaming worksheet."""
+    values = tuple(_safe_cell_value(value) for value in values)
     if not sheet.parent.write_only:
         sheet.append(values)
         return
