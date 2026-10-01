@@ -174,6 +174,7 @@ def build_asa_source_accounting(
                 source_path=source_path,
                 reason="Cisco ASA command is preserved but not safely extracted.",
                 raw_capture=safe_line,
+                source_context=source_context,
             ))
 
     for item in config.unsupported_commands:
