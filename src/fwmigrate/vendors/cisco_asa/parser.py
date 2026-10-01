@@ -17,7 +17,7 @@ from fwmigrate.vendors.cisco_asa.model.failover import CiscoFailoverConfig, Cisc
 from fwmigrate.vendors.cisco_asa.model.groups import CiscoNamedGroup, CiscoNamedGroupMember
 from fwmigrate.vendors.cisco_asa.model.identity import CiscoAAAAccountingRule, CiscoAAAAuthenticationRule, CiscoAAAAuthorizationRule, CiscoAAARecord, CiscoAAAServerGroup, CiscoAAAServerHost, CiscoCommandPrivilege, CiscoLocalUser
 from fwmigrate.vendors.cisco_asa.model.interface import CiscoIPv6Address, CiscoInterface
-from fwmigrate.vendors.cisco_asa.model.management import CiscoConnectionControl, CiscoDNSServerGroup, CiscoEnableCredential, CiscoHTTPServerConfig, CiscoICMPManagementRule, CiscoLoggingSetting, CiscoManagementAccessRule, CiscoManagementSetting, CiscoNTPServer, CiscoSNMPSetting, CiscoSystemSettings
+from fwmigrate.vendors.cisco_asa.model.management import CiscoConnectionControl, CiscoDNSServerGroup, CiscoDNSSettings, CiscoEnableCredential, CiscoHTTPServerConfig, CiscoICMPManagementRule, CiscoLoggingSetting, CiscoManagementAccessRule, CiscoManagementSetting, CiscoNTPServer, CiscoSNMPSetting, CiscoSystemSettings
 from fwmigrate.vendors.cisco_asa.model.mpf import CiscoClassMap, CiscoClassMapMatch, CiscoInspectAction, CiscoInspectionPolicySection, CiscoMPFConnectionAction, CiscoMPFPoliceAction, CiscoPolicyMap, CiscoPolicyMapClass, CiscoServicePolicy, CiscoTCPMap, CiscoTCPMapSetting
 from fwmigrate.vendors.cisco_asa.model.nat import CiscoNATRule
 from fwmigrate.vendors.cisco_asa.model.routing import CiscoPolicyRoutePathMonitor, CiscoRouteMap, CiscoRouteMapRule, CiscoSLAMonitor, CiscoStaticRoute, CiscoTrack
@@ -86,6 +86,31 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
         self._nat_section_counts: Dict[str, int] = {}
         self._line_contexts: Dict[int, Optional[str]] = {}
 
+    def _ensure_dns_settings(self) -> CiscoDNSSettings:
+        if self.config.dns_settings is None:
+            self.config.dns_settings = CiscoDNSSettings(name="system-dns")
+        return self.config.dns_settings
+
+    def _ensure_system_settings(self) -> CiscoSystemSettings:
+        if self.config.system_settings is None:
+            self.config.system_settings = CiscoSystemSettings(name="system")
+        return self.config.system_settings
+
+    def _ensure_failover_config(self) -> CiscoFailoverConfig:
+        if self.config.failover_config is None:
+            self.config.failover_config = CiscoFailoverConfig(name="failover")
+        return self.config.failover_config
+
+    def _ensure_http_server(self) -> CiscoHTTPServerConfig:
+        if self.config.http_server is None:
+            self.config.http_server = CiscoHTTPServerConfig()
+        return self.config.http_server
+
+    def _ensure_multi_context_system(self) -> CiscoMultiContextSystem:
+        if self.config.multi_context_system is None:
+            self.config.multi_context_system = CiscoMultiContextSystem()
+        return self.config.multi_context_system
+
 
     def _with_source_context(self, record: Any, line_number: int) -> Any:
         context = self._line_contexts.get(line_number)
@@ -130,7 +155,7 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
 
 
     def _parse_failover_command(self, line: str, line_number: int, children: Optional[List[str]] = None) -> None:
-        parts = line.split(); lower = line.lower(); cfg = self.config.failover_config
+        parts = line.split(); lower = line.lower(); cfg = self._ensure_failover_config()
         safe = sanitize_raw_text(line); cfg.raw_lines.append(safe); cfg.source_attributes.setdefault("raw_commands", []).append(safe)
         setting = CiscoFailoverSetting(name="failover", setting=parts[0], extraction_status="PARTIAL", requires_manual_review=False, raw_lines=[safe], source_attributes={"raw_command": safe})
         self.config.failover_settings.append(setting)
@@ -467,14 +492,15 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
             line_number = i + 1
             admin_match = re.fullmatch(r"admin-context\s+(\S+)", line, re.I)
             if admin_match:
-                system = self.config.multi_context_system
+                system = self._ensure_multi_context_system()
                 system.admin_context_name = admin_match.group(1)
                 system.raw_lines.append(sanitize_raw_text(line))
                 i += 1
                 continue
             if re.fullmatch(r"no\s+admin-context(?:\s+\S+)?", line, re.I):
-                self.config.multi_context_system.admin_context_name = None
-                self.config.multi_context_system.raw_lines.append(sanitize_raw_text(line))
+                system = self._ensure_multi_context_system()
+                system.admin_context_name = None
+                system.raw_lines.append(sanitize_raw_text(line))
                 i += 1
                 continue
             if not line or line.startswith((":", "!")):
@@ -526,7 +552,7 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                     parts = line.split()
                     name = parts[2] if len(parts) > 2 else ""
                     if name:
-                        self.config.failover_config.interface_monitoring[name] = False
+                        self._ensure_failover_config().interface_monitoring[name] = False
                     i += 1
                     continue
                 negated = line[3:].strip()
@@ -619,9 +645,10 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                 enabled = not lower.startswith("no ")
                 name = line.split()[-1] if enabled else (line.split()[1] if len(line.split()) > 1 else "")
                 if name:
-                    self.config.failover_config.interface_monitoring[name] = enabled
-                    self.config.failover_config.raw_lines.append(sanitize_raw_text(line))
-                    self.config.failover_config.source_attributes.setdefault("raw_commands", []).append(sanitize_raw_text(line))
+                    failover = self._ensure_failover_config()
+                    failover.interface_monitoring[name] = enabled
+                    failover.raw_lines.append(sanitize_raw_text(line))
+                    failover.source_attributes.setdefault("raw_commands", []).append(sanitize_raw_text(line))
                 i += 1
                 continue
             if lower in {"failover", "no failover"} or lower.startswith(("dhcpd ", "dhcprelay ", "dns ", "domain-name ",
@@ -645,9 +672,10 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                 elif lower.startswith("dns "):
                     parts = line.split()
                     if len(parts) >= 3 and parts[1].lower() == "domain-lookup":
-                        self.config.dns_settings.lookup_interfaces.append(parts[2])
-                        self.config.dns_settings.raw_lines.append(line)
-                        self.config.dns_settings.source_attributes.setdefault("raw_commands", []).append(line)
+                        dns_settings = self._ensure_dns_settings()
+                        dns_settings.lookup_interfaces.append(parts[2])
+                        dns_settings.raw_lines.append(line)
+                        dns_settings.source_attributes.setdefault("raw_commands", []).append(line)
                         i += 1
                         continue
                     group = parts[1] if len(parts) > 1 else "default"
@@ -658,10 +686,12 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                     record.raw_lines.append(line)
                     record.source_attributes.setdefault("raw_commands", []).append(line)
                 elif lower.startswith("domain-name "):
-                    self.config.dns_settings.domain_name = line.split(maxsplit=1)[1]
-                    self.config.system_settings.domain_name = self.config.dns_settings.domain_name
-                    self.config.dns_settings.raw_lines.append(line)
-                    self.config.dns_settings.source_attributes.setdefault("raw_commands", []).append(line)
+                    dns_settings = self._ensure_dns_settings()
+                    system_settings = self._ensure_system_settings()
+                    dns_settings.domain_name = line.split(maxsplit=1)[1]
+                    system_settings.domain_name = dns_settings.domain_name
+                    dns_settings.raw_lines.append(line)
+                    dns_settings.source_attributes.setdefault("raw_commands", []).append(line)
                 elif lower in {"failover", "no failover"} or lower.startswith("failover "):
                     self.config.failover_settings.append(CiscoFailoverSetting(name="failover", setting=line.split(maxsplit=1)[0], raw_lines=[line], source_attributes=attrs))
                 elif lower.startswith("context ") or lower == "admin-context" or lower in {"allocate-interface", "config-url", "resource-class"} or lower.startswith(("allocate-interface ", "config-url ", "admin-context ", "resource-class ")):
