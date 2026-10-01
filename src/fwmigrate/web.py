@@ -200,6 +200,10 @@ def create_app(test_config=None):
         or 'fwmigrate'
     )
     web_password = app.config.get('WEB_AUTH_PASSWORD') or os.environ.get('FWMIGRATE_WEB_PASSWORD')
+    if app.config.get('ALLOW_REMOTE_COLLECTION') and not web_password:
+        raise RuntimeError(
+            'Remote live collection requires configured web authentication'
+        )
     if require_web_auth and not web_password:
         raise RuntimeError(
             'Hosted web authentication is required but FWMIGRATE_WEB_PASSWORD is not configured'
