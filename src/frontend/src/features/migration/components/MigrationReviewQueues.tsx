@@ -6,6 +6,8 @@ type RunAction = (action: () => Promise<void>, done?: string) => Promise<void>
 
 export function MigrationReviewQueues({
   review,
+  selectedGroupKey,
+  setSelectedGroupKey,
   reviewGroups,
   queueNames,
   activeQueue,
@@ -16,8 +18,6 @@ export function MigrationReviewQueues({
   setVdomFilter,
   vdoms,
   visibleGroups,
-  groupPage,
-  setGroupPage,
   setDecisionPage,
   drafts,
   setDrafts,
@@ -30,6 +30,8 @@ export function MigrationReviewQueues({
   confirmGroup,
 }: {
   review: ReviewData
+  selectedGroupKey: string
+  setSelectedGroupKey: Dispatch<SetStateAction<string>>
   reviewGroups: ReviewGroup[]
   queueNames: string[]
   activeQueue: string
@@ -40,8 +42,6 @@ export function MigrationReviewQueues({
   setVdomFilter: Dispatch<SetStateAction<string>>
   vdoms: string[]
   visibleGroups: ReviewGroup[]
-  groupPage: number
-  setGroupPage: Dispatch<SetStateAction<number>>
   setDecisionPage: Dispatch<SetStateAction<number>>
   drafts: Record<string, string>
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
@@ -55,38 +55,17 @@ export function MigrationReviewQueues({
 }) {
   return (
     <>
-        <section className="architecture-decisions" aria-label="Architecture decisions">
-          <h3>Architecture decisions</h3>
-          {(review.architecture_questions ?? []).map((question) => {
-            const group = reviewGroups.find((item) => item.source_vdom === question.source_vdom && item.source_name === question.source_name)
-            return <article key={`${question.type}:${question.source_vdom}:${question.source_name}`} className="review-work-card">
-              <strong>{question.source_vdom} · {question.source_name}</strong>
-              <p>{question.type === 'VDOM_CONTEXT' ? 'Choose target VSYS and virtual router.' : question.type === 'AGGREGATE_MAPPING' ? 'Choose the target aggregate interface.' : 'Choose the target zone.'} {question.affected_count ?? group?.affected_count ?? 0} affected objects.</p>
-              {group && <button type="button" className="secondary-button" onClick={() => {
-                setActiveQueue(group.queue); setSearch(''); setVdomFilter('all'); setGroupPage(Math.floor(reviewGroups.filter((item) => item.queue === group.queue).indexOf(group) / 10) + 1)
-                requestAnimationFrame(() => { const input = document.getElementById(`decision-${group.decision_keys[0]}`); input?.scrollIntoView({ block: 'center' }); input?.focus() })
-              }}>Review architecture mapping</button>}
-            </article>
-          })}
-          {!review.architecture_questions?.length && <p>No architecture questions reported.</p>}
-        </section>
-        <div className="review-summary">
-          {[
-            ['verified', 'Verified'], ['derived', 'Derived'], ['choose_candidate', 'Choices'],
-            ['needs_input', 'Manual'], ['conflicts', 'Conflicts'],
-          ].map(([key, label]) => <div className="review-summary-card" key={key}><strong>{review.review_summary[key] ?? 0}</strong><span>{label} decisions</span></div>)}
-        </div>
         <section className="review-workflow" aria-label="Migration review queues">
           <nav className="review-queues" role="tablist" aria-label="Migration review work queues" onKeyDown={tabKeyboard}>
-            {queueNames.map((queue) => <button type="button" role="tab" key={queue} id={`queue-tab-${queue}`} aria-controls={`queue-panel-${queue}`} tabIndex={activeQueue === queue ? 0 : -1} aria-selected={activeQueue === queue} onClick={() => { setActiveQueue(queue); setGroupPage(1) }}>
-              {({ READY_TO_CONFIRM: 'Ready to approve', CHOOSE_CANDIDATE: 'Choose match', NEEDS_INPUT: 'Needs design', CONFLICT: 'Conflicts', COMPLETE: 'Completed' } as Record<string, string>)[queue]} <span>{reviewGroups.filter((group) => group.queue === queue).length} groups</span>
+            {queueNames.map((queue) => <button type="button" role="tab" key={queue} id={`queue-tab-${queue}`} aria-controls={`queue-panel-${queue}`} tabIndex={activeQueue === queue ? 0 : -1} aria-selected={activeQueue === queue} onClick={() => { setActiveQueue(queue); setSelectedGroupKey('') }}>
+              {({ READY_TO_CONFIRM: 'Review suggestions', CHOOSE_CANDIDATE: 'Choose a match', NEEDS_INPUT: 'Needs input', CONFLICT: 'Conflicts', COMPLETE: 'Completed' } as Record<string, string>)[queue]} <span>{reviewGroups.filter((group) => group.queue === queue).length} groups</span>
             </button>)}
           </nav>
           {queueNames.filter((queue) => queue !== activeQueue).map((queue) => <div key={queue} hidden role="tabpanel" id={`queue-panel-${queue}`} aria-labelledby={`queue-tab-${queue}`} />)}
           <div role="tabpanel" id={`queue-panel-${activeQueue}`} aria-labelledby={`queue-tab-${activeQueue}`} tabIndex={0}>
           <div className="migration-toolbar">
-            <label className="field">Search review groups<input value={search} onChange={(event) => { setSearch(event.target.value); setGroupPage(1) }} placeholder="Search source mappings" /></label>
-            <label className="field">VDOM<select value={vdomFilter} onChange={(event) => { setVdomFilter(event.target.value); setGroupPage(1); setDecisionPage(1) }}><option value="all">All VDOMs</option>{vdoms.map((item) => <option key={item}>{item}</option>)}</select></label>
+            <label className="field">Search review groups<input value={search} onChange={(event) => { setSearch(event.target.value); setSelectedGroupKey('') }} placeholder="Search source mappings" /></label>
+            <label className="field">VDOM<select value={vdomFilter} onChange={(event) => { setVdomFilter(event.target.value); setSelectedGroupKey(''); setDecisionPage(1) }}><option value="all">All VDOMs</option>{vdoms.map((item) => <option key={item}>{item}</option>)}</select></label>
           </div>
           {!visibleGroups.length && <p>{reviewGroups.length ? 'Nothing in this queue.' : 'No migration decisions are required.'}</p>}
           {review.rule_suggestions.map((suggestion) => <article className="review-work-card architecture-question" key={`${suggestion.source_vdom}:${suggestion.source_zone}`}>
@@ -95,7 +74,14 @@ export function MigrationReviewQueues({
             <details><summary>Review affected mappings</summary><ul>{suggestion.affected.map((name) => <li key={name}>{name}</li>)}</ul></details>
             <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(() => applyRuleSuggestion(suggestion))}>Apply to {suggestion.affected.length} mappings</button>
           </article>)}
-          {visibleGroups.slice((groupPage - 1) * 10, groupPage * 10).map((group) => <article className={`review-work-card queue-${group.queue.toLowerCase()}`} key={`${group.source_vdom}:${group.source_kind}:${group.source_name}`}>
+          <div className="mapping-workspace">
+            <nav className="mapping-list" aria-label="Source mappings">
+              {visibleGroups.map((group) => <button type="button" key={group.decision_keys[0]} aria-current={selectedGroupKey === group.decision_keys[0] || (!visibleGroups.some((item) => item.decision_keys[0] === selectedGroupKey) && group === visibleGroups[0]) ? 'true' : undefined} onClick={() => setSelectedGroupKey(group.decision_keys[0])}>
+                <strong>{group.source_name}</strong><span>{group.source_vdom} · {group.source_kind}</span><span>{({ READY_TO_CONFIRM: 'Review suggestion', CHOOSE_CANDIDATE: 'Choose a match', NEEDS_INPUT: 'Needs input', CONFLICT: 'Conflict', COMPLETE: 'Completed' } as Record<string, string>)[group.queue]}</span>
+              </button>)}
+            </nav>
+            <div className="mapping-editor">
+          {visibleGroups.filter((group) => group === (visibleGroups.find((item) => item.decision_keys[0] === selectedGroupKey) ?? visibleGroups[0])).map((group) => <article className={`review-work-card queue-${group.queue.toLowerCase()}`} key={`${group.source_vdom}:${group.source_kind}:${group.source_name}`}>
             <div className="review-work-heading"><div><h3>{group.source_kind === 'vdom' ? `${group.source_name} VDOM` : group.source_name}</h3><p>{group.source_vdom} · {group.source_kind}{typeof group.source_evidence.source_type === 'string' ? ` · ${group.source_evidence.source_type}` : ''}</p></div><span className="review-work-badge">{group.queue.replaceAll('_', ' ')}</span></div>
             {(review.architecture_questions ?? []).filter((question) => question.source_vdom === group.source_vdom && question.source_name === group.source_name).map((question) => <div className="review-work-suggestion" key={`${question.type}:${question.source_name}`}>
               <p>{question.type === 'AGGREGATE_MAPPING' ? `Architecture question: Which PAN aggregate replaces this interface? ${question.affected_count ?? 0} VLAN mappings will be re-evaluated.` : question.type === 'VDOM_CONTEXT' ? 'Architecture question: Choose the target VSYS and virtual router for this VDOM.' : 'Architecture question: Choose the PAN zone for this source zone.'}</p>
@@ -116,9 +102,9 @@ export function MigrationReviewQueues({
             </div>
             {group.decisions.filter((item) => item.mode === 'UNSUPPORTED').map((item) => <p key={item.key}>Unsupported: {item.target_field} · {item.reason}</p>)}
             {group.actions?.map((action) => <div key={`${action.type}:${action.source_key}`}><details><summary>Review member decision scope</summary><p>{group.source_vdom} · {action.source_key} → {action.value}</p><ul>{action.apply_to.map((key) => <li key={key}>{key}</li>)}</ul></details><button className="secondary-button" type="button" disabled={busy} onClick={() => void run(() => applyGroupAction(action))}>Apply {action.value} to {action.apply_to.length} member decisions</button></div>)}
-            {group.decisions.some((item) => item.mode !== 'UNSUPPORTED') && <button className="primary-button" type="button" disabled={busy || !group.decision_keys.some((key) => (drafts[key] ?? decisions.find((item) => item.key === key)?.value ?? decisions.find((item) => item.key === key)?.suggested_value ?? '').trim())} onClick={() => void run(() => confirmGroup(group), 'Mapping confirmed.')}>Confirm mapping</button>}
+            {group.decisions.some((item) => item.mode !== 'UNSUPPORTED') && <button className="primary-button" type="button" disabled={busy || !group.decision_keys.some((key) => (drafts[key] ?? decisions.find((item) => item.key === key)?.value ?? decisions.find((item) => item.key === key)?.suggested_value ?? '').trim())} onClick={() => void run(() => confirmGroup(group))}>Confirm mapping</button>}
           </article>)}
-          <div className="report-pager"><button type="button" className="secondary-button" disabled={groupPage <= 1} onClick={() => setGroupPage((page) => page - 1)}>Previous groups</button><span role="status">Page {groupPage} of {Math.max(1, Math.ceil(visibleGroups.length / 10))} · {visibleGroups.length} groups</span><button type="button" className="secondary-button" disabled={groupPage * 10 >= visibleGroups.length} onClick={() => setGroupPage((page) => page + 1)}>Next groups</button></div>
+          </div></div>
           </div>
         </section>
 

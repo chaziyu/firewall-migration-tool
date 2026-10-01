@@ -8,6 +8,7 @@ import { download } from './download'
 import { MigrationReviewQueues } from './components/MigrationReviewQueues'
 import { MigrationAIReview } from './components/MigrationAIReview'
 import { MigrationDecisionTable } from './components/MigrationDecisionTable'
+import { reconcileReviewDrafts } from './reviewDrafts'
 
 export function MigrationReview({ preview, vendor, onDecisionDocument, onContextChange, requestedDecision }: {
   preview: SourcePreviewData
@@ -26,7 +27,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [designSessionId, setDesignSessionId] = useState('')
   const [activeQueue, setActiveQueue] = useState('NEEDS_INPUT')
-  const [groupPage, setGroupPage] = useState(1)
+  const [selectedGroupKey, setSelectedGroupKey] = useState('')
+  const [replaceTarget, setReplaceTarget] = useState(false)
   const [decisionPage, setDecisionPage] = useState(1)
   const [bulkPreview, setBulkPreview] = useState<Array<{ key: string; scope: string; value: string }>>([])
   const [bulkPage, setBulkPage] = useState(1)
@@ -57,14 +59,23 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     })
     if (request !== requestVersion.current) return
     setReview(result)
+    const currentGroupKey = selectedGroupKey || review?.review_groups.find((group) => group.queue === activeQueue)?.decision_keys[0]
+    const selected = result.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
+    const previousSelected = review?.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
+    if (selected?.queue === 'COMPLETE' && previousSelected?.queue !== 'COMPLETE') {
+      const next = result.review_groups.find((group) => group.queue === activeQueue && group.queue !== 'COMPLETE')
+        ?? result.review_groups.find((group) => group.queue !== 'COMPLETE')
+      if (next) { setActiveQueue(next.queue); setSelectedGroupKey(next.decision_keys[0]) }
+      else { setActiveQueue('COMPLETE'); setSelectedGroupKey(selected.decision_keys[0]) }
+    }
     setTargetDevices(result.target_devices || [])
     setTargetDevice(result.target_device || '')
     onDecisionDocument?.(result.decision_document as unknown as MigrationDecisionDocument)
     onContextChange?.(targetId, result.target_device || device || '')
-    setDrafts(Object.fromEntries(result.decisions.decisions.map((item) => [item.key, item.value ?? item.suggested_value ?? ''])))
+    const contextChanged = targetId !== targetPreviewId || device !== targetDevice || result.target_evidence_changed
+    setDrafts((current) => reconcileReviewDrafts(current, review?.decisions.decisions ?? [], result.decisions.decisions, Boolean(contextChanged)))
     setBulkPreview([])
     setSelectedKeys([])
-    setGroupPage(1)
   }
 
   useEffect(() => {
@@ -92,8 +103,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     setActiveQueue(group.queue)
     setSearch('')
     setVdomFilter('all')
-    const index = review.review_groups.filter((item) => item.queue === group.queue).indexOf(group)
-    setGroupPage(Math.floor(index / 10) + 1)
+    setSelectedGroupKey(group.decision_keys[0])
   }, [requestedDecision, review])
 
   useEffect(() => {
@@ -102,7 +112,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     const destination = input ?? document.getElementById('migration-review-title')
     destination?.scrollIntoView({ block: 'center' })
     destination?.focus()
-  }, [requestedDecision, activeQueue, groupPage, review])
+  }, [requestedDecision, activeQueue, selectedGroupKey, review])
 
   if (vendor !== 'fortigate' || !previewId) return null
 
@@ -148,6 +158,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       setDesignSessionId('')
       await loadReview(review ? currentDocument() : undefined, nextTargetId, '')
       setTargetFilename(file.name)
+      setReplaceTarget(false)
       setStatus('Target evidence loaded. Review each suggested mapping before confirming it.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not read target PAN-OS XML')
@@ -344,6 +355,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     const next = decisions.map((item) => keys.has(item.key) && item.mode !== 'UNSUPPORTED' && (drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim()
       ? engineerConfirmation(item, (drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim()) : item)
     await updateDecisions(next)
+    const unfilled = group.decisions.filter((item) => item.mode !== 'UNSUPPORTED' && item.mode !== 'AUTO' && !(drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim()).length
+    setStatus(unfilled ? 'Entered mappings confirmed. This group still needs additional values.' : 'Entered mappings confirmed; dependent mappings re-evaluated.')
   }
 
   async function applyGroupAction(action: NonNullable<ReviewGroup['actions']>[number]) {
@@ -367,7 +380,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const devices = targetDevices
   const reviewGroups = review?.review_groups ?? []
   const vdoms = [...new Set(reviewGroups.map((group) => group.source_vdom))].sort()
-  const queueNames = ['READY_TO_CONFIRM', 'CHOOSE_CANDIDATE', 'NEEDS_INPUT', 'CONFLICT', 'COMPLETE']
+  const queueNames = ['NEEDS_INPUT', 'CHOOSE_CANDIDATE', 'READY_TO_CONFIRM', 'CONFLICT', 'COMPLETE']
   const visibleGroups = reviewGroups.filter((group) => group.queue === activeQueue && (vdomFilter === 'all' || group.source_vdom === vdomFilter)
     && `${group.source_vdom} ${group.source_kind} ${group.source_name}`.toLowerCase().includes(search.toLowerCase()))
   const validProposalKeys = proposals.filter((proposal) => proposal.validation_status === 'VALID' && proposal.proposed_value).map((proposal) => proposal.decision_key)
@@ -403,16 +416,19 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   return (
     <section className="panel migration-review" aria-labelledby="migration-review-title">
-      <h2 id="migration-review-title" tabIndex={-1}>Target evidence and mappings</h2>
+      <h2 id="migration-review-title" tabIndex={-1}>Review target mappings</h2>
       <p className="migration-review-intro">Target XML is optional. Suggestions stay pending until you confirm them.</p>
       <p className="report-count-note">FortiGate → PAN-OS · Review VDOM, VSYS, and virtual router decisions before dependent mappings.</p>
 
+      <details className="migration-target-evidence" open={targetPreviewId ? undefined : true}>
+        <summary>Target configuration — optional{targetFilename ? ` · ${targetFilename}` : ''}</summary>
       <div className="migration-toolbar">
         <div className="target-xml-upload">
           <h3>Optional PAN-OS target XML</h3>
-          <FileUpload file={null} accept=".xml,application/xml,text/xml" disabled={busy} title="Drop your target XML here" helpText="Optional · Supports .xml files" onChange={(file) => { if (file) void uploadTarget(file) }} />
+          {(!targetPreviewId || replaceTarget) && <FileUpload file={null} accept=".xml,application/xml,text/xml" disabled={busy} title="Drop your target XML here" helpText="Optional · Supports .xml files" onChange={(file) => { if (file) void uploadTarget(file) }} />}
           {targetFilename && <p className="report-count-note">Loaded target: {targetFilename}</p>}
         </div>
+        {targetPreviewId && <button className="secondary-button" type="button" disabled={busy} onClick={() => setReplaceTarget((value) => !value)}>Replace XML</button>}
         {targetPreviewId && <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => {
           setTargetPreviewId(''); setTargetFilename(''); setTargetDevices([]); setTargetDevice(''); setProposals([]); setDesignSessionId('')
           onContextChange?.('', '')
@@ -426,10 +442,18 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
         </label>}
       </div>
 
+      </details>
+
       {error && <div className="error-banner" role="alert">{error}</div>}
       {(status || busy) && <p role="status" aria-live="polite" className="migration-status">{busy ? 'Updating migration review…' : status}</p>}
       {review && <>
-        <p className="migration-counts">{decisions.filter((item) => item.mode !== 'AUTO' && item.mode !== 'UNSUPPORTED' && item.review_state !== 'CONFIRMED').length} remaining decisions · {reviewGroups.filter((item) => item.queue !== 'COMPLETE').length} remaining groups. Affected-object counts are per group and may overlap.</p>
+        <p className="migration-counts"><strong>{reviewGroups.filter((item) => item.queue !== 'COMPLETE').length} mapping groups remaining · {reviewGroups.filter((item) => item.queue === 'CONFLICT').length} conflict groups</strong></p>
+        {review.architecture_questions?.[0] && <button className="secondary-button" type="button" onClick={() => {
+          const question = review.architecture_questions![0]
+          const group = reviewGroups.find((item) => item.source_vdom === question.source_vdom && item.source_name === question.source_name)
+          if (group) { setActiveQueue(group.queue); setSearch(''); setVdomFilter('all'); setSelectedGroupKey(group.decision_keys[0]) }
+        }}>Recommended next mapping: {review.architecture_questions[0].source_vdom} · {review.architecture_questions[0].source_name}</button>}
+        <details className="migration-review-tools"><summary>Decision counts and impact</summary><p className="migration-counts">{decisions.filter((item) => item.mode !== 'AUTO' && item.mode !== 'UNSUPPORTED' && item.review_state !== 'CONFIRMED').length} remaining decisions · {reviewGroups.filter((item) => item.queue !== 'COMPLETE').length} remaining groups. Affected-object counts are per group and may overlap.</p></details>
         <MigrationReviewQueues
           review={review}
           reviewGroups={reviewGroups}
@@ -442,8 +466,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           setVdomFilter={setVdomFilter}
           vdoms={vdoms}
           visibleGroups={visibleGroups}
-          groupPage={groupPage}
-          setGroupPage={setGroupPage}
+          selectedGroupKey={selectedGroupKey}
+          setSelectedGroupKey={setSelectedGroupKey}
           setDecisionPage={setDecisionPage}
           drafts={drafts}
           setDrafts={setDrafts}
@@ -455,7 +479,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           applyGroupAction={applyGroupAction}
           confirmGroup={confirmGroup}
         />
-        <div className="migration-toolbar">
+        <details className="migration-review-tools"><summary>Import / export target intent</summary><div className="migration-toolbar">
           <label className="field">Import target intent YAML
             <input type="file" accept=".yaml,.yml,text/yaml" disabled={busy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void run(() => importIntent(file), 'Target intent imported.') }} />
           </label>
@@ -463,6 +487,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 <button className="secondary-button" type="button" disabled={busy || !suggestions.length} onClick={() => bulkConfirm(suggestions.map((item) => item.key), (item) => item.suggested_value ?? '')}>Review all suggestions</button>
         </div>
 
+        </details>
+        <p className="report-count-note">AI assistance requires target XML and a selected target device. Proposals need your approval.</p>
         <MigrationAIReview
           advisorStatus={advisorStatus}
           busy={busy}
@@ -480,7 +506,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           setDrafts={setDrafts}
         />
         <details className="migration-review-tools">
-          <summary>Advanced review tools</summary>
+          <summary>Mapping files and explicit automation</summary>
           <div className="migration-toolbar">
             <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => exportMappingTemplate(), 'Mapping template downloaded.')}>Download mapping template</button>
             <label className="field">Import mapping YAML

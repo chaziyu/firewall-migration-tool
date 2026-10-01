@@ -250,8 +250,15 @@ class ExcelReportTest(unittest.TestCase):
         assert links
         assert link_sheets <= set(fast.sheetnames)
         assert {"FortiGate Source Inventory", "Extraction Coverage"}.isdisjoint(link_sheets)
-        assert summary.column_dimensions["A"].width == 42
-        assert summary.column_dimensions["B"].width == 52
+        assert summary.sheet_view.showGridLines is True
+        assert summary.sheet_view.zoomScale == 90
+        for column, width in {"A": 42, "B": 60, "C": 20, "D": 4, "E": 38, "F": 18}.items():
+            assert summary.column_dimensions[column].width == width
+        assert summary["B10"].alignment.wrap_text is True
+        assert summary.row_dimensions[10].height == 45
+        for row in summary.iter_rows():
+            for cell in row:
+                assert all(getattr(cell.border, side).style is None for side in ("left", "right", "top", "bottom"))
         assert list(full["FortiGate Source Inventory"].iter_rows(min_row=3, values_only=True))
         assert list(full["Extraction Coverage"].iter_rows(min_row=3, values_only=True))
 
