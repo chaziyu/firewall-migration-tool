@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from functools import wraps
 from pydantic import ValidationError
-from flask import Flask, render_template, request, send_file, send_from_directory, jsonify
+from flask import Flask, request, send_file, send_from_directory, jsonify
 
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
@@ -328,8 +328,6 @@ def create_app(test_config=None):
     register_builtin_collectors()
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         base_dir = os.path.join(sys._MEIPASS, 'fwmigrate')
-        if not os.path.exists(os.path.join(base_dir, 'templates')):
-            base_dir = sys._MEIPASS
         frontend_dist = os.path.join(sys._MEIPASS, 'frontend', 'dist')
     else:
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -338,12 +336,9 @@ def create_app(test_config=None):
     app = Flask(
         __name__,
         static_folder=os.path.join(base_dir, 'static'),
-        template_folder=os.path.join(base_dir, 'templates')
     )
 
-    app.config['TEMPLATES_AUTO_RELOAD'] = True
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
-    app.jinja_env.auto_reload = True
     app.config.setdefault('AI_DESIGN_SESSION_TTL_SECONDS', 30 * 60)
     app.config.setdefault('AI_DESIGN_SESSION_MAX', 32)
     app.config.setdefault('MIGRATION_ARTIFACT_TTL_SECONDS', 30 * 60)
@@ -500,11 +495,7 @@ def create_app(test_config=None):
         frontend_index = os.path.join(app.config['FRONTEND_DIST_DIR'], 'index.html')
         if os.path.isfile(frontend_index):
             return send_from_directory(app.config['FRONTEND_DIST_DIR'], 'index.html')
-        return render_template('index.html')
-
-    @app.route('/legacy')
-    def legacy_index():
-        return render_template('index.html')
+        return jsonify({'error': 'Frontend build is unavailable'}), 503
 
     @app.route('/assets/<path:filename>')
     def frontend_asset(filename):

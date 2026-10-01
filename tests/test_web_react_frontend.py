@@ -3,7 +3,7 @@ from pathlib import Path
 from fwmigrate.web import create_app
 
 
-def test_react_build_is_served_and_legacy_ui_remains_available(tmp_path: Path):
+def test_react_build_is_served(tmp_path: Path):
     dist = tmp_path / "dist"
     assets = dist / "assets"
     assets.mkdir(parents=True)
@@ -14,10 +14,13 @@ def test_react_build_is_served_and_legacy_ui_remains_available(tmp_path: Path):
 
     assert b'<div id="root"></div>' in client.get("/").data
     assert client.get("/assets/app.js").data == b"React app"
-    assert b'id="tab-report"' in client.get("/legacy").data
+    assert client.get("/legacy").status_code == 404
 
 
-def test_react_route_falls_back_to_legacy_when_build_is_missing(tmp_path: Path):
+def test_react_route_reports_missing_build(tmp_path: Path):
     client = create_app({"TESTING": True, "FRONTEND_DIST_DIR": str(tmp_path / "missing")}).test_client()
 
-    assert b'id="tab-report"' in client.get("/").data
+    response = client.get("/")
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "Frontend build is unavailable"}
