@@ -77,6 +77,7 @@ SHEET_HEADERS = {
     "Secure Connect": ("Context", "Source Type", "Source Name", "Relationship", "Target Type", "Target Name", "Resolved", "Source Effective", "Status", "Interface"),
     "APBR Relationships": ("Context", "Source Type", "Source Name", "Relationship", "Target Type", "Target Name", "Resolved", "Source Effective", "Status"),
     "Inheritance": ("Record Type", "Context", "Origin", "Status", "Target Path", "Source Path", "Source Group", "Group Chain", "Source Order", "Active", "Value"),
+    "Effective Objects": ("Context", "Object Type", "Name", "Owner", "Source Presence", "Attributes"),
     "Review Required": ("Severity", "Code", "Category", "Message", "Context", "Source Path", "Object", "Field"),
     "Validation": ("Code", "Severity", "Category", "Message", "Context Type", "Context", "Source Path", "Object Type", "Object", "Field", "Reference", "Expected Type"),
     "Extraction Coverage": ("Context", "Source Path", "Source Commands", "Extracted", "Partial", "Source Only", "Unsupported", "Unknown", "Ignored", "Parse Errors", "Unresolved References", "Status", "Review Required"),
