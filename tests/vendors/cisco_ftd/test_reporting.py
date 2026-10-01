@@ -80,6 +80,7 @@ def test_preview_preserves_structured_fmc_scope():
     result = extract_cisco_ftd_source(json.dumps({
         "source": "fmc-rest-api",
         "domain": {"id": "domain-1", "name": "Global"},
+        "objects": {},
         "devices": [{"id": "device-1", "name": "FTD-A", "resources": {
             "ftd_interfaces": [{"id": "if-1", "name": "GigabitEthernet0/0"}]
         }}],
