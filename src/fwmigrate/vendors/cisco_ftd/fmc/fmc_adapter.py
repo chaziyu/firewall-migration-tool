@@ -55,7 +55,7 @@ def is_fmc_bundle(content: str) -> bool:
     return isinstance(payload, dict) and (
         payload.get("format") == FMC_BUNDLE_FORMAT
         or (
-            any(key in payload for key in ("access_policies", "nat_policies", "objects"))
+            any(key in payload for key in ("access_policies", "nat_policies", "objects", "devices"))
             and payload.get("source") in {"fmc-rest-api", "cisco-fmc-rest-api"}
         )
     )
@@ -73,8 +73,8 @@ class CiscoFMCBundleParser:
         self.payload = payload
         domain = payload.get("domain") if isinstance(payload.get("domain"), dict) else {}
         self.domain_id = domain.get("id") or payload.get("domainUUID")
-        self.domain_name = domain.get("name") or "Global"
-        self.context = f"fmc:{self.domain_name}"
+        self.domain_name = domain.get("name")
+        self.context = f"fmc:{self.domain_name}" if self.domain_name else None
 
     def _object_collections(self) -> dict[str, list[dict]]:
         objects = self.payload.get("objects") if isinstance(self.payload.get("objects"), dict) else {}
@@ -108,13 +108,11 @@ class CiscoFMCBundleParser:
         )
 
         def name(item: dict, index: int) -> str:
+            # name remains a required legacy model field. For FMC records
+            # where the API did not return a name, keep it empty rather than
+            # manufacturing a UUID/index as configured source state.
             configured_name = item.get("name")
-            if configured_name is not None:
-                return str(configured_name)
-            source_id = item.get("id")
-            if source_id is not None:
-                return str(source_id)
-            return f"<unnamed:{index}>"
+            return str(configured_name) if configured_name is not None else ""
 
         def reference(value: Any) -> CiscoFTDReference:
             if isinstance(value, dict):
@@ -159,7 +157,9 @@ class CiscoFMCBundleParser:
                 "source_name_explicit": source_name_explicit,
             }
             if not source_name_explicit:
-                attributes["source_name_fallback"] = "source_id" if item.get("id") is not None else "collection_index"
+                attributes["internal_record_key"] = (
+                    f"id:{item['id']}" if item.get("id") is not None else f"collection-index:{index}"
+                )
             attributes.update(values.pop("source_attributes", {}))
             raw_extra = values.pop("raw_extra", sanitize_source_attributes(item))
             return cls(
