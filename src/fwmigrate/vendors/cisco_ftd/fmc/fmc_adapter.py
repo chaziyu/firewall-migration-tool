@@ -148,7 +148,7 @@ class CiscoFMCBundleParser:
             return refs(value)
 
         def record(item: dict, index: int, cls, **values):
-            source_name_explicit = item.get("name") is not None
+            source_name_explicit = "name" in item
             attributes = {
                 "provenance": "FMC REST",
                 "domain_id": self.domain_id,
