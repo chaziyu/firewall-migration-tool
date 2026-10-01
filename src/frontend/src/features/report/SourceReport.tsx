@@ -139,9 +139,8 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
     })
   }, [allRows, scope, severity, search])
   const group = findingGroups(matchingRows).find((item) => item.key === activeGroup)
-  const groupKey = group?.key
-  const filteredRows = matchingRows.filter((row) => !groupKey
-    || findingGroupKey(row) === groupKey)
+  const filteredRows = useMemo(() => matchingRows.filter((row) => !activeGroup
+    || findingGroupKey(row) === activeGroup), [matchingRows, activeGroup])
   const { visibleRows, loadMoreRef } = useScrollRows(filteredRows, active)
 
   function clearFilters() {
