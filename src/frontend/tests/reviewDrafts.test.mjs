@@ -2,6 +2,52 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { candidateLabel, confirmationEvidenceType, decisionLabel, interfaceMappingRows, reconcileReviewDrafts } from '../src/features/migration/reviewDrafts.ts'
 
+test('single usable interface candidate prefills only a pending draft', () => {
+  const decision = { key: 'root:port1', source_kind: 'interface', target_field: 'target_interface', value: null, suggested_value: null, mode: 'REQUIRED', review_state: 'PENDING' }
+  for (const classification of ['STRONG', 'POSSIBLE']) {
+    const candidates = { [decision.key]: [{ value: 'ethernet1/1', class: classification, available: true, contested: false }] }
+    const original = structuredClone(decision)
+    const drafts = reconcileReviewDrafts({}, [], [decision], false, candidates)
+    assert.equal(drafts[decision.key], 'ethernet1/1')
+    assert.equal(interfaceMappingRows([decision], drafts, candidates)[0].ready, classification === 'STRONG')
+    assert.deepEqual(decision, original)
+  }
+})
+
+test('ambiguous, unavailable and contested interface candidates stay blank', () => {
+  const decision = { key: 'port1', source_kind: 'interface', target_field: 'target_interface', value: null, suggested_value: null }
+  for (const options of [
+    [],
+    [{ value: 'ethernet1/1' }, { value: 'ethernet1/2' }],
+    [{ value: 'ethernet1/1', available: false }],
+    [{ value: 'ethernet1/1', contested: true }],
+    [{ value: 'ethernet1/1', target_scope: 'vsys1' }, { value: 'ethernet1/1', target_scope: 'vsys2', available: false }],
+  ]) {
+    assert.equal(reconcileReviewDrafts({}, [], [decision], false, { port1: options }).port1, '')
+  }
+})
+
+test('candidate prefill respects values, engineer edits and target context changes', () => {
+  const decision = { key: 'port1', source_kind: 'interface', target_field: 'target_interface', value: null, suggested_value: null, review_state: 'PENDING' }
+  const candidates = { port1: [{ value: 'ethernet1/1' }] }
+  assert.equal(reconcileReviewDrafts({}, [], [{ ...decision, suggested_value: 'ethernet1/2' }], false, candidates).port1, 'ethernet1/2')
+  const confirmed = { ...decision, value: 'ethernet1/3', suggested_value: 'ethernet1/2', review_state: 'CONFIRMED' }
+  assert.equal(reconcileReviewDrafts({ port1: 'edited' }, [decision], [confirmed], false, candidates).port1, 'ethernet1/3')
+  const drafts = reconcileReviewDrafts({}, [], [decision], false, candidates)
+  drafts.port1 = 'engineer edit'
+  const changedCandidates = { port1: [{ value: 'ethernet1/4' }] }
+  assert.equal(reconcileReviewDrafts(drafts, [decision], [decision], false, changedCandidates).port1, 'engineer edit')
+  assert.equal(reconcileReviewDrafts(drafts, [decision], [decision], true, changedCandidates).port1, 'ethernet1/4')
+  assert.equal(reconcileReviewDrafts(drafts, [decision], [decision], true, { port1: [] }).port1, '')
+})
+
+test('candidate prefill is limited to interface target_interface decisions', () => {
+  for (const fields of [{ source_kind: 'zone', target_field: 'target_interface' }, { source_kind: 'interface', target_field: 'target_zone' }]) {
+    const decision = { key: 'other', value: null, suggested_value: null, ...fields }
+    assert.equal(reconcileReviewDrafts({}, [], [decision], false, { other: [{ value: 'ethernet1/1' }] }).other, '')
+  }
+})
+
 test('review refresh preserves unrelated edits but resets changed decisions and target context', () => {
   const previous = [{ key: 'root:port1', value: null, suggested_value: 'ethernet1/1' }, { key: 'other:port1', value: null }]
   const drafts = { 'root:port1': 'ethernet1/2', 'other:port1': 'ethernet1/3', removed: 'old' }

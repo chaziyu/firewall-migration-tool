@@ -110,7 +110,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     onDecisionDocument?.(result.decision_document as unknown as MigrationDecisionDocument)
     onContextChange?.(targetId, result.target_device || device || '')
     const contextChanged = targetId !== targetSource || device !== targetDevice || result.target_evidence_changed
-    setDrafts((current) => reconcileReviewDrafts(current, review?.decisions.decisions ?? [], result.decisions.decisions, Boolean(contextChanged)))
+    setDrafts((current) => reconcileReviewDrafts(current, review?.decisions.decisions ?? [], result.decisions.decisions, Boolean(contextChanged), result.decision_candidates))
     setBulkPreview([])
     setSelectedKeys([])
   }

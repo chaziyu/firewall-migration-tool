@@ -1,9 +1,12 @@
 import io
 import json
 from copy import deepcopy
+from importlib import import_module
 from pathlib import Path
 from unittest.mock import patch
 
+import openpyxl
+import pytest
 from openpyxl import load_workbook
 
 from fwmigrate.web import create_app, source_reporters
@@ -219,6 +222,91 @@ def test_all_registered_sources_advertise_view_report():
         "fortigate", "palo_alto", "cisco_asa", "cisco_ftd", "checkpoint", "juniper_srx",
     }
     assert all(item["web_report"] is True for item in sources)
+
+
+@pytest.mark.parametrize("transport", ("upload", "preview"))
+@pytest.mark.parametrize(("vendor", "fixture", "excluded"), (
+    ("fortigate", "example_fortigate.conf", {"FortiGate Source Inventory", "Extraction Coverage"}),
+    ("palo_alto", "example_palo_alto.xml", {"PAN-OS Source Inventory", "Extraction Coverage"}),
+    ("cisco_asa", "example_cisco_asa.cfg", {"Source Inventory", "Extraction Coverage"}),
+    ("cisco_ftd", "cisco_ftd/fmc_selected_domains.json", set()),
+    ("checkpoint", "checkpoint/multidomain_full.json", set()),
+    ("juniper_srx", "example_juniper_srx.set", {"Source Inventory", "Extraction Coverage"}),
+))
+def test_excel_selector_reaches_real_vendor_profiles(vendor, fixture, excluded, transport, monkeypatch):
+    client = create_app({"TESTING": True}).test_client()
+    path = Path(__file__).parent / "fixtures" / fixture
+    source = path.read_bytes()
+    evidence = None
+    if transport == "preview":
+        preview = client.post("/api/preview", data={
+            "source_vendor": vendor, "file": (io.BytesIO(source), path.name),
+        }, content_type="multipart/form-data")
+        assert preview.status_code == 200
+        evidence = preview.get_json()["source_evidence"]
+    original = openpyxl.Workbook
+    write_modes = []
+
+    def workbook_factory(*args, **kwargs):
+        workbook = original(*args, **kwargs)
+        write_modes.append(workbook.write_only)
+        return workbook
+
+    monkeypatch.setattr(openpyxl, "Workbook", workbook_factory)
+    module = import_module(f"fwmigrate.vendors.{vendor}.export.excel")
+    if hasattr(module, "Workbook"):
+        monkeypatch.setattr(module, "Workbook", workbook_factory)
+    workbooks = {}
+    for profile in ("fast", "full"):
+        if transport == "preview":
+            response = client.post("/api/extract/excel", json={
+                "source_vendor": vendor, "excel_profile": profile, "source": evidence,
+            })
+        else:
+            response = client.post("/api/extract/excel", data={
+                "source_vendor": vendor, "excel_profile": profile,
+                "file": (io.BytesIO(source), path.name),
+            }, content_type="multipart/form-data")
+        assert response.status_code == 200, (vendor, profile, response.get_json())
+        workbooks[profile] = load_workbook(io.BytesIO(response.data))
+    assert write_modes == [True, False]
+    fast, full = workbooks["fast"], workbooks["full"]
+    assert excluded <= set(full.sheetnames)
+    assert excluded.isdisjoint(fast.sheetnames)
+    assert set(fast.sheetnames) <= set(full.sheetnames)
+    assert fast.sheetnames[0] == full.sheetnames[0] == "Summary"
+    header_row = 3 if vendor in {"fortigate", "palo_alto"} else 1
+    for name in fast.sheetnames:
+        if name == "Summary":
+            continue
+        fast_sheet, full_sheet = fast[name], full[name]
+        assert fast_sheet.sheet_view.showGridLines is not False
+        assert full_sheet.sheet_view.showGridLines is not False
+        fast_rows = list(fast_sheet.iter_rows(min_row=header_row, values_only=True))
+        full_rows = list(full_sheet.iter_rows(min_row=header_row, values_only=True))
+        if vendor == "fortigate" and name == "Unsupported":
+            # FortiGate redirects its inventory reference in FAST exports.
+            fast_rows = [row[:-1] for row in fast_rows]
+            full_rows = [row[:-1] for row in full_rows]
+        assert fast_rows == full_rows, (vendor, name)
+        assert fast_sheet.freeze_panes == full_sheet.freeze_panes
+        if fast_sheet.max_row > header_row:
+            assert fast_sheet.auto_filter.ref == full_sheet.auto_filter.ref, (vendor, name)
+        assert all(not cell.has_style for row in fast_sheet.iter_rows(min_row=header_row + 1) for cell in row)
+        for column, dimension in full_sheet.column_dimensions.items():
+            if dimension.hidden:
+                assert fast_sheet.column_dimensions[column].hidden, (vendor, name, column)
+    if vendor != "fortigate":
+        assert all(cell.hyperlink is None for row in fast["Summary"] for cell in row)
+    assert any(cell.hyperlink is not None for row in full["Summary"] for cell in row)
+
+
+@pytest.mark.parametrize("vendor", ("fortigate", "palo_alto", "cisco_asa", "cisco_ftd", "checkpoint", "juniper_srx"))
+def test_excel_selector_rejects_invalid_profiles_for_every_vendor(vendor):
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post("/api/extract/excel", json={"source_vendor": vendor, "excel_profile": "invalid"})
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "excel_profile must be one of: fast, full"
 
 
 def test_api_preview_contract_covers_every_registered_vendor():

@@ -6,6 +6,8 @@ from typing import Any
 
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
+from ....source_reporting.options import ExcelExportProfile
+from ....source_reporting.excel_style import append_report_row, finish_report_workbook
 
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 
@@ -76,12 +78,13 @@ def _unresolved_reference_row(item: Any) -> dict[str, Any]:
             "reason": item.notes or item.reason}
 
 
-def export_juniper_excel(result: Any, output: Any) -> Any:
+def export_juniper_excel(result: Any, output: Any, *, profile: ExcelExportProfile | str = ExcelExportProfile.FULL) -> Any:
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment
 
-    workbook = Workbook()
-    workbook.remove(workbook.active)
+    profile = ExcelExportProfile(profile)
+    workbook = Workbook(write_only=profile is ExcelExportProfile.FAST)
+    if not workbook.write_only:
+        workbook.remove(workbook.active)
     views = result.derived
     rows = {"Interfaces": views.interface_topology, "Zones": views.zone_memberships,
             "Routing Instances": views.routing_instances, "Address Books": views.address_books,
@@ -114,73 +117,68 @@ def export_juniper_excel(result: Any, output: Any) -> Any:
                                "activation_directives", "unsupported_commands"}), "root"))
     rows["Additional Settings"] = tuple(additional)
     for name in SHEET_ORDER:
+        if profile is ExcelExportProfile.FAST and name in {"Source Inventory", "Extraction Coverage"}:
+            continue
         sheet = workbook.create_sheet(name)
         if name == "Summary":
-            sheet.append(("Field", "Value"))
-            sheet.append(("Vendor", "Juniper SRX"))
-            sheet.append(("Hostname", result.config.hostname))
-            sheet.append(("Source Format", result.source_format))
-            sheet.append(("Contexts", len(result.config.contexts)))
-            sheet.append(("Configuration Groups", len(result.config.configuration_groups)))
-            sheet.append(("Source Sections", len(result.source_sections)))
-            sheet.append(("Partial Sections", sum(item.status == ExtractionStatus.PARTIAL for item in result.source_sections)))
-            sheet.append(("Source Only Sections", sum(item.status == ExtractionStatus.SOURCE_ONLY for item in result.source_sections)))
-            sheet.append(("Unsupported Sections", sum(item.status == ExtractionStatus.UNSUPPORTED for item in result.source_sections)))
-            sheet.append(("Parse Errors", sum(item.status == ExtractionStatus.PARSE_ERROR for item in result.source_sections)))
-            sheet.append(("Validation Errors", len(result.validation.errors)))
-            sheet.append(("Validation Warnings", len(result.validation.warnings)))
-            sheet.append(("Unresolved References", sum(item.result == "UNRESOLVED" for item in views.dependencies)))
-            sheet.append(("Interfaces", len(views.interface_topology)))
-            sheet.append(("Zones", len(views.zone_memberships)))
-            sheet.append(("Policies", len(views.policies)))
-            sheet.append(("NAT Rule Sets", len(views.nat_rule_sets)))
-            sheet.append(("Routes", sum(len(context.routes) for context in result.config.iter_contexts())))
-            sheet.append(("DHCP Objects", len(views.dhcp)))
-            sheet.append(("VPNs", len(views.vpn_relationships)))
-            sheet.append(("Remote Access Profiles", len(result.config.contexts) and sum(len(context.remote_access.profiles) for context in result.config.iter_contexts())))
-            sheet.append(("APBR SLA Rules", sum(len(context.apbr.sla_rules) for context in result.config.iter_contexts())))
+            append_report_row(sheet, ("Field", "Value"))
+            append_report_row(sheet, ("Vendor", "Juniper SRX"))
+            append_report_row(sheet, ("Hostname", result.config.hostname))
+            append_report_row(sheet, ("Source Format", result.source_format))
+            append_report_row(sheet, ("Contexts", len(result.config.contexts)))
+            append_report_row(sheet, ("Configuration Groups", len(result.config.configuration_groups)))
+            append_report_row(sheet, ("Source Sections", len(result.source_sections)))
+            append_report_row(sheet, ("Partial Sections", sum(item.status == ExtractionStatus.PARTIAL for item in result.source_sections)))
+            append_report_row(sheet, ("Source Only Sections", sum(item.status == ExtractionStatus.SOURCE_ONLY for item in result.source_sections)))
+            append_report_row(sheet, ("Unsupported Sections", sum(item.status == ExtractionStatus.UNSUPPORTED for item in result.source_sections)))
+            append_report_row(sheet, ("Parse Errors", sum(item.status == ExtractionStatus.PARSE_ERROR for item in result.source_sections)))
+            append_report_row(sheet, ("Validation Errors", len(result.validation.errors)))
+            append_report_row(sheet, ("Validation Warnings", len(result.validation.warnings)))
+            append_report_row(sheet, ("Unresolved References", sum(item.result == "UNRESOLVED" for item in views.dependencies)))
+            append_report_row(sheet, ("Interfaces", len(views.interface_topology)))
+            append_report_row(sheet, ("Zones", len(views.zone_memberships)))
+            append_report_row(sheet, ("Policies", len(views.policies)))
+            append_report_row(sheet, ("NAT Rule Sets", len(views.nat_rule_sets)))
+            append_report_row(sheet, ("Routes", sum(len(context.routes) for context in result.config.iter_contexts())))
+            append_report_row(sheet, ("DHCP Objects", len(views.dhcp)))
+            append_report_row(sheet, ("VPNs", len(views.vpn_relationships)))
+            append_report_row(sheet, ("Remote Access Profiles", len(result.config.contexts) and sum(len(context.remote_access.profiles) for context in result.config.iter_contexts())))
+            append_report_row(sheet, ("APBR SLA Rules", sum(len(context.apbr.sla_rules) for context in result.config.iter_contexts())))
             continue
         if name == "Source Inventory":
-            sheet.append(("Domain", "Source Path", "Context", "Status", "Review Required", "Commands"))
+            append_report_row(sheet, ("Domain", "Source Path", "Context", "Status", "Review Required", "Commands"))
             for item in result.inventory_items:
-                sheet.append((item.domain, item.source_path, item.source_context, item.status.value,
+                append_report_row(sheet, (item.domain, item.source_path, item.source_context, item.status.value,
                               item.requires_manual_review, len(item.commands)))
             continue
         if name == "Validation":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for issue in result.validation.issues:
-                sheet.append((issue.code, issue.severity, issue.category, issue.message, issue.context_type,
+                append_report_row(sheet, (issue.code, issue.severity, issue.category, issue.message, issue.context_type,
                               issue.context, issue.source_path, issue.object_type, issue.object_name,
                               issue.field, issue.reference, issue.expected_type))
             continue
         if name == "Extraction Coverage":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for section in result.source_sections:
-                sheet.append(_coverage_row(section, inventory_by_path))
+                append_report_row(sheet, _coverage_row(section, inventory_by_path))
             continue
         if name == "Unsupported Source":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.unsupported_items:
-                sheet.append((item.source_context, item.source_path, item.source_name, item.reason, item.raw_capture))
+                append_report_row(sheet, (item.source_context, item.source_path, item.source_name, item.reason, item.raw_capture))
             continue
-        sheet.append(SHEET_HEADERS[name])
+        append_report_row(sheet, SHEET_HEADERS[name])
         for item in rows[name]:
             if isinstance(item, tuple):
-                sheet.append(tuple(_value(value) for value in item))
+                append_report_row(sheet, tuple(_value(value) for value in item))
                 continue
             if hasattr(item, "model_dump"):
                 item = item.model_dump(mode="python")
             elif hasattr(item, "__dict__"):
                 item = item.__dict__
-            sheet.append(tuple(_value(item.get(header.lower().replace(" ", "_"))) for header in SHEET_HEADERS[name]))
-    for sheet in workbook.worksheets:
-        sheet.freeze_panes = "A2"
-        sheet.auto_filter.ref = sheet.dimensions
-        for column in sheet.columns:
-            letter = column[0].column_letter
-            sheet.column_dimensions[letter].width = min(48, max(12, max(len(str(cell.value or "")) for cell in column) + 2))
-            for cell in column:
-                cell.alignment = cell.alignment + Alignment(wrap_text=True, vertical="top")
+            append_report_row(sheet, tuple(_value(item.get(header.lower().replace(" ", "_"))) for header in SHEET_HEADERS[name]))
+    finish_report_workbook(workbook)
     if hasattr(output, "write"):
         workbook.save(output)
         return output

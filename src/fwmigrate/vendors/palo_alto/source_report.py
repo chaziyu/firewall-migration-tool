@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ...source_reporting.options import ExcelExportProfile
+
 from .native import build_derived_views, validate_panos_config
 from .source_builder import build_panos_config
 from .model.source import PANOSConfig
@@ -38,10 +40,10 @@ class PaloAltoSourceReporter:
 
         return build_panos_preview(analysis)
 
-    def export_excel(self, analysis: PaloAltoSourceResult, output: Any, **options: Any) -> Any:
+    def export_excel(self, analysis: PaloAltoSourceResult, output: Any, profile: ExcelExportProfile | str = ExcelExportProfile.FULL, **options: Any) -> Any:
         from .export.excel import export_panos_excel
 
-        export_panos_excel(analysis, output, source_name=options.get("source_name"))
+        export_panos_excel(analysis, output, profile=profile, source_name=options.get("source_name"))
         return output
 
 

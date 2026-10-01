@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter, PaloAltoSourceResult
 from fwmigrate.vendors.palo_alto.export.excel_schema import HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, SHEET_IMPLEMENTATION_STATUS
-from fwmigrate.vendors.palo_alto.export.excel import _write_table, _ERROR_FILL, _REVIEW_FILL, _DERIVED_FILL, _ALT_FILL
+from fwmigrate.vendors.palo_alto.export.excel import _write_table
 from fwmigrate.vendors.palo_alto.model import PANAddress, PANOSConfig
 from fwmigrate.vendors.palo_alto.source_model import PANOSDerivedViews, PANScope
 from fwmigrate.vendors.palo_alto.validation.models import PANOSValidationIssue, PANOSValidationResult
@@ -129,7 +129,7 @@ def test_validation_issues_stay_on_the_matching_native_scope(scopes, target):
     assert [sheet.cell(row, reason_col).value == "scoped warning" for row in (4, 5)] == [target == 0, target == 1]
 
 
-def test_streamed_writer_preserves_fill_precedence_and_layout_after_reload():
+def test_plain_writer_preserves_values_and_layout_after_reload():
     workbook = Workbook()
     workbook.remove(workbook.active)
     rows = iter((
@@ -145,12 +145,11 @@ def test_streamed_writer_preserves_fill_precedence_and_layout_after_reload():
     sheet = load_workbook(BytesIO(output.getvalue()))["Security Policies"]
     headers = {cell.value: cell.column for cell in sheet[3]}
     derived = headers["Effective Order"]
-    assert sheet.cell(4, derived).fill.fgColor.rgb.endswith(_REVIEW_FILL.fgColor.rgb[-6:])
-    assert sheet.cell(5, derived).fill.fgColor.rgb.endswith(_ERROR_FILL.fgColor.rgb[-6:])
-    assert sheet.cell(5, 1).fill.fgColor.rgb.endswith(_ERROR_FILL.fgColor.rgb[-6:])
-    assert sheet.cell(6, derived).fill.fgColor.rgb.endswith(_DERIVED_FILL.fgColor.rgb[-6:])
-    assert sheet.cell(7, 1).fill.fgColor.rgb.endswith(_ALT_FILL.fgColor.rgb[-6:])
-    assert sheet.cell(8, 1).fill.fill_type is None
+    assert [sheet.cell(row, derived).value for row in range(4, 8)] == ["derived"] * 4
+    assert sheet.sheet_view.showGridLines
+    assert all(not cell.has_style for row in sheet.iter_rows(min_row=4) for cell in row)
+    assert all(sheet.column_dimensions[get_column_letter(column)].width == 28
+               for column in range(1, len(SHEET_HEADERS["Security Policies"]) + 1))
     assert sheet["A2"].value.startswith("5 row(s)")
     assert sheet.auto_filter.ref == f"A3:{get_column_letter(len(SHEET_HEADERS['Security Policies']))}8"
     assert sheet.freeze_panes == "D4"

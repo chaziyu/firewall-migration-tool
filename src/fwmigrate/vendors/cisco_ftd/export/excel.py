@@ -4,6 +4,8 @@ from pathlib import Path
 import json
 from typing import Any
 
+from ....source_reporting.options import ExcelExportProfile
+from ....source_reporting.excel_style import append_report_row, finish_report_workbook
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 
 
@@ -78,11 +80,13 @@ def _inspection_rows(config: Any) -> list[tuple[Any, ...]]:
     return rows
 
 
-def export_ftd_excel(result: Any, output: Any) -> Any:
+def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | str = ExcelExportProfile.FULL) -> Any:
     from openpyxl import Workbook
 
-    workbook = Workbook()
-    workbook.remove(workbook.active)
+    profile = ExcelExportProfile(profile)
+    workbook = Workbook(write_only=profile is ExcelExportProfile.FAST)
+    if not workbook.write_only:
+        workbook.remove(workbook.active)
     config = result.config
     derived = getattr(result, "derived", None)
     topologies = {(item.device_id or "", item.name): item for item in getattr(getattr(derived, "interface_topology", None), "interfaces", ())}
@@ -205,29 +209,30 @@ def export_ftd_excel(result: Any, output: Any) -> Any:
     for name in SHEET_ORDER:
         sheet = workbook.create_sheet(name)
         if name == "Summary":
-            sheet.append(("Field", "Value"))
+            append_report_row(sheet, ("Field", "Value"))
             for key, value in {"Vendor": "Cisco FTD", "Input Source": config.input_source_type,
                                "Source Plane": config.source_plane,
                                "Validation Issues": len(result.validation.issues)}.items():
-                sheet.append((key, _text(value)))
+                append_report_row(sheet, (key, _text(value)))
         elif name == "Source Evidence":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for item in config.unsupported_evidence:
-                sheet.append((item.get("source_path"), item.get("reason")))
+                append_report_row(sheet, (item.get("source_path"), item.get("reason")))
         elif name == "Validation":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.validation.issues:
-                sheet.append((item.severity, item.category, item.message, item.source_plane, item.source_object))
+                append_report_row(sheet, (item.severity, item.category, item.message, item.source_plane, item.source_object))
         elif name == "Native Sources":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for collection in native_collections:
                 for item in getattr(config, collection):
-                    sheet.append((collection, item.name, item.source_id, item.source_context,
+                    append_report_row(sheet, (collection, item.name, item.source_id, item.source_context,
                         json.dumps(item.source_attributes, default=str), json.dumps(item.raw_extra, default=str)))
         else:
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for row in rows[name]:
-                sheet.append(tuple(_text(value) for value in row))
+                append_report_row(sheet, tuple(_text(value) for value in row))
+    finish_report_workbook(workbook)
     if hasattr(output, "write"):
         workbook.save(output)
         return output
