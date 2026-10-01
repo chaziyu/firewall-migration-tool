@@ -108,7 +108,13 @@ class CiscoFMCBundleParser:
         )
 
         def name(item: dict, index: int) -> str:
-            return str(item.get("name") or item.get("id") or index)
+            configured_name = item.get("name")
+            if configured_name is not None:
+                return str(configured_name)
+            source_id = item.get("id")
+            if source_id is not None:
+                return str(source_id)
+            return f"<unnamed:{index}>"
 
         def reference(value: Any) -> CiscoFTDReference:
             if isinstance(value, dict):
@@ -146,7 +152,14 @@ class CiscoFMCBundleParser:
             return refs(value)
 
         def record(item: dict, index: int, cls, **values):
-            attributes = {"provenance": "FMC REST", "domain_id": self.domain_id}
+            source_name_explicit = item.get("name") is not None
+            attributes = {
+                "provenance": "FMC REST",
+                "domain_id": self.domain_id,
+                "source_name_explicit": source_name_explicit,
+            }
+            if not source_name_explicit:
+                attributes["source_name_fallback"] = "source_id" if item.get("id") is not None else "collection_index"
             attributes.update(values.pop("source_attributes", {}))
             raw_extra = values.pop("raw_extra", sanitize_source_attributes(item))
             return cls(
