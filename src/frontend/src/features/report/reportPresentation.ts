@@ -243,9 +243,16 @@ export function activeSubsection(subsections: Array<{ key: string; rows: ReportR
 
 export function matchingSourceRows(rows: ReportRow[], finding: ReportRow) {
   const scope = finding.scope ?? finding.vdom
-  const findingNames = [finding.object_name, finding.policy_id, String(finding.object_name ?? '').replace(/^policy\s+/i, '')].filter((value) => value != null).map(String)
+  const stableIds = [finding.source_id, finding.rule_id].filter((value) => value != null).map(String)
+  const findingNames = [finding.object_name, finding.policy_id,
+    String(finding.object_name ?? '').replace(/^policy\s+/i, '')].filter((value) => value != null).map(String)
   return rows.filter((row) => {
-    const names = [row.name, row.display_name, row.object_name, row.policy_name, row.policy_id, row.source_policy_id, row.route_id].filter((value) => value != null).map(String)
-    return findingNames.some((name) => names.includes(name)) && (scope == null || (row.scope ?? row.vdom) === scope)
+    const rowIds = [row.source_id, row.rule_id].filter((value) => value != null).map(String)
+    const names = [row.name, row.display_name, row.object_name, row.policy_name, row.policy_id,
+      row.source_policy_id, row.route_id].filter((value) => value != null).map(String)
+    const identityMatches = stableIds.length
+      ? stableIds.some((id) => rowIds.includes(id))
+      : findingNames.some((name) => names.includes(name))
+    return identityMatches && (scope == null || (row.scope ?? row.vdom) === scope)
   })
 }
