@@ -95,15 +95,17 @@ def export_asa_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
         if name == "Source Inventory":
             append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.inventory_items:
-                append_report_row(sheet, (item.domain, item.source_path, item.source_id, item.status.value,
-                              item.requires_manual_review, "; ".join(item.notes)))
+                append_report_row(sheet, (item.domain, item.source_context, item.source_path,
+                              item.source_id, item.status.value, item.requires_manual_review,
+                              "; ".join(item.notes)))
             continue
         if name == "Review Required":
             append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.inventory_items:
                 if item.requires_manual_review:
-                    append_report_row(sheet, (item.domain, item.source_path, item.source_id, item.status.value,
-                                  "; ".join(item.notes), item.source_path or item.source_id))
+                    append_report_row(sheet, (item.domain, item.source_context, item.source_id,
+                                  item.status.value, "; ".join(item.notes),
+                                  item.source_path or item.source_id))
             for issue in result.validation.issues:
                 append_report_row(sheet, ("Validation", issue.source_context, issue.source_object, issue.severity,
                               issue.message, issue.source_object))
