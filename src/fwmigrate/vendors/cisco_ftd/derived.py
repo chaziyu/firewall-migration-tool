@@ -424,8 +424,9 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
                 "rule_group_id": None, "rule_group_name": None, "rule_id": None,
                 "rule_behavior_id": None, "override_id": None})
 
-    zone_interfaces = {zone.name: tuple(ref.name or ref.source_id for ref in (zone.interfaces or []) if ref.name or ref.source_id)
-                       for zone in config.security_zones}
+    zone_interfaces = {(zone.name or zone.source_id): tuple(
+        ref.name or ref.source_id for ref in (zone.interfaces or []) if ref.name or ref.source_id)
+        for zone in config.security_zones if zone.name or zone.source_id}
     incomplete_interfaces = any(part.name.endswith("/ftd_interfaces") and not part.complete
                                 for part in config.collection_metadata.parts)
     interface_records = (*config.source_interfaces, *config.device_interfaces)
