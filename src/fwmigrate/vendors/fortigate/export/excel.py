@@ -40,7 +40,18 @@ from .excel_schema import (
     SHEET_HEADERS,
     SHEET_ORDER,
 )
-from .excel_common import _excel_safe, _normalize_key
+from .excel_common import (
+    _additional_source_settings,
+    _additional_settings,
+    _build_additional_settings,
+    _excel_safe,
+    _interface_source_values,
+    _lookup_source_header,
+    _model_rows,
+    _normalize_key,
+    _normalized_source_values,
+    _overlay_safe_raw,
+)
 from .excel_rows import (
     _iter_fortigate_source_inventory_rows,
     rows_for_sheet as _rows_for_sheet,
