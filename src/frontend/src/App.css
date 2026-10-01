@@ -278,10 +278,10 @@ body:has(.finding-inspector[open]) { overflow: hidden; }
 .source-report .report-workspace-header { flex-wrap: wrap; margin-bottom: 12px; }
 .source-report .report-header-actions { flex-wrap: wrap; }
 .source-report .report-source-filename { overflow-wrap: anywhere; min-width: 0; }
-.source-report .report-tabs { position: sticky; top: 0; z-index: 3; flex-wrap: wrap; overflow: visible; margin: 12px 0 20px; padding: 6px 0; background: var(--surface); }
+.source-report .report-tabs { position: sticky; top: 0; z-index: 3; flex-wrap: wrap; overflow: visible; margin: 6px 0 10px; padding: 4px 0; background: var(--surface); }
 .source-report .report-tab { padding: 8px 10px; font-size: 13px; }
 .report-section-select { display: none; }
-.source-report .report-object-tabs { flex-wrap: wrap; overflow: visible; margin: 12px 0; }
+.source-report .report-object-tabs { flex-wrap: wrap; overflow: visible; margin: 6px 0 8px; }
 .report-empty-toggle { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 13px; }
 .report-validation-attention { display: flex; flex-wrap: wrap; gap: 8px 16px; width: 100%; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--canvas); color: var(--text-heading); font: inherit; text-align: left; cursor: pointer; }
 .report-validation-attention span { margin-left: auto; color: var(--color-primary); }
@@ -291,8 +291,12 @@ body:has(.finding-inspector[open]) { overflow: hidden; }
 .report-column-selector summary { padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
 .report-column-selector > div { position: absolute; right: 0; z-index: 4; display: grid; gap: 8px; width: 260px; max-height: 55vh; overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); box-shadow: 0 8px 24px #0002; }
 .report-column-selector label { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.source-report .report-toolbar { margin: 8px 0; }
+.source-report .report-toolbar input, .source-report .report-toolbar select { min-height: 34px; padding: 6px 8px; }
+.source-report .report-filter-controls { gap: 8px; }
 .source-report .report-table { border-collapse: separate; border-spacing: 0; font-size: 14px; }
 .source-report .report-table th, .source-report .report-table td { min-width: 0; max-width: none; padding: 10px; }
+.source-report .report-table th { position: sticky; top: 0; z-index: 1; background: var(--canvas); }
 .source-report .report-cell { width: auto; white-space: normal; overflow-wrap: anywhere; }
 .source-report .report-topology-view .report-identity .report-cell { white-space: pre-wrap; }
 .source-report .report-column-short { width: 86px; min-width: 86px !important; }
@@ -303,10 +307,10 @@ body:has(.finding-inspector[open]) { overflow: hidden; }
 .source-report .report-table tbody tr:hover td { background: var(--canvas); }
 .source-report .report-table tbody tr.selected td { background: var(--color-primary-subtle); }
 .report-not-reported { color: var(--text-muted); font-size: 12px; font-weight: 400; }
-.source-report .report-pager { justify-content: flex-start; flex-wrap: wrap; margin: 12px 0; gap: 8px 12px; }
+.source-report .report-pager { justify-content: flex-start; flex-wrap: wrap; margin: 8px 0; gap: 6px 10px; }
 .source-report .report-pager label { display: flex; align-items: center; gap: 6px; }
 .source-report .report-pager input { width: 64px; }
-.source-report .report-pager input, .source-report .report-pager select, .report-section-select select { padding: 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-main); font: inherit; }
+.source-report .report-pager input, .source-report .report-pager select, .report-section-select select { min-height: 32px; padding: 5px 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-main); font: inherit; }
 .source-report .validation-groups { display: grid; }
 .source-report .validation-group { width: 100%; font: inherit; line-height: 1.5; overflow-wrap: anywhere; }
 .source-report .validation-group .finding-severity, .source-report .finding-group-count { flex-shrink: 0; white-space: nowrap; }

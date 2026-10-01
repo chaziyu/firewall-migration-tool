@@ -9,11 +9,14 @@ def test_react_build_is_served(tmp_path: Path):
     assets.mkdir(parents=True)
     (dist / "index.html").write_text('<div id="root"></div><script src="/assets/app.js"></script>', encoding="utf-8")
     (assets / "app.js").write_text("React app", encoding="utf-8")
+    (dist / "favicon.svg").write_text("<svg></svg>", encoding="utf-8")
 
     client = create_app({"TESTING": True, "FRONTEND_DIST_DIR": str(dist)}).test_client()
 
     assert b'<div id="root"></div>' in client.get("/").data
     assert client.get("/assets/app.js").data == b"React app"
+    assert client.get("/favicon.svg").data == b"<svg></svg>"
+    assert client.get("/favicon.ico").status_code == 200
     assert client.get("/legacy").status_code == 404
 
 

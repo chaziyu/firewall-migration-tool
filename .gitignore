@@ -59,7 +59,6 @@ split_configs/
 
 # Temporary files and logs
 *.tmp
-*.log
 *.swp
 *.swo
 *~
@@ -88,3 +87,21 @@ fix.md
 .fixing_plan.md
 .fortigate_interface_check.md
 firewall migration tool references link.txt
+
+# Logs
+logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist-ssr
+*.local
+
+# Editor directories and files
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

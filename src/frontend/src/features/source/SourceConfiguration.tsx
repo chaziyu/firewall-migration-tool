@@ -34,12 +34,10 @@ export function SourceConfiguration({ view, onViewChange }: {
   const [exporting, setExporting] = useState(false)
   const [excelProfile, setExcelProfile] = useState<'fast' | 'full'>('fast')
   const [ingestMode, setIngestMode] = useState<'config' | 'snapshot'>('config')
-  const [sourceInputVisible, setSourceInputVisible] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [migrationVisited, setMigrationVisited] = useState(false)
   const [requestedDecision, setRequestedDecision] = useState<{ key: string; request: number } | null>(null)
   const analysisRequest = useRef(0)
-  const sourceConfigurationRef = useRef<HTMLElement>(null)
 
   if ((view === 'migration' || view === 'live') && !migrationVisited) setMigrationVisited(true)
 
@@ -64,7 +62,6 @@ export function SourceConfiguration({ view, onViewChange }: {
       const result = await previewSource(sourceFile, vendor)
       if (request !== analysisRequest.current) return
       setPreview({ ...result, vendor: result.vendor || vendor, acquisition: 'Uploaded configuration' })
-      setSourceInputVisible(false)
       setDecisionDocument(null)
       setTargetPreviewId('')
       setTargetDevice('')
@@ -91,7 +88,6 @@ export function SourceConfiguration({ view, onViewChange }: {
     setFile(nextFile)
     clearAnalysis()
     setError(null)
-    setSourceInputVisible(true)
     if (nextFile) void analyse(nextFile)
   }
 
@@ -99,7 +95,6 @@ export function SourceConfiguration({ view, onViewChange }: {
     if (nextVendor === vendor) return
     setVendor(nextVendor)
     setFile(null)
-    setSourceInputVisible(true)
     clearAnalysis()
     setError(null)
   }
@@ -110,7 +105,6 @@ export function SourceConfiguration({ view, onViewChange }: {
     const collectedVendor = result.vendor_id || result.collection.vendor || vendor
     setVendor(collectedVendor)
     setPreview({ ...result.preview, preview_id: result.preview_id, vendor: collectedVendor, collection: result.collection, acquisition: 'Live collection' })
-    setSourceInputVisible(false)
     setFile(null)
     onViewChange('report')
   }
@@ -146,7 +140,6 @@ export function SourceConfiguration({ view, onViewChange }: {
       setVendor(result.vendor_id)
       setFile(null)
       setPreview({ ...result.preview, preview_id: result.preview_id, vendor: result.vendor_id, collection: result.collection, acquisition: 'Imported collection snapshot' })
-      setSourceInputVisible(false)
     } catch (cause) {
       if (request !== analysisRequest.current) return
       setError(cause instanceof Error ? cause.message : 'Snapshot import failed')
@@ -159,7 +152,7 @@ export function SourceConfiguration({ view, onViewChange }: {
   const sourceCounts = preview ? reportCounts(preview) : null
 
   return <main className="feature-content">
-    <section id="source-configuration" ref={sourceConfigurationRef} className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview) && !sourceInputVisible} aria-labelledby="source-title">
+    <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview)} aria-labelledby="source-title">
       <h2 id="source-title"><span className="step-num">01</span> Source configuration</h2>
       <div className={`source-vendor-grid${view === 'migration' || view === 'live' ? ' with-target' : ''}`}>
         <VendorSelect value={vendor} onChange={changeVendor} vendors={vendors} />
@@ -168,7 +161,7 @@ export function SourceConfiguration({ view, onViewChange }: {
       {vendorsLoading && <LoadingState label="Loading vendors…" />}
       {vendorsError && <ErrorBanner message={vendorsError} />}
       {view === 'collect' ? <>{selectedVendor?.live_collection ? <LiveCollection key={vendor} vendor={selectedVendor} onCollected={acceptCollection} /> : !vendorsLoading && <p>Live collection is not available for this vendor.</p>}</> : <>
-        {(!preview || sourceInputVisible) && <><div className="ingest-tabs" role="tablist" aria-label="Configuration source">
+        {!preview && <><div className="ingest-tabs" role="tablist" aria-label="Configuration source">
           <button className={`ingest-tab-btn${ingestMode === 'config' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'config'} type="button" onClick={() => setIngestMode('config')}>↑ Upload Config</button>
           <button className={`ingest-tab-btn${ingestMode === 'snapshot' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'snapshot'} type="button" onClick={() => setIngestMode('snapshot')}>▤ Upload Snapshot</button>
         </div>
@@ -177,24 +170,12 @@ export function SourceConfiguration({ view, onViewChange }: {
           <input type="file" accept=".json,application/json" disabled={loading} onChange={(event) => { const snapshot = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void importSnapshot(snapshot) }} />
         </label>}</>}
         {preview && <SourceOverview vendor={vendor} vendorName={selectedVendor?.display_name ?? ''} file={file} preview={preview} />}
-        {preview && !sourceInputVisible && <button className="text-button source-change-button" type="button" onClick={() => setSourceInputVisible(true)}>Change source</button>}
         {loading && <LoadingState label="Reading configuration and preparing the inventory…" />}
       </>}
     </section>
 
     <div className="workflow-panel" hidden={view !== 'report'}>
       {preview && <SourceReport key={previewId} data={preview}
-        vendorName={selectedVendor?.display_name ?? vendor}
-        fileName={file?.name ?? null}
-        acquisition={String(preview.acquisition ?? 'Uploaded configuration')}
-        sourceControlsVisible={sourceInputVisible}
-        onToggleSourceControls={() => {
-          const show = !sourceInputVisible
-          setSourceInputVisible(show)
-          if (show) requestAnimationFrame(() => {
-            sourceConfigurationRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-          })
-        }}
         excelProfile={excelProfile}
         onExcelProfileChange={(value) => setExcelProfile(value)}
         exporting={exporting}
@@ -207,14 +188,13 @@ export function SourceConfiguration({ view, onViewChange }: {
 
     <div className="workflow-panel" hidden={view !== 'migration' && view !== 'live'}>
       {preview && previewId && vendor === 'fortigate' ? migrationVisited && <>
-        {!sourceInputVisible && <div className="report-source-context">
+        <div className="report-source-context">
           <strong>{selectedVendor?.display_name ?? vendor} → PAN-OS</strong>
           {file && <span className="report-source-item report-source-filename">{file.name}</span>}
           <span>{String(preview.acquisition ?? 'Uploaded configuration')}</span>
           <span>Parsed · {sourceCounts?.errors} errors · {sourceCounts?.warnings} warnings</span>
           {preview.collection != null && <span>Collection: {String(asRecord(preview.collection).status ?? 'Unknown')}</span>}
-          <button type="button" className="text-button" onClick={() => setSourceInputVisible(true)}>Change source</button>
-        </div>}
+        </div>
         <section hidden={view !== 'migration'}>
         <MigrationReview key={previewId} preview={preview} vendor={vendor} requestedDecision={requestedDecision}
           onDecisionDocument={setDecisionDocument}
