@@ -228,7 +228,8 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                            "apbr_graph": result.derived.apbr_graph,
                            "inheritance": result.derived.inheritance,
                            "inheritance_view": result.derived.inheritance_view,
-                           "activation_directives": result.derived.activation_directives}),
+                           "activation_directives": result.derived.activation_directives,
+                           "effective_objects": result.derived.effective_objects}),
         "validation": _project(result.validation.issues),
         "semantic_validation": _project(tuple(issue for issue in result.validation.issues
                                                if issue.category != "extraction-coverage")),
