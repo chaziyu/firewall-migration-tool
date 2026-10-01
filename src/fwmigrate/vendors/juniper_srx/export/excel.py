@@ -124,10 +124,10 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                 "description": item.description,
             })
 
-        for item in (*context.policies, *context.global_policies):
+        for order, item in enumerate((*context.policies, *context.global_policies), 1):
             rows["Policy Details"].append({
                 "context": scope, "policy_scope": item.policy_scope, "name": item.name,
-                "order": item.sequence, "from_zones": list(item.from_zones),
+                "order": order, "from_zones": list(item.from_zones),
                 "to_zones": list(item.to_zones), "source_addresses": list(item.source_addresses),
                 "destination_addresses": list(item.destination_addresses),
                 "applications": list(item.applications),
@@ -156,10 +156,10 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
         ):
             for rule_set in rule_sets.values():
                 to_context = rule_set.to_context
-                for item in rule_set.rules:
+                for order, item in enumerate(rule_set.rules, 1):
                     rows["NAT Rules"].append({
                         "context": scope, "nat_type": nat_type, "rule_set": rule_set.name,
-                        "rule": item.name, "order": item.sequence,
+                        "rule": item.name, "order": order,
                         "from_zones": list(rule_set.from_context.zones),
                         "from_interfaces": list(rule_set.from_context.interfaces),
                         "from_routing_instances": list(rule_set.from_context.routing_instances),
