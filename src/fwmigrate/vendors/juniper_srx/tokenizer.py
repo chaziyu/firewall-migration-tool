@@ -29,6 +29,7 @@ class JunosCommand(BaseModel):
     tokens: List[str] = Field(default_factory=list)
     raw_sanitized: str
     line_number: int
+    normalized_line_number: Optional[int] = None
     consumed: bool = False
     handler: Optional[str] = None
     parse_error: Optional[str] = None
@@ -71,6 +72,7 @@ class JunosCommand(BaseModel):
             tokens=sanitize_tokens(self.tokens),
             raw_sanitized=self.raw_sanitized,
             line_number=self.line_number,
+            normalized_line_number=self.normalized_line_number,
             consumed=self.consumed,
             handler=self.handler,
             parse_error=self.parse_error,
@@ -213,6 +215,7 @@ class JuniperSetTokenizer:
                         tokens=tokens,
                         raw_sanitized=sanitized_raw,
                         line_number=line_idx,
+                        normalized_line_number=line_idx,
                         source_order=line_idx,
                         parse_error=f"Lexical error: {ex}",
                         extraction_status=ExtractionStatus.PARSE_ERROR,
@@ -243,6 +246,7 @@ class JuniperSetTokenizer:
                 tokens=tokens,
                 raw_sanitized=sanitized_raw,
                 line_number=line_idx,
+                normalized_line_number=line_idx,
                 source_order=line_idx,
                 access_denied=access_denied,
                 requires_manual_review=access_denied,
