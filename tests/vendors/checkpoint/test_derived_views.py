@@ -50,3 +50,30 @@ def test_derived_build_populates_views_and_preserves_source_and_collection():
     assert derived.interface_completeness.complete is True
     assert derived.vpn_completeness.complete is True
     assert config.model_dump() == before
+
+
+
+def test_derived_completeness_tracks_all_transform_dependencies():
+    diagnostics = (
+        CheckPointCollectionDiagnostic(
+            command="show-services-tcp", source_plane="management",
+            status=CollectionStatus.API_ERROR, complete=False, error="failed",
+        ),
+        CheckPointCollectionDiagnostic(
+            command="show-interoperable-devices", source_plane="management",
+            status=CollectionStatus.API_ERROR, complete=False, error="failed",
+        ),
+        CheckPointCollectionDiagnostic(
+            command="gaia/show-vpn-tunnels", source_plane="gaia",
+            status=CollectionStatus.API_ERROR, complete=False, error="failed",
+        ),
+    )
+
+    derived = build_checkpoint_derived_views(CheckPointConfig(), diagnostics)
+
+    assert derived.nat_completeness.complete is False
+    assert "show-services-tcp" in derived.nat_completeness.incomplete_commands
+    assert derived.interface_completeness.complete is False
+    assert "show-interoperable-devices" in derived.interface_completeness.incomplete_commands
+    assert derived.vpn_completeness.complete is False
+    assert "gaia/show-vpn-tunnels" in derived.vpn_completeness.incomplete_commands
