@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import collect_all
 
 ROOT = Path(SPECPATH).parent
 
-datas = [(str(ROOT / 'src' / 'fwmigrate' / 'static'), 'fwmigrate/static')]
+datas = []
 binaries = []
 hiddenimports = ['clr', 'clr_loader', 'pythonnet']
 

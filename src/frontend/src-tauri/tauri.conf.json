@@ -17,7 +17,6 @@
   "bundle": {
     "active": true,
     "targets": ["msi", "nsis"],
-    "externalBin": ["binaries/fwmigrate-backend"],
-    "icon": ["../../fwmigrate/static/app_icon.ico"]
+    "externalBin": ["binaries/fwmigrate-backend"]
   }
 }
