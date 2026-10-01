@@ -1,6 +1,7 @@
 @font-face {
   font-family: 'DM Sans';
   src: url('/fonts/dm-sans.ttf') format('truetype');
+  font-weight: 100 1000;
   font-display: swap;
 }
 
@@ -25,7 +26,8 @@
   --text-main: #34423d;
   --text-muted: #6a746e;
   --text-dim: #7a847e;
-  --line: #e3e7e1;
+  --line: #b8c2b9;
+  --line-divider: #cbd2ca;
   --color-primary: #c64c24;
   --color-primary-hover: #a93c19;
   --color-primary-subtle: #fcf0e9;

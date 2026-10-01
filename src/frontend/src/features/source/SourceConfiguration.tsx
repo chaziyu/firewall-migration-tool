@@ -165,10 +165,7 @@ export function SourceConfiguration({ view, onViewChange }: {
           <button className={`ingest-tab-btn${ingestMode === 'config' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'config'} type="button" onClick={() => setIngestMode('config')}>↑ Upload Config</button>
           <button className={`ingest-tab-btn${ingestMode === 'snapshot' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'snapshot'} type="button" onClick={() => setIngestMode('snapshot')}>▤ Upload Snapshot</button>
         </div>
-        {ingestMode === 'config' ? selectedVendor && <FileUpload key={vendor} file={file} onChange={updateFile} accept={selectedVendor.file_extensions.join(',')} /> : <label className="dropzone snapshot-dropzone" role="tabpanel" aria-label="Upload collection snapshot">
-          <strong>Choose a collection snapshot</strong><span>Import a previously collected, sanitized snapshot</span>
-          <input type="file" accept=".json,application/json" disabled={loading} onChange={(event) => { const snapshot = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void importSnapshot(snapshot) }} />
-        </label>}</>}
+        {ingestMode === 'config' ? selectedVendor && <FileUpload key={vendor} file={file} onChange={updateFile} accept={selectedVendor.file_extensions.join(',')} /> : <FileUpload key="snapshot" file={null} onChange={(snapshot) => { if (snapshot) void importSnapshot(snapshot) }} accept=".json,application/json" disabled={loading} title="Drop your collection snapshot here" helpText="Import a previously collected, sanitized snapshot (.json)" />}</>}
         {preview && <SourceOverview vendor={vendor} vendorName={selectedVendor?.display_name ?? ''} file={file} preview={preview} />}
         {loading && <LoadingState label="Reading configuration and preparing the inventory…" />}
       </>}
