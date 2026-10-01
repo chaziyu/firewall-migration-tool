@@ -24,7 +24,7 @@ class R81CommandSpec:
 R81_COMMAND_REGISTRY: Dict[str, R81CommandSpec] = {
     # Management/domain and gateway inventory.
     "show-domains": R81CommandSpec("show-domains", scope_type="GLOBAL", required=True),
-    "show-gateways-and-servers": R81CommandSpec("show-gateways-and-servers", required=True),
+    "show-gateways-and-servers": R81CommandSpec("show-gateways-and-servers", required=True, details_level_full=True),
     "show-simple-gateways": R81CommandSpec("show-simple-gateways", details_level_full=True),
     "show-simple-clusters": R81CommandSpec("show-simple-clusters", details_level_full=True),
     "show-global-properties": R81CommandSpec("show-global-properties", scope_type="GLOBAL"),
