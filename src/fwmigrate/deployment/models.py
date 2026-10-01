@@ -43,7 +43,6 @@ class PANDeploymentSession:
     command_sha256: str
     host: str
     port: int
-    username: str
     validation_job_id: str | None
     validated_at: float
 

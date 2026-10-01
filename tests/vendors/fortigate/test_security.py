@@ -61,7 +61,7 @@ end
     )
     assert preview.status_code == 200
     assert "do-not-export-typed-secret" not in json.dumps(preview.get_json())
-    workbook = client.post("/api/extract/excel", data={"preview_id": preview.get_json()["preview_id"]})
+    workbook = client.post("/api/extract/excel", data={"source": __import__("json").dumps(preview.get_json()["source_evidence"])})
     assert workbook.status_code == 200
     assert b"do-not-export-typed-secret" not in workbook.data
 
@@ -78,7 +78,7 @@ def test_fortigate_web_preview_and_excel_redact_secrets():
 
     workbook = client.post(
         "/api/extract/excel",
-        data={"preview_id": preview.get_json()["preview_id"]},
+        data={"source": __import__("json").dumps(preview.get_json()["source_evidence"])},
     )
     assert workbook.status_code == 200
     assert b"do-not-export-this-secret" not in workbook.data

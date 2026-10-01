@@ -8,7 +8,8 @@ export type SourceVendorOption = {
   collection?: { method: string; connection_fields: CollectionField[] } | null
 }
 export type SourcePreviewData = {
-  preview_id?: string
+  source_evidence?: import('../../storage/workspaceTypes').SourceEvidence
+  source_digest?: string
   vendor?: string
   summary?: Record<string, unknown>
   sections?: Record<string, unknown>

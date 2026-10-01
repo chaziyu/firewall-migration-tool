@@ -1,6 +1,8 @@
+import { saveWorkspace, workspace } from '../../storage/workspaceStore'
+import type { SourceEvidence } from '../../storage/workspaceTypes'
 import { useEffect, useRef, useState } from 'react'
 import type { SetStateAction } from 'react'
-import { postForm, postJson, RequestError } from '../../api/client'
+import { postForm, postJson as requestJson, RequestError } from '../../api/client'
 import { FileUpload } from '../source/FileUpload'
 import type { SourcePreviewData } from '../source/types'
 import type { MigrationDecisionDocument } from './types'
@@ -9,25 +11,27 @@ import { download } from './download'
 import { MigrationReviewQueues } from './components/MigrationReviewQueues'
 import { MigrationAIReview } from './components/MigrationAIReview'
 import { MigrationDecisionTable } from './components/MigrationDecisionTable'
-import { reconcileReviewDrafts } from './reviewDrafts'
+import { confirmationEvidenceType, reconcileReviewDrafts } from './reviewDrafts'
 import { MigrationInterfaceMappings } from './components/MigrationInterfaceMappings'
 
 export function MigrationReview({ preview, vendor, onDecisionDocument, onContextChange, requestedDecision }: {
   preview: SourcePreviewData
   vendor: string
   onDecisionDocument?: (document: MigrationDecisionDocument | null) => void
-  onContextChange?: (targetPreviewId: string, targetDevice: string) => void
+  onContextChange?: (targetSource: SourceEvidence | null, targetDevice: string) => void
   requestedDecision?: { key: string; request: number } | null
 }) {
-  const previewId = typeof preview.preview_id === 'string' ? preview.preview_id : ''
-  const [targetPreviewId, setTargetPreviewId] = useState('')
+  const source = preview.source_evidence
+  const previewId = preview.source_digest || (source ? 'source' : '')
+  const [targetSource, setTargetSource] = useState<SourceEvidence | null>(workspace().targetSource)
   const [targetFilename, setTargetFilename] = useState('')
   const [targetDevices, setTargetDevices] = useState<string[]>([])
-  const [targetDevice, setTargetDevice] = useState('')
+  const [targetDevice, setTargetDevice] = useState(workspace().targetDevice)
   const [review, setReview] = useState<ReviewData | null>(null)
   const [drafts, updateDrafts] = useState<Record<string, string>>({})
-  const [proposals, setProposals] = useState<Proposal[]>([])
-  const [designSessionId, setDesignSessionId] = useState('')
+  const [proposals, setProposals] = useState<Proposal[]>((workspace().designSession?.proposals as Proposal[]) || [])
+  const [designSession, setDesignSession] = useState<Record<string, unknown> | null>(workspace().designSession)
+  const designSessionId = String(designSession?.design_session_id || '')
   const [activeQueue, setActiveQueue] = useState('NEEDS_INPUT')
   const [selectedGroupKey, setSelectedGroupKey] = useState('')
   const [replaceTarget, setReplaceTarget] = useState(false)
@@ -49,6 +53,16 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
 
+  async function postJson<T>(path: string, payload: Record<string, unknown>): Promise<T> {
+    const version = requestVersion.current
+    const result = await requestJson<T>(path, { source, target_source: targetSource, target_device: targetDevice,
+      ...(designSession ? { design_session: designSession } : {}), ...payload })
+    if (version !== requestVersion.current) return result
+    const response = result as { design_session?: Record<string, unknown> }
+    if (response.design_session) { setDesignSession(response.design_session); await saveWorkspace({ designSession: response.design_session }) }
+    return result
+  }
+
   function setDrafts(value: SetStateAction<Record<string, string>>) {
     updateDrafts(value)
     setBulkPreview([])
@@ -61,23 +75,23 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       ? engineerConfirmation(item, values.get(item.key)!) : item)
     if (!selections.length) return updateDecisions(next)
     const result = await postJson<ReviewData>('/api/migration/interfaces/confirm', {
-      preview_id: previewId, decision_document: currentDocument(next), selections,
+      source, decision_document: currentDocument(next), selections,
       reviewed_target_evidence: review?.target_evidence ?? null,
-      ...(targetPreviewId ? { target_preview_id: targetPreviewId, target_device: targetDevice } : {}),
+      ...(targetSource ? { target_source: targetSource, target_device: targetDevice } : {}),
     })
     await loadReview(result.decision_document)
     setProposals([])
-    setDesignSessionId('')
+    setDesignSession(null); void saveWorkspace({ designSession: null })
   }
 
-  async function loadReview(document?: DecisionDocument, targetId = targetPreviewId, device = targetDevice) {
+  async function loadReview(document?: DecisionDocument, targetId = targetSource, device = targetDevice) {
     if (!previewId) return
     const request = ++requestVersion.current
     onDecisionDocument?.(null)
     const result = await postJson<ReviewData>('/api/migration/requirements', {
-      preview_id: previewId,
+      source,
       ...(document ? { decision_document: document } : {}),
-      ...(targetId ? { target_preview_id: targetId } : {}),
+      ...(targetId ? { target_source: targetId } : {}),
       ...(device ? { target_device: device } : {}),
     })
     if (request !== requestVersion.current) return
@@ -95,7 +109,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     setTargetDevice(result.target_device || '')
     onDecisionDocument?.(result.decision_document as unknown as MigrationDecisionDocument)
     onContextChange?.(targetId, result.target_device || device || '')
-    const contextChanged = targetId !== targetPreviewId || device !== targetDevice || result.target_evidence_changed
+    const contextChanged = targetId !== targetSource || device !== targetDevice || result.target_evidence_changed
     setDrafts((current) => reconcileReviewDrafts(current, review?.decisions.decisions ?? [], result.decisions.decisions, Boolean(contextChanged)))
     setBulkPreview([])
     setSelectedKeys([])
@@ -104,7 +118,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   useEffect(() => {
     if (vendor === 'fortigate' && previewId) {
       // Invalidate the previous decision document immediately; local state updates follow the awaited API response.
-      void loadReview().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not load migration review'))
+      void loadReview(workspace().decisionDocument as unknown as DecisionDocument | undefined).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not load migration review'))
     }
     return () => {
       // Invalidate in-flight requests; this ref is a version counter, not a DOM node.
@@ -163,7 +177,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   async function updateDecisions(decisions: Decision[]) {
     await loadReview(currentDocument(decisions))
     setProposals([])
-    setDesignSessionId('')
+    setDesignSession(null); void saveWorkspace({ designSession: null })
   }
 
   async function uploadTarget(file: File | undefined) {
@@ -176,12 +190,12 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       const form = new FormData()
       form.append('source_vendor', 'palo_alto')
       form.append('file', file)
-      const result = await postForm<SourcePreviewData & { preview_id?: string }>('/api/preview', form)
-      if (!result.preview_id) throw new Error('PAN-OS preview did not return a preview ID')
-      const nextTargetId = result.preview_id
-      setTargetPreviewId(nextTargetId)
+      const result = await postForm<SourcePreviewData>('/api/preview', form)
+      if (!result.source_evidence) throw new Error('PAN-OS preview did not return source evidence')
+      const nextTargetId = result.source_evidence
+      setTargetSource(nextTargetId)
       setProposals([])
-      setDesignSessionId('')
+      setDesignSession(null); void saveWorkspace({ designSession: null })
       await loadReview(review ? currentDocument() : undefined, nextTargetId, '')
       setTargetFilename(file.name)
       setReplaceTarget(false)
@@ -198,8 +212,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   async function selectTargetDevice(device: string) {
     setTargetDevice(device)
     setProposals([])
-    setDesignSessionId('')
-    await loadReview(currentDocument(), targetPreviewId, device)
+    setDesignSession(null); void saveWorkspace({ designSession: null })
+    await loadReview(currentDocument(), targetSource, device)
   }
 
   async function confirmDecision(decision: Decision, value: string) {
@@ -217,7 +231,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       mode: decision.mode === 'AUTO' ? 'REQUIRED' : decision.mode,
       review_state: 'CONFIRMED',
       evidence_source: 'ENGINEER',
-      evidence_type: confirmedTargetSuggestion ? 'ENGINEER_TARGET_SUGGESTION' : 'MANUAL',
+      evidence_type: confirmationEvidenceType(decision, value),
       evidence_value: value,
       target_object: value,
       evidence_target_digest: confirmedTargetSuggestion ? targetEvidence?.config_digest ?? null : null,
@@ -228,17 +242,17 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   async function importIntent(file: File | undefined) {
     if (!file || !review) return
     const result = await postJson<{ decision_document: DecisionDocument }>('/api/migration/target-intent/import', {
-      preview_id: previewId,
+      source,
       decision_document: currentDocument(),
       yaml: await file.text(),
-      ...(targetPreviewId ? { target_preview_id: targetPreviewId, target_device: targetDevice } : {}),
+      ...(targetSource ? { target_source: targetSource, target_device: targetDevice } : {}),
     })
     await loadReview(result.decision_document)
   }
 
   async function exportIntent() {
     const result = await postJson<{ yaml: string }>('/api/migration/target-intent/export', {
-      preview_id: previewId,
+      source,
       decision_document: currentDocument(),
     })
     download(result.yaml, 'target-intent.yaml', 'text/yaml')
@@ -287,43 +301,43 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   }
 
   async function exportDecisions() {
-    const result = await postJson<{ document: DecisionDocument }>('/api/migration/decisions/export', { preview_id: previewId, decision_document: currentDocument() })
+    const result = await postJson<{ document: DecisionDocument }>('/api/migration/decisions/export', { source, decision_document: currentDocument() })
     download(JSON.stringify(result.document, null, 2), 'migration_decisions.json', 'application/json')
   }
 
   async function importDecisions(file: File | undefined) {
     if (!file) return
     const document = JSON.parse(await file.text()) as DecisionDocument
-    const result = await postJson<{ decision_document: DecisionDocument }>('/api/migration/decisions/import', { preview_id: previewId, document })
+    const result = await postJson<{ decision_document: DecisionDocument }>('/api/migration/decisions/import', { source, document })
     setProposals([])
-    setDesignSessionId('')
-    await loadReview(result.decision_document, targetPreviewId, targetDevice)
+    setDesignSession(null); void saveWorkspace({ designSession: null })
+    await loadReview(result.decision_document, targetSource, targetDevice)
   }
 
   async function runAutomation() {
     const enabledPolicies = [autoVerified && 'AUTO_APPLY_VERIFIED', autoDerived && 'AUTO_APPLY_DERIVED'].filter((item): item is string => Boolean(item))
     const result = await postJson<{ decision_document: DecisionDocument; audit?: unknown[] }>('/api/migration/automation/run', {
-      preview_id: previewId,
+      source,
       decision_document: currentDocument(),
       enabled_policies: enabledPolicies,
-      ...(targetPreviewId ? { target_preview_id: targetPreviewId, target_device: targetDevice } : {}),
+      ...(targetSource ? { target_source: targetSource, target_device: targetDevice } : {}),
     })
     setProposals([])
-    setDesignSessionId('')
-    await loadReview(result.decision_document, targetPreviewId, targetDevice)
+    setDesignSession(null); void saveWorkspace({ designSession: null })
+    await loadReview(result.decision_document, targetSource, targetDevice)
     setStatus(`${enabledPolicies.length ? result.audit?.length ?? 0 : 0} decisions resolved by deterministic automation.`)
   }
 
   async function buildProposals(retry = false) {
-    const result = await postJson<{ design_session: { design_session_id: string; proposals: Proposal[] } }>('/api/migration/ai/design', {
-      preview_id: previewId,
+    const result = await postJson<{ design_session: Record<string, unknown> & { design_session_id: string; proposals: Proposal[] } }>('/api/migration/ai/design', {
+      source,
       decision_document: currentDocument(),
-      target_preview_id: targetPreviewId,
+      target_source: targetSource,
       target_device: targetDevice,
       ...(designSessionId ? { design_session_id: designSessionId } : {}),
       ...(retry && designSessionId ? { retry_exceptions: true } : {}),
     })
-    setDesignSessionId(result.design_session.design_session_id)
+    setDesignSession(result.design_session)
     setProposals(result.design_session.proposals || [])
   }
 
@@ -332,9 +346,9 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     const result = await postJson<{ decisions: { decisions: Decision[] }; decision_document: DecisionDocument }>(
       `/api/migration/ai/design/${encodeURIComponent(designSessionId)}/approve`,
       {
-        preview_id: previewId,
+        source,
         decision_document: currentDocument(),
-        target_preview_id: targetPreviewId,
+        target_source: targetSource,
         target_device: targetDevice,
         decision_keys: [proposal.decision_key],
       },
@@ -346,7 +360,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   async function approveProposals(keys: string[]) {
     if (!designSessionId || !keys.length) return
     const result = await postJson<{ decision_document: DecisionDocument }>('/api/migration/ai/design/' + encodeURIComponent(designSessionId) + '/approve', {
-      preview_id: previewId, decision_document: currentDocument(), target_preview_id: targetPreviewId, target_device: targetDevice, decision_keys: keys,
+      source, decision_document: currentDocument(), target_source: targetSource, target_device: targetDevice, decision_keys: keys,
     })
     await loadReview(result.decision_document)
     setProposals((items) => items.filter((item) => !keys.includes(item.decision_key)))
@@ -355,7 +369,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   async function rejectProposals(keys: string[]) {
     if (!designSessionId || !keys.length) return
     await postJson(`/api/migration/ai/design/${encodeURIComponent(designSessionId)}/reject`, {
-      preview_id: previewId, decision_document: currentDocument(), target_preview_id: targetPreviewId,
+      source, decision_document: currentDocument(), target_source: targetSource,
       target_device: targetDevice, decision_keys: keys,
     })
     setProposals((items) => items.filter((item) => !keys.includes(item.decision_key)))
@@ -386,14 +400,14 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   async function applyGroupAction(action: NonNullable<ReviewGroup['actions']>[number]) {
     const result = await postJson<{ decision_document: DecisionDocument }>('/api/migration/rules/apply', {
-      preview_id: previewId, decision_document: currentDocument(), rule_type: action.type, source_key: action.source_key, value: action.value, apply_to: action.apply_to,
+      source, decision_document: currentDocument(), rule_type: action.type, source_key: action.source_key, value: action.value, apply_to: action.apply_to,
     })
     await loadReview(result.decision_document)
   }
 
   async function applyRuleSuggestion(suggestion: ReviewData['rule_suggestions'][number]) {
     const result = await postJson<{ decision_document: DecisionDocument }>('/api/migration/rules/apply', {
-      preview_id: previewId, decision_document: currentDocument(), rule_type: suggestion.rule_type,
+      source, decision_document: currentDocument(), rule_type: suggestion.rule_type,
       source_vdom: suggestion.source_vdom, source_zone: suggestion.source_zone,
       value: suggestion.target_zone, apply_to: suggestion.apply_to,
     })
@@ -445,19 +459,19 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       <p className="migration-review-intro">Target XML is optional. Suggestions stay pending until you confirm them.</p>
       <p className="report-count-note">FortiGate → PAN-OS · Review VDOM, VSYS, and virtual router decisions before dependent mappings.</p>
 
-      <details className="migration-target-evidence" open={targetPreviewId ? undefined : true}>
+      <details className="migration-target-evidence" open={targetSource ? undefined : true}>
         <summary>Target configuration — optional{targetFilename ? ` · ${targetFilename}` : ''}</summary>
       <div className="migration-toolbar">
         <div className="target-xml-upload">
           <h3>Optional PAN-OS target XML</h3>
-          {(!targetPreviewId || replaceTarget) && <FileUpload file={null} accept=".xml,application/xml,text/xml" disabled={busy} title="Drop your target XML here" helpText="Optional · Supports .xml files" onChange={(file) => { if (file) void uploadTarget(file) }} />}
+          {(!targetSource || replaceTarget) && <FileUpload file={null} accept=".xml,application/xml,text/xml" disabled={busy} title="Drop your target XML here" helpText="Optional · Supports .xml files" onChange={(file) => { if (file) void uploadTarget(file) }} />}
           {targetFilename && <p className="report-count-note">Loaded target: {targetFilename}</p>}
         </div>
-        {targetPreviewId && <button className="secondary-button" type="button" disabled={busy} onClick={() => setReplaceTarget((value) => !value)}>Replace XML</button>}
-        {targetPreviewId && <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => {
-          setTargetPreviewId(''); setTargetFilename(''); setTargetDevices([]); setTargetDevice(''); setProposals([]); setDesignSessionId('')
-          onContextChange?.('', '')
-          await loadReview(currentDocument(), '', '')
+        {targetSource && <button className="secondary-button" type="button" disabled={busy} onClick={() => setReplaceTarget((value) => !value)}>Replace XML</button>}
+        {targetSource && <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => {
+          setTargetSource(null); setTargetFilename(''); setTargetDevices([]); setTargetDevice(''); setProposals([]); setDesignSession(null); void saveWorkspace({ designSession: null })
+          onContextChange?.(null, '')
+          await loadReview(currentDocument(), null, '')
         }, 'Target evidence removed.')}>Remove target</button>}
         {devices.length > 0 && <label className="field">Target device
           <select value={targetDevice} disabled={busy} onChange={(event) => void run(() => selectTargetDevice(event.target.value))}>
@@ -520,7 +534,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
         <MigrationAIReview
           advisorStatus={advisorStatus}
           busy={busy}
-          targetPreviewId={targetPreviewId}
+          targetSource={targetSource}
           targetDevice={targetDevice}
           designSessionId={designSessionId}
           validProposalKeys={validProposalKeys}

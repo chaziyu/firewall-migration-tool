@@ -33,14 +33,14 @@ def _ready_artifact(client):
     )
     assert preview.status_code == 200
     plan = client.post("/api/migrate", json={
-        "preview_id": preview.get_json()["preview_id"],
+        "source": preview.get_json()["source_evidence"],
         "mapping": {"vdoms": {"root": {"vsys": "vsys1"}}},
     })
     assert plan.status_code == 200
     payload = plan.get_json()
     assert payload["plan_status"] == "READY"
-    assert payload["commands"] > 0
-    return payload["artifact_id"]
+    assert payload["command_count"] > 0
+    return payload["artifact"]
 
 
 class _SuccessfulDeployer:
@@ -82,13 +82,13 @@ def test_prepare_candidate_forces_validation_and_commit_requires_bound_session(m
     client = web.create_app({"TESTING": True}).test_client()
     artifact_id = _ready_artifact(client)
 
-    premature = client.post("/api/commit", json={**CREDS, "artifact_id": artifact_id})
+    premature = client.post("/api/commit", json={**CREDS, "artifact": artifact_id})
     assert premature.status_code == 400
     assert "validated candidate deployment session" in premature.get_json()["error"]
 
     prepared = client.post("/api/deploy", json={
         **CREDS,
-        "artifact_id": artifact_id,
+        "artifact": artifact_id,
         "validate": False,
     })
     assert prepared.status_code == 200
@@ -102,7 +102,7 @@ def test_prepare_candidate_forces_validation_and_commit_requires_bound_session(m
     wrong_target = client.post("/api/validate-candidate", json={
         **CREDS,
         "host": "192.0.2.51",
-        "artifact_id": artifact_id,
+        "artifact": artifact_id,
         "deployment_session_id": session_id,
     })
     assert wrong_target.status_code == 400
@@ -118,7 +118,7 @@ def test_prepare_candidate_forces_validation_and_commit_requires_bound_session(m
 
     revalidated = client.post("/api/validate-candidate", json={
         **CREDS,
-        "artifact_id": artifact_id,
+        "artifact": artifact_id,
         "deployment_session_id": session_id,
     })
     assert revalidated.status_code == 200
@@ -127,7 +127,7 @@ def test_prepare_candidate_forces_validation_and_commit_requires_bound_session(m
 
     committed = client.post("/api/commit", json={
         **CREDS,
-        "artifact_id": artifact_id,
+        "artifact": artifact_id,
         "deployment_session_id": session_id,
     })
     assert committed.status_code == 200
@@ -136,7 +136,7 @@ def test_prepare_candidate_forces_validation_and_commit_requires_bound_session(m
 
     replay = client.post("/api/commit", json={
         **CREDS,
-        "artifact_id": artifact_id,
+        "artifact": artifact_id,
         "deployment_session_id": session_id,
     })
     assert replay.status_code == 400
@@ -148,7 +148,7 @@ def test_failed_candidate_validation_never_creates_commit_session(monkeypatch):
     client = web.create_app({"TESTING": True}).test_client()
     artifact_id = _ready_artifact(client)
 
-    prepared = client.post("/api/deploy", json={**CREDS, "artifact_id": artifact_id})
+    prepared = client.post("/api/deploy", json={**CREDS, "artifact": artifact_id})
     assert prepared.status_code == 502
     payload = prepared.get_json()
     assert payload["candidate_validated"] is False
@@ -161,13 +161,13 @@ def test_candidate_attempt_invalidates_all_old_sessions_for_target(monkeypatch, 
     monkeypatch.setattr(web, "PANSSHDeployer", _SuccessfulDeployer)
     client = web.create_app({"TESTING": True}).test_client()
     artifact = _ready_artifact(client)
-    old_session = client.post("/api/deploy", json={**CREDS, "artifact_id": artifact}).get_json()["deployment_session_id"]
+    old_session = client.post("/api/deploy", json={**CREDS, "artifact": artifact}).get_json()["deployment_session_id"]
     next_artifact = artifact if failed_retry else _ready_artifact(client)
     if failed_retry:
         monkeypatch.setattr(web, "PANSSHDeployer", _FailedValidationDeployer)
-    attempted = client.post("/api/deploy", json={**CREDS, "username": "other-admin", "artifact_id": next_artifact})
+    attempted = client.post("/api/deploy", json={**CREDS, "username": "other-admin", "artifact": next_artifact})
     assert attempted.status_code == (502 if failed_retry else 200)
-    commit = client.post("/api/commit", json={**CREDS, "artifact_id": artifact, "deployment_session_id": old_session})
+    commit = client.post("/api/commit", json={**CREDS, "artifact": artifact, "deployment_session_id": old_session})
     assert commit.status_code == 400
     assert "missing or expired" in commit.get_json()["error"]
 
@@ -180,7 +180,7 @@ def test_commit_waits_for_candidate_write_and_rejects_stale_session(monkeypatch)
     app = web.create_app({"TESTING": True})
     client = app.test_client()
     artifact = _ready_artifact(client)
-    session = client.post("/api/deploy", json={**CREDS, "artifact_id": artifact}).get_json()["deployment_session_id"]
+    session = client.post("/api/deploy", json={**CREDS, "artifact": artifact}).get_json()["deployment_session_id"]
     started, release, committing = Event(), Event(), Event()
 
     class BlockingDeployer(_FailedValidationDeployer):
@@ -193,10 +193,10 @@ def test_commit_waits_for_candidate_write_and_rejects_stale_session(monkeypatch)
 
     def commit():
         committing.set()
-        return app.test_client().post("/api/commit", json={**CREDS, "artifact_id": artifact, "deployment_session_id": session})
+        return app.test_client().post("/api/commit", json={**CREDS, "artifact": artifact, "deployment_session_id": session})
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        write = pool.submit(lambda: app.test_client().post("/api/deploy", json={**CREDS, "artifact_id": artifact}))
+        write = pool.submit(lambda: app.test_client().post("/api/deploy", json={**CREDS, "artifact": artifact}))
         assert started.wait(5)
         pending = pool.submit(commit)
         assert committing.wait(5)
@@ -213,7 +213,7 @@ def test_candidate_write_to_different_target_preserves_validated_session(monkeyp
     monkeypatch.setattr(web, "PANSSHDeployer", _SuccessfulDeployer)
     client = web.create_app({"TESTING": True}).test_client()
     artifact = _ready_artifact(client)
-    session = client.post("/api/deploy", json={**CREDS, "artifact_id": artifact}).get_json()["deployment_session_id"]
-    assert client.post("/api/deploy", json={**CREDS, "host": "192.0.2.51", "artifact_id": artifact}).status_code == 200
-    assert client.post("/api/commit", json={**CREDS, "artifact_id": artifact,
+    session = client.post("/api/deploy", json={**CREDS, "artifact": artifact}).get_json()["deployment_session_id"]
+    assert client.post("/api/deploy", json={**CREDS, "host": "192.0.2.51", "artifact": artifact}).status_code == 200
+    assert client.post("/api/commit", json={**CREDS, "artifact": artifact,
         "deployment_session_id": session}).status_code == 200

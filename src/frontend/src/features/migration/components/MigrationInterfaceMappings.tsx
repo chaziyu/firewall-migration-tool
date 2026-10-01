@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Decision, ReviewData } from '../reviewTypes'
-import { interfaceMappingRows } from '../reviewDrafts'
+import { candidateLabel, decisionLabel, interfaceMappingRows } from '../reviewDrafts'
 
 export function MigrationInterfaceMappings({ review, drafts, setDraft, selectedKeys, setSelectedKeys, busy, reviewSelected, openDetails }: {
   review: ReviewData
@@ -22,7 +22,7 @@ export function MigrationInterfaceMappings({ review, drafts, setDraft, selectedK
     <h3>Interface mappings</h3>
     <p>{rows.length} mappings · {rows.filter((row) => row.decision.review_state === 'CONFIRMED').length} confirmed · {rows.filter((row) => row.conflict).length} conflicts · {selected.length} selected</p>
     <div className="migration-toolbar">
-      <button className="secondary-button" type="button" disabled={busy} onClick={() => setSelectedKeys(rows.filter((row) => row.ready).map((row) => row.decision.key))}>Select non-conflicting suggestions</button>
+      <button className="secondary-button" type="button" disabled={busy} onClick={() => setSelectedKeys(rows.filter((row) => row.ready).map((row) => row.decision.key))}>Select strong interface suggestions</button>
       <button className="primary-button" type="button" disabled={busy || !selected.length || selected.some((row) => !row.value || row.conflict)} onClick={() => reviewSelected(selected.map((row) => row.decision.key), (decision) => rows.find((row) => row.decision.key === decision.key)?.value ?? '')}>Review selected mappings</button>
     </div>
     <div className="report-table-wrap"><table className="report-table migration-decision-table">
@@ -31,10 +31,10 @@ export function MigrationInterfaceMappings({ review, drafts, setDraft, selectedK
         <td><input type="checkbox" aria-label={`Select ${decision.source_vdom} / ${decision.source_name}`} disabled={busy || decision.mode === 'UNSUPPORTED'} checked={selectedKeys.includes(decision.key)} onChange={(event) => setSelectedKeys(event.target.checked ? [...selectedKeys, decision.key] : selectedKeys.filter((key) => key !== decision.key))} /></td>
         <td>{decision.source_vdom} / {decision.source_name}</td>
         <td><input aria-label={`Target interface for ${decision.source_vdom} / ${decision.source_name}`} value={value} disabled={busy || decision.mode === 'UNSUPPORTED'} onChange={(event) => setDraft(decision.key, event.target.value)} /></td>
-        <td>{candidate?.class === 'STRONG' ? 'Strong' : candidate ? (candidate.supporting_evidence?.some((fact) => !['INTERFACE_FAMILY_MATCH', 'physical interface family'].includes(fact)) ? 'Possible match' : 'Available interface') : 'Manual'}</td>
+        <td>{decision.evidence_source ?? (candidate ? candidateLabel(candidate) : 'Needs input')}{decision.evidence_type && <small> · {decision.evidence_type}</small>}</td>
         <td>{conflict || review.review_groups.find((group) => group.decision_keys.includes(decision.key))?.conflicts?.find((finding) => finding.decision_key === decision.key)?.message
-          || (decision.review_state === 'CONFIRMED' && value !== decision.value ? `Draft · confirmed mapping: ${decision.value}` : decision.review_state)}</td>
-        <td><details><summary>Evidence</summary><ul>{[...(candidate?.strong_evidence ?? []), ...(candidate?.supporting_evidence ?? [])].map((fact) => <li key={fact}>{fact}</li>)}</ul><p>{decision.reason}</p></details><button className="text-button" type="button" onClick={() => openDetails(decision.key)}>Edit details</button></td>
+          || (decision.review_state === 'CONFIRMED' && value !== decision.value ? `Draft · confirmed mapping: ${decision.value}` : decisionLabel(decision, review.decision_candidates[decision.key]))}</td>
+        <td><details><summary>Evidence</summary>{decision.suggested_value && <p>Suggested: {decision.suggested_value} · requires confirmation</p>}<ul>{[...(candidate?.strong_evidence ?? []), ...(candidate?.supporting_evidence ?? [])].map((fact) => <li key={fact}>{fact}</li>)}</ul><p>{decision.reason}</p>{review.review_groups.filter((group) => group.decision_keys.includes(decision.key)).map((group) => <p key={group.decision_keys[0]}>{group.affected_count} affected objects · {group.dependent_decision_count} dependent mappings</p>)}</details><button className="text-button" type="button" onClick={() => openDetails(decision.key)}>Edit details</button></td>
       </tr>)}</tbody>
     </table></div>
     <div className="report-pager"><button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Previous interfaces</button><span>Page {currentPage} of {pages}</span><button type="button" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>Next interfaces</button></div>

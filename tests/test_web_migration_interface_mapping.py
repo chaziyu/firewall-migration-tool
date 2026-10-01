@@ -15,10 +15,10 @@ def _review(target=False):
     client = create_app({'TESTING': True}).test_client()
     def upload(path, vendor):
         return client.post('/api/preview', data={'source_vendor': vendor,
-            'file': (io.BytesIO(path.read_bytes()), path.name)}, content_type='multipart/form-data').get_json()['preview_id']
-    payload = {'preview_id': upload(SOURCE, 'fortigate')}
+            'file': (io.BytesIO(path.read_bytes()), path.name)}, content_type='multipart/form-data').get_json()['source_evidence']
+    payload = {'source': upload(SOURCE, 'fortigate')}
     if target:
-        payload['target_preview_id'] = upload(TARGET, 'palo_alto')
+        payload['target_source'] = upload(TARGET, 'palo_alto')
     state = client.post('/api/migration/requirements', json=payload).get_json()
     rows = [item for item in state['decisions']['decisions'] if item['target_field'] == 'target_interface']
     return client, {**payload, 'decision_document': state['decision_document'],
@@ -62,7 +62,7 @@ def test_invalid_batches_are_atomic(invalid):
         errors = response.get_json()['errors']
         assert {item['decision_key'] for item in errors} == {row['key'] for row in rows}
         assert all(len(item['evidence']) == 2 for item in errors)
-    refreshed = client.post('/api/migration/requirements', json={'preview_id': payload['preview_id'], 'decision_document': original}).get_json()
+    refreshed = client.post('/api/migration/requirements', json={'source': payload['source'], 'decision_document': original}).get_json()
     assert refreshed['decisions'] == state['decisions']
 
 

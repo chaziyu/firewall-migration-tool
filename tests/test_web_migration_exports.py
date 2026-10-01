@@ -14,7 +14,7 @@ PANOS_TARGET_FIXTURE = Path(__file__).parent / "fixtures" / "palo_alto" / "integ
 def _preview(client):
     response = client.post("/api/preview", data={"file": (io.BytesIO(MIGRATION_FIXTURE.read_bytes()), MIGRATION_FIXTURE.name)}, content_type="multipart/form-data")
     assert response.status_code == 200
-    return response.get_json()["preview_id"]
+    return response.get_json()["source_evidence"]
 
 
 def _target_preview(client):
@@ -23,7 +23,7 @@ def _target_preview(client):
         "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes()), PANOS_TARGET_FIXTURE.name),
     }, content_type="multipart/form-data")
     assert response.status_code == 200
-    return response.get_json()["preview_id"]
+    return response.get_json()["source_evidence"]
 
 
 def test_migration_endpoint_rejects_unsupported_pair():
@@ -55,8 +55,8 @@ def test_target_preview_adds_pending_evidence_based_suggestions():
     source_preview = _preview(client)
     target_preview = _target_preview(client)
     response = client.post("/api/migration/requirements", json={
-        "preview_id": source_preview,
-        "target_preview_id": target_preview,
+        "source": source_preview,
+        "target_source": target_preview,
     })
     assert response.status_code == 200
     payload = response.get_json()
@@ -96,10 +96,10 @@ def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence(
     client = create_app({"TESTING": True}).test_client()
     source_preview, target_preview = _preview(client), _target_preview(client)
     requirements = client.post("/api/migration/requirements", json={
-        "preview_id": source_preview, "target_preview_id": target_preview,
+        "source": source_preview, "target_source": target_preview,
     }).get_json()
     imported = client.post("/api/migration/target-intent/import", json={
-        "preview_id": source_preview, "decision_document": requirements["decision_document"],
+        "source": source_preview, "decision_document": requirements["decision_document"],
         "yaml": "interfaces:\n  lan:\n    zone: trust\n",
     })
     assert imported.status_code == 200
@@ -109,7 +109,7 @@ def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence(
                and item["target_field"] == "target_zone")
     assert lan["review_state"] == "CONFIRMED" and lan["value"] == "trust"
     exported = client.post("/api/migration/target-intent/export", json={
-        "preview_id": source_preview, "decision_document": imported_document,
+        "source": source_preview, "decision_document": imported_document,
     })
     assert exported.status_code == 200
     assert "zone: trust" in exported.get_json()["yaml"]
@@ -118,8 +118,8 @@ def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence(
                  if item["status"] in {"VERIFIED", "DERIVED"}]
     assert safe_keys
     approved = client.post("/api/migration/decisions/approve", json={
-        "preview_id": source_preview, "decision_document": requirements["decision_document"],
-        "decision_keys": safe_keys, "target_preview_id": target_preview,
+        "source": source_preview, "decision_document": requirements["decision_document"],
+        "decision_keys": safe_keys, "target_source": target_preview,
     })
     assert approved.status_code == 200
     assert approved.get_json()["approved_count"] == len(safe_keys)
@@ -136,8 +136,8 @@ def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence(
     manual_key = next(key for key, item in requirements["auto_decisions"].items()
                       if item["status"] == "MANUAL")
     rejected = client.post("/api/migration/decisions/approve", json={
-        "preview_id": source_preview, "decision_document": requirements["decision_document"],
-        "decision_keys": [manual_key], "target_preview_id": target_preview,
+        "source": source_preview, "decision_document": requirements["decision_document"],
+        "decision_keys": [manual_key], "target_source": target_preview,
     })
     assert rejected.status_code == 400
 
@@ -146,13 +146,13 @@ def test_migrate_returns_authoritative_automated_decision_document():
     client = create_app({"TESTING": True}).test_client()
     source_preview, target_preview = _preview(client), _target_preview(client)
     requirements = client.post("/api/migration/requirements", json={
-        "preview_id": source_preview,
-        "target_preview_id": target_preview,
+        "source": source_preview,
+        "target_source": target_preview,
     }).get_json()
 
     response = client.post("/api/migrate", json={
-        "preview_id": source_preview,
-        "target_preview_id": target_preview,
+        "source": source_preview,
+        "target_source": target_preview,
         "decision_document": requirements["decision_document"],
     })
     assert response.status_code == 200
@@ -171,9 +171,9 @@ def test_fixed_point_automation_requires_opt_in_policies_and_records_determinist
     client = create_app({"TESTING": True}).test_client()
     source_preview, target_preview = _preview(client), _target_preview(client)
     requirements = client.post("/api/migration/requirements", json={
-        "preview_id": source_preview, "target_preview_id": target_preview,
+        "source": source_preview, "target_source": target_preview,
     }).get_json()
-    request = {"preview_id": source_preview, "target_preview_id": target_preview,
+    request = {"source": source_preview, "target_source": target_preview,
                "decision_document": requirements["decision_document"]}
 
     disabled = client.post("/api/migration/automation/run", json=request)
@@ -212,7 +212,7 @@ def test_fixed_point_automation_requires_opt_in_policies_and_records_determinist
 def test_source_only_requirements_show_facts_and_next_action_without_candidates():
     client = create_app({"TESTING": True}).test_client()
     source_preview = _preview(client)
-    payload = client.post("/api/migration/requirements", json={"preview_id": source_preview}).get_json()
+    payload = client.post("/api/migration/requirements", json={"source": source_preview}).get_json()
     decision = next(item for item in payload["decisions"]["decisions"]
                     if item["source_kind"] == "interface" and item["target_field"] == "target_zone")
     assert payload["decision_candidates"] == {}
@@ -224,7 +224,7 @@ def test_source_only_requirements_show_facts_and_next_action_without_candidates(
 def test_zone_rule_applies_only_requested_related_decisions_and_confirms_them():
     client = create_app({"TESTING": True}).test_client()
     preview_id = _preview(client)
-    requirements = client.post("/api/migration/requirements", json={"preview_id": preview_id}).get_json()
+    requirements = client.post("/api/migration/requirements", json={"source": preview_id}).get_json()
     document = requirements["decision_document"]
     zone = next(item for item in document["decisions"]
                 if item["source_kind"] == "zone" and item["source_name"] == "trust" and item["target_field"] == "target_zone")
@@ -232,7 +232,7 @@ def test_zone_rule_applies_only_requested_related_decisions_and_confirms_them():
     member = next(item for item in document["decisions"]
                   if item["source_kind"] == "interface" and item["source_name"] == "lan" and item["target_field"] == "target_zone")
     response = client.post("/api/migration/rules/apply", json={
-        "preview_id": preview_id, "decision_document": document,
+        "source": preview_id, "decision_document": document,
         "rule_type": "APPLY_ZONE_TO_MEMBERS", "source_key": zone["key"],
         "value": "TRUST", "apply_to": [member["key"]],
     })
@@ -242,7 +242,7 @@ def test_zone_rule_applies_only_requested_related_decisions_and_confirms_them():
     assert updated["evidence_type"] == "ENGINEER_ZONE_TO_MEMBERS"
 
     unrelated = client.post("/api/migration/rules/apply", json={
-        "preview_id": preview_id, "decision_document": document,
+        "source": preview_id, "decision_document": document,
         "rule_type": "APPLY_ZONE_TO_MEMBERS", "source_key": zone["key"],
         "value": "TRUST", "apply_to": ['["blue","interface","lan","target_zone"]'],
     })
@@ -254,8 +254,8 @@ def test_changed_target_evidence_restores_decisions_and_reports_staleness():
     source_preview = _preview(client)
     first_target = _target_preview(client)
     first = client.post("/api/migration/requirements", json={
-        "preview_id": source_preview,
-        "target_preview_id": first_target,
+        "source": source_preview,
+        "target_source": first_target,
     }).get_json()
     document = first["decision_document"]
     decision = next(item for item in document["decisions"]
@@ -267,10 +267,10 @@ def test_changed_target_evidence_restores_decisions_and_reports_staleness():
         "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes() + b"\n"), "changed-target.xml"),
     }, content_type="multipart/form-data")
     assert second_target_response.status_code == 200
-    second_target = second_target_response.get_json()["preview_id"]
+    second_target = second_target_response.get_json()["source_evidence"]
     second = client.post("/api/migration/requirements", json={
-        "preview_id": source_preview,
-        "target_preview_id": second_target,
+        "source": source_preview,
+        "target_source": second_target,
         "decision_document": document,
     })
     assert second.status_code == 200
@@ -282,9 +282,9 @@ def test_changed_target_evidence_restores_decisions_and_reports_staleness():
     assert payload["target_evidence_changed"] is True
 
     migration = client.post("/api/migrate", json={
-        "preview_id": source_preview,
+        "source": source_preview,
         "decision_document": document,
-        "target_preview_id": second_target,
+        "target_source": second_target,
         "target_device": "integrated-fw",
     })
     assert migration.status_code == 200
@@ -299,12 +299,12 @@ def test_changed_target_evidence_invalidates_auto_confirmations_until_reproved()
     source_preview = _preview(client)
     first_target = _target_preview(client)
     requirements = client.post("/api/migration/requirements", json={
-        "preview_id": source_preview,
-        "target_preview_id": first_target,
+        "source": source_preview,
+        "target_source": first_target,
     }).get_json()
     automated = client.post("/api/migration/automation/run", json={
-        "preview_id": source_preview,
-        "target_preview_id": first_target,
+        "source": source_preview,
+        "target_source": first_target,
         "decision_document": requirements["decision_document"],
         "enabled_policies": ["AUTO_APPLY_VERIFIED", "AUTO_APPLY_DERIVED"],
     }).get_json()
@@ -320,11 +320,11 @@ def test_changed_target_evidence_invalidates_auto_confirmations_until_reproved()
         "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes() + b"\n"), "changed-target.xml"),
     }, content_type="multipart/form-data")
     assert changed_target_response.status_code == 200
-    changed_target = changed_target_response.get_json()["preview_id"]
+    changed_target = changed_target_response.get_json()["source_evidence"]
 
     review = client.post("/api/migration/requirements", json={
-        "preview_id": source_preview,
-        "target_preview_id": changed_target,
+        "source": source_preview,
+        "target_source": changed_target,
         "decision_document": auto_document,
     }).get_json()
     invalidated = {item["decision_key"] for item in review["invalidated_target_decisions"]}
@@ -335,8 +335,8 @@ def test_changed_target_evidence_invalidates_auto_confirmations_until_reproved()
     assert review["target_evidence_changed"] is True
 
     plan = client.post("/api/migrate", json={
-        "preview_id": source_preview,
-        "target_preview_id": changed_target,
+        "source": source_preview,
+        "target_source": changed_target,
         "decision_document": auto_document,
         "automation_mode": "REVIEW_ONLY",
     }).get_json()
@@ -350,12 +350,12 @@ def test_legacy_v2_auto_confirmations_are_bound_then_invalidated_by_new_target()
     source_preview = _preview(client)
     first_target = _target_preview(client)
     requirements = client.post("/api/migration/requirements", json={
-        "preview_id": source_preview,
-        "target_preview_id": first_target,
+        "source": source_preview,
+        "target_source": first_target,
     }).get_json()
     automated = client.post("/api/migration/automation/run", json={
-        "preview_id": source_preview,
-        "target_preview_id": first_target,
+        "source": source_preview,
+        "target_source": first_target,
         "decision_document": requirements["decision_document"],
         "enabled_policies": ["AUTO_APPLY_VERIFIED", "AUTO_APPLY_DERIVED"],
     }).get_json()
@@ -368,10 +368,10 @@ def test_legacy_v2_auto_confirmations_are_bound_then_invalidated_by_new_target()
     changed_target = client.post("/api/preview", data={
         "source_vendor": "palo_alto",
         "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes() + b"\n"), "changed-target.xml"),
-    }, content_type="multipart/form-data").get_json()["preview_id"]
+    }, content_type="multipart/form-data").get_json()["source_evidence"]
     review = client.post("/api/migration/requirements", json={
-        "preview_id": source_preview,
-        "target_preview_id": changed_target,
+        "source": source_preview,
+        "target_source": changed_target,
         "decision_document": legacy,
     }).get_json()
 
@@ -388,17 +388,17 @@ def test_target_preview_rejects_wrong_vendor_preview():
     client = create_app({"TESTING": True}).test_client()
     source_preview = _preview(client)
     response = client.post("/api/migration/requirements", json={
-        "preview_id": source_preview,
-        "target_preview_id": source_preview,
+        "source": source_preview,
+        "target_source": source_preview,
     })
     assert response.status_code == 400
-    assert "PAN-OS target" in response.get_json()["error"]
+    assert "source evidence" in response.get_json()["error"]
 
 
 def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources():
     client = create_app({"TESTING": True}).test_client()
     preview_id = _preview(client)
-    requirements = client.post("/api/migration/requirements", json={"preview_id": preview_id}).get_json()
+    requirements = client.post("/api/migration/requirements", json={"source": preview_id}).get_json()
     document = requirements["decision_document"]
     assert requirements["decisions"]["decisions"]
 
@@ -418,10 +418,10 @@ def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources
             decision["review_state"] = "CONFIRMED"
 
     planned = client.post("/api/migrate", json={
-        "preview_id": preview_id, "decision_document": document,
+        "source": preview_id, "decision_document": document,
     })
     assert planned.status_code == 200
-    assert planned.get_json()["commands"] > 0
+    assert planned.get_json()["command_count"] > 0
 
     # Same-named interfaces in different VDOMs remain distinct decision identities.
     from fwmigrate.conversion.fortigate_to_palo_alto import PANDecisionReviewState, PANMigrationDecision
@@ -430,12 +430,12 @@ def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources
         review_state=PANDecisionReviewState.CONFIRMED,
     ).to_dict())
     exported = client.post("/api/migration/decisions/export", json={
-        "preview_id": preview_id, "decision_document": document,
+        "source": preview_id, "decision_document": document,
     })
     assert exported.status_code == 200
     saved = exported.get_json()["document"]
     imported = client.post("/api/migration/decisions/import", json={
-        "preview_id": preview_id, "document": saved,
+        "source": preview_id, "document": saved,
     })
     assert imported.status_code == 200
     restored = imported.get_json()
@@ -448,15 +448,15 @@ def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources
     malformed["decisions"][0].pop("key", None)
     malformed["decisions"][0]["target_field"] = "unknown"
     rejected = client.post("/api/migration/decisions/import", json={
-        "preview_id": preview_id, "document": malformed,
+        "source": preview_id, "document": malformed,
     })
     assert rejected.status_code == 400
 
     changed_source = client.post("/api/preview", data={
         "file": (io.BytesIO(MIGRATION_FIXTURE.read_bytes() + b"\n# source digest change\n"), MIGRATION_FIXTURE.name),
-    }, content_type="multipart/form-data").get_json()["preview_id"]
+    }, content_type="multipart/form-data").get_json()["source_evidence"]
     mismatch = client.post("/api/migration/decisions/import", json={
-        "preview_id": changed_source, "document": saved,
+        "source": changed_source, "document": saved,
     })
     assert mismatch.status_code == 400
     assert "different source" in mismatch.get_json()["error"]
@@ -465,7 +465,7 @@ def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources
         legacy = json.loads(json.dumps(saved))
         legacy["format_version"] = legacy_version
         accepted = client.post("/api/migration/decisions/import", json={
-            "preview_id": preview_id, "document": legacy,
+            "source": preview_id, "document": legacy,
         })
         assert accepted.status_code == 200
 
@@ -473,13 +473,13 @@ def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources
 def test_plan_reports_missing_mappings_and_blocks_empty_bundle():
     client = create_app({"TESTING": True}).test_client()
     preview_id = _preview(client)
-    requirements = client.post("/api/migration/requirements", json={"preview_id": preview_id}).get_json()["requirements"]
+    requirements = client.post("/api/migration/requirements", json={"source": preview_id}).get_json()["requirements"]
     assert {item["source_vdom"] for item in requirements["vdoms"]} == {"root"}
-    plan = client.post("/api/migrate", json={"preview_id": preview_id, "mapping": {}}).get_json()
+    plan = client.post("/api/migrate", json={"source": preview_id, "mapping": {}}).get_json()
     assert plan["plan_status"] == "NEEDS_MAPPING"
-    assert plan["commands"] == 0
+    assert plan["command_count"] == 0
     assert plan["missing_mappings"]
-    bundle = client.post("/api/migration/bundle", json={"artifact_id": plan["artifact_id"]})
+    bundle = client.post("/api/migration/bundle", json={"artifact": plan["artifact"], "source": preview_id})
     assert bundle.status_code == 422
 
 
@@ -495,16 +495,16 @@ def test_complete_mappings_create_zip_for_same_plan_artifact():
             "untrust": {"target_zone": "untrust"},
         }},
     }
-    plan = client.post("/api/migrate", json={"preview_id": preview_id, "mapping": mapping}).get_json()
-    assert plan["commands"] > 0
-    response = client.post("/api/migration/bundle", json={"artifact_id": plan["artifact_id"]})
+    plan = client.post("/api/migrate", json={"source": preview_id, "mapping": mapping}).get_json()
+    assert plan["command_count"] > 0
+    response = client.post("/api/migration/bundle", json={"artifact": plan["artifact"], "source": preview_id})
     assert response.status_code == 200
     with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
         assert set(archive.namelist()) == {"palo_alto_config.set", "migration_report.json", "migration_decisions.json", "target_mapping.yaml", "source_inventory.xlsx"}
         assert archive.read("palo_alto_config.set").strip()
         report = json.loads(archive.read("migration_report.json"))
         decisions = json.loads(archive.read("migration_decisions.json"))
-        assert report["commands"] == plan["commands"]
+        assert report["commands"] == plan["command_count"]
         assert decisions["format_version"] == 3
         assert decisions["source_vendor"] == "fortigate"
         root_vsys = next(item for item in decisions["decisions"] if item["source_kind"] == "vdom" and item["target_field"] == "vsys")
@@ -529,15 +529,15 @@ def test_vsys_only_mapping_renders_objects_and_keeps_policy_for_review():
     client = create_app({"TESTING": True}).test_client()
     preview_id = _preview(client)
     plan = client.post("/api/migrate", json={
-        "preview_id": preview_id,
+        "source": preview_id,
         "mapping": {"vdoms": {"root": {"vsys": "vsys1", "virtual_router": "default"}}},
     }).get_json()
     assert plan["plan_status"] == "NEEDS_MAPPING"
-    assert plan["commands"] > 0
+    assert plan["command_count"] > 0
     assert plan["counts"]["renderable"] > 0
     policies = [item for item in plan["report"]["items"] if item["source_kind"] == "policy"]
     assert policies and all(not item["renderable"] for item in policies)
-    response = client.post("/api/migration/bundle", json={"artifact_id": plan["artifact_id"]})
+    response = client.post("/api/migration/bundle", json={"artifact": plan["artifact"], "source": preview_id})
     assert response.status_code == 200
     with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
         commands = archive.read("palo_alto_config.set").decode()
@@ -549,8 +549,8 @@ def test_vsys_only_mapping_renders_objects_and_keeps_policy_for_review():
 def test_deploy_rejects_empty_rendered_artifact_before_credentials():
     client = create_app({"TESTING": True}).test_client()
     preview_id = _preview(client)
-    plan = client.post("/api/migrate", json={"preview_id": preview_id, "mapping": {}}).get_json()
-    response = client.post("/api/deploy", json={"artifact_id": plan["artifact_id"]})
+    plan = client.post("/api/migrate", json={"source": preview_id, "mapping": {}}).get_json()
+    response = client.post("/api/deploy", json={"artifact": plan["artifact"], "source": preview_id})
     assert response.status_code == 400
     assert "no renderable commands" in response.get_json()["error"]
 
@@ -587,14 +587,14 @@ def test_migration_recommendations_are_review_only_and_reported():
     fixture = Path(__file__).parent / "fixtures" / "fortigate" / "identity_authentication_full.conf"
     preview = client.post("/api/preview", data={
         "file": (io.BytesIO(fixture.read_bytes()), fixture.name),
-    }, content_type="multipart/form-data").get_json()["preview_id"]
+    }, content_type="multipart/form-data").get_json()["source_evidence"]
 
-    requirements = client.post("/api/migration/requirements", json={"preview_id": preview}).get_json()
+    requirements = client.post("/api/migration/requirements", json={"source": preview}).get_json()
     assert requirements["recommendations"]
     assert any(item["family"] == "Users/Admin" for item in requirements["recommendations"])
     assert all("review_state" not in item and "planner_value" not in item for item in requirements["recommendations"])
 
-    plan = client.post("/api/migrate", json={"preview_id": preview, "mapping": {}}).get_json()
+    plan = client.post("/api/migrate", json={"source": preview, "mapping": {}}).get_json()
     assert plan["recommendations"] == plan["report"]["review"]["recommendations"]
     assert plan["coverage"] == plan["report"]["coverage"]
     assert plan["coverage"]["complete"] is False
