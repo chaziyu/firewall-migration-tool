@@ -50,7 +50,7 @@ class FTDReferenceKind(str, Enum):
 
 @dataclass(frozen=True)
 class FTDReferenceIssue:
-    owner: str
+    owner: str | None
     field: str
     reference: str
     source_plane: str
