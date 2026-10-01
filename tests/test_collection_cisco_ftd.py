@@ -397,6 +397,20 @@ def test_fmc_expanded_selected_coverage_keeps_device_and_policy_ownership():
     assert bundle["objects"]["networkanalysispolicies"][0]["inspectorconfigs"][0]["id"] == "inspector-1"
     assert bundle["objects"]["networkanalysispolicies"][0]["inspectoroverrideconfigs"][0]["id"] == "override-1"
     assert bundle["coverage"]["fmc_cli_users"]["status"] == "UNAVAILABLE"
+    assert bundle["coverage"]["nat_source_translation"]["status"] == "SUPPORTED"
+    assert bundle["coverage"]["nat_destination_translation"]["status"] == "SUPPORTED"
+    assert bundle["coverage"]["inspection_policies"]["status"] == "SUPPORTED"
+    assert bundle["coverage"]["service_objects_and_groups"]["status"] == "SUPPORTED"
+    assert bundle["coverage"]["fmc_user_roles"]["status"] == "SUPPORTED"
+    assert bundle["coverage"]["fmc_users"]["status"] == "SUPPORTED"
+    assert bundle["coverage"]["routing_and_path_selection"]["status"] == "SUPPORTED"
+    assert bundle["coverage"]["realm_user_groups"]["status"] == "SUPPORTED"
+    assert bundle["coverage"]["local_realm_users"]["status"] == "SUPPORTED"
+    assert not {
+        "source_nat_ip_pools", "destination_nat_vip", "vip_group_equivalent",
+        "inspection_profiles", "services_groups", "access_profiles", "administrators",
+        "sd_wan_routing", "user_groups", "local_users",
+    } & bundle["coverage"].keys()
     parts = {part.name for part in source.parts}
     assert "device/dev-1/virtual_router/vr-1/ipv6_static_routes" in parts
     assert "intrusionpolicies/ips-1/rules" in parts
