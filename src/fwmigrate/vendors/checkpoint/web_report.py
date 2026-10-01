@@ -111,6 +111,10 @@ def build_checkpoint_preview(result: CheckPointSourceResult) -> dict[str, Any]:
                    "reference": item.reference, "status": item.status,
                    "expected_kinds": [kind.value for kind in item.expected_kinds], "scope": item.scope}
                   for item in derived.broken_references]
+    unsupported_inventory = [
+        item for item in result.source_inventory
+        if getattr(item, "object_type", None) != "gaia-show-evidence"
+    ]
     scopes = sorted({item.domain for field in SOURCE_SHEETS.values() for item in getattr(config, field)
                      if getattr(item, "domain", None)} |
                     ({result.scope.selected_domain} if result.scope.selected_domain else set()))
@@ -130,9 +134,16 @@ def build_checkpoint_preview(result: CheckPointSourceResult) -> dict[str, Any]:
                     "derived_views": len(nat) + len(traversal) + len(interfaces) + len(vpn),
                     "validation_findings": len(result.validation.issues),
                     "incomplete_collections": len(derived.collection_incomplete),
-                    "unsupported_source_inventory": len(result.source_inventory),
+                    "source_inventory_evidence": len(result.source_inventory),
+                    "unsupported_source_inventory": len(unsupported_inventory),
                     "scope_ambiguous": bool(getattr(result.scope, "ambiguous", False)),
                     "capabilities": {"SD-WAN": "No direct R81.00 equivalent"},
+                    "derived_source_complete": {
+                        "nat": derived.nat_completeness.complete,
+                        "policy": derived.policy_completeness.complete,
+                        "interfaces": derived.interface_completeness.complete,
+                        "vpn": derived.vpn_completeness.complete,
+                    },
                     "objects": {"interfaces": len(interfaces), "addresses": len(addresses),
                                 "address_groups": len(address_groups), "services": len(services),
                                 "service_groups": len(service_groups), "policies": len(policies),
@@ -143,11 +154,22 @@ def build_checkpoint_preview(result: CheckPointSourceResult) -> dict[str, Any]:
                     "scopes": scopes},
         "collection": [_project(item) for item in result.collection],
         "scope": _project(result.scope), "source": source,
-        "derived": {"nat": nat, "policy_traversal": traversal, "interfaces": interfaces, "vpn": vpn,
-                    "unresolved_references": [_project(i) for i in derived.broken_references]},
+        "derived": {
+            "nat": nat,
+            "policy_traversal": traversal,
+            "interfaces": interfaces,
+            "vpn": vpn,
+            "completeness": {
+                "nat": _project(derived.nat_completeness),
+                "policy": _project(derived.policy_completeness),
+                "interfaces": _project(derived.interface_completeness),
+                "vpn": _project(derived.vpn_completeness),
+            },
+            "unresolved_references": [_project(i) for i in derived.broken_references],
+        },
         "validation": [_project(i) for i in result.validation.issues],
         "source_inventory": [_project(i) for i in result.source_inventory],
-        "unsupported": {"inventory": [_project(i) for i in result.source_inventory],
+        "unsupported": {"inventory": [_project(i) for i in unsupported_inventory],
                         "collections": [_project(i) for i in result.collection if not i.complete]},
         "source_metadata": _project(result.source_metadata),
         "sections": sections,

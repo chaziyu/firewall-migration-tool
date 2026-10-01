@@ -16,6 +16,16 @@ from .source_inventory import CheckPointSourceRecord
 
 
 def extract_gaia_records(response: CheckPointResponse) -> Iterable[tuple[str, CheckPointSourceObject | CheckPointSourceRecord]]:
+    if "command_output" in response.data:
+        output = sanitize_raw_text(str(response.data.get("command_output", "")))
+        if output:
+            yield "source_inventory", build_source_inventory(response, {
+                "type": "gaia-show-evidence",
+                "name": response.command.removeprefix("gaia/"),
+                "raw": output,
+            }, 1)
+        return
+
     text = sanitize_raw_text(str(response.data.get("cli_text", "")))
     tree = parse_gaia(text)
     evaluations = evaluate_gaia_commands(tree)

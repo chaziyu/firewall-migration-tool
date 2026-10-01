@@ -1,7 +1,10 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from fwmigrate.collection.checkpoint import CheckPointCollector, _classify_management_error
+from fwmigrate.collection.contracts import CollectionError
 from fwmigrate.vendors.checkpoint.models import CheckPointExportBundle, CheckPointResponse, CollectionStatus as CPStatus
 from fwmigrate.vendors.checkpoint.r81_commands import R81CommandSpec, R81_COMMAND_REGISTRY
 
@@ -37,8 +40,10 @@ class FakeConnection:
     def __init__(self, output=""):
         self.output = output
         self.disconnected = False
+        self.commands = []
 
-    def send_command(self, *args, **kwargs):
+    def send_command(self, command, *args, **kwargs):
+        self.commands.append(command)
         return self.output
 
     def disconnect(self):
@@ -68,7 +73,7 @@ def test_checkpoint_bundle_keeps_command_status_and_gaia_separate():
 
     def handle(command, kwargs):
         commands.append(command)
-        if command == "login": return Response({"sid": "do-not-save"})
+        if command == "login": return Response({"sid": "do-not-save", "api-server-version": "1.8.1"})
         if command == "logout": return Response({})
         shape = "rulebase" if command.endswith("rulebase") else "objects"
         items = [{"uid": "uid-1", "name": "obj"}] if command == "show-hosts" else []
@@ -88,6 +93,16 @@ def test_checkpoint_bundle_keeps_command_status_and_gaia_separate():
     bundle = json.loads(source.source_text)
     assert "do-not-save" not in source.source_text
     assert bundle["gaia_responses"] and bundle["responses"]
+    assert {item["command"] for item in bundle["gaia_responses"]} >= {
+        "gaia/show-configuration",
+        "gaia/show-route-static-all",
+        "gaia/show-ipv6-route-static-all",
+        "gaia/show-dhcp-server-all",
+        "gaia/show-users",
+        "gaia/show-rba-roles",
+        "gaia/show-vpn-tunnels",
+    }
+    assert "show route static all" in gaia.commands
     assert bundle["collection_completeness"]["show-hosts|domain=D"]["status"] == CPStatus.SUCCESS_WITH_DATA.value
     host = next(item for item in bundle["responses"] if item["command"] == "show-hosts")
     assert host["domain"] == "D" and not any(host.get(key) for key in ("package", "layer", "gateway"))
@@ -96,6 +111,9 @@ def test_checkpoint_bundle_keeps_command_status_and_gaia_separate():
     assert nat["package"] == "P" and nat.get("layer") is None
     assert layer["layer"] == "L" and layer.get("package") is None
     assert bundle["management_server"] == "mgmt"
+    assert bundle["api_version"] == "1.8.1"
+    assert bundle["collection_timestamp"]
+    assert bundle["successful_command_count"] > 0
     assert bundle["requested_scope"] == {"domain": "D", "package": "P", "layer": "L", "gateway": "G"}
     assert commands[0] == "login" and commands[-1] == "logout"
     assert set(commands[1:-1]).isdisjoint({"publish", "install-policy", "delete"})
@@ -261,3 +279,46 @@ def test_selected_package_discovers_its_layers_without_labeling_layer_scope_as_p
     scope = CheckPointCollector._response_scope(spec, options, ("name", "Layer A"))
     assert scope == {"domain": "Domain A", "layer": "Layer A"}
     assert CheckPointCollector._operation_key("show-access-rulebase", scope) == "show-access-rulebase|domain=Domain A|layer=Layer A"
+
+
+def test_multiple_management_domains_require_explicit_selection():
+    def handle(command, kwargs):
+        if command == "login":
+            return Response({"sid": "sid"})
+        if command == "logout":
+            return Response({})
+        if command == "show-domains":
+            return Response({
+                "objects": [
+                    {"uid": "d1", "name": "Domain A"},
+                    {"uid": "d2", "name": "Domain B"},
+                ],
+                "from": 1, "to": 2, "total": 2,
+            })
+        return Response({"objects": [], "from": 1, "to": 0, "total": 0})
+
+    collector = CheckPointCollector(
+        api_factory(handle),
+        command_registry={
+            "show-domains": R81CommandSpec(
+                "show-domains", scope_type="GLOBAL", required=True,
+            ),
+            "show-hosts": R81CommandSpec("show-hosts"),
+        },
+    )
+
+    with pytest.raises(CollectionError, match="Select a Domain explicitly"):
+        collector.collect(options())
+
+
+def test_management_error_classifier_detects_confirmed_unsupported_command():
+    class Unsupported(Exception):
+        response = SimpleNamespace(
+            status_code=400,
+            json=lambda: {
+                "code": "generic_err_command_not_found",
+                "message": "Unknown command",
+            },
+        )
+
+    assert _classify_management_error(Unsupported()) == CPStatus.UNSUPPORTED_COMMAND

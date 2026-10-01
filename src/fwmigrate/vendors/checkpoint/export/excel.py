@@ -75,6 +75,22 @@ def _issue_rows(result: Any):
         i.field, i.message, i.reference, names.get(i.object_type or "", ""))) for i in result.validation.issues]
 
 
+def _unsupported_inventory(result: Any):
+    return tuple(
+        item for item in result.source_inventory
+        if getattr(item, "object_type", None) != "gaia-show-evidence"
+    )
+
+
+def _derived_completeness_rows(result: Any):
+    return [
+        ("NAT Migration Views", result.derived.nat_completeness.complete, result.derived.nat_completeness.incomplete_commands),
+        ("Policy Traversal", result.derived.policy_completeness.complete, result.derived.policy_completeness.incomplete_commands),
+        ("Interface Views", result.derived.interface_completeness.complete, result.derived.interface_completeness.incomplete_commands),
+        ("VPN Views", result.derived.vpn_completeness.complete, result.derived.vpn_completeness.incomplete_commands),
+    ]
+
+
 def _derived_rows(result: Any, sheet: str):
     if sheet == "NAT Migration Views":
         return [(v.source_kind, v.owner_name or v.source_name, v.translation_method,
@@ -110,11 +126,18 @@ def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportPro
             append_report_row(sheet, ("Derived Views", sum(len(_derived_rows(result, s)) for s in DERIVED_SHEETS)))
             append_report_row(sheet, ("Validation Findings", len(result.validation.issues)))
             append_report_row(sheet, ("Incomplete Collections", len(result.derived.collection_incomplete)))
-            append_report_row(sheet, ("Unsupported Source Inventory", len(result.source_inventory)))
+            append_report_row(sheet, ("Source Inventory Evidence", len(result.source_inventory)))
+            append_report_row(sheet, ("Unsupported Source Inventory", len(_unsupported_inventory(result))))
             append_report_row(sheet, ("Scope Ambiguous", "Yes" if getattr(result.scope, "ambiguous", False) else "No"))
             append_report_row(sheet, ("SD-WAN", "No direct R81.00 equivalent"))
             append_report_row(sheet, ("API Version", result.source_metadata.api_version))
             append_report_row(sheet, ("Management Server", result.source_metadata.management_server))
+            append_report_row(sheet, ("Collector Version", result.source_metadata.collector_version))
+            append_report_row(sheet, ("Collection Timestamp", result.source_metadata.collection_timestamp))
+            append_report_row(sheet, ("Successful Collection Operations", result.source_metadata.successful_command_count))
+            append_report_row(sheet, ("Failed Collection Operations", result.source_metadata.failed_command_count))
+            append_report_row(sheet, ("Unsupported Collection Operations", result.source_metadata.unsupported_command_count))
+            append_report_row(sheet, ("Permission-Denied Collection Operations", result.source_metadata.permission_denied_count))
         elif name in SOURCE_SHEETS:
             field = SOURCE_SHEETS[name]
             headers = _source_headers(result, field)
@@ -123,6 +146,10 @@ def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportPro
                     sheet.column_dimensions[get_column_letter(col)].hidden = True
             append_report_row(sheet, headers)
             for row in _source_rows(getattr(result.config, field), headers, validation, name): append_report_row(sheet, row)
+        elif name == "Derived Completeness":
+            append_report_row(sheet, SHEET_HEADERS[name])
+            for row in _derived_completeness_rows(result):
+                append_report_row(sheet, tuple(_excel_safe(v) for v in row))
         elif name in DERIVED_SHEETS:
             append_report_row(sheet, SHEET_HEADERS[name])
             for row in _derived_rows(result, name): append_report_row(sheet, tuple(_excel_safe(v) for v in row))
@@ -144,7 +171,7 @@ def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportPro
         elif name == "Unsupported":
             append_report_row(sheet, SHEET_HEADERS[name])
             groups = {}
-            for item in result.source_inventory:
+            for item in _unsupported_inventory(result):
                 key = (item.command, item.domain, "UNSUPPORTED_SOURCE", item.object_type or "Unmodeled source object")
                 groups[key] = groups.get(key, 0) + 1
             for item in result.collection:
