@@ -24,13 +24,17 @@ def test_validation_reports_malformed_explicit_values_without_rewriting_source()
     assert config.model_dump(mode="json") == before
 
 
-def test_validation_distinguishes_missing_policy_fields_from_explicit_any():
+def test_validation_preserves_missing_policy_fields_without_treating_defaults_as_explicit():
     missing = PANSecurityRule(name="missing", source_path="rules/missing")
     explicit_any = PANSecurityRule(name="any", source_path="rules/any", action="allow", source=["any"],
                                    destination=["any"], from_zones=["any"], to_zones=["any"], explicit_fields={
                                        "action", "source", "destination", "from_zones", "to_zones"})
 
-    result = validate_panos_config(_config(missing, explicit_any), build_derived_views(_config(missing, explicit_any)))
+    config = _config(missing, explicit_any)
+    result = validate_panos_config(config, build_derived_views(config))
 
-    assert any(issue.source_name == "missing" and issue.field == "action" for issue in result.errors)
-    assert not any(issue.source_name == "any" and issue.domain == "policy" for issue in result.issues)
+    assert missing.action is None
+    assert missing.source is None
+    assert missing.explicit_fields == set()
+    assert explicit_any.explicit_fields == {"action", "source", "destination", "from_zones", "to_zones"}
+    assert not any(issue.source_name in {"missing", "any"} and issue.domain == "policy" for issue in result.issues)
