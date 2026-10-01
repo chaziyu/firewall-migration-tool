@@ -289,3 +289,20 @@ def test_compatibility_suffixes_do_not_type_unrelated_user_or_gateway_entries():
     assert local_user is not None and local_user.name == "local_user_database"
     assert portal is not None and portal.name == "globalprotect_portal"
     assert gateway is not None and gateway.name == "globalprotect_gateway"
+
+
+def test_unknown_wrapper_does_not_reinterpret_nested_known_suffix_as_typed_source():
+    from fwmigrate.vendors.palo_alto.source_builder import build_panos_config
+
+    path = ("config", "shared", "future-feature", "address", "entry")
+    assert match_path_spec(path) is None
+
+    config = build_panos_config(
+        "<config><shared><future-feature><address>"
+        "<entry name='unexpected'><ip-netmask>192.0.2.10/32</ip-netmask></entry>"
+        "</address></future-feature></shared></config>"
+    )
+
+    assert config.addresses == []
+    record = next(item for item in config.source_inventory if item.name == "unexpected")
+    assert record.source_path.endswith("future-feature/address/entry")
