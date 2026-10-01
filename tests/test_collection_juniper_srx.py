@@ -48,6 +48,10 @@ def test_juniper_collection_preserves_ntp_key_id_and_redacts_secrets(monkeypatch
         "set system ntp server 192.0.2.10 key 10",
         "set system ntp authentication-key 10 type md5 value AUTH_SECRET",
         "set security ike policy P1 pre-shared-key ascii-text REAL_SECRET",
+        "set access profile AUTH radius-server 192.0.2.10 shared-secret SHARED_RADIUS_SECRET",
+        "set access profile AUTH ldap-options bind-password LDAP_BIND_SECRET",
+        "set access profile AUTH client bob firewall-user chap-secret CHAP_SECRET",
+        "set access profile AUTH client carol firewall-user pap-password PAP_SECRET",
     ])
     connection = SimpleNamespace(send_command=lambda *args, **kwargs: content, disconnect=lambda: None)
     monkeypatch.setitem(sys.modules, "netmiko", SimpleNamespace(ConnectHandler=lambda **kwargs: connection))
@@ -57,6 +61,10 @@ def test_juniper_collection_preserves_ntp_key_id_and_redacts_secrets(monkeypatch
     assert "AUTH_SECRET" not in source.source_text
     assert "pre-shared-key ascii-text [REDACTED]" in source.source_text
     assert "REAL_SECRET" not in source.source_text
+    for secret in ("SHARED_RADIUS_SECRET", "LDAP_BIND_SECRET", "CHAP_SECRET", "PAP_SECRET"):
+        assert secret not in source.source_text
+    assert "shared-secret [REDACTED]" in source.source_text
+    assert "bind-password [REDACTED]" in source.source_text
     assert JuniperSRXSourceReporter().analyze_source(source.source_text)
 
 
@@ -77,4 +85,11 @@ def test_juniper_access_denied_placeholder_marks_collection_partial(monkeypatch)
     assert source.parts[0].status == "PERMISSION_DENIED"
     assert source.parts[0].complete is False
     assert source.warnings
-    assert "ACCESS-DENIED" not in source.source_text
+    assert "[ACCESS-DENIED]" in source.source_text
+
+    analysis = JuniperSRXSourceReporter().analyze_source(source.source_text)
+    assert "admin" not in analysis.config.admin_users
+    command = next(command for item in analysis.inventory_items for command in item.commands
+                   if command.parser_handler == "access-denied")
+    assert command.status.value == "UNSUPPORTED"
+    assert command.requires_manual_review is True
