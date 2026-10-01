@@ -60,7 +60,7 @@ def extract_checkpoint_config(
             to_index=max((page.to_index for page in pages if page.to_index is not None), default=None),
             total=max((page.total for page in pages if page.total is not None), default=None),
         ))
-        if response.command.startswith("gaia/") and "cli_text" in response.data:
+        if response.command.startswith("gaia/"):
             records = extract_gaia_records(response)
         elif response.command.lower() in _POLICY_EXTRACTORS:
             records = _POLICY_EXTRACTORS[response.command.lower()](response)
