@@ -171,8 +171,6 @@ class RoutingEvaluator:
         lower = line.lower()
         if re.match(r"^track\s+\d+\s+", lower):
             track_id = int(line.split()[1])
-            if track_id not in self.config.route_tracking_ids:
-                self.config.route_tracking_ids.append(track_id)
             parts = line.split()
             record = CiscoTrack(name=f"track:{track_id}", track_id=track_id, track_type=parts[2] if len(parts) > 2 else None,
                                  sla_id=int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else None,
