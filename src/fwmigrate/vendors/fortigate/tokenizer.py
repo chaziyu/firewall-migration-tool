@@ -27,6 +27,9 @@ class TokenType(enum.Enum):
     UNKNOWN = "unknown"
 
 
+_TOKEN_TYPES = {token_type.value: token_type for token_type in TokenType}
+
+
 class TokenizerError(Exception):
     """Raised when FortiGate CLI syntax cannot be tokenized."""
 
@@ -78,6 +81,10 @@ class FortiGateTokenizer:
                 continue
 
             if not logical_lines:
+                parts = self._split_simple_quoted_command(physical_line)
+                if parts is not None:
+                    yield from self._tokens_from_parts(parts, line_number)
+                    continue
                 start_line_number = line_number
 
             # Preserve physical-line contents for multiline quoted values.
@@ -127,9 +134,9 @@ class FortiGateTokenizer:
         if not any(character in command for character in ('"', "'", "\\")):
             return command.split()
 
-        # Only whole-token double quotes; complex syntax keeps shlex semantics.
-        if not any(character in command for character in ("'", "\\", "\r", "\n")) and _SIMPLE_QUOTED_COMMAND.fullmatch(command):
-            return [part[1:-1] if part.startswith('"') else part for part in _QUOTED_PARTS.findall(command)]
+        parts = FortiGateTokenizer._split_simple_quoted_command(command)
+        if parts is not None:
+            return parts
 
         lexer = shlex.shlex(command, posix=True)
 
@@ -137,6 +144,13 @@ class FortiGateTokenizer:
         lexer.commenters = ""
 
         return list(lexer)
+
+    @staticmethod
+    def _split_simple_quoted_command(command: str) -> list[str] | None:
+        # Only complete whole-token double quotes; complex syntax keeps the scanner.
+        if not any(character in command for character in ("'", "\\", "\r", "\n")) and _SIMPLE_QUOTED_COMMAND.fullmatch(command):
+            return [part[1:-1] if part.startswith('"') else part for part in _QUOTED_PARTS.findall(command)]
+        return None
 
     @staticmethod
     def _scan_lexical_state(
@@ -174,25 +188,7 @@ class FortiGateTokenizer:
         if not parts:
             return
 
-        keyword = parts[0].lower()
-
-        try:
-            token_type = TokenType(keyword)
-        except ValueError:
-            yield Token(
-                TokenType.UNKNOWN,
-                parts[0],
-                line_number,
-            )
-
-            for part in parts[1:]:
-                yield Token(
-                    TokenType.STRING,
-                    part,
-                    line_number,
-                )
-
-            return
+        token_type = _TOKEN_TYPES.get(parts[0].lower(), TokenType.UNKNOWN)
 
         yield Token(
             token_type,
