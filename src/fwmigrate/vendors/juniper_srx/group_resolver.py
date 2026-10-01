@@ -6,10 +6,11 @@ from collections import defaultdict
 from typing import List
 
 from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.vendors.juniper_srx.activation import JunosActivationState
 from fwmigrate.vendors.juniper_srx.extraction import sanitize_tokens
 from fwmigrate.vendors.juniper_srx.group_syntax import apply_group_index, group_definition_index
 from fwmigrate.vendors.juniper_srx.tokenizer import (
-    JunosActivationState, JunosCommand, JunosOperation, extract_value_list,
+    JunosCommand, JunosOperation, extract_value_list,
 )
 from fwmigrate.vendors.juniper_srx.model import JuniperResolutionStatus
 from fwmigrate.vendors.juniper_srx.provenance import build_candidate
@@ -185,7 +186,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
 
         for path, source in sorted(definitions, key=lambda item: item[1].line_number):
             source_tokens = source.tokens[1:]
-            source_group_index = next((i for i, token in enumerate(source_tokens) if token.lower() == "groups"), None)
+            source_group_index = group_definition_index(source_tokens)
             source_scope = tuple(source_tokens[:source_group_index]) if source_group_index is not None else ()
             if source_scope != target_scope:
                 application.group_resolution = "GROUP_HIERARCHY_INCOMPATIBLE"
