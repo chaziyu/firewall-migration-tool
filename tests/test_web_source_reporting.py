@@ -345,3 +345,33 @@ def test_api_preview_contract_covers_every_registered_vendor():
         assert owned == copied, vendor
         assert json.loads(json.dumps(owned)) == {key: value for key, value in report.items() if key not in {"success", "source_evidence", "source_digest"}}, vendor
         assert analysis == before, vendor
+
+
+def test_source_reporting_rejects_oversized_upload_and_inline_evidence(monkeypatch):
+    request_source = import_module("fwmigrate.web_support.request_source")
+    monkeypatch.setattr(request_source, "MAX_BYTES", 64)
+    client = create_app({"TESTING": True}).test_client()
+    oversized = b"<config>" + (b"x" * 80) + b"</config>"
+
+    for route in ("/api/preview", "/api/extract/excel"):
+        response = client.post(
+            route,
+            data={
+                "source_vendor": "palo_alto",
+                "file": (io.BytesIO(oversized), "oversized.xml"),
+            },
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 400
+
+    inline = client.post(
+        "/api/extract/excel",
+        json={
+            "source_vendor": "palo_alto",
+            "source": {
+                "vendor": "palo_alto",
+                "source_text": "x" * 65,
+            },
+        },
+    )
+    assert inline.status_code == 400
