@@ -125,6 +125,7 @@ const CISCO_FTD_COLUMNS: Record<string, string[]> = {
   services: ['name', 'domain_id', 'device_name', 'protocol', 'port'],
   service_groups: ['name', 'domain_id', 'device_name', 'members'],
   schedules: ['name', 'domain_id', 'device_name', 'value'],
+  routes: ['route_id', 'name', 'domain_id', 'device_name', 'virtual_router_name', 'destination', 'gateway', 'status'],
   vpn_tunnels: ['name', 'domain_id', 'device_name', 'parent_policy_name', 'kind', 'peer'],
 }
 
