@@ -97,3 +97,31 @@ def test_interface_aliases_and_topology_are_context_local():
     child = next(item for item in topology.interfaces if item.name.endswith("0/2"))
     assert child.parent.source_context == "customer-a"
     assert not topology.issues
+
+def test_source_inventory_and_diagnostics_preserve_execution_context():
+    result = extract_cisco_asa_source(
+        "changeto context blue\n"
+        "object network WEB\n"
+        " host 10.0.0.1\n"
+        "ssh not-an-address not-a-mask outside\n"
+        "changeto context green\n"
+        "future-command retained\n"
+    )
+
+    blue_inventory = [
+        item for item in result.inventory_items
+        if item.source_context == "blue"
+    ]
+    green_inventory = [
+        item for item in result.inventory_items
+        if item.source_context == "green"
+    ]
+    assert any(item.source_path == "object network" for item in blue_inventory)
+    assert any(item.source_path == "other" for item in green_inventory)
+    assert any(item.source_context == "blue" for item in result.config.diagnostics)
+    assert any(
+        issue.source_context == "blue" and issue.category == "parse"
+        for issue in result.validation.issues
+    )
+    assert any(item.source_context == "green" for item in result.unsupported_items)
+
