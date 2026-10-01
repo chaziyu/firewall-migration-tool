@@ -17,6 +17,7 @@ from ..security.extraction import sanitize_source_attributes
 from ..transform.policies import effective_policy_action
 from .excel_common import (
     _POLICY_ACTION_NOTE,
+    _VISIBLE_MODEL_FIELDS_BY_SHEET,
     _SOURCE_PATHS_BY_SHEET,
     _add_analysis_status,
     _additional_settings,
