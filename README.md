@@ -233,6 +233,21 @@ Equivalent module invocation:
 python -m fwmigrate.main serve --port 5000
 ```
 
+### Docker
+
+Build and run the production web image:
+
+```bash
+docker build -t firewall-migration-tool .
+docker run --detach --name fwmigrate --publish 5000:5000 --env-file /etc/fwmigrate/fwmigrate.env --mount type=bind,src=/etc/fwmigrate/known_hosts,dst=/home/fwmigrate/.ssh/known_hosts,readonly firewall-migration-tool
+```
+
+The environment file supplies server settings and secrets at runtime. For a company AI endpoint, set `FWMIGRATE_AI_ENABLED=1` and `FWMIGRATE_AI_LOCAL_URL` to its reachable HTTPS URL; `localhost` inside the container refers to the container itself. Do not bake secrets into the image.
+
+The container listens on port `5000` and runs as the non-root `fwmigrate` user. SSH collection and deployment use strict host-key checking, so mount the company's trusted `known_hosts` file at `/home/fwmigrate/.ssh/known_hosts`. Allow outbound access from the container to firewall management interfaces, FMC/Check Point APIs as used, and the company AI endpoint.
+
+Gunicorn uses one worker because previews, rendered artifacts, AI design sessions, and deployment sessions are held in process memory. A container restart loses those in-memory sessions and artifacts. Keep the single-worker setting until that state is moved to shared storage.
+
 The source-reporting workflow is:
 
 ```text

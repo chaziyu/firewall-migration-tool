@@ -190,7 +190,7 @@ def create_app(test_config=None):
 
     if test_config:
         app.config.update(test_config)
-    app.config.setdefault('FRONTEND_DIST_DIR', frontend_dist)
+    app.config.setdefault('FRONTEND_DIST_DIR', os.environ.get('FWMIGRATE_FRONTEND_DIST_DIR') or frontend_dist)
 
     try:
         ai_config = ai_advisor.validate_static_configuration()
