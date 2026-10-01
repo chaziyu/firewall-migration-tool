@@ -1,13 +1,8 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-# A sample workflow which sets up periodic OSV-Scanner scanning for vulnerabilities,
-# in addition to a PR check which fails if new vulnerabilities are introduced.
+# OSV dependency scanning.
 #
-# For more examples and options, including how to ignore specific vulnerabilities,
-# see https://google.github.io/osv-scanner/github-action/
+# Full scans use the exact dependency sets used by artifact-producing builds.
+# PR differential scanning remains recursive so changes to other manifests are
+# still compared against the target branch.
 
 name: OSV-Scanner
 
@@ -22,27 +17,33 @@ on:
     branches: [ "main" ]
 
 permissions:
-  # Require writing security events to upload SARIF file to security tab
+  actions: read
   security-events: write
-  # Read commit contents
   contents: read
 
 jobs:
   scan-scheduled:
     if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
-    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@1f1242919d8a60496dd1874b24b62b2370ed4c78" # v1.7.1
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc" # v2.6.0
     with:
-      # Scan the exact dependency sets used by artifact-producing builds.
       scan-args: |-
         --lockfile=requirements.txt:./requirements/constraints-python312.txt
         --lockfile=./src/frontend/package-lock.json
+
+  scan-resolved-pr:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc" # v2.6.0
+    with:
+      scan-args: |-
+        --lockfile=requirements.txt:./requirements/constraints-python312.txt
+        --lockfile=./src/frontend/package-lock.json
+
   scan-pr:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
-    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@1f1242919d8a60496dd1874b24b62b2370ed4c78" # v1.7.1
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc" # v2.6.0
     with:
-      # Differential PR scanning stays recursive so the base commit remains
-      # scannable while this constraints file is first introduced.
+      # The base commit does not yet contain the new constraints file, so keep
+      # differential scanning recursive for this transition and future manifest changes.
       scan-args: |-
         -r
-        --skip-git
         ./
