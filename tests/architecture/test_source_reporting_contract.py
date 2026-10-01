@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from fwmigrate.extraction.models import ExtractionStatus
-import fwmigrate.web as web
+import fwmigrate.web_api.source as web_source
 from fwmigrate.source_reporting import SourceReportRegistry
 
 
@@ -65,7 +65,7 @@ def test_source_report_registry_keeps_vendor_results_opaque():
 
 
 def test_source_excel_endpoint_does_not_use_legacy_ir_exporter():
-    tree = ast.parse((Path(web.__file__)).read_text(encoding="utf-8"))
+    tree = ast.parse((Path(web_source.__file__)).read_text(encoding="utf-8"))
     endpoint = next(
         node for node in ast.walk(tree)
         if isinstance(node, ast.FunctionDef) and node.name == "extract_excel"
