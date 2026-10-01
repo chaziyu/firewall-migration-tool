@@ -173,3 +173,42 @@ set routing-options static route 203.0.113.0/24 next-hop 192.0.2.254
     assert "egress_interfaces" not in nat
     assert interface["status"] is None
     assert route["status"] is None
+
+
+
+def test_unresolved_reference_counts_roll_up_to_native_section():
+    result = extract_juniper_source("set security ike gateway GW ike-policy MISSING")
+
+    section = next(item for item in result.source_sections if item.path == "security ike")
+    assert section.unresolved_dependencies == 1
+
+
+def test_excel_neutralizes_formula_cells_and_reports_partial_collection():
+    result = extract_juniper_source(
+        'set security address-book global address "=1+1" 192.0.2.1/32'
+    )
+    output = BytesIO()
+    export_juniper_excel(
+        result,
+        output,
+        collection_status="PARTIAL",
+        collection_parts=({"name": "configuration", "status": "PERMISSION_DENIED", "complete": False},),
+        collection_warnings=("Configuration incomplete",),
+    )
+    output.seek(0)
+    workbook = load_workbook(output, read_only=True, data_only=False)
+
+    address_sheet = workbook["Addresses"]
+    headers = [cell.value for cell in next(address_sheet.iter_rows(min_row=1, max_row=1))]
+    name_index = headers.index("Name")
+    values = next(address_sheet.iter_rows(min_row=2, max_row=2))
+    assert values[name_index].value == "'=1+1"
+
+    summary = {
+        row[0].value: row[1].value
+        for row in workbook["Summary"].iter_rows(min_row=2)
+        if row[0].value is not None and len(row) > 1
+    }
+    assert summary["Collection Status"] == "PARTIAL"
+    assert summary["Incomplete Collection Parts"] == 1
+    assert "Configuration incomplete" in summary["Collection Warnings"]
