@@ -44,4 +44,9 @@ def test_derived_build_populates_views_and_preserves_source_and_collection():
     assert derived.vpn_views.issues
     assert derived.nat.issues
     assert derived.collection_incomplete == (diagnostic,)
+    assert derived.nat_completeness.complete is False
+    assert derived.nat_completeness.incomplete_commands == ("show-hosts",)
+    assert derived.policy_completeness.complete is True
+    assert derived.interface_completeness.complete is True
+    assert derived.vpn_completeness.complete is True
     assert config.model_dump() == before
