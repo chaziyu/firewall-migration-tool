@@ -8,7 +8,7 @@ from ..model import CiscoFTDRoute, CiscoFTDStaticRoute
 
 @dataclass(frozen=True)
 class NormalizedFTDRoute:
-    source_name: str
+    source_name: str | None
     address_family: str | None
     configured_destination: str | None
     configured_mask: str | None
@@ -26,6 +26,8 @@ def normalize_ftd_routes(routes: list[CiscoFTDStaticRoute | CiscoFTDRoute], netw
     by_name = {}
     duplicate_names = set()
     for item in network_addresses:
+        if not item.name:
+            continue
         if item.name in by_name:
             duplicate_names.add(item.name)
         else:
