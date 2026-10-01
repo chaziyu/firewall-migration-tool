@@ -244,14 +244,16 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
                 )))
         elif name == "Collection Completeness":
             append_report_row(sheet, SHEET_HEADERS[name])
-            completeness = getattr(derived, "source_plane_completeness", {})
             if not config.collection_metadata.provided:
-                append_report_row(sheet, ("Collection metadata", "NOT_PROVIDED", None, None, None))
+                append_report_row(sheet, ("Collection metadata", "NOT_PROVIDED", None, None))
             for part in config.collection_metadata.parts:
-                append_report_row(sheet, (
-                    part.name, part.status, part.complete, part.count,
-                    completeness.get(f"collection:{part.name}", "unknown"),
-                ))
+                append_report_row(sheet, (part.name, part.status, part.complete, part.count))
+        elif name == "Semantic Completeness":
+            append_report_row(sheet, SHEET_HEADERS[name])
+            completeness = getattr(derived, "source_plane_completeness", {})
+            for family, status in completeness.items():
+                if not family.startswith("collection:"):
+                    append_report_row(sheet, (family, status))
         elif name == "Source Evidence":
             append_report_row(sheet, SHEET_HEADERS[name])
             for item in config.unsupported_evidence:
