@@ -165,3 +165,49 @@ set apply-groups G
     assert commands
     assert all(command.status == ExtractionStatus.EXTRACTED for command in commands)
     assert not result.review_required
+
+
+
+def test_group_keywords_used_as_object_names_are_not_group_commands():
+    result = extract_juniper_source(
+        """set applications application groups protocol tcp
+set applications application apply-groups protocol udp
+"""
+    )
+
+    context = result.config.get_context()
+    assert set(context.applications) >= {"groups", "apply-groups"}
+    assert context.applications["groups"].top_level.protocol == "tcp"
+    assert context.applications["apply-groups"].top_level.protocol == "udp"
+    assert not result.config.configuration_groups
+
+
+def test_top_level_application_settings_do_not_create_synthetic_term():
+    result = extract_juniper_source(
+        """set applications application WEB protocol tcp
+set applications application WEB destination-port 443
+"""
+    )
+
+    application = result.config.get_context().applications["WEB"]
+    assert application.terms == []
+    assert application.top_level.protocol == "tcp"
+    assert application.top_level.destination_ports == ["443"]
+
+    service = build_juniper_preview(result)["sections"]["services"][0]
+    assert service["term"] is None
+    assert service["protocol"] == "tcp"
+    assert service["port"] == ["443"]
+
+
+def test_modeled_utm_and_idp_commands_are_reported_as_extracted():
+    result = extract_juniper_source(
+        """set security utm feature-profile anti-virus profile AV type juniper-express-engine
+set security idp idp-policy IDP rulebase-ips rule R action drop
+"""
+    )
+
+    commands = [command for item in result.inventory_items for command in item.commands]
+    by_handler = {command.parser_handler: command for command in commands}
+    assert by_handler["utm"].status == ExtractionStatus.EXTRACTED
+    assert by_handler["idp"].status == ExtractionStatus.EXTRACTED
