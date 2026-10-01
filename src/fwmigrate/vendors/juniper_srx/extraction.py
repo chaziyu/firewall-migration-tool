@@ -19,6 +19,12 @@ _SENSITIVE_KEYWORDS = {
     "privacy-password",
     "community",
     "secret",
+    "shared-secret",
+    "chap-secret",
+    "pap-password",
+    "bind-password",
+    "login-password",
+    "password-hash",
     "password",
     "passwd",
     "private-key",
@@ -45,6 +51,12 @@ _SENSITIVE_KEY_SET = {
     "privacy_password",
     "community",
     "secret",
+    "shared_secret",
+    "chap_secret",
+    "pap_password",
+    "bind_password",
+    "login_password",
+    "password_hash",
     "password",
     "passwd",
     "private_key",
@@ -188,6 +200,11 @@ def sanitize_tokens(tokens: Sequence[str]) -> List[str]:
             continue
 
         if redact_next:
+            if token.strip().upper() in {"ACCESS-DENIED", "[ACCESS-DENIED]"}:
+                sanitized.append("[ACCESS-DENIED]")
+                redact_next = False
+                skip_sub_keyword = False
+                continue
             if token == "[":
                 in_secret_bracket_list = True
                 redact_next = False
@@ -275,7 +292,11 @@ def is_sensitive_key(key: str) -> bool:
     if norm in _SENSITIVE_KEY_SET:
         return True
     parts = norm.split("_")
-    if any(p in ("password", "passwd", "secret", "pre_shared_key", "private_key", "api_key", "passphrase") for p in parts):
+    if any(p in (
+        "password", "passwd", "secret", "pre_shared_key", "private_key",
+        "api_key", "passphrase", "shared_secret", "chap_secret",
+        "pap_password", "bind_password", "login_password", "password_hash",
+    ) for p in parts):
         return True
     if norm == "community" or norm.endswith("_community"):
         return True
