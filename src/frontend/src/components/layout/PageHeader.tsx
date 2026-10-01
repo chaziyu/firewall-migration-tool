@@ -1,3 +1,5 @@
+import { ThemeColorPicker } from './ThemeColorPicker'
+
 export function PageHeader({ page, theme, onNewWorkspace, onToggleTheme }: {
   page: { title: string; description: string }
   theme: 'light' | 'dark'
@@ -11,6 +13,7 @@ export function PageHeader({ page, theme, onNewWorkspace, onToggleTheme }: {
         <span className="page-description">{page.description}</span>
       </div>
       <div className="page-header-actions">
+        <ThemeColorPicker theme={theme} />
         <button className="secondary-button new-workspace" type="button" onClick={() => {
           if (window.confirm('Start a new workspace? This clears the current source from this window.')) onNewWorkspace()
         }}><span aria-hidden="true">＋</span> New workspace</button>

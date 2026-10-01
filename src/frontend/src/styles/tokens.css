@@ -8,6 +8,7 @@
 @font-face {
   font-family: 'Space Grotesk';
   src: url('/fonts/space-grotesk.ttf') format('truetype');
+  font-weight: 300 700;
   font-display: swap;
 }
 
@@ -19,25 +20,56 @@
   -moz-osx-font-smoothing: grayscale;
   --font-ui: 'DM Sans', sans-serif;
   --font-display: 'Space Grotesk', sans-serif;
-  --canvas: #f5f6f3;
-  --surface: #fff;
-  --sidebar: #172321;
-  --text-heading: #202c29;
-  --text-main: #34423d;
-  --text-muted: #6a746e;
-  --text-dim: #7a847e;
-  --line: #b8c2b9;
-  --line-divider: #cbd2ca;
-  --color-primary: #c64c24;
-  --color-primary-hover: #a93c19;
-  --color-primary-subtle: #fcf0e9;
-  --color-teal: #27755d;
-  --warning: #986817;
-  --danger: #b4413d;
-  --success: #27755d;
-  --bg-input: #fff;
-  --radius-sm: 7px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --font-mono: ui-monospace, Consolas, monospace;
+
+  /* Color Hunt palette: cream, soft sage, sage, and olive. */
+  --palette-cream: #f8ede3;
+  --palette-soft-sage: #bdd2b6;
+  --palette-sage: #a2b29f;
+  --palette-olive: #798777;
+
+  --canvas: var(--palette-cream);
+  --surface: #fffaf5;
+  --surface-muted: color-mix(in srgb, var(--palette-soft-sage) 18%, var(--surface));
+  --surface-hover: color-mix(in srgb, var(--palette-soft-sage) 32%, var(--surface));
+  --sidebar: color-mix(in srgb, var(--surface) 60%, var(--canvas));
+  --sidebar-line: var(--line);
+  --sidebar-text: var(--text-muted);
+  --sidebar-active: var(--color-primary-subtle);
+  --sidebar-hover: var(--surface-muted);
+  --text-heading: #2f3d2e;
+  --text-main: #3f4c3b;
+  --text-muted: #616e5c;
+  --text-dim: var(--text-muted);
+  --line: color-mix(in srgb, var(--palette-sage) 65%, var(--surface));
+  --line-divider: color-mix(in srgb, var(--palette-sage) 48%, var(--surface));
+  --line-strong: var(--palette-olive);
+  /* Deeper olive keeps small links and cream button labels readable. */
+  --color-primary: #4d6348;
+  --color-primary-hover: #3c5038;
+  --color-on-primary: #fffaf5;
+  --color-primary-subtle: color-mix(in srgb, var(--palette-soft-sage) 48%, var(--surface));
+  --color-accent: var(--palette-olive);
+  --warning: #85591b;
+  --danger: #a64438;
+  --success: #496343;
+  --bg-input: #fffcf8;
+  --focus-ring: var(--color-primary);
+  --shadow-panel: 0 3px 16px #3f4c3b08, 0 1px 3px #3f4c3b05;
+  --shadow-popover: 0 12px 32px #2f3d2e24;
+  --backdrop: #202a2073;
+
+  --terminal-bg: #232e24;
+  --terminal-header: #303d2f;
+  --terminal-line: #63725d;
+  --terminal-text: #e0e7d9;
+  --terminal-muted: var(--palette-sage);
+  --terminal-success: var(--palette-soft-sage);
+  --terminal-warning: #e2be84;
+  --terminal-error: #efb3a0;
+
+  --radius-sm: 9px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
   --sidebar-width: 242px;
 }
