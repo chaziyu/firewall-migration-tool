@@ -17,6 +17,12 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
             return item
         return item
 
+    def source_name(item):
+        if item is None:
+            return None
+        attributes = getattr(item, "source_attributes", {}) or {}
+        return item.name if attributes.get("source_name_explicit", True) else None
+
     def ref(item):
         if item is None:
             return None
@@ -48,36 +54,44 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
                    "physical_interfaces": [], "status": "SHUTDOWN" if item.shutdown else "EXTRACTED",
                    "scope": None, "source_plane": config.source_plane}
                   for item in config.interfaces]
-    interfaces.extend({"name": item.name, "display_name": item.name, "kind": item.interface_type,
+    interfaces.extend({"name": source_name(item), "display_name": source_name(item), "kind": item.interface_type,
                        "ip": [item.address] if item.address else [], "zone": [ref(item.zone)] if item.zone else [],
-                       "status": "EXTRACTED", "scope": scope(item), "scope_details": scope_details(item), "source_plane": item.source_plane}
+                       "status": "EXTRACTED", "scope": scope(item), "scope_details": scope_details(item),
+                       **scope_details(item), "source_plane": item.source_plane}
                       for item in (*config.device_interfaces, *config.source_interfaces))
-    addresses = [{"name": item.name, "value": value(item.value), "type": item.address_type,
+    addresses = [{"name": source_name(item), "value": value(item.value), "type": item.address_type,
                   "address_family": item.address_family, "scope": scope(item),
-                  "scope_details": scope_details(item), "source_plane": item.source_plane}
+                  "scope_details": scope_details(item), **scope_details(item), "source_plane": item.source_plane}
                  for item in config.network_addresses]
-    address_groups = [{"name": item.name,
+    address_groups = [{"name": source_name(item),
                        "members": [ref(value) for value in (*(item.members or ()), *(item.literal_members or ()))],
-                       "scope": scope(item), "scope_details": scope_details(item), "source_plane": item.source_plane} for item in config.network_groups]
-    services = [{"name": item.name, "protocol": item.protocol,
+                       "scope": scope(item), "scope_details": scope_details(item), **scope_details(item),
+                       "source_plane": item.source_plane} for item in config.network_groups]
+    services = [{"name": source_name(item), "protocol": item.protocol,
                  "port": item.ports or item.port or item.end_port,
-                 "scope": scope(item), "scope_details": scope_details(item), "source_plane": item.source_plane} for item in config.protocol_port_objects]
-    service_groups = [{"name": item.name, "members": [ref(member) for member in item.members or ()],
-                       "scope": scope(item), "scope_details": scope_details(item), "source_plane": item.source_plane} for item in config.port_object_groups]
-    schedules = [{"name": item.name, "value": value(item), "scope": scope(item), "scope_details": scope_details(item), "source_plane": item.source_plane}
+                 "scope": scope(item), "scope_details": scope_details(item), **scope_details(item),
+                 "source_plane": item.source_plane} for item in config.protocol_port_objects]
+    service_groups = [{"name": source_name(item), "members": [ref(member) for member in item.members or ()],
+                       "scope": scope(item), "scope_details": scope_details(item), **scope_details(item),
+                       "source_plane": item.source_plane} for item in config.port_object_groups]
+    schedules = [{"name": source_name(item), "value": value(item), "scope": scope(item),
+                  "scope_details": scope_details(item), **scope_details(item), "source_plane": item.source_plane}
                  for item in config.time_ranges]
     policies = []
     for policy in config.access_control_policies:
         for index, rule in enumerate(policy.rules or (), 1):
-            policies.append({"policy_id": rule.position or rule.collection_order or index,
-                             "name": rule.name, "source_addresses": [ref(x) for x in rule.source_networks or ()],
+            policies.append({"policy_id": policy.source_id, "policy_name": source_name(policy),
+                             "rule_id": rule.source_id, "position": rule.position,
+                             "collection_order": rule.collection_order or index,
+                             "name": source_name(rule), "source_addresses": [ref(x) for x in rule.source_networks or ()],
                              "destination_addresses": [ref(x) for x in rule.destination_networks or ()],
                              "source_interfaces": [ref(x) for x in rule.source_zones or ()],
                              "destination_interfaces": [ref(x) for x in rule.destination_zones or ()],
                              "services": [ref(x) for x in rule.destination_ports or ()],
                              "schedule": ref(rule.time_range), "action": rule.action,
                              "section": rule.section, "category": rule.category,
-                             "source_plane": rule.source_plane, "scope": scope(rule), "scope_details": scope_details(rule)})
+                             "source_plane": rule.source_plane, "scope": scope(rule), "scope_details": scope_details(rule),
+                             **scope_details(rule)})
     nat_rows = []
     for policy in config.nat_policies:
         for collection, rules in (("manual-before-auto", policy.manual_rules_before_auto),
@@ -86,13 +100,18 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
             for rule in rules or ():
                 translated = [ref(getattr(rule, field, None)) for field in
                               ("translated_source", "translated_destination", "translated_network")]
-                nat_rows.append({"policy_id": getattr(rule, "position", None) or getattr(rule, "sequence", None),
-                                 "policy_name": rule.name, "translation_type": getattr(rule, "nat_type", None) or getattr(rule, "rule_type", None),
+                synthetic = policy.source_attributes.get("synthetic_container")
+                nat_rows.append({"policy_id": None if synthetic else policy.source_id,
+                                 "policy_name": None if synthetic else source_name(policy),
+                                 "rule_id": rule.source_id, "name": source_name(rule),
+                                 "position": getattr(rule, "position", None),
+                                 "sequence": getattr(rule, "sequence", None),
+                                 "translation_type": getattr(rule, "nat_type", None) or getattr(rule, "rule_type", None),
                                  "translated_addresses": [item for item in translated if item],
                                  "egress_interfaces": [ref(rule.destination_interface)] if getattr(rule, "destination_interface", None) else [],
                                  "source_kind": collection, "source_plane": rule.source_plane,
                                  "source_order": getattr(rule, "observed_collection_order", None), "scope": scope(rule),
-                                 "scope_details": scope_details(rule)})
+                                 "scope_details": scope_details(rule), **scope_details(rule)})
     routes = [{"route_id": item.source_name, "destination": item.normalized_destination or item.configured_destination,
                "configured_destination": item.configured_destination, "gateway": item.gateway,
                "device": item.device_id or item.virtual_router, "distance": None,
@@ -106,12 +125,16 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
                         "source_plane": item.source_plane, "scope": scope(item), "scope_details": scope_details(item)}
                        for item in config.s2s_vpn_endpoints)
     validation = [{"severity": item.severity, "domain": item.category, "object_name": item.source_object,
-                   "field": None, "message": item.message,
-                   "scope": getattr(item, "source_context", None)} for item in result.validation.issues]
+                   "source_id": item.source_id, "field": None, "message": item.message,
+                   "source_context": item.source_context, "domain_id": item.domain_id,
+                   "device_id": item.device_id,
+                   "scope": item.source_context or item.domain_id or item.device_id}
+                  for item in result.validation.issues]
     unresolved = [{"source_kind": item.source_plane, "source_name": item.owner,
-                   "source_field": item.field, "reference": item.reference,
+                   "source_id": item.owner_id, "source_field": item.field, "reference": item.reference,
                    "expected_kinds": list(item.expected_kinds), "status": item.status,
-                   "scope": item.domain_id or item.scope}
+                   "domain_id": item.domain_id, "device_id": item.device_id,
+                   "scope": item.domain_id or item.device_id or item.scope}
                   for item in result.derived.unresolved_references]
     scopes = sorted({row["scope"] for rows in (interfaces, addresses, address_groups, services, service_groups, policies, nat_rows, routes, vpn_tunnels)
                      for row in rows if row.get("scope")})
@@ -191,7 +214,14 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
         "source_metadata": config.source_metadata,
         "capability_coverage": config.source_metadata.get("coverage", {}),
         "source_plane_completeness": result.derived.source_plane_completeness,
-        "collection_completeness": result.derived.source_plane_completeness,
+        "collection_completeness": {
+            "provided": config.collection_metadata.provided,
+            "status": config.collection_metadata.status if config.collection_metadata.provided else "NOT_PROVIDED",
+            "parts": [
+                {"name": part.name, "status": part.status, "complete": part.complete, "count": part.count}
+                for part in config.collection_metadata.parts
+            ],
+        },
         "interface_topology": [{"name": item.name, "device_id": item.device_id, "kind": item.kind, "parent": item.parent,
             "aggregate": item.aggregate, "physical_interfaces": item.physical_interfaces}
             for item in result.derived.interface_topology.interfaces],
