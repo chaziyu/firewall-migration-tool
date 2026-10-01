@@ -95,6 +95,19 @@ Unsupported or partially understood source configuration is preserved where prac
 - Migration reports and downloadable migration bundles.
 - Optional PAN-OS candidate deployment and validation.
 
+## Runtime Targets
+
+The repository supports two independent runtime targets that share the same React frontend, Flask API contract, and `fwmigrate` application logic:
+
+| Target | Runtime | Docker required? | Where backend operations run |
+|---|---|---|---|
+| Web / Render | Browser → Gunicorn → Flask | Yes for the current production container deployment | Render/container host |
+| Windows desktop | React → Tauri → local PyInstaller Flask sidecar | **No** | User workstation |
+
+The Tauri desktop application does **not** start Docker, require Docker Desktop, or communicate through a Docker container. Its Python backend is packaged as a sidecar executable and binds only to `127.0.0.1` using a per-launch authentication token.
+
+This distinction matters for network access: desktop collection and PAN-OS deployment originate from the user's workstation, while web/Render collection and deployment originate from the hosted container and therefore require network reachability from that environment.
+
 ## Supported Source Vendors
 
 | Vendor | Vendor ID | Accepted Input | Notes |
@@ -197,21 +210,41 @@ Set `GROQ_API_KEY` and `FWMIGRATE_AI_ENABLED=1` in `.env.local`. Groq uses the 2
 
 ### Desktop Application
 
-The supported desktop architecture keeps the same React frontend and Flask API contract while Tauri owns the native window. The Python backend runs as an authenticated loopback-only sidecar. Render/Docker continues to use Gunicorn and is unchanged.
+The desktop build is a native Tauri application. Tauri owns the window and lifecycle, while the existing Flask application runs locally as a PyInstaller sidecar:
 
-Windows development prerequisites include Rust, Node.js, Python, and the Tauri system dependencies. Build the desktop sidecar and shell with:
+```text
+React
+→ Tauri
+→ authenticated 127.0.0.1 Flask sidecar
+→ fwmigrate application / domain logic
+```
+
+**Docker is not part of the desktop runtime.** A user can run the packaged desktop application without Docker Desktop installed.
+
+Windows build prerequisites are Rust, Node.js, Python, PyInstaller, and the normal Tauri Windows system dependencies. Build the desktop sidecar and installer with:
 
 ```powershell
 python -m pip install -e ".[ai,collection,deployment]"
 python -m pip install "pyinstaller>=6.0"
+
 cd src/frontend
 npm ci
 npm run build
 cd ../..
+
 python desktop/build_tauri_sidecar.py
+
 cd src/frontend
 cargo install tauri-cli --version "^2" --locked
 cargo tauri build
+```
+
+Typical build outputs are under:
+
+```text
+src/frontend/src-tauri/target/release/
+src/frontend/src-tauri/target/release/bundle/nsis/
+src/frontend/src-tauri/target/release/bundle/msi/
 ```
 
 The existing pywebview/PyInstaller package remains available during the Tauri migration:
@@ -252,7 +285,9 @@ Equivalent module invocation:
 python -m fwmigrate.main serve --port 5000
 ```
 
-### Docker
+### Docker / Render Web Deployment
+
+Docker is used for the hosted web application, including the current Render deployment. It is separate from the Tauri desktop runtime; the Docker image does not host or launch the Tauri application.
 
 Build and run the production web image:
 
