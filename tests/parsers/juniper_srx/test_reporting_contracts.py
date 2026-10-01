@@ -244,3 +244,27 @@ deactivate security ipsec vpn VPN
         rows = list(workbook[sheet_name].values)
         state_index = rows[0].index("Effective State")
         assert rows[1][state_index] == "INACTIVE"
+
+
+
+def test_excel_separates_inherited_effective_objects_from_explicit_source():
+    result = extract_juniper_source(
+        """set groups G security address-book global address INHERITED 192.0.2.5/32
+set apply-groups G
+"""
+    )
+    assert "global" not in result.config.get_context().address_books
+
+    output = BytesIO()
+    export_juniper_excel(result, output)
+    output.seek(0)
+    workbook = load_workbook(output, read_only=True)
+
+    explicit_rows = list(workbook["Addresses"].values)
+    assert len(explicit_rows) == 1
+
+    effective_rows = list(workbook["Effective Objects"].values)
+    headers = effective_rows[0]
+    row = next(item for item in effective_rows[1:] if item[1:3] == ("address", "INHERITED"))
+    assert row[headers.index("Source Presence")] == "INHERITED_ONLY"
+    assert "192.0.2.5/32" in row[headers.index("Attributes")]
