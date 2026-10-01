@@ -59,6 +59,7 @@ pub fn run() {
                                 "desktop sidecar exited before ready: {status:?}"
                             )));
                         }
+                        Some(_) => {}
                         None => {
                             break Err(io::Error::other(
                                 "desktop sidecar closed output before reporting readiness",
