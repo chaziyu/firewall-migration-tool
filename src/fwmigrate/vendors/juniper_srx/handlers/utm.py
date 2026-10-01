@@ -1,4 +1,4 @@
-"""Source-only extraction for Junos UTM policy/profile composition."""
+"""Structured extraction for Junos UTM policy/profile composition."""
 
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.vendors.juniper_srx.extraction import sanitize_source_attributes, sanitize_tokens
@@ -32,6 +32,7 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
             name, JuniperUTMAntivirusProfile(name=name)
         )
         rest = toks[7:]
+        status = ExtractionStatus.EXTRACTED
         if rest:
             key = rest[0].lower()
             values = extract_value_list(rest[1:])
@@ -41,9 +42,11 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
             elif key in {"scan-options", "scan-option", "scan"}:
                 option, option_values = _option_values(safe_values, key)
                 profile.scan_behavior.setdefault(option, []).extend(option_values)
+                status = ExtractionStatus.PARTIAL
             elif key in {"fallback-options", "fallback-option", "fallback"}:
                 option, option_values = _option_values(safe_values, key)
                 profile.fallback_behavior.setdefault(option, []).extend(option_values)
+                status = ExtractionStatus.PARTIAL
             elif key in {"file-extension", "file-extensions", "file-type", "file-types"}:
                 profile.file_controls.extend(v for v in safe_values if v not in profile.file_controls)
             elif key in {"mime", "mime-type", "mime-types"}:
@@ -52,11 +55,13 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
                 profile.settings.setdefault("_".join(sanitize_tokens(rest)), []).append(
                     sanitize_source_attributes({"raw": cmd.raw_sanitized})
                 )
+                status = ExtractionStatus.SOURCE_ONLY
         profile.source_attributes.update(
             sanitize_source_attributes({"raw": cmd.raw_sanitized})
         )
         cmd.consumed, cmd.handler = True, "utm"
-        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
+        cmd.extraction_status = status
+        cmd.requires_manual_review = status != ExtractionStatus.EXTRACTED
         return True
 
     if (
@@ -70,6 +75,7 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
             name, JuniperUTMAntiSpamProfile(name=name)
         )
         rest = toks[7:]
+        status = ExtractionStatus.EXTRACTED
         if rest:
             key = rest[0].lower()
             values = sanitize_tokens(extract_value_list(rest[1:]))
@@ -81,9 +87,11 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
                 profile.settings.setdefault("_".join(sanitize_tokens(rest)), []).append(
                     sanitize_source_attributes({"raw": cmd.raw_sanitized})
                 )
+                status = ExtractionStatus.SOURCE_ONLY
         profile.source_attributes.update(sanitize_source_attributes({"raw": cmd.raw_sanitized}))
         cmd.consumed, cmd.handler = True, "utm"
-        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
+        cmd.extraction_status = status
+        cmd.requires_manual_review = status != ExtractionStatus.EXTRACTED
         return True
 
     if (
@@ -97,6 +105,7 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
             name, JuniperUTMContentFilteringProfile(name=name)
         )
         rest = toks[7:]
+        status = ExtractionStatus.EXTRACTED
         if rest:
             key = rest[0].lower()
             values = sanitize_tokens(extract_value_list(rest[1:]))
@@ -108,10 +117,12 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
                 profile.settings.setdefault("_".join(sanitize_tokens(rest)), []).append(
                     sanitize_source_attributes({"raw": cmd.raw_sanitized})
                 )
+                status = ExtractionStatus.SOURCE_ONLY
             profile.syntax_variant = key
         profile.source_attributes.update(sanitize_source_attributes({"raw": cmd.raw_sanitized}))
         cmd.consumed, cmd.handler = True, "utm"
-        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
+        cmd.extraction_status = status
+        cmd.requires_manual_review = status != ExtractionStatus.EXTRACTED
         return True
 
     if (
@@ -125,6 +136,7 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
             name, JuniperUTMWebFilteringProfile(name=name)
         )
         rest = toks[7:]
+        status = ExtractionStatus.EXTRACTED
         if rest:
             key = rest[0].lower()
             values = sanitize_tokens(extract_value_list(rest[1:]))
@@ -143,9 +155,11 @@ def handle_utm_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
                 profile.settings.setdefault("_".join(sanitize_tokens(rest)), []).append(
                     sanitize_source_attributes({"raw": cmd.raw_sanitized})
                 )
+                status = ExtractionStatus.SOURCE_ONLY
         profile.source_attributes.update(sanitize_source_attributes({"raw": cmd.raw_sanitized}))
         cmd.consumed, cmd.handler = True, "utm"
-        cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
+        cmd.extraction_status = status
+        cmd.requires_manual_review = status != ExtractionStatus.EXTRACTED
         return True
 
     if len(toks) > 4 and toks[3].lower() == "utm-policy":
