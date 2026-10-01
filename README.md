@@ -242,6 +242,8 @@ docker build -t firewall-migration-tool .
 docker run --detach --name fwmigrate --publish 5000:5000 --env-file /etc/fwmigrate/fwmigrate.env --mount type=bind,src=/etc/fwmigrate/known_hosts,dst=/home/fwmigrate/.ssh/known_hosts,readonly firewall-migration-tool
 ```
 
+On Windows, double-click [`Start Docker.bat`](./Start%20Docker.bat) to build the image, start it on port `5000`, wait for its health check, and open the web application. If that container is already running, the launcher reuses it; stop and remove it before rerunning to rebuild from current files.
+
 The environment file supplies server settings and secrets at runtime. For a company AI endpoint, set `FWMIGRATE_AI_ENABLED=1` and `FWMIGRATE_AI_LOCAL_URL` to its reachable HTTPS URL; `localhost` inside the container refers to the container itself. Do not bake secrets into the image.
 
 The container listens on port `5000` and runs as the non-root `fwmigrate` user. SSH collection and deployment use strict host-key checking, so mount the company's trusted `known_hosts` file at `/home/fwmigrate/.ssh/known_hosts`. Allow outbound access from the container to firewall management interfaces, FMC/Check Point APIs as used, and the company AI endpoint.

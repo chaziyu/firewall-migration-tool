@@ -379,6 +379,8 @@ body:has(.finding-inspector[open]) { overflow: hidden; }
 .source-report .report-column-identity { width: 160px; min-width: 160px !important; }
 .source-report .report-column-content { width: 165px; min-width: 165px !important; }
 .source-report .report-identity { position: sticky; left: 0; z-index: 1; background: var(--surface); box-shadow: 1px 0 var(--line); font-weight: 700; }
+.source-report .report-identity .finding-inline-link { font-size: 12px; font-weight: 400; text-decoration: underline; text-underline-offset: 3px; }
+.source-report .report-identity .finding-inline-link:hover { color: var(--color-primary-hover); text-decoration-thickness: 2px; }
 .source-report th.report-identity { z-index: 2; background: var(--surface-muted); }
 .source-report .report-table tbody tr:hover td { background: var(--surface-hover); }
 .source-report .report-table tbody tr.selected td { background: var(--color-primary-subtle); }
