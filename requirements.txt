@@ -1,3 +1,5 @@
+# Compatibility/convenience requirements only; not the production/build lock.
+# Docker and Tauri/PyInstaller builds use requirements/constraints-python312.txt.
 pydantic>=2.0,<3.0
 lxml>=5.0
 click>=8.0
