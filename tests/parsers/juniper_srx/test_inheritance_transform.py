@@ -152,6 +152,12 @@ def test_effective_inherited_address_resolves_without_mutating_source():
     derived = build_juniper_derived_views(config, parser.commands)
     dependency = next(item for item in derived.dependencies if item.reference == "INHERITED")
     assert dependency.result == "RESOLVED"
+    effective = next(
+        item for item in derived.effective_objects
+        if item["object_type"] == "address" and item["name"] == "INHERITED"
+    )
+    assert effective["source_presence"] == "INHERITED_ONLY"
+    assert effective["attributes"]["prefix"] == "192.0.2.5/32"
     assert "global" not in config.get_context().address_books
     assert config == before
 
