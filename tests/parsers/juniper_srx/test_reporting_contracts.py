@@ -212,3 +212,35 @@ def test_excel_neutralizes_formula_cells_and_reports_partial_collection():
     assert summary["Collection Status"] == "PARTIAL"
     assert summary["Incomplete Collection Parts"] == 1
     assert "Configuration incomplete" in summary["Collection Warnings"]
+
+
+
+def test_deactivation_is_reported_as_derived_effective_state():
+    result = extract_juniper_source(
+        """set security address-book global address A 192.0.2.1/32
+set schedulers scheduler SCH daily 12:00-13:00
+set security policies from-zone trust to-zone untrust policy P then permit
+set security nat source rule-set RS rule R then source-nat interface
+set routing-options static route 203.0.113.0/24 next-hop 192.0.2.1
+set security ipsec vpn VPN bind-interface st0.0
+deactivate security address-book global address A
+deactivate schedulers scheduler SCH
+deactivate security policies from-zone trust to-zone untrust policy P
+deactivate security nat source rule-set RS rule R
+deactivate routing-options static route 203.0.113.0/24
+deactivate security ipsec vpn VPN
+"""
+    )
+
+    preview = build_juniper_preview(result)
+    for section in ("addresses", "schedules", "policies", "nat", "routes", "vpn_tunnels"):
+        assert preview["sections"][section][0]["effective_state"] == "INACTIVE"
+
+    output = BytesIO()
+    export_juniper_excel(result, output)
+    output.seek(0)
+    workbook = load_workbook(output, read_only=True)
+    for sheet_name in ("Addresses", "Schedulers", "Policy Details", "NAT Rules", "Static Routes", "IPsec VPNs"):
+        rows = list(workbook[sheet_name].values)
+        state_index = rows[0].index("Effective State")
+        assert rows[1][state_index] == "INACTIVE"
