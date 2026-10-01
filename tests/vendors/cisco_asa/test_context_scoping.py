@@ -125,3 +125,23 @@ def test_source_inventory_and_diagnostics_preserve_execution_context():
     )
     assert any(item.source_context == "green" for item in result.unsupported_items)
 
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
+
+    output = BytesIO()
+    export_asa_excel(result, output)
+    sheet = load_workbook(BytesIO(output.getvalue()), read_only=True)["Source Inventory"]
+    rows = list(sheet.iter_rows(values_only=True))
+    headers = rows[0]
+    context_index = headers.index("Context")
+    path_index = headers.index("Source Path")
+    assert any(
+        row[context_index] == "blue" and row[path_index] == "object network"
+        for row in rows[1:]
+    )
+    assert any(
+        row[context_index] == "green" and row[path_index] == "other"
+        for row in rows[1:]
+    )
+
