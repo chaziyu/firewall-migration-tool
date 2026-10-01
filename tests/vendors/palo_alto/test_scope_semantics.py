@@ -56,3 +56,39 @@ def test_template_vsys_scope_identity_includes_vsys():
     assert len({pan_scope_identity(item.scope) for item in addresses}) == 2
     scoped = [scope for scope in config.scopes if scope.kind == "template" and scope.vsys]
     assert {scope.vsys for scope in scoped} == {"vsys1", "vsys2"}
+
+
+def test_managed_vsys_resolves_device_group_ancestor_and_shared_objects():
+    config = build_panos_config("""<config>
+      <shared><address><entry name='shared-a'><ip-netmask>10.0.0.1/32</ip-netmask></entry></address></shared>
+      <devices><entry name='panorama'><device-group>
+        <entry name='parent'>
+          <address><entry name='parent-a'><ip-netmask>10.0.0.2/32</ip-netmask></entry></address>
+        </entry>
+        <entry name='child'>
+          <parent-dg>parent</parent-dg>
+          <address><entry name='child-a'><ip-netmask>10.0.0.3/32</ip-netmask></entry></address>
+          <devices><entry name='SER-A'><vsys><entry name='vsys1'>
+            <rulebase><security><rules><entry name='local-rule'>
+              <source>
+                <member>child-a</member>
+                <member>parent-a</member>
+                <member>shared-a</member>
+              </source>
+            </entry></rules></security></rulebase>
+          </entry></vsys></entry></devices>
+        </entry>
+      </device-group></entry></devices>
+    </config>""")
+
+    resolutions = {
+        item.reference_name: item
+        for item in build_derived_views(config).reference_resolutions
+        if item.owner_name == "local-rule" and item.owner_field == "source"
+    }
+
+    assert set(resolutions) == {"child-a", "parent-a", "shared-a"}
+    assert all(item.status == "RESOLVED" for item in resolutions.values())
+    assert resolutions["child-a"].resolved_target_scope.device_group == "child"
+    assert resolutions["parent-a"].resolved_target_scope.device_group == "parent"
+    assert resolutions["shared-a"].resolved_target_scope.kind == "shared"
