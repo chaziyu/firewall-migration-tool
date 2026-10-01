@@ -84,7 +84,7 @@ from fwmigrate.collection.builtin import register_builtin_collectors
 from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot, MAX_BYTES
 from fwmigrate.desktop import DesktopAPI, run_desktop
 from fwmigrate.web_support.frontend import register_frontend_routes
-from fwmigrate.web_support.reporting import _decode_configuration
+from fwmigrate.web_support.reporting import _decode_configuration, _parse_bool
 from fwmigrate.web_api.source import register_source_routes
 from fwmigrate.web_support.preview_cache import (
     _PreviewCacheEntry,
