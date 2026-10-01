@@ -44,7 +44,11 @@ def test_service_object_keeps_last_specification_and_flags_prior_conflict():
 def test_missing_hostname_remains_unconfigured():
     config = extract_cisco_asa_source("interface Ethernet0/0\n").config
     assert config.hostname is None
-    assert config.system_settings.hostname is None
+    assert config.system_settings is None
+    assert config.dns_settings is None
+    assert config.failover_config is None
+    assert config.http_server is None
+    assert config.multi_context_system is None
     assert "hostname" not in config.explicit_fields
 
 def test_explicit_hostname_is_tracked():
