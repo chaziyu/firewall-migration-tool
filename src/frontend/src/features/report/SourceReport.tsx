@@ -8,7 +8,7 @@ import { tabKeyboard } from '../../components/common/tabKeyboard'
 type Finding = Record<string, unknown>
 const EMPTY_ROWS: Finding[] = []
 type ValidationTarget = { section: string; label: string; rows: unknown[] }
-type OverviewMetric = { label: string; value: number; tier: 'primary' | 'secondary'; section?: string; objectSection?: string; tone?: string }
+type OverviewMetric = { label: string; value: number | null; tier: 'primary' | 'secondary'; section?: string; objectSection?: string; tone?: string }
 
 const VALIDATION_TARGETS: Record<string, [string, string]> = {
   nat: ['nat', 'NAT'],
@@ -98,6 +98,22 @@ function ValidationTable({ rows, selected, onSelect, onNavigate, grouped }: {
     })}</tbody></table></div>
 }
 
+function useScrollRows(filteredRows: Finding[], active = true) {
+  const [renderedRowCount, setRenderedRowCount] = useState(200)
+  const loadMoreRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { setRenderedRowCount(200) }, [filteredRows])
+  useEffect(() => {
+    const sentinel = loadMoreRef.current
+    if (!active || !sentinel || renderedRowCount >= filteredRows.length) return
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) setRenderedRowCount((count) => Math.min(count + 200, filteredRows.length))
+    }, { rootMargin: '600px' })
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [filteredRows.length, renderedRowCount, active])
+  return { visibleRows: filteredRows.slice(0, renderedRowCount), loadMoreRef }
+}
+
 function ValidationReport({ data, reportScope, onReportScope, active }: { data: SourcePreviewData; reportScope: string; onReportScope: (scope: string) => void; active: boolean }) {
   const sections = asRecord(data.sections)
   const allRows = useMemo(() => asRows(sections.validation), [sections.validation])
@@ -106,11 +122,10 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
   const [activeGroup, setActiveGroup] = useState('')
   const [selected, setSelected] = useState<Finding | null>(null)
   const [target, setTarget] = useState<ValidationTarget | null>(null)
-  const [page, setPage] = useState(1)
   const scopes = useMemo(() => [...new Set(allRows.map((row) => String(row.scope || row.vdom || '')).filter(Boolean))], [allRows])
   const scope = scopes.includes(reportScope) ? reportScope : ''
   const [requestedScope, setRequestedScope] = useState(reportScope)
-  if (requestedScope !== reportScope) { setRequestedScope(reportScope); setPage(1); setSelected(null); setTarget(null) }
+  if (requestedScope !== reportScope) { setRequestedScope(reportScope); setSelected(null); setTarget(null) }
 
   const matchingRows = useMemo(() => {
     const query = search.toLowerCase()
@@ -124,11 +139,9 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
   const group = findingGroups(matchingRows).find((item) => item.key === activeGroup)
   const filteredRows = useMemo(() => matchingRows.filter((row) => !group
     || findingGroupKey(row) === group.key), [matchingRows, group])
-  const pageCount = Math.max(1, Math.ceil(filteredRows.length / 50))
-  const visibleRows = filteredRows.slice((page - 1) * 50, page * 50)
+  const { visibleRows, loadMoreRef } = useScrollRows(filteredRows, active)
 
   function clearFilters() {
-    setPage(1)
     setSearch('')
     onReportScope('')
     setSeverity('')
@@ -145,22 +158,16 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
 
   return <div className="validation-report">
     <h3>Validation findings</h3>
-    <ValidationFilters rows={allRows} search={search} scope={scope} severity={severity} onSearch={(value) => { setSearch(value); setPage(1); setSelected(null) }} onScope={(value) => { onReportScope(value); setPage(1); setSelected(null) }} onSeverity={(value) => { setSeverity(value); setPage(1); setSelected(null) }} onClear={() => { clearFilters(); setSelected(null) }} />
-    <ValidationSummary rows={matchingRows} activeGroup={group?.key ?? ''} onGroupChange={(key) => { setActiveGroup(key); setPage(1); setSelected(null) }} />
+    <ValidationFilters rows={allRows} search={search} scope={scope} severity={severity} onSearch={(value) => { setSearch(value); setSelected(null) }} onScope={(value) => { onReportScope(value); setSelected(null) }} onSeverity={(value) => { setSeverity(value); setSelected(null) }} onClear={() => { clearFilters(); setSelected(null) }} />
+    <ValidationSummary rows={matchingRows} activeGroup={group?.key ?? ''} onGroupChange={(key) => { setActiveGroup(key); setSelected(null) }} />
     {group && <p className="validation-group-explanation"><strong>{group.count} affected findings</strong> · {text(group.row.message)}</p>}
-    <ReportPagination page={page} pageCount={pageCount} onPage={(value) => { setPage(value); setSelected(null) }} label="Validation pages" />
     <div className={`validation-workspace${selected && visibleRows.includes(selected) ? ' has-details' : ''}`}>
-      <ValidationTable rows={visibleRows} selected={selected} grouped={!!group} onSelect={(row) => { setSelected(row); setTarget(null) }} onNavigate={navigateToObject} />
+      <div><ValidationTable rows={visibleRows} selected={selected} grouped={!!group} onSelect={(row) => { setSelected(row); setTarget(null) }} onNavigate={navigateToObject} /><div ref={loadMoreRef} aria-hidden="true" style={{ height: 1 }} /></div>
       {active && selected && visibleRows.includes(selected) && <ReportDetails finding row={selected} target={target} onNavigate={() => navigateToObject(selected)} onClose={() => { setSelected(null); setTarget(null) }} />}
     </div>
-    <ReportPagination page={page} pageCount={pageCount} onPage={(value) => { setPage(value); setSelected(null) }} label="Validation pages below table" />
     {!allRows.length && <p className="validation-empty">No validation findings were reported.</p>}
     {!!scopes.length && <p className="validation-scope-note">Findings are reported for {scopes.length} {scopes.length === 1 ? 'scope' : 'scopes'}.</p>}
   </div>
-}
-
-function ReportPagination({ page, pageCount, onPage, pageSize, onPageSize, label: name = 'Report pages' }: { page: number; pageCount: number; onPage: (page: number) => void; pageSize?: number; onPageSize?: (size: number) => void; label?: string }) {
-  return <div className="report-pager" aria-label={name}><button type="button" className="secondary-button" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</button><label>Page <input aria-label={`${name}: page number`} type="number" min={1} max={pageCount} value={page} onChange={(event) => { const value = Number(event.target.value); if (Number.isInteger(value) && value >= 1 && value <= pageCount) onPage(value) }} /></label><span role="status">of {pageCount}</span><button type="button" className="secondary-button" disabled={page >= pageCount} onClick={() => onPage(page + 1)}>Next</button>{onPageSize && <label>Rows per page <select value={pageSize} onChange={(event) => onPageSize(Number(event.target.value))}>{[25, 50, 100].map((size) => <option key={size}>{size}</option>)}</select></label>}</div>
 }
 
 function SourceRowsTable({ rows, columns, selected, hasSource, topology, loadMoreRef, onSelect }: { rows: Finding[]; columns: string[]; selected: Finding | null; hasSource: boolean; topology: boolean; loadMoreRef: RefObject<HTMLDivElement | null>; onSelect: (row: Finding) => void }) {
@@ -173,16 +180,6 @@ function SourceRowsTable({ rows, columns, selected, hasSource, topology, loadMor
     </table>
     <div ref={loadMoreRef} aria-hidden="true" style={{ height: 1 }} />
   </div>
-}
-
-function reportMetric(summary: Record<string, unknown>, sections: ReturnType<typeof reportSections>, labelText: string, keys: string[]) {
-  const counts = asRecord(summary.objects)
-  const section = sections.find((item) => item.label === labelText)
-  for (const key of keys) {
-    const value = counts[key] ?? summary[key]
-    if (typeof value === 'number') return value
-  }
-  return section?.rows.length ?? 0
 }
 
 export function SourceReport({ data, excelProfile, onExcelProfileChange, exporting, onExport }: {
@@ -206,12 +203,12 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   const errorCount = counts.errors
   const warningCount = counts.warnings
   const overviewMetrics: OverviewMetric[] = []
-  if (counts.policies !== null) overviewMetrics.push({ label: 'Configured policies', value: counts.policies, tier: 'primary', section: 'Policies' })
-  if (counts.objects !== null) overviewMetrics.push({ label: 'Configured address/service objects', value: counts.objects, tier: 'primary', section: 'Objects', objectSection: 'addresses' })
-  if (counts.interfaces !== null) overviewMetrics.push({ label: 'Configured interfaces', value: counts.interfaces, tier: 'primary', section: 'Interfaces', objectSection: 'interfaces' })
-  for (const [labelText, section] of [['Schedules', 'Schedules'], ['Routes', 'Routes'], ['VPN report rows', 'VPN']] as const) {
-    const count = reportMetric(summary, sections, section, [])
-    if (count || sections.some((item) => item.label === section)) overviewMetrics.push({ label: labelText, value: count, tier: 'secondary', section })
+  overviewMetrics.push({ label: 'Policies', value: counts.policies, tier: 'primary', section: 'Policies' })
+  overviewMetrics.push({ label: 'Address/service objects', value: counts.objects, tier: 'primary', section: 'Objects', objectSection: 'addresses' })
+  overviewMetrics.push({ label: 'Interfaces', value: counts.interfaces, tier: 'primary', section: 'Interfaces', objectSection: 'interfaces' })
+  for (const section of ['Schedules', 'NAT', 'Routes', 'VPN']) {
+    const group = sections.find((item) => item.label === section)
+    overviewMetrics.push({ label: section, value: reportSectionRowCount(group), tier: 'secondary', section })
   }
   const unresolved = asRows(sectionsData.unresolved_references).length
   if (sectionsData.unresolved_references) overviewMetrics.push({ label: 'Unresolved references', value: unresolved, tier: 'secondary', section: 'References', tone: unresolved ? 'warning' : undefined })
@@ -249,19 +246,9 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       return !query || reportSearchText(row).includes(query)
     })
   }, [subsectionRows, effectiveScope, activeObjectSection, search])
-  const [renderedRowCount, setRenderedRowCount] = useState(200)
-  const loadMoreRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { setRenderedRowCount(200) }, [filteredRows])
-  useEffect(() => {
-    const sentinel = loadMoreRef.current
-    if (!sentinel || renderedRowCount >= filteredRows.length) return
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) setRenderedRowCount((count) => Math.min(count + 200, filteredRows.length))
-    }, { rootMargin: '600px' })
-    observer.observe(sentinel)
-    return () => observer.disconnect()
-  }, [filteredRows.length, renderedRowCount])
-  const visibleRows = unifiedInterfaces ? filteredRows : filteredRows.slice(0, renderedRowCount)
+  const { visibleRows: scrollRows, loadMoreRef } = useScrollRows(filteredRows)
+  const visibleRows = unifiedInterfaces ? filteredRows : scrollRows
+  const subsectionCount = search || effectiveScope ? `${filteredRows.length} of ${subsectionRows.length}` : subsectionRows.length
   const reportTabs = ['Overview', 'Interfaces', 'Objects', 'Schedules', 'Policies', 'NAT', 'Routes', 'VPN', 'References', ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []), 'Validation']
   const objectTabs = unifiedInterfaces ? ['interface_topology'] : sourceSections.filter((key) => showEmpty || key === activeObjectSection || active?.subsections.find((item) => item.key === key)?.rows.length)
   const currentSelected = selectedRow && visibleRows.includes(selectedRow) ? selectedRow : null
@@ -270,7 +257,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
 
   function renderOverviewMetric(item: OverviewMetric) {
     const className = `report-stat report-stat-${item.tier}${item.tone ? ` report-stat-${item.tone}` : ''}${item.section ? ' report-stat-button' : ''}`
-    const content = <><strong>{item.value}</strong><span className="report-stat-label">{item.label}</span>{item.section && <span className="report-stat-affordance">View →</span>}</>
+    const content = <><span className="report-stat-label">{item.label}</span><strong>{item.value === null ? 'Not reported' : item.value.toLocaleString()}{item.tier === 'secondary' && item.value !== null && ['Schedules', 'NAT', 'Routes', 'VPN'].includes(item.label) && <small> rows</small>}</strong>{item.section && <span className="report-stat-affordance" aria-hidden="true">→</span>}</>
     if (!item.section) return <div className={className} key={item.label}>{content}</div>
     return <button className={className} type="button" key={item.label} onClick={() => { changeSection(item.section!); if (item.objectSection) setSourceSection(item.objectSection, item.section) }}>{content}</button>
   }
@@ -278,10 +265,10 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   return <section className="panel source-report" aria-labelledby="report-title">
     <div className="report-sticky-header">
       <div className="report-workspace-header">
-        <div><h2 id="report-title">Source inventory</h2></div>
+        <div><h2 id="report-title">Source inventory</h2>{Array.isArray(summary.scopes) && summary.scopes.length > 0 && <p className="report-scope-summary">Scopes: {summary.scopes.join(', ')}</p>}</div>
         <div className="report-header-actions">
           <div className="excel-actions"><label className="excel-profile-control">Excel<select aria-label="Excel export profile" value={excelProfile} onChange={(event) => onExcelProfileChange(event.target.value as 'fast' | 'full')}><option value="fast">FAST</option><option value="full">FULL</option></select></label>
-            <button className="secondary-button" type="button" disabled={exporting} onClick={onExport}>{exporting ? 'Preparing workbook…' : 'Export Excel'}</button>
+            <button className="primary-button excel-export-button" type="button" disabled={exporting} aria-busy={exporting} onClick={onExport}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" /></svg>{exporting ? 'Preparing workbook…' : 'Export Excel'}</button>
           </div>
         </div>
       </div>
@@ -290,7 +277,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       <nav className="report-tabs" role="tablist" aria-label="Report sections" onKeyDown={tabKeyboard}>
       {reportTabs.map((sectionLabel) => (
         <button key={sectionLabel} id={`report-tab-${encodeURIComponent(sectionLabel)}`} aria-controls={`report-panel-${encodeURIComponent(sectionLabel)}`} tabIndex={activeSection === sectionLabel ? 0 : -1} type="button" role="tab" aria-selected={activeSection === sectionLabel} className={`report-tab${activeSection === sectionLabel ? ' active' : ''}`} onClick={() => changeSection(sectionLabel)}>
-          {sectionLabel}{sectionLabel !== 'Overview' && <span className="report-tab-count">{sectionLabel === 'Validation' ? sectionsData.validation == null ? 'Not reported' : validationRows.length : reportSectionRowCount(sections.find((section) => section.label === sectionLabel)) ?? 'Not reported'}</span>}
+          {sectionLabel}
         </button>
       ))}
       </nav>
@@ -298,27 +285,26 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     {reportTabs.filter((item) => item !== activeSection).map((item) => <div key={item} hidden role="tabpanel" id={`report-panel-${encodeURIComponent(item)}`} aria-labelledby={`report-tab-${encodeURIComponent(item)}`} />)}
     <div role="tabpanel" id={`report-panel-${encodeURIComponent(activeSection)}`} aria-labelledby={`report-tab-${encodeURIComponent(activeSection)}`} tabIndex={0}>
     {activeSection === 'Overview' ? <>
-      <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => changeSection('Validation')}>{errorCount} errors · {warningCount} warnings · {warningGroups} warning groups <span>Review findings →</span></button>
-      <p className="report-count-note">Configured objects count addresses, address groups, services, and service groups once. Tab counts show report rows, including expanded entries. Interfaces counts configured inventory rows.</p>
+      <h3 className="report-overview-heading">Validation</h3>
+      <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => changeSection('Validation')}><div>{sectionsData.validation == null && asRecord(summary.validation).severity_counts == null ? 'Not reported' : <>{errorCount.toLocaleString()} errors · {warningCount.toLocaleString()} warnings <small>{warningGroups.toLocaleString()} warning groups</small></>}</div><span>Review findings →</span></button>
       {(['primary', 'secondary'] as const).map((tier) => {
         const items = overviewMetrics.filter((item) => item.tier === tier)
-        return items.length ? <div className={`report-summary-${tier}`} key={tier}>{items.map(renderOverviewMetric)}</div> : null
+        return items.length ? <div className="report-overview-group" key={tier}><h3 className="report-overview-heading">{tier === 'primary' ? 'Configured inventory' : 'Report sections'}</h3><div className={`report-summary-${tier}`}>{items.map(renderOverviewMetric)}</div></div> : null
       })}
-      {Array.isArray(summary.scopes) && summary.scopes.length > 0 && <p className="report-scope-summary">Scopes: {summary.scopes.join(', ')}</p>}
+      <details className="report-count-explanation"><summary>About these counts</summary><p>Configured objects count addresses, address groups, services, and service groups once. Policies and interfaces use configured inventory counts. Report sections count rows, including expanded entries. Not reported means the count is unavailable.</p></details>
     </> : activeSection === 'Validation' ? null : <>
       {activeSection !== 'Interfaces' && active?.subsections.some((item) => !item.rows.length) && <label className="report-empty-toggle"><input type="checkbox" checked={showEmpty} onChange={(event) => setShowEmpty(event.target.checked)} /> Show empty sections</label>}
-      {!!objectTabs.length && <nav className="report-object-tabs" role="tablist" aria-label="Source subsections" onKeyDown={tabKeyboard}>{objectTabs.map((item) => <button type="button" role="tab" id={`subsection-tab-${encodeURIComponent(item)}`} aria-controls={`subsection-panel-${encodeURIComponent(item)}`} tabIndex={activeObjectSection === item ? 0 : -1} aria-selected={activeObjectSection === item} className={activeObjectSection === item ? 'active' : ''} key={item} onClick={() => setSourceSection(item)}>{unifiedInterfaces ? `Interface Topology (${topologyRows.length})` : `${fieldLabel(item)} (${active?.subsections.find((section) => section.key === item)?.rows.length ?? 0})`}</button>)}</nav>}
+      {!!objectTabs.length && <nav className="report-object-tabs" role="tablist" aria-label="Source subsections" onKeyDown={tabKeyboard}>{objectTabs.map((item) => <button type="button" role="tab" id={`subsection-tab-${encodeURIComponent(item)}`} aria-controls={`subsection-panel-${encodeURIComponent(item)}`} tabIndex={activeObjectSection === item ? 0 : -1} aria-selected={activeObjectSection === item} className={activeObjectSection === item ? 'active' : ''} key={item} onClick={() => setSourceSection(item)}>{unifiedInterfaces ? `Interface Topology (${subsectionCount})` : `${fieldLabel(item)} (${activeObjectSection === item ? subsectionCount : active?.subsections.find((section) => section.key === item)?.rows.length ?? 0})`}</button>)}</nav>}
       {objectTabs.filter((item) => item !== activeObjectSection).map((item) => <div key={item} hidden role="tabpanel" id={`subsection-panel-${encodeURIComponent(item)}`} aria-labelledby={`subsection-tab-${encodeURIComponent(item)}`} />)}
       <div {...(unifiedInterfaces ? {} : { role: 'tabpanel', id: `subsection-panel-${encodeURIComponent(activeObjectSection)}`, 'aria-labelledby': `subsection-tab-${encodeURIComponent(activeObjectSection)}`, tabIndex: 0 as const })}>
       <div className="report-toolbar">
         <label className="report-search-control"><span className="visually-hidden">Search report rows</span><input type="search" value={search} placeholder={unifiedInterfaces ? 'Search topology' : 'Search this section'} onChange={(event) => setSearch(event.target.value)} /></label>
         <div className="report-filter-controls">
-          <details className="report-column-selector"><summary>Columns ({columns.length})</summary><div>{allColumns.map((key, index) => <label key={key}><input type="checkbox" checked={columns.includes(key)} disabled={index === 0} onChange={(event) => updateView({ columns: allColumns.filter((column) => column === allColumns[0] || (column === key ? event.target.checked : columns.includes(column))) })} />{fieldLabel(key)}</label>)}<button className="filter-clear" type="button" onClick={() => updateView({ columns: undefined })}>Reset columns</button></div></details>
-          <button type="button" className="filter-clear" onClick={() => { setSearch(''); changeScope('') }}>Clear filters</button>
           {scopes.length > 0 && <select aria-label="Filter report scope" value={effectiveScope} onChange={(event) => changeScope(event.target.value)}><option value="">All scopes</option>{scopes.map((item) => <option key={item} value={item}>{item}</option>)}</select>}
+          <button type="button" className="filter-clear" disabled={!search && !effectiveScope} onClick={() => { setSearch(''); changeScope('') }}>Clear filters</button>
         </div>
+        <details className="report-column-selector"><summary>Columns ({columns.length})</summary><div>{allColumns.map((key, index) => <label key={key}><input type="checkbox" checked={columns.includes(key)} disabled={index === 0} onChange={(event) => updateView({ columns: allColumns.filter((column) => column === allColumns[0] || (column === key ? event.target.checked : columns.includes(column))) })} />{fieldLabel(key)}</label>)}<button className="filter-clear" type="button" onClick={() => updateView({ columns: undefined })}>Reset columns</button></div></details>
       </div>
-      <div className="report-table-meta"><p role="status" aria-live="polite">Showing {visibleRows.length} of {filteredRows.length} {unifiedInterfaces ? 'topology rows' : 'report rows'}</p></div>
       <div className={`validation-workspace${currentSelected ? ' has-details' : ''}${unifiedInterfaces ? ' report-topology-view' : ''}`} key={activeSection}>
         <SourceRowsTable rows={visibleRows} columns={columns} selected={currentSelected} hasSource={subsectionRows.length > 0} topology={activeObjectSection === 'interface_topology'} loadMoreRef={loadMoreRef} onSelect={setSelectedRow} />
         {currentSelected && <ReportDetails row={currentSelected} subsection={activeObjectSection} vendor={data.vendor} onClose={() => setSelectedRow(null)} previous={selectedIndex > 0 ? () => setSelectedRow(visibleRows[selectedIndex - 1]) : undefined} next={selectedIndex < visibleRows.length - 1 ? () => setSelectedRow(visibleRows[selectedIndex + 1]) : undefined} />}
