@@ -157,6 +157,38 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
         if len(rules) > len(scopes):
             _issue(issues, "error", "identity", f"duplicate security rule name {name!r} in the same scope", rules[-1], "name", object_type="policy")
 
+    device_group_ancestors = dict(derived.scope_hierarchy.ancestors)
+    for name, rules in _by_name(config.security_rules).items():
+        device_group_rules = [
+            rule
+            for rule in rules
+            if rule.scope is not None and rule.scope.kind == "device-group"
+        ]
+        for index, left in enumerate(device_group_rules):
+            left_id = pan_scope_identity(left.scope)
+            for right in device_group_rules[index + 1:]:
+                right_id = pan_scope_identity(right.scope)
+                if left_id == right_id:
+                    continue
+                left_is_ancestor = left_id in device_group_ancestors.get(right_id, ())
+                right_is_ancestor = right_id in device_group_ancestors.get(left_id, ())
+                if not left_is_ancestor and not right_is_ancestor:
+                    continue
+                descendant = right if left_is_ancestor else left
+                ancestor = left if left_is_ancestor else right
+                _issue(
+                    issues,
+                    "error",
+                    "identity",
+                    (
+                        f"security rule name {name!r} conflicts across Panorama device-group hierarchy: "
+                        f"{ancestor.scope.name!r} and descendant {descendant.scope.name!r}"
+                    ),
+                    descendant,
+                    "name",
+                    object_type="policy",
+                )
+
     for message in getattr(derived.scope_hierarchy, "issues", ()):
         _issue(issues, "error", "scope", message)
     for item in derived.reference_resolutions:
