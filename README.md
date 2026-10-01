@@ -195,7 +195,26 @@ if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
 
 Set `GROQ_API_KEY` and `FWMIGRATE_AI_ENABLED=1` in `.env.local`. Groq uses the 20B model for simple decisions and 120B for ownership, dependency, high-candidate, coupled, and repair work. Request batches, byte size, AI-context candidate count, completion tokens, reasoning effort, reasoning format, retry delay, and the complex-candidate threshold are bounded in `.env.example`. Candidate reduction is deterministic and affects only the AI request: the full target candidate inventory is preserved for review. If a candidate cutoff would split equally supported candidates, the decision remains manual instead of being truncated arbitrarily. Rate-limit retries honor a provider `Retry-After` value when it is within the configured retry-delay ceiling. Set `FWMIGRATE_AI_LOCAL_URL` to use local Qwen first, with Groq available for capability escalation and fallback. The advisor resolves deterministic decisions before requesting advice and proposes only existing, unambiguous target candidates. An engineer must approve proposals before they affect the plan. The review page's synthetic **Test advisor** checks both the provider contract and a production-shaped request; `/api/migration/ai/status` returns configuration metadata without credentials. Set `FWMIGRATE_AI_LOCAL_RESPONSE_MODE=JSON_ONLY` if the local server rejects strict JSON schema requests. `FWMIGRATE_AI_GROQ_MODEL`, `FWMIGRATE_AI_MODEL`, and `FWMIGRATE_GROQ_MODEL` remain supported as fallback settings. `FWMIGRATE_AI_GUARD_MODEL` is reserved for free-text evidence; the current advisor context excludes descriptions and comments. Exported sanitized AI audit JSONL can be evaluated with `python tools/evaluate_ai_advisor.py <audit.jsonl>`; the report includes agreement, abstention, safety, engineer-outcome, request-efficiency, provider/model, target-field, and candidate-count metrics.
 
-Build the desktop executable with:
+### Desktop Application
+
+The supported desktop architecture keeps the same React frontend and Flask API contract while Tauri owns the native window. The Python backend runs as an authenticated loopback-only sidecar. Render/Docker continues to use Gunicorn and is unchanged.
+
+Windows development prerequisites include Rust, Node.js, Python, and the Tauri system dependencies. Build the desktop sidecar and shell with:
+
+```powershell
+python -m pip install -e ".[ai,collection,deployment]"
+python -m pip install "pyinstaller>=6.0"
+cd src/frontend
+npm ci
+npm run build
+cd ../..
+python desktop/build_tauri_sidecar.py
+cd src/frontend
+cargo install tauri-cli --version "^2" --locked
+cargo tauri build
+```
+
+The existing pywebview/PyInstaller package remains available during the Tauri migration:
 
 ```powershell
 pyinstaller "Firewall Migration Tool.spec"

@@ -1,0 +1,55 @@
+"""Build the PyInstaller backend using Tauri's target-triple sidecar naming."""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = ROOT / "desktop" / "fwmigrate-backend.spec"
+BINARIES = ROOT / "src" / "frontend" / "src-tauri" / "binaries"
+
+
+def main() -> None:
+    dist_path = ROOT / "dist"
+    work_path = ROOT / "build" / "tauri-sidecar"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "PyInstaller",
+            "--clean",
+            "--noconfirm",
+            "--distpath",
+            str(dist_path),
+            "--workpath",
+            str(work_path),
+            str(SPEC),
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+    target = subprocess.check_output(
+        ["rustc", "--print", "host-tuple"],
+        cwd=ROOT,
+        text=True,
+    ).strip()
+    if not target:
+        raise RuntimeError("rustc did not report a host target triple")
+
+    extension = ".exe" if os.name == "nt" else ""
+    source = dist_path / f"fwmigrate-backend{extension}"
+    if not source.is_file():
+        raise FileNotFoundError(source)
+
+    BINARIES.mkdir(parents=True, exist_ok=True)
+    destination = BINARIES / f"fwmigrate-backend-{target}{extension}"
+    shutil.copy2(source, destination)
+    print(destination)
+
+
+if __name__ == "__main__":
+    main()
