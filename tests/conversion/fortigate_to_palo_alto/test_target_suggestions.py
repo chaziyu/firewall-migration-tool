@@ -14,6 +14,38 @@ from fwmigrate.vendors.palo_alto.source_model import PANScope, pan_scope_identit
 from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import _compatible
 
 
+def test_reservations_release_and_competing_strong_suggestions_stay_pending():
+    scope = PANScope(kind="device", name="dev", device_name="dev")
+    record = SimpleNamespace(name="ethernet1/1", interface_family="ethernet", ipv4_addresses=["192.0.2.1/24"],
+                             scope=scope, tag=None, parent=None, comment=None)
+    target = SimpleNamespace(config=SimpleNamespace(interfaces=[record], interface_units=[], zones=[]),
+        derived=SimpleNamespace(interface_topology=[PANInterfaceTopologyEntry(record.name, pan_scope_identity(scope))]))
+    source = FGConfig(interfaces=[FGInterface(name=name, type="physical", ip="192.0.2.1/24") for name in ("port1", "port2")])
+    pending = PANMigrationDecisionSet(tuple(PANMigrationDecision("root", "interface", name, "target_interface") for name in ("port1", "port2")))
+    reserved = PANMigrationDecisionSet((pending.decisions[0].confirm("ethernet1/1"), pending.decisions[1]))
+    candidates = discover_target_candidates(source, reserved, target, "dev")
+    assert candidates[pending.decisions[0].key][0]["available"]
+    unavailable = candidates[pending.decisions[1].key][0]
+    assert not unavailable["available"] and unavailable["assigned_to"] == [{"source_vdom": "root", "source_name": "port1"}]
+    updated, _ = suggest_from_target(source, reserved, target, "dev")
+    assert updated.decisions[1].suggested_value is None
+    candidates = discover_target_candidates(source, pending, target, "dev")
+    assert all(options[0]["available"] and options[0]["contested"] for options in candidates.values())
+    updated, warnings = suggest_from_target(source, pending, target, "dev")
+    assert len(warnings) == 2
+    assert all(item.value is None and item.review_state == PANDecisionReviewState.PENDING for item in updated.decisions)
+    from fwmigrate.conversion.fortigate_to_palo_alto.auto_decisions import classify_auto_decisions
+    auto = classify_auto_decisions(source, None, pending, target, "dev")
+    assert all(auto[item.key]["status"] == "CONFLICT" for item in pending.decisions)
+
+
+def test_explicit_physical_interfaces_do_not_match_target_units():
+    source = SimpleNamespace(type="physical", vlanid=None, ip=None, name="port1")
+    target = SimpleNamespace(interface_family="ethernet", tag="201", parent="ethernet1/1", ipv4_addresses=[])
+    assert not _compatible(source, target)
+    assert candidate_evidence(source, target)[2]
+
+
 def test_redundant_source_interface_is_not_assumed_to_be_aggregate():
     source = SimpleNamespace(type="redundant", vlanid=None)
     target = SimpleNamespace(interface_family="aggregate-ethernet", tag=None)

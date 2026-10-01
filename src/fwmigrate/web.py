@@ -76,6 +76,9 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     validate_plan,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto import ai_advisor
+from fwmigrate.conversion.fortigate_to_palo_alto.application.review import (
+    confirm_interface_mappings, InterfaceMappingConfirmationError,
+)
 from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.artifact_status import classify_artifact_status
 from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession, PANSSHDeployer
@@ -334,6 +337,31 @@ def create_app(test_config=None):
     register_frontend_routes(app)
     register_source_routes(app)
 
+    def _migration_review_response(entry, state):
+        target_context = state['target_context']
+        target = target_context.analysis if target_context else None
+        decisions = state['decisions']
+        return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': state['requirements'],
+                        'decisions': decisions.to_dict(),
+                        'design_session': state['design_session'].to_dict(),
+                        'decision_document': build_decision_document(entry.source_digest, decisions,
+                                                                 target_context.metadata if target_context else None),
+                        'target_devices': list(target_context.devices) if target_context else [],
+                        'target_device': state['target_device'],
+                        'target_device_metadata': target_device_metadata(target) if target else [],
+                        'decision_context': state['review_context'],
+                        'decision_candidates': state['decision_candidates'],
+                        **state['review_workflow'],
+                        'target_warnings': state['target_warnings'],
+                        'target_findings': [item.to_dict() for item in state['target_findings']],
+                        'decision_evidence': state['decision_evidence'],
+                        'auto_decisions': state['auto_decisions'],
+                        'evidence_summary': evidence_summary(decisions, state['decision_evidence']),
+                        'target_evidence': target_context.metadata if target_context else None,
+                        'target_evidence_changed': state['target_evidence_changed'],
+                        'invalidated_target_decisions': list(state['invalidated_target_decisions']),
+                        'recommendations': [item.to_dict() for item in state['recommendations']]})
+
     @app.route('/api/migration/requirements', methods=['POST'])
     def migration_requirements():
         payload = request.get_json(silent=True) or request.form
@@ -350,33 +378,38 @@ def create_app(test_config=None):
                     analysis = source_reporters.get('fortigate').analyze_source(_decode_configuration(raw))
                     entry = _cache_preview('fortigate', raw, analysis, os.path.basename(uploaded.filename))
             state = _build_migration_review_state(entry, payload)
-            target_context = state['target_context']
-            target = target_context.analysis if target_context else None
-            decisions = state['decisions']
-            return jsonify({'success': True, 'preview_id': entry.preview_id, 'requirements': state['requirements'],
-                            'decisions': decisions.to_dict(),
-                            'design_session': state['design_session'].to_dict(),
-                            'decision_document': build_decision_document(entry.source_digest, decisions,
-                                                                     target_context.metadata if target_context else None),
-                            'target_devices': list(target_context.devices) if target_context else [],
-                            'target_device': state['target_device'],
-                            'target_device_metadata': target_device_metadata(target) if target else [],
-                            'decision_context': state['review_context'],
-                            'decision_candidates': state['decision_candidates'],
-                            **state['review_workflow'],
-                            'target_warnings': state['target_warnings'],
-                            'target_findings': [item.to_dict() for item in state['target_findings']],
-                            'decision_evidence': state['decision_evidence'],
-                            'auto_decisions': state['auto_decisions'],
-                            'evidence_summary': evidence_summary(decisions, state['decision_evidence']),
-                            'target_evidence': target_context.metadata if target_context else None,
-                            'target_evidence_changed': state['target_evidence_changed'],
-                            'invalidated_target_decisions': list(state['invalidated_target_decisions']),
-                            'recommendations': [item.to_dict() for item in state['recommendations']]})
+            return _migration_review_response(entry, state)
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception as exc:
             return jsonify({'success': False, 'error': str(exc)}), 500
+
+    @app.route('/api/migration/interfaces/confirm', methods=['POST'])
+    def migration_interfaces_confirm():
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError('An interface confirmation request is required')
+            entry = _lookup_preview(payload.get('preview_id'), 'fortigate')
+            if entry is None:
+                raise ValueError('A valid FortiGate preview_id is required')
+            _require_complete_collection(entry)
+            analysis = _clone_preview(entry)
+            target_context = _target_evidence(payload)
+            state = confirm_interface_mappings(
+                analysis.extracted.config, analysis.derived, entry.source_digest,
+                previous_document=payload.get('decision_document'), selections=payload.get('selections'),
+                reviewed_target_evidence=payload.get('reviewed_target_evidence'),
+                target=target_context.analysis if target_context else None,
+                target_device=target_context.selected_device if target_context else None,
+                target_metadata=target_context.metadata if target_context else None,
+                target_device_count=len(target_context.devices) if target_context else 0,
+            )
+            return _migration_review_response(entry, {'target_context': target_context, **state})
+        except InterfaceMappingConfirmationError as exc:
+            return jsonify({'success': False, 'error': str(exc), 'errors': exc.errors}), 400
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
 
     def _ai_failure(exc, *, provider, model, batch_size, duration_ms, batch_id=None):
         error = exc if isinstance(exc, ai_advisor.AdvisorError) else ai_advisor.AdvisorError()

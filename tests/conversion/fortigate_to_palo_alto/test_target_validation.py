@@ -73,6 +73,23 @@ def _confirmed(*items):
     ))
 
 
+def test_duplicate_assignments_without_target_report_every_owner_including_auto():
+    from dataclasses import replace
+    from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANDecisionMode
+
+    decisions = _confirmed(
+        (("root", "interface", "port1", "target_interface"), "ethernet1/3"),
+        (("branch", "interface", "port1", "target_interface"), "ethernet1/3"),
+        (("root", "interface", "vlan201", "target_interface"), "ethernet1/3.201"),
+        (("root", "interface", "vlan202", "target_interface"), "ethernet1/3.202"),
+    )
+    decisions = PANMigrationDecisionSet((replace(decisions.decisions[0], mode=PANDecisionMode.AUTO,
+        review_state=PANDecisionReviewState.PENDING), *decisions.decisions[1:]))
+    findings = validate_against_target(SimpleNamespace(interfaces=[]), decisions, None, None)
+    assert {item.decision_key for item in findings} == {item.key for item in decisions.decisions[:2]}
+    assert all(item.code == "TARGET_INTERFACE_ALREADY_ASSIGNED" and len(item.evidence) == 2 for item in findings)
+
+
 def test_target_validation_reports_missing_interface_and_address_difference():
     source = SimpleNamespace(interfaces=[SimpleNamespace(vdom="root", name="lan", type="ethernet", vlanid=None, interface=None, ip="192.0.2.1/24")])
     missing = _confirmed(( ("root", "interface", "lan", "target_interface"), "missing" ))

@@ -70,6 +70,8 @@ def _compatible(source, target):
     kind = (source.type or "").lower()
     if source.vlanid is not None or kind == "vlan":
         return getattr(target, "tag", None) is not None
+    if kind and (getattr(target, "tag", None) is not None or getattr(target, "parent", None)):
+        return False
     if kind == "aggregate":
         return family == "aggregate-ethernet"
     if kind == "redundant":
@@ -84,6 +86,9 @@ def _compatible(source, target):
 def discover_target_candidates(source, decisions: PANMigrationDecisionSet, target, device: str, *, evidence=None,
                               proposed_design=None):
     """Return current target evidence, separate from the persisted decision document."""
+    from .target_validation import interface_assignment_index
+
+    reservations = interface_assignment_index(decisions)
     records = [item for item in (*target.config.interfaces, *target.config.interface_units)
                if item.name and _device(item) == device]
     topology = {(item.scope, item.interface): item for item in target.derived.interface_topology}
@@ -128,12 +133,24 @@ def discover_target_candidates(source, decisions: PANMigrationDecisionSet, targe
             candidate_class = (PANInterfaceCandidateClass.EXCLUDED if contradicting else
                                PANInterfaceCandidateClass.STRONG if strong else
                                PANInterfaceCandidateClass.POSSIBLE)
+            owners = tuple((owner.source_vdom, owner.source_name) for owner in reservations.get(target_item.name, ()))
+            available = not any(owner != (vdom, name) for owner in owners)
             found.append(PANInterfaceCandidate(
                 target_item.name, str(pan_scope_identity(target_item.scope)) if target_item.scope else None,
-                candidate_class, strong, supporting, contradicting))
+                candidate_class, strong, supporting, contradicting, owners, available))
         found.sort(key=lambda candidate: (candidate.candidate_class != PANInterfaceCandidateClass.STRONG,
+                                          -len(candidate.supporting_evidence),
                                           candidate.value, candidate.target_scope or ""))
         result[key] = [candidate.to_dict() for candidate in found if candidate.candidate_class != PANInterfaceCandidateClass.EXCLUDED]
+
+    claims = {}
+    for key, options in result.items():
+        strong = [item for item in options if item["class"] == "STRONG" and item["available"]]
+        if len(strong) == 1:
+            claims.setdefault(strong[0]["value"], []).append(key)
+    for options in result.values():
+        for item in options:
+            item["contested"] = len(claims.get(item["value"], ())) > 1
 
     # Other decision fields use the same closed, scope-aware candidate contract.
     scope_records = (*getattr(target.config, "scopes", ()),
@@ -188,6 +205,9 @@ def discover_target_candidates(source, decisions: PANMigrationDecisionSet, targe
 
 def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, device: str):
     """Return reviewed-only suggestions and warnings; never confirm a mapping."""
+    from .target_validation import interface_assignment_index
+
+    reservations = interface_assignment_index(decisions)
     records = [item for item in (*target.config.interfaces, *target.config.interface_units)
                if item.name and _device(item) == device]
     topology = {(item.scope, item.interface): item for item in target.derived.interface_topology}
@@ -204,7 +224,7 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
 
     mapped = {}
     for decision in decisions.decisions:
-        if decision.source_kind == "interface" and decision.target_field == "target_interface" and decision.review_state == PANDecisionReviewState.CONFIRMED and decision.value:
+        if decision.source_kind == "interface" and decision.target_field == "target_interface" and (decision.review_state == PANDecisionReviewState.CONFIRMED or decision.mode == PANDecisionMode.AUTO) and decision.value:
             mapped[(decision.source_vdom, decision.source_name)] = decision.value
     confirmed_mapped = dict(mapped)
 
@@ -217,6 +237,8 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
         parent = confirmed_mapped.get((vdom, item.interface)) if item.interface else None
         target_vsys = target_vsys_value(decisions, vdom)
         for target_item, topo in scoped:
+            if any((owner.source_vdom, owner.source_name) != (vdom, name) for owner in reservations.get(target_item.name, ())):
+                continue
             if not _compatible(item, target_item):
                 continue
             if target_vsys and (topo is None or target_vsys not in topo.imported_vsys):
@@ -244,6 +266,10 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
         candidates = []
         target_vsys = target_vsys_value(decisions, vdom)
         for target_item, topo in scoped:
+            if any((owner.source_vdom, owner.source_name) != (vdom, name) for owner in reservations.get(target_item.name, ())):
+                continue
+            if not _compatible(item, target_item):
+                continue
             if target_vsys and (topo is None or target_vsys not in topo.imported_vsys):
                 continue
             valid, strong, supporting, _ = viable_candidate(item, target_item, topo, parent)
@@ -255,6 +281,18 @@ def suggest_from_target(source, decisions: PANMigrationDecisionSet, target, devi
                 f"Target XML: unique VLAN candidate ({'; '.join((*strong, *supporting))})",
                 "TARGET_VLAN_PARENT", '; '.join((*strong, *supporting)), target_item.name)
             mapped[(vdom, name)] = target_item.name
+
+    claims = {}
+    for identity, value in mapped.items():
+        claims.setdefault(value, []).append(identity)
+    for value, owners in claims.items():
+        if len(owners) < 2:
+            continue
+        for vdom, name in owners:
+            key = make_decision_key(vdom, "interface", name, "target_interface")
+            warnings[key] = f"Target interface {value} is contested by " + ", ".join(f"{v} / {n}" for v, n in owners) + ". Choose manually."
+            if (vdom, name) not in confirmed_mapped:
+                mapped.pop((vdom, name))
 
     assignments = {}
     for (vdom, name), target_name in mapped.items():

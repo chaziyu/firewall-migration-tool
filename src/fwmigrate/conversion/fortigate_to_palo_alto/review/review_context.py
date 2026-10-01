@@ -23,7 +23,8 @@ def build_review_context(config, decisions, *, candidates=None, target_available
                 if value is not None and (explicit is None or name in explicit):
                     values[output] = list(value) if isinstance(value, (list, tuple, set)) else value
             if decision.target_field == "target_interface":
-                matches = (candidates or {}).get(decision.key, ())
+                matches = [item for item in (candidates or {}).get(decision.key, ())
+                           if item.get("available", True) and not item.get("contested")]
                 strong = [candidate for candidate in matches if candidate["class"] == "STRONG"]
                 if not target_available:
                     values["next_action"] = "Upload PAN-OS target XML or enter the intended target interface manually."

@@ -1,3 +1,4 @@
+import { candidateLabel } from '../reviewDrafts'
 import type { Dispatch, SetStateAction } from 'react'
 import type { Decision, ReviewData } from '../reviewTypes'
 
@@ -86,9 +87,9 @@ export function MigrationDecisionTable({
               return <tr key={decision.key}>
                 <td><input aria-label={`Select ${decision.source_name}`} type="checkbox" checked={selectedKeys.includes(decision.key)} onChange={(event) => setSelectedKeys((keys) => event.target.checked ? [...keys, decision.key] : keys.filter((key) => key !== decision.key))} /> {decision.source_vdom} · {decision.source_kind} · {decision.source_name}<small className="decision-reason">{decision.reason}</small></td>
                 <td>{decision.target_field}</td>
-                <td>{decision.suggested_value || '—'}{candidates.length > 0 && <details><summary>{candidates.length} target candidates</summary><ul>{candidates.map((candidate) => <li key={`${decision.key}:${candidate.value}`}>
-                  <span>{candidate.value}{candidate.target_scope ? ` · ${candidate.target_scope}` : ''}{[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].length ? ` · ${[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].join(', ')}` : ''}</span>
-                  <button type="button" className="text-button" onClick={() => setDrafts((current) => ({ ...current, [decision.key]: candidate.value }))}>Use candidate</button>
+                <td>{decision.suggested_value || '—'}{candidates.length > 0 && <details><summary>{candidates.length} target candidates</summary><ul>{candidates.map((candidate) => <li key={`${decision.key}:${candidate.target_scope}:${candidate.value}`}>
+                  <span>{candidateLabel(candidate)}: {candidate.value}{candidate.target_scope ? ` · ${candidate.target_scope}` : ''}{[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].length ? ` · ${[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].join(', ')}` : ''}</span>
+                  <button type="button" className="text-button" disabled={busy || candidate.available === false} onClick={() => setDrafts((current) => ({ ...current, [decision.key]: candidate.value }))}>Use candidate</button>
                 </li>)}</ul></details>}</td>
                 <td><input aria-label={`${decision.target_field} for ${decision.source_name}`} value={value} disabled={decision.mode === 'UNSUPPORTED'} onChange={(event) => setDrafts((current) => ({ ...current, [decision.key]: event.target.value }))} /></td>
                 <td>{decision.review_state === 'CONFIRMED' || decision.mode === 'AUTO' ? 'Confirmed' : 'Pending'}{decision.mode !== 'UNSUPPORTED' && decision.review_state !== 'CONFIRMED' && decision.mode !== 'AUTO' && <button className="text-button" type="button" disabled={busy || !value.trim()} onClick={() => void run(() => confirmDecision(decision, value))}>Confirm</button>}</td>

@@ -57,6 +57,31 @@ MAPPING = {
 }
 
 
+def test_duplicate_interface_imports_cannot_reach_reviewed_artifact_commands():
+    from copy import deepcopy
+
+    client = create_app({"TESTING": True}).test_client()
+    preview_id = client.post('/api/preview', data={'source_vendor': 'fortigate',
+        'file': (io.BytesIO(FIXTURE.read_bytes()), FIXTURE.name)}, content_type='multipart/form-data').get_json()['preview_id']
+    mapping = deepcopy(MAPPING)
+    mapping['interfaces']['root']['wan']['target_interface'] = 'ethernet1/1'
+    result = client.post('/api/migrate', json={'preview_id': preview_id, 'mapping': mapping}).get_json()
+    assert len([item for item in result['target_findings'] if item['code'] == 'TARGET_INTERFACE_ALREADY_ASSIGNED']) == 2
+    artifact = {'artifact_id': result['artifact_id']}
+    command_preview = client.post('/api/migration/command-preview', json=artifact).get_json()
+    command_download = client.post('/api/migration/download', json=artifact).data.decode()
+    assert 'set network interface' not in command_download
+    assert 'set zone ' not in command_download
+    assert 'set rulebase security' not in command_download
+    assert 'set address web-host' in command_download
+    assert command_preview['command_sha256'] == result['report']['command_sha256']
+    assert command_preview['command_text'] == command_download
+    bundle = client.post('/api/migration/bundle', json=artifact)
+    with zipfile.ZipFile(io.BytesIO(bundle.data)) as archive:
+        command_file = next(name for name in archive.namelist() if name.endswith('.set'))
+        assert archive.read(command_file).decode() == command_download
+
+
 def test_preview_download_and_bundle_share_one_rendered_artifact():
     client = create_app({"TESTING": True}).test_client()
     preview = client.post("/api/preview", data={

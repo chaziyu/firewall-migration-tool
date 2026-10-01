@@ -1,3 +1,4 @@
+import { candidateLabel } from '../reviewDrafts'
 import type { Dispatch, SetStateAction } from 'react'
 import { tabKeyboard } from '../../../components/common/tabKeyboard'
 import type { Decision, Proposal, ReviewData, ReviewGroup, RuleSuggestion } from '../reviewTypes'
@@ -93,7 +94,7 @@ export function MigrationReviewQueues({
               return <div className="review-work-field" key={decision.key}>
                 <label>{decision.target_field.replaceAll('_', ' ')}<input id={`decision-${decision.key}`} disabled={busy} aria-label={`${decision.target_field} for ${group.source_name}`} value={value} onChange={(event) => setDrafts((current) => ({ ...current, [decision.key]: event.target.value }))} placeholder={decision.suggested_value ? `Suggested: ${decision.suggested_value}` : 'Enter mapping'} /></label>
                 {decision.suggested_value && decision.review_state !== 'CONFIRMED' && <p className="review-work-suggestion">Suggested: {decision.suggested_value}</p>}
-                {candidates.length > 0 && <details className="review-work-candidates"><summary>{candidates.length} possible matches</summary>{candidates.map((candidate) => <div className="review-work-candidate" key={candidate.value}><span>{candidate.class === 'STRONG' ? 'Recommended' : 'Possible match'}: {candidate.value}{candidate.target_scope ? ` · ${candidate.target_scope}` : ''}</span><button className="text-button" type="button" onClick={() => setDrafts((current) => ({ ...current, [decision.key]: candidate.value }))}>Use</button><details><summary>Why?</summary><ul>{[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].map((fact) => <li key={fact}>{fact}</li>)}</ul></details></div>)}</details>}
+                {candidates.length > 0 && <details className="review-work-candidates"><summary>{candidates.filter((item) => item.available !== false).length} available candidates</summary>{candidates.map((candidate) => <div className="review-work-candidate" key={`${candidate.target_scope}:${candidate.value}`}><span>{candidateLabel(candidate)}: {candidate.value}{candidate.target_scope ? ` · ${candidate.target_scope}` : ''}</span><button className="text-button" type="button" disabled={busy || candidate.available === false} onClick={() => setDrafts((current) => ({ ...current, [decision.key]: candidate.value }))}>Use</button><details><summary>Why?</summary><ul>{[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].map((fact) => <li key={fact}>{fact}</li>)}</ul></details></div>)}</details>}
                 {proposals.find((item) => item.decision_key === decision.key) && <p className="review-work-suggestion">AI proposal is available in the optional AI review section.</p>}
               </div>
             })}
