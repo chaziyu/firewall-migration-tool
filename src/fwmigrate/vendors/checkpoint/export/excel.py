@@ -75,6 +75,13 @@ def _issue_rows(result: Any):
         i.field, i.message, i.reference, names.get(i.object_type or "", ""))) for i in result.validation.issues]
 
 
+def _unsupported_inventory(result: Any):
+    return tuple(
+        item for item in result.source_inventory
+        if getattr(item, "object_type", None) != "gaia-show-evidence"
+    )
+
+
 def _derived_completeness_rows(result: Any):
     return [
         ("NAT Migration Views", result.derived.nat_completeness.complete, result.derived.nat_completeness.incomplete_commands),
@@ -119,7 +126,8 @@ def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportPro
             append_report_row(sheet, ("Derived Views", sum(len(_derived_rows(result, s)) for s in DERIVED_SHEETS)))
             append_report_row(sheet, ("Validation Findings", len(result.validation.issues)))
             append_report_row(sheet, ("Incomplete Collections", len(result.derived.collection_incomplete)))
-            append_report_row(sheet, ("Unsupported Source Inventory", len(result.source_inventory)))
+            append_report_row(sheet, ("Source Inventory Evidence", len(result.source_inventory)))
+            append_report_row(sheet, ("Unsupported Source Inventory", len(_unsupported_inventory(result))))
             append_report_row(sheet, ("Scope Ambiguous", "Yes" if getattr(result.scope, "ambiguous", False) else "No"))
             append_report_row(sheet, ("SD-WAN", "No direct R81.00 equivalent"))
             append_report_row(sheet, ("API Version", result.source_metadata.api_version))
@@ -163,7 +171,7 @@ def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportPro
         elif name == "Unsupported":
             append_report_row(sheet, SHEET_HEADERS[name])
             groups = {}
-            for item in result.source_inventory:
+            for item in _unsupported_inventory(result):
                 key = (item.command, item.domain, "UNSUPPORTED_SOURCE", item.object_type or "Unmodeled source object")
                 groups[key] = groups.get(key, 0) + 1
             for item in result.collection:
