@@ -2,52 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { postForm, postJson } from '../../api/client'
 import type { SourcePreviewData } from '../source/types'
 import type { MigrationDecisionDocument } from './types'
-import { tabKeyboard } from '../../components/common/tabKeyboard'
-
-type Decision = {
-  key: string
-  source_vdom: string
-  source_kind: string
-  source_name: string
-  target_field: string
-  suggested_value: string | null
-  value: string | null
-  mode: string
-  review_state: string
-  reason: string
-  evidence_source?: string | null
-  evidence_type?: string | null
-  evidence_value?: string | null
-  target_object?: string | null
-  [key: string]: unknown
-}
-
-type DecisionDocument = { decisions?: Decision[]; [key: string]: unknown }
-type Candidate = { value: string; class?: string; target_scope?: string; strong_evidence?: string[]; supporting_evidence?: string[] }
-type Proposal = { decision_key: string; action: string; proposed_value: string | null; target_scope?: string; rationale?: string; evidence_refs?: string[]; validation_status: string }
-type ReviewGroup = { queue: string; source_vdom: string; source_kind: string; source_name: string; decision_keys: string[]; decisions: Decision[]; candidates: Record<string, Candidate[]>; source_evidence: Record<string, unknown>; affected_count: number; dependent_decision_count: number; next_action?: string | null; actions?: Array<{ type: string; source_key: string; value: string; apply_to: string[] }> }
-type ReviewData = {
-  decisions: { decisions: Decision[] }
-  decision_document: DecisionDocument
-  target_devices: string[]
-  target_device: string | null
-  decision_candidates: Record<string, Candidate[]>
-  review_groups: ReviewGroup[]
-  review_summary: Record<string, number>
-  rule_suggestions: Array<{ rule_type: string; source_vdom: string; source_zone: string; target_zone: string; confirmed_count: number; affected: string[]; apply_to: string[] }>
-  architecture_questions?: Array<{ type: string; source_vdom: string; source_name: string; affected_count?: number; decision_key?: string; candidates?: string[]; fields?: Decision[] }>
-  target_evidence: { device?: string; config_digest?: string } | null
-  [key: string]: unknown
-}
-
-function download(text: string, name: string, type: string) {
-  const url = URL.createObjectURL(new Blob([text], { type }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = name
-  link.click()
-  URL.revokeObjectURL(url)
-}
+import type { Decision, DecisionDocument, Proposal, ReviewData, ReviewGroup } from './reviewTypes'
+import { download } from './download'
+import { MigrationReviewQueues } from './components/MigrationReviewQueues'
+import { MigrationAIReview } from './components/MigrationAIReview'
+import { MigrationDecisionTable } from './components/MigrationDecisionTable'
 
 export function MigrationReview({ preview, vendor, onDecisionDocument, onContextChange, requestedDecision }: {
   preview: SourcePreviewData
@@ -466,72 +425,31 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       {(status || busy) && <p role="status" aria-live="polite" className="migration-status">{busy ? 'Updating migration review…' : status}</p>}
       {review && <>
         <p className="migration-counts">{decisions.filter((item) => item.mode !== 'AUTO' && item.mode !== 'UNSUPPORTED' && item.review_state !== 'CONFIRMED').length} remaining decisions · {reviewGroups.filter((item) => item.queue !== 'COMPLETE').length} remaining groups. Affected-object counts are per group and may overlap.</p>
-        <section className="architecture-decisions" aria-label="Architecture decisions">
-          <h3>Architecture decisions</h3>
-          {(review.architecture_questions ?? []).map((question) => {
-            const group = reviewGroups.find((item) => item.source_vdom === question.source_vdom && item.source_name === question.source_name)
-            return <article key={`${question.type}:${question.source_vdom}:${question.source_name}`} className="review-work-card">
-              <strong>{question.source_vdom} · {question.source_name}</strong>
-              <p>{question.type === 'VDOM_CONTEXT' ? 'Choose target VSYS and virtual router.' : question.type === 'AGGREGATE_MAPPING' ? 'Choose the target aggregate interface.' : 'Choose the target zone.'} {question.affected_count ?? group?.affected_count ?? 0} affected objects.</p>
-              {group && <button type="button" className="secondary-button" onClick={() => {
-                setActiveQueue(group.queue); setSearch(''); setVdomFilter('all'); setGroupPage(Math.floor(reviewGroups.filter((item) => item.queue === group.queue).indexOf(group) / 10) + 1)
-                requestAnimationFrame(() => { const input = document.getElementById(`decision-${group.decision_keys[0]}`); input?.scrollIntoView({ block: 'center' }); input?.focus() })
-              }}>Review architecture mapping</button>}
-            </article>
-          })}
-          {!review.architecture_questions?.length && <p>No architecture questions reported.</p>}
-        </section>
-        <div className="review-summary">
-          {[
-            ['verified', 'Verified'], ['derived', 'Derived'], ['choose_candidate', 'Choices'],
-            ['needs_input', 'Manual'], ['conflicts', 'Conflicts'],
-          ].map(([key, label]) => <div className="review-summary-card" key={key}><strong>{review.review_summary[key] ?? 0}</strong><span>{label} decisions</span></div>)}
-        </div>
-        <section className="review-workflow" aria-label="Migration review queues">
-          <nav className="review-queues" role="tablist" aria-label="Migration review work queues" onKeyDown={tabKeyboard}>
-            {queueNames.map((queue) => <button type="button" role="tab" key={queue} id={`queue-tab-${queue}`} aria-controls={`queue-panel-${queue}`} tabIndex={activeQueue === queue ? 0 : -1} aria-selected={activeQueue === queue} onClick={() => { setActiveQueue(queue); setGroupPage(1) }}>
-              {({ READY_TO_CONFIRM: 'Ready to approve', CHOOSE_CANDIDATE: 'Choose match', NEEDS_INPUT: 'Needs design', CONFLICT: 'Conflicts', COMPLETE: 'Completed' } as Record<string, string>)[queue]} <span>{reviewGroups.filter((group) => group.queue === queue).length} groups</span>
-            </button>)}
-          </nav>
-          {queueNames.filter((queue) => queue !== activeQueue).map((queue) => <div key={queue} hidden role="tabpanel" id={`queue-panel-${queue}`} aria-labelledby={`queue-tab-${queue}`} />)}
-          <div role="tabpanel" id={`queue-panel-${activeQueue}`} aria-labelledby={`queue-tab-${activeQueue}`} tabIndex={0}>
-          <div className="migration-toolbar">
-            <label className="field">Search review groups<input value={search} onChange={(event) => { setSearch(event.target.value); setGroupPage(1) }} placeholder="Search source mappings" /></label>
-            <label className="field">VDOM<select value={vdomFilter} onChange={(event) => { setVdomFilter(event.target.value); setGroupPage(1); setDecisionPage(1) }}><option value="all">All VDOMs</option>{vdoms.map((item) => <option key={item}>{item}</option>)}</select></label>
-          </div>
-          {!visibleGroups.length && <p>{reviewGroups.length ? 'Nothing in this queue.' : 'No migration decisions are required.'}</p>}
-          {review.rule_suggestions.map((suggestion) => <article className="review-work-card architecture-question" key={`${suggestion.source_vdom}:${suggestion.source_zone}`}>
-            <h3>Apply {suggestion.target_zone} to {suggestion.affected.length} other interfaces in {suggestion.source_zone}?</h3>
-            <p>Based on {suggestion.confirmed_count} engineer-confirmed mappings for explicit zone members.</p>
-            <details><summary>Review affected mappings</summary><ul>{suggestion.affected.map((name) => <li key={name}>{name}</li>)}</ul></details>
-            <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(() => applyRuleSuggestion(suggestion))}>Apply to {suggestion.affected.length} mappings</button>
-          </article>)}
-          {visibleGroups.slice((groupPage - 1) * 10, groupPage * 10).map((group) => <article className={`review-work-card queue-${group.queue.toLowerCase()}`} key={`${group.source_vdom}:${group.source_kind}:${group.source_name}`}>
-            <div className="review-work-heading"><div><h3>{group.source_kind === 'vdom' ? `${group.source_name} VDOM` : group.source_name}</h3><p>{group.source_vdom} · {group.source_kind}{typeof group.source_evidence.source_type === 'string' ? ` · ${group.source_evidence.source_type}` : ''}</p></div><span className="review-work-badge">{group.queue.replaceAll('_', ' ')}</span></div>
-            {(review.architecture_questions ?? []).filter((question) => question.source_vdom === group.source_vdom && question.source_name === group.source_name).map((question) => <div className="review-work-suggestion" key={`${question.type}:${question.source_name}`}>
-              <p>{question.type === 'AGGREGATE_MAPPING' ? `Architecture question: Which PAN aggregate replaces this interface? ${question.affected_count ?? 0} VLAN mappings will be re-evaluated.` : question.type === 'VDOM_CONTEXT' ? 'Architecture question: Choose the target VSYS and virtual router for this VDOM.' : 'Architecture question: Choose the PAN zone for this source zone.'}</p>
-              {question.type === 'VDOM_CONTEXT' ? question.fields?.filter((item) => item.suggested_value).map((item) => <button className="secondary-button" type="button" key={item.key} onClick={() => setDrafts((current) => ({ ...current, [item.key]: item.suggested_value ?? '' }))}>{item.target_field === 'vsys' ? 'VSYS' : 'VR'}: {item.suggested_value}</button>) : (question.candidates ?? []).map((value) => <button className="secondary-button" type="button" key={value} onClick={() => question.decision_key && setDrafts((current) => ({ ...current, [question.decision_key as string]: value }))}>Use {value}</button>)}
-            </div>)}
-            {group.decisions.filter((item) => item.mode !== 'UNSUPPORTED').map((decision) => {
-              const value = drafts[decision.key] ?? decision.value ?? decision.suggested_value ?? ''
-              const candidates = group.candidates[decision.key] ?? review.decision_candidates[decision.key] ?? []
-              return <div className="review-work-field" key={decision.key}>
-                <label>{decision.target_field.replaceAll('_', ' ')}<input id={`decision-${decision.key}`} disabled={busy} aria-label={`${decision.target_field} for ${group.source_name}`} value={value} onChange={(event) => setDrafts((current) => ({ ...current, [decision.key]: event.target.value }))} placeholder={decision.suggested_value ? `Suggested: ${decision.suggested_value}` : 'Enter mapping'} /></label>
-                {decision.suggested_value && decision.review_state !== 'CONFIRMED' && <p className="review-work-suggestion">Suggested: {decision.suggested_value}</p>}
-                {candidates.length > 0 && <details className="review-work-candidates"><summary>{candidates.length} possible matches</summary>{candidates.map((candidate) => <div className="review-work-candidate" key={candidate.value}><span>{candidate.class === 'STRONG' ? 'Recommended' : 'Possible match'}: {candidate.value}{candidate.target_scope ? ` · ${candidate.target_scope}` : ''}</span><button className="text-button" type="button" onClick={() => setDrafts((current) => ({ ...current, [decision.key]: candidate.value }))}>Use</button><details><summary>Why?</summary><ul>{[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].map((fact) => <li key={fact}>{fact}</li>)}</ul></details></div>)}</details>}
-                {proposals.find((item) => item.decision_key === decision.key) && <p className="review-work-suggestion">AI proposal is available in the optional AI review section.</p>}
-              </div>
-            })}
-            <div className="review-work-impact"><p>{group.affected_count} affected objects · {group.dependent_decision_count} dependent mappings will be re-evaluated</p>{group.next_action && <p>Next action: {group.next_action}</p>}
-              {Object.keys(group.source_evidence).length > 0 && <details><summary>Source facts</summary><ul>{Object.entries(group.source_evidence).map(([key, value]) => <li key={key}>{key.replace(/^source_/, '').replaceAll('_', ' ')}: {Array.isArray(value) ? value.join(', ') || '(explicitly empty)' : String(value)}</li>)}</ul></details>}
-            </div>
-            {group.decisions.filter((item) => item.mode === 'UNSUPPORTED').map((item) => <p key={item.key}>Unsupported: {item.target_field} · {item.reason}</p>)}
-            {group.actions?.map((action) => <div key={`${action.type}:${action.source_key}`}><details><summary>Review member decision scope</summary><p>{group.source_vdom} · {action.source_key} → {action.value}</p><ul>{action.apply_to.map((key) => <li key={key}>{key}</li>)}</ul></details><button className="secondary-button" type="button" disabled={busy} onClick={() => void run(() => applyGroupAction(action))}>Apply {action.value} to {action.apply_to.length} member decisions</button></div>)}
-            {group.decisions.some((item) => item.mode !== 'UNSUPPORTED') && <button className="primary-button" type="button" disabled={busy || !group.decision_keys.some((key) => (drafts[key] ?? decisions.find((item) => item.key === key)?.value ?? decisions.find((item) => item.key === key)?.suggested_value ?? '').trim())} onClick={() => void run(() => confirmGroup(group), 'Mapping confirmed.')}>Confirm mapping</button>}
-          </article>)}
-          <div className="report-pager"><button type="button" className="secondary-button" disabled={groupPage <= 1} onClick={() => setGroupPage((page) => page - 1)}>Previous groups</button><span role="status">Page {groupPage} of {Math.max(1, Math.ceil(visibleGroups.length / 10))} · {visibleGroups.length} groups</span><button type="button" className="secondary-button" disabled={groupPage * 10 >= visibleGroups.length} onClick={() => setGroupPage((page) => page + 1)}>Next groups</button></div>
-          </div>
-        </section>
+        <MigrationReviewQueues
+          review={review}
+          reviewGroups={reviewGroups}
+          queueNames={queueNames}
+          activeQueue={activeQueue}
+          setActiveQueue={setActiveQueue}
+          search={search}
+          setSearch={setSearch}
+          vdomFilter={vdomFilter}
+          setVdomFilter={setVdomFilter}
+          vdoms={vdoms}
+          visibleGroups={visibleGroups}
+          groupPage={groupPage}
+          setGroupPage={setGroupPage}
+          setDecisionPage={setDecisionPage}
+          drafts={drafts}
+          setDrafts={setDrafts}
+          proposals={proposals}
+          decisions={decisions}
+          busy={busy}
+          run={run}
+          applyRuleSuggestion={applyRuleSuggestion}
+          applyGroupAction={applyGroupAction}
+          confirmGroup={confirmGroup}
+        />
         <div className="migration-toolbar">
           <label className="field">Import target intent YAML
             <input type="file" accept=".yaml,.yml,text/yaml" disabled={busy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void run(() => importIntent(file), 'Target intent imported.') }} />
@@ -540,26 +458,22 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 <button className="secondary-button" type="button" disabled={busy || !suggestions.length} onClick={() => bulkConfirm(suggestions.map((item) => item.key), (item) => item.suggested_value ?? '')}>Review all suggestions</button>
         </div>
 
-          <details className="ai-review-controls"><summary>AI-assisted review (optional)</summary>
-            <h3>AI-assisted review</h3>
-            <p>AI suggestions remain provisional. Approving a validated proposal records an engineer-confirmed decision.</p>
-            <p role="status" aria-live="polite">{advisorStatus}</p>
-            <div className="migration-toolbar">
-              <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(testAdvisor)}>Test advisor</button>
-              {targetPreviewId && targetDevice && <>
-                <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(() => buildProposals(Boolean(designSessionId)), 'Ready proposals refreshed.')}>{designSessionId ? 'Retry ready proposals' : 'Propose ready mappings'}</button>
-                <button className="secondary-button" type="button" disabled={busy || !validProposalKeys.length} onClick={() => void run(() => approveProposals(validProposalKeys), 'Valid proposals approved by engineer.')}>Approve valid proposals ({validProposalKeys.length})</button>
-              </>}
-              <a className="secondary-button" href="/api/migration/ai/audit/export">Download AI review audit</a>
-            </div>
-            {proposals.map((proposal) => <article className="ai-proposal" key={proposal.decision_key}>
-              <strong>{proposal.proposed_value ?? 'No safe proposal'}</strong><p>{proposal.target_scope || proposal.action} · {proposal.rationale || proposal.validation_status}</p>
-              {proposal.evidence_refs?.length ? <small>Evidence: {proposal.evidence_refs.join(', ')}</small> : null}
-              {proposal.validation_status === 'VALID' && proposal.proposed_value && <button type="button" className="text-button" disabled={busy} onClick={() => void run(() => approveProposal(proposal), 'Proposal approved by engineer.')}>Approve proposal</button>}
-              {proposal.proposed_value && <button type="button" className="text-button" disabled={busy} onClick={() => setDrafts((current) => ({ ...current, [proposal.decision_key]: proposal.proposed_value ?? '' }))}>Use value to edit</button>}
-              <button type="button" className="text-button" disabled={busy} onClick={() => void run(() => rejectProposals([proposal.decision_key]), 'Proposal dismissed.')}>Dismiss</button>
-            </article>)}
-          </details>
+        <MigrationAIReview
+          advisorStatus={advisorStatus}
+          busy={busy}
+          targetPreviewId={targetPreviewId}
+          targetDevice={targetDevice}
+          designSessionId={designSessionId}
+          validProposalKeys={validProposalKeys}
+          proposals={proposals}
+          run={run}
+          testAdvisor={testAdvisor}
+          buildProposals={buildProposals}
+          approveProposals={approveProposals}
+          approveProposal={approveProposal}
+          rejectProposals={rejectProposals}
+          setDrafts={setDrafts}
+        />
         <details className="migration-review-tools">
           <summary>Advanced review tools</summary>
           <div className="migration-toolbar">
@@ -579,48 +493,32 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           </div>
         </details>
 
-        <details className="migration-review-tools"><summary>Advanced decision view</summary>
-        <div className="migration-toolbar">
-          <label className="field">Show<select value={decisionFilter} onChange={(event) => { setDecisionFilter(event.target.value); setDecisionPage(1) }}><option value="all">All decisions</option><option value="zones">Zones</option><option value="interfaces">Interfaces</option><option value="route-nat">Route/NAT impact</option></select></label>
-          <label className="field">Evidence<select value={evidenceFilter} onChange={(event) => { setEvidenceFilter(event.target.value); setDecisionPage(1) }}><option value="all">All evidence</option><option value="target">Target-backed</option><option value="source">Source-only</option><option value="conflict">Conflicts</option><option value="required">Required</option><option value="confirmed">Confirmed</option></select></label>
-          <label><input type="checkbox" checked={pendingOnly} onChange={(event) => { setPendingOnly(event.target.checked); setDecisionPage(1) }} /> Show pending only</label>
-          <button className="secondary-button" type="button" onClick={() => setSelectedKeys(visibleDecisions.slice((decisionPage - 1) * 50, decisionPage * 50).filter((item) => item.mode !== 'UNSUPPORTED').map((item) => item.key))}>Select all visible</button>
-          <button className="secondary-button" type="button" onClick={() => setSelectedKeys([])}>Clear selection</button>
-          <span aria-live="polite">Selected: {selectedKeys.length}</span>
-          <button className="primary-button" type="button" disabled={busy || !selectedKeys.length} onClick={() => bulkConfirm(selectedKeys, (item) => drafts[item.key] ?? item.value ?? item.suggested_value ?? '')}>Confirm selected</button>
-          <button className="secondary-button" type="button" disabled={busy || !suggestions.length} onClick={() => bulkConfirm(suggestions.map((item) => item.key), (item) => item.suggested_value ?? '')}>Confirm all mapping suggestions</button>
-        </div>
-        <div className="migration-toolbar"><label className="field">Final value for selected<input value={bulkValue} onChange={(event) => setBulkValue(event.target.value)} /></label>
-          <button className="secondary-button" type="button" disabled={busy || !selectedKeys.length || !bulkValue.trim()} onClick={() => {
-            const selected = decisions.filter((item) => selectedKeys.includes(item.key))
-            if (new Set(selected.map((item) => item.target_field)).size > 1) { setError('Select decisions with one target field before setting a shared value.'); return }
-            bulkConfirm(selectedKeys, () => bulkValue)
-          }}>Set selected value</button>
-          <button className="secondary-button" type="button" disabled={busy || !selectedKeys.length} onClick={() => bulkConfirm(selectedKeys, (item) => item.suggested_value ?? '')}>Use suggestion</button>
-          <button className="secondary-button" type="button" disabled={busy || !selectedKeys.length} onClick={clearSelected}>Clear selected values</button>
-        </div>
-        <p className="migration-counts" aria-live="polite">{decisions.filter((item) => item.review_state === 'CONFIRMED' || item.mode === 'AUTO').length} confirmed · {suggestions.length} suggestions · {decisions.filter((item) => item.mode === 'REQUIRED' && item.review_state !== 'CONFIRMED').length} required</p>
-        <div className="report-table-wrap">
-          <table className="report-table migration-decision-table">
-            <thead><tr><th>Source</th><th>Target field</th><th>Suggestion and candidates</th><th>Final value</th><th>Review</th></tr></thead>
-            <tbody>{visibleDecisions.slice((decisionPage - 1) * 50, decisionPage * 50).map((decision) => {
-              const candidates = review.decision_candidates[decision.key] ?? []
-              const value = drafts[decision.key] ?? decision.value ?? decision.suggested_value ?? ''
-              return <tr key={decision.key}>
-                <td><input aria-label={`Select ${decision.source_name}`} type="checkbox" checked={selectedKeys.includes(decision.key)} onChange={(event) => setSelectedKeys((keys) => event.target.checked ? [...keys, decision.key] : keys.filter((key) => key !== decision.key))} /> {decision.source_vdom} · {decision.source_kind} · {decision.source_name}<small className="decision-reason">{decision.reason}</small></td>
-                <td>{decision.target_field}</td>
-                <td>{decision.suggested_value || '—'}{candidates.length > 0 && <details><summary>{candidates.length} target candidates</summary><ul>{candidates.map((candidate) => <li key={`${decision.key}:${candidate.value}`}>
-                  <span>{candidate.value}{candidate.target_scope ? ` · ${candidate.target_scope}` : ''}{[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].length ? ` · ${[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].join(', ')}` : ''}</span>
-                  <button type="button" className="text-button" onClick={() => setDrafts((current) => ({ ...current, [decision.key]: candidate.value }))}>Use candidate</button>
-                </li>)}</ul></details>}</td>
-                <td><input aria-label={`${decision.target_field} for ${decision.source_name}`} value={value} disabled={decision.mode === 'UNSUPPORTED'} onChange={(event) => setDrafts((current) => ({ ...current, [decision.key]: event.target.value }))} /></td>
-                <td>{decision.review_state === 'CONFIRMED' || decision.mode === 'AUTO' ? 'Confirmed' : 'Pending'}{decision.mode !== 'UNSUPPORTED' && decision.review_state !== 'CONFIRMED' && decision.mode !== 'AUTO' && <button className="text-button" type="button" disabled={busy || !value.trim()} onClick={() => void run(() => confirmDecision(decision, value))}>Confirm</button>}</td>
-              </tr>
-            })}</tbody>
-          </table>
-        </div>
-          <div className="report-pager"><button type="button" disabled={decisionPage <= 1} onClick={() => setDecisionPage((page) => page - 1)}>Previous decisions</button><span>Page {decisionPage} of {Math.max(1, Math.ceil(visibleDecisions.length / 50))}</span><button type="button" disabled={decisionPage * 50 >= visibleDecisions.length} onClick={() => setDecisionPage((page) => page + 1)}>Next decisions</button></div>
-        </details>
+        <MigrationDecisionTable
+          decisionFilter={decisionFilter}
+          setDecisionFilter={setDecisionFilter}
+          evidenceFilter={evidenceFilter}
+          setEvidenceFilter={setEvidenceFilter}
+          pendingOnly={pendingOnly}
+          setPendingOnly={setPendingOnly}
+          decisionPage={decisionPage}
+          setDecisionPage={setDecisionPage}
+          visibleDecisions={visibleDecisions}
+          selectedKeys={selectedKeys}
+          setSelectedKeys={setSelectedKeys}
+          busy={busy}
+          bulkConfirm={bulkConfirm}
+          suggestions={suggestions}
+          drafts={drafts}
+          decisions={decisions}
+          bulkValue={bulkValue}
+          setBulkValue={setBulkValue}
+          setError={setError}
+          clearSelected={clearSelected}
+          review={review}
+          setDrafts={setDrafts}
+          run={run}
+          confirmDecision={confirmDecision}
+        />
         {!!bulkPreview.length && <section className="review-work-card" aria-label="Bulk confirmation review">
           <h3>Review {bulkPreview.length} decisions before confirming</h3>
           <ul>{bulkPreview.slice((bulkPage - 1) * 50, bulkPage * 50).map((item) => <li key={item.key}>{item.scope} → <strong>{item.value}</strong></li>)}</ul>

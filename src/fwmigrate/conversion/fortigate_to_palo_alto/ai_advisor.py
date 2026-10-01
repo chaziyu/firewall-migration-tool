@@ -15,22 +15,52 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .ai import groq_client
+from .ai.advisor_contracts import (
+    AdvisorFailure,
+    RepairResult,
+    AdvisorError,
+    AdvisorUnavailable,
+    AdvisorAuthenticationError,
+    AdvisorRateLimitError,
+    AdvisorTimeoutError,
+    AdvisorRequestError,
+    AdvisorResponseError,
+    AdvisorProposalValidationError,
+    _provider_error_payload,
+    _retry_after_seconds,
+    _safe_diagnostic_text,
+)
+from .ai.advisor_settings import (
+    DEFAULT_SIMPLE_MODEL,
+    DEFAULT_COMPLEX_MODEL,
+    DEFAULT_REPAIR_MODEL,
+    MAX_DECISIONS,
+    DEFAULT_MAX_REQUEST_BYTES,
+    DEFAULT_MAX_CANDIDATES_PER_DECISION,
+    DEFAULT_MAX_COMPLETION_TOKENS,
+    DEFAULT_MAX_RETRY_DELAY_SECONDS,
+    DEFAULT_COMPLEX_CANDIDATE_THRESHOLD,
+    advisor_enabled,
+    advisor_provider,
+    groq_model,
+    _max_completion_tokens,
+    _reasoning_effort,
+    _reasoning_format,
+    _max_decisions,
+    _max_request_bytes,
+    _max_candidates_per_decision,
+    _timeout,
+    _max_retry_delay,
+    _complex_candidate_threshold,
+)
+from .ai.candidates import _candidate_id, _candidate_strength, _select_ai_candidates
 from .ai.models import PANAIProposal, PANAIProposalAction, PANAIProposalSet
 from .decisions import PANDecisionMode, PANDecisionReviewState, PANMigrationDecision, PANMigrationDecisionSet
 from .target_evidence import target_evidence_identity
 from .target_validation import validate_against_target
 
 PROMPT_VERSION = 2
-DEFAULT_SIMPLE_MODEL = "openai/gpt-oss-20b"
-DEFAULT_COMPLEX_MODEL = "openai/gpt-oss-120b"
-DEFAULT_REPAIR_MODEL = "openai/gpt-oss-120b"
-MAX_DECISIONS = 2
 MAX_AI_REPAIR_PASSES = 2
-DEFAULT_MAX_REQUEST_BYTES = 24 * 1024
-DEFAULT_MAX_CANDIDATES_PER_DECISION = 12
-DEFAULT_MAX_COMPLETION_TOKENS = 1536
-DEFAULT_MAX_RETRY_DELAY_SECONDS = 10.0
-DEFAULT_COMPLEX_CANDIDATE_THRESHOLD = 3
 _SOURCE_FIELDS = (
     "source_type", "source_role", "source_ip", "source_parent",
     "source_vlan", "source_vrf",
@@ -72,140 +102,6 @@ _RESPONSE_SCHEMA = {
 }
 
 
-@dataclass(frozen=True, slots=True)
-class AdvisorFailure:
-    category: str
-    provider: str
-    model: str
-    status: int | None = None
-    request_id: str | None = None
-    provider_code: str | None = None
-    provider_type: str | None = None
-    safe_reason: str | None = None
-    decision_keys: tuple[str, ...] = ()
-    batch_size: int = 0
-    candidate_count: int = 0
-    request_bytes: int = 0
-    retry_after_seconds: float | None = None
-
-    def to_dict(self) -> dict:
-        return {
-            "failure_category": self.category,
-            "provider": self.provider,
-            "model": self.model,
-            "status": self.status,
-            "request_id": self.request_id,
-            "provider_code": self.provider_code,
-            "provider_type": self.provider_type,
-            "safe_reason": self.safe_reason,
-            "decision_keys": list(self.decision_keys),
-            "batch_size": self.batch_size,
-            "candidate_count": self.candidate_count,
-            "request_bytes": self.request_bytes,
-            "retry_after_seconds": self.retry_after_seconds,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class RepairResult:
-    proposals: tuple[dict, ...]
-    failures: tuple[dict, ...] = ()
-    exhausted: bool = False
-
-    def __iter__(self):
-        return iter(self.proposals)
-
-
-class AdvisorError(ValueError):
-    code = "AI_INTERNAL_ERROR"
-    message = "The AI advisor could not complete the request."
-
-    def __init__(self, detail="", *, status=None, request_id=None, reason=None, failure=None):
-        super().__init__(detail or self.message)
-        self.status = status
-        self.request_id = request_id
-        self.reason = reason
-        self.failure = failure
-
-
-class AdvisorUnavailable(AdvisorError):
-    code = "AI_UNAVAILABLE"
-    message = "The configured AI provider is unavailable."
-
-
-class AdvisorAuthenticationError(AdvisorError):
-    code = "AI_AUTH_FAILED"
-    message = "The AI provider rejected its credentials."
-
-
-class AdvisorRateLimitError(AdvisorError):
-    code = "AI_RATE_LIMITED"
-    message = "The AI provider is rate limited."
-
-
-class AdvisorTimeoutError(AdvisorError):
-    code = "AI_TIMEOUT"
-    message = "The AI provider timed out."
-
-
-class AdvisorRequestError(AdvisorError):
-    code = "AI_REQUEST_REJECTED"
-    message = "The configured AI model rejected the advisor request."
-
-
-class AdvisorResponseError(AdvisorError):
-    code = "AI_RESPONSE_INVALID"
-    message = "The AI provider returned an invalid response."
-
-
-class AdvisorProposalValidationError(AdvisorError):
-    code = "AI_PROPOSAL_INVALID"
-    message = "The AI proposal failed deterministic validation."
-
-    def __init__(self, detail="", *, reason="PROPOSAL_INVALID"):
-        super().__init__(detail, reason=reason)
-
-
-def _safe_diagnostic_text(value):
-    if not isinstance(value, str) or "\n" in value or "\r" in value:
-        return None
-    lowered = value.casefold()
-    if (value.lstrip().startswith(("{", "[")) or any(marker in lowered for marker in (
-        "migration_pair", "candidate_id", "decision_id", "evidence_refs", "source_vdom",
-        "target_device", "fortigate to pan-os", "config system", "config firewall",
-    ))):
-        return None
-    value = " ".join(value.split())
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if api_key:
-        value = value.replace(api_key, "[redacted]")
-    value = re.sub(r"(?i)\bBearer\s+\S+", "Bearer [redacted]", value)
-    value = re.sub(r"(?i)\b(?:gsk_|sk-)[A-Za-z0-9_-]{8,}", "[redacted]", value)
-    value = re.sub(
-        r"(?i)\b(password|passwd|token|secret|api[_-]?key|private[_ -]?key|psk)\b\s*[:=]\s*[^,;\s]+",
-        r"\1=[redacted]", value,
-    )
-    if any(marker in value.casefold() for marker in ("config system", "config firewall", "set password", "private key")):
-        return None
-    return value[:240] or None
-
-
-def _provider_error_payload(exc):
-    body = getattr(exc, "body", None)
-    if body is None:
-        response = getattr(exc, "response", None)
-        try:
-            body = response.json() if response is not None else None
-        except (AttributeError, TypeError, ValueError):
-            body = None
-    if isinstance(body, str):
-        try:
-            body = json.loads(body)
-        except (TypeError, ValueError):
-            return None
-    return body if isinstance(body, dict) else None
-
-
 def failure_record(exc, prepared=None, *, provider=None, model=None):
     if isinstance(exc, AdvisorError) and exc.failure is not None:
         return exc.failure.to_dict()
@@ -232,19 +128,6 @@ def failure_record(exc, prepared=None, *, provider=None, model=None):
         candidate_count=candidate_count,
         request_bytes=request_bytes,
     ).to_dict()
-
-
-def _retry_after_seconds(headers):
-    if headers is None:
-        return None
-    raw = headers.get("retry-after") or headers.get("Retry-After")
-    if raw is None:
-        return None
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        return None
-    return value if value >= 0 else None
 
 
 def classify_provider_error(exc, *, prepared=None, provider="groq"):
@@ -334,25 +217,6 @@ def response_format(mode):
     return ({"type": "json_schema", "json_schema": {
         "name": "pan_migration_proposals", "strict": True, "schema": _RESPONSE_SCHEMA,
     }} if mode == "STRICT_SCHEMA" else {"type": "json_object"})
-
-
-def _max_completion_tokens() -> int:
-    try:
-        return min(65536, max(256, int(os.environ.get(
-            "FWMIGRATE_AI_MAX_COMPLETION_TOKENS", DEFAULT_MAX_COMPLETION_TOKENS
-        ))))
-    except (TypeError, ValueError):
-        return DEFAULT_MAX_COMPLETION_TOKENS
-
-
-def _reasoning_effort() -> str:
-    value = os.environ.get("FWMIGRATE_AI_REASONING_EFFORT", "medium").strip().lower()
-    return value if value in {"low", "medium", "high"} else "medium"
-
-
-def _reasoning_format() -> str:
-    value = os.environ.get("FWMIGRATE_AI_REASONING_FORMAT", "hidden").strip().lower()
-    return value if value in {"hidden", "raw", "parsed"} else "hidden"
 
 
 def _groq_request_kwargs(prepared):
@@ -492,31 +356,10 @@ def test_advisor():
     }
 
 
-def advisor_enabled() -> bool:
-    return os.environ.get("FWMIGRATE_AI_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def advisor_provider() -> str:
-    return "qwen_local" if os.environ.get("FWMIGRATE_AI_LOCAL_URL", "").strip() else "groq"
-
-
 def advisor_model() -> str:
     if advisor_provider() == "qwen_local":
         return os.environ.get("FWMIGRATE_AI_LOCAL_MODEL", "Qwen/Qwen3-0.6B").strip() or "Qwen/Qwen3-0.6B"
     return groq_model("complex")
-
-
-def groq_model(tier="complex") -> str:
-    setting, default = {
-        "simple": ("FWMIGRATE_AI_SIMPLE_MODEL", DEFAULT_SIMPLE_MODEL),
-        "complex": ("FWMIGRATE_AI_COMPLEX_MODEL", DEFAULT_COMPLEX_MODEL),
-        "repair": ("FWMIGRATE_AI_REPAIR_MODEL", DEFAULT_REPAIR_MODEL),
-    }.get(tier, ("FWMIGRATE_AI_COMPLEX_MODEL", DEFAULT_COMPLEX_MODEL))
-    return (os.environ.get(setting)
-            or os.environ.get("FWMIGRATE_AI_GROQ_MODEL")
-            or os.environ.get("FWMIGRATE_GROQ_MODEL")
-            or os.environ.get("FWMIGRATE_AI_MODEL")
-            or default).strip() or default
 
 
 def classify_advisor_tiers(state, decision_keys, *, repair=False):
@@ -621,107 +464,6 @@ def validate_static_configuration():
     }:
         raise AdvisorRequestError("Invalid FWMIGRATE_AI_REASONING_FORMAT configuration")
     return status
-
-
-def _max_decisions() -> int:
-    try:
-        return min(32, max(1, int(os.environ.get("FWMIGRATE_AI_MAX_BATCH", MAX_DECISIONS))))
-    except (TypeError, ValueError):
-        return MAX_DECISIONS
-
-
-def _max_request_bytes() -> int:
-    try:
-        return min(1_000_000, max(1024, int(os.environ.get(
-            "FWMIGRATE_AI_MAX_REQUEST_BYTES", DEFAULT_MAX_REQUEST_BYTES
-        ))))
-    except (TypeError, ValueError):
-        return DEFAULT_MAX_REQUEST_BYTES
-
-
-def _max_candidates_per_decision() -> int:
-    try:
-        return min(256, max(1, int(os.environ.get(
-            "FWMIGRATE_AI_MAX_CANDIDATES_PER_DECISION", DEFAULT_MAX_CANDIDATES_PER_DECISION
-        ))))
-    except (TypeError, ValueError):
-        return DEFAULT_MAX_CANDIDATES_PER_DECISION
-
-
-def _timeout() -> float:
-    try:
-        return min(120.0, max(1.0, float(os.environ.get("FWMIGRATE_AI_TIMEOUT", os.environ.get("FWMIGRATE_AI_TIMEOUT_SECONDS", "30")))))
-    except ValueError:
-        return 30.0
-
-
-def _max_retry_delay() -> float:
-    try:
-        return min(60.0, max(0.1, float(os.environ.get(
-            "FWMIGRATE_AI_MAX_RETRY_DELAY_SECONDS", DEFAULT_MAX_RETRY_DELAY_SECONDS
-        ))))
-    except (TypeError, ValueError):
-        return DEFAULT_MAX_RETRY_DELAY_SECONDS
-
-
-def _complex_candidate_threshold() -> int:
-    try:
-        return min(64, max(1, int(os.environ.get(
-            "FWMIGRATE_AI_COMPLEX_CANDIDATE_THRESHOLD", DEFAULT_COMPLEX_CANDIDATE_THRESHOLD
-        ))))
-    except (TypeError, ValueError):
-        return DEFAULT_COMPLEX_CANDIDATE_THRESHOLD
-
-
-def _candidate_id(decision_key, candidate) -> str:
-    scope = candidate.get("target_scope")
-    value = candidate.get("value")
-    return hashlib.sha256(
-        f"{decision_key}\0{scope or ''}\0{value}".encode("utf-8")
-    ).hexdigest()
-
-
-def _candidate_strength(candidate):
-    strong_values = candidate.get("strong_evidence") or ()
-    supporting_values = candidate.get("supporting_evidence") or ()
-    strong = sum(isinstance(item, str) and bool(item) for item in strong_values[:6])
-    supporting = sum(
-        isinstance(item, str) and bool(item)
-        for item in supporting_values[:6]
-    )
-    return (
-        0 if candidate.get("class") == "STRONG" else 1,
-        -strong,
-        -supporting,
-    )
-
-
-def _select_ai_candidates(decision_key, raw_candidates, *, excluded_candidate_ids=()):
-    """Return a bounded deterministic candidate subset without splitting evidence ties."""
-    value_counts = Counter(
-        item.get("value") for item in raw_candidates
-        if item.get("class") in {"STRONG", "POSSIBLE"}
-        and isinstance(item.get("value"), str)
-    )
-    excluded = set(excluded_candidate_ids)
-    eligible = [
-        item for item in raw_candidates
-        if item.get("class") in {"STRONG", "POSSIBLE"}
-        and isinstance(item.get("value"), str)
-        and value_counts[item["value"]] == 1
-        and _candidate_id(decision_key, item) not in excluded
-    ]
-    eligible.sort(key=lambda item: (
-        _candidate_strength(item),
-        item.get("target_scope") or "",
-        item["value"],
-    ))
-    limit = _max_candidates_per_decision()
-    if len(eligible) <= limit:
-        return tuple(eligible), None
-    if _candidate_strength(eligible[limit - 1]) == _candidate_strength(eligible[limit]):
-        return (), "Candidate evidence is tied across the configured AI candidate cutoff."
-    return tuple(eligible[:limit]), None
 
 
 def _canonical_digest(value) -> str:
