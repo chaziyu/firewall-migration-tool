@@ -3,19 +3,20 @@ from fwmigrate.vendors.juniper_srx.model import (
     JuniperGroupStatement, JuniperSRXConfig,
 )
 from fwmigrate.vendors.juniper_srx.tokenizer import JunosCommand
+from fwmigrate.vendors.juniper_srx.group_syntax import apply_group_index, group_definition_index, is_group_command
 from fwmigrate.extraction.models import ExtractionStatus
 
 
 def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
     tokens = cmd.tokens[1:]
-    if not tokens or not any(token.lower() in {"groups", "apply-groups", "apply-groups-except"} for token in tokens):
+    if not tokens or not is_group_command(tokens):
         return False
     cmd.consumed = True
     cmd.handler = "groups"
     cmd.extraction_status = ExtractionStatus.PARTIAL
     cmd.requires_manual_review = True
-    group_index = next((i for i, token in enumerate(tokens) if token.lower() == "groups"), None)
-    apply_index = next((i for i, token in enumerate(tokens) if token.lower() in {"apply-groups", "apply-groups-except"}), None)
+    group_index = group_definition_index(tokens)
+    apply_index = apply_group_index(tokens)
     if group_index is not None and len(tokens) > group_index + 2:
         name = tokens[group_index + 1]
         path = tokens[group_index + 2:]
@@ -30,8 +31,7 @@ def handle_groups_command(cmd: JunosCommand, config: JuniperSRXConfig) -> bool:
             group_key, JuniperConfigurationGroup(name=name, root_node=JuniperGroupNode(path_component=""),
                                                  context_type=context_type, context_name=context_name)
         )
-        marker = next((i for i, token in enumerate(path)
-                       if token.lower() in {"apply-groups", "apply-groups-except"}), None)
+        marker = apply_group_index(path)
         node_path = path if marker is None else path[:marker]
         node = group.root_node
         for component in node_path:
