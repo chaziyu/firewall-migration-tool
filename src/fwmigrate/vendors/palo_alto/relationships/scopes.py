@@ -72,12 +72,61 @@ def build_scope_hierarchy(scopes: list[PANScope]) -> PANDeviceGroupHierarchy:
     )
 
 
+def _assigned_device_group_identity(
+    scope: PANScope,
+    hierarchy: PANDeviceGroupHierarchy,
+) -> str | None:
+    """Resolve an explicitly recorded VSYS-to-device-group assignment.
+
+    The source walker records the Panorama device-group name on managed VSYS
+    scopes.  Use that explicit association only when it maps unambiguously to
+    a device-group present in the extracted source.
+    """
+
+    if not scope.device_group:
+        return None
+
+    parents = dict(hierarchy.parents)
+
+    if scope.device_name:
+        candidate = pan_scope_identity(
+            PANScope(
+                kind="device-group",
+                name=scope.device_group,
+                device_name=scope.device_name,
+                device_group=scope.device_group,
+            )
+        )
+        if candidate in parents:
+            return candidate
+
+    prefix = f"device-group:{scope.device_group}"
+    candidates = tuple(
+        identity
+        for identity in parents
+        if identity == prefix or identity.startswith(f"{prefix}:device:")
+    )
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def visible_scopes(scope: PANScope | None, hierarchy: PANDeviceGroupHierarchy) -> tuple[str, ...]:
     if scope is None:
         return ("shared:shared",)
     if scope.kind == "device-group":
         identity = pan_scope_identity(scope)
         return (identity, *dict(hierarchy.ancestors).get(identity, ()), "shared:shared")
-    if scope.kind in {"vsys", "device"}:
+    if scope.kind == "vsys":
+        identity = pan_scope_identity(scope)
+        device_group = _assigned_device_group_identity(scope, hierarchy)
+        if device_group:
+            visible = (
+                identity,
+                device_group,
+                *dict(hierarchy.ancestors).get(device_group, ()),
+                "shared:shared",
+            )
+            return tuple(dict.fromkeys(visible))
+        return (identity, "shared:shared")
+    if scope.kind == "device":
         return (pan_scope_identity(scope), "shared:shared")
     return (pan_scope_identity(scope),)
