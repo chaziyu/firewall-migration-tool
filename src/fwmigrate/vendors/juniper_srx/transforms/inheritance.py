@@ -4,8 +4,9 @@ from copy import deepcopy
 
 from ..extraction import is_sensitive_key, sanitize_tokens
 from ..group_resolver import resolve_group_commands
+from ..activation import JunosActivationState
+from ..group_syntax import group_definition_index
 from ..path_semantics import scalar_identity
-from ..tokenizer import JunosActivationState
 
 
 _GROUP_FAILURES = {
