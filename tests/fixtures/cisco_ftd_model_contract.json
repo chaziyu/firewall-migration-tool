@@ -1,4 +1,5 @@
 {
+  "nullable_source_record_name": true,
   "models": {
     "CiscoFTDManagementSetting": {
       "fields": [
