@@ -246,7 +246,15 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
     return {name: tuple(values) for name, values in rows.items()}
 
 
-def export_juniper_excel(result: Any, output: Any, *, profile: ExcelExportProfile | str = ExcelExportProfile.FULL) -> Any:
+def export_juniper_excel(
+    result: Any,
+    output: Any,
+    *,
+    profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
+    collection_status: str | None = None,
+    collection_parts: Any = None,
+    collection_warnings: Any = None,
+) -> Any:
     from openpyxl import Workbook
 
     profile = ExcelExportProfile(profile)
@@ -293,6 +301,17 @@ def export_juniper_excel(result: Any, output: Any, *, profile: ExcelExportProfil
             append_report_row(sheet, ("Vendor", "Juniper SRX"))
             append_report_row(sheet, ("Hostname", result.config.hostname))
             append_report_row(sheet, ("Source Format", result.source_format))
+            if collection_status is not None:
+                parts = tuple(collection_parts or ())
+                warnings = tuple(collection_warnings or ())
+                incomplete = sum(
+                    not (part.get("complete") if isinstance(part, dict) else getattr(part, "complete", False))
+                    for part in parts
+                )
+                append_report_row(sheet, ("Collection Status", collection_status))
+                append_report_row(sheet, ("Incomplete Collection Parts", incomplete))
+                if warnings:
+                    append_report_row(sheet, ("Collection Warnings", " | ".join(str(item) for item in warnings)))
             append_report_row(sheet, ("Contexts", len(result.config.contexts)))
             append_report_row(sheet, ("Configuration Groups", len(result.config.configuration_groups)))
             append_report_row(sheet, ("Source Sections", len(result.source_sections)))
