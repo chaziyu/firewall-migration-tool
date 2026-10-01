@@ -56,9 +56,11 @@ SHEET_HEADERS = {
         "Reuse Delay", "Use DHCP", "Use Authorization Server IPv4", "Use Authorization Server IPv6",
         "Use Internal Pool IPv4", "Use Internal Pool IPv6", "Additional Settings"),
     "Source Inventory": ("Source Path", "Name", "Source ID", "Record ID", "Type", "Source Context",
-        "Domain", "Device", "Device Name", "Status", "Review Required", "Explicit Fields"),
+        "Domain", "Device", "Device Name", "Virtual Router ID", "Virtual Router", "Parent Policy ID",
+        "Parent Policy", "Status", "Review Required", "Explicit Fields"),
     "Collection Completeness": ("Collection Part", "Status", "Complete", "Count", "Derived Status"),
     "Source Evidence": ("Path", "Reason"),
     "Native Sources": ("Collection", "Name", "ID", "Source Context", "Source Attributes", "Raw Source"),
-    "Validation": ("Severity", "Category", "Message", "Source Plane", "Object"),
+    "Validation": ("Severity", "Category", "Message", "Source Plane", "Object", "Source ID",
+        "Source Context", "Domain", "Device"),
 }
