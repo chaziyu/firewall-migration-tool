@@ -5,15 +5,38 @@ import xml.etree.ElementTree as ET
 from ..model import PANSchedule, PANScheduleRecurring
 from ..schema_registry import PANPathSpec
 from ..source_context import PANWalkContext
-from .common import source_fields, typed_fields, value, values
+from .common import raw_extra, source_fields, typed_fields, value, values
+
+
+_WEEKDAYS = frozenset({
+    "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+})
 
 
 def _recurring(element: ET.Element | None) -> PANScheduleRecurring | None:
     if element is None:
         return None
     weekly_node = element.find("weekly")
-    weekly = {day.tag: values(weekly_node, day.tag) or [] for day in weekly_node} if weekly_node is not None else None
+    weekly = (
+        {
+            day.tag: values(weekly_node, day.tag) or []
+            for day in weekly_node
+            if day.tag in _WEEKDAYS
+        }
+        if weekly_node is not None
+        else None
+    )
     extra, explicit = typed_fields(element, {"daily", "weekly"})
+    if weekly_node is not None:
+        weekly_extra = raw_extra(weekly_node, set(_WEEKDAYS))
+        for day in weekly_node:
+            if day.tag not in _WEEKDAYS:
+                continue
+            day_extra = raw_extra(day, {"member"})
+            if day_extra:
+                weekly_extra[day.tag] = day_extra
+        if weekly_extra:
+            extra["weekly"] = weekly_extra
     return PANScheduleRecurring(daily=values(element, "daily"), weekly=weekly, raw_extra=extra, explicit_fields=explicit)
 
 
