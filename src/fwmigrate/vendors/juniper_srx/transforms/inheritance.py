@@ -5,7 +5,7 @@ from copy import deepcopy
 from ..extraction import is_sensitive_key, sanitize_tokens
 from ..group_resolver import resolve_group_commands
 from ..activation import JunosActivationState
-from ..group_syntax import group_definition_index
+from ..group_syntax import is_group_command
 from ..path_semantics import scalar_identity
 
 
@@ -56,7 +56,7 @@ def build_inheritance_view(source_commands=()) -> dict:
 
     local_paths = set()
     for command in source_commands:
-        if command.operation.value == "set" and "groups" not in command.tokens[1:]:
+        if command.operation.value == "set" and not is_group_command(command.tokens[1:]):
             identity = scalar_identity(tuple(command.tokens[1:]))
             if identity:
                 local_paths.add((scope_for(command, command.tokens[1:]), *identity))
