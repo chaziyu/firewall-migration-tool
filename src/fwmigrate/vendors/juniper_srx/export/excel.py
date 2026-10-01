@@ -10,6 +10,7 @@ from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.excel_style import append_report_row, finish_report_workbook
 
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
+from ..transforms.effective_state import effective_path_state
 
 
 def _value(value: Any) -> Any:
@@ -82,7 +83,7 @@ def _context_scope(context: Any) -> str:
     return "root" if context.context_type == "root" else f"{context.context_type} {context.name}"
 
 
-def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
+def _native_source_rows(config: Any, inheritance_view: dict[str, Any]) -> dict[str, tuple[dict[str, Any], ...]]:
     rows: dict[str, list[dict[str, Any]]] = {
         "Addresses": [], "Address Sets": [], "Application Sets": [], "Schedulers": [],
         "Policy Details": [], "NAT Pools": [], "NAT Rules": [],
@@ -92,6 +93,7 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
     }
     for context in config.iter_contexts():
         scope = _context_scope(context)
+        state = lambda path: effective_path_state(inheritance_view, scope, path)
 
         for book in context.address_books.values():
             for item in book.addresses.values():
@@ -100,6 +102,7 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                     "prefix": item.prefix, "fqdn": item.fqdn, "range_start": item.range_start,
                     "range_end": item.range_end, "wildcard": item.wildcard, "zone": item.zone,
                     "description": item.description,
+                    "effective_state": state(("security", "address-book", book.name, "address", item.name)),
                 })
             for item in book.address_sets.values():
                 rows["Address Sets"].append({
@@ -107,12 +110,14 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                     "members": [member.name for member in item.members],
                     "member_types": [member.member_type for member in item.members],
                     "zone": item.zone, "description": item.description,
+                    "effective_state": state(("security", "address-book", book.name, "address-set", item.name)),
                 })
 
         for item in context.application_sets.values():
             rows["Application Sets"].append({
                 "context": scope, "name": item.name, "applications": list(item.applications),
                 "description": item.description,
+                "effective_state": state(("applications", "application-set", item.name)),
             })
 
         for item in context.schedulers.values():
@@ -122,9 +127,15 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                 "weekdays": dict(item.weekdays), "daily_windows": list(item.daily_windows),
                 "weekday_windows": dict(item.weekday_windows), "exclusions": list(item.exclusions),
                 "description": item.description,
+                "effective_state": state(("schedulers", "scheduler", item.name)),
             })
 
         for order, item in enumerate((*context.policies, *context.global_policies), 1):
+            policy_path = (
+                ("security", "policies", "global", "policy", item.name)
+                if item.policy_scope == "global"
+                else ("security", "policies", "from-zone", item.from_zone, "to-zone", item.to_zone, "policy", item.name)
+            )
             rows["Policy Details"].append({
                 "context": scope, "policy_scope": item.policy_scope, "name": item.name,
                 "order": order, "from_zones": list(item.from_zones),
@@ -137,7 +148,7 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                 "log_session_close": item.log_session_close,
                 "application_services": list(item.application_services),
                 "security_profile_references": dict(item.security_profile_references),
-                "description": item.description,
+                "description": item.description, "effective_state": state(policy_path),
             })
 
         for nat_type, pools in (("source", context.nat.source_pools), ("destination", context.nat.destination_pools)):
@@ -147,6 +158,7 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                     "routing_instance": item.routing_instance, "addresses": list(item.addresses),
                     "address_ranges": list(item.address_ranges), "ports": list(item.ports),
                     "options": dict(item.options),
+                    "effective_state": state(("security", "nat", nat_type, "pool", item.name)),
                 })
 
         for nat_type, rule_sets in (
@@ -174,6 +186,7 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                         "destination_ports": list(item.match.destination_ports),
                         "protocols": list(item.match.protocols), "applications": list(item.match.applications),
                         "action": dict(item.action), "disabled": item.disabled, "description": item.description,
+                        "effective_state": state(("security", "nat", nat_type, "rule-set", rule_set.name, "rule", item.name)),
                     })
 
         vpn = context.vpn
@@ -184,11 +197,13 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
             "digital_signature_scheme": item.digital_signature_scheme, "prf_algorithm": item.prf_algorithm,
             "signature_hash_algorithm": item.signature_hash_algorithm,
             "lifetime_seconds": item.lifetime_seconds, "description": item.description,
+            "effective_state": state(("security", "ike", "proposal", item.name)),
         } for item in vpn.ike_proposals.values())
         rows["IKE Policies"].extend({
             "context": scope, "name": item.name, "mode": item.mode, "proposal_set": item.proposal_set,
             "proposals": list(item.proposals), "pre_shared_key_configured": item.has_pre_shared_key,
             "certificate_reference": item.certificate_reference, "local_certificate": item.local_certificate,
+            "effective_state": state(("security", "ike", "policy", item.name)),
         } for item in vpn.ike_policies.values())
         rows["IKE Gateways"].extend({
             "context": scope, "name": item.name, "ike_policy": item.ike_policy, "address": item.address,
@@ -196,16 +211,19 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
             "local_address": item.local_address, "local_identity": item.local_identity,
             "remote_identity": item.remote_identity, "nat_traversal": item.nat_traversal,
             "dpd": dict(item.dpd), "certificate_reference": item.certificate_reference,
+            "effective_state": state(("security", "ike", "gateway", item.name)),
         } for item in vpn.ike_gateways.values())
         rows["IPsec Proposals"].extend({
             "context": scope, "name": item.name, "protocol": item.protocol,
             "authentication_algorithm": item.authentication_algorithm,
             "encryption_algorithm": item.encryption_algorithm, "lifetime_seconds": item.lifetime_seconds,
             "lifetime_kilobytes": item.lifetime_kilobytes, "description": item.description,
+            "effective_state": state(("security", "ipsec", "proposal", item.name)),
         } for item in vpn.ipsec_proposals.values())
         rows["IPsec Policies"].extend({
             "context": scope, "name": item.name, "proposal_set": item.proposal_set,
             "proposals": list(item.proposals), "pfs_group": item.pfs_group,
+            "effective_state": state(("security", "ipsec", "policy", item.name)),
         } for item in vpn.ipsec_policies.values())
         for item in vpn.ipsec_vpns.values():
             rows["IPsec VPNs"].append({
@@ -214,6 +232,7 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                 "establish_tunnels": item.establish_tunnels,
                 "vpn_monitor_destination": item.vpn_monitor.destination_ip if item.vpn_monitor else None,
                 "vpn_monitor_source_interface": item.vpn_monitor.source_interface if item.vpn_monitor else None,
+                "effective_state": state(("security", "ipsec", "vpn", item.name)),
             })
             for selector in item.traffic_selectors.values():
                 rows["Traffic Selectors"].append({
@@ -221,6 +240,7 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                     "local_ip": list(selector.local_ip), "remote_ip": list(selector.remote_ip),
                     "protocol": selector.protocol, "local_port": list(selector.local_port),
                     "remote_port": list(selector.remote_port),
+                    "effective_state": state(("security", "ipsec", "vpn", item.name, "traffic-selector", selector.name)),
                 })
                 for term in selector.terms.values():
                     rows["Traffic Selectors"].append({
@@ -228,9 +248,17 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                         "local_ip": list(term.local_ip), "remote_ip": list(term.remote_ip),
                         "protocol": term.protocol, "local_port": list(term.local_port),
                         "remote_port": list(term.remote_port),
+                        "effective_state": state(("security", "ipsec", "vpn", item.name, "traffic-selector", selector.name, "term", term.name)),
                     })
 
         for item in context.routes:
+            route_path = (
+                ("routing-instances", item.routing_instance, "routing-options", "static", "route", item.destination)
+                if item.routing_instance else
+                ("routing-options", "rib", item.rib, "static", "route", item.destination)
+                if item.rib else
+                ("routing-options", "static", "route", item.destination)
+            )
             hops = item.next_hops or (None,)
             for hop in hops:
                 rows["Static Routes"].append({
@@ -241,7 +269,7 @@ def _native_source_rows(config: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                     "next_hop_preference": hop.preference if hop else None,
                     "next_hop_metric": hop.metric if hop else None, "next_hop_tag": hop.tag if hop else None,
                     "action": item.action, "retain": item.retain, "installation": item.installation,
-                    "disabled": item.disabled,
+                    "disabled": item.disabled, "effective_state": state(route_path),
                 })
     return {name: tuple(values) for name, values in rows.items()}
 
@@ -265,7 +293,7 @@ def export_juniper_excel(
     rows = {"Interfaces": views.interface_topology, "Zones": views.zone_memberships,
             "Routing Instances": views.routing_instances, "Address Books": views.address_books,
             "Applications": views.applications, "Policies": views.policies, "NAT": views.nat_rule_sets,
-            "VPN": views.vpn_relationships, **_native_source_rows(result.config),
+            "VPN": views.vpn_relationships, **_native_source_rows(result.config, views.inheritance_view),
             "DHCP Local Servers": tuple(item for item in views.dhcp if item["kind"] == "local-server"),
             "DHCP Relay Groups": tuple(item for item in views.dhcp if item["kind"] == "relay-group"),
             "DHCP Pools": tuple(item for item in views.dhcp if item["kind"] == "address-assignment-pool"),
