@@ -2,7 +2,7 @@ from io import BytesIO
 
 from openpyxl import Workbook, load_workbook
 
-from fwmigrate.source_reporting.excel_style import style_fast_sheet
+from fwmigrate.source_reporting.excel_style import append_report_row, style_fast_sheet
 
 
 def test_fast_style_preserves_native_cells_and_hidden_evidence_after_save():
@@ -23,3 +23,17 @@ def test_fast_style_preserves_native_cells_and_hidden_evidence_after_save():
     assert restored["A1"].fill.fgColor.rgb.endswith("0F766E")
     assert [cell.value for cell in restored[2]] == ["source object", "retained evidence"]
     assert all(not cell.has_style for cell in restored[2])
+
+
+def test_report_row_neutralizes_formula_leading_source_values_in_full_and_streaming_workbooks():
+    for write_only in (False, True):
+        workbook = Workbook(write_only=write_only)
+        sheet = workbook.create_sheet("Report") if write_only else workbook.active
+        append_report_row(sheet, ("A", "B", "C", "D", "E"))
+        append_report_row(sheet, ("=1+1", "+SUM(A1:A2)", "-2+3", "@cmd", "safe"))
+        output = BytesIO()
+        workbook.save(output)
+        restored = load_workbook(BytesIO(output.getvalue()), read_only=True).active
+        row = next(restored.iter_rows(min_row=2, max_row=2))
+        assert [cell.value for cell in row] == ["'=1+1", "'+SUM(A1:A2)", "'-2+3", "'@cmd", "safe"]
+        assert all(cell.data_type != "f" for cell in row)
