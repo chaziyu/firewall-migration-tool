@@ -143,6 +143,24 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                 "uses_target_evidence": bool(target is not None),
             }
 
+    from .target_validation import interface_assignment_index
+
+    reservations = interface_assignment_index(decisions)
+    claims = {}
+    for decision in decisions.decisions:
+        result = results.get(decision.key, {})
+        if decision.target_field != "target_interface" or result.get("status") not in {"VERIFIED", "DERIVED"}:
+            continue
+        value = result["value"]
+        claims.setdefault(value, []).append(decision.key)
+        if any((owner.source_vdom, owner.source_name) != (decision.source_vdom, decision.source_name)
+               for owner in reservations.get(value, ())):
+            result.update(status="CONFLICT", reason="Target interface is already assigned to another source.")
+    for value, keys in claims.items():
+        if len(keys) > 1:
+            for key in keys:
+                results[key].update(status="CONFLICT", reason=f"Target interface {value} is contested by multiple sources.")
+
     mapped_for_recomputation = dict(mapped)
     for decision in decisions.decisions:
         result = results.get(decision.key, {})

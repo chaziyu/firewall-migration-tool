@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { postForm, postJson } from '../../api/client'
+import type { SetStateAction } from 'react'
+import { postForm, postJson, RequestError } from '../../api/client'
 import { FileUpload } from '../source/FileUpload'
 import type { SourcePreviewData } from '../source/types'
 import type { MigrationDecisionDocument } from './types'
@@ -9,6 +10,7 @@ import { MigrationReviewQueues } from './components/MigrationReviewQueues'
 import { MigrationAIReview } from './components/MigrationAIReview'
 import { MigrationDecisionTable } from './components/MigrationDecisionTable'
 import { reconcileReviewDrafts } from './reviewDrafts'
+import { MigrationInterfaceMappings } from './components/MigrationInterfaceMappings'
 
 export function MigrationReview({ preview, vendor, onDecisionDocument, onContextChange, requestedDecision }: {
   preview: SourcePreviewData
@@ -23,7 +25,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const [targetDevices, setTargetDevices] = useState<string[]>([])
   const [targetDevice, setTargetDevice] = useState('')
   const [review, setReview] = useState<ReviewData | null>(null)
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [drafts, updateDrafts] = useState<Record<string, string>>({})
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [designSessionId, setDesignSessionId] = useState('')
   const [activeQueue, setActiveQueue] = useState('NEEDS_INPUT')
@@ -46,6 +48,27 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const [autoDerived, setAutoDerived] = useState(false)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
+
+  function setDrafts(value: SetStateAction<Record<string, string>>) {
+    updateDrafts(value)
+    setBulkPreview([])
+  }
+
+  async function confirmValues(values: Map<string, string>) {
+    const selections = decisions.filter((item) => values.has(item.key) && item.source_kind === 'interface' && item.target_field === 'target_interface')
+      .map((item) => ({ decision_key: item.key, value: values.get(item.key)! }))
+    const next = decisions.map((item) => values.has(item.key) && !selections.some((row) => row.decision_key === item.key)
+      ? engineerConfirmation(item, values.get(item.key)!) : item)
+    if (!selections.length) return updateDecisions(next)
+    const result = await postJson<ReviewData>('/api/migration/interfaces/confirm', {
+      preview_id: previewId, decision_document: currentDocument(next), selections,
+      reviewed_target_evidence: review?.target_evidence ?? null,
+      ...(targetPreviewId ? { target_preview_id: targetPreviewId, target_device: targetDevice } : {}),
+    })
+    await loadReview(result.decision_document)
+    setProposals([])
+    setDesignSessionId('')
+  }
 
   async function loadReview(document?: DecisionDocument, targetId = targetPreviewId, device = targetDevice) {
     if (!previewId) return
@@ -81,7 +104,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   useEffect(() => {
     if (vendor === 'fortigate' && previewId) {
       // Invalidate the previous decision document immediately; local state updates follow the awaited API response.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadReview().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not load migration review'))
     }
     return () => {
@@ -126,7 +148,9 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       await action()
       if (done) setStatus(done)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Migration review failed')
+      const findings = cause instanceof RequestError && Array.isArray(cause.details.errors) ? cause.details.errors : []
+      const details = findings.map((finding: unknown) => typeof finding === 'object' && finding !== null && 'message' in finding ? String(finding.message) : '').filter(Boolean)
+      setError([cause instanceof Error ? cause.message : 'Migration review failed', ...new Set(details)].join(' '))
     } finally {
       setBusy(false)
     }
@@ -180,8 +204,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   async function confirmDecision(decision: Decision, value: string) {
     if (!value.trim()) return
-    const confirmed = engineerConfirmation(decision, value)
-    await updateDecisions((review?.decisions.decisions ?? []).map((item) => item.key === decision.key ? confirmed : item))
+    await confirmValues(new Map([[decision.key, value.trim()]]))
   }
 
   function engineerConfirmation(decision: Decision, value: string): Decision {
@@ -354,9 +377,9 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   async function confirmGroup(group: ReviewGroup) {
     const keys = new Set(group.decision_keys)
-    const next = decisions.map((item) => keys.has(item.key) && item.mode !== 'UNSUPPORTED' && (drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim()
-      ? engineerConfirmation(item, (drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim()) : item)
-    await updateDecisions(next)
+    const values = new Map(decisions.filter((item) => keys.has(item.key) && item.mode !== 'UNSUPPORTED')
+      .map((item) => [item.key, (drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim()] as const).filter(([, value]) => value))
+    await confirmValues(values)
     const unfilled = group.decisions.filter((item) => item.mode !== 'UNSUPPORTED' && item.mode !== 'AUTO' && !(drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim()).length
     setStatus(unfilled ? 'Entered mappings confirmed. This group still needs additional values.' : 'Entered mappings confirmed; dependent mappings re-evaluated.')
   }
@@ -456,6 +479,9 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           if (group) { setActiveQueue(group.queue); setSearch(''); setVdomFilter('all'); setSelectedGroupKey(group.decision_keys[0]) }
         }}>Recommended next mapping: {review.architecture_questions[0].source_vdom} · {review.architecture_questions[0].source_name}</button>}
         <details className="migration-review-tools"><summary>Decision counts and impact</summary><p className="migration-counts">{decisions.filter((item) => item.mode !== 'AUTO' && item.mode !== 'UNSUPPORTED' && item.review_state !== 'CONFIRMED').length} remaining decisions · {reviewGroups.filter((item) => item.queue !== 'COMPLETE').length} remaining groups. Affected-object counts are per group and may overlap.</p></details>
+        <MigrationInterfaceMappings review={review} drafts={drafts} setDraft={(key, value) => setDrafts((current) => ({ ...current, [key]: value }))}
+          selectedKeys={selectedKeys} setSelectedKeys={(keys) => { setSelectedKeys(keys); setBulkPreview([]) }} busy={busy} reviewSelected={bulkConfirm}
+          openDetails={(key) => { const group = reviewGroups.find((item) => item.decision_keys.includes(key)); if (group) { setActiveQueue(group.queue); setSelectedGroupKey(group.decision_keys[0]); setSearch(''); setVdomFilter('all') } }} />
         <MigrationReviewQueues
           review={review}
           reviewGroups={reviewGroups}
@@ -558,8 +584,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           <div className="report-pager"><button type="button" disabled={bulkPage <= 1} onClick={() => setBulkPage((page) => page - 1)}>Previous values</button><span>Page {bulkPage} of {Math.ceil(bulkPreview.length / 50)}</span><button type="button" disabled={bulkPage * 50 >= bulkPreview.length} onClick={() => setBulkPage((page) => page + 1)}>Next values</button></div>
           <button type="button" className="primary-button" disabled={busy} onClick={() => void run(async () => {
             const values = new Map(bulkPreview.map((item) => [item.key, item.value]))
-            await updateDecisions(decisions.map((item) => values.has(item.key) && item.mode !== 'UNSUPPORTED' ? engineerConfirmation(item, values.get(item.key)!) : item))
-          }, 'Reviewed decisions confirmed.')}>Apply reviewed confirmations</button>
+            await confirmValues(values)
+          }, 'Reviewed decisions confirmed.')}>Confirm selected mappings</button>
           <button type="button" className="secondary-button" onClick={() => setBulkPreview([])}>Cancel bulk confirmation</button>
         </section>}
       </>}

@@ -24,6 +24,9 @@ export type Candidate = {
   target_scope?: string
   strong_evidence?: string[]
   supporting_evidence?: string[]
+  available?: boolean
+  contested?: boolean
+  assigned_to?: Array<{ source_vdom: string; source_name: string }>
 }
 
 export type Proposal = {
@@ -48,6 +51,7 @@ export type ReviewGroup = {
   affected_count: number
   dependent_decision_count: number
   next_action?: string | null
+  conflicts?: Array<{ decision_key: string; code: string; message: string }>
   actions?: Array<{ type: string; source_key: string; value: string; apply_to: string[] }>
 }
 

@@ -24,6 +24,9 @@ export interface MigrationDecision {
 
 export interface MigrationCandidate {
   value: string
+  available?: boolean
+  contested?: boolean
+  assigned_to?: Array<{ source_vdom: string; source_name: string }>
   [key: string]: unknown
 }
 
@@ -39,6 +42,7 @@ export interface MigrationReviewGroup {
   affected_count: number
   dependent_decision_count: number
   next_action: string | null
+  conflicts?: Array<{ decision_key: string; code: string; message: string }>
   queue: 'READY_TO_CONFIRM' | 'CHOOSE_CANDIDATE' | 'NEEDS_INPUT' | 'CONFLICT' | 'COMPLETE'
 }
 

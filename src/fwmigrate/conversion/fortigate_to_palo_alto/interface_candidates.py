@@ -27,13 +27,17 @@ class PANInterfaceCandidate:
     strong_evidence: tuple[str, ...] = ()
     supporting_evidence: tuple[str, ...] = ()
     contradicting_evidence: tuple[str, ...] = ()
+    assigned_to: tuple[tuple[str, str], ...] = ()
+    available: bool = True
 
     def to_dict(self):
         return {"value": self.value, "target_scope": self.target_scope,
                 "class": self.candidate_class.value,
                 "strong_evidence": list(self.strong_evidence),
                 "supporting_evidence": list(self.supporting_evidence),
-                "contradicting_evidence": list(self.contradicting_evidence)}
+                "contradicting_evidence": list(self.contradicting_evidence),
+                "available": self.available,
+                "assigned_to": [{"source_vdom": vdom, "source_name": name} for vdom, name in self.assigned_to]}
 
 
 def _interfaces(value):
@@ -95,6 +99,8 @@ def candidate_evidence(source, target, topology=None, mapped_parent=None, eviden
 
     vlan = getattr(source, "vlanid", None)
     target_tag = getattr(target, "tag", None)
+    if source_kind in {"physical", "ethernet"} and (target_tag is not None or _parent(target, topology)):
+        contradicting.append("physical source cannot map to a target subinterface")
     if vlan is not None:
         if str(vlan) != str(target_tag):
             contradicting.append("VLAN mismatch")

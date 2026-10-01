@@ -14,7 +14,79 @@ from ..review_workflow import build_review_workflow
 from ..target_evidence import reconcile_target_evidence, target_evidence_changed
 from ..target_suggestions import discover_target_candidates, suggest_from_target
 from ..target_validation import validate_against_target
-from .decision_documents import load_decision_document
+from dataclasses import replace
+
+from ..decisions import PANMigrationDecisionSet
+from .decision_documents import build_decision_document, load_decision_document
+
+
+class InterfaceMappingConfirmationError(ValueError):
+    def __init__(self, message, errors=()):
+        super().__init__(message)
+        self.errors = list(errors)
+
+
+def confirm_interface_mappings(config, derived, source_digest, *, previous_document, selections,
+                               reviewed_target_evidence=None, target=None, target_device=None,
+                               target_metadata=None, target_device_count=0):
+    """Validate an explicit batch atomically against the complete replacement set."""
+    if reviewed_target_evidence != target_metadata:
+        raise InterfaceMappingConfirmationError("Target evidence changed; refresh and review the mappings again.")
+    if not isinstance(previous_document, dict):
+        raise InterfaceMappingConfirmationError("A reviewed decision document is required.")
+    if target is not None and not target_device:
+        raise InterfaceMappingConfirmationError("Select a target device before confirming interface mappings.")
+    state = build_review_state(config, derived, source_digest, previous_document=previous_document,
+        target=target, target_device=target_device, target_metadata=target_metadata,
+        target_device_count=target_device_count)
+    if state['target_evidence_changed']:
+        raise InterfaceMappingConfirmationError("Target evidence changed; refresh and review the mappings again.")
+    if not isinstance(selections, list) or not selections:
+        raise InterfaceMappingConfirmationError("Select at least one interface mapping.")
+    by_key = {item.key: item for item in state['decisions'].decisions}
+    replacements = {}
+    for row in selections:
+        if not isinstance(row, dict) or set(row) != {'decision_key', 'value'}:
+            raise InterfaceMappingConfirmationError("Each selection must contain decision_key and value.")
+        key, value = row['decision_key'], row['value']
+        if not isinstance(key, str) or key not in by_key:
+            raise InterfaceMappingConfirmationError("Unknown interface decision key.")
+        decision = by_key[key]
+        if key in replacements:
+            raise InterfaceMappingConfirmationError("Duplicate interface decision in batch.")
+        if decision.source_kind != 'interface' or decision.target_field != 'target_interface' or decision.mode is PANDecisionMode.UNSUPPORTED:
+            raise InterfaceMappingConfirmationError("Only supported target_interface decisions may be confirmed.")
+        if not isinstance(value, str) or not value.strip():
+            raise InterfaceMappingConfirmationError("Interface mapping values must be non-empty strings.")
+        value = value.strip()
+        options = state['decision_candidates'].get(key, ())
+        matching = [item for item in options if item['value'] == value]
+        if len(matching) > 1:
+            raise InterfaceMappingConfirmationError("Selected interface is ambiguous.",
+                [{'decision_key': key, 'code': 'TARGET_INTERFACE_AMBIGUOUS', 'target_object': value,
+                  'evidence': matching}])
+        target_backed = bool(target_metadata)
+        replacements[key] = replace(decision, value=value, review_state=PANDecisionReviewState.CONFIRMED,
+            mode=PANDecisionMode.REQUIRED if decision.mode is PANDecisionMode.AUTO else decision.mode,
+            evidence_source='ENGINEER', evidence_type='ENGINEER_TARGET_SELECTION' if target_backed else 'MANUAL',
+            evidence_value=value, target_object=value,
+            evidence_target_digest=target_metadata['config_digest'] if target_backed else None,
+            evidence_target_device=target_metadata['device'] if target_backed else None)
+    proposed = PANMigrationDecisionSet(tuple(replacements.get(item.key, item) for item in state['decisions'].decisions))
+    findings = validate_against_target(config, proposed, target, target_device)
+    errors = [item.to_dict() for item in findings if item.severity == 'error' and item.decision_key in replacements]
+    previous_errors = {(item.decision_key, item.code, item.message) for item in state['target_findings'] if item.severity == 'error'}
+    selected_vdoms = {item.source_vdom for item in replacements.values()}
+    related_keys = {item.key for item in proposed.decisions if item.source_vdom in selected_vdoms
+                    and item.source_kind == 'vdom'}
+    errors.extend(item.to_dict() for item in findings if item.severity == 'error' and item.decision_key in related_keys
+                  and (item.decision_key, item.code, item.message) not in previous_errors)
+    if errors:
+        raise InterfaceMappingConfirmationError("Interface mappings conflict; no mappings were confirmed.", errors)
+    return build_review_state(config, derived, source_digest,
+        previous_document=build_decision_document(source_digest, proposed, target_metadata),
+        target=target, target_device=target_device, target_metadata=target_metadata,
+        target_device_count=target_device_count)
 
 
 def decision_evidence(decision_set, target_findings):

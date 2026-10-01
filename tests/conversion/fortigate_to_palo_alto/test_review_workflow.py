@@ -6,6 +6,26 @@ from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 
 
+def test_conflicting_groups_show_all_owners_and_reserved_candidates_are_not_actionable():
+    from fwmigrate.conversion.fortigate_to_palo_alto.application.review import decision_evidence
+    from fwmigrate.conversion.fortigate_to_palo_alto.target_validation import validate_against_target
+
+    config = FGConfig()
+    decisions = PANMigrationDecisionSet(tuple(PANMigrationDecision(vdom, "interface", "port1", "target_interface",
+        value="ethernet1/1", review_state=PANDecisionReviewState.CONFIRMED) for vdom in ("root", "branch")))
+    findings = validate_against_target(config, decisions, None, None)
+    workflow = build_review_workflow(config, decisions, candidates={}, context={},
+        decision_evidence=decision_evidence(decisions, findings), target_warnings={}, target_findings=findings)
+    assert all(group['queue'] == 'CONFLICT' and len(group['conflicts'][0]['evidence']) == 2
+               and 'root / port1' in group['next_action'] and 'branch / port1' in group['next_action']
+               for group in workflow['review_groups'])
+    pending = PANMigrationDecision("root", "interface", "port2", "target_interface",
+        suggested_value="ethernet1/1", mode=PANDecisionMode.SUGGESTED)
+    workflow = build_review_workflow(config, PANMigrationDecisionSet((pending,)), context={}, decision_evidence={}, target_warnings={},
+        candidates={pending.key: [{'value': 'ethernet1/1', 'class': 'STRONG', 'available': False}]})
+    assert workflow['review_groups'][0]['queue'] == 'NEEDS_INPUT'
+
+
 def test_review_workflow_groups_decisions_classifies_queues_and_orders_vdom_first():
     config = FGConfig(interfaces=[FGInterface(name="lan", type="vlan", interface="agg1")])
     decisions = PANMigrationDecisionSet((

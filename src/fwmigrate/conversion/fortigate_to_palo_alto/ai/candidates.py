@@ -37,6 +37,8 @@ def _select_ai_candidates(decision_key, raw_candidates, *, excluded_candidate_id
         item.get("value")
         for item in raw_candidates
         if item.get("class") in {"STRONG", "POSSIBLE"}
+        and item.get("available", True)
+        and not item.get("contested")
         and isinstance(item.get("value"), str)
     )
     excluded = set(excluded_candidate_ids)
@@ -44,6 +46,8 @@ def _select_ai_candidates(decision_key, raw_candidates, *, excluded_candidate_id
         item
         for item in raw_candidates
         if item.get("class") in {"STRONG", "POSSIBLE"}
+        and item.get("available", True)
+        and not item.get("contested")
         and isinstance(item.get("value"), str)
         and value_counts[item["value"]] == 1
         and _candidate_id(decision_key, item) not in excluded

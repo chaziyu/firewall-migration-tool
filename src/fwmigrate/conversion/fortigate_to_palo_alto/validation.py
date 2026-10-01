@@ -58,7 +58,9 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
     for name, owners in interface_assignments.items():
         if len({(item.source_vdom, item.source_name) for item in owners}) > 1:
             for item in owners:
-                add("TARGET_INTERFACE_ALREADY_ASSIGNED", f"target interface {name!r} has multiple source owners", item)
+                add("TARGET_INTERFACE_ALREADY_ASSIGNED",
+                    f"source {item.source_vdom} / {item.source_name} shares target interface {name!r} with "
+                    + ", ".join(f"{owner.source_vdom} / {owner.source_name}" for owner in owners if owner is not item), item)
 
     for item in _items(plan):
         key = _key(item)
@@ -201,6 +203,14 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                 changed = True
 
         if plan.interfaces:
+            for interface in plan.interfaces:
+                if _key(interface) not in renderable or not interface.parent:
+                    continue
+                parent = find(("interfaces",), interface.parent, interface.target_vsys)
+                if parent is not None and _key(parent) not in renderable:
+                    add("dependency_not_renderable", f"parent interface {interface.parent!r} is not renderable", interface)
+                    renderable.remove(_key(interface))
+                    changed = True
             for zone in plan.zones:
                 if _key(zone) not in renderable:
                     continue

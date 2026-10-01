@@ -106,7 +106,8 @@ def build_review_workflow(config, decisions, *, candidates, context, decision_ev
             continue
         key = next((item["key"] for item in group["decisions"] if item["target_field"] == "target_interface"), None)
         options = (candidates or {}).get(key, ())
-        matches = [item for item in options if item.get("class") == "STRONG"]
+        matches = [item for item in options if item.get("class") == "STRONG"
+                   and item.get("available", True) and not item.get("contested")]
         children = [item for item in getattr(config, "interfaces", ())
                     if (item.vdom or "root") == group["source_vdom"] and item.interface == source.name
                     and item.vlanid is not None]
