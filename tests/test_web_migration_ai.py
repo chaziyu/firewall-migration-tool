@@ -1380,7 +1380,7 @@ def test_review_state_synthesizes_before_automation_and_refreshes_after(monkeypa
     events = []
     monkeypatch.setattr(web, "_require_complete_collection", lambda *_: None)
     monkeypatch.setattr(web, "_clone_preview", lambda *_: analysis)
-    monkeypatch.setattr(migration_review, "build_mapping_requirements", lambda *_: "requirements")
+    monkeypatch.setattr(migration_review, "build_mapping_requirements", lambda *_, **_kwargs: "requirements")
     monkeypatch.setattr(web, "_target_evidence", lambda *_: target_context)
     monkeypatch.setattr(migration_review, "build_decision_set", lambda *_: decisions)
     monkeypatch.setattr(migration_review, "reconcile_target_evidence", lambda current, *_: (current, ()))

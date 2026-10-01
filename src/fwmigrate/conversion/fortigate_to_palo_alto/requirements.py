@@ -1,7 +1,7 @@
 """Explicit target mappings needed by the FortiGate to PAN-OS planner."""
 
 
-def build_mapping_requirements(config, derived):
+def build_mapping_requirements(config, derived, *, include_configuration=False):
     """Return only mappings consumed by the currently implemented planner.
 
     Recommendation-only source families do not create blocking mapping
@@ -32,6 +32,15 @@ def build_mapping_requirements(config, derived):
         item["requires"] = list(dict.fromkeys([*item["requires"], *fields]))
         item["reasons"] = list(dict.fromkeys([*item["reasons"], reason]))
         item["_affected"].setdefault(reason, set()).add(consumer)
+
+    if include_configuration:
+        for interface in getattr(config, "interfaces", ()):
+            need(interface.vdom, interface.name, "interface", "design_configuration",
+                 ("interface", interface.vdom or "root", interface.name), "target_interface", "target_zone")
+        for zone in getattr(config, "zones", ()):
+            need(zone.vdom, zone.name, "zone", "design_configuration",
+                 ("zone", zone.vdom or "root", zone.name), "target_zone")
+            need_vdom(zone.vdom, "vsys")
 
     # VSYS-scoped families that the planner currently produces directly.
     for section in ("addresses", "address_groups", "recurring_schedules", "one_time_schedules"):

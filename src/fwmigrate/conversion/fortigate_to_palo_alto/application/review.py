@@ -127,8 +127,8 @@ def evidence_summary(decision_set, evidence):
 
 def build_review_state(config, derived, source_digest, *, previous_document=None,
                        target=None, target_device=None, target_metadata=None,
-                       target_device_count=0, apply_deterministic=False):
-    requirements = build_mapping_requirements(config, derived)
+                       target_device_count=0, apply_deterministic=False, include_configuration=False):
+    requirements = build_mapping_requirements(config, derived, include_configuration=include_configuration)
     previous = load_decision_document(previous_document, source_digest) if previous_document is not None else None
     decisions = build_decision_set(config, derived, requirements, previous)
     decisions, invalidated_target_decisions = reconcile_target_evidence(decisions, target_metadata)

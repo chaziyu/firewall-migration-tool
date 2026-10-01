@@ -91,6 +91,9 @@ from fwmigrate.web_support.reporting import _decode_configuration, _parse_bool
 from fwmigrate.web_api.source import register_source_routes
 from fwmigrate.web_support.request_source import analyze_request_source, _clone_preview, _require_complete_collection
 from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope, verify_artifact
+from fwmigrate.conversion.fortigate_to_palo_alto.design.deterministic import (
+    build_deterministic_draft, approve_draft, draft_context,
+)
 
 try:
     from dotenv import load_dotenv
@@ -150,11 +153,12 @@ def _build_migration_review_state(entry, payload, apply_deterministic=False):
         analysis.derived,
         entry.source_digest,
         previous_document=prior,
-        target=target_context.analysis if target_context else None,
-        target_device=target_context.selected_device if target_context else None,
-        target_metadata=target_metadata,
+        target=target_context.analysis if target_context and payload.get('reference_role') != 'TEMPLATE' else None,
+        target_device=target_context.selected_device if target_context and payload.get('reference_role') != 'TEMPLATE' else None,
+        target_metadata=target_metadata if payload.get('reference_role') != 'TEMPLATE' else None,
         target_device_count=len(target_context.devices) if target_context else 0,
         apply_deterministic=apply_deterministic,
+        include_configuration=payload.get('_deterministic_draft', False),
     )
     return {'analysis': analysis, 'target_context': target_context, **state}
 
@@ -241,6 +245,113 @@ def create_app(test_config=None):
 
     def _request_artifact(payload):
         return verify_artifact(payload.get('artifact'), signing_key)
+
+    def _decision_approval_snapshot(decisions):
+        fields = ('value', 'review_state', 'approved_operation', 'approval_context',
+                  'evidence_source', 'evidence_type', 'evidence_value', 'target_object',
+                  'evidence_target_digest', 'evidence_target_device')
+        result = {}
+        for row in decisions.decisions:
+            data = row.to_dict()
+            result[row.key] = {field: data[field] for field in fields}
+        return result
+
+    def _reviewed_design_document(payload, entry, *, strict=False):
+        document = payload.get('decision_document')
+        if not isinstance(document, dict):
+            return document, None
+        decisions = load_decision_document(document, entry.source_digest)
+        approval = document.get('design_approval')
+        if approval is None:
+            if any(row.approved_operation for row in decisions.decisions):
+                raise ValueError('Draft operations require a signed engineer approval')
+            return document, None
+        verify_envelope(approval, signing_key)
+        if approval.get('envelope_type') != 'pan_design_approval':
+            raise ValueError('A signed design approval is required')
+        target_context = _target_evidence(payload)
+        bound = approval['context']
+        context = draft_context(entry.source_digest, target_context.metadata if target_context else None,
+            payload.get('reference_role', bound['reference_role']),
+            target_context.selected_device if target_context else None,
+            payload.get('target_intent', bound['intent']))
+        context['overrides'] = payload.get('draft_overrides', bound.get('overrides', {}))
+        current = _decision_approval_snapshot(decisions)
+        stale = context != bound or current != approval.get('decisions')
+        if stale:
+            if strict:
+                raise ValueError('Approved design is stale or modified; prepare and review it again')
+            decisions = PANMigrationDecisionSet(tuple(replace(row, value=None,
+                review_state=PANDecisionReviewState.PENDING, approved_operation=None, approval_context=None,
+                evidence_source=None, evidence_type=None, evidence_value=None, target_object=None)
+                if row.approved_operation or row.approval_context else row for row in decisions.decisions))
+            return build_decision_document(entry.source_digest, decisions), None
+        return document, approval
+
+    def _deterministic_state(payload, entry):
+        document, approval = _reviewed_design_document(payload, entry)
+        bound = (approval or {}).get('context', {})
+        payload = {**payload, 'decision_document': document,
+                   '_deterministic_draft': True,
+                   'reference_role': payload.get('reference_role', bound.get('reference_role'))}
+        state = _build_migration_review_state(entry, payload)
+        target_context = state['target_context']
+        draft = build_deterministic_draft(state['analysis'].extracted.config, state['analysis'].derived,
+            state['decisions'], source_digest=entry.source_digest,
+            target=target_context.analysis if target_context else None,
+            target_device=target_context.selected_device if target_context else None,
+            reference=target_context.metadata if target_context else None,
+            reference_role=payload.get('reference_role'),
+            intent=payload.get('target_intent', bound.get('intent')),
+            overrides=payload.get('draft_overrides', bound.get('overrides')))
+        return state, draft, approval
+
+    @app.route('/api/migration/design/prepare', methods=['POST'])
+    def prepare_migration_design():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            raise ValueError('A JSON object is required')
+        entry = _migration_source(payload)
+        state, draft, approval = _deterministic_state(payload, entry)
+        response = _migration_review_response(entry, state).get_json()
+        response['draft'] = sign_envelope(draft.to_dict(), signing_key)
+        response['decision_document']['draft_required'] = True
+        if approval:
+            response['decision_document']['design_approval'] = approval
+        return jsonify(response)
+
+    @app.route('/api/migration/design/approve', methods=['POST'])
+    def approve_migration_design():
+        try:
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                raise ValueError('A JSON object is required')
+            signed = verify_envelope(payload.get('draft'), signing_key)
+            if signed.get('envelope_type') != 'pan_migration_draft':
+                raise ValueError('A signed deterministic draft is required')
+            entry = _migration_source(payload)
+            state, draft, previous_approval = _deterministic_state(payload, entry)
+            body = draft.to_dict()
+            if signed.get('digest') != body['digest'] or payload.get('draft_digest') != body['digest']:
+                raise ValueError('Draft is stale; prepare and review the current configuration')
+            selected = payload.get('selected_groups')
+            confirmed = approve_draft(state['decisions'], draft, selected,
+                approved_groups=tuple('item:' + key for key in (previous_approval or {}).get('configuration', {})))
+            selected = set(selected)
+            approved_rows = dict((previous_approval or {}).get('configuration', {}))
+            approved_rows.update({row['item_key']: row for row in body['configuration'] if row['group_key'] in selected})
+            # Bind the exact approved operations, values, scope, evidence and dependency context.
+            approval = sign_envelope({'envelope_type': 'pan_design_approval', 'context': body['context'],
+                'draft_digest': body['digest'], 'configuration': approved_rows,
+                'decisions': _decision_approval_snapshot(confirmed)}, signing_key)
+            document = build_decision_document(entry.source_digest, confirmed,
+                state['target_context'].metadata if state['target_context'] and body['context']['reference_role'] == 'DESTINATION' else None)
+            document['design_approval'] = approval
+            document['draft_required'] = True
+            return jsonify({'success': True, 'approved_count': len(selected), 'decision_document': document,
+                            'decisions': confirmed.to_dict()})
+        except (ValueError, KeyError, TypeError) as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 409
 
     @app.errorhandler(ValueError)
     def _invalid_request(error):
@@ -806,6 +917,10 @@ def create_app(test_config=None):
                 )
             target_evidence = serialized.get('target_evidence') if isinstance(serialized, dict) else None
             document = build_decision_document(entry.source_digest, decision_set, target_evidence)
+            if isinstance(serialized, dict) and serialized.get('design_approval'):
+                verify_envelope(serialized['design_approval'], signing_key)
+                document['design_approval'] = serialized['design_approval']
+                document['draft_required'] = True
             return jsonify({'success': True, 'document': document})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
@@ -817,7 +932,12 @@ def create_app(test_config=None):
         try:
             decision_set = load_decision_document(payload.get('document'), entry.source_digest)
             target_evidence = (payload.get('document') or {}).get('target_evidence') if isinstance(payload.get('document'), dict) else None
-            return jsonify({'success': True, 'decision_document': build_decision_document(entry.source_digest, decision_set, target_evidence),
+            document = build_decision_document(entry.source_digest, decision_set, target_evidence)
+            if payload['document'].get('design_approval'):
+                verify_envelope(payload['document']['design_approval'], signing_key)
+                document['design_approval'] = payload['document']['design_approval']
+                document['draft_required'] = True
+            return jsonify({'success': True, 'decision_document': document,
                             'decisions': decision_set.to_dict(), 'mapping': options_mapping(decision_set.to_options())})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
@@ -840,6 +960,11 @@ def create_app(test_config=None):
 
             _require_complete_collection(entry)
             serialized = payload.get('decision_document', payload.get('decisions', payload.get('decision_set')))
+            design_approval = None
+            if isinstance(serialized, dict) and 'format_version' in serialized:
+                serialized, design_approval = _reviewed_design_document(payload, entry, strict=True)
+                if serialized.get('draft_required') and design_approval is None:
+                    raise ValueError('Review and approve the deterministic draft before building an artifact')
             decision_set = None
             options = None
             if serialized is not None:
@@ -849,6 +974,8 @@ def create_app(test_config=None):
                     decision_set = PANMigrationDecisionSet.from_dict(
                         serialized if isinstance(serialized, dict) else {'decisions': serialized}
                     )
+                    if any(row.approved_operation for row in decision_set.decisions):
+                        raise ValueError('Draft operations require a signed engineer approval')
             else:
                 mapping_value = payload.get('mapping', '{}')
                 mapping = json.loads(mapping_value) if isinstance(mapping_value, str) else mapping_value
@@ -860,7 +987,9 @@ def create_app(test_config=None):
             target_evidence_changed = target_evidence_has_changed((serialized.get('target_evidence') if isinstance(serialized, dict) else None), (target_context.metadata if target_context else None))
             target = target_context.analysis if target_context else None
             target_device = target_context.selected_device if target_context else None
-            mode_value = payload.get('automation_mode', PANAutomationMode.VERIFIED_AND_DERIVED.value)
+            if design_approval and design_approval['context']['reference_role'] != 'DESTINATION':
+                target, target_device = None, None
+            mode_value = payload.get('automation_mode', PANAutomationMode.REVIEW_ONLY.value if design_approval else PANAutomationMode.VERIFIED_AND_DERIVED.value)
             if not isinstance(mode_value, str):
                 raise ValueError('automation_mode must be a string')
             try:
@@ -880,18 +1009,24 @@ def create_app(test_config=None):
                 source_digest=entry.source_digest,
                 planner=migration_planners.get(source_vendor, target_vendor),
                 target_object_reuse_classifier=classify_target_object_reuse,
+                approved_item_keys=set(design_approval['configuration']) if design_approval else None,
             )
             target_evidence_changed = target_evidence_changed or bool(result.invalidated_target_decisions)
             decision_set = result.decisions
             mapping = options_mapping(result.options)
             safe_target_evidence = target_context.metadata if target_context else None
             decision_document = build_decision_document(entry.source_digest, decision_set, safe_target_evidence)
+            if design_approval:
+                decision_document['design_approval'] = design_approval
             decision_evidence = build_decision_evidence(decision_set, result.target_findings)
 
             rendered = replace(result.rendered, report={
                 **result.rendered.report,
                 'source': {'vendor': 'fortigate', 'digest': entry.source_digest},
                 'target_evidence': safe_target_evidence,
+                'approved_design_digest': design_approval['draft_digest'] if design_approval else None,
+                'destination_verified': bool(design_approval and design_approval['context']['reference_role'] == 'DESTINATION'
+                                             and target is not None and target_device),
                 'review': {
                     'target_evidence_changed': target_evidence_changed,
                     'invalidated_target_decisions': list(result.invalidated_target_decisions),
@@ -906,6 +1041,9 @@ def create_app(test_config=None):
                 },
             })
             plan_status = result.artifact_status
+            if design_approval and not rendered.report['destination_verified']:
+                plan_status = 'PARTIAL'
+                rendered = replace(rendered, report={**rendered.report, 'plan_status': plan_status})
             artifact_id = uuid.uuid4().hex
             artifact = sign_envelope({
                 'artifact_id': artifact_id, 'commands': list(rendered.commands),
@@ -967,6 +1105,8 @@ def create_app(test_config=None):
                 'satisfied': rendered.report['satisfied'],
                 'command_renderable': rendered.report['command_renderable'],
             }
+            if render_counts.get('CONFIGURE'):
+                render_summary['configure'] = render_counts['CONFIGURE']
             return jsonify({
                 'success': True,
                 'artifact_id': artifact_id,

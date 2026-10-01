@@ -24,8 +24,30 @@ from fwmigrate.vendors.palo_alto.source_model import PANScope
 from fwmigrate.vendors.palo_alto.model.routing import PANStaticRoute, PANVirtualRouter
 from fwmigrate.vendors.palo_alto.model.nat import PANNATRule
 from fwmigrate.vendors.palo_alto.model.interface import PANInterface
+from fwmigrate.vendors.palo_alto.model.zone import PANZone
 from fwmigrate.vendors.palo_alto.relationships.topology import PANInterfaceTopologyEntry
 from fwmigrate.vendors.palo_alto.source_model import pan_scope_identity
+
+
+def test_zone_reuse_and_additive_delta_require_explicit_compatible_membership():
+    plan = PANMigrationPlan(zones=(PlannedZone(source_vdom='root', source_kind='zone',
+        source_object_type='zone', source_name='inside', target_name='trust', target_vsys='vsys1',
+        status=PANMigrationStatus.SUPPORTED, interfaces=('ethernet1/1', 'ethernet1/1.10')),))
+    zone = PANZone(name='trust', source_path='/zone',
+        scope=PANScope(kind='vsys', name='vsys1', vsys='vsys1', device_name='dev'),
+        network_type='layer3', members=['ethernet1/1'], explicit_fields={'network_type', 'members'})
+    target = SimpleNamespace(config=SimpleNamespace(zones=[zone]))
+    assert classify_target_object_reuse(plan, target, 'dev')[0]['status'] == 'NAME_CONFLICT'
+    addition = classify_target_object_reuse(plan, target, 'dev', allow_additive=True)[0]
+    assert addition['status'] == 'ADDITIVE'
+    assert addition['configure_paths'] == [('vsys', 'zone', 'trust', 'network', 'layer3', '[', 'ethernet1/1.10', ']')]
+    assert zone.members == ['ethernet1/1']
+    zone.members.append('ethernet1/1.10')
+    assert classify_target_object_reuse(plan, target, 'dev', allow_additive=True)[0]['status'] == 'EXACT_MATCH'
+    zone.members = ['ethernet1/2']
+    assert classify_target_object_reuse(plan, target, 'dev', allow_additive=True)[0]['status'] == 'NAME_CONFLICT'
+    zone.raw_extra = {'unknown': 'setting'}
+    assert classify_target_object_reuse(plan, target, 'dev', allow_additive=True)[0]['status'] == 'AMBIGUOUS'
 
 
 def _target(address):

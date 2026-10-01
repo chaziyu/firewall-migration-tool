@@ -5,7 +5,7 @@ from typing import Any
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedZone
 
 
-def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=None):
+def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=None, *, include_configuration=False):
     topology = getattr(derived, "topology", None)
     entries = {(item.vdom, item.name): item for item in getattr(topology, "interfaces", ())}
     result = []
@@ -22,7 +22,7 @@ def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=No
         warnings = []
         if zone_mapping is None or not zone_mapping.target_zone:
             warnings.append(f"missing target zone mapping for {zone.name!r}")
-        for member in zone.members:
+        for member in zone.members or ():
             mapping = mappings.get(member)
             if mapping is None or not mapping.target_interface:
                 warnings.append(f"missing target interface mapping for {member!r}")
@@ -38,4 +38,24 @@ def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=No
             target_vsys=getattr(getattr(options, "vdoms", {}).get(vdom), "vsys", None), target_name=getattr(zone_mapping, "target_zone", None),
             interfaces=tuple(target_interfaces),
         ))
+    if include_configuration:
+        memberships = {(zone.vdom or "root", member) for zone in source.zones for member in zone.members or ()}
+        proposed = {}
+        for interface in source.interfaces:
+            vdom = interface.vdom or "root"
+            if (vdom, interface.name) in memberships:
+                continue
+            mapping = getattr(options, "interfaces", {}).get(vdom, {}).get(interface.name)
+            zone = getattr(mapping, "target_zone", None)
+            if not zone:
+                continue
+            vsys = getattr(getattr(options, "vdoms", {}).get(vdom), "vsys", None)
+            group = proposed.setdefault((vdom, vsys, zone), [])
+            group.append((interface.name, getattr(mapping, "target_interface", None)))
+        for (vdom, vsys, zone), members in proposed.items():
+            warnings = tuple(f"missing target interface mapping for {name!r}" for name, target in members if not target)
+            result.append(PlannedZone(source_vdom=vdom, source_kind="interface", source_object_type="zone",
+                source_name=members[0][0], target_vsys=vsys, target_name=zone,
+                interfaces=tuple(target for _, target in members if target), warnings=warnings,
+                status=PANMigrationStatus.MANUAL_REVIEW if warnings else PANMigrationStatus.SUPPORTED))
     return tuple(result)

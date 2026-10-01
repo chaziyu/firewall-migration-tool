@@ -4,6 +4,8 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationPlan
 from fwmigrate.conversion.fortigate_to_palo_alto.target.target_candidates import PANTargetCandidateMatchClass, build_target_candidates
 from fwmigrate.conversion.fortigate_to_palo_alto.target.target_suggestions import _device
 from fwmigrate.vendors.palo_alto.source_model import pan_scope_identity
+from ..rendering import cli_paths
+from dataclasses import replace
 
 
 def _fields(item):
@@ -284,7 +286,7 @@ def _classify(target, family, attribute, item, device, compare):
             "evidence": list(candidate.strong_evidence + candidate.supporting_evidence + candidate.contradictions)}
 
 
-def _interface_collisions(planned, target, device):
+def _interface_collisions(planned, target, device, *, allow_additive=False):
     """Compare planned interfaces with explicit device/topology evidence."""
     if not planned:
         return []
@@ -305,6 +307,7 @@ def _interface_collisions(planned, target, device):
         evidence = []
         contradictions = []
         supporting = []
+        additions = []
         if len(matches) != 1:
             result.append({
                 "status": "AMBIGUOUS", "family": "interface",
@@ -331,6 +334,7 @@ def _interface_collisions(planned, target, device):
         if source.parent:
             if "tag" not in explicit:
                 supporting.append("target VLAN tag is not explicit")
+                additions.append("tag")
             elif str(getattr(target_item, "tag", None)) != str(source.tag):
                 contradictions.append("target VLAN tag differs")
             else:
@@ -339,6 +343,7 @@ def _interface_collisions(planned, target, device):
             mode = getattr(target_item, "mode", None)
             if "mode" not in explicit:
                 supporting.append("target interface mode is not explicit")
+                additions.append("mode")
             elif mode != "layer3":
                 contradictions.append("target interface is not explicitly layer3")
             else:
@@ -349,6 +354,7 @@ def _interface_collisions(planned, target, device):
         if planned_addresses:
             if "ipv4_addresses" not in explicit:
                 supporting.append("target IPv4 addresses are not explicit")
+                additions.append("ip")
             elif set(target_addresses) != set(planned_addresses):
                 contradictions.append("target IPv4 addresses differ")
             else:
@@ -370,11 +376,17 @@ def _interface_collisions(planned, target, device):
             if topo.issues:
                 supporting.extend(topo.issues)
             if source.target_vsys not in topo.imported_vsys:
-                contradictions.append("target VSYS import differs")
+                if allow_additive and not topo.imported_vsys:
+                    additions.append("import")
+                else:
+                    contradictions.append("target VSYS import differs")
             else:
                 evidence.append("same explicit VSYS import")
             if source.virtual_router not in topo.virtual_routers:
-                contradictions.append("target virtual-router membership differs")
+                if allow_additive and not topo.virtual_routers:
+                    additions.append("router")
+                else:
+                    contradictions.append("target virtual-router membership differs")
             else:
                 evidence.append("same explicit virtual-router membership")
 
@@ -383,12 +395,26 @@ def _interface_collisions(planned, target, device):
             "AMBIGUOUS" if supporting else
             "EXACT_MATCH"
         )
+        safe_missing = {"target VLAN tag is not explicit", "target interface mode is not explicit",
+                        "target IPv4 addresses are not explicit"}
+        paths = []
+        if allow_additive and additions and not contradictions and not set(supporting) - safe_missing:
+            status = "ADDITIVE"
+            for path in cli_paths.interface(source):
+                if ((path[0] == "vsys" and "import" in additions)
+                        or (path[0] == "device_post" and "router" in additions)
+                        or (path[0] == "device_pre" and
+                            ((path[-2] == "ip" and "ip" in additions)
+                             or (path[-2] == "tag" and "tag" in additions)
+                             or (path[-1] == "layer3" and "mode" in additions)))):
+                    paths.append(path)
         result.append({
             "status": status, "family": "interface",
             "source_name": source.source_name, "source_vdom": source.source_vdom or "root",
             "source_kind": source.source_kind, "target_vsys": source.target_vsys,
             "target_name": source.target_name,
             "evidence": [*evidence, *supporting, *contradictions],
+            "configure_paths": paths,
         })
     return result
 
@@ -446,12 +472,44 @@ def _rule_collisions(planned, target, device, family, attribute, fields):
     return result
 
 
-def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | None):
+def _zone_collisions(planned, target, device, *, allow_additive=False):
+    result = []
+    for source in planned:
+        matches = [row for row in getattr(target.config, "zones", ()) if row.name == source.target_name
+                   and (_device(row) == device or getattr(row.scope, "kind", None) == "shared")
+                   and getattr(row.scope, "vsys", None) in {None, source.target_vsys}]
+        if not matches:
+            continue
+        status, paths = "AMBIGUOUS", []
+        if len(matches) == 1:
+            existing = matches[0]
+            explicit = _fields(existing)
+            unknown = existing.raw_extra or explicit - {"network_type", "members"}
+            if existing.network_type and existing.network_type != "layer3":
+                status = "NAME_CONFLICT"
+            elif not unknown and {"network_type", "members"} <= explicit:
+                if set(existing.members or ()) == set(source.interfaces):
+                    status = "EXACT_MATCH"
+                elif allow_additive and set(existing.members or ()) <= set(source.interfaces):
+                    status = "ADDITIVE"
+                    additions = tuple(name for name in source.interfaces if name not in (existing.members or ()))
+                    paths = cli_paths.zone(replace(source, interfaces=additions))
+                else:
+                    status = "NAME_CONFLICT"
+        result.append({"status": status, "family": "zone", "source_name": source.source_name,
+            "source_vdom": source.source_vdom or "root", "source_kind": source.source_kind,
+            "target_vsys": source.target_vsys, "target_name": source.target_name,
+            "evidence": ["Compared explicit zone type and membership"], "configure_paths": paths})
+    return result
+
+
+def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | None, *, allow_additive=False):
     """Classify items from the actual plan; never rerun planner functions here."""
     if target is None or not device:
         return ()
     result = []
-    result.extend(_interface_collisions(plan.interfaces, target, device))
+    result.extend(_interface_collisions(plan.interfaces, target, device, allow_additive=allow_additive))
+    result.extend(_zone_collisions(plan.zones, target, device, allow_additive=allow_additive))
     for family, attribute, items, compare in (
         ("address", "addresses", plan.addresses, _address),
         ("address_group", "address_groups", plan.address_groups, _members),

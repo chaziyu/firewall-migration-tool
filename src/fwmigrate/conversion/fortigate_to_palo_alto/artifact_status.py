@@ -22,8 +22,9 @@ def classify_artifact_status(rendered, *, pending_mapping_issues=(), coverage=No
         return PANArtifactStatus.PARTIAL
     if any(counts.get(key, 0) for key in ("PARTIAL", "MANUAL_REVIEW", "UNSUPPORTED")):
         return PANArtifactStatus.PARTIAL
-    if dispositions.get("CREATE", 0) == 0 and dispositions.get("REUSE", 0) > 0:
+    additions = dispositions.get("CREATE", 0) + dispositions.get("CONFIGURE", 0)
+    if additions == 0 and dispositions.get("REUSE", 0) > 0 and not rendered.commands:
         return PANArtifactStatus.READY_NO_CHANGES
-    if dispositions.get("CREATE", 0) > 0:
+    if additions > 0 or rendered.commands:
         return PANArtifactStatus.READY
     return PANArtifactStatus.NEEDS_MAPPING

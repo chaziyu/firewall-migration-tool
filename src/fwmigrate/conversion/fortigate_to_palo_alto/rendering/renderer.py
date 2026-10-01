@@ -27,7 +27,8 @@ def _v(value):
 
 class PANSetRenderer:
     def render(self, plan: PANMigrationPlan, validation: MigrationValidationResult | None = None, *,
-               dispositions=None, render_blockers=None, decision_keys=None) -> RenderedMigration:
+               dispositions=None, render_blockers=None, decision_keys=None,
+               configure_paths=None, virtual_router_names=()) -> RenderedMigration:
         actual_validation = validate_plan(plan)
         if validation is not None and validation != actual_validation:
             raise ValueError("validation result does not match this migration plan")
@@ -38,10 +39,17 @@ class PANSetRenderer:
         decision_keys = decision_keys or {}
         disposition = lambda item: dispositions.get(item_key(item), PANRenderDisposition.CREATE
             if item.status is PANMigrationStatus.SUPPORTED else PANRenderDisposition.BLOCK)
-        can_create = lambda item: disposition(item) is PANRenderDisposition.CREATE
+        can_create = lambda item: disposition(item) in {PANRenderDisposition.CREATE, PANRenderDisposition.CONFIGURE}
+        def paths_for(item, factory):
+            if disposition(item) is PANRenderDisposition.CONFIGURE:
+                paths = (configure_paths or {}).get(item_key(item), ())
+                if not paths:
+                    raise ValueError("CONFIGURE requires validated additive command paths")
+                return paths
+            return factory(item)
         commands = []
         interface_items = [
-            (item, cli_paths.interface(item))
+            (item, paths_for(item, cli_paths.interface))
             for item in plan.interfaces
             if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)
         ]
@@ -66,7 +74,7 @@ class PANSetRenderer:
                   ("schedules", cli_paths.schedule), ("zones", cli_paths.zone),
                   ("nat_rules", cli_paths.nat_rule), ("security_rules", cli_paths.security_rule))
         vsys_items = [*interface_imports, *[
-            (item, path(item)) for name, path in scopes for item in getattr(plan, name)
+            (item, paths_for(item, path)) for name, path in scopes for item in getattr(plan, name)
             if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)
         ]]
         vsys_commands = []
@@ -89,6 +97,7 @@ class PANSetRenderer:
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in routes})
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in dhcp_servers})
         commands.extend(self._render_device_scope(interface_pre, reset_vsys=False))
+        commands[0:0] = [_serialize(("network", "virtual-router", name)) for name in dict.fromkeys(virtual_router_names)]
         commands.extend(vsys_commands)
         device_tail = [*interface_post, *dhcp_servers, *routes]
         commands.extend(self._render_device_scope(device_tail, reset_vsys=bool(vsys_commands)))
@@ -140,11 +149,13 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
             if item.status is PANMigrationStatus.SUPPORTED else PANRenderDisposition.BLOCK)
     disposition_counts = {status.value: sum(disposition(item) is status
                                              for item in items) for status in PANRenderDisposition}
-    command_renderable = sum(disposition(item) is PANRenderDisposition.CREATE and
+    if not disposition_counts["CONFIGURE"]:
+        disposition_counts.pop("CONFIGURE")
+    command_renderable = sum(disposition(item) in {PANRenderDisposition.CREATE, PANRenderDisposition.CONFIGURE} and
                               (validation is None or _key(item) in validation.renderable_item_keys)
                               for item in items)
     satisfied = sum(disposition(item) is PANRenderDisposition.REUSE or
-                    disposition(item) is PANRenderDisposition.CREATE and
+                    disposition(item) in {PANRenderDisposition.CREATE, PANRenderDisposition.CONFIGURE} and
                     (validation is None or _key(item) in validation.renderable_item_keys)
                     for item in items)
     return {"summary": {"counts": counts, "renderable": command_renderable,
@@ -162,12 +173,12 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
                         "decision_keys": list(decision_keys.get(item_key(item), ())),
                         "render_disposition": disposition(item).value,
                         "satisfied": (disposition(item) is PANRenderDisposition.REUSE or
-                                      disposition(item) is PANRenderDisposition.CREATE and item.status is PANMigrationStatus.SUPPORTED
+                                      disposition(item) in {PANRenderDisposition.CREATE, PANRenderDisposition.CONFIGURE} and item.status is PANMigrationStatus.SUPPORTED
                                       and (validation is None or _key(item) in validation.renderable_item_keys)),
-                        "command_renderable": (disposition(item) is PANRenderDisposition.CREATE
+                        "command_renderable": (disposition(item) in {PANRenderDisposition.CREATE, PANRenderDisposition.CONFIGURE}
                                                and item.status is PANMigrationStatus.SUPPORTED
                                                and (validation is None or _key(item) in validation.renderable_item_keys)),
-                        "renderable": (disposition(item) is PANRenderDisposition.CREATE
+                        "renderable": (disposition(item) in {PANRenderDisposition.CREATE, PANRenderDisposition.CONFIGURE}
                                        and item.status is PANMigrationStatus.SUPPORTED
                                        and (validation is None or _key(item) in validation.renderable_item_keys)),
                         "render_blockers": [*item.warnings, *render_blockers.get(item_key(item), ()), *(issue.code for issue in (validation.issues if validation else ()) if issue.source.source_name == item.source_name and issue.source.source_vdom == item.source_vdom)],
