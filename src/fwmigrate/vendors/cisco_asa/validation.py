@@ -41,15 +41,17 @@ def validate_asa_config(config: Any, derived: ASADerivedViews) -> ASAValidationR
         source_object=item.source_object,
     ) for item in derived.relationship_issues if not item.resolved]
     issues.extend(ASAValidationIssue(
-        severity="error",
+        severity=item.severity,
         category="parse",
         message=item.reason,
+        source_context=item.source_context,
         source_object=item.object_name,
     ) for item in config.diagnostics)
     issues.extend(ASAValidationIssue(
         severity="warning",
         category="unsupported",
         message=item["reason"],
+        source_context=item.get("source_context"),
         source_object=f"line {item.get('line_number', '')}".strip(),
     ) for item in config.unsupported_commands)
     issues.extend(ASAValidationIssue("warning", item.category, item.message,
