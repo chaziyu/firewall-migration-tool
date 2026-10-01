@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANDecisionReviewState, PANMigrationDecisionSet
+from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANDecisionMode, PANDecisionReviewState, PANMigrationDecisionSet
 from fwmigrate.conversion.fortigate_to_palo_alto.target.target_suggestions import _addresses, _compatible, _device
 from fwmigrate.vendors.palo_alto.source_model import pan_scope_identity
 
@@ -42,18 +42,38 @@ def _finding(decision, code, severity, message, target_object=None, evidence=Non
     return PANTargetFinding(decision.key, code, severity, message, target_object, evidence)
 
 
+def interface_assignment_index(decisions):
+    """Exact device interface names reserved by authoritative source decisions."""
+    assignments = {}
+    for item in decisions.decisions:
+        if (item.source_kind == "interface" and item.target_field == "target_interface"
+                and item.mode is not PANDecisionMode.UNSUPPORTED and item.value
+                and (item.mode is PANDecisionMode.AUTO or item.review_state is PANDecisionReviewState.CONFIRMED)):
+            assignments.setdefault(item.value, []).append(item)
+    return assignments
+
+
 def validate_against_target(source, decisions: PANMigrationDecisionSet, target, device: str | None):
     """Return target conflicts without changing decisions or planner options."""
-    if target is None or not device:
-        return ()
     findings = []
+    for name, owners in interface_assignment_index(decisions).items():
+        if len({(item.source_vdom, item.source_name) for item in owners}) < 2:
+            continue
+        evidence = [{"source_vdom": item.source_vdom, "source_name": item.source_name,
+                     "decision_key": item.key} for item in owners]
+        message = f"Target interface {name!r} is assigned to " + ", ".join(
+            f"{item.source_vdom} / {item.source_name}" for item in owners) + ". Choose distinct target interfaces."
+        findings.extend(_finding(item, "TARGET_INTERFACE_ALREADY_ASSIGNED", "error", message, name, evidence)
+                        for item in owners)
+    if target is None or not device:
+        return tuple(findings)
     source_interfaces = {(item.vdom or "root", item.name): item for item in getattr(source, "interfaces", ()) if item.name}
     mapped = {}
     confirmed_names = {(item.source_vdom, item.source_name): item.value for item in decisions.decisions
                        if item.source_kind == "interface" and item.target_field == "target_interface"
-                       and item.review_state is PANDecisionReviewState.CONFIRMED and item.value}
+                       and (item.review_state is PANDecisionReviewState.CONFIRMED or item.mode is PANDecisionMode.AUTO) and item.value}
     for decision in decisions.decisions:
-        if decision.review_state is not PANDecisionReviewState.CONFIRMED or not decision.value:
+        if (decision.review_state is not PANDecisionReviewState.CONFIRMED and decision.mode is not PANDecisionMode.AUTO) or not decision.value:
             continue
         if decision.source_kind == "interface" and decision.target_field == "target_interface":
             source_item = source_interfaces.get((decision.source_vdom, decision.source_name))
@@ -144,4 +164,4 @@ def validate_against_target(source, decisions: PANMigrationDecisionSet, target, 
     return tuple(findings)
 
 
-__all__ = ["PANTargetFinding", "validate_against_target"]
+__all__ = ["PANTargetFinding", "validate_against_target", "interface_assignment_index"]

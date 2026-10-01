@@ -9,20 +9,22 @@ from fwmigrate.conversion.fortigate_to_palo_alto.decision_propagation import (
 
 
 def _queue(decision, candidates, evidence):
+    selectable = [item for item in candidates if item.get("available", True) and not item.get("contested")]
     if evidence == "CONFLICT":
         return "CONFLICT"
     if decision.mode == PANDecisionMode.AUTO:
         return "COMPLETE"
     if decision.review_state == PANDecisionReviewState.CONFIRMED:
         return "COMPLETE"
-    if decision.mode == PANDecisionMode.SUGGESTED and decision.suggested_value:
+    if decision.mode == PANDecisionMode.SUGGESTED and decision.suggested_value and (not candidates or any(
+            item["value"] == decision.suggested_value for item in selectable)):
         return "READY_TO_CONFIRM"
-    if candidates:
+    if selectable:
         return "CHOOSE_CANDIDATE"
     return "NEEDS_INPUT"
 
 
-def build_review_workflow(config, decisions, *, candidates, context, decision_evidence, target_warnings):
+def build_review_workflow(config, decisions, *, candidates, context, decision_evidence, target_warnings, target_findings=()):
     dependencies = dependent_decision_keys(config, decisions)
     groups = {}
     queues = Counter()
@@ -39,6 +41,10 @@ def build_review_workflow(config, decisions, *, candidates, context, decision_ev
             "source_evidence": {}, "affected_count": 0, "dependent_decision_count": 0,
             "next_action": None, "queues": []})
         item = decision.to_dict()
+        conflicts = [finding.to_dict() for finding in target_findings if finding.decision_key == key]
+        if conflicts:
+            group.setdefault("conflicts", []).extend(conflicts)
+            group["next_action"] = conflicts[0]["message"]
         group["decision_keys"].append(key)
         group["decisions"].append(item)
         if decision.suggested_value:

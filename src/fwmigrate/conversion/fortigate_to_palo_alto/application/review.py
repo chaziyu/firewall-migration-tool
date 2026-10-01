@@ -85,7 +85,7 @@ def build_review_state(config, derived, source_digest, *, previous_document=None
         target_available=target is not None, target_selected=bool(target_device),
         target_device_count=target_device_count, evidence=review_evidence)
     workflow = build_review_workflow(config, decisions, candidates=candidates,
-        context=context, decision_evidence=evidence, target_warnings=target_warnings)
+        context=context, decision_evidence=evidence, target_warnings=target_warnings, target_findings=findings)
     recommendations = build_recommendations(config, derived, decisions, target, target_device)
     return {
         'requirements': requirements,

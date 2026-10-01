@@ -51,6 +51,15 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             issue_keys.add(marker)
         errors.add(_key(item))
 
+    interface_assignments = {}
+    for item in plan.interfaces:
+        if item.target_name:
+            interface_assignments.setdefault(item.target_name, []).append(item)
+    for name, owners in interface_assignments.items():
+        if len({(item.source_vdom, item.source_name) for item in owners}) > 1:
+            for item in owners:
+                add("TARGET_INTERFACE_ALREADY_ASSIGNED", f"target interface {name!r} has multiple source owners", item)
+
     for item in _items(plan):
         key = _key(item)
         for warning in item.warnings:
