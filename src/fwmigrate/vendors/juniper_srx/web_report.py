@@ -87,7 +87,7 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                           "scope": scope, "provenance": _project(getattr(item, "provenance", None))}
                          for item in context.schedulers.values())
         for index, item in enumerate((*context.policies, *context.global_policies), 1):
-            policies.append({"policy_id": item.sequence or index, "name": item.name,
+            policies.append({"policy_id": index, "name": item.name,
                              "source_zones": item.from_zones, "destination_zones": item.to_zones,
                              "source_addresses": item.source_addresses, "destination_addresses": item.destination_addresses,
                              "services": [*item.applications, *item.dynamic_applications], "schedule": item.scheduler_name,
