@@ -307,6 +307,7 @@ def export_juniper_excel(
             "NAT Usage": views.nat_usage, "NAT Pool Usage": views.nat_pool_usage, "VPN Relationships": views.vpn_graph,
             "Secure Connect": views.secure_connect_graph, "APBR Relationships": views.apbr_graph,
             "Inheritance": _inheritance_rows(views.inheritance_view),
+            "Effective Objects": views.effective_objects,
             "Review Required": result.review_required,
             "Unresolved References": tuple(_unresolved_reference_row(item) for item in views.dependencies
                                            if item.result == "UNRESOLVED")}
