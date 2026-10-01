@@ -101,7 +101,8 @@ function ValidationTable({ rows, selected, onSelect, onNavigate, grouped }: {
 function useScrollRows(filteredRows: Finding[], active = true) {
   const [renderedRowCount, setRenderedRowCount] = useState(200)
   const loadMoreRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { setRenderedRowCount(200) }, [filteredRows])
+  const [previousRows, setPreviousRows] = useState(filteredRows)
+  if (previousRows !== filteredRows) { setPreviousRows(filteredRows); setRenderedRowCount(200) }
   useEffect(() => {
     const sentinel = loadMoreRef.current
     if (!active || !sentinel || renderedRowCount >= filteredRows.length) return
@@ -223,9 +224,13 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   ), [sections, activeSection, subsectionChoices])
   const unifiedInterfaces = activeSection === 'Interfaces'
   const activeObjectSection = unifiedInterfaces ? 'interface_topology' : subsection?.key ?? ''
-  const inventoryRows = active?.subsections.find((item) => item.key === 'interfaces')?.rows ?? EMPTY_ROWS
-  const topologyRows = active?.subsections.find((item) => item.key === 'interface_topology')?.rows ?? EMPTY_ROWS
-  const unifiedRows = useMemo(() => interfaceTopologyRows(inventoryRows, topologyRows), [inventoryRows, topologyRows])
+  const unifiedRows = useMemo(() => {
+    const subsections = sections.find((item) => item.label === activeSection)?.subsections
+    return interfaceTopologyRows(
+      subsections?.find((item) => item.key === 'interfaces')?.rows ?? EMPTY_ROWS,
+      subsections?.find((item) => item.key === 'interface_topology')?.rows ?? EMPTY_ROWS,
+    )
+  }, [sections, activeSection])
   const subsectionRows = unifiedInterfaces ? unifiedRows : subsection?.rows ?? EMPTY_ROWS
   const view = views[activeObjectSection] ?? { search: '' }
   const search = view.search
@@ -245,7 +250,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       if (!unifiedInterfaces && activeObjectSection && row['Source section'] !== activeObjectSection) return false
       return !query || reportSearchText(row).includes(query)
     })
-  }, [subsectionRows, effectiveScope, activeObjectSection, search])
+  }, [subsectionRows, effectiveScope, activeObjectSection, search, unifiedInterfaces])
   const { visibleRows: scrollRows, loadMoreRef } = useScrollRows(filteredRows)
   const visibleRows = unifiedInterfaces ? filteredRows : scrollRows
   const subsectionCount = search || effectiveScope ? `${filteredRows.length} of ${subsectionRows.length}` : subsectionRows.length
