@@ -32,6 +32,78 @@ class ASAValidationResult:
         return tuple(issue for issue in self.issues if issue.severity == "warning")
 
 
+def _ip_interval(value: str) -> tuple[int, int, int] | None:
+    try:
+        address = ipaddress.ip_address(value)
+        integer = int(address)
+        return address.version, integer, integer
+    except ValueError:
+        pass
+    try:
+        network = ipaddress.ip_network(value, strict=False)
+        return network.version, int(network.network_address), int(network.broadcast_address)
+    except ValueError:
+        return None
+
+
+def _object_intervals(value: str | None, context: str | None, derived: ASADerivedViews) -> tuple[tuple[int, int, int], ...]:
+    if not value or value.lower() in {"interface", "any", "any4", "any6"}:
+        return ()
+    direct = _ip_interval(value)
+    if direct is not None:
+        return (direct,)
+    resolved = derived.references.resolve(context, ASAReferenceKind.NETWORK_OBJECT, value)
+    target = resolved.target
+    if target is None or not getattr(target, "value", None):
+        return ()
+    object_type = getattr(target, "type", None)
+    object_value = str(target.value)
+    if object_type == "range" and "-" in object_value:
+        start, end = object_value.split("-", 1)
+        try:
+            first, last = ipaddress.ip_address(start), ipaddress.ip_address(end)
+        except ValueError:
+            return ()
+        if first.version != last.version:
+            return ()
+        return ((first.version, int(first), int(last)),)
+    interval = _ip_interval(object_value)
+    return (interval,) if interval is not None else ()
+
+
+def _intervals_overlap(first: tuple[int, int, int], second: tuple[int, int, int]) -> bool:
+    return first[0] == second[0] and first[1] <= second[2] and second[1] <= first[2]
+
+
+def _legacy_crypto_tokens(config: Any) -> tuple[tuple[str | None, str, str], ...]:
+    weak = {
+        "des", "3des", "md5", "sha", "sha1",
+        "esp-des", "esp-3des", "esp-md5-hmac", "esp-sha-hmac",
+    }
+    rows: list[tuple[str | None, str, str]] = []
+    for item in getattr(config, "ike_policies", ()):
+        values = [
+            getattr(item, "encryption", None), getattr(item, "hash_algorithm", None),
+            getattr(item, "integrity", None), *getattr(item, "encryption_algorithms", ()),
+            *getattr(item, "hash_algorithms", ()), *getattr(item, "integrity_algorithms", ()),
+        ]
+        for value in values:
+            for token in str(value or "").lower().replace(",", " ").split():
+                if token in weak:
+                    rows.append((item.source_context, item.name, token))
+    for item in getattr(config, "ikev2_proposals", ()):
+        for value in (*item.encryption_algorithms, *item.integrity_algorithms):
+            token = str(value).lower()
+            if token in weak:
+                rows.append((item.source_context, item.name, token))
+    for item in getattr(config, "ipsec_transform_sets", ()):
+        for value in (item.encryption, item.authentication):
+            token = str(value or "").lower()
+            if token in weak:
+                rows.append((item.source_context, item.name, token))
+    return tuple(dict.fromkeys(rows))
+
+
 def validate_asa_config(config: Any, derived: ASADerivedViews) -> ASAValidationResult:
     issues = [ASAValidationIssue(
         severity="error" if not item.resolved else "warning",
@@ -143,6 +215,59 @@ def validate_asa_config(config: Any, derived: ASADerivedViews) -> ASAValidationR
             issues.append(ASAValidationIssue("warning", "vpn", "Crypto map entry has no ACL reference", crypto.source_context, crypto.name))
         if not crypto.transform_sets and not crypto.ikev2_proposals:
             issues.append(ASAValidationIssue("warning", "vpn", "Crypto map entry has no transform set or proposal", crypto.source_context, crypto.name))
+
+    for context, name, algorithm in _legacy_crypto_tokens(config):
+        issues.append(ASAValidationIssue(
+            "warning", "crypto",
+            f"Legacy cryptographic algorithm {algorithm} requires migration review",
+            context, name,
+        ))
+
+    interface_intervals: dict[str | None, list[tuple[str, tuple[int, int, int]]]] = {}
+    for interface in getattr(config, "interfaces", ()):
+        values = [getattr(interface, "ip", None), getattr(interface, "standby_ip", None)]
+        values.extend(getattr(entry, "address", None) for entry in getattr(interface, "ipv6_addresses", ()))
+        for value in values:
+            if not value:
+                continue
+            try:
+                address = ipaddress.ip_interface(str(value)).ip if "/" in str(value) else ipaddress.ip_address(str(value))
+            except ValueError:
+                continue
+            interval = (address.version, int(address), int(address))
+            interface_intervals.setdefault(interface.source_context, []).append((interface.name, interval))
+
+    vpn_intervals: dict[str | None, list[tuple[str, tuple[int, int, int]]]] = {}
+    for pool in getattr(config, "vpn_address_pools", ()):
+        if not pool.start or not pool.end:
+            continue
+        try:
+            start, end = ipaddress.ip_address(pool.start), ipaddress.ip_address(pool.end)
+        except ValueError:
+            continue
+        if start.version == end.version:
+            vpn_intervals.setdefault(pool.source_context, []).append(
+                (pool.name, (start.version, int(start), int(end)))
+            )
+
+    for rule in getattr(config, "nat_rules", ()):
+        for field in ("mapped_source", "mapped_destination", "pat_pool"):
+            value = getattr(rule, field, None)
+            for interval in _object_intervals(value, rule.source_context, derived):
+                for interface_name, interface_interval in interface_intervals.get(rule.source_context, ()):
+                    if _intervals_overlap(interval, interface_interval):
+                        issues.append(ASAValidationIssue(
+                            "warning", "nat",
+                            f"Translated NAT value {value} overlaps interface address on {interface_name}",
+                            rule.source_context, rule.name,
+                        ))
+                for pool_name, pool_interval in vpn_intervals.get(rule.source_context, ()):
+                    if _intervals_overlap(interval, pool_interval):
+                        issues.append(ASAValidationIssue(
+                            "warning", "nat",
+                            f"Translated NAT value {value} overlaps VPN address pool {pool_name}",
+                            rule.source_context, rule.name,
+                        ))
 
     for policy in getattr(config, "group_policies", ()):
         seen = {policy.name}
