@@ -32,12 +32,10 @@ class JuniperPolicy(JuniperEffectiveModel):
     permit_options: Dict[str, Any] = Field(default_factory=dict)
     unknown_match_conditions: Dict[str, Any] = Field(default_factory=dict)
     unknown_then_options: Dict[str, Any] = Field(default_factory=dict)
-    sequence: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     parsed_match_fields: List[str] = Field(default_factory=list)
     from_zone: Optional[str] = None
     to_zone: Optional[str] = None
-    policy_key: Optional[str] = None
     permit_option_paths: List[List[str]] = Field(default_factory=list)
     vpn_action: Optional[str] = None
     vpn_reference: Optional[str] = None
