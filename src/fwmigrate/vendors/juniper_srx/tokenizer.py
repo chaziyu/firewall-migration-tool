@@ -1,4 +1,4 @@
-"""Tokenizer and activation state management for Juniper JunOS 'set' configuration format."""
+"""Syntax tokenizer for Juniper JunOS display-set configuration."""
 
 from __future__ import annotations
 
@@ -153,50 +153,6 @@ def validate_input_mode(commands: Sequence[JunosCommand]) -> None:
                         f"output; relative display-set input detected starting with '{cmd.tokens[0]} {first_sub}'."
                     )
 
-
-class JunosActivationState:
-    """Tracks deactivate/activate path state to determine if a configuration path is inactive."""
-
-    def __init__(self) -> None:
-        self.inactive_paths: List[List[str]] = []
-
-    def apply(self, commands: Sequence[JunosCommand]) -> None:
-        """Process deactivate and activate commands."""
-        for cmd in commands:
-            if cmd.operation == JunosOperation.DEACTIVATE:
-                if len(cmd.tokens) > 1:
-                    path = [t.lower() for t in cmd.tokens[1:]]
-                    if path not in self.inactive_paths:
-                        self.inactive_paths.append(path)
-                cmd.consumed = True
-                cmd.extraction_status = ExtractionStatus.EXTRACTED
-            elif cmd.operation == JunosOperation.ACTIVATE:
-                if len(cmd.tokens) > 1:
-                    path = [t.lower() for t in cmd.tokens[1:]]
-                    # Activating a hierarchy reactivates its descendants too.
-                    self.inactive_paths = [
-                        p for p in self.inactive_paths if p[:len(path)] != path
-                    ]
-                cmd.consumed = True
-                cmd.extraction_status = ExtractionStatus.EXTRACTED
-
-    def is_inactive(self, path: Sequence[str]) -> bool:
-        """
-        Check if path or any parent prefix path is deactivated.
-        Supports subtree inheritance.
-        """
-        if not path or not self.inactive_paths:
-            return False
-        normalized_path = [t.lower() for t in path]
-        for inact in self.inactive_paths:
-            if len(normalized_path) >= len(inact):
-                if normalized_path[:len(inact)] == inact:
-                    return True
-        return False
-
-    def is_exactly_inactive(self, path: Sequence[str]) -> bool:
-        normalized_path = [t.lower() for t in path]
-        return normalized_path in self.inactive_paths
 
 
 class JuniperSetTokenizer:
