@@ -192,6 +192,11 @@ def register_source_routes(app) -> None:
                 else None
             )
             export_options = {'profile': profile, 'source_name': source_name}
+            if entry.collection_status is not None:
+                export_options['collection_status'] = entry.collection_status.value
+                if isinstance(entry.evidence, dict):
+                    export_options['collection_parts'] = entry.evidence.get('parts', ())
+                    export_options['collection_warnings'] = entry.evidence.get('warnings', ())
             if export_metrics is not None:
                 export_options['metrics'] = export_metrics
             reporter.export_excel(analysis, workbook, **export_options)
