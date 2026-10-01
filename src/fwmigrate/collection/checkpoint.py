@@ -138,7 +138,12 @@ class CheckPointCollector:
 
         usable = any(part.count for part in parts)
         failed = any(not part.complete and self.command_registry.get(part.name, None) and self.command_registry[part.name].required for part in parts)
-        failed = failed or any(part.status in (CPStatus.API_ERROR.value, CPStatus.PERMISSION_DENIED.value, CPStatus.TRANSPORT_ERROR.value) for part in parts)
+        failed = failed or any(part.status in (
+            CPStatus.API_ERROR.value,
+            CPStatus.PERMISSION_DENIED.value,
+            CPStatus.TRANSPORT_ERROR.value,
+            CPStatus.UNSUPPORTED_COMMAND.value,
+        ) for part in parts)
         status = CollectionStatus.PARTIAL if failed and usable else CollectionStatus.FAILED if failed else CollectionStatus.SUCCESS
         if status == CollectionStatus.FAILED:
             raise CollectionError("Check Point returned no usable source configuration.")
