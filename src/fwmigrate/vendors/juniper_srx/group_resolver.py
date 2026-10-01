@@ -208,6 +208,10 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
             for rendered in _render(relative_path, apply_at, target, commands, application):
                 if target and tuple(target[:len(rendered)]) != rendered[:len(target)]:
                     continue
+                if len(inherited) >= MAX_GROUP_EXPANSIONS:
+                    application.group_resolution = "GROUP_EXPANSION_LIMIT_EXCEEDED"
+                    application.requires_manual_review = True
+                    return
                 inherited.append(JunosCommand(
                     operation=JunosOperation.SET,
                     tokens=["set", *rendered],
