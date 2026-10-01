@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 
 export function FileUpload({ file, onChange, accept, title = 'Drop your configuration here', helpText, disabled = false }: {
   file: File | null
@@ -9,6 +9,7 @@ export function FileUpload({ file, onChange, accept, title = 'Drop your configur
   disabled?: boolean
 }) {
   const input = useRef<HTMLInputElement>(null)
+  const inputId = useId()
   const [error, setError] = useState<string | null>(null)
 
   function selectFile(selected: File | undefined) {
@@ -31,7 +32,7 @@ export function FileUpload({ file, onChange, accept, title = 'Drop your configur
 
   return (
     <div className="file-upload">
-      <label className="dropzone" htmlFor="configuration-file" onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+      <label className="dropzone" htmlFor={inputId} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
         event.preventDefault()
         selectFile(event.dataTransfer.files[0])
       }}>
@@ -42,12 +43,12 @@ export function FileUpload({ file, onChange, accept, title = 'Drop your configur
       </label>
       <input
         ref={input}
-        id="configuration-file"
+        id={inputId}
         type="file"
         accept={accept}
         disabled={disabled}
         className="visually-hidden"
-        aria-describedby={error ? 'file-upload-error' : undefined}
+        aria-describedby={error ? `${inputId}-error` : undefined}
         onChange={(event) => { selectFile(event.currentTarget.files?.[0]); event.currentTarget.value = '' }}
       />
       {file && (
@@ -56,7 +57,7 @@ export function FileUpload({ file, onChange, accept, title = 'Drop your configur
           <button type="button" aria-label="Remove configuration file" onClick={removeFile}>×</button>
         </div>
       )}
-      {error && <small id="file-upload-error" role="alert">{error}</small>}
+      {error && <small id={`${inputId}-error`} role="alert">{error}</small>}
     </div>
   )
 }
