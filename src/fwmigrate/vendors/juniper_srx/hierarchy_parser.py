@@ -70,10 +70,10 @@ def _lex(content: str) -> list[_Token]:
     return tokens
 
 
-def normalize_hierarchy(content: str) -> str:
-    """Return equivalent root-level ``set``/``deactivate`` lines."""
+def normalize_hierarchy_with_provenance(content: str) -> tuple[str, tuple[int, ...]]:
+    """Return normalized commands plus their original hierarchical source lines."""
     tokens = _lex(content)
-    output: list[str] = []
+    output: list[tuple[str, int]] = []
     index = 0
 
     def render(path: list[str]) -> str:
@@ -83,6 +83,11 @@ def normalize_hierarchy(content: str) -> str:
         inactive = any(token.lower() == "inactive:" or token.lower().startswith("inactive:") for token in tokens)
         return ([token[len("inactive:"):] if token.lower().startswith("inactive:") else token
                  for token in tokens if token.lower() != "inactive:"], inactive)
+
+    def append_output(command: str, line: int, *, deduplicate: bool = False) -> None:
+        if deduplicate and any(existing == command for existing, _ in output):
+            return
+        output.append((command, line))
 
     def parse_block(prefix: list[str], stop: str | None = None) -> None:
         nonlocal index
@@ -97,8 +102,8 @@ def normalize_hierarchy(content: str) -> str:
                 path = prefix + child_prefix
                 if inactive and path:
                     directive = "deactivate " + render(path)
-                    if directive not in output:
-                        output.append(directive)
+                    source_line = statement[0].line if statement else token.line
+                    append_output(directive, source_line, deduplicate=True)
                 parse_block(path, "}")
                 statement = []
             elif token.value == ";":
@@ -118,12 +123,17 @@ def normalize_hierarchy(content: str) -> str:
         path = [p for p in path if p not in ("[", "]")]
         if inactive:
             directive = "deactivate " + render(path)
-            if directive not in output:
-                output.append(directive)
-        output.append("set " + render(path))
+            append_output(directive, line, deduplicate=True)
+        append_output("set " + render(path), line)
 
     parse_block([])
-    return "\n".join(output)
+    return "\n".join(command for command, _ in output), tuple(line for _, line in output)
+
+
+def normalize_hierarchy(content: str) -> str:
+    """Return equivalent root-level ``set``/``deactivate`` lines."""
+    normalized, _ = normalize_hierarchy_with_provenance(content)
+    return normalized
 
 
 def looks_hierarchical(content: str) -> bool:
