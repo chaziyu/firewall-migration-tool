@@ -133,7 +133,8 @@ jobs:
       - name: Install sidecar dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[ai,collection,deployment]" "pyinstaller>=6.0"
+          python -m pip install --constraint requirements/constraints-python312.txt -e ".[ai,collection,deployment]" "pyinstaller>=6.0"
+          python -m pip check
       - name: Install frontend dependencies
         working-directory: src/frontend
         run: npm ci
