@@ -183,6 +183,10 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
     app.config.setdefault('FRONTEND_DIST_DIR', os.environ.get('FWMIGRATE_FRONTEND_DIST_DIR') or frontend_dist)
+    app.config.setdefault(
+        'ALLOW_REMOTE_COLLECTION',
+        os.environ.get('FWMIGRATE_ALLOW_REMOTE_COLLECTION', '').strip().casefold() in {'1', 'true', 'yes', 'on'},
+    )
     app.config.setdefault('MAX_CONTENT_LENGTH', 2 * MAX_BYTES + 5_000_000)
 
     require_web_auth = app.config.get('REQUIRE_WEB_AUTH')
