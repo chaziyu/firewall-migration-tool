@@ -29,6 +29,19 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
     def scope(item):
         return getattr(item, "source_context", None) or getattr(item, "domain_id", None) or getattr(item, "device_id", None)
 
+    def scope_details(item):
+        attributes = getattr(item, "source_attributes", {}) or {}
+        return {
+            "source_context": getattr(item, "source_context", None),
+            "domain_id": getattr(item, "domain_id", None) or attributes.get("domain_id"),
+            "device_id": getattr(item, "device_id", None) or attributes.get("device_id"),
+            "device_name": attributes.get("device_name"),
+            "virtual_router_id": attributes.get("virtual_router_id"),
+            "virtual_router_name": attributes.get("virtual_router_name"),
+            "parent_policy_id": attributes.get("parent_policy_id") or getattr(item, "policy_id", None),
+            "parent_policy_name": attributes.get("parent_policy_name") or getattr(item, "policy_name", None),
+        }
+
     interfaces = [{"name": item.name, "display_name": item.nameif or item.name,
                    "kind": item.interface_type, "ip": [item.ip] if item.ip else [],
                    "zone": [], "parent": item.parent_interface, "aggregate": item.etherchannel_id,
@@ -37,20 +50,20 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
                   for item in config.interfaces]
     interfaces.extend({"name": item.name, "display_name": item.name, "kind": item.interface_type,
                        "ip": [item.address] if item.address else [], "zone": [ref(item.zone)] if item.zone else [],
-                       "status": "EXTRACTED", "scope": scope(item), "source_plane": item.source_plane}
+                       "status": "EXTRACTED", "scope": scope(item), "scope_details": scope_details(item), "source_plane": item.source_plane}
                       for item in (*config.device_interfaces, *config.source_interfaces))
     addresses = [{"name": item.name, "value": value(item.value), "type": item.address_type,
                   "address_family": item.address_family, "scope": scope(item), "source_plane": item.source_plane}
                  for item in config.network_addresses]
     address_groups = [{"name": item.name,
                        "members": [ref(value) for value in (*(item.members or ()), *(item.literal_members or ()))],
-                       "scope": scope(item), "source_plane": item.source_plane} for item in config.network_groups]
+                       "scope": scope(item), "scope_details": scope_details(item), "source_plane": item.source_plane} for item in config.network_groups]
     services = [{"name": item.name, "protocol": item.protocol,
                  "port": item.ports or item.port or item.end_port,
-                 "scope": scope(item), "source_plane": item.source_plane} for item in config.protocol_port_objects]
+                 "scope": scope(item), "scope_details": scope_details(item), "source_plane": item.source_plane} for item in config.protocol_port_objects]
     service_groups = [{"name": item.name, "members": [ref(member) for member in item.members or ()],
-                       "scope": scope(item), "source_plane": item.source_plane} for item in config.port_object_groups]
-    schedules = [{"name": item.name, "value": value(item), "scope": scope(item), "source_plane": item.source_plane}
+                       "scope": scope(item), "scope_details": scope_details(item), "source_plane": item.source_plane} for item in config.port_object_groups]
+    schedules = [{"name": item.name, "value": value(item), "scope": scope(item), "scope_details": scope_details(item), "source_plane": item.source_plane}
                  for item in config.time_ranges]
     policies = []
     for policy in config.access_control_policies:
@@ -63,7 +76,7 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
                              "services": [ref(x) for x in rule.destination_ports or ()],
                              "schedule": ref(rule.time_range), "action": rule.action,
                              "section": rule.section, "category": rule.category,
-                             "source_plane": rule.source_plane, "scope": scope(rule)})
+                             "source_plane": rule.source_plane, "scope": scope(rule), "scope_details": scope_details(rule)})
     nat_rows = []
     for policy in config.nat_policies:
         for collection, rules in (("manual-before-auto", policy.manual_rules_before_auto),
@@ -77,7 +90,8 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
                                  "translated_addresses": [item for item in translated if item],
                                  "egress_interfaces": [ref(rule.destination_interface)] if getattr(rule, "destination_interface", None) else [],
                                  "source_kind": collection, "source_plane": rule.source_plane,
-                                 "source_order": getattr(rule, "observed_collection_order", None), "scope": scope(rule)})
+                                 "source_order": getattr(rule, "observed_collection_order", None), "scope": scope(rule),
+                                 "scope_details": scope_details(rule)})
     routes = [{"route_id": item.source_name, "destination": item.normalized_destination or item.configured_destination,
                "configured_destination": item.configured_destination, "gateway": item.gateway,
                "device": item.device_id or item.virtual_router, "distance": None,
@@ -85,9 +99,11 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
                "review": [item.issue] if item.issue else [], "scope": item.device_id or item.virtual_router}
               for item in result.derived.normalized_routes]
     vpn_tunnels = [{"kind": "Site-to-site", "name": item.name, "peer": value(item),
-                    "source_plane": item.source_plane, "scope": scope(item)} for item in config.s2s_vpn_topologies]
+                    "source_plane": item.source_plane, "scope": scope(item), "scope_details": scope_details(item)}
+                   for item in config.s2s_vpn_topologies]
     vpn_tunnels.extend({"kind": "Site-to-site endpoint", "name": item.name, "peer": value(item),
-                        "source_plane": item.source_plane, "scope": scope(item)} for item in config.s2s_vpn_endpoints)
+                        "source_plane": item.source_plane, "scope": scope(item), "scope_details": scope_details(item)}
+                       for item in config.s2s_vpn_endpoints)
     validation = [{"severity": item.severity, "domain": item.category, "object_name": item.source_object,
                    "field": None, "message": item.message,
                    "scope": getattr(item, "source_context", None)} for item in result.validation.issues]
@@ -174,6 +190,7 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
         "source_metadata": config.source_metadata,
         "capability_coverage": config.source_metadata.get("coverage", {}),
         "source_plane_completeness": result.derived.source_plane_completeness,
+        "collection_completeness": result.derived.source_plane_completeness,
         "interface_topology": [{"name": item.name, "device_id": item.device_id, "kind": item.kind, "parent": item.parent,
             "aggregate": item.aggregate, "physical_interfaces": item.physical_interfaces}
             for item in result.derived.interface_topology.interfaces],
