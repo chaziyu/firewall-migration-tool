@@ -178,3 +178,36 @@ def test_sysopt_permit_vpn_preserves_explicit_positive_and_negative_source_state
     assert [item.enabled for item in settings] == [True, False]
     assert all({"setting", "enabled"} <= item.explicit_fields for item in settings)
     assert not result.unsupported_items
+
+def test_acl_consumer_bookkeeping_does_not_mutate_vendor_source_config():
+    result = extract_cisco_asa_source(
+        "interface Ethernet0/0\n"
+        " nameif outside\n"
+        "access-list OUT extended permit ip any any\n"
+        "access-group OUT in interface outside\n"
+    )
+
+    assert result.config.acl_consumers == {}
+    assert len(result.derived.acl_relationships.bindings) == 1
+    binding = result.derived.acl_relationships.bindings[0]
+    assert binding.acl_name == "OUT"
+    assert binding.resolved_acl is not None
+
+
+def test_source_only_cleanup_uses_line_identity_not_duplicate_raw_text():
+    result = extract_cisco_asa_source(
+        "webvpn\n"
+        " future-webvpn-setting keep\n"
+        "future-webvpn-setting keep\n"
+    )
+
+    matching = [
+        item for item in result.config.unsupported_commands
+        if item.get("raw_line") == "future-webvpn-setting keep"
+        and item.get("reason") == "No Cisco ASA extraction handler"
+    ]
+    assert [item["line_number"] for item in matching] == [3]
+    assert result.config.webvpn_configs[0].raw_extra["unmodeled_lines"] == [
+        "future-webvpn-setting keep"
+    ]
+
