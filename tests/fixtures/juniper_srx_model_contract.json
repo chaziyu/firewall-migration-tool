@@ -360,12 +360,10 @@
         "permit_options",
         "unknown_match_conditions",
         "unknown_then_options",
-        "sequence",
         "source_attributes",
         "parsed_match_fields",
         "from_zone",
         "to_zone",
-        "policy_key",
         "permit_option_paths",
         "vpn_action",
         "vpn_reference",
@@ -373,7 +371,7 @@
         "security_profile_references",
         "provenance"
       ],
-      "sha256": "0f3b56ef2dc73e546a57f959bb8546ed189812d76b641d9f6b0a2acc06eb7503"
+      "sha256": "b02b913906131c71ec6e6f1a970e05b37dd8deeeada4469d569a3b9a8ed6c991"
     },
     "JuniperIDPRule": {
       "fields": [
@@ -573,10 +571,9 @@
         "action",
         "description",
         "disabled",
-        "sequence",
         "source_attributes"
       ],
-      "sha256": "81d444abe532728185a1007736938056b8976bab473972a1f0d94c0a00388ac9"
+      "sha256": "bf1781db5e8e80fec9d691b7d68529ae06456d6ca80130e2042cdb4b4161c11b"
     },
     "JuniperNATRuleSet": {
       "fields": [
