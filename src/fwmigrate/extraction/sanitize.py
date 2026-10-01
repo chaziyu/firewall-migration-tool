@@ -115,6 +115,14 @@ def sanitize_raw_text(text: str) -> str:
     if not text:
         return text
 
+    # ASA NTP authentication keys place the secret after a key ID and
+    # algorithm. Redact the secret-bearing tail before the generic "key"
+    # sanitizer can mistake the non-secret key ID for the credential.
+    text = re.sub(
+        r"(?im)^(\s*ntp\s+authentication-key\s+\S+\s+\S+)(?:\s+.+)?$",
+        rf"\1 {REDACTED_PLACEHOLDER}", text,
+    )
+
     # ASA SNMPv3 credentials follow algorithm names rather than secret keys.
     token = r'(?:"[^"]*"|\'[^\']*\'|[^\s\r\n]+)'
     text = re.sub(
