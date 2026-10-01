@@ -1,7 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('src/fwmigrate/static', 'fwmigrate/static')]
+ROOT = Path(SPECPATH).parent
+
+datas = [(str(ROOT / 'src' / 'fwmigrate' / 'static'), 'fwmigrate/static')]
 binaries = []
 hiddenimports = ['clr', 'clr_loader', 'pythonnet']
 
@@ -11,8 +15,8 @@ binaries += [item for item in tmp_ret[1] if not item[1].replace('\\', '/').start
 hiddenimports += tmp_ret[2]
 
 a = Analysis(
-    ['src/fwmigrate/desktop_server.py'],
-    pathex=['src'],
+    [str(ROOT / 'src' / 'fwmigrate' / 'desktop_server.py')],
+    pathex=[str(ROOT / 'src')],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
