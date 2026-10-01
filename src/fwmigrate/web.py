@@ -3,6 +3,7 @@ import sys
 import io
 import uuid
 import re
+import secrets
 import hashlib
 import logging
 import threading
@@ -182,6 +183,47 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
     app.config.setdefault('FRONTEND_DIST_DIR', os.environ.get('FWMIGRATE_FRONTEND_DIST_DIR') or frontend_dist)
+    app.config.setdefault('MAX_CONTENT_LENGTH', 2 * MAX_BYTES + 5_000_000)
+
+    require_web_auth = app.config.get('REQUIRE_WEB_AUTH')
+    if require_web_auth is None:
+        require_web_auth = str(os.environ.get('FWMIGRATE_REQUIRE_WEB_AUTH', '')).strip().lower() in {
+            '1', 'true', 'yes', 'on',
+        }
+    web_username = str(
+        app.config.get('WEB_AUTH_USERNAME')
+        or os.environ.get('FWMIGRATE_WEB_USERNAME')
+        or 'fwmigrate'
+    )
+    web_password = app.config.get('WEB_AUTH_PASSWORD') or os.environ.get('FWMIGRATE_WEB_PASSWORD')
+    if require_web_auth and not web_password:
+        raise RuntimeError(
+            'Hosted web authentication is required but FWMIGRATE_WEB_PASSWORD is not configured'
+        )
+
+    if web_password:
+        expected_password = str(web_password)
+
+        @app.before_request
+        def _authenticate_hosted_web():
+            if request.path == '/healthz':
+                return None
+            authorization = request.authorization
+            if (
+                authorization is not None
+                and authorization.type == 'basic'
+                and secrets.compare_digest(authorization.username or '', web_username)
+                and secrets.compare_digest(authorization.password or '', expected_password)
+            ):
+                return None
+            response = jsonify({'error': 'Authentication required'})
+            response.status_code = 401
+            response.headers['WWW-Authenticate'] = 'Basic realm="Firewall Migration Tool"'
+            return response
+
+    @app.route('/healthz', methods=['GET'])
+    def healthz():
+        return jsonify({'status': 'ok'})
 
     try:
         ai_config = ai_advisor.validate_static_configuration()
