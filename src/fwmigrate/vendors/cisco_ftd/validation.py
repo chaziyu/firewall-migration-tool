@@ -98,6 +98,34 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
                 f"Manual NAT rule {rule.name} has an unclassified source section",
                 rule.source_plane, rule.name))
 
+    for policy in config.access_control_policies:
+        positions = {}
+        for rule in policy.rules or ():
+            if rule.position is not None:
+                positions.setdefault(rule.position, []).append(rule)
+        for position, rules in positions.items():
+            if len(rules) > 1:
+                issues.append(FTDValidationIssue("warning", "duplicate-acp-position",
+                    f"Access control rules share explicit position {position} within policy {policy.name}",
+                    rules[0].source_plane, policy.name))
+
+    for policy in config.nat_policies:
+        for section, rules in (
+            ("BEFORE_AUTO", policy.manual_rules_before_auto),
+            ("AUTO", policy.auto_rules),
+            ("AFTER_AUTO", policy.manual_rules_after_auto),
+            ("UNCLASSIFIED", policy.unclassified_manual_rules),
+        ):
+            positions = {}
+            for rule in rules or ():
+                if rule.position is not None:
+                    positions.setdefault(rule.position, []).append(rule)
+            for position, positioned_rules in positions.items():
+                if len(positioned_rules) > 1:
+                    issues.append(FTDValidationIssue("warning", "duplicate-nat-position",
+                        f"NAT rules share explicit position {position} within {section} of policy {policy.name}",
+                        positioned_rules[0].source_plane, policy.name))
+
     positions = {}
     for route in config.policy_based_routes:
         if route.position is None:
