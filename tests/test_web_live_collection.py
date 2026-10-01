@@ -1,5 +1,7 @@
+import base64
 import io
 import json
+import pytest
 
 from openpyxl import load_workbook
 
@@ -139,10 +141,25 @@ def test_remote_live_collection_is_disabled_without_explicit_opt_in(monkeypatch)
 
 
 def test_remote_live_collection_requires_explicit_server_opt_in(monkeypatch):
-    client = create_app({"TESTING": True, "ALLOW_REMOTE_COLLECTION": True}).test_client()
+    client = create_app({
+        "TESTING": True,
+        "ALLOW_REMOTE_COLLECTION": True,
+        "WEB_AUTH_PASSWORD": "test-web-secret",
+    }).test_client()
     monkeypatch.setattr(source_collectors.get("cisco_asa"), "test_connection", lambda _options: None)
     remote = {"REMOTE_ADDR": "198.51.100.20"}
+    token = base64.b64encode(b"fwmigrate:test-web-secret").decode()
+    headers = {"Authorization": f"Basic {token}"}
 
-    sources = {item["vendor_id"]: item for item in client.get("/api/vendors", environ_base=remote).get_json()["sources"]}
+    sources = {item["vendor_id"]: item for item in client.get(
+        "/api/vendors", headers=headers, environ_base=remote
+    ).get_json()["sources"]}
     assert sources["cisco_asa"]["live_collection"] is True
-    assert client.post("/api/collection/test", json=_payload(), environ_base=remote).status_code == 200
+    assert client.post(
+        "/api/collection/test", json=_payload(), headers=headers, environ_base=remote
+    ).status_code == 200
+
+
+def test_remote_live_collection_opt_in_without_web_auth_is_rejected():
+    with pytest.raises(RuntimeError, match="Remote live collection requires configured web authentication"):
+        create_app({"TESTING": True, "ALLOW_REMOTE_COLLECTION": True})
