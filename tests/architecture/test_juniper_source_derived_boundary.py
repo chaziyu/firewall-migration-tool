@@ -62,3 +62,26 @@ set security advance-policy-based-routing sla-rule SLA metrics-profile MET
     validate_juniper_config(config, derived)
     assert config.model_dump(mode="python") == source_before
     assert parser.commands == commands_before
+
+
+
+def test_juniper_parser_delegates_vendor_semantics_to_command_evaluator():
+    tree = ast.parse((VENDOR / "parser.py").read_text(encoding="utf-8"))
+    imports = [
+        alias.name
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    ]
+    modules = [
+        node.module or ""
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+    ]
+    assert "JuniperCommandEvaluator" in imports
+    assert not any(".handlers." in module for module in modules)
+
+    evaluator = (VENDOR / "command_evaluator.py").read_text(encoding="utf-8")
+    assert "handle_policies_command" in evaluator
+    assert "handle_nat_command" in evaluator
+    assert "handle_vpn_command" in evaluator
