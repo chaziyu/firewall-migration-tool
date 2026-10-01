@@ -80,7 +80,10 @@
 @media (max-width: 900px) { .mapping-workspace { grid-template-columns: 1fr; } .mapping-list { max-height: 240px; } }
 .target-xml-upload { width: 100%; min-width: 0; }
 .target-xml-upload h3 { margin: 0 0 10px; font-size: 15px; }
-.target-xml-upload .dropzone { min-height: 240px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; padding: 26px 18px; border: 2px dashed var(--line-strong); border-radius: var(--radius-md); text-align: center; cursor: pointer; background: var(--surface-muted); color: var(--text-muted); font-weight: 500; }
+.target-xml-upload .dropzone { min-height: 170px; padding: 12px 18px; }
+.target-xml-upload .drop-illustration { height: 48px; margin-bottom: 0; transform: scale(.65); transform-origin: top center; }
+.target-xml-upload .dropzone small { margin-top: 8px; }
+.dropzone { min-height: 240px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; padding: 26px 18px; border: 2px dashed var(--line-strong); border-radius: var(--radius-md); text-align: center; cursor: pointer; background: var(--surface-muted); color: var(--text-muted); font-weight: 500; }
 .dropzone:hover { border-color: var(--color-primary); background: var(--surface-hover); }
 .file-upload:has(input:focus-visible) .dropzone { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .dropzone strong { color: var(--text-heading); font-size: 15px; }
