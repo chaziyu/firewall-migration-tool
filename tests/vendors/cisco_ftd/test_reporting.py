@@ -158,3 +158,92 @@ def test_excel_source_inventory_exposes_structured_ownership_columns():
     headers = [cell.value for cell in workbook["Source Inventory"][1]]
     assert {"Domain", "Device", "Device Name", "Virtual Router ID", "Virtual Router",
             "Parent Policy ID", "Parent Policy"} <= set(headers)
+
+
+def test_preview_keeps_fmc_policy_and_rule_identity_separate():
+    result = CiscoFTDSourceReporter().analyze_source(FIXTURE.read_text(encoding="utf-8"))
+    policy = result.config.access_control_policies[0]
+    rule = policy.rules[0]
+    row = build_ftd_preview(result)["sections"]["policies"][0]
+
+    assert row["policy_id"] == policy.source_id == "acp-1"
+    assert row["policy_name"] == policy.name == "Access"
+    assert row["rule_id"] == rule.source_id == "r-1"
+    assert row["name"] == rule.name == "Allow updates"
+    assert row["position"] == rule.position
+    assert row["policy_id"] != row["position"]
+
+
+def test_validation_findings_keep_stable_fmc_scope_identity():
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "domain": {"id": "domain-1", "name": "Global"},
+        "access_policies": [{
+            "id": "policy-1", "name": "Policy",
+            "rules": [
+                {"id": "rule-1", "name": "First", "position": 4, "action": "ALLOW"},
+                {"id": "rule-2", "name": "Second", "position": 4, "action": "BLOCK"},
+            ],
+        }],
+    }))
+    issue = next(item for item in result.validation.issues if item.category == "duplicate-acp-position")
+    assert issue.source_id == "policy-1"
+    assert issue.source_context == "fmc:Global"
+    assert issue.domain_id == "domain-1"
+
+    row = next(item for item in build_ftd_preview(result)["sections"]["validation"]
+               if item["domain"] == "duplicate-acp-position")
+    assert row["source_id"] == "policy-1"
+    assert row["source_context"] == "fmc:Global"
+    assert row["domain_id"] == "domain-1"
+
+
+def test_source_inventory_exports_policy_ownership_and_native_types():
+    result = CiscoFTDSourceReporter().analyze_source(FIXTURE.read_text(encoding="utf-8"))
+    rule_item = next(item for item in result.inventory_items if item.source_id == "r-1")
+    assert rule_item.source_attributes["policy_id"] == "acp-1"
+    assert rule_item.source_record_id.startswith("fmc-rest-bundle/domain=domain-1/")
+    assert "/parent=acp-1/" in rule_item.source_record_id
+
+    address_item = next(item for item in result.inventory_items
+                        if item.source_path.endswith("/network-addresses"))
+    assert address_item.source_type.startswith("Network") or address_item.source_type in {
+        "Host", "Network", "Range", "FQDN",
+    }
+
+    output = BytesIO()
+    CiscoFTDSourceReporter().export_excel(result, output)
+    workbook = load_workbook(output, read_only=True)
+    headers = [cell.value for cell in workbook["Source Inventory"][1]]
+    for column in ("Virtual Router ID", "Virtual Router", "Parent Policy ID", "Parent Policy"):
+        assert column in headers
+    rows = [dict(zip(headers, row)) for row in
+            workbook["Source Inventory"].iter_rows(min_row=2, values_only=True)]
+    exported_rule = next(row for row in rows if row["Source ID"] == "r-1")
+    assert exported_rule["Parent Policy ID"] == "acp-1"
+
+
+def test_unsupported_evidence_does_not_cross_associate_duplicate_scoped_names():
+    from fwmigrate.vendors.cisco_ftd.model import CiscoFTDConfig, CiscoFTDNetworkAddress
+    from fwmigrate.vendors.cisco_ftd.source_inventory import build_ftd_source_inventory
+
+    first = CiscoFTDNetworkAddress(
+        name="duplicate", source_id="id-1", source_plane="fmc-rest-bundle", domain_id="domain-1")
+    second = CiscoFTDNetworkAddress(
+        name="duplicate", source_id="id-2", source_plane="fmc-rest-bundle", domain_id="domain-2")
+    config = CiscoFTDConfig(
+        input_source_type="fmc-rest-bundle", source_plane="fmc-rest-bundle",
+        network_addresses=[first, second],
+        unsupported_evidence=[{"source_name": "duplicate", "reason": "ambiguous name-only evidence"}],
+    )
+    items = [item for item in build_ftd_source_inventory(config)
+             if item.source_path.endswith("/network-addresses")]
+    assert [item.requires_manual_review for item in items] == [False, False]
+
+    config.unsupported_evidence = [{
+        "source_id": "id-2", "domain_id": "domain-2", "reason": "scoped evidence",
+    }]
+    items = [item for item in build_ftd_source_inventory(config)
+             if item.source_path.endswith("/network-addresses")]
+    assert [item.requires_manual_review for item in items] == [False, True]
+    assert len({item.source_record_id for item in items}) == 2
