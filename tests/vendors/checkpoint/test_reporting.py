@@ -14,7 +14,7 @@ def test_excel_report_uses_typed_source_and_derived_sheets():
     output = io.BytesIO(); export_checkpoint_excel(result, output)
     workbook = load_workbook(io.BytesIO(output.getvalue()), read_only=True)
     assert {"Hosts", "Networks", "Access Sections", "Access Rules", "NAT Rules", "Gaia Interfaces",
-            "NAT Migration Views", "Policy Traversal", "Interface Views", "VPN Views",
+            "Derived Completeness", "NAT Migration Views", "Policy Traversal", "Interface Views", "VPN Views",
             "Check Point Source Inventory", "Review Required"} <= set(workbook.sheetnames)
     assert "Network Objects" not in workbook.sheetnames and "Gaia" not in workbook.sheetnames
     assert "IP Pools" not in SHEET_ORDER and "VIPs" not in SHEET_ORDER and "SD-WAN" not in SHEET_ORDER
@@ -36,9 +36,10 @@ def test_web_report_has_typed_source_derived_validation_and_traceability():
     preview = build_checkpoint_preview(result)
     assert preview["vendor"] == "checkpoint"
     assert "access_rules" in preview["source"]
-    assert {"nat", "policy_traversal", "interfaces", "vpn"} <= set(preview["derived"])
+    assert {"nat", "policy_traversal", "interfaces", "vpn", "completeness"} <= set(preview["derived"])
     assert {"scope", "collection", "source_inventory", "unsupported", "validation"} <= set(preview)
     assert "No direct R81.00 equivalent" == preview["summary"]["capabilities"]["SD-WAN"]
+    assert {"nat", "policy", "interfaces", "vpn"} <= set(preview["summary"]["derived_source_complete"])
     assert preview["summary"]["scopes"]
     assert {"interfaces", "addresses", "address_groups", "services", "service_groups", "schedules",
             "policies", "nat", "routes", "vpn_tunnels", "vpn_phase2", "validation",
