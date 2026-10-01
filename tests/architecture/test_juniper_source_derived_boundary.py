@@ -85,3 +85,11 @@ def test_juniper_parser_delegates_vendor_semantics_to_command_evaluator():
     assert "handle_policies_command" in evaluator
     assert "handle_nat_command" in evaluator
     assert "handle_vpn_command" in evaluator
+
+
+
+def test_juniper_tokenizer_contains_syntax_only():
+    tokenizer = (VENDOR / "tokenizer.py").read_text(encoding="utf-8")
+    assert "class JunosActivationState" not in tokenizer
+    assert "activation state management" not in tokenizer
+    assert (VENDOR / "activation.py").exists()
