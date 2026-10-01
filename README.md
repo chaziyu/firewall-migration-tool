@@ -198,6 +198,31 @@ For development:
 python -m pip install -e ".[dev]"
 ```
 
+### Reproducible Python 3.12 Builds
+
+Dependency responsibilities are split deliberately:
+
+```text
+pyproject.toml
+→ compatible source dependency ranges
+
+requirements/constraints-python312.txt
+→ resolved Python 3.12 versions for Docker/Render and Tauri/PyInstaller builds
+
+src/frontend/package-lock.json
+→ resolved frontend dependency graph
+```
+
+The Python constraints file is used only by artifact-producing Python 3.12 paths. The Python 3.11/3.12/3.13 compatibility test matrix continues to install from the declared ranges so supported-version compatibility is still exercised.
+
+For a reproducible production-style install:
+
+```bash
+python -m pip install --constraint requirements/constraints-python312.txt -e ".[ai,collection,deployment]"
+python -m pip check
+```
+
+Review and regenerate the constraints file when dependencies are intentionally updated; do not silently edit individual pins merely to suppress a vulnerability scanner.
 
 For the optional Groq migration advisor:
 
@@ -221,11 +246,11 @@ React
 
 **Docker is not part of the desktop runtime.** A user can run the packaged desktop application without Docker Desktop installed.
 
-Windows build prerequisites are Rust, Node.js, Python, PyInstaller, and the normal Tauri Windows system dependencies. Build the desktop sidecar and installer with:
+Windows build prerequisites are Rust, Node.js, Python, PyInstaller, and the normal Tauri Windows system dependencies. The desktop build uses the reviewed Python 3.12 constraints file:
 
 ```powershell
-python -m pip install -e ".[ai,collection,deployment]"
-python -m pip install "pyinstaller>=6.0"
+python -m pip install --constraint requirements/constraints-python312.txt -e ".[ai,collection,deployment]" "pyinstaller>=6.0"
+python -m pip check
 
 cd src/frontend
 npm ci
@@ -288,6 +313,8 @@ python -m fwmigrate.main serve --port 5000
 ### Docker / Render Web Deployment
 
 Docker is used for the hosted web application, including the current Render deployment. It is separate from the Tauri desktop runtime; the Docker image does not host or launch the Tauri application.
+
+The Docker image installs Python dependencies through `requirements/constraints-python312.txt`, so the deployed Python dependency set matches the reviewed Python 3.12 build constraints.
 
 Build and run the production web image:
 
