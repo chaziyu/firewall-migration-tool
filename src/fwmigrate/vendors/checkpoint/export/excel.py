@@ -6,7 +6,11 @@ import json
 from pathlib import Path
 from typing import Any, get_args
 
+from openpyxl.utils import get_column_letter
+
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
+from ....source_reporting.options import ExcelExportProfile
+from ....source_reporting.excel_style import append_report_row, finish_report_workbook
 from ..validation.index import CheckPointValidationIndex
 from .excel_schema import DERIVED_SHEETS, SHEET_HEADERS, SHEET_ORDER, SOURCE_SHEETS
 
@@ -90,47 +94,55 @@ def _derived_rows(result: Any, sheet: str):
             for i in result.derived.broken_references]
 
 
-def export_checkpoint_excel(result: Any, output: Any) -> Any:
+def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportProfile | str = ExcelExportProfile.FULL) -> Any:
     from openpyxl import Workbook
 
-    workbook = Workbook(); workbook.remove(workbook.active)
+    profile = ExcelExportProfile(profile)
+    workbook = Workbook(write_only=profile is ExcelExportProfile.FAST)
+    if not workbook.write_only:
+        workbook.remove(workbook.active)
     validation = CheckPointValidationIndex(result.validation.issues)
     for name in SHEET_ORDER:
         sheet = workbook.create_sheet(name)
         if name == "Summary":
-            sheet.append(("Metric", "Count / Value"))
-            sheet.append(("Source Objects", sum(len(getattr(result.config, f)) for f in SOURCE_SHEETS.values())))
-            sheet.append(("Derived Views", sum(len(_derived_rows(result, s)) for s in DERIVED_SHEETS)))
-            sheet.append(("Validation Findings", len(result.validation.issues)))
-            sheet.append(("Incomplete Collections", len(result.derived.collection_incomplete)))
-            sheet.append(("Unsupported Source Inventory", len(result.source_inventory)))
-            sheet.append(("Scope Ambiguous", "Yes" if getattr(result.scope, "ambiguous", False) else "No"))
-            sheet.append(("SD-WAN", "No direct R81.00 equivalent"))
-            sheet.append(("API Version", result.source_metadata.api_version))
-            sheet.append(("Management Server", result.source_metadata.management_server))
+            append_report_row(sheet, ("Metric", "Count / Value"))
+            append_report_row(sheet, ("Source Objects", sum(len(getattr(result.config, f)) for f in SOURCE_SHEETS.values())))
+            append_report_row(sheet, ("Derived Views", sum(len(_derived_rows(result, s)) for s in DERIVED_SHEETS)))
+            append_report_row(sheet, ("Validation Findings", len(result.validation.issues)))
+            append_report_row(sheet, ("Incomplete Collections", len(result.derived.collection_incomplete)))
+            append_report_row(sheet, ("Unsupported Source Inventory", len(result.source_inventory)))
+            append_report_row(sheet, ("Scope Ambiguous", "Yes" if getattr(result.scope, "ambiguous", False) else "No"))
+            append_report_row(sheet, ("SD-WAN", "No direct R81.00 equivalent"))
+            append_report_row(sheet, ("API Version", result.source_metadata.api_version))
+            append_report_row(sheet, ("Management Server", result.source_metadata.management_server))
         elif name in SOURCE_SHEETS:
-            field = SOURCE_SHEETS[name]; headers = _source_headers(result, field); sheet.append(headers)
-            for row in _source_rows(getattr(result.config, field), headers, validation, name): sheet.append(row)
+            field = SOURCE_SHEETS[name]
+            headers = _source_headers(result, field)
+            for col, header in enumerate(headers, 1):
+                if header in {"raw_extra", "explicit_fields", "Source Explicit Fields", "Additional Settings"}:
+                    sheet.column_dimensions[get_column_letter(col)].hidden = True
+            append_report_row(sheet, headers)
+            for row in _source_rows(getattr(result.config, field), headers, validation, name): append_report_row(sheet, row)
         elif name in DERIVED_SHEETS:
-            sheet.append(SHEET_HEADERS[name])
-            for row in _derived_rows(result, name): sheet.append(tuple(_excel_safe(v) for v in row))
+            append_report_row(sheet, SHEET_HEADERS[name])
+            for row in _derived_rows(result, name): append_report_row(sheet, tuple(_excel_safe(v) for v in row))
         elif name == "Collection":
-            sheet.append(SHEET_HEADERS[name])
-            for i in result.collection: sheet.append(tuple(_excel_safe(v) for v in (i.command, i.source_plane, i.status, i.complete, i.error)))
+            append_report_row(sheet, SHEET_HEADERS[name])
+            for i in result.collection: append_report_row(sheet, tuple(_excel_safe(v) for v in (i.command, i.source_plane, i.status, i.complete, i.error)))
         elif name == "Scope":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             scope = getattr(result.scope, "model_dump", lambda: vars(result.scope))()
-            for key, value in scope.items(): sheet.append((_excel_safe(key), _excel_safe(value)))
+            for key, value in scope.items(): append_report_row(sheet, (_excel_safe(key), _excel_safe(value)))
         elif name == "Review Required":
-            sheet.append(SHEET_HEADERS[name])
-            for row in _issue_rows(result): sheet.append(row)
+            append_report_row(sheet, SHEET_HEADERS[name])
+            for row in _issue_rows(result): append_report_row(sheet, row)
         elif name == "Check Point Source Inventory":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.source_inventory:
                 d = item.model_dump(mode="python", by_alias=False)
-                sheet.append(tuple(_excel_safe(v) for v in (d.get("source_plane"), d.get("domain"), d.get("domain_uid"), d.get("command"), d.get("object_type"), d.get("uid"), d.get("name"), d.get("package"), d.get("layer"), d.get("gateway"), d.get("order"), d.get("explicit_fields"), d.get("values"), _additional_settings(item))))
+                append_report_row(sheet, tuple(_excel_safe(v) for v in (d.get("source_plane"), d.get("domain"), d.get("domain_uid"), d.get("command"), d.get("object_type"), d.get("uid"), d.get("name"), d.get("package"), d.get("layer"), d.get("gateway"), d.get("order"), d.get("explicit_fields"), d.get("values"), _additional_settings(item))))
         elif name == "Unsupported":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             groups = {}
             for item in result.source_inventory:
                 key = (item.command, item.domain, "UNSUPPORTED_SOURCE", item.object_type or "Unmodeled source object")
@@ -139,13 +151,9 @@ def export_checkpoint_excel(result: Any, output: Any) -> Any:
                 if not item.complete or str(item.status).lower().endswith("unsupported"):
                     key = (item.command, item.source_plane, str(item.status), item.error)
                     groups[key] = groups.get(key, 0) + 1
-            for (command, scope, status, reason), count in groups.items(): sheet.append(tuple(_excel_safe(v) for v in (command, scope, count, reason or status, command)))
-        else: sheet.append(SHEET_HEADERS[name])
-        sheet.freeze_panes = "A2"
-        if name in SOURCE_SHEETS:
-            headers = _source_headers(result, SOURCE_SHEETS[name])
-            for col, header in enumerate(headers, 1):
-                if header in {"raw_extra", "explicit_fields", "Source Explicit Fields", "Additional Settings"}: sheet.column_dimensions[sheet.cell(1, col).column_letter].hidden = True
+            for (command, scope, status, reason), count in groups.items(): append_report_row(sheet, tuple(_excel_safe(v) for v in (command, scope, count, reason or status, command)))
+        else: append_report_row(sheet, SHEET_HEADERS[name])
+    finish_report_workbook(workbook)
     if hasattr(output, "write"):
         workbook.save(output); return output
     path = Path(output); workbook.save(path); return path

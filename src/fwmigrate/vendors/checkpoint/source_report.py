@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from ...source_reporting.options import ExcelExportProfile
+
 from .derived import CheckPointDerivedViews, build_checkpoint_derived_views
 from .loader import load_checkpoint_input
 from .model.source import CheckPointConfig
@@ -52,10 +54,10 @@ class CheckPointSourceReporter:
 
         return build_checkpoint_preview(analysis)
 
-    def export_excel(self, analysis: CheckPointSourceResult, output: Any, **options: Any) -> Any:
+    def export_excel(self, analysis: CheckPointSourceResult, output: Any, profile: ExcelExportProfile | str = ExcelExportProfile.FULL, **options: Any) -> Any:
         from .export.excel import export_checkpoint_excel
 
-        return export_checkpoint_excel(analysis, output)
+        return export_checkpoint_excel(analysis, output, profile=profile)
 
 
 def extract_checkpoint_source(source: str) -> CheckPointSourceResult:

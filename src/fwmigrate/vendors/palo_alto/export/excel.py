@@ -1,31 +1,30 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from itertools import chain
 from pathlib import Path
-from typing import Any, BinaryIO, Iterable, Mapping, Sequence
+from typing import Any, BinaryIO, Iterable, Mapping
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.cell import WriteOnlyCell
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from ....source_reporting.options import ExcelExportProfile
+from ....source_reporting.excel_style import append_report_row, style_fast_sheet
+
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
-from .excel_schema import ACTIVE_SHEET_ORDER, DERIVED_COLUMNS_BY_SHEET, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS
+from .excel_schema import ACTIVE_SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS
 from ..source_report import PaloAltoSourceResult
 
 _TITLE_FILL = PatternFill("solid", fgColor="17324D")
 _HEADER_FILL = PatternFill("solid", fgColor="0F766E")
-_DERIVED_FILL = PatternFill("solid", fgColor="D7F0EC")
-_REVIEW_FILL = PatternFill("solid", fgColor="FEF3C7")
-_ERROR_FILL = PatternFill("solid", fgColor="FEE2E2")
-_ALT_FILL = PatternFill("solid", fgColor="F8FAFC")
 _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
 _SUMMARY_TITLE_FONT = Font(color="FFFFFF", bold=True, size=18)
-_HEADER_FONT = Font(color="FFFFFF", bold=True)
 _WHITE_FONT = Font(color="FFFFFF", bold=True)
 _LABEL_FONT = Font(bold=True)
 _MUTED_FONT = Font(color="64748B", italic=True)
 _LINK_FONT = Font(color="0563C1", underline="single")
-_BORDER = Border(bottom=Side(style="thin", color="CBD5E1"))
 _TITLE_ALIGNMENT = Alignment(vertical="center")
 _HEADER_ALIGNMENT = Alignment(wrap_text=True, vertical="center")
 _BODY_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
@@ -46,17 +45,10 @@ def _add_back_link(sheet) -> None:
         cell.alignment = _LINK_ALIGNMENT
 
 
-def _widths(sheet, headers: Sequence[str]) -> None:
-    for index, header in enumerate(headers, 1):
-        name = header.lower()
-        width = 36 if any(word in name for word in ("reason", "settings", "notes")) else 28 if any(word in name for word in ("description", "path", "value")) else 24 if any(word in name for word in ("members", "addresses", "references")) else 18
-        sheet.column_dimensions[get_column_letter(index)].width = width
-
-
 def _write_table(workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]]) -> int:
     headers = SHEET_HEADERS[name]
     sheet = workbook.create_sheet(name)
-    sheet.sheet_view.showGridLines = False
+    sheet.sheet_view.showGridLines = True
     sheet.sheet_view.zoomScale = 90
     max_column = max(len(headers), 1)
     sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_column)
@@ -71,24 +63,13 @@ def _write_table(workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]
     hidden_headers = set(HIDDEN_COLUMNS_BY_DEFAULT.get(name, ()))
     for column, header in enumerate(headers, 1):
         cell = sheet.cell(3, column, header)
-        cell.fill, cell.font, cell.border = _HEADER_FILL, _HEADER_FONT, _BORDER
         cell.alignment = _HEADER_ALIGNMENT
-    derived_headers = set(DERIVED_COLUMNS_BY_SHEET.get(name, ()))
     row_count = 0
     for row_count, row in enumerate(rows, 1):
-        row_number = row_count + 3
-        review_fill = _ERROR_FILL if row.get("__error__") else _REVIEW_FILL if row.get("__review__") else None
-        for column, header in enumerate(headers, 1):
-            cell = sheet.cell(row_number, column, _excel_safe(row.get(header)))
-            cell.alignment = _BODY_ALIGNMENT
-            fill = review_fill or (_DERIVED_FILL if header in derived_headers else _ALT_FILL if row_number % 2 else None)
-            if fill is not None:
-                cell.fill = fill
+        sheet.append([_excel_safe(row.get(header)) for header in headers])
     note.value = f"{row_count} row(s). PAN-OS source values remain separate from derived and validation data."
-    if row_count:
-        sheet.auto_filter.ref = f"A3:{get_column_letter(max_column)}{row_count + 3}"
+    style_fast_sheet(sheet, header_row=3)
     sheet.freeze_panes = "D4" if name in {"Interfaces", "Security Policies", "NAT Rules"} else "C4" if len(headers) > 12 else "A4"
-    _widths(sheet, headers)
     for column, header in enumerate(headers, 1):
         if header in hidden_headers:
             sheet.column_dimensions[get_column_letter(column)].hidden = True
@@ -98,7 +79,7 @@ def _write_table(workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]
 
 def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Mapping[str, int]) -> None:
     sheet = workbook.create_sheet("Summary")
-    sheet.sheet_view.showGridLines = False
+    sheet.sheet_view.showGridLines = True
     sheet.freeze_panes = "A5"
     sheet.merge_cells("A1:F1")
     sheet["A1"], sheet["A1"].fill, sheet["A1"].font = "PAN-OS Configuration Report", _TITLE_FILL, _SUMMARY_TITLE_FONT
@@ -127,22 +108,79 @@ def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Ma
     for row, name in enumerate((item for item in ACTIVE_SHEET_ORDER if item != "Summary"), 4):
         cell = sheet.cell(row, nav_column, name)
         cell.hyperlink, cell.font = f"#'{name}'!A1", _LINK_FONT
-    sheet.column_dimensions["A"].width = 28
-    sheet.column_dimensions["B"].width = 24
-    sheet.column_dimensions["C"].width = 16
-    sheet.column_dimensions["E"].width = 34
+    for column in ("A", "B", "C", "D", "E", "F"):
+        sheet.column_dimensions[column].width = 28
 
 
-def export_panos_excel(analysis: PaloAltoSourceResult, output: BinaryIO | str | Path, *, source_name: str | None = None) -> None:
-    context = _PANExcelContext(analysis, source_name)
-    workbook = Workbook()
-    workbook.remove(workbook.active)
-    row_counts = {}
+def _write_table_fast(workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]]) -> int:
+    headers = SHEET_HEADERS[name]
+    sheet = workbook.create_sheet(name)
+    sheet.sheet_view.showGridLines = True
+    sheet.freeze_panes = "D4" if name in {"Interfaces", "Security Policies", "NAT Rules"} else "C4" if len(headers) > 12 else "A4"
+    for column, header in enumerate(headers, 1):
+        dimension = sheet.column_dimensions[get_column_letter(column)]
+        dimension.width = 28
+        dimension.hidden = header in HIDDEN_COLUMNS_BY_DEFAULT.get(name, ())
+    title = WriteOnlyCell(sheet, name)
+    title.fill, title.font = _TITLE_FILL, _TITLE_FONT
+    sheet.append([title])
+    sheet.append(["FAST lightweight export; source, derived and validation columns remain separate."])
+    cells = []
+    for header in headers:
+        cell = WriteOnlyCell(sheet, header)
+        cell.fill, cell.font = _HEADER_FILL, _WHITE_FONT
+        cells.append(cell)
+    sheet.append(cells)
+    row_count = 0
+    for row_count, row in enumerate(rows, 1):
+        sheet.append([_excel_safe(row.get(header)) for header in headers])
+    sheet.auto_filter.ref = f"A3:{get_column_letter(len(headers))}{row_count + 3}"
+    return row_count
+
+
+def _build_fast_workbook(context: _PANExcelContext) -> Workbook:
+    workbook = Workbook(write_only=True)
+    summary = workbook.create_sheet("Summary")
+    counts = {}
+    no_rows = object()
     for name in ACTIVE_SHEET_ORDER:
-        if name != "Summary":
-            row_counts[name] = _write_table(workbook, name, ROW_BUILDERS[name](context))
-    _write_summary(workbook, context, row_counts)
-    workbook.move_sheet(workbook["Summary"], offset=-len(workbook.sheetnames) + 1)
+        if name in {"Summary", "PAN-OS Source Inventory", "Extraction Coverage"}:
+            continue
+        rows = iter(ROW_BUILDERS[name](context))
+        first = next(rows, no_rows)
+        if first is no_rows and name != "Review Required":
+            continue
+        counts[name] = _write_table_fast(workbook, name, () if first is no_rows else chain((first,), rows))
+    append_report_row(summary, ("PAN-OS Configuration Report", "Value"))
+    for label, value in (
+        ("Excel Profile", "FAST"), ("Source File", context.source_name),
+        ("Hostname", context.config.hostname), ("PAN-OS Version", context.config.source_version),
+        ("Scopes", "\n".join(context.derived.scope_identities)),
+        ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
+        ("Validation Errors", len(context.validation.errors)), ("Validation Warnings", len(context.validation.warnings)),
+        *counts.items(),
+    ):
+        append_report_row(summary, (label, _excel_safe(value)))
+    return workbook
+
+
+def export_panos_excel(
+    analysis: PaloAltoSourceResult, output: BinaryIO | str | Path, *,
+    source_name: str | None = None, profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
+) -> None:
+    profile = ExcelExportProfile(profile)
+    context = _PANExcelContext(analysis, source_name)
+    if profile is ExcelExportProfile.FAST:
+        workbook = _build_fast_workbook(context)
+    else:
+        workbook = Workbook()
+        workbook.remove(workbook.active)
+        row_counts = {}
+        for name in ACTIVE_SHEET_ORDER:
+            if name != "Summary":
+                row_counts[name] = _write_table(workbook, name, ROW_BUILDERS[name](context))
+        _write_summary(workbook, context, row_counts)
+        workbook.move_sheet(workbook["Summary"], offset=-len(workbook.sheetnames) + 1)
     if isinstance(output, (str, Path)):
         Path(output).parent.mkdir(parents=True, exist_ok=True)
     workbook.save(output)

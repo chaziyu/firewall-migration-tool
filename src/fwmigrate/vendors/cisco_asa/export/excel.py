@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ....source_reporting.options import ExcelExportProfile
+from ....source_reporting.excel_style import append_report_row, finish_report_workbook
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 from ..presentation_schema import DERIVED_SECTIONS, SOURCE_SECTIONS
 from ..presentation import excel_value, has_source_evidence, source_value
@@ -68,62 +70,66 @@ def _row(sheet: str, item: Any) -> tuple[Any, ...]:
     raise KeyError(sheet)
 
 
-def export_asa_excel(result: Any, output: Any) -> Any:
+def export_asa_excel(result: Any, output: Any, *, profile: ExcelExportProfile | str = ExcelExportProfile.FULL) -> Any:
     from openpyxl import Workbook
 
-    workbook = Workbook()
-    workbook.remove(workbook.active)
+    profile = ExcelExportProfile(profile)
+    workbook = Workbook(write_only=profile is ExcelExportProfile.FAST)
+    if not workbook.write_only:
+        workbook.remove(workbook.active)
     config = result.config
     for name in SHEET_ORDER:
+        if profile is ExcelExportProfile.FAST and name in {"Source Inventory", "Extraction Coverage"}:
+            continue
         sheet = workbook.create_sheet(name)
         if name == "Summary":
-            sheet.append(("Field", "Value"))
+            append_report_row(sheet, ("Field", "Value"))
             for key, value in {
                 "Vendor": "Cisco ASA", "Hostname": config.hostname,
                 "Interfaces": len(config.interfaces), "ACL Rules": len(config.access_rules),
                 "NAT Rules": len(config.nat_rules), "Validation Issues": len(result.validation.issues),
                 "Unsupported Commands": len(result.unsupported_items),
             }.items():
-                sheet.append((key, excel_value(value)))
+                append_report_row(sheet, (key, excel_value(value)))
             continue
         if name == "Source Inventory":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.inventory_items:
-                sheet.append((item.domain, item.source_path, item.source_id, item.status.value,
+                append_report_row(sheet, (item.domain, item.source_path, item.source_id, item.status.value,
                               item.requires_manual_review, "; ".join(item.notes)))
             continue
         if name == "Review Required":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.inventory_items:
                 if item.requires_manual_review:
-                    sheet.append((item.domain, item.source_path, item.source_id, item.status.value,
+                    append_report_row(sheet, (item.domain, item.source_path, item.source_id, item.status.value,
                                   "; ".join(item.notes), item.source_path or item.source_id))
             for issue in result.validation.issues:
-                sheet.append(("Validation", issue.source_context, issue.source_object, issue.severity,
+                append_report_row(sheet, ("Validation", issue.source_context, issue.source_object, issue.severity,
                               issue.message, issue.source_object))
             for issue in result.derived.relationship_issues + result.derived.transform_issues:
-                sheet.append(("Derived", getattr(issue, "source_context", None),
+                append_report_row(sheet, ("Derived", getattr(issue, "source_context", None),
                               getattr(issue, "source_object", None), "REVIEW_REQUIRED",
                               getattr(issue, "message", str(issue)), getattr(issue, "source_object", None)))
             continue
         if name == "Validation":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for issue in result.validation.issues:
-                sheet.append((issue.severity, issue.category, issue.message, issue.source_context, issue.source_object))
+                append_report_row(sheet, (issue.severity, issue.category, issue.message, issue.source_context, issue.source_object))
             continue
         if name == "Unsupported":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.unsupported_items:
                 raw = getattr(item, "raw_capture", None)
                 source_name = getattr(item, "source_name", "") or ""
                 line = getattr(item, "line_number", None)
                 if line is None and source_name.startswith("line ") and source_name[5:].isdigit():
                     line = int(source_name[5:])
-                sheet.append((line, getattr(item, "source_context", None),
+                append_report_row(sheet, (line, getattr(item, "source_context", None),
                               getattr(item, "source_path", None), item.reason, raw))
             continue
         if name == "Extraction Coverage":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             from collections import Counter
             counts = Counter((item.source_path, item.status.value, item.requires_manual_review)
                              for item in result.inventory_items)
@@ -143,7 +149,7 @@ def export_asa_excel(result: Any, output: Any) -> Any:
             for label, families in areas.items():
                 matching = [(path, status, review, count) for (path, status, review), count in counts.items()
                             if any(path.startswith(family) for family in families)]
-                sheet.append((label, ", ".join(families), sum(c for _, _, _, c in matching),
+                append_report_row(sheet, (label, ", ".join(families), sum(c for _, _, _, c in matching),
                               sum(c for _, s, _, c in matching if s == "EXTRACTED"),
                               sum(c for _, s, _, c in matching if s == "PARTIAL"),
                               sum(c for _, s, _, c in matching if s == "UNSUPPORTED"),
@@ -151,7 +157,7 @@ def export_asa_excel(result: Any, output: Any) -> Any:
                               sum(c for _, _, r, c in matching if r)))
             continue
         if name == "NAT Rules":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.derived.nat.rules:
                 rule = item.source_rule
                 values = (rule.name, item.source_order, item.effective_order, item.ordering_status,
@@ -167,15 +173,15 @@ def export_asa_excel(result: Any, output: Any) -> Any:
                           source_value(rule, "no_proxy_arp"), source_value(rule, "route_lookup"),
                           source_value(rule, "unidirectional"), source_value(rule, "inactive"),
                           rule.options, item.issues, rule.raw_line)
-                sheet.append(tuple(excel_value(value) for value in values))
+                append_report_row(sheet, tuple(excel_value(value) for value in values))
             continue
         if name == "Routes":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.derived.routes.routes:
-                sheet.append(tuple(excel_value(value) for value in _row(name, item)))
+                append_report_row(sheet, tuple(excel_value(value) for value in _row(name, item)))
             continue
         if name == "Interfaces":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             topology = {(item.source_context, item.name.casefold()): item
                         for item in result.derived.interface_topology.interfaces}
             fields = SOURCE_SECTIONS[name][1].split()
@@ -185,10 +191,10 @@ def export_asa_excel(result: Any, output: Any) -> Any:
                           _name(getattr(view, "parent", None)), _name(getattr(view, "aggregate", None)),
                           tuple(_name(value) for value in getattr(view, "physical_interfaces", ())),
                           getattr(view, "issues", ()))
-                sheet.append(tuple(excel_value(value) for value in values))
+                append_report_row(sheet, tuple(excel_value(value) for value in values))
             continue
         if name == "Zones":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             resolved = {}
             for entry in result.derived.interface_topology.interfaces:
                 for zone in entry.zones:
@@ -204,12 +210,12 @@ def export_asa_excel(result: Any, output: Any) -> Any:
                 members = resolved.get((zone.source_context, zone.name), set())
                 unresolved = tuple(member for member in explicit if member not in members)
                 has_issue = (zone.source_context, zone.name) in issues
-                sheet.append((zone.name, zone.source_context, excel_value(explicit),
+                append_report_row(sheet, (zone.name, zone.source_context, excel_value(explicit),
                               excel_value(tuple(sorted(members))), excel_value(unresolved),
                               excel_value(zone.raw_extra), zone.requires_manual_review or has_issue))
             continue
         if name == "IPS Actions":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             activations = {}
             for relationship in result.derived.mpf_relationships.service_policies:
                 policy_map = getattr(relationship.policy_map, "name", None)
@@ -217,28 +223,28 @@ def export_asa_excel(result: Any, output: Any) -> Any:
                     activations.setdefault(policy_map, []).append(
                         getattr(relationship.service_policy, "name", None))
             for policy_map, class_map, action in result.derived.mpf_relationships.external_ips_actions:
-                sheet.append((policy_map.name, class_map.class_name, action.mode, action.failure_mode,
+                append_report_row(sheet, (policy_map.name, class_map.class_name, action.mode, action.failure_mode,
                               action.sensor, policy_map.source_context,
                               excel_value(tuple(activations.get(policy_map.name, ()))), None))
             continue
         if name == "Failover":
-            sheet.append(("Record Type", "Context", "Source Values"))
+            append_report_row(sheet, ("Record Type", "Context", "Source Values"))
             if has_source_evidence(result.config.failover_config):
-                sheet.append(("Failover Configuration", None, excel_value(result.config.failover_config)))
+                append_report_row(sheet, ("Failover Configuration", None, excel_value(result.config.failover_config)))
             for item in config.failover_settings:
-                sheet.append(("Failover Setting", item.source_context,
+                append_report_row(sheet, ("Failover Setting", item.source_context,
                               excel_value({"setting": item.setting})))
             continue
         if name == "DHCP Reservations":
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             for server in config.dhcp_servers:
                 for item in server.reservations:
-                    sheet.append(tuple(excel_value(value) for value in (
+                    append_report_row(sheet, tuple(excel_value(value) for value in (
                         item.ip, item.mac, item.interface, server.source_context, item.source_order,
                     )))
             continue
         if name in SOURCE_SECTIONS:
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             spec = SOURCE_SECTIONS[name]
             values = getattr(config, spec[0], ()) or ()
             singleton = bool(getattr(type(values), "model_fields", None))
@@ -255,17 +261,18 @@ def export_asa_excel(result: Any, output: Any) -> Any:
                 values = (item for item in values if any(getattr(item, key, None)
                           for key in ("policy_route_maps", "policy_route_cost", "policy_route_path_monitors")))
             for item in values:
-                sheet.append(tuple(excel_value(source_value(item, field)) for field in fields))
+                append_report_row(sheet, tuple(excel_value(source_value(item, field)) for field in fields))
             continue
         if name in DERIVED_SECTIONS:
-            sheet.append(SHEET_HEADERS[name])
+            append_report_row(sheet, SHEET_HEADERS[name])
             path = DERIVED_SECTIONS[name].split(".")
             values = result.derived
             for part in path:
                 values = getattr(values, part)
             for item in values:
-                sheet.append(tuple(excel_value(value) for value in _derived_row(name, item)))
+                append_report_row(sheet, tuple(excel_value(value) for value in _derived_row(name, item)))
             continue
+    finish_report_workbook(workbook)
     if hasattr(output, "write"):
         workbook.save(output)
         return output

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...source_reporting.options import ExcelExportProfile
+
 from .source_analysis import JuniperSourceResult, extract_juniper_source as _analyze_juniper_source
 from .source_accounting import get_command_section_path
 
@@ -24,9 +26,9 @@ class JuniperSRXSourceReporter:
         from .web_report import build_juniper_preview
         return build_juniper_preview(analysis)
 
-    def export_excel(self, analysis: JuniperSourceResult, output: Any, **options: Any) -> Any:
+    def export_excel(self, analysis: JuniperSourceResult, output: Any, profile: ExcelExportProfile | str = ExcelExportProfile.FULL, **options: Any) -> Any:
         from .export.excel import export_juniper_excel
-        return export_juniper_excel(analysis, output)
+        return export_juniper_excel(analysis, output, profile=profile)
 
 
 __all__ = ["JuniperSourceResult", "JuniperSRXSourceReporter", "extract_juniper_source"]

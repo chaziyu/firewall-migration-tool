@@ -6,6 +6,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from ...source_reporting.options import ExcelExportProfile
+
 from .model.source import CiscoASAConfig
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes
@@ -54,10 +56,10 @@ class CiscoASASourceReporter:
 
         return build_asa_preview(analysis)
 
-    def export_excel(self, analysis: ASASourceResult, output: Any, **options: Any) -> Any:
+    def export_excel(self, analysis: ASASourceResult, output: Any, profile: ExcelExportProfile | str = ExcelExportProfile.FULL, **options: Any) -> Any:
         from .export.excel import export_asa_excel
 
-        return export_asa_excel(analysis, output)
+        return export_asa_excel(analysis, output, profile=profile)
 
 
 def extract_cisco_asa_source(
