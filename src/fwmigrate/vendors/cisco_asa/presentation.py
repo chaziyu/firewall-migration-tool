@@ -39,7 +39,7 @@ def safe_value(value: Any) -> Any:
     if model_fields:
         return {key: safe_value(source_value(value, key)) for key in model_fields
                 if _safe_key(key, source_value(value, key))
-                and key not in {"raw_extra", "source_attributes"}}
+                and key not in {"explicit_fields", "raw_extra", "source_attributes"}}
     if is_dataclass(value):
         return {field.name: safe_value(getattr(value, field.name)) for field in fields(value)
                 if _safe_key(field.name, getattr(value, field.name))}
