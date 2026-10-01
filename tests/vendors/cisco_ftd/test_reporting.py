@@ -207,9 +207,7 @@ def test_source_inventory_exports_policy_ownership_and_native_types():
 
     address_item = next(item for item in result.inventory_items
                         if item.source_path.endswith("/network-addresses"))
-    assert address_item.source_type.startswith("Network") or address_item.source_type in {
-        "Host", "Network", "Range", "FQDN",
-    }
+    assert address_item.source_type == "network_address"
 
     output = BytesIO()
     CiscoFTDSourceReporter().export_excel(result, output)
