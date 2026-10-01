@@ -82,11 +82,15 @@ def handle_policies_command(cmd: JunosCommand, context: JuniperContextConfig) ->
 
 
 def _get_or_create_policy(pol_list, name, scope="zone", from_zone=None, to_zone=None):
-    key = "|".join((scope, from_zone or "", to_zone or "", name))
-    for p in pol_list:
-        if p.policy_key == key:
-            return p
-    new_p = JuniperPolicy(name=name, policy_scope=scope, from_zone=from_zone, to_zone=to_zone, policy_key=key)
+    for policy in pol_list:
+        if (
+            policy.name == name
+            and policy.policy_scope == scope
+            and policy.from_zone == from_zone
+            and policy.to_zone == to_zone
+        ):
+            return policy
+    new_p = JuniperPolicy(name=name, policy_scope=scope, from_zone=from_zone, to_zone=to_zone)
     if from_zone:
         new_p.from_zones.append(from_zone)
     if to_zone:
