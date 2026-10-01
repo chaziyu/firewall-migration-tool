@@ -531,7 +531,7 @@ class CiscoFMCBundleParser:
             explicit_fields=[field for field, key in (("policy", "policy"), ("targets", "targets")) if key in item])
             for index, item in enumerate(objects.get("policy_assignments", []), 1)]
         for policy_index, policy in enumerate(_items(self.payload.get("access_policies")), 1):
-            policy_name = str(policy.get("name") or policy.get("id") or policy_index)
+            policy_name = str(policy["name"]) if policy.get("name") is not None else None
             acp_rules = []
             for rule_index, item in enumerate(_items(policy.get("rules")), 1):
                 metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
