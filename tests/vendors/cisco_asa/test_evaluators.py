@@ -43,7 +43,7 @@ def test_ipv6_ssh_management_source_is_valid_and_preserved():
     rule = config.management_access_rules[0]
     assert rule.address_family == "ipv6"
     assert rule.source == "2001:db8:1::/64"
-    assert rule.mask_or_prefix is None
+    assert rule.mask_or_prefix == "64"
     assert rule.interface == "outside"
     assert rule.extraction_status != "PARSE_ERROR"
     assert not config.diagnostics
