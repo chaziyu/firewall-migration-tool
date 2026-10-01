@@ -59,3 +59,19 @@ def test_selected_fmc_domains_preserve_native_ownership_and_order():
     assert config.file_policies[0].rules[0].position == 1
     assert config.file_policies[0].rules[0].collection_order == 1
     assert "rules" not in config.file_policies[0].raw_extra
+
+def test_duplicate_nat_positions_are_reported_within_source_section():
+    import json
+    from fwmigrate.vendors.cisco_ftd.source_report import extract_cisco_ftd_source
+
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "nat_policies": [{"id": "nat-1", "name": "NAT", "manual_rules_before_auto": [
+            {"id": "r1", "name": "First", "section": "BEFORE_AUTO", "position": 1},
+            {"id": "r2", "name": "Second", "section": "BEFORE_AUTO", "position": 1},
+        ]}],
+    }))
+
+    rules = result.config.nat_policies[0].manual_rules_before_auto
+    assert [rule.name for rule in rules] == ["First", "Second"]
+    assert any(issue.category == "duplicate-nat-position" for issue in result.validation.issues)

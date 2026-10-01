@@ -5,6 +5,12 @@ from .model import CiscoFTDConfig
 
 
 def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryItem]:
+    def source_name(record):
+        return record.name if record.source_attributes.get("source_name_explicit", True) else None
+
+    def record_id(path: str, index: int) -> str:
+        return f"{config.source_plane}/{path}:{index}"
+
     def nat_rules(policy):
         for rules in (policy.manual_rules_before_auto, policy.auto_rules, policy.manual_rules_after_auto,
                       policy.unclassified_manual_rules, policy.rules):
@@ -60,7 +66,7 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
         for index, record in enumerate(getattr(config, attribute), 1):
             items.append(SourceInventoryItem(
                 domain="cisco_ftd", source_path=f"{config.source_plane}/{path}",
-                source_id=str(record.source_id or index), name=record.name,
+                source_id=record.source_id, source_record_id=record_id(path, index), name=source_name(record),
                 source_type=attribute[:-1], source_context=record.source_context,
                 source_attributes={"source_plane": record.source_plane, "device_id": record.device_id,
                     "device_name": record.source_attributes.get("device_name"), "domain_id": record.domain_id,
@@ -76,8 +82,9 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
             for index, rule in enumerate(policy.rules or [], 1):
                 items.append(SourceInventoryItem(domain="cisco_ftd",
                     source_path=f"{config.source_plane}/{path}",
-                    source_id=str(rule.source_id or f"{policy.source_id or policy.name}:{index}"),
-                    name=rule.name, source_type="policy-rule",
+                    source_id=rule.source_id,
+                    source_record_id=f"{policy.source_id or policy.name or path}:{index}",
+                    name=source_name(rule), source_type="policy-rule",
                     source_context=rule.source_context,
                     source_attributes={"source_plane": rule.source_plane, "domain_id": rule.domain_id,
                         "policy_id": rule.parent_policy_id, "policy_name": rule.parent_policy_name,
@@ -98,7 +105,8 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
         for policy in getattr(config, policy_attribute):
             for index, record in enumerate(policy.rules or [], 1):
                 items.append(SourceInventoryItem(domain="cisco_ftd", source_path=f"{config.source_plane}/{path}",
-                    source_id=str(record.source_id or f"{policy.source_id or policy.name}:{index}"), name=record.name,
+                    source_id=record.source_id,
+                    source_record_id=f"{policy.source_id or policy.name or path}:{index}", name=source_name(record),
                     source_type="rule", source_context=record.source_context,
                     source_attributes={"source_plane": record.source_plane, "policy_id": policy.source_id,
                         "policy_name": policy.name, "section": getattr(record, "section", None), **record.source_attributes},
@@ -106,7 +114,8 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
     for policy in config.nat_policies:
         if not policy.source_attributes.get("synthetic_container"):
             items.append(SourceInventoryItem(domain="cisco_ftd", source_path=f"{config.source_plane}/nat-policies",
-            source_id=policy.source_id or policy.name, name=policy.name, source_type="nat-policy",
+            source_id=policy.source_id, source_record_id=f"nat-policies:{policy.source_id or policy.name}",
+            name=source_name(policy), source_type="nat-policy",
             source_context=policy.source_context, source_attributes={"source_plane": policy.source_plane,
                 "domain_id": policy.domain_id},
             status=ExtractionStatus.SOURCE_ONLY if config.source_plane == "ftd-text-evidence" else ExtractionStatus.EXTRACTED))
@@ -125,7 +134,8 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
             elif record in (policy.manual_rules_after_auto or []):
                 section = "AFTER_AUTO"
             items.append(SourceInventoryItem(domain="cisco_ftd", source_path=f"{config.source_plane}/nat-rules",
-                source_id=record.source_id or f"{policy.source_id or policy.name}:{index}", name=record.name,
+                source_id=record.source_id,
+                source_record_id=f"{policy.source_id or policy.name or 'nat-policy'}:{index}", name=source_name(record),
                 source_type=kind, source_context=record.source_context,
                 source_attributes={"source_plane": record.source_plane, "policy_id": policy.source_id,
                     "policy_name": policy.name, "section": getattr(record, "section", None) or section,

@@ -89,6 +89,10 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
         workbook.remove(workbook.active)
     config = result.config
     derived = getattr(result, "derived", None)
+    inventory_items = getattr(result, "inventory_items", None)
+    if inventory_items is None:
+        from ..source_inventory import build_ftd_source_inventory
+        inventory_items = build_ftd_source_inventory(config)
     topologies = {(item.device_id or "", item.name): item for item in getattr(getattr(derived, "interface_topology", None), "interfaces", ())}
     normalized_routes = {}
     for item in getattr(derived, "normalized_routes", ()):
@@ -212,8 +216,29 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             append_report_row(sheet, ("Field", "Value"))
             for key, value in {"Vendor": "Cisco FTD", "Input Source": config.input_source_type,
                                "Source Plane": config.source_plane,
+                               "Collection Status": config.collection_metadata.status,
+                               "Collection Parts": len(config.collection_metadata.parts),
+                               "Incomplete Collection Parts": sum(not part.complete for part in config.collection_metadata.parts),
                                "Validation Issues": len(result.validation.issues)}.items():
                 append_report_row(sheet, (key, _text(value)))
+        elif name == "Source Inventory":
+            append_report_row(sheet, SHEET_HEADERS[name])
+            for item in inventory_items:
+                attrs = item.source_attributes
+                append_report_row(sheet, tuple(_text(value) for value in (
+                    item.source_path, item.name, item.source_id, item.source_record_id, item.source_type,
+                    item.source_context, attrs.get("domain_id"), attrs.get("device_id"),
+                    attrs.get("device_name"), item.status.value, item.requires_manual_review,
+                    attrs.get("explicit_fields"),
+                )))
+        elif name == "Collection Completeness":
+            append_report_row(sheet, SHEET_HEADERS[name])
+            completeness = getattr(derived, "source_plane_completeness", {})
+            for part in config.collection_metadata.parts:
+                append_report_row(sheet, (
+                    part.name, part.status, part.complete, part.count,
+                    completeness.get(f"collection:{part.name}", "unknown"),
+                ))
         elif name == "Source Evidence":
             append_report_row(sheet, SHEET_HEADERS[name])
             for item in config.unsupported_evidence:
@@ -226,7 +251,8 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             append_report_row(sheet, SHEET_HEADERS[name])
             for collection in native_collections:
                 for item in getattr(config, collection):
-                    append_report_row(sheet, (collection, item.name, item.source_id, item.source_context,
+                    display_name = item.name if item.source_attributes.get("source_name_explicit", True) else None
+                    append_report_row(sheet, (collection, display_name, item.source_id, item.source_context,
                         json.dumps(item.source_attributes, default=str), json.dumps(item.raw_extra, default=str)))
         else:
             append_report_row(sheet, SHEET_HEADERS[name])
