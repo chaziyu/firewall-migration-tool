@@ -90,8 +90,59 @@ def _path(line: str, parent: str | None = None) -> str:
     return "other"
 
 
+def _build_source_contexts(lines: list[str]) -> dict[int, str | None]:
+    """Track explicit ASA execution-space markers without deriving semantics."""
+    admin_name: str | None = None
+    for raw in lines:
+        if raw[:1].isspace():
+            continue
+        line = raw.strip()
+        match = re.fullmatch(r"admin-context\s+(\S+)", line, re.I)
+        if match:
+            admin_name = match.group(1)
+        elif re.fullmatch(r"no\s+admin-context(?:\s+\S+)?", line, re.I):
+            admin_name = None
+
+    ownership: dict[int, str | None] = {}
+    active: str | None = None
+    for index, raw in enumerate(lines):
+        number = index + 1
+        line = raw.strip()
+        ownership[number] = active
+        if not line or line.startswith(("!", ":")) or raw[:1].isspace():
+            continue
+        switch = re.fullmatch(r"changeto\s+context\s+(\S+)", line, re.I)
+        if switch:
+            active = switch.group(1)
+            ownership[number] = active
+            continue
+        if re.fullmatch(r"changeto\s+system", line, re.I):
+            active = None
+            ownership[number] = None
+            continue
+        if re.fullmatch(r"changeto\s+admin", line, re.I):
+            active = admin_name
+            ownership[number] = active
+            continue
+        context = re.fullmatch(r"context\s+(\S+)", line, re.I)
+        if context:
+            next_index = index + 1
+            while next_index < len(lines) and not lines[next_index].strip():
+                next_index += 1
+            has_definition_children = (
+                next_index < len(lines)
+                and not lines[next_index].strip().startswith(("!", ":"))
+                and bool(lines[next_index][:1].isspace())
+            )
+            active = None if has_definition_children else context.group(1)
+            ownership[number] = active
+    return ownership
+
+
 def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
     """Account for every non-comment ASA command and hierarchical block."""
+    lines = text.splitlines()
+    contexts = _build_source_contexts(lines)
     sections: list[SourceSectionResult] = []
     current: SourceSectionResult | None = None
     current_path: str | None = None
@@ -105,7 +156,7 @@ def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
         "crypto map", "crypto ikev1 policy", "crypto ikev2 policy", "crypto ipsec", "webvpn",
         "certificate/trustpoint", "vpn address pool", "dynamic-routing", "sla-monitor",
     }
-    for number, raw in enumerate(text.splitlines(), 1):
+    for number, raw in enumerate(lines, 1):
         line = raw.strip()
         if not line or line.startswith(("!", ":")):
             if current is not None:
@@ -122,7 +173,8 @@ def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
             current.line_end = number - 1
         current_path = _path(line)
         current = SourceSectionResult(
-            path=current_path, line_start=number, line_end=number,
+            path=current_path, source_context=contexts.get(number),
+            line_start=number, line_end=number,
             object_count_source=1, status=ExtractionStatus.UNSUPPORTED,
         )
         sections.append(current)
