@@ -423,3 +423,32 @@ def test_routing_models_preserve_static_routes_and_logical_router_vrfs():
     dynamic = build_panos_config((Path(__file__).parents[2] / "fixtures" / "palo_alto" / "dynamic_routing.xml").read_text())
     assert dynamic.logical_routers[0].vrfs[0].name == "vrf-a"
     assert dynamic.logical_routers[0].vrfs[0].routing_protocol["bgp"]["router-id"] == "10.255.0.1"
+
+
+def test_hostname_uses_only_unambiguous_device_owned_source_path():
+    direct = load_pan_source(
+        "<config><devices><entry name='fw'><deviceconfig><system>"
+        "<hostname>edge-fw</hostname>"
+        "</system></deviceconfig></entry></devices></config>"
+    )
+    assert direct.hostname == "edge-fw"
+
+    template_only = load_pan_source(
+        "<config><devices><entry name='panorama'><template><entry name='branch'>"
+        "<config><devices><entry name='localhost.localdomain'><deviceconfig><system>"
+        "<hostname>template-fw</hostname>"
+        "</system></deviceconfig></entry></devices></config>"
+        "</entry></template></entry></devices></config>"
+    )
+    assert template_only.hostname is None
+
+    direct_and_template = load_pan_source(
+        "<config><devices><entry name='panorama'><deviceconfig><system>"
+        "<hostname>panorama</hostname>"
+        "</system></deviceconfig><template><entry name='branch'>"
+        "<config><devices><entry name='localhost.localdomain'><deviceconfig><system>"
+        "<hostname>template-fw</hostname>"
+        "</system></deviceconfig></entry></devices></config>"
+        "</entry></template></entry></devices></config>"
+    )
+    assert direct_and_template.hostname == "panorama"
