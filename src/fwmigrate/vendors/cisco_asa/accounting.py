@@ -142,15 +142,18 @@ def build_asa_source_accounting(
             ExtractionStatus.PARSE_ERROR,
             ExtractionStatus.UNKNOWN,
         }
-        source_path = next(
-            (s.path for s in sections if (s.line_start or 0) <= number <= (s.line_end or s.line_start or 0)),
-            "other",
+        source_section = next(
+            (s for s in sections if (s.line_start or 0) <= number <= (s.line_end or s.line_start or 0)),
+            None,
         )
+        source_path = source_section.path if source_section is not None else "other"
+        source_context = source_section.source_context if source_section is not None else None
         inventory.append(SourceInventoryItem(
             domain="cisco_asa",
             source_path=source_path,
             source_id=str(number),
             source_type="command",
+            source_context=source_context,
             commands=[SourceCommand(
                 operation=safe_parts[0].lower(),
                 key=" ".join(safe_parts[:2]).lower(),
@@ -159,6 +162,7 @@ def build_asa_source_accounting(
                 status=status,
                 parser_handler="CiscoASAParser.parse_raw" if status != ExtractionStatus.UNSUPPORTED else None,
                 requires_manual_review=requires_review,
+                source_context=source_context,
             )],
             source_attributes={"line_number": number, "raw": safe_line},
             status=status,
@@ -178,6 +182,7 @@ def build_asa_source_accounting(
             source_name=f"line {item['line_number']}",
             reason=item["reason"],
             raw_capture=sanitize_raw_text(item["raw_line"]),
+            source_context=item.get("source_context"),
         ))
     return inventory, unsupported
 
