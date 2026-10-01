@@ -147,7 +147,7 @@ export function rowColumns(rows: ReportRow[], subsection = '', vendor = '') {
 }
 export function defaultColumns(rows: ReportRow[], subsection = '', vendor = '') {
   const columns = rowColumns(rows, subsection, vendor)
-  if (subsection === 'interface_topology') return columns.filter((key) => !['parent', 'members', 'aggregate', 'path', 'topology_path'].includes(key))
+  if (subsection === 'interface_topology') return columns.filter((key) => !['type', 'parent', 'members', 'aggregate', 'path', 'topology_path'].includes(key))
   const preferred = vendor === 'fortigate' ? FORTIGATE_COLUMNS[subsection] : undefined
   const selected = preferred ? columns.filter((key) => preferred.includes(key)) : []
   return selected.length ? selected : columns.slice(0, 8)
