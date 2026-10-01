@@ -1,6 +1,6 @@
 """Validation for FTD source reporting."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, time
 from ipaddress import ip_address
 
@@ -15,6 +15,10 @@ class FTDValidationIssue:
     message: str
     source_plane: str
     source_object: str | None = None
+    source_id: str | None = None
+    source_context: str | None = None
+    domain_id: str | None = None
+    device_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -29,7 +33,8 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
         f"{item.reason.replace('-', ' ').capitalize()} FTD reference {item.reference} in {item.field}; "
         f"expected {' | '.join(item.expected_kinds)}; found {' | '.join(item.found_kinds) or 'none'} "
         f"in domain/scope {item.domain_id or item.scope or 'source'}",
-        item.source_plane, item.owner) for item in derived.unresolved_references]
+        item.source_plane, item.owner, source_id=item.owner_id, source_context=item.source_context,
+        domain_id=item.domain_id, device_id=item.device_id) for item in derived.unresolved_references]
     issues.extend(FTDValidationIssue("warning", "unsupported", str(item.get("reason", "Unsupported source evidence")),
                                      config.source_plane, str(item.get("source_path", "")))
                   for item in config.unsupported_evidence)
@@ -249,7 +254,44 @@ def validate_ftd_config(config: CiscoFTDConfig, derived: FTDDerivedViews) -> FTD
                     issues.append(FTDValidationIssue("warning", "invalid-time-range",
                         f"{prefix} has an invalid day selection in {field.replace('_', ' ')}",
                         item.source_plane, item.name))
-    return FTDValidationResult(tuple(issues))
+    def iter_source_records(value):
+        if isinstance(value, (list, tuple)):
+            for child in value:
+                yield from iter_source_records(child)
+            return
+        fields = getattr(type(value), "model_fields", None)
+        if fields is None:
+            return
+        if all(hasattr(value, field) for field in ("name", "source_id", "source_plane", "source_context")):
+            yield value
+        for field in fields:
+            if field in {"raw_extra", "source_attributes"}:
+                continue
+            yield from iter_source_records(getattr(value, field))
+
+    records = list(iter_source_records(config))
+    enriched = []
+    for issue in issues:
+        if issue.source_id or issue.source_context or issue.domain_id or issue.device_id or not issue.source_object:
+            enriched.append(issue)
+            continue
+        candidates = [
+            record for record in records
+            if record.source_plane == issue.source_plane
+            and issue.source_object in {record.name, record.source_id}
+        ]
+        if len(candidates) != 1:
+            enriched.append(issue)
+            continue
+        record = candidates[0]
+        enriched.append(replace(
+            issue,
+            source_id=record.source_id,
+            source_context=record.source_context,
+            domain_id=record.domain_id,
+            device_id=record.device_id or record.source_attributes.get("device_id"),
+        ))
+    return FTDValidationResult(tuple(enriched))
 
 
 __all__ = ["FTDValidationIssue", "FTDValidationResult", "validate_ftd_config"]
