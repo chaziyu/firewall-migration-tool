@@ -13,6 +13,45 @@ from . import _mark_explicit
 
 class ManagementEvaluator:
 
+    def _parse_ntp_authentication_command(self, line: str, line_number: int) -> bool:
+        lower = line.lower().strip()
+        negated = lower.startswith("no ")
+        effective = line[3:].strip() if negated else line.strip()
+        parts = effective.split()
+        safe = sanitize_raw_text(line)
+
+        setting = None
+        secret_present = False
+        if [part.lower() for part in parts] == ["ntp", "authenticate"]:
+            setting = "ntp authenticate"
+        elif len(parts) >= 3 and [part.lower() for part in parts[:2]] == ["ntp", "trusted-key"]:
+            setting = f"ntp trusted-key {parts[2]}"
+        elif len(parts) >= 3 and [part.lower() for part in parts[:2]] == ["ntp", "authentication-key"]:
+            if not negated and len(parts) < 5:
+                self._record_diagnostic(
+                    line_number, line, "Malformed NTP authentication-key command", "ntp"
+                )
+            algorithm = parts[3] if len(parts) > 3 else None
+            setting = " ".join(
+                value for value in ("ntp authentication-key", parts[2], algorithm) if value
+            )
+            secret_present = not negated and len(parts) >= 5
+        else:
+            return False
+
+        record = CiscoManagementSetting(
+            name=f"ntp-auth:{line_number}",
+            setting=setting,
+            enabled=not negated,
+            raw_lines=[safe],
+            extraction_status="EXTRACTED" if setting is not None else "PARTIAL",
+            requires_manual_review=False,
+            explicit_fields={"setting", "enabled"},
+            source_attributes={"raw_command": safe, "secret_present": secret_present},
+        )
+        self.config.management_settings.append(self._with_source_context(record, line_number))
+        return True
+
     def _legacy_management(self, line: str) -> None:
         self.config.management_settings.append(CiscoManagementSetting(
             name=line.split()[0], setting=line.split()[0], raw_lines=[sanitize_raw_text(line)],
@@ -20,6 +59,8 @@ class ManagementEvaluator:
 
     def _parse_management_command_base(self, line: str, line_number: int) -> None:
         parts = line.split(); lower = line.lower(); command = parts[0].lower()
+        if self._parse_ntp_authentication_command(line, line_number):
+            return
         self._legacy_management(line)
         system = self.config.system_settings
         system.raw_lines.append(sanitize_raw_text(line))
@@ -60,15 +101,47 @@ class ManagementEvaluator:
                 elif token.lower() == "key" and pos + 1 < len(parts): item.key_id = parts[pos + 1]
             self.config.ntp_servers.append(item); return
         if command in {"ssh", "http", "telnet"}:
-            item = CiscoManagementAccessRule(name=f"{command}:{line_number}", protocol=command, source=parts[1] if len(parts)>1 else None, mask_or_prefix=parts[2] if len(parts)>2 else None, interface=parts[3] if len(parts)>3 else None, raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number, source_attributes={"raw_command": sanitize_raw_text(line)})
-            if len(parts) < 4:
-                item.extraction_status = "PARSE_ERROR"; item.requires_manual_review = True; item.review_reasons.append("Malformed management access rule"); self._record_diagnostic(line_number, line, item.review_reasons[0], command)
-            elif normalize_ipv4_network(item.source or "", item.mask_or_prefix or "") is None:
-                item.extraction_status = "PARSE_ERROR"; item.requires_manual_review = True; item.review_reasons.append("Invalid management source IPv4 address/netmask"); self._record_diagnostic(line_number, line, item.review_reasons[0], command)
+            ipv6_form = len(parts) >= 3 and ":" in parts[1]
+            item = CiscoManagementAccessRule(
+                name=f"{command}:{line_number}",
+                protocol=command,
+                source=parts[1] if len(parts) > 1 else None,
+                mask_or_prefix=None if ipv6_form else (parts[2] if len(parts) > 2 else None),
+                interface=(parts[2] if ipv6_form and len(parts) > 2 else
+                           parts[3] if not ipv6_form and len(parts) > 3 else None),
+                address_family="ipv6" if ipv6_form else "ipv4",
+                raw_line=sanitize_raw_text(line),
+                raw_lines=[sanitize_raw_text(line)],
+                source_order=line_number,
+                source_attributes={"raw_command": sanitize_raw_text(line)},
+            )
+            valid = True
+            if ipv6_form:
+                try:
+                    valid = ipaddress.ip_network(item.source or "", strict=False).version == 6
+                except ValueError:
+                    valid = False
+                if not item.interface:
+                    valid = False
+                reason = "Invalid management source IPv6 prefix"
+            else:
+                valid = len(parts) >= 4 and normalize_ipv4_network(
+                    item.source or "", item.mask_or_prefix or ""
+                ) is not None
+                reason = "Invalid management source IPv4 address/netmask"
+            if not valid:
+                item.extraction_status = "PARSE_ERROR"
+                item.requires_manual_review = True
+                item.review_reasons.append(reason)
+                self._record_diagnostic(line_number, line, reason, command)
             if "port" in [x.lower() for x in parts]:
                 pos = [x.lower() for x in parts].index("port")
-                if pos + 1 < len(parts) and parts[pos + 1].isdigit(): item.port = int(parts[pos + 1])
-            self.config.management_access_rules.append(item); return
+                if pos + 1 < len(parts) and parts[pos + 1].isdigit():
+                    item.port = int(parts[pos + 1])
+            self.config.management_access_rules.append(
+                self._with_source_context(item, line_number)
+            )
+            return
         if lower.startswith("snmp-server "):
             item = CiscoSNMPSetting(name=f"snmp:{line_number}", setting_type="command", raw_line=sanitize_raw_text(line), raw_lines=[sanitize_raw_text(line)], source_order=line_number, source_attributes={"raw_command": sanitize_raw_text(line)})
             if len(parts) > 1 and parts[1].lower() in {"location", "contact"}:
