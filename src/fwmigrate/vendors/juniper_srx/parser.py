@@ -6,7 +6,10 @@ from typing import Dict, Optional
 
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.vendors.juniper_srx.command_evaluator import JuniperCommandEvaluator
-from fwmigrate.vendors.juniper_srx.hierarchy_parser import looks_hierarchical, normalize_hierarchy
+from fwmigrate.vendors.juniper_srx.hierarchy_parser import (
+    looks_hierarchical,
+    normalize_hierarchy_with_provenance,
+)
 from fwmigrate.vendors.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig
 from fwmigrate.vendors.juniper_srx.tokenizer import (
     JuniperSetTokenizer,
@@ -30,8 +33,16 @@ class JuniperSRXParser:
         """Parse explicit Junos source state without entering the legacy IR path."""
         self.config = JuniperSRXConfig()
         source_format = "junos_hierarchical" if looks_hierarchical(self.content) else "junos_display_set"
-        source = normalize_hierarchy(self.content) if source_format == "junos_hierarchical" else self.content
+        if source_format == "junos_hierarchical":
+            source, original_lines = normalize_hierarchy_with_provenance(self.content)
+        else:
+            source, original_lines = self.content, ()
         commands = self.tokenizer.tokenize(source)
+        if original_lines:
+            for command in commands:
+                normalized_line = command.normalized_line_number or command.line_number
+                if 1 <= normalized_line <= len(original_lines):
+                    command.line_number = original_lines[normalized_line - 1]
         self.source_format = source_format
         self.commands = commands
 
@@ -135,6 +146,7 @@ class JuniperSRXParser:
             tokens=stripped_tokens,
             raw_sanitized=cmd.raw_sanitized,
             line_number=cmd.line_number,
+            normalized_line_number=cmd.normalized_line_number,
             original_tokens=list(cmd.tokens),
             normalized_tokens=list(stripped_tokens),
             context_type=context.context_type,
