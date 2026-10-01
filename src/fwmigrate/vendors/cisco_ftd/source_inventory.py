@@ -13,7 +13,9 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
         scope = [
             f"domain={record.domain_id}" if record.domain_id else None,
             f"device={record.device_id or attributes.get('device_id')}" if record.device_id or attributes.get("device_id") else None,
-            f"parent={parent_id or attributes.get('parent_policy_id')}" if parent_id or attributes.get("parent_policy_id") else None,
+            f"virtual-router={attributes.get('virtual_router_id')}" if attributes.get("virtual_router_id") else None,
+            f"parent={parent_id or attributes.get('parent_policy_id') or attributes.get('parent_topology_id')}"
+            if parent_id or attributes.get("parent_policy_id") or attributes.get("parent_topology_id") else None,
         ]
         identity = f"id={record.source_id}" if record.source_id else f"index={index}"
         return "/".join([config.source_plane, *[item for item in scope if item], path, identity])
@@ -120,12 +122,13 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
     for policies, path in ((config.file_policies, "file-policy-rules"),
                            (config.decryption_policies, "decryption-policy-rules"),
                            (config.dns_policies, "dns-policy-rules")):
-        for policy in policies:
+        for policy_index, policy in enumerate(policies, 1):
+            parent_record_id = policy.source_id or record_id(path.removesuffix("-rules"), policy_index, policy)
             for index, rule in enumerate(policy.rules or [], 1):
                 items.append(SourceInventoryItem(domain="cisco_ftd",
                     source_path=f"{config.source_plane}/{path}",
                     source_id=rule.source_id,
-                    source_record_id=record_id(path, index, rule, policy.source_id),
+                    source_record_id=record_id(path, index, rule, parent_record_id),
                     name=source_name(rule), source_type="policy-rule",
                     source_context=rule.source_context,
                     source_attributes={"source_plane": rule.source_plane, "domain_id": rule.domain_id,
@@ -144,11 +147,12 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
                     status=ExtractionStatus.SOURCE_ONLY,
                     requires_manual_review=any(evidence_matches(record, item) for item in config.unsupported_evidence)))
     for policy_attribute, path in (("access_control_policies", "access-control-rules"),):
-        for policy in getattr(config, policy_attribute):
+        for policy_index, policy in enumerate(getattr(config, policy_attribute), 1):
+            parent_record_id = policy.source_id or record_id("access-control-policies", policy_index, policy)
             for index, record in enumerate(policy.rules or [], 1):
                 items.append(SourceInventoryItem(domain="cisco_ftd", source_path=f"{config.source_plane}/{path}",
                     source_id=record.source_id,
-                    source_record_id=record_id(path, index, record, policy.source_id), name=source_name(record),
+                    source_record_id=record_id(path, index, record, parent_record_id), name=source_name(record),
                     source_type="rule", source_context=record.source_context,
                     source_attributes={"source_plane": record.source_plane, "policy_id": policy.source_id,
                         "policy_name": policy.name, "section": getattr(record, "section", None), **record.source_attributes},
