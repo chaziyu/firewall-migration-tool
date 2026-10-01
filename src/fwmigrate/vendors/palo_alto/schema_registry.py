@@ -37,6 +37,49 @@ class PANPathSpec:
 
 _REGISTRY: dict[str, PANPathSpec] = {}
 
+# Structural containers that may legitimately appear before a registered
+# vendor-object suffix. Unknown containers fail closed so a future PAN-OS
+# subtree cannot be reinterpreted as a known object merely because it ends in
+# a familiar tag sequence such as address/entry.
+_STRUCTURAL_CONTEXT_SEGMENTS = frozenset({
+    "config",
+    "devices",
+    "device",
+    "entry",
+    "shared",
+    "vsys",
+    "device-group",
+    "template",
+    "template-stack",
+    "network",
+    "deviceconfig",
+    "user-id",
+    "rulebase",
+    "pre-rulebase",
+    "post-rulebase",
+    "crypto-profiles",
+})
+
+
+def _known_context_segments() -> frozenset[str]:
+    return _STRUCTURAL_CONTEXT_SEGMENTS | frozenset(
+        segment
+        for spec in _REGISTRY.values()
+        for segment in spec.path_suffix
+    )
+
+
+def _context_is_supported(path: tuple[str, ...], spec: PANPathSpec) -> bool:
+    prefix_length = len(path) - len(spec.path_suffix)
+    if prefix_length <= 0:
+        return False
+    prefix = path[:prefix_length]
+    if prefix[0] != "config":
+        return False
+    known = _known_context_segments()
+    return all(segment in known for segment in prefix)
+
+
 
 def register_path(spec: PANPathSpec) -> None:
     if spec.name in _REGISTRY:
@@ -53,7 +96,7 @@ def get_path_spec(name: str) -> PANPathSpec | None:
 def match_path_spec(path: tuple[str, ...]) -> PANPathSpec | None:
     matches = [spec for spec in _REGISTRY.values() if path[-len(spec.path_suffix):] == spec.path_suffix]
     match = max(matches, key=lambda spec: len(spec.path_suffix), default=None)
-    if match is None:
+    if match is None or not _context_is_supported(path, match):
         return None
     ancestors = [
         spec
