@@ -1704,6 +1704,7 @@
       "fields": [
         "line_number",
         "section",
+        "source_context",
         "object_name",
         "raw_line",
         "severity",
@@ -1734,7 +1735,6 @@
         "acl_bindings",
         "nat_rules",
         "static_routes",
-        "route_tracking_ids",
         "tracks",
         "sla_monitors",
         "dynamic_routing",
@@ -1785,7 +1785,6 @@
         "trustpoint_records",
         "http_server",
         "multi_context_system",
-        "acl_consumers",
         "unsupported_commands",
         "parse_errors",
         "diagnostics"
