@@ -10,7 +10,6 @@ export type Workspace = {
   targetSource: SourceEvidence | null
   targetDevice: string
   decisionDocument: MigrationDecisionDocument | null
-  designSession: Record<string, unknown> | null
   deterministicDraft: MigrationDraft | null
   referenceRole: ReferenceRole
   artifact: PlanArtifact | null

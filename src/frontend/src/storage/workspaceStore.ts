@@ -1,7 +1,7 @@
 import type { Workspace } from './workspaceTypes'
 
 const TTL = 24 * 60 * 60 * 1000
-const empty = (): Workspace => ({ updatedAt: Date.now(), preview: null, targetSource: null, targetDevice: '', decisionDocument: null, designSession: null, deterministicDraft: null, referenceRole: 'DESTINATION', artifact: null })
+const empty = (): Workspace => ({ updatedAt: Date.now(), preview: null, targetSource: null, targetDevice: '', decisionDocument: null, deterministicDraft: null, referenceRole: 'DESTINATION', artifact: null })
 let current = empty()
 
 function open(): Promise<IDBDatabase> {
@@ -56,9 +56,6 @@ export function saveWorkspace(update: Partial<Workspace>): Promise<void> {
     targetDevice: update.targetDevice ?? current.targetDevice,
     referenceRole: update.referenceRole ?? current.referenceRole,
     decisionDocument: update.decisionDocument === undefined ? current.decisionDocument : update.decisionDocument,
-    designSession: update.designSession === undefined
-      ? (contextChanged ? null : current.designSession)
-      : update.designSession,
     deterministicDraft: update.deterministicDraft === undefined
       ? (derivedStateChanged ? null : current.deterministicDraft)
       : update.deterministicDraft,
