@@ -2,16 +2,15 @@ import { saveWorkspace, workspace } from '../../storage/workspaceStore'
 import type { SourceEvidence } from '../../storage/workspaceTypes'
 import { useEffect, useRef, useState } from 'react'
 import type { SetStateAction } from 'react'
-import { apiFetch, postForm, postJson as requestJson, RequestError } from '../../api/client'
+import { postForm, postJson as requestJson, RequestError } from '../../api/client'
 import { FileUpload } from '../source/FileUpload'
 import type { SourcePreviewData } from '../source/types'
 import type { MigrationDecisionDocument } from './types'
 import type { MigrationDraft, ReferenceRole } from './types'
 import { MigrationDesignReview } from './components/MigrationDesignReview'
-import type { Decision, DecisionDocument, Proposal, ReviewData, ReviewGroup } from './reviewTypes'
+import type { Decision, DecisionDocument, ReviewData, ReviewGroup } from './reviewTypes'
 import { download } from './download'
 import { MigrationReviewQueues } from './components/MigrationReviewQueues'
-import { MigrationAIReview } from './components/MigrationAIReview'
 import { MigrationDecisionTable } from './components/MigrationDecisionTable'
 import { confirmationEvidenceType, reconcileReviewDrafts } from './reviewDrafts'
 import { MigrationInterfaceMappings } from './components/MigrationInterfaceMappings'
@@ -33,9 +32,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const [deterministicDraft, setDeterministicDraft] = useState<MigrationDraft | null>(workspace().deterministicDraft)
   const [review, setReview] = useState<ReviewData | null>(null)
   const [drafts, updateDrafts] = useState<Record<string, string>>({})
-  const [proposals, setProposals] = useState<Proposal[]>((workspace().designSession?.proposals as Proposal[]) || [])
-  const [designSession, setDesignSession] = useState<Record<string, unknown> | null>(workspace().designSession)
-  const designSessionId = String(designSession?.design_session_id || '')
   const [activeQueue, setActiveQueue] = useState('NEEDS_INPUT')
   const [selectedGroupKey, setSelectedGroupKey] = useState('')
   const [replaceTarget, setReplaceTarget] = useState(false)
@@ -46,7 +42,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const actionVersion = useRef(0)
   const [search, setSearch] = useState('')
   const [vdomFilter, setVdomFilter] = useState('all')
-  const [advisorStatus, setAdvisorStatus] = useState('Advisor status not checked.')
   const [decisionFilter, setDecisionFilter] = useState('all')
   const [evidenceFilter, setEvidenceFilter] = useState('all')
   const [pendingOnly, setPendingOnly] = useState(false)
@@ -62,14 +57,11 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   async function postJson<T>(path: string, payload: Record<string, unknown>): Promise<T> {
     const version = requestVersion.current
-    const result = await requestJson<T>(path, { source, target_source: targetSource, target_device: targetDevice,
-      ...(designSession ? { design_session: designSession } : {}), ...payload }).catch((cause: unknown) => {
+    const result = await requestJson<T>(path, { source, target_source: targetSource, target_device: targetDevice, ...payload }).catch((cause: unknown) => {
         if (version !== requestVersion.current) throw new DOMException('Review context changed', 'AbortError')
         throw cause
       })
     if (version !== requestVersion.current) throw new DOMException('Review context changed', 'AbortError')
-    const response = result as { design_session?: Record<string, unknown> }
-    if (response.design_session?.design_session_id) { setDesignSession(response.design_session); await saveWorkspace({ designSession: response.design_session }) }
     if (version !== requestVersion.current) throw new DOMException('Review context changed', 'AbortError')
     return result
   }
@@ -91,8 +83,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       ...(targetSource ? { target_source: targetSource, target_device: targetDevice } : {}),
     })
     await loadReview(result.decision_document)
-    setProposals([])
-    setDesignSession(null); void saveWorkspace({ designSession: null })
   }
 
   async function loadReview(document?: DecisionDocument, targetId = targetSource, device = targetDevice,
@@ -213,8 +203,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   async function updateDecisions(decisions: Decision[]) {
     await loadReview(currentDocument(decisions))
-    setProposals([])
-    setDesignSession(null); void saveWorkspace({ designSession: null })
   }
 
   async function approveDesign(groups: string[]) {
@@ -246,8 +234,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       if (!result.source_evidence) throw new Error('PAN-OS preview did not return source evidence')
       const nextTargetId = result.source_evidence
       setTargetSource(nextTargetId)
-      setProposals([])
-      setDesignSession(null); void saveWorkspace({ designSession: null })
       await loadReview(review ? currentDocument() : undefined, nextTargetId, '')
       if (version !== actionVersion.current) return
       setTargetFilename(file.name)
@@ -264,8 +250,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   async function selectTargetDevice(device: string) {
     setTargetDevice(device)
-    setProposals([])
-    setDesignSession(null); void saveWorkspace({ designSession: null })
     await loadReview(currentDocument(), targetSource, device)
   }
 
@@ -362,8 +346,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     if (!file) return
     const document = JSON.parse(await file.text()) as DecisionDocument
     const result = await postJson<{ decision_document: DecisionDocument }>('/api/migration/decisions/import', { source, document })
-    setProposals([])
-    setDesignSession(null); void saveWorkspace({ designSession: null })
     await loadReview(result.decision_document, targetSource, targetDevice)
   }
 
@@ -375,71 +357,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       enabled_policies: enabledPolicies,
       ...(targetSource ? { target_source: targetSource, target_device: targetDevice } : {}),
     })
-    setProposals([])
-    setDesignSession(null); void saveWorkspace({ designSession: null })
     await loadReview(result.decision_document, targetSource, targetDevice)
     setStatus(`${enabledPolicies.length ? result.audit?.length ?? 0 : 0} decisions resolved by deterministic automation.`)
-  }
-
-  async function buildProposals(retry = false) {
-    const result = await postJson<{ design_session: Record<string, unknown> & { design_session_id: string; proposals: Proposal[] } }>('/api/migration/ai/design', {
-      source,
-      decision_document: currentDocument(),
-      target_source: targetSource,
-      target_device: targetDevice,
-      ...(designSessionId ? { design_session_id: designSessionId } : {}),
-      ...(retry && designSessionId ? { retry_exceptions: true } : {}),
-    })
-    setDesignSession(result.design_session)
-    setProposals(result.design_session.proposals || [])
-  }
-
-  async function approveProposal(proposal: Proposal) {
-    if (!designSessionId || proposal.validation_status !== 'VALID') return
-    const result = await postJson<{ decisions: { decisions: Decision[] }; decision_document: DecisionDocument }>(
-      `/api/migration/ai/design/${encodeURIComponent(designSessionId)}/approve`,
-      {
-        source,
-        decision_document: currentDocument(),
-        target_source: targetSource,
-        target_device: targetDevice,
-        decision_keys: [proposal.decision_key],
-      },
-    )
-    await loadReview(result.decision_document)
-    setProposals((items) => items.filter((item) => item.decision_key !== proposal.decision_key))
-  }
-
-  async function approveProposals(keys: string[]) {
-    if (!designSessionId || !keys.length) return
-    const result = await postJson<{ decision_document: DecisionDocument }>('/api/migration/ai/design/' + encodeURIComponent(designSessionId) + '/approve', {
-      source, decision_document: currentDocument(), target_source: targetSource, target_device: targetDevice, decision_keys: keys,
-    })
-    await loadReview(result.decision_document)
-    setProposals((items) => items.filter((item) => !keys.includes(item.decision_key)))
-  }
-
-  async function rejectProposals(keys: string[]) {
-    if (!designSessionId || !keys.length) return
-    await postJson(`/api/migration/ai/design/${encodeURIComponent(designSessionId)}/reject`, {
-      source, decision_document: currentDocument(), target_source: targetSource,
-      target_device: targetDevice, decision_keys: keys,
-    })
-    setProposals((items) => items.filter((item) => !keys.includes(item.decision_key)))
-  }
-
-  async function testAdvisor() {
-    try {
-      const response = await apiFetch('/api/migration/ai/status')
-      const config = await response.json() as { enabled?: boolean; provider?: string; model?: string; groq_configured?: boolean; local_configured?: boolean; error?: string }
-      setAdvisorStatus(config.enabled ? `${config.provider === 'qwen_local' ? 'Local Qwen' : 'Groq'} · ${config.model} · ${(config.provider === 'qwen_local' ? config.local_configured : config.groq_configured) ? 'Ready' : 'Configuration error'}` : 'AI advisor disabled.')
-      const result = await postJson<{ provider: string; model: string; checks?: Array<{ name: string; success: boolean }> }>('/api/migration/ai/test', {})
-      setAdvisorStatus(`${result.provider} · ${result.model} · ${(result.checks ?? []).map((item) => `${item.name}: ${item.success ? 'PASS' : 'FAIL'}`).join(' · ') || 'Test passed'}`)
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'Advisor test failed'
-      setAdvisorStatus(message)
-      throw cause
-    }
   }
 
   async function confirmGroup(group: ReviewGroup) {
@@ -475,7 +394,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const queueNames = ['NEEDS_INPUT', 'CHOOSE_CANDIDATE', 'READY_TO_CONFIRM', 'CONFLICT', 'COMPLETE']
   const visibleGroups = reviewGroups.filter((group) => group.queue === activeQueue && (vdomFilter === 'all' || group.source_vdom === vdomFilter)
     && `${group.source_vdom} ${group.source_kind} ${group.source_name}`.toLowerCase().includes(search.toLowerCase()))
-  const validProposalKeys = proposals.filter((proposal) => proposal.validation_status === 'VALID' && proposal.proposed_value).map((proposal) => proposal.decision_key)
   const visibleDecisions = decisions.filter((item) => {
     if (decisionFilter === 'zones' && item.source_kind !== 'zone') return false
     if (decisionFilter === 'interfaces' && item.source_kind !== 'interface') return false
@@ -522,7 +440,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
         </div>
         {targetSource && <button className="secondary-button" type="button" disabled={busy} onClick={() => setReplaceTarget((value) => !value)}>Replace XML</button>}
         {targetSource && <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => {
-          setTargetSource(null); setTargetFilename(''); setTargetDevices([]); setTargetDevice(''); setProposals([]); setDesignSession(null); void saveWorkspace({ designSession: null })
+          setTargetSource(null); setTargetFilename(''); setTargetDevices([]); setTargetDevice('')
           onContextChange?.(null, '')
           await loadReview(currentDocument(), null, '')
         }, 'Target evidence removed.')}>Remove target</button>}
@@ -575,7 +493,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           setDecisionPage={setDecisionPage}
           drafts={drafts}
           setDrafts={setDrafts}
-          proposals={proposals}
           decisions={decisions}
           busy={busy}
           run={run}
@@ -592,25 +509,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 <button className="secondary-button" type="button" disabled={busy || !suggestions.length} onClick={() => bulkConfirm(suggestions.map((item) => item.key), (item) => item.suggested_value ?? '')}>Review all suggestions</button>
         </div>
 
-        </details>
-        <details className="migration-review-tools"><summary>Optional AI assistance</summary>
-        <p className="report-count-note">AI assistance requires target XML and a selected target device. Proposals need your approval.</p>
-        <MigrationAIReview
-          advisorStatus={advisorStatus}
-          busy={busy}
-          targetSource={targetSource}
-          targetDevice={targetDevice}
-          designSessionId={designSessionId}
-          validProposalKeys={validProposalKeys}
-          proposals={proposals}
-          run={run}
-          testAdvisor={testAdvisor}
-          buildProposals={buildProposals}
-          approveProposals={approveProposals}
-          approveProposal={approveProposal}
-          rejectProposals={rejectProposals}
-          setDrafts={setDrafts}
-        />
         </details>
         <details className="migration-review-tools">
           <summary>Mapping files and explicit automation</summary>
