@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from functools import wraps
 from pydantic import ValidationError
-from flask import Flask, request, send_file, send_from_directory, jsonify
+from flask import Flask, Request as FlaskRequest, request, send_file, send_from_directory, jsonify
 
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
@@ -118,6 +118,19 @@ from fwmigrate.source_reporting.web_report import normalize_web_report
 _LOGGER = logging.getLogger(__name__)
 _DEPLOYMENT_SESSION_TTL_SECONDS = 30 * 60
 
+
+class _MemoryOnlyUploadRequest(FlaskRequest):
+    """Keep bounded customer uploads in memory instead of Werkzeug temp files."""
+
+    def _get_file_stream(
+        self,
+        total_content_length,
+        content_type,
+        filename=None,
+        content_length=None,
+    ):
+        return io.BytesIO()
+
 @dataclass(frozen=True)
 class _TargetEvidenceContext:
     analysis: object
@@ -177,6 +190,7 @@ def create_app(test_config=None):
         __name__,
         static_folder=os.path.join(base_dir, 'static'),
     )
+    app.request_class = _MemoryOnlyUploadRequest
 
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 
@@ -186,6 +200,10 @@ def create_app(test_config=None):
     app.config.setdefault(
         'ALLOW_REMOTE_COLLECTION',
         os.environ.get('FWMIGRATE_ALLOW_REMOTE_COLLECTION', '').strip().casefold() in {'1', 'true', 'yes', 'on'},
+    )
+    app.config.setdefault(
+        'ALLOW_REMOTE_DEPLOYMENT',
+        os.environ.get('FWMIGRATE_ALLOW_REMOTE_DEPLOYMENT', '').strip().casefold() in {'1', 'true', 'yes', 'on'},
     )
     app.config.setdefault('MAX_CONTENT_LENGTH', 2 * MAX_BYTES + 5_000_000)
 
@@ -203,6 +221,10 @@ def create_app(test_config=None):
     if app.config.get('ALLOW_REMOTE_COLLECTION') and not web_password:
         raise RuntimeError(
             'Remote live collection requires configured web authentication'
+        )
+    if app.config.get('ALLOW_REMOTE_DEPLOYMENT') and not web_password:
+        raise RuntimeError(
+            'Remote deployment requires configured web authentication'
         )
     if require_web_auth and not web_password:
         raise RuntimeError(
@@ -228,6 +250,21 @@ def create_app(test_config=None):
             response.status_code = 401
             response.headers['WWW-Authenticate'] = 'Basic realm="Firewall Migration Tool"'
             return response
+
+    @app.after_request
+    def _security_headers(response):
+        response.headers.setdefault('Content-Security-Policy',
+            "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; "
+            "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('X-Frame-Options', 'DENY')
+        response.headers.setdefault('Referrer-Policy', 'no-referrer')
+        response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+        if request.path.startswith('/api/'):
+            response.headers['Cache-Control'] = 'no-store, private'
+            response.headers['Pragma'] = 'no-cache'
+        return response
 
     @app.route('/healthz', methods=['GET'])
     def healthz():
@@ -256,6 +293,14 @@ def create_app(test_config=None):
     def _candidate_operation(function):
         @wraps(function)
         def locked(*args, **kwargs):
+            if (
+                not app.config.get('ALLOW_REMOTE_DEPLOYMENT')
+                and request.remote_addr not in {'127.0.0.1', '::1'}
+            ):
+                return jsonify({
+                    'success': False,
+                    'error': 'Remote deployment is disabled on this server.',
+                }), 403
             payload = request.get_json(silent=True) or {}
             try:
                 if request.path == '/api/deploy':
@@ -502,8 +547,9 @@ def create_app(test_config=None):
             return _migration_review_response(entry, state)
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
-        except Exception as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 500
+        except Exception:
+            _LOGGER.exception('Migration requirements failed')
+            return jsonify({'success': False, 'error': 'Migration requirements failed'}), 500
 
     @app.route('/api/migration/interfaces/confirm', methods=['POST'])
     def migration_interfaces_confirm():
@@ -934,8 +980,9 @@ def create_app(test_config=None):
                     target_context.metadata if target_context else document.get('target_evidence'))})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
-        except Exception as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 500
+        except Exception:
+            _LOGGER.exception('Migration re-evaluation failed')
+            return jsonify({'success': False, 'error': 'Migration re-evaluation failed'}), 500
 
     @app.route('/api/migration/mapping/import', methods=['POST'])
     def import_migration_mapping():
@@ -1228,8 +1275,9 @@ def create_app(test_config=None):
                 archive.writestr('source_inventory.xlsx', workbook.getvalue())
             bundle.seek(0)
             return send_file(bundle, mimetype='application/zip', as_attachment=True, download_name='migration_fortigate_to_palo_alto.zip')
-        except Exception as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 500
+        except Exception:
+            _LOGGER.exception('Migration bundle export failed')
+            return jsonify({'success': False, 'error': 'Migration bundle export failed'}), 500
 
     @app.route('/api/migration/command-preview', methods=['POST'])
     def migration_command_preview():
@@ -1403,7 +1451,7 @@ def create_app(test_config=None):
                 'deployment_session_id': session.session_id if result.status != 'SUCCESS' else None,
             }), (200 if result.status == 'SUCCESS' else 502)
         except ValueError as exc:
-            logging.exception("Invalid request during candidate commit")
-            return jsonify({'success': False, 'error': 'Invalid request'}), 400
+            _LOGGER.info("Invalid candidate commit request: %s", exc)
+            return jsonify({'success': False, 'error': 'Invalid candidate commit request'}), 400
 
     return app

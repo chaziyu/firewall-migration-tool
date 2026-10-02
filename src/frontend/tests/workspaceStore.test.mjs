@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { clearWorkspace, restoreWorkspace, saveWorkspace, workspace, workspaceExpired } from '../src/storage/workspaceStore.ts'
 
-// Minimal asynchronous IndexedDB surface used by this store; browser smoke tests cover native IndexedDB.
+// Minimal asynchronous IndexedDB surface used only to verify legacy data is cleared.
 let saved
 globalThis.indexedDB = {
   open() {
@@ -32,51 +32,76 @@ globalThis.indexedDB = {
   },
 }
 
-test('workspace persists sanitized evidence and decisions, excludes credentials, and clears queued writes', async () => {
-  await clearWorkspace()
-  const preview = { vendor: 'fortigate', source_evidence: { vendor: 'fortigate', source_text: 'config system global\nend\n' } }
-  await saveWorkspace({ preview, password: 'must-not-persist', username: 'admin', connection: { password: 'also-secret' } })
-  assert.equal(JSON.stringify(saved).includes('must-not-persist'), false)
-  assert.equal(JSON.stringify(saved).includes('also-secret'), false)
-  assert.equal('username' in saved, false)
-  assert.deepEqual((await restoreWorkspace()).preview, preview)
-  const pending = saveWorkspace({ targetDevice: 'device-1' })
-  await clearWorkspace()
-  await pending
+test('workspace keeps customer evidence in memory only and clears legacy IndexedDB data', async () => {
+  saved = {
+    updatedAt: Date.now(),
+    preview: { source_evidence: { source_text: 'legacy-customer-config' } },
+  }
+
+  await restoreWorkspace()
   assert.equal(saved, undefined)
+
+  const preview = {
+    vendor: 'fortigate',
+    source_evidence: { vendor: 'fortigate', source_text: 'config system global\nend\n' },
+  }
+  await saveWorkspace({
+    preview,
+    password: 'must-not-persist',
+    username: 'admin',
+    connection: { password: 'also-secret' },
+  })
+
+  assert.equal(saved, undefined)
+  assert.deepEqual(workspace().preview, preview)
+  assert.deepEqual((await restoreWorkspace()).preview, preview)
+
+  await clearWorkspace()
   assert.equal(workspace().preview, null)
+  assert.equal(saved, undefined)
 })
 
-test('TTL removes expired workspaces and changes invalidate the previous rendered artifact', async () => {
+test('TTL expires in-memory state and context changes invalidate rendered artifacts', async () => {
+  await clearWorkspace()
   await saveWorkspace({ preview: { vendor: 'fortigate' } })
   await saveWorkspace({ artifact: { artifact_id: 'old' }, designSession: { proposals: [] } })
   await saveWorkspace({ targetDevice: 'different-target' })
   assert.equal(workspace().artifact, null)
   assert.equal(workspace().designSession, null)
+
   await saveWorkspace({ artifact: { artifact_id: 'old' } })
   await saveWorkspace({ decisionDocument: { decisions: [{ key: 'changed' }] } })
   assert.equal(workspace().artifact, null)
+
   const now = Date.now
   Date.now = () => now() + 25 * 60 * 60 * 1000
   try {
     assert.equal(workspaceExpired(), true)
     assert.equal((await restoreWorkspace()).preview, null)
     assert.equal(saved, undefined)
-  } finally { Date.now = now }
+  } finally {
+    Date.now = now
+  }
 })
 
-test('old workspaces keep AI sessions separate and role or cleared decisions invalidate deterministic state', async () => {
-  saved = { updatedAt: Date.now(), preview: { vendor: 'fortigate' }, designSession: { design_session_id: 'ai-only' } }
-  const restored = await restoreWorkspace()
-  assert.equal(restored.referenceRole, 'DESTINATION')
-  assert.equal(restored.deterministicDraft, null)
-  assert.equal(restored.designSession.design_session_id, 'ai-only')
-  await saveWorkspace({ deterministicDraft: { digest: 'draft' }, artifact: { artifact_id: 'approved' }, decisionDocument: { design_approval: {} } })
+test('role and decision changes invalidate deterministic state without persistent storage', async () => {
+  await clearWorkspace()
+  assert.equal(workspace().referenceRole, 'DESTINATION')
+
+  await saveWorkspace({
+    preview: { vendor: 'fortigate' },
+    designSession: { design_session_id: 'ai-only' },
+    deterministicDraft: { digest: 'draft' },
+    artifact: { artifact_id: 'approved' },
+    decisionDocument: { design_approval: {} },
+  })
   await saveWorkspace({ referenceRole: 'TEMPLATE' })
   assert.equal(workspace().deterministicDraft, null)
   assert.equal(workspace().artifact, null)
+
   await saveWorkspace({ deterministicDraft: { digest: 'draft' }, artifact: { artifact_id: 'approved' } })
   await saveWorkspace({ decisionDocument: null })
   assert.equal(workspace().deterministicDraft, null)
   assert.equal(workspace().artifact, null)
+  assert.equal(saved, undefined)
 })

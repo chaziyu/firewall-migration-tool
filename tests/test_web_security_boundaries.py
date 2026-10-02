@@ -1,6 +1,8 @@
 import base64
+import io
 
 import pytest
+from flask import request
 
 from fwmigrate.web import create_app
 
@@ -49,3 +51,46 @@ def test_global_request_size_limit_is_enforced():
         content_type="application/json",
     )
     assert response.status_code == 413
+
+
+def test_customer_uploads_use_memory_only_streams():
+    app = create_app({"TESTING": True})
+    with app.test_request_context(
+        "/api/preview",
+        method="POST",
+        data={"file": (io.BytesIO(b"x" * 600_000), "customer.conf")},
+    ):
+        uploaded = request.files["file"]
+        assert isinstance(uploaded.stream, io.BytesIO)
+
+
+def test_api_responses_disable_storage_and_add_browser_security_headers():
+    client = create_app({"TESTING": True}).test_client()
+
+    response = client.get("/api/vendors")
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store, private"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+
+
+def test_remote_deployment_is_disabled_by_default():
+    client = create_app({"TESTING": True}).test_client()
+
+    response = client.post(
+        "/api/deploy",
+        json={},
+        environ_overrides={"REMOTE_ADDR": "198.51.100.20"},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "Remote deployment is disabled on this server."
+
+
+def test_remote_deployment_requires_web_authentication():
+    with pytest.raises(RuntimeError, match="Remote deployment requires configured web authentication"):
+        create_app({"TESTING": True, "ALLOW_REMOTE_DEPLOYMENT": True})

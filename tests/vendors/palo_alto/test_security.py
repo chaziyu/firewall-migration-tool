@@ -1,8 +1,11 @@
 import io
 
+import pytest
 from openpyxl import load_workbook
 
 from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter
+from fwmigrate.vendors.palo_alto.collection_source import PANOSCollectedSourceSanitizer
+from fwmigrate.vendors.palo_alto.xml_loader import load_pan_source
 
 
 def test_known_secret_classes_never_reach_source_or_report_surfaces():
@@ -49,3 +52,13 @@ def test_unknown_password_leaf_is_redacted_end_to_end():
     values = " ".join(str(cell.value) for sheet in workbook.worksheets for row in sheet.iter_rows() for cell in row)
     assert secret not in str(result.config.model_dump()) + str(reporter.build_preview(result)) + values
     assert "[REDACTED]" in values
+
+
+def test_pan_os_xml_rejects_dtd_and_entity_declarations_before_parsing():
+    source = """<!DOCTYPE config [<!ENTITY leak SYSTEM "file:///etc/passwd">]>
+<config><shared><address><entry name="x"><description>&leak;</description></entry></address></shared></config>"""
+
+    with pytest.raises(ValueError, match="DTD/entity declarations"):
+        load_pan_source(source)
+    with pytest.raises(ValueError, match="DTD/entity declarations"):
+        PANOSCollectedSourceSanitizer().sanitize(source)
