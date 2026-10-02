@@ -137,7 +137,8 @@ def register_source_routes(app) -> None:
         try:
             collector, options = collection_options()
         except PermissionError as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 403
+            _LOGGER.warning("Collection request forbidden: %s", exc)
+            return jsonify({'success': False, 'error': 'Remote live collection is disabled on this server.'}), 403
         except ValueError as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
         try:
