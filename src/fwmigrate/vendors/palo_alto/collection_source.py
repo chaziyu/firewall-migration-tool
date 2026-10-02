@@ -1,12 +1,14 @@
 """Sanitize portable PAN-OS XML evidence using the existing secret-key policy."""
 import xml.etree.ElementTree as ET
 from fwmigrate.extraction.sanitize import is_sensitive_key, sanitize_raw_text
+from .xml_loader import reject_unsafe_xml_declarations
 
 
 class PANOSCollectedSourceSanitizer:
     vendor_id = 'palo_alto'
 
     def sanitize(self, source_text):
+        reject_unsafe_xml_declarations(source_text)
         try:
             root = ET.fromstring(source_text)
         except ET.ParseError as exc:
