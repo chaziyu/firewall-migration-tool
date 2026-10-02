@@ -23,6 +23,10 @@ def advisor_provider() -> str:
     return "qwen_local" if os.environ.get("FWMIGRATE_AI_LOCAL_URL", "").strip() else "groq"
 
 
+def external_ai_allowed() -> bool:
+    return os.environ.get("FWMIGRATE_AI_ALLOW_EXTERNAL", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def groq_model(tier="complex") -> str:
     setting, default = {
         "simple": ("FWMIGRATE_AI_SIMPLE_MODEL", DEFAULT_SIMPLE_MODEL),
