@@ -48,14 +48,24 @@ export function saveWorkspace(update: Partial<Workspace>): Promise<void> {
     || (update.referenceRole !== undefined && update.referenceRole !== current.referenceRole)
   const decisionsChanged = update.decisionDocument !== undefined
     && JSON.stringify(update.decisionDocument) !== JSON.stringify(current.decisionDocument)
-  current = { updatedAt: Date.now(), preview: update.preview === undefined ? current.preview : update.preview,
+  const derivedStateChanged = contextChanged || decisionsChanged
+  current = {
+    updatedAt: Date.now(),
+    preview: update.preview === undefined ? current.preview : update.preview,
     targetSource: update.targetSource === undefined ? current.targetSource : update.targetSource,
     targetDevice: update.targetDevice ?? current.targetDevice,
     referenceRole: update.referenceRole ?? current.referenceRole,
     decisionDocument: update.decisionDocument === undefined ? current.decisionDocument : update.decisionDocument,
-    designSession: update.designSession === undefined ? contextChanged ? null : current.designSession : update.designSession,
-    deterministicDraft: update.deterministicDraft === undefined ? contextChanged || decisionsChanged ? null : current.deterministicDraft : update.deterministicDraft,
-    artifact: update.artifact === undefined ? contextChanged || decisionsChanged ? null : current.artifact }
+    designSession: update.designSession === undefined
+      ? (contextChanged ? null : current.designSession)
+      : update.designSession,
+    deterministicDraft: update.deterministicDraft === undefined
+      ? (derivedStateChanged ? null : current.deterministicDraft)
+      : update.deterministicDraft,
+    artifact: update.artifact === undefined
+      ? (derivedStateChanged ? null : current.artifact)
+      : update.artifact,
+  }
   return Promise.resolve()
 }
 
