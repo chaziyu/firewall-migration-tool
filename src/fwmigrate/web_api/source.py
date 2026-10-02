@@ -123,9 +123,11 @@ def register_source_routes(app) -> None:
         try:
             collector, options = collection_options()
         except PermissionError as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 403
+            _LOGGER.warning('Collection test denied by policy.', exc_info=exc)
+            return jsonify({'success': False, 'error': 'Remote live collection is disabled on this server.'}), 403
         except ValueError as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            _LOGGER.info('Invalid collection test request.', exc_info=exc)
+            return jsonify({'success': False, 'error': 'Invalid collection request.'}), 400
         try:
             collector.test_connection(options)
             return jsonify({'success': True, 'status': 'CONNECTED'})
