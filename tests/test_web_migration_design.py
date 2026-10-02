@@ -69,9 +69,7 @@ def approve(client, payload, data, groups=None):
         'draft_digest': draft['digest'], 'selected_groups': keys})
 
 
-def test_prepare_repeatable_no_ai_no_authoritative_confirmation(monkeypatch):
-    from fwmigrate.conversion.fortigate_to_palo_alto import ai_advisor
-    monkeypatch.setattr(ai_advisor, 'validate_static_configuration', lambda: {'enabled': False, 'provider': None, 'model': None})
+def test_prepare_repeatable_no_authoritative_confirmation():
     client, payload = setup()
     data, payload = prepare(client, payload)
     again, _ = prepare(client, payload)
