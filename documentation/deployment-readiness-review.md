@@ -19,16 +19,16 @@ hardening). Passing CI does not establish production deployment readiness.
   Persistent monitor/report publishing has been removed. Snyk account access,
   actual scan results and whether this repository has applicable IaC still
   require validation by the approved service owner.
-- Python 3.12 CI tests the constrained release dependencies with optional AI,
-  collection and deployment packages and runs `pip check`. Container and
+- Python 3.12 CI tests the constrained release dependencies with collection and
+  deployment packages and runs `pip check`. Container and
   desktop jobs depend on this check as well as the existing matrix.
 
 ## Remaining release requirements
 
 These repairs do not resolve every architecture or deployment finding:
 
-- Use a controlled internal reporting/export pilot with AI and network actions
-  disabled at the trusted gateway and restricted egress. Loopback peer checks
+- Use a controlled internal reporting/export pilot with network actions disabled
+  at the trusted gateway and restricted egress. Loopback peer checks
   still cannot distinguish a local client from a same-host reverse proxy.
 - Bind live commit to device candidate state using device-supported locking,
   dirty-candidate handling and drift checks. Until lab verification is complete,
@@ -38,13 +38,12 @@ These repairs do not resolve every architecture or deployment finding:
 - Govern browser/WebView profiles, retained workspaces, downloads, swap, crash
   dumps, proxy buffering and backups under customer-data retention rules.
   Bounded application memory uploads do not control those external stores.
-- Keep AI disabled until the provider and transmitted fields are approved.
 - Establish concurrency and memory limits using representative load tests;
   long-running work still occupies request threads.
 - Verify the actual container and Windows installer. Rust locking, signed
   bundles, clean standard-user installation/launch/import/export/uninstall,
   WebView2 handling and sidecar startup deadline/cleanup remain release work.
 
-No customer configuration, external AI call or real-device deployment is
+No customer configuration or real-device deployment is
 needed to validate these CI repairs. Company controls and lab-device checks
 remain prerequisites for production approval.
