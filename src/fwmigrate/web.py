@@ -1452,6 +1452,6 @@ def create_app(test_config=None):
             }), (200 if result.status == 'SUCCESS' else 502)
         except ValueError as exc:
             _LOGGER.info("Invalid candidate commit request: %s", exc)
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            return jsonify({'success': False, 'error': 'Invalid candidate commit request'}), 400
 
     return app
