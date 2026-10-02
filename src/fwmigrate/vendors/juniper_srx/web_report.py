@@ -8,6 +8,7 @@ from typing import Any
 
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 from .validation import JuniperValidationIssueIndex
+from .transforms.effective_state import effective_path_state
 
 
 def _project(value: Any) -> Any:
@@ -45,6 +46,7 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
             for unit in unit_rows:
                 name = interface.name if unit is None else f"{interface.name}.{unit.unit}"
                 addresses_for_unit = list(getattr(unit, "addresses", ())) if unit else []
+                interface_path = ("interfaces", interface.name, "unit", str(unit.unit)) if unit else ("interfaces", interface.name)
                 interfaces.append({"name": name, "display_name": name, "kind": "logical" if unit else "physical",
                                    "ip": [item.address for item in addresses_for_unit],
                                    "zone": [zone_by_interface[name]] if name in zone_by_interface else [],
@@ -55,6 +57,7 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                                               "INACTIVE" if unit is None and interface.disabled is True else
                                               "ACTIVE" if unit is None and interface.disabled is False else None),
                                    "scope": scope,
+                                   "effective_state": effective_path_state(result.derived.inheritance_view, scope, interface_path),
                                    "provenance": _project(getattr(unit, "field_provenance", None) or interface.field_provenance)})
         for book in context.address_books.values():
             for item in book.addresses.values():
@@ -66,35 +69,58 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                                   "wildcard": item.wildcard,
                                   "address_family": "IPv6" if ":" in (item.prefix or "") else "IPv4" if item.prefix else None,
                                   "associated_interface": item.zone, "scope": scope, "address_book": book.name,
+                                  "effective_state": effective_path_state(
+                                      result.derived.inheritance_view, scope,
+                                      ("security", "address-book", book.name, "address", item.name)),
                                   "provenance": _project(getattr(item, "provenance", None))})
             for item in book.address_sets.values():
                 address_groups.append({"name": item.name, "members": [member.name for member in item.members],
                                        "address_family": None, "exclude_members": [], "scope": scope,
                                        "address_book": book.name, "zone": item.zone,
+                                       "effective_state": effective_path_state(
+                                           result.derived.inheritance_view, scope,
+                                           ("security", "address-book", book.name, "address-set", item.name)),
                                        "provenance": _project(getattr(item, "provenance", None))})
         for item in context.applications.values():
-            for term in item.terms or (None,):
-                services.append({"name": item.name, "protocol": term.protocol if term else None,
-                                 "port": term.destination_ports if term else [], "source_port": term.source_ports if term else None,
-                                 "scope": scope, "term": term.name if term else None,
+            settings = item.terms or (item.top_level,)
+            for term in settings:
+                services.append({"name": item.name, "protocol": term.protocol,
+                                 "port": term.destination_ports, "source_port": term.source_ports,
+                                 "scope": scope, "term": getattr(term, "name", None),
+                                 "effective_state": effective_path_state(
+                                     result.derived.inheritance_view, scope,
+                                     ("applications", "application", item.name)),
                                  "provenance": _project(getattr(item, "provenance", None))})
         for item in context.application_sets.values():
             service_groups.append({"name": item.name, "members": item.applications, "scope": scope,
+                                   "effective_state": effective_path_state(
+                                       result.derived.inheritance_view, scope,
+                                       ("applications", "application-set", item.name)),
                                    "provenance": _project(getattr(item, "provenance", None))})
         schedules.extend({"name": item.name, "start_date": item.start_date, "stop_date": item.stop_date,
                           "daily": item.daily, "weekdays": item.weekdays, "exclusions": item.exclusions,
-                          "scope": scope, "provenance": _project(getattr(item, "provenance", None))}
+                          "scope": scope, "effective_state": effective_path_state(
+                              result.derived.inheritance_view, scope, ("schedulers", "scheduler", item.name)),
+                          "provenance": _project(getattr(item, "provenance", None))}
                          for item in context.schedulers.values())
         for index, item in enumerate((*context.policies, *context.global_policies), 1):
-            policies.append({"policy_id": item.sequence or index, "name": item.name,
+            policy_path = (
+                ("security", "policies", "global", "policy", item.name)
+                if item.policy_scope == "global"
+                else ("security", "policies", "from-zone", item.from_zone, "to-zone", item.to_zone, "policy", item.name)
+            )
+            policies.append({"policy_id": index, "name": item.name,
                              "source_zones": item.from_zones, "destination_zones": item.to_zones,
                              "source_addresses": item.source_addresses, "destination_addresses": item.destination_addresses,
                              "services": [*item.applications, *item.dynamic_applications], "schedule": item.scheduler_name,
                              "action": item.action, "nat": False, "policy_scope": item.policy_scope,
-                             "scope": scope, "provenance": _project(getattr(item, "provenance", None))})
+                             "scope": scope,
+                             "effective_state": effective_path_state(result.derived.inheritance_view, scope, policy_path),
+                             "provenance": _project(getattr(item, "provenance", None))})
         for sets in (context.nat.source_rule_sets, context.nat.destination_rule_sets, context.nat.static_rule_sets):
             for rule_set in sets.values():
                 for item in rule_set.rules:
+                    nat_path = ("security", "nat", item.nat_type, "rule-set", rule_set.name, "rule", item.name)
                     nat.append({"policy_name": item.name, "translation_type": item.nat_type,
                                 "translated_addresses": _translated_addresses(item.action),
                                 "translation": _project(item.action),
@@ -107,14 +133,23 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                                 "to_zones": list(rule_set.to_context.zones) if rule_set.to_context else [],
                                 "to_routing_instances": list(rule_set.to_context.routing_instances) if rule_set.to_context else [],
                                 "scope": scope, "rule_set": rule_set.name,
+                                "effective_state": effective_path_state(result.derived.inheritance_view, scope, nat_path),
                                 "provenance": _project(getattr(item, "provenance", None))})
         for item in context.routes:
             for hop in item.next_hops or (None,):
+                route_path = (
+                    ("routing-instances", item.routing_instance, "routing-options", "static", "route", item.destination)
+                    if item.routing_instance else
+                    ("routing-options", "rib", item.rib, "static", "route", item.destination)
+                    if item.rib else
+                    ("routing-options", "static", "route", item.destination)
+                )
                 routes.append({"route_id": item.destination, "destination": item.destination,
                                "gateway": hop.value if hop else item.next_table,
                                "device": None, "distance": item.preference,
                                "status": "INACTIVE" if item.disabled is True else "ACTIVE" if item.disabled is False else None,
                                "routing_instance": item.routing_instance, "scope": scope,
+                               "effective_state": effective_path_state(result.derived.inheritance_view, scope, route_path),
                                "provenance": _project(getattr(item, "provenance", None))})
         for item in context.vpn.ipsec_vpns.values():
             vpn_tunnels.append({"kind": "IPsec VPN", "name": item.name,
@@ -122,7 +157,11 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                                 "crypto": item.ipsec_policy,
                                 "topology": {"traffic_selectors": _project(item.traffic_selectors),
                                              "establish_tunnels": item.establish_tunnels},
-                                "scope": scope, "provenance": _project(getattr(item, "provenance", None))})
+                                "scope": scope,
+                                "effective_state": effective_path_state(
+                                    result.derived.inheritance_view, scope,
+                                    ("security", "ipsec", "vpn", item.name)),
+                                "provenance": _project(getattr(item, "provenance", None))})
     validation_rows = [{"severity": issue.severity, "domain": issue.category,
                         "object_name": issue.object_name, "field": issue.field,
                         "message": issue.message, "scope": issue.context,
@@ -189,7 +228,8 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                            "apbr_graph": result.derived.apbr_graph,
                            "inheritance": result.derived.inheritance,
                            "inheritance_view": result.derived.inheritance_view,
-                           "activation_directives": result.derived.activation_directives}),
+                           "activation_directives": result.derived.activation_directives,
+                           "effective_objects": result.derived.effective_objects}),
         "validation": _project(result.validation.issues),
         "semantic_validation": _project(tuple(issue for issue in result.validation.issues
                                                if issue.category != "extraction-coverage")),

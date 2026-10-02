@@ -6,15 +6,18 @@ from collections import defaultdict
 from typing import List
 
 from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.vendors.juniper_srx.activation import JunosActivationState
 from fwmigrate.vendors.juniper_srx.extraction import sanitize_tokens
+from fwmigrate.vendors.juniper_srx.group_syntax import apply_group_index, group_definition_index
 from fwmigrate.vendors.juniper_srx.tokenizer import (
-    JunosActivationState, JunosCommand, JunosOperation, extract_value_list,
+    JunosCommand, JunosOperation, extract_value_list,
 )
 from fwmigrate.vendors.juniper_srx.model import JuniperResolutionStatus
 from fwmigrate.vendors.juniper_srx.provenance import build_candidate
 from fwmigrate.vendors.juniper_srx.path_semantics import candidate_field_value as _candidate_field_value
 
 MAX_GROUP_RECURSION_DEPTH = 64
+MAX_GROUP_EXPANSIONS = 10_000
 _APPLY = {"apply-groups", "apply-groups-except"}
 
 
@@ -33,7 +36,7 @@ def _context_prefix(path: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _render(path: tuple[str, ...], base: tuple[str, ...], target: tuple[str, ...],
-            commands: List[JunosCommand]) -> list[tuple[str, ...]]:
+            commands: List[JunosCommand], application: JunosCommand | None = None) -> list[tuple[str, ...]]:
     """Render one relative path, expanding wildcards only to real targets."""
     values = [list(base)]
     for offset, component in enumerate(path):
@@ -51,6 +54,11 @@ def _render(path: tuple[str, ...], base: tuple[str, ...], target: tuple[str, ...
             candidates = [target[absolute]]
         else:
             candidates = [component]
+        if len(values) * len(candidates) > MAX_GROUP_EXPANSIONS:
+            if application is not None:
+                application.group_resolution = "GROUP_EXPANSION_LIMIT_EXCEEDED"
+                application.requires_manual_review = True
+            return []
         values = [current + [value] for current in values for value in candidates]
     return [tuple(value) for value in values]
 
@@ -105,13 +113,13 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
         if command.operation != JunosOperation.SET:
             continue
         tokens = command.tokens[1:]
-        group_index = next((i for i, t in enumerate(tokens) if t.lower() == "groups"), None)
+        group_index = group_definition_index(tokens)
         if group_index is not None and len(tokens) > group_index + 2:
             scope = tuple(tokens[:group_index])
             group_name = tokens[group_index + 1]
             path = tuple(tokens[group_index + 2:])
             owner = _group_key(scope, group_name)
-            marker = next((i for i, t in enumerate(path) if t.lower() in _APPLY), None)
+            marker = apply_group_index(path)
             if marker is None and _inactive(tuple(t.lower() for t in tokens), inactive_paths):
                 inactive_groups[owner].append((path, command))
             elif marker is None:
@@ -125,7 +133,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
             command.extraction_status = ExtractionStatus.SOURCE_ONLY
             continue
 
-        marker = next((i for i, t in enumerate(tokens) if t.lower() in _APPLY), None)
+        marker = apply_group_index(tokens)
         if marker is None:
             continue
         target = tuple(tokens[:marker])
@@ -167,7 +175,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
         # Actual nested applications create a new point; no fabricated prefixes.
         for node_path, nested_name, excluded, source, nested_priority in sorted(
                 nested_refs, key=lambda item: item[3].line_number):
-            nested_points = _render(node_path, apply_at, target, commands)
+            nested_points = _render(node_path, apply_at, target, commands, application)
             for nested_at in nested_points:
                 if target and tuple(target[:len(nested_at)]) != nested_at:
                     continue
@@ -184,7 +192,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
 
         for path, source in sorted(definitions, key=lambda item: item[1].line_number):
             source_tokens = source.tokens[1:]
-            source_group_index = next((i for i, token in enumerate(source_tokens) if token.lower() == "groups"), None)
+            source_group_index = group_definition_index(source_tokens)
             source_scope = tuple(source_tokens[:source_group_index]) if source_group_index is not None else ()
             if source_scope != target_scope:
                 application.group_resolution = "GROUP_HIERARCHY_INCOMPATIBLE"
@@ -197,9 +205,13 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
             relative_path = path
             if apply_at and tuple(path[:len(apply_at)]) == apply_at:
                 relative_path = path[len(apply_at):]
-            for rendered in _render(relative_path, apply_at, target, commands):
+            for rendered in _render(relative_path, apply_at, target, commands, application):
                 if target and tuple(target[:len(rendered)]) != rendered[:len(target)]:
                     continue
+                if len(inherited) >= MAX_GROUP_EXPANSIONS:
+                    application.group_resolution = "GROUP_EXPANSION_LIMIT_EXCEEDED"
+                    application.requires_manual_review = True
+                    return
                 inherited.append(JunosCommand(
                     operation=JunosOperation.SET,
                     tokens=["set", *rendered],
@@ -248,7 +260,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
             owners = list(dict.fromkeys((_group_key(_context_prefix(target), name), _group_key((), name))))
             for owner in owners:
                 for path, source in sorted(inactive_groups.get(owner, []), key=lambda item: item[1].line_number):
-                    for rendered in _render(path, (), target, commands):
+                    for rendered in _render(path, (), target, commands, application):
                         _record_non_effective_definition(
                             application, name, rendered, source,
                             JuniperResolutionStatus.INACTIVE, "inactive", rendered,

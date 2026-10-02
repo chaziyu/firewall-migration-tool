@@ -51,3 +51,14 @@ def test_fmc_secrets_stay_redacted_through_ftd_reports():
     assert result.config.local_realm_users[0].password_configured is True
     assert result.config.certificates[0].private_key_present is True
     assert result.config.s2s_ike_settings[0].psk_present is True
+
+
+def test_key_length_metadata_is_preserved_without_weakening_secret_redaction():
+    safe = sanitize_source_attributes({
+        "keyLength": 2048,
+        "privateKey": "must-not-survive",
+        "preSharedKey": "must-not-survive-either",
+    })
+    assert safe["keyLength"] == 2048
+    assert safe["privateKey"] == "[REDACTED]"
+    assert safe["preSharedKey"] == "[REDACTED]"

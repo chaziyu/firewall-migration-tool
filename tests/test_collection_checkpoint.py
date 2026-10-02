@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fwmigrate.collection.checkpoint import CheckPointCollector, _classify_management_error
+from fwmigrate.collection.checkpoint import CheckPointCollector, _classify_gaia_output, _classify_management_error
 from fwmigrate.collection.contracts import CollectionError
 from fwmigrate.vendors.checkpoint.models import CheckPointExportBundle, CheckPointResponse, CollectionStatus as CPStatus
 from fwmigrate.vendors.checkpoint.r81_commands import R81CommandSpec, R81_COMMAND_REGISTRY
@@ -44,6 +44,8 @@ class FakeConnection:
 
     def send_command(self, command, *args, **kwargs):
         self.commands.append(command)
+        if isinstance(self.output, dict):
+            return self.output.get(command, "")
         return self.output
 
     def disconnect(self):
@@ -322,3 +324,99 @@ def test_management_error_classifier_detects_confirmed_unsupported_command():
         )
 
     assert _classify_management_error(Unsupported()) == CPStatus.UNSUPPORTED_COMMAND
+
+
+
+def test_single_discovered_domain_reopens_management_session_in_that_domain():
+    login_domains = []
+
+    def handle(command, kwargs):
+        if command == "login":
+            login_domains.append(kwargs["json"].get("domain"))
+            return Response({"sid": f"sid-{len(login_domains)}"})
+        if command == "logout":
+            return Response({})
+        if command == "show-domains":
+            return Response({
+                "objects": [{"uid": "d1", "name": "Domain A", "type": "domain"}],
+                "from": 1, "to": 1, "total": 1,
+            })
+        if command == "show-hosts":
+            return Response({
+                "objects": [{"uid": "h1", "name": "host-1", "type": "host"}],
+                "from": 1, "to": 1, "total": 1,
+            })
+        raise AssertionError(command)
+
+    collector = CheckPointCollector(
+        api_factory(handle),
+        command_registry={
+            "show-domains": R81CommandSpec(
+                "show-domains", scope_type="GLOBAL", required=True,
+            ),
+            "show-hosts": R81CommandSpec("show-hosts", required=True),
+        },
+    )
+    bundle = json.loads(collector.collect(options()).source_text)
+
+    assert login_domains == [None, "Domain A"]
+    assert bundle["selected_domain"] == "Domain A"
+    host = next(item for item in bundle["responses"] if item["command"] == "show-hosts")
+    assert host["domain"] == "Domain A"
+
+
+def test_gaia_commands_continue_after_show_configuration_error():
+    gaia = FakeConnection({
+        "show configuration": "CLINFR0329  Invalid command",
+        "show route static all": "default via 192.0.2.1",
+    })
+
+    def handle(command, kwargs):
+        if command == "login":
+            return Response({"sid": "sid"})
+        if command == "logout":
+            return Response({})
+        return Response({
+            "objects": [{"uid": "h1", "name": "host-1"}],
+            "from": 1, "to": 1, "total": 1,
+        })
+
+    collector = CheckPointCollector(
+        api_factory(handle),
+        connection_factory(gaia),
+        {"show-hosts": R81CommandSpec("show-hosts", required=True)},
+    )
+    source = collector.collect(collector.validate_options({
+        "host": "mgmt", "username": "u", "password": "p",
+        "gaia_host": "gaia", "gaia_username": "u", "gaia_password": "p",
+    }))
+    bundle = json.loads(source.source_text)
+    by_command = {item["command"]: item for item in bundle["gaia_responses"]}
+
+    assert source.status.value == "PARTIAL"
+    assert by_command["gaia/show-configuration"]["collection_status"] == CPStatus.API_ERROR.value
+    assert by_command["gaia/show-route-static-all"]["collection_status"] == CPStatus.SUCCESS_WITH_DATA.value
+    assert "show route static all" in gaia.commands
+
+
+@pytest.mark.parametrize(
+    ("output", "status"),
+    [
+        ("Permission denied", CPStatus.PERMISSION_DENIED),
+        ("Unknown command", CPStatus.UNSUPPORTED_COMMAND),
+        ("CLINFR0329 Invalid command", CPStatus.API_ERROR),
+        ("normal configuration output", None),
+    ],
+)
+def test_gaia_output_classifier_requires_explicit_error_evidence(output, status):
+    assert _classify_gaia_output(output) == status
+
+
+def test_typed_r81_inventory_requests_full_details():
+    commands = {
+        "show-groups", "show-service-groups", "show-times", "show-time-groups",
+        "show-user-groups", "show-access-roles", "show-permission-profiles",
+        "show-administrators", "show-vpn-communities-star",
+        "show-vpn-communities-meshed", "show-threat-profiles",
+    }
+    assert all(R81_COMMAND_REGISTRY[command].details_level_full for command in commands)

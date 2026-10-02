@@ -6,7 +6,7 @@ import os
 
 from flask import request
 from fwmigrate.collection import CollectionStatus
-from fwmigrate.collection.snapshot import parse_snapshot, sanitize_source, make_snapshot
+from fwmigrate.collection.snapshot import MAX_BYTES, parse_snapshot, sanitize_source, make_snapshot
 from fwmigrate.source_reporting import source_reporters
 from .reporting import _decode_configuration
 
@@ -19,6 +19,19 @@ class RequestSource:
     source_name: str | None = None
     collection_status: CollectionStatus | None = None
     evidence: dict | None = None
+
+
+def _ensure_source_size(text: str) -> str:
+    if len(text) > MAX_BYTES or len(text.encode("utf-8")) > MAX_BYTES:
+        raise ValueError("Source configuration exceeds the size limit.")
+    return text
+
+
+def _read_uploaded_source(uploaded) -> str:
+    raw = uploaded.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        raise ValueError("Source configuration exceeds the size limit.")
+    return _decode_configuration(raw)
 
 
 def analyze_request_source(payload, vendor, *, target=False):
@@ -41,11 +54,11 @@ def analyze_request_source(payload, vendor, *, target=False):
         else:
             if evidence.get('vendor') != vendor or not isinstance(evidence.get('source_text'), str):
                 raise ValueError('Vendor-native source evidence is required')
-            text = sanitize_source(vendor, evidence['source_text'])
+            text = sanitize_source(vendor, _ensure_source_size(evidence['source_text']))
             name = evidence.get('source_name')
             evidence = {'vendor': vendor, 'source_text': text, 'source_name': name}
     elif uploaded and uploaded.filename:
-        text = sanitize_source(vendor, _decode_configuration(uploaded.read()))
+        text = sanitize_source(vendor, _read_uploaded_source(uploaded))
         name = os.path.basename(uploaded.filename)
         evidence = {'vendor': vendor, 'source_text': text, 'source_name': name}
     else:

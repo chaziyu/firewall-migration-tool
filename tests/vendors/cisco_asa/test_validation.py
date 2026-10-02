@@ -9,8 +9,10 @@ from fwmigrate.vendors.cisco_asa.derived import build_asa_derived_views
 from fwmigrate.vendors.cisco_asa.model.interface import CiscoInterface
 
 from fwmigrate.vendors.cisco_asa.model.source import CiscoASAConfig
+from fwmigrate.vendors.cisco_asa.model.nat import CiscoNATRule
+from fwmigrate.vendors.cisco_asa.model.address import CiscoNetworkObject
 
-from fwmigrate.vendors.cisco_asa.model.vpn import CiscoGroupPolicy
+from fwmigrate.vendors.cisco_asa.model.vpn import CiscoGroupPolicy, CiscoVPNAddressPool
 
 from fwmigrate.vendors.cisco_asa.model.zone import CiscoTrafficZone
 
@@ -76,3 +78,51 @@ def test_group_policy_inheritance_cycle_is_reported_without_mutation():
 
     assert any(issue.category == "vpn" and issue.message == "Group-policy inheritance cycle" for issue in result.issues)
     assert_source_unchanged(config, snapshot)
+
+def test_partial_diagnostic_remains_warning_in_validation():
+    result = extract_cisco_asa_source(
+        "object service APP\n"
+        " service tcp destination eq 443\n"
+        " service udp destination eq 53\n"
+    )
+
+    issue = next(
+        item for item in result.validation.issues
+        if item.category == "parse" and "Multiple service specifications" in item.message
+    )
+    assert issue.severity == "warning"
+
+
+def test_legacy_crypto_algorithms_are_reported_without_rewriting_source():
+    result = extract_cisco_asa_source(
+        "crypto ikev1 policy 10\n"
+        " encryption 3des\n"
+        " hash md5\n"
+    )
+
+    messages = [item.message for item in result.validation.issues if item.category == "crypto"]
+    assert any("3des" in message for message in messages)
+    assert any("md5" in message for message in messages)
+    assert result.config.ike_policies[0].encryption == "3des"
+    assert result.config.ike_policies[0].hash_algorithm == "md5"
+
+
+def test_translated_nat_value_conflicts_with_interface_and_vpn_pool_are_reported():
+    config = CiscoASAConfig(
+        interfaces=[CiscoInterface(name="Ethernet0/0", ip="203.0.113.10")],
+        network_objects=[
+            CiscoNetworkObject(name="MAPPED", type="host", value="203.0.113.10")
+        ],
+        vpn_address_pools=[
+            CiscoVPNAddressPool(name="RA", start="203.0.113.1", end="203.0.113.20")
+        ],
+        nat_rules=[
+            CiscoNATRule(name="nat:1", mapped_source="MAPPED")
+        ],
+    )
+
+    result = validate_asa_config(config, build_asa_derived_views(config))
+    messages = [item.message for item in result.issues if item.category == "nat"]
+    assert any("overlaps interface address" in message for message in messages)
+    assert any("overlaps VPN address pool RA" in message for message in messages)
+

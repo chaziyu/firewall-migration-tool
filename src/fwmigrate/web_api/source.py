@@ -44,6 +44,11 @@ def _conversion_unavailable():
 
 
 def register_source_routes(app) -> None:
+    def live_collection_allowed() -> bool:
+        if app.config.get('ALLOW_REMOTE_COLLECTION'):
+            return True
+        return request.remote_addr in {'127.0.0.1', '::1'}
+
     @app.route('/api/vendors', methods=['GET'])
     def list_vendors():
         """Return registered source-reporting vendors."""
@@ -53,7 +58,10 @@ def register_source_routes(app) -> None:
                 'display_name': getattr(reporter, 'display_name', reporter.vendor_id),
                 'file_extensions': list(reporter.supported_extensions),
                 'web_report': True,
-                'live_collection': reporter.vendor_id in {collector.vendor_id for collector in source_collectors.list()},
+                'live_collection': (
+                    live_collection_allowed()
+                    and reporter.vendor_id in {collector.vendor_id for collector in source_collectors.list()}
+                ),
                 'collection': ({'method': source_collectors.get(reporter.vendor_id).method,
                                 'connection_fields': source_collectors.get(reporter.vendor_id).fields}
                                if reporter.vendor_id in {collector.vendor_id for collector in source_collectors.list()} else None),
@@ -102,6 +110,8 @@ def register_source_routes(app) -> None:
             return jsonify({'success': False, 'error': 'Source preview failed'}), 500
 
     def collection_options():
+        if not live_collection_allowed():
+            raise PermissionError('Remote live collection is disabled on this server.')
         payload = request.get_json(silent=True) or {}
         if not isinstance(payload, dict):
             raise ValueError('Collection request must be a JSON object.')
@@ -112,6 +122,8 @@ def register_source_routes(app) -> None:
     def test_collection_connection():
         try:
             collector, options = collection_options()
+        except PermissionError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 403
         except ValueError as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
         try:
@@ -124,6 +136,9 @@ def register_source_routes(app) -> None:
     def collect_configuration():
         try:
             collector, options = collection_options()
+        except PermissionError as exc:
+            _LOGGER.warning("Collection request forbidden: %s", exc)
+            return jsonify({'success': False, 'error': 'Remote live collection is disabled on this server.'}), 403
         except ValueError as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
         try:
@@ -192,6 +207,11 @@ def register_source_routes(app) -> None:
                 else None
             )
             export_options = {'profile': profile, 'source_name': source_name}
+            if entry.collection_status is not None:
+                export_options['collection_status'] = entry.collection_status.value
+                if isinstance(entry.evidence, dict):
+                    export_options['collection_parts'] = entry.evidence.get('parts', ())
+                    export_options['collection_warnings'] = entry.evidence.get('warnings', ())
             if export_metrics is not None:
                 export_options['metrics'] = export_metrics
             reporter.export_excel(analysis, workbook, **export_options)

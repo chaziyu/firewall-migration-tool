@@ -13,13 +13,14 @@ def handle_idp_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
     policy = context.idp_policies.setdefault(t[4], JuniperIDPPolicy(name=t[4]))
     rest = t[5:]
     if not rest:
-        return _done(cmd)
+        return _done(cmd, ExtractionStatus.EXTRACTED)
     if rest[0].lower() in {"rulebase-ips", "rulebase"} and len(rest) >= 3 and rest[1].lower() == "rule":
         base, name = rest[0], rest[2]
         rule = next((r for r in policy.rulebase.setdefault(base, []) if r.name == name), None)
         if rule is None:
             rule = JuniperIDPRule(name=name); policy.rulebase[base].append(rule)
         body = rest[3:]
+        status = ExtractionStatus.EXTRACTED
         if body:
             key, vals = body[0].lower(), extract_value_list(body[1:])
             if key in {"match", "signature", "attack", "attacks", "application", "protocol"}:
@@ -32,12 +33,17 @@ def handle_idp_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool
                 target = rule.severity if key == "severity" else None
                 if target is not None: target.extend(v for v in sanitize_tokens(vals) if v not in target)
                 elif vals: rule.action = sanitize_tokens(vals)[0]
-            else: rule.source_attributes.update(sanitize_source_attributes({"_".join(sanitize_tokens(body)): {"raw": cmd.raw_sanitized}}))
-        return _done(cmd)
+            else:
+                rule.source_attributes.update(sanitize_source_attributes({"_".join(sanitize_tokens(body)): {"raw": cmd.raw_sanitized}}))
+                status = ExtractionStatus.SOURCE_ONLY
+        return _done(cmd, status)
     return _store(policy.source_attributes, rest, cmd)
 
-def _done(cmd):
-    cmd.consumed, cmd.handler, cmd.extraction_status = True, "idp", ExtractionStatus.SOURCE_ONLY; return True
+def _done(cmd, status=ExtractionStatus.SOURCE_ONLY):
+    cmd.consumed, cmd.handler, cmd.extraction_status = True, "idp", status
+    cmd.requires_manual_review = status != ExtractionStatus.EXTRACTED
+    return True
+
 def _store(target, path, cmd):
     target["_".join(sanitize_tokens(path))] = sanitize_source_attributes({"raw": cmd.raw_sanitized})
     return _done(cmd)

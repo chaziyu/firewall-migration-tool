@@ -11,7 +11,8 @@ FROM python:3.12-slim AS runtime
 ENV HOME=/home/fwmigrate \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    FWMIGRATE_FRONTEND_DIST_DIR=/opt/fwmigrate/frontend-dist
+    FWMIGRATE_FRONTEND_DIST_DIR=/opt/fwmigrate/frontend-dist \
+    FWMIGRATE_REQUIRE_WEB_AUTH=1
 
 WORKDIR /app
 COPY pyproject.toml README.md ./
@@ -30,7 +31,7 @@ USER fwmigrate
 EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/vendors', timeout=3)" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=3)" || exit 1
 
 # Keep one worker for transient per-target candidate locks and validated-session metadata.
 # Supply FWMIGRATE_WORKSPACE_SIGNING_KEY through the runtime environment.

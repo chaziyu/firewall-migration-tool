@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class CiscoFTDSourceRecord(BaseModel):
     """Vendor-native record retained from one authoritative FTD source plane."""
 
-    name: str
+    name: Optional[str] = None
     source_id: Optional[str] = None
     source_plane: str
     source_context: Optional[str] = None

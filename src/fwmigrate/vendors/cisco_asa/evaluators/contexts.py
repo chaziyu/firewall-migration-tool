@@ -23,8 +23,8 @@ class ContextsEvaluator:
 
     @staticmethod
     def _build_context_ownership(lines: List[str]) -> Dict[int, Optional[str]]:
-        from ..parser_mpf import _build_context_ownership
-        return _build_context_ownership(lines)
+        from ..section_scanner import _build_source_contexts
+        return _build_source_contexts(lines)
 
     def _parse_context_command(self, line, line_number):
         lower = line.lower()

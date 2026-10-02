@@ -3,7 +3,7 @@ SHEET_ORDER = (
     "Interfaces", "Routes", "ACP Policies", "ACP Rules", "Object Overrides", "DHCP", "Inspection Policies", "NAT Rules",
     "RA VPN Policies", "RA Connection Profiles", "RA Group Policies", "RA Address Pools",
     "RA Certificates", "RA Certificate Maps", "RA Secure Client", "RA IPsec Settings",
-    "RA Address Assignment", "Source Inventory", "Collection Completeness",
+    "RA Address Assignment", "Source Inventory", "Collection Completeness", "Semantic Completeness",
     "Native Sources", "Source Evidence", "Validation",
 )
 
@@ -56,9 +56,12 @@ SHEET_HEADERS = {
         "Reuse Delay", "Use DHCP", "Use Authorization Server IPv4", "Use Authorization Server IPv6",
         "Use Internal Pool IPv4", "Use Internal Pool IPv6", "Additional Settings"),
     "Source Inventory": ("Source Path", "Name", "Source ID", "Record ID", "Type", "Source Context",
-        "Domain", "Device", "Device Name", "Status", "Review Required", "Explicit Fields"),
-    "Collection Completeness": ("Collection Part", "Status", "Complete", "Count", "Derived Status"),
+        "Domain", "Device", "Device Name", "Virtual Router ID", "Virtual Router", "Parent Policy ID",
+        "Parent Policy", "Status", "Review Required", "Explicit Fields"),
+    "Collection Completeness": ("Collection Part", "Status", "Complete", "Count"),
+    "Semantic Completeness": ("Source Family", "Derived Status"),
     "Source Evidence": ("Path", "Reason"),
     "Native Sources": ("Collection", "Name", "ID", "Source Context", "Source Attributes", "Raw Source"),
-    "Validation": ("Severity", "Category", "Message", "Source Plane", "Object"),
+    "Validation": ("Severity", "Category", "Message", "Source Plane", "Object", "Source ID",
+        "Source Context", "Domain", "Device"),
 }

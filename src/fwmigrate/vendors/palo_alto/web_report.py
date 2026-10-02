@@ -8,6 +8,9 @@ from .source_model import PANScope, pan_scope_identity
 from .source_report import PaloAltoSourceResult
 
 
+_PREVIEW_RECORD_LIMIT = 200
+
+
 def _scope_id(scope: PANScope | None) -> str:
     return pan_scope_identity(scope) if scope else "<unscoped>"
 
@@ -255,6 +258,9 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "parents": list(analysis.derived.scope_hierarchy.parents),
             "ancestors": list(analysis.derived.scope_hierarchy.ancestors),
         },
+        "records_total": len(records),
+        "records_returned": min(len(records), _PREVIEW_RECORD_LIMIT),
+        "records_truncated": len(records) > _PREVIEW_RECORD_LIMIT,
         "records": [
             {
                 "kind": record.kind,
@@ -264,7 +270,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
                 "source_order": record.source_order,
                 "values": record.values,
             }
-            for record in records[:200]
+            for record in records[:_PREVIEW_RECORD_LIMIT]
         ],
         "unresolved_references": [_jsonable(item) for item in analysis.derived.reference_resolutions if item.status != "RESOLVED"],
         "validation": [_jsonable(issue) for issue in analysis.validation.issues],

@@ -89,7 +89,7 @@ SHEET_HEADERS = {name: tuple(field.replace("_", " ").title() for field in spec[1
 SHEET_HEADERS.update({
     "Summary": ("Field", "Value"),
     "Review Required": ("Domain", "Context", "Object", "Source Status", "Reason", "Source Path / Identity"),
-    "Source Inventory": ("Domain", "Source Path", "Source ID", "Status", "Review Required", "Notes"),
+    "Source Inventory": ("Domain", "Context", "Source Path", "Source ID", "Status", "Review Required", "Notes"),
     "ACL Bindings": ("ACL", "Context", "Scope", "Interface", "Direction", "Resolved ACL", "Resolved Interface", "Issues"),
     "Zones": ("Name", "Context", "Explicit Members", "Resolved Members", "Unresolved Members", "Additional Settings", "Review Required"),
     "IPS Actions": ("Policy Map", "Class", "Mode", "Failure Mode", "Sensor Reference", "Context", "Service Policy Activation", "Issues"),

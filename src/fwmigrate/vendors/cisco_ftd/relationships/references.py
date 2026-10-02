@@ -50,7 +50,7 @@ class FTDReferenceKind(str, Enum):
 
 @dataclass(frozen=True)
 class FTDReferenceIssue:
-    owner: str
+    owner: str | None
     field: str
     reference: str
     source_plane: str
@@ -63,6 +63,8 @@ class FTDReferenceIssue:
     found_kinds: tuple[str, ...] = ()
     scope: str | None = None
     reason: str = "unresolved"
+    owner_id: str | None = None
+    device_id: str | None = None
 
 
 class FTDReferenceResolver:
@@ -98,7 +100,7 @@ class FTDReferenceResolver:
             domain = self.key_scope(item)
             if item.source_id:
                 self.by_id.setdefault((domain, kind, str(item.source_id)), []).append(item)
-            if item.name:
+            if item.name and item.source_attributes.get("source_name_explicit", True):
                 self.by_name.setdefault((domain, kind, item.name), []).append(item)
 
     def resolve(
@@ -196,6 +198,8 @@ class FTDReferenceResolver:
             found_kinds,
             scope or owner.source_context or owner.source_plane,
             reason,
+            owner_id=owner.source_id,
+            device_id=owner.device_id,
         ))
 
 

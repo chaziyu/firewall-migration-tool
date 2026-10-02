@@ -1,10 +1,13 @@
 """Sanitize copied Juniper source state before reporting."""
 
+from enum import Enum
 from typing import Any
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 
 
 def _sanitize(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value
     if isinstance(value, str):
         return sanitize_raw_text(value)
     if isinstance(value, list):

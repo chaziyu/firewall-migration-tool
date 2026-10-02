@@ -43,3 +43,17 @@ def test_schedule_contract_preserves_explicit_state_scope_inventory_and_redactio
     assert explicit.scope.kind == "shared"
     assert_source_contract(explicit, config)
     assert secret not in str(config.model_dump())
+
+
+def test_unknown_weekly_schedule_children_stay_untyped_source_evidence():
+    config = build_panos_config(
+        """<config><shared><schedule><entry name='weekly-future'><schedule-type><recurring><weekly>
+          <monday><member>08:00-17:00</member><future-setting>keep-day</future-setting></monday>
+          <funday><member>09:00-10:00</member></funday>
+        </weekly></recurring></schedule-type></entry></schedule></shared></config>"""
+    )
+
+    recurring = config.schedules[0].recurring
+    assert recurring.weekly == {"monday": ["08:00-17:00"]}
+    assert recurring.raw_extra["weekly"]["funday"] == {"member": "09:00-10:00"}
+    assert recurring.raw_extra["weekly"]["monday"]["future-setting"] == "keep-day"

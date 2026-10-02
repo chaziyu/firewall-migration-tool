@@ -1,6 +1,7 @@
 """Check Point Management API and optional Gaia SSH collection."""
 
 import json
+import re
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 
@@ -126,6 +127,13 @@ class CheckPointCollector:
                             "Multiple Check Point management Domains were discovered. "
                             "Select a Domain explicitly before collection."
                         )
+                    if len(domains) == 1:
+                        resolved_options = dict(options)
+                        resolved_options["domain"] = domains[0]
+                        self._close(session, base)
+                        session, base = self._open(resolved_options)
+                        options = resolved_options
+                        bundle.selected_domain = domains[0]
             if options["gaia_host"]:
                 self._collect_gaia(options, bundle, parts)
         finally:
@@ -345,11 +353,10 @@ class CheckPointCollector:
             return
 
         try:
-            if not self._collect_gaia_command(
+            self._collect_gaia_command(
                 connection, "gaia/show-configuration", "show configuration",
                 bundle, parts, options, data_key="cli_text",
-            ):
-                return
+            )
             for source_command, cli_command in _GAIA_EVIDENCE_COMMANDS:
                 self._collect_gaia_command(
                     connection, source_command, cli_command,
@@ -366,19 +373,35 @@ class CheckPointCollector:
             content = connection.send_command(cli_command, read_timeout=60)
             if len(content.encode("utf-8")) > 25_000_000:
                 raise CollectionError("Gaia command output exceeds the size limit.")
-            status = CPStatus.SUCCESS_WITH_DATA if content.strip() else CPStatus.SUCCESS_EMPTY
+            safe_content = sanitize_raw_text(content)
+            failure_status = _classify_gaia_output(safe_content)
+            if failure_status is not None:
+                bundle.gaia_responses.append({
+                    "command": source_command,
+                    "data": {data_key: ""},
+                    "gateway": options["gateway"] or None,
+                    "scope_type": "gateway",
+                    "parser_consumer": "gaia-config" if data_key == "cli_text" else "source-inventory",
+                    "expected_response_shape": data_key,
+                    "collection_status": failure_status.value,
+                    "source_response": safe_content[:2000],
+                    "error": "Gaia command returned an error response.",
+                })
+                parts.append(CollectionPart(source_command, failure_status.value, False))
+                return False
+            status = CPStatus.SUCCESS_WITH_DATA if safe_content.strip() else CPStatus.SUCCESS_EMPTY
             bundle.gaia_responses.append({
                 "command": source_command,
-                "data": {data_key: sanitize_raw_text(content)},
+                "data": {data_key: safe_content},
                 "gateway": options["gateway"] or None,
                 "scope_type": "gateway",
                 "parser_consumer": "gaia-config" if data_key == "cli_text" else "source-inventory",
                 "expected_response_shape": data_key,
                 "collection_status": status.value,
-                "object_count": 1 if content.strip() else 0,
+                "object_count": 1 if safe_content.strip() else 0,
             })
             parts.append(CollectionPart(
-                source_command, status.value, True, 1 if content.strip() else 0,
+                source_command, status.value, True, 1 if safe_content.strip() else 0,
             ))
             return True
         except Exception:
@@ -394,6 +417,22 @@ class CheckPointCollector:
             })
             parts.append(CollectionPart(source_command, CPStatus.TRANSPORT_ERROR.value, False))
             return False
+
+
+def _classify_gaia_output(content):
+    if not content:
+        return None
+    if re.search(r"(?im)^\s*(?:permission denied|not authorized|authorization failed)\b", content):
+        return CPStatus.PERMISSION_DENIED
+    if re.search(
+        r"(?im)^\s*(?:unknown command|invalid command|command not found|unsupported command|"
+        r"command is not supported)\b",
+        content,
+    ):
+        return CPStatus.UNSUPPORTED_COMMAND
+    if re.search(r"(?im)^\s*(?:CLINFR\d+|ERROR\s*:|ERROR\s+-)", content):
+        return CPStatus.API_ERROR
+    return None
 
 
 def _default_api_session_factory():

@@ -97,3 +97,51 @@ def test_interface_aliases_and_topology_are_context_local():
     child = next(item for item in topology.interfaces if item.name.endswith("0/2"))
     assert child.parent.source_context == "customer-a"
     assert not topology.issues
+
+def test_source_inventory_and_diagnostics_preserve_execution_context():
+    result = extract_cisco_asa_source(
+        "changeto context blue\n"
+        "object network WEB\n"
+        " host 10.0.0.1\n"
+        "ssh not-an-address not-a-mask outside\n"
+        "changeto context green\n"
+        "future-command retained\n"
+    )
+
+    blue_inventory = [
+        item for item in result.inventory_items
+        if item.source_context == "blue"
+    ]
+    green_inventory = [
+        item for item in result.inventory_items
+        if item.source_context == "green"
+    ]
+    assert any(item.source_path == "object network" for item in blue_inventory)
+    assert any(item.source_path == "other" for item in green_inventory)
+    assert any(item.source_context == "blue" for item in result.config.diagnostics)
+    assert any(
+        issue.source_context == "blue" and issue.category == "parse"
+        for issue in result.validation.issues
+    )
+    assert any(item.source_context == "green" for item in result.unsupported_items)
+
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
+
+    output = BytesIO()
+    export_asa_excel(result, output)
+    sheet = load_workbook(BytesIO(output.getvalue()), read_only=True)["Source Inventory"]
+    rows = list(sheet.iter_rows(values_only=True))
+    headers = rows[0]
+    context_index = headers.index("Context")
+    path_index = headers.index("Source Path")
+    assert any(
+        row[context_index] == "blue" and row[path_index] == "object network"
+        for row in rows[1:]
+    )
+    assert any(
+        row[context_index] == "green" and row[path_index] == "other"
+        for row in rows[1:]
+    )
+
