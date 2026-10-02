@@ -42,6 +42,7 @@ from .ai.advisor_settings import (
     DEFAULT_COMPLEX_CANDIDATE_THRESHOLD,
     advisor_enabled,
     advisor_provider,
+    external_ai_allowed,
     groq_model,
     _max_completion_tokens,
     _reasoning_effort,
@@ -409,6 +410,7 @@ def advisor_status() -> dict:
         "provider": provider,
         "model": advisor_model(),
         "groq_configured": groq_client.configured(),
+        "external_ai_allowed": external_ai_allowed(),
         "local_configured": bool(os.environ.get("FWMIGRATE_AI_LOCAL_URL", "").strip()),
         "prompt_version": PROMPT_VERSION,
         "max_batch": _max_decisions(),
@@ -426,6 +428,10 @@ def validate_static_configuration():
     status = advisor_status()
     if not status["enabled"]:
         return status
+    if status["provider"] == "groq" and not status["external_ai_allowed"]:
+        raise AdvisorUnavailable(
+            "External AI is disabled; set FWMIGRATE_AI_ALLOW_EXTERNAL=1 only for approved customer-data use"
+        )
     if status["provider"] == "groq" and not status["groq_configured"]:
         raise AdvisorUnavailable("GROQ_API_KEY is not configured")
     if status["provider"] == "qwen_local" and not status["local_configured"]:
@@ -750,6 +756,10 @@ def validate_model_output(response_text, prepared):
 
 
 def _request_groq(prepared):
+    if not external_ai_allowed():
+        raise AdvisorUnavailable(
+            "External AI is disabled; set FWMIGRATE_AI_ALLOW_EXTERNAL=1 only for approved customer-data use"
+        )
     kwargs = _groq_request_kwargs(prepared)
     try:
         content = groq_client.request_content(kwargs, timeout=_timeout())
@@ -815,7 +825,7 @@ def request_proposals(prepared):
 
     keys = list(prepared["by_decision"])
     remote_model = groq_model("complex")
-    groq_available = groq_client.configured()
+    groq_available = groq_client.configured() and external_ai_allowed()
     by_id = {item["decision_id"]: key for key, item in prepared["by_decision"].items()}
     coupled_ids = set()
     claims = {}
