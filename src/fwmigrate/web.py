@@ -119,6 +119,24 @@ _LOGGER = logging.getLogger(__name__)
 _DEPLOYMENT_SESSION_TTL_SECONDS = 30 * 60
 
 
+class _CandidateSessionError(ValueError):
+    """Expected session failures with a fixed, approved public contract."""
+
+    MESSAGES = {
+        'session_required': 'A validated candidate deployment session is required',
+        'session_missing': 'The validated candidate deployment session is missing or expired',
+        'session_expired': 'The validated candidate deployment session has expired; prepare the candidate again',
+        'artifact_mismatch': 'The deployment session belongs to a different migration artifact',
+        'artifact_expired': 'The migration artifact for this deployment session has expired',
+        'artifact_changed': 'The migration artifact changed after candidate validation',
+        'target_mismatch': 'The deployment session belongs to a different PAN-OS target identity',
+    }
+
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.MESSAGES[code])
+
+
 class _MemoryOnlyUploadRequest(FlaskRequest):
     """Keep bounded customer uploads in memory instead of Werkzeug temp files."""
 
@@ -1336,29 +1354,29 @@ def create_app(test_config=None):
     def _require_deployment_session(payload):
         session_id = payload.get('deployment_session_id')
         if not isinstance(session_id, str) or not session_id:
-            raise ValueError('A validated candidate deployment session is required')
+            raise _CandidateSessionError('session_required')
         session = deployment_sessions.get(session_id)
         if session is None:
-            raise ValueError('The validated candidate deployment session is missing or expired')
+            raise _CandidateSessionError('session_missing')
         if time.time() - session.validated_at > _DEPLOYMENT_SESSION_TTL_SECONDS:
             deployment_sessions.pop(session_id, None)
-            raise ValueError('The validated candidate deployment session has expired; prepare the candidate again')
+            raise _CandidateSessionError('session_expired')
         artifact_id = (payload.get('artifact') or {}).get('artifact_id')
         if artifact_id != session.artifact_id:
-            raise ValueError('The deployment session belongs to a different migration artifact')
+            raise _CandidateSessionError('artifact_mismatch')
         rendered = _request_artifact(payload)
         if rendered is None:
             deployment_sessions.pop(session_id, None)
-            raise ValueError('The migration artifact for this deployment session has expired')
+            raise _CandidateSessionError('artifact_expired')
         if (
             len(rendered.commands) != session.command_count
             or rendered.report.get('command_sha256') != session.command_sha256
         ):
             deployment_sessions.pop(session_id, None)
-            raise ValueError('The migration artifact changed after candidate validation')
+            raise _CandidateSessionError('artifact_changed')
         options = _deployment_options(payload)
         if (options.host.casefold(), options.port) != (session.host.casefold(), session.port):
-            raise ValueError('The deployment session belongs to a different PAN-OS target identity')
+            raise _CandidateSessionError('target_mismatch')
         return session, rendered, options
 
     @app.route('/api/deploy', methods=['POST'])
@@ -1450,8 +1468,14 @@ def create_app(test_config=None):
                 'result': asdict(result),
                 'deployment_session_id': session.session_id if result.status != 'SUCCESS' else None,
             }), (200 if result.status == 'SUCCESS' else 502)
-        except ValueError as exc:
-            _LOGGER.info("Invalid candidate commit request: %s", exc)
+        except _CandidateSessionError as exc:
+            return jsonify({
+                'success': False,
+                'error': _CandidateSessionError.MESSAGES[exc.code],
+                'error_code': exc.code,
+            }), 400
+        except ValueError:
+            _LOGGER.info("Invalid candidate commit request")
             return jsonify({'success': False, 'error': 'Invalid candidate commit request'}), 400
 
     return app

@@ -57,6 +57,23 @@ jobs:
       - name: Run test suite
         run: python -m pytest -q
 
+  release-dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install constrained release dependencies and test tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --constraint requirements/constraints-python312.txt -e ".[dev,ai,collection,deployment]"
+          python -m pip check
+      - name: Test release dependency set
+        run: python -m pytest -q
+
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -82,7 +99,7 @@ jobs:
         run: npm run build
 
   docker:
-    needs: [lint, test, frontend]
+    needs: [lint, test, frontend, release-dependencies]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -116,7 +133,7 @@ jobs:
 
 
   desktop:
-    needs: [lint, test, frontend]
+    needs: [lint, test, frontend, release-dependencies]
     runs-on: windows-latest
     timeout-minutes: 35
     steps:
