@@ -3,23 +3,49 @@ import type { DraftRow } from './types'
 
 export const draftRowKey = (row: DraftRow) => row.decision_key || row.group_key!
 
-export function draftDependencies(rows: DraftRow[], keys: string[], approvedItems: string[] = []): string[] {
-  const byKey = new Map(rows.map((row) => [draftRowKey(row), row]))
+export function draftDependencies(rows: DraftRow[] | Map<string, DraftRow>, keys: string[], approvedItems: string[] = []): string[] {
+  const byKey = rows instanceof Map ? rows : new Map(rows.map((row) => [draftRowKey(row), row]))
+  const approved = new Set(approvedItems)
   const result = new Set(keys)
   for (const key of result) for (const parent of byKey.get(key)?.dependencies || []) {
     const row = byKey.get(parent)
-    if (row && !row.approved && !(row.item_key && approvedItems.includes(row.item_key))) result.add(parent)
+    if (row && !row.approved && !(row.item_key && approved.has(row.item_key))) result.add(parent)
   }
   return [...result]
 }
 
 export function portExceptionGroups(rows: DraftRow[]): Map<string, DraftRow[]> {
   const ports = rows.filter((row) => row.target_field === 'target_interface' && ['NEEDS_INPUT', 'CONFLICT'].includes(row.status))
+  const byKey = new Map(rows.map((row) => [draftRowKey(row), row]))
+  const portKeys = new Set(ports.map(draftRowKey))
+  const dependents = new Map<string, string[]>()
+  const order = new Map(rows.map((row, index) => [draftRowKey(row), index]))
+  for (const row of rows) for (const parent of row.dependencies) {
+    const children = dependents.get(parent) ?? []
+    children.push(draftRowKey(row))
+    dependents.set(parent, children)
+  }
   const groups = new Map<string, DraftRow[]>()
   for (const port of ports) {
-    if (draftDependencies(rows, port.dependencies).some((key) => ports.some((parent) => draftRowKey(parent) === key))) continue
-    const affected = rows.filter((row) => row !== port && row.status === 'NEEDS_INPUT'
-      && draftDependencies(rows, row.dependencies).includes(draftRowKey(port)))
+    if (draftDependencies(byKey, port.dependencies).some((key) => portKeys.has(key))) continue
+    const key = draftRowKey(port)
+    const visited = new Set([key])
+    const expanded = new Set([key])
+    const queue = [key]
+    const affected: DraftRow[] = []
+    for (const parent of queue) for (const child of dependents.get(parent) ?? []) {
+      const row = byKey.get(child)!
+      if (!visited.has(child)) {
+        visited.add(child)
+        if (row !== port && row.status === 'NEEDS_INPUT') affected.push(row)
+      }
+      // Approved keys can be direct prerequisites, but are excluded when discovered transitively.
+      if (!byKey.get(parent)?.approved && !expanded.has(child)) {
+        expanded.add(child)
+        queue.push(child)
+      }
+    }
+    affected.sort((a, b) => order.get(draftRowKey(a))! - order.get(draftRowKey(b))!)
     groups.set(draftRowKey(port), affected)
   }
   return groups

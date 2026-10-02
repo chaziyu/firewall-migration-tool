@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import json
+import heapq
 
 from .models import PANMigrationPlan
 
@@ -72,47 +73,52 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
                 if dependency is not item:
                     dependents[keys[id(dependency)]].append(keys[id(item)])
 
-    # ponytail: O(decisions x items); index source identities if real plans grow materially.
-    for decision in getattr(decisions, "decisions", ()):
-        affected = []
-        for item in items:
-            if item.source_vdom != decision.source_vdom:
-                continue
-            kind = item.source_object_type
-            if decision.source_kind == "vdom":
-                match = decision.target_field == "vsys" or (
-                    decision.target_field == "virtual_router" and kind in {"interface", "static_route"}
-                )
-            elif decision.source_kind == item.source_kind and decision.source_name == item.source_name:
-                match = True
-            elif decision.source_kind == "interface":
-                target = decision.value
-                names = set(getattr(item, "interfaces", ()))
-                names.update(value for value in (getattr(item, "interface", None), getattr(item, "to_interface", None)) if value)
-                zones = set(getattr(item, "from_zones", ())) | set(getattr(item, "to_zones", ()))
-                match = bool(target) and (
-                    decision.target_field == "target_interface" and target in names
-                    or decision.target_field == "target_zone" and (target in zones or kind == "zone" and item.target_name == target)
-                )
-            else:
-                match = False
-            if match:
-                key = keys[id(item)]
-                direct_decisions[key].append(decision.key)
-                affected.append(key)
-
-        # Interface mapping failures also block consumers of the affected zones.
-        if decision.source_kind == "interface" and affected:
-            changed = True
-            while changed:
-                changed = False
-                for source, targets in dependents.items():
-                    if source in affected:
-                        for target in targets:
-                            if target not in affected:
-                                affected.append(target)
-                                direct_decisions[target].append(decision.key)
-                                changed = True
+    by_vdom = {}
+    by_source = {}
+    by_interface = {}
+    by_zone = {}
+    positions = {}
+    for position, item in enumerate(items):
+        key = keys[id(item)]
+        positions.setdefault(key, position)
+        by_vdom.setdefault(item.source_vdom, []).append(key)
+        by_source.setdefault((item.source_vdom, item.source_kind, item.source_name), []).append(key)
+        names = set(getattr(item, 'interfaces', ()))
+        names.update(value for value in (getattr(item, 'interface', None), getattr(item, 'to_interface', None)) if value)
+        zones = set(getattr(item, 'from_zones', ())) | set(getattr(item, 'to_zones', ()))
+        if item.source_object_type == 'zone' and item.target_name:
+            zones.add(item.target_name)
+        for name in names:
+            by_interface.setdefault((item.source_vdom, name), []).append(key)
+        for name in zones:
+            by_zone.setdefault((item.source_vdom, name), []).append(key)
+    by_key = {keys[id(item)]: item for item in items}
+    for decision in getattr(decisions, 'decisions', ()):
+        if decision.source_kind == 'vdom':
+            affected = [key for key in by_vdom.get(decision.source_vdom, ())
+                        if decision.target_field == 'vsys' or (decision.target_field == 'virtual_router'
+                            and by_key[key].source_object_type in {'interface', 'static_route'})]
+        else:
+            matched = set(by_source.get((decision.source_vdom, decision.source_kind, decision.source_name), ()))
+            if decision.source_kind == 'interface' and decision.value:
+                references = by_interface if decision.target_field == 'target_interface' else by_zone if decision.target_field == 'target_zone' else {}
+                matched.update(references.get((decision.source_vdom, decision.value), ()))
+            affected = sorted(matched, key=positions.__getitem__)
+        for key in affected:
+            direct_decisions[key].append(decision.key)
+        if decision.source_kind == 'interface' and affected:
+            seen = set(affected)
+            pending = [(0, positions[key], key) for key in affected]
+            heapq.heapify(pending)
+            while pending:
+                wave, position, source = heapq.heappop(pending)
+                for target in dependents.get(source, ()):
+                    if target not in seen:
+                        seen.add(target)
+                        affected.append(target)
+                        direct_decisions[target].append(decision.key)
+                        # Keep the old forward-scan ordering, including backward edges and cycles.
+                        heapq.heappush(pending, (wave + (positions[target] <= position), positions[target], target))
         items_by_decision[decision.key] = list(dict.fromkeys(affected))
 
     return PANPlanDependencyIndex(

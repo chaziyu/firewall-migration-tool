@@ -43,6 +43,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const [bulkPreview, setBulkPreview] = useState<Array<{ key: string; scope: string; value: string }>>([])
   const [bulkPage, setBulkPage] = useState(1)
   const requestVersion = useRef(0)
+  const actionVersion = useRef(0)
   const [search, setSearch] = useState('')
   const [vdomFilter, setVdomFilter] = useState('all')
   const [advisorStatus, setAdvisorStatus] = useState('Advisor status not checked.')
@@ -51,7 +52,9 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const [pendingOnly, setPendingOnly] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [bulkValue, setBulkValue] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [actionBusy, setBusy] = useState(false)
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const busy = actionBusy || reviewLoading
   const [autoVerified, setAutoVerified] = useState(false)
   const [autoDerived, setAutoDerived] = useState(false)
   const [error, setError] = useState('')
@@ -60,10 +63,14 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   async function postJson<T>(path: string, payload: Record<string, unknown>): Promise<T> {
     const version = requestVersion.current
     const result = await requestJson<T>(path, { source, target_source: targetSource, target_device: targetDevice,
-      ...(designSession ? { design_session: designSession } : {}), ...payload })
-    if (version !== requestVersion.current) return result
+      ...(designSession ? { design_session: designSession } : {}), ...payload }).catch((cause: unknown) => {
+        if (version !== requestVersion.current) throw new DOMException('Review context changed', 'AbortError')
+        throw cause
+      })
+    if (version !== requestVersion.current) throw new DOMException('Review context changed', 'AbortError')
     const response = result as { design_session?: Record<string, unknown> }
     if (response.design_session?.design_session_id) { setDesignSession(response.design_session); await saveWorkspace({ designSession: response.design_session }) }
+    if (version !== requestVersion.current) throw new DOMException('Review context changed', 'AbortError')
     return result
   }
 
@@ -92,51 +99,65 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
                             role = referenceRole, overrides = deterministicDraft?.context.overrides) {
     if (!previewId) return
     const request = ++requestVersion.current
-    onDecisionDocument?.(null)
-    setDeterministicDraft(null)
-    void saveWorkspace({ deterministicDraft: null, artifact: null })
-    const result = await postJson<ReviewData & { draft: MigrationDraft }>('/api/migration/design/prepare', {
-      source,
-      target_source: targetId, target_device: device, reference_role: role,
-      ...(overrides ? { draft_overrides: overrides } : {}),
-      ...(document ? { decision_document: document } : {}),
-      ...(targetId ? { target_source: targetId } : {}),
-      ...(device ? { target_device: device } : {}),
-    })
-    if (request !== requestVersion.current) return
-    setReview(result)
-    setDeterministicDraft(result.draft)
-    await saveWorkspace({ targetSource: targetId, targetDevice: result.target_device || device || '',
-      referenceRole: role, decisionDocument: result.decision_document as unknown as MigrationDecisionDocument,
-      deterministicDraft: result.draft })
-    const currentGroupKey = selectedGroupKey || review?.review_groups.find((group) => group.queue === activeQueue)?.decision_keys[0]
-    const selected = result.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
-    const previousSelected = review?.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
-    if (selected?.queue === 'COMPLETE' && previousSelected?.queue !== 'COMPLETE') {
-      const next = result.review_groups.find((group) => group.queue === activeQueue && group.queue !== 'COMPLETE')
-        ?? result.review_groups.find((group) => group.queue !== 'COMPLETE')
-      if (next) { setActiveQueue(next.queue); setSelectedGroupKey(next.decision_keys[0]) }
-      else { setActiveQueue('COMPLETE'); setSelectedGroupKey(selected.decision_keys[0]) }
+    setReviewLoading(true)
+    setError('')
+    try {
+      onDecisionDocument?.(null)
+      setDeterministicDraft(null)
+      void saveWorkspace({ deterministicDraft: null, artifact: null })
+      const result = await postJson<ReviewData & { draft: MigrationDraft }>('/api/migration/design/prepare', {
+        source,
+        target_source: targetId, target_device: device, reference_role: role,
+        ...(overrides ? { draft_overrides: overrides } : {}),
+        ...(document ? { decision_document: document } : {}),
+        ...(targetId ? { target_source: targetId } : {}),
+        ...(device ? { target_device: device } : {}),
+      })
+      if (request !== requestVersion.current) return
+      setReview(result)
+      setDeterministicDraft(result.draft)
+      await saveWorkspace({ targetSource: targetId, targetDevice: result.target_device || device || '',
+        referenceRole: role, decisionDocument: result.decision_document as unknown as MigrationDecisionDocument,
+        deterministicDraft: result.draft })
+      if (request !== requestVersion.current) return
+      const currentGroupKey = selectedGroupKey || review?.review_groups.find((group) => group.queue === activeQueue)?.decision_keys[0]
+      const selected = result.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
+      const previousSelected = review?.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
+      if (selected?.queue === 'COMPLETE' && previousSelected?.queue !== 'COMPLETE') {
+        const next = result.review_groups.find((group) => group.queue === activeQueue && group.queue !== 'COMPLETE')
+          ?? result.review_groups.find((group) => group.queue !== 'COMPLETE')
+        if (next) { setActiveQueue(next.queue); setSelectedGroupKey(next.decision_keys[0]) }
+        else { setActiveQueue('COMPLETE'); setSelectedGroupKey(selected.decision_keys[0]) }
+      }
+      setTargetDevices(result.target_devices || [])
+      setTargetDevice(result.target_device || '')
+      onDecisionDocument?.(result.decision_document as unknown as MigrationDecisionDocument)
+      onContextChange?.(targetId, result.target_device || device || '')
+      const contextChanged = targetId !== targetSource || device !== targetDevice || result.target_evidence_changed
+      setDrafts((current) => reconcileReviewDrafts(current, review?.decisions.decisions ?? [], result.decisions.decisions, Boolean(contextChanged), result.decision_candidates))
+      setBulkPreview([])
+      setSelectedKeys([])
+    } catch (cause) {
+      if (request !== requestVersion.current) return
+      setError(cause instanceof Error ? cause.message : 'Could not load migration review')
+      throw cause
+    } finally {
+      if (request === requestVersion.current) setReviewLoading(false)
     }
-    setTargetDevices(result.target_devices || [])
-    setTargetDevice(result.target_device || '')
-    onDecisionDocument?.(result.decision_document as unknown as MigrationDecisionDocument)
-    onContextChange?.(targetId, result.target_device || device || '')
-    const contextChanged = targetId !== targetSource || device !== targetDevice || result.target_evidence_changed
-    setDrafts((current) => reconcileReviewDrafts(current, review?.decisions.decisions ?? [], result.decisions.decisions, Boolean(contextChanged), result.decision_candidates))
-    setBulkPreview([])
-    setSelectedKeys([])
   }
 
   useEffect(() => {
     if (vendor === 'fortigate' && previewId) {
       // Invalidate the previous decision document immediately; local state updates follow the awaited API response.
-      void loadReview(workspace().decisionDocument as unknown as DecisionDocument | undefined).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not load migration review'))
+      void loadReview(workspace().decisionDocument as unknown as DecisionDocument | undefined).catch(() => {})
     }
     return () => {
       // Invalidate in-flight requests; this ref is a version counter, not a DOM node.
       // eslint-disable-next-line react-hooks/exhaustive-deps
       requestVersion.current++
+      // This is also a request version counter, not a DOM node.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      actionVersion.current++
     }
     // Reload only when the source preview changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -168,18 +189,21 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   if (vendor !== 'fortigate' || !previewId) return null
 
   async function run(action: () => Promise<void>, done?: string) {
+    const version = ++actionVersion.current
     setBusy(true)
     setError('')
     setStatus('')
     try {
       await action()
-      if (done) setStatus(done)
+      if (version === actionVersion.current && done) setStatus(done)
     } catch (cause) {
+      if (version !== actionVersion.current) return
+      if (cause instanceof DOMException && cause.name === 'AbortError') return
       const findings = cause instanceof RequestError && Array.isArray(cause.details.errors) ? cause.details.errors : []
       const details = findings.map((finding: unknown) => typeof finding === 'object' && finding !== null && 'message' in finding ? String(finding.message) : '').filter(Boolean)
       setError([cause instanceof Error ? cause.message : 'Migration review failed', ...new Set(details)].join(' '))
     } finally {
-      setBusy(false)
+      if (version === actionVersion.current) setBusy(false)
     }
   }
 
@@ -206,6 +230,9 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   async function uploadTarget(file: File | undefined) {
     if (!file) return
+    const version = ++actionVersion.current
+    requestVersion.current++
+    setReviewLoading(false)
     setError('')
     setStatus('Reading PAN-OS target XML…')
     setBusy(true)
@@ -215,21 +242,23 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       form.append('source_vendor', 'palo_alto')
       form.append('file', file)
       const result = await postForm<SourcePreviewData>('/api/preview', form)
+      if (version !== actionVersion.current) return
       if (!result.source_evidence) throw new Error('PAN-OS preview did not return source evidence')
       const nextTargetId = result.source_evidence
       setTargetSource(nextTargetId)
       setProposals([])
       setDesignSession(null); void saveWorkspace({ designSession: null })
       await loadReview(review ? currentDocument() : undefined, nextTargetId, '')
+      if (version !== actionVersion.current) return
       setTargetFilename(file.name)
       setReplaceTarget(false)
       setStatus('Target evidence loaded. Review each suggested mapping before confirming it.')
     } catch (cause) {
+      if (version !== actionVersion.current) return
       setError(cause instanceof Error ? cause.message : 'Could not read target PAN-OS XML')
       setStatus('')
-      if (review) onDecisionDocument?.(review.decision_document as unknown as MigrationDecisionDocument)
     } finally {
-      setBusy(false)
+      if (version === actionVersion.current) setBusy(false)
     }
   }
 

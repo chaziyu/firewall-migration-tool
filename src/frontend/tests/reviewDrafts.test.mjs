@@ -115,3 +115,39 @@ test('review labels distinguish pending suggestions, candidates and confirmation
   assert.equal(decisionLabel({ ...decision, suggested_value: null }, [{ value: 'trust' }]), 'Candidate available')
   assert.equal(decisionLabel({ ...decision, suggested_value: null }, [{ value: 'trust', available: false }]), 'Needs input')
 })
+
+// Retain the old implementation as a small behavioral oracle for the optimized traversal.
+function legacyPortGroups(rows) {
+  const ports = rows.filter((row) => row.target_field === 'target_interface' && ['NEEDS_INPUT', 'CONFLICT'].includes(row.status))
+  return new Map(ports.filter((port) => !draftDependencies(rows, port.dependencies).some((key) => ports.some((parent) => (parent.decision_key || parent.group_key) === key)))
+    .map((port) => [port.decision_key, rows.filter((row) => row !== port && row.status === 'NEEDS_INPUT' && draftDependencies(rows, row.dependencies).includes(port.decision_key))]))
+}
+
+test('indexed port groups preserve cycles, missing keys, shared dependents, approval and scoped identities', () => {
+  const row = (key, dependencies = [], extra = {}) => ({ decision_key: key, status: 'NEEDS_INPUT', dependencies, ...extra })
+  const rows = [row('root/port1', ['missing'], { target_field: 'target_interface' }),
+    row('branch/port1', [], { target_field: 'target_interface' }),
+    row('shared', ['root/port1', 'branch/port1']), row('approved', ['root/port1'], { approved: true }),
+    row('direct-approved', ['approved']), row('transitive-approved', ['direct-approved']),
+    row('cycle-a', ['cycle-b', 'root/port1']), row('cycle-b', ['cycle-a']),
+    row('alternate', ['direct-approved', 'shared']), row('tail', ['alternate']),
+    row('cyclic-port', ['cyclic-port'], { target_field: 'target_interface' })]
+  for (const approved of [false, true]) {
+    rows[0].approved = approved
+    assert.deepEqual(portExceptionGroups(rows), legacyPortGroups(rows))
+  }
+  assert.deepEqual(draftDependencies(rows, ['shared'], ['approved']), draftDependencies(new Map(rows.map((row) => [row.decision_key, row])), ['shared'], ['approved']))
+})
+
+test('10,000-row draft groups in under one second without changing row order', () => {
+  const ports = Array.from({ length: 50 }, (_, index) => ({ decision_key: `port-${index}`, target_field: 'target_interface', status: 'NEEDS_INPUT', dependencies: [] }))
+  const rows = [...ports, ...Array.from({ length: 9950 }, (_, index) => ({ group_key: `item-${index}`, status: 'NEEDS_INPUT', dependencies: [`port-${index % 50}`] }))]
+  const start = performance.now()
+  const groups = portExceptionGroups(rows)
+  const elapsed = performance.now() - start
+  assert.equal(groups.size, 50)
+  assert.deepEqual(groups.get('port-0'), rows.filter((row) => row.dependencies.includes('port-0')))
+  assert.equal([...groups.values()].reduce((count, rows) => count + rows.length, 0), 9950)
+  assert.ok(elapsed < 1000, `Grouping took ${elapsed.toFixed(1)} ms`)
+  console.log(`10,000-row grouping: ${elapsed.toFixed(1)} ms`)
+})

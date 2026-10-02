@@ -141,3 +141,34 @@ def test_artifact_report_contains_safe_target_review_provenance():
     assert report["target_evidence"]["device"] == "integrated-fw"
     assert "target_findings" in report["review"]
     assert "support_guidance" in report["review"]
+
+
+def test_compact_plan_keeps_identical_signed_evidence_and_exports(monkeypatch):
+    monkeypatch.setattr(web.uuid, 'uuid4', lambda: type('ID', (), {'hex': 'stable-artifact'})())
+    client = create_app({'TESTING': True}).test_client()
+    source = client.post('/api/preview', data={'source_vendor': 'fortigate',
+        'file': (io.BytesIO(FIXTURE.read_bytes()), FIXTURE.name)}, content_type='multipart/form-data').get_json()['source_evidence']
+    payload = {'source': source, 'mapping': MAPPING}
+    full_response = client.post('/api/migrate', json=payload)
+    compact_response = client.post('/api/migrate', json={**payload, 'compact_response': True})
+    full, compact = full_response.get_json(), compact_response.get_json()
+    assert full_response.status_code == compact_response.status_code == 200
+    assert compact['artifact'] == full['artifact']
+    assert compact['artifact']['report'] == full['report']
+    assert compact['artifact']['decision_document'] == full['decision_document']
+    assert compact['artifact']['commands'] == full['commands']
+    assert compact['artifact']['report']['review']['recommendations'] == full['recommendations']
+    assert compact['artifact']['report']['review']['support_guidance'] == full['support_guidance']
+    for key in compact:
+        assert compact[key] == full[key]
+    assert not {'commands', 'report', 'decision_document', 'decisions'} & compact.keys()
+    assert len(compact_response.data) < len(full_response.data)
+    artifact = {'artifact': compact['artifact'], 'source': source}
+    preview = client.post('/api/migration/command-preview', json=artifact).get_json()
+    download = client.post('/api/migration/download', json=artifact)
+    assert preview['command_sha256'] == compact['command_sha256']
+    assert preview['command_text'].encode() == download.data
+    bundle = client.post('/api/migration/bundle', json=artifact)
+    with zipfile.ZipFile(io.BytesIO(bundle.data)) as archive:
+        assert archive.read('palo_alto_config.set') == download.data
+        assert json.loads(archive.read('migration_decisions.json')) == full['decision_document']

@@ -43,6 +43,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
       if (request !== buildRequest.current) return
       setArtifact(result)
       await saveWorkspace({ artifact: result })
+      if (request !== buildRequest.current) return
       if (result.artifact.command_count > 0 || result.plan_status === 'READY_NO_CHANGES') {
         setCommandText(result.artifact.commands.join('\n'))
       }
@@ -78,12 +79,14 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
 
   async function runDeployment(action: 'prepare' | 'validate' | 'commit') {
     if (!artifact) return
+    const request = buildRequest.current
     setBusy(true); setError(null)
     const credentials = { ...connection, port: Number(connection.port) }
     try {
       if (action === 'prepare') {
         log('[PREPARE] Pushing reviewed commands to the candidate configuration.')
         const result = await deployArtifact(artifact, credentials) as { deployment_session_id?: string; candidate_validated?: boolean; result?: { commands_succeeded?: number; validation?: { status?: string; response?: string } } }
+        if (request !== buildRequest.current) return
         setSessionId(result.deployment_session_id || '')
         const validation = result.result?.validation
         const validated = result.candidate_validated === true && validation?.status === 'SUCCESS'
@@ -95,6 +98,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
       } else if (action === 'validate' && sessionId) {
         log('[REVALIDATE] Checking the current candidate configuration.')
         const result = await validateCandidate(artifact, sessionId, credentials) as { deployment_session_id?: string; result?: { status?: string; response?: string } }
+        if (request !== buildRequest.current) return
         setSessionId(result.deployment_session_id || '')
         const validated = Boolean(result.deployment_session_id && result.result?.status === 'SUCCESS')
         setCandidateValidated(validated)
@@ -102,10 +106,12 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
         log(`[REVALIDATE] Candidate ${String(result.result?.status || 'unknown').toLowerCase()}: ${result.result?.response || ''}`)
       } else if (action === 'commit' && sessionId && window.confirm('Commit the validated candidate configuration?')) {
         const result = await commitCandidate(artifact, sessionId, credentials) as { result?: { job_id?: string } }
+        if (request !== buildRequest.current) return
         setSessionId(''); setCandidateValidated(false); setStatus('Commit submitted.')
         log(`[COMMIT] Commit completed (job ${result.result?.job_id || 'unknown'}).`)
       }
     } catch (cause) {
+      if (request !== buildRequest.current) return
       setSessionId(''); setCandidateValidated(false)
       const message = cause instanceof Error ? cause.message : 'Deployment action failed'
       setError(message)
@@ -119,7 +125,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
       }
     }
     finally {
-      setBusy(false)
+      if (request === buildRequest.current) setBusy(false)
       setConnection((current) => ({ ...current, password: '' }))
     }
   }
