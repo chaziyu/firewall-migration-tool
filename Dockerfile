@@ -22,7 +22,7 @@ COPY src/fwmigrate ./src/fwmigrate
 RUN groupadd --system fwmigrate \
     && useradd --system --gid fwmigrate --home-dir /home/fwmigrate --create-home fwmigrate \
     && install -d --owner=fwmigrate --group=fwmigrate --mode=0700 /home/fwmigrate/.ssh \
-    && python -m pip install --no-cache-dir --constraint requirements/constraints-python312.txt '.[ai,collection,deployment]' \
+    && python -m pip install --no-cache-dir --constraint requirements/constraints-python312.txt '.[collection,deployment]' \
     && python -m pip check
 
 COPY --from=frontend /build/src/frontend/dist /opt/fwmigrate/frontend-dist
