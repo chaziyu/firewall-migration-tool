@@ -46,7 +46,7 @@ if not defined FWMIGRATE_WEB_PASSWORD (
 )
 
 echo Starting the web application...
-docker run --detach --name "%CONTAINER%" --publish 127.0.0.1:5000:5000 --env FWMIGRATE_WEB_USERNAME=fwmigrate --env FWMIGRATE_WEB_PASSWORD --env FWMIGRATE_ALLOW_REMOTE_COLLECTION=1 "%IMAGE%" >nul
+docker run --detach --name "%CONTAINER%" --publish 127.0.0.1:5000:5000 --env FWMIGRATE_WEB_USERNAME=fwmigrate --env FWMIGRATE_WEB_PASSWORD --env FWMIGRATE_ALLOW_REMOTE_COLLECTION=1 --env FWMIGRATE_ALLOW_REMOTE_DEPLOYMENT=1 "%IMAGE%" >nul
 if errorlevel 1 goto :failed
 
 set "HEALTH="
