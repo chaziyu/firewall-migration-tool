@@ -1,7 +1,7 @@
 import { candidateLabel, decisionLabel } from '../reviewDrafts'
 import type { Dispatch, SetStateAction } from 'react'
 import { tabKeyboard } from '../../../components/common/tabKeyboard'
-import type { Decision, Proposal, ReviewData, ReviewGroup, RuleSuggestion } from '../reviewTypes'
+import type { Decision, ReviewData, ReviewGroup, RuleSuggestion } from '../reviewTypes'
 
 type RunAction = (action: () => Promise<void>, done?: string) => Promise<void>
 
@@ -22,7 +22,6 @@ export function MigrationReviewQueues({
   setDecisionPage,
   drafts,
   setDrafts,
-  proposals,
   decisions,
   busy,
   run,
@@ -46,7 +45,6 @@ export function MigrationReviewQueues({
   setDecisionPage: Dispatch<SetStateAction<number>>
   drafts: Record<string, string>
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
-  proposals: Proposal[]
   decisions: Decision[]
   busy: boolean
   run: RunAction
@@ -96,7 +94,6 @@ export function MigrationReviewQueues({
                 <p className="review-work-suggestion">{decisionLabel(decision, candidates, group.conflicts?.some((finding) => finding.decision_key === decision.key))}{decision.suggested_value && decision.review_state !== 'CONFIRMED' ? `: ${decision.suggested_value} · requires confirmation` : ''}</p>
                 <p>{decision.reason}{decision.evidence_source ? ` · ${decision.evidence_source}` : ''}{decision.evidence_type ? ` · ${decision.evidence_type}` : ''}</p>
                 {candidates.length > 0 && <details className="review-work-candidates"><summary>{candidates.filter((item) => item.available !== false).length} available candidates</summary>{candidates.map((candidate) => <div className="review-work-candidate" key={`${candidate.target_scope}:${candidate.value}`}><span>{candidateLabel(candidate)}: {candidate.value}{candidate.target_scope ? ` · ${candidate.target_scope}` : ''}</span><button className="text-button" type="button" disabled={busy || candidate.available === false} onClick={() => setDrafts((current) => ({ ...current, [decision.key]: candidate.value }))}>Use</button><details><summary>Why?</summary><ul>{[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].map((fact) => <li key={fact}>{fact}</li>)}</ul></details></div>)}</details>}
-                {proposals.find((item) => item.decision_key === decision.key) && <p className="review-work-suggestion">AI proposal is available in the optional AI review section.</p>}
               </div>
             })}
             <div className="review-work-impact"><p>{group.affected_count} affected objects · {group.dependent_decision_count} dependent mappings will be re-evaluated</p>{group.next_action && <p>Next action: {group.next_action}</p>}
