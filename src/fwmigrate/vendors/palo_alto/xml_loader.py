@@ -7,8 +7,16 @@ import xml.etree.ElementTree as ET
 from .source_model import PANSourceDocument
 
 
+def reject_unsafe_xml_declarations(content: str) -> None:
+    """Reject DTD/entity declarations before handing customer XML to ElementTree."""
+    lowered = content.casefold()
+    if "<!doctype" in lowered or "<!entity" in lowered:
+        raise ValueError("PAN-OS XML DTD/entity declarations are not supported.")
+
+
 def load_pan_source(content: str) -> PANSourceDocument:
     """Load a PAN-OS XML export without entering source traversal."""
+    reject_unsafe_xml_declarations(content)
     try:
         root = ET.fromstring(content)
     except ET.ParseError as error:

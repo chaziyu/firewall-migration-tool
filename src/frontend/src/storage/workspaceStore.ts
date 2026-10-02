@@ -3,8 +3,6 @@ import type { Workspace } from './workspaceTypes'
 const TTL = 24 * 60 * 60 * 1000
 const empty = (): Workspace => ({ updatedAt: Date.now(), preview: null, targetSource: null, targetDevice: '', decisionDocument: null, designSession: null, deterministicDraft: null, referenceRole: 'DESTINATION', artifact: null })
 let current = empty()
-let writes = Promise.resolve()
-let generation = 0
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -34,39 +32,44 @@ export function workspace(): Workspace { return current }
 export function workspaceExpired(): boolean { return Boolean(current.preview) && Date.now() - current.updatedAt >= TTL }
 
 export async function restoreWorkspace(): Promise<Workspace> {
-  const saved = await transact(false)
-  if (saved && Date.now() - saved.updatedAt < TTL) current = { ...empty(), ...saved }
-  else await clearWorkspace()
+  if (workspaceExpired()) current = empty()
+  // Customer configuration and migration state are memory-only. Clear data
+  // persisted by older releases instead of restoring it into the application.
+  if (typeof indexedDB !== 'undefined') await transact(true, null)
   return current
 }
 
 export function saveWorkspace(update: Partial<Workspace>): Promise<void> {
-  // Only workflow fields are persisted. Connection forms and credentials never enter this object.
+  // Workflow state can contain sanitized customer configuration and target topology.
+  // Keep it in memory only; connection forms and credentials never enter this object.
   const contextChanged = (update.preview !== undefined && update.preview !== current.preview)
     || (update.targetSource !== undefined && update.targetSource !== current.targetSource)
     || (update.targetDevice !== undefined && update.targetDevice !== current.targetDevice)
     || (update.referenceRole !== undefined && update.referenceRole !== current.referenceRole)
   const decisionsChanged = update.decisionDocument !== undefined
     && JSON.stringify(update.decisionDocument) !== JSON.stringify(current.decisionDocument)
-  current = { updatedAt: Date.now(), preview: update.preview === undefined ? current.preview : update.preview,
+  const derivedStateChanged = contextChanged || decisionsChanged
+  current = {
+    updatedAt: Date.now(),
+    preview: update.preview === undefined ? current.preview : update.preview,
     targetSource: update.targetSource === undefined ? current.targetSource : update.targetSource,
     targetDevice: update.targetDevice ?? current.targetDevice,
     referenceRole: update.referenceRole ?? current.referenceRole,
     decisionDocument: update.decisionDocument === undefined ? current.decisionDocument : update.decisionDocument,
-    designSession: update.designSession === undefined ? contextChanged ? null : current.designSession : update.designSession,
-    deterministicDraft: update.deterministicDraft === undefined ? contextChanged || decisionsChanged ? null : current.deterministicDraft : update.deterministicDraft,
-    artifact: update.artifact === undefined ? contextChanged || decisionsChanged ? null : current.artifact : update.artifact }
-  const snapshot = current
-  const version = generation
-  const pending = writes.then(async () => { if (version === generation) await transact(true, snapshot) })
-  writes = pending.catch(() => {})
-  return pending
+    designSession: update.designSession === undefined
+      ? (contextChanged ? null : current.designSession)
+      : update.designSession,
+    deterministicDraft: update.deterministicDraft === undefined
+      ? (derivedStateChanged ? null : current.deterministicDraft)
+      : update.deterministicDraft,
+    artifact: update.artifact === undefined
+      ? (derivedStateChanged ? null : current.artifact)
+      : update.artifact,
+  }
+  return Promise.resolve()
 }
 
-export function clearWorkspace(): Promise<void> {
-  generation++
+export async function clearWorkspace(): Promise<void> {
   current = empty()
-  const pending = writes.then(async () => { await transact(true, null) })
-  writes = pending.catch(() => {})
-  return pending
+  if (typeof indexedDB !== 'undefined') await transact(true, null)
 }
