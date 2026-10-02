@@ -65,7 +65,7 @@ REDACTED_PLACEHOLDER = "[REDACTED]"
 def is_sensitive_key(key: str) -> bool:
     """Check if a dictionary key name matches sensitive prefixes/names."""
     k = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", key.strip()).lower().replace("_", "-")
-    if k in {"community-type", "vpn-community", "vpn-community-type"}:
+    if k in {"community-type", "vpn-community", "vpn-community-type", "key-length"}:
         return False
     if k in {item.replace("_", "-") for item in SENSITIVE_EXACT_KEYS}:
         return True
@@ -115,6 +115,14 @@ def sanitize_raw_text(text: str) -> str:
     if not text:
         return text
 
+    # ASA NTP authentication keys place the secret after a key ID and
+    # algorithm. Redact the secret-bearing tail before the generic "key"
+    # sanitizer can mistake the non-secret key ID for the credential.
+    text = re.sub(
+        r"(?im)^(\s*ntp\s+authentication-key\s+\S+\s+\S+)(?:\s+.+)?$",
+        rf"\1 {REDACTED_PLACEHOLDER}", text,
+    )
+
     # ASA SNMPv3 credentials follow algorithm names rather than secret keys.
     token = r'(?:"[^"]*"|\'[^\']*\'|[^\s\r\n]+)'
     text = re.sub(
@@ -132,7 +140,7 @@ def sanitize_raw_text(text: str) -> str:
     # Mask password hashes or cleartext in known CLI patterns (e.g. set user admin password-hash ...)
     key_pattern = (
         r"password(?:-hash)?|phash|one-time-password|passcode|shared-secret|sic-name|sic-password|"
-        r"secret|key|password|login-password|common-password|bind-password|new-?pass(?:word)?|pre-?shared-key|preshared-key|private-key|api-key|token|psk|community|ddns-key|ddns_key|agent-user-override-key|agent_user_override_key"
+        r"secret|(?<!-)key|password|login-password|common-password|bind-password|new-?pass(?:word)?|pre-?shared-key|preshared-key|private-key|api-key|token|psk|community|ddns-key|ddns_key|agent-user-override-key|agent_user_override_key"
     )
     # Cisco-style credentials may place an encryption type between the key
     # and the secret (for example, ``password 0 value``).

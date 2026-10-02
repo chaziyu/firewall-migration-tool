@@ -6,7 +6,10 @@ from typing import Dict, Optional
 
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.vendors.juniper_srx.command_evaluator import JuniperCommandEvaluator
-from fwmigrate.vendors.juniper_srx.hierarchy_parser import looks_hierarchical, normalize_hierarchy
+from fwmigrate.vendors.juniper_srx.hierarchy_parser import (
+    looks_hierarchical,
+    normalize_hierarchy_with_provenance,
+)
 from fwmigrate.vendors.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig
 from fwmigrate.vendors.juniper_srx.tokenizer import (
     JuniperSetTokenizer,
@@ -30,14 +33,34 @@ class JuniperSRXParser:
         """Parse explicit Junos source state without entering the legacy IR path."""
         self.config = JuniperSRXConfig()
         source_format = "junos_hierarchical" if looks_hierarchical(self.content) else "junos_display_set"
-        source = normalize_hierarchy(self.content) if source_format == "junos_hierarchical" else self.content
+        if source_format == "junos_hierarchical":
+            source, original_lines = normalize_hierarchy_with_provenance(self.content)
+        else:
+            source, original_lines = self.content, ()
         commands = self.tokenizer.tokenize(source)
+        if original_lines:
+            for command in commands:
+                normalized_line = command.normalized_line_number or command.line_number
+                if 1 <= normalized_line <= len(original_lines):
+                    command.line_number = original_lines[normalized_line - 1]
         self.source_format = source_format
         self.commands = commands
 
         validate_input_mode(commands)
 
         for cmd in commands:
+            if cmd.access_denied:
+                _, effective_cmd = self._normalize_context(cmd)
+                if effective_cmd.parse_error:
+                    self._record_context_parse_error(cmd, effective_cmd)
+                    continue
+                cmd.consumed = True
+                cmd.handler = "access-denied"
+                cmd.extraction_status = ExtractionStatus.UNSUPPORTED
+                cmd.requires_manual_review = True
+                self.config.unsupported_commands.append(cmd.to_sanitized_copy())
+                continue
+
             if cmd.operation in (JunosOperation.ACTIVATE, JunosOperation.DEACTIVATE):
                 context, effective_cmd = self._normalize_context(cmd)
                 if effective_cmd.parse_error:
@@ -123,10 +146,13 @@ class JuniperSRXParser:
             tokens=stripped_tokens,
             raw_sanitized=cmd.raw_sanitized,
             line_number=cmd.line_number,
+            normalized_line_number=cmd.normalized_line_number,
             original_tokens=list(cmd.tokens),
             normalized_tokens=list(stripped_tokens),
             context_type=context.context_type,
             context_name=context.name,
+            access_denied=cmd.access_denied,
+            requires_manual_review=cmd.requires_manual_review,
             source_group=cmd.source_group,
             source_group_path=cmd.source_group_path,
             source_group_chain=list(cmd.source_group_chain),

@@ -1,4 +1,4 @@
-"""Tokenizer and activation state management for Juniper JunOS 'set' configuration format."""
+"""Syntax tokenizer for Juniper JunOS display-set configuration."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ class JunosCommand(BaseModel):
     tokens: List[str] = Field(default_factory=list)
     raw_sanitized: str
     line_number: int
+    normalized_line_number: Optional[int] = None
     consumed: bool = False
     handler: Optional[str] = None
     parse_error: Optional[str] = None
@@ -71,6 +72,7 @@ class JunosCommand(BaseModel):
             tokens=sanitize_tokens(self.tokens),
             raw_sanitized=self.raw_sanitized,
             line_number=self.line_number,
+            normalized_line_number=self.normalized_line_number,
             consumed=self.consumed,
             handler=self.handler,
             parse_error=self.parse_error,
@@ -154,50 +156,6 @@ def validate_input_mode(commands: Sequence[JunosCommand]) -> None:
                     )
 
 
-class JunosActivationState:
-    """Tracks deactivate/activate path state to determine if a configuration path is inactive."""
-
-    def __init__(self) -> None:
-        self.inactive_paths: List[List[str]] = []
-
-    def apply(self, commands: Sequence[JunosCommand]) -> None:
-        """Process deactivate and activate commands."""
-        for cmd in commands:
-            if cmd.operation == JunosOperation.DEACTIVATE:
-                if len(cmd.tokens) > 1:
-                    path = [t.lower() for t in cmd.tokens[1:]]
-                    if path not in self.inactive_paths:
-                        self.inactive_paths.append(path)
-                cmd.consumed = True
-                cmd.extraction_status = ExtractionStatus.EXTRACTED
-            elif cmd.operation == JunosOperation.ACTIVATE:
-                if len(cmd.tokens) > 1:
-                    path = [t.lower() for t in cmd.tokens[1:]]
-                    # Activating a hierarchy reactivates its descendants too.
-                    self.inactive_paths = [
-                        p for p in self.inactive_paths if p[:len(path)] != path
-                    ]
-                cmd.consumed = True
-                cmd.extraction_status = ExtractionStatus.EXTRACTED
-
-    def is_inactive(self, path: Sequence[str]) -> bool:
-        """
-        Check if path or any parent prefix path is deactivated.
-        Supports subtree inheritance.
-        """
-        if not path or not self.inactive_paths:
-            return False
-        normalized_path = [t.lower() for t in path]
-        for inact in self.inactive_paths:
-            if len(normalized_path) >= len(inact):
-                if normalized_path[:len(inact)] == inact:
-                    return True
-        return False
-
-    def is_exactly_inactive(self, path: Sequence[str]) -> bool:
-        normalized_path = [t.lower() for t in path]
-        return normalized_path in self.inactive_paths
-
 
 class JuniperSetTokenizer:
     """Tokenizes JunOS display-set configuration text into sanitized JunosCommand objects."""
@@ -257,6 +215,7 @@ class JuniperSetTokenizer:
                         tokens=tokens,
                         raw_sanitized=sanitized_raw,
                         line_number=line_idx,
+                        normalized_line_number=line_idx,
                         source_order=line_idx,
                         parse_error=f"Lexical error: {ex}",
                         extraction_status=ExtractionStatus.PARSE_ERROR,
@@ -287,6 +246,7 @@ class JuniperSetTokenizer:
                 tokens=tokens,
                 raw_sanitized=sanitized_raw,
                 line_number=line_idx,
+                normalized_line_number=line_idx,
                 source_order=line_idx,
                 access_denied=access_denied,
                 requires_manual_review=access_denied,

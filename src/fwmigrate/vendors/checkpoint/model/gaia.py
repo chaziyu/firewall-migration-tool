@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .common import CheckPointObjectReference, CheckPointSourceObject
 
@@ -44,14 +44,18 @@ class CPGaiaStaticRoute(CheckPointSourceObject):
     default: bool | None = None
 
 
-class CPGaiaDHCPPool(CheckPointSourceObject):
+class _CPGaiaNestedSource(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+
+class CPGaiaDHCPPool(_CPGaiaNestedSource):
     start: str | None = None
     end: str | None = None
     enabled: bool | None = None
     state: str | None = None
 
 
-class CPGaiaDHCPSubnet(CheckPointSourceObject):
+class CPGaiaDHCPSubnet(_CPGaiaNestedSource):
     subnet: str | None = None
     netmask: str | None = None
     prefix: int | None = None

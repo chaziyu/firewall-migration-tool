@@ -40,7 +40,6 @@ class CiscoASAConfig(CiscoSourceModel):
     acl_bindings: List[CiscoACLBinding] = Field(default_factory=list)
     nat_rules: List[CiscoNATRule] = Field(default_factory=list)
     static_routes: List[CiscoStaticRoute] = Field(default_factory=list)
-    route_tracking_ids: List[int] = Field(default_factory=list)
     tracks: List[CiscoTrack] = Field(default_factory=list)
     sla_monitors: List[CiscoSLAMonitor] = Field(default_factory=list)
     dynamic_routing: List[CiscoSourceRecord] = Field(default_factory=list)
@@ -75,10 +74,10 @@ class CiscoASAConfig(CiscoSourceModel):
     dhcp_global_settings: List[CiscoDHCPGlobalSettings] = Field(default_factory=list)
     dhcp_relays: List[CiscoDHCPRelay] = Field(default_factory=list)
     dns_server_groups: List[CiscoDNSServerGroup] = Field(default_factory=list)
-    dns_settings: CiscoDNSSettings = Field(default_factory=lambda: CiscoDNSSettings(name="system-dns"))
+    dns_settings: Optional[CiscoDNSSettings] = None
     connection_controls: List[CiscoConnectionControl] = Field(default_factory=list)
     management_settings: List[CiscoManagementSetting] = Field(default_factory=list)
-    system_settings: CiscoSystemSettings = Field(default_factory=lambda: CiscoSystemSettings(name="system"))
+    system_settings: Optional[CiscoSystemSettings] = None
     ntp_servers: List[CiscoNTPServer] = Field(default_factory=list)
     management_access_rules: List[CiscoManagementAccessRule] = Field(default_factory=list)
     icmp_management_rules: List[CiscoICMPManagementRule] = Field(default_factory=list)
@@ -86,12 +85,11 @@ class CiscoASAConfig(CiscoSourceModel):
     logging_settings: List[CiscoLoggingSetting] = Field(default_factory=list)
     enable_credentials: List[CiscoEnableCredential] = Field(default_factory=list)
     failover_settings: List[CiscoFailoverSetting] = Field(default_factory=list)
-    failover_config: CiscoFailoverConfig = Field(default_factory=lambda: CiscoFailoverConfig(name="failover"))
+    failover_config: Optional[CiscoFailoverConfig] = None
     contexts: List[CiscoASAContext] = Field(default_factory=list)
     trustpoint_records: List[CiscoTrustpointRecord] = Field(default_factory=list)
-    http_server: CiscoHTTPServerConfig = Field(default_factory=CiscoHTTPServerConfig)
-    multi_context_system: CiscoMultiContextSystem = Field(default_factory=CiscoMultiContextSystem)
-    acl_consumers: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+    http_server: Optional[CiscoHTTPServerConfig] = None
+    multi_context_system: Optional[CiscoMultiContextSystem] = None
     unsupported_commands: List[Dict[str, Any]] = Field(default_factory=list)
     parse_errors: List[Dict[str, Any]] = Field(default_factory=list)
     diagnostics: List[CiscoDiagnostic] = Field(default_factory=list)

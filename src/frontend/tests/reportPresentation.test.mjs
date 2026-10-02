@@ -185,3 +185,32 @@ test('validation retains exact severity/domain/field/message groups and every oc
   assert.deepEqual(findingGroups([]), [])
   assert.deepEqual(rows, before)
 })
+
+
+test('Cisco FTD columns preserve policy rule and source scope identity', () => {
+  const row = {
+    policy_id: 'policy-1', policy_name: 'Corporate ACP', rule_id: 'rule-7', name: 'Allow HTTPS',
+    position: 7, domain_id: 'domain-1', device_id: 'device-1', device_name: 'FTD-A',
+    source_context: 'fmc:Global', source_addresses: ['inside'], destination_addresses: ['server'],
+    source_interfaces: ['inside-zone'], destination_interfaces: ['dmz-zone'], services: ['HTTPS'], action: 'ALLOW',
+  }
+  assert.deepEqual(defaultColumns([row], 'policies', 'cisco_ftd'), [
+    'policy_id', 'policy_name', 'rule_id', 'name', 'position', 'domain_id', 'device_name',
+    'source_interfaces', 'source_addresses', 'destination_interfaces', 'destination_addresses', 'services', 'action',
+  ])
+  const scope = detailGroups(row, 'policies', 'cisco_ftd').find((group) => group.title === 'Source scope')
+  assert.deepEqual(scope.fields, [
+    ['source_context', 'fmc:Global'], ['domain_id', 'domain-1'],
+    ['device_id', 'device-1'], ['device_name', 'FTD-A'],
+  ])
+})
+
+test('finding navigation prefers stable Cisco FTD source IDs over duplicate names', () => {
+  const rows = [
+    { source_id: 'rule-a', rule_id: 'rule-a', name: 'Same', scope: 'fmc:Global' },
+    { source_id: 'rule-b', rule_id: 'rule-b', name: 'Same', scope: 'fmc:Global' },
+  ]
+  assert.deepEqual(matchingSourceRows(rows, {
+    source_id: 'rule-b', object_name: 'Same', scope: 'fmc:Global',
+  }), [rows[1]])
+})

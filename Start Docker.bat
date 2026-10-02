@@ -37,8 +37,16 @@ echo Building %IMAGE%...
 docker build --tag "%IMAGE%" .
 if errorlevel 1 goto :failed
 
+if not defined FWMIGRATE_WEB_PASSWORD (
+    set /p "FWMIGRATE_WEB_PASSWORD=Choose a local web password: "
+)
+if not defined FWMIGRATE_WEB_PASSWORD (
+    echo A non-empty web password is required.
+    goto :failed
+)
+
 echo Starting the web application...
-docker run --detach --name "%CONTAINER%" --publish 5000:5000 "%IMAGE%" >nul
+docker run --detach --name "%CONTAINER%" --publish 127.0.0.1:5000:5000 --env FWMIGRATE_WEB_USERNAME=fwmigrate --env FWMIGRATE_WEB_PASSWORD --env FWMIGRATE_ALLOW_REMOTE_COLLECTION=1 "%IMAGE%" >nul
 if errorlevel 1 goto :failed
 
 set "HEALTH="
@@ -59,6 +67,7 @@ exit /b 1
 
 :ready
 echo The application is ready at %URL%.
+echo Sign in with username fwmigrate and the password you entered.
 start "" "%URL%"
 exit /b 0
 

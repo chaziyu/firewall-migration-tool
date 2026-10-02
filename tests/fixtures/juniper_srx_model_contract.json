@@ -271,12 +271,11 @@
       ],
       "sha256": "c3edb6fd494a0227b73c293873435e95895f1645a13da124840b48957be3fa32"
     },
-    "JuniperApplicationTerm": {
+    "JuniperApplicationSettings": {
       "fields": [
         "field_provenance",
         "field_candidate_history",
         "member_candidate_history",
-        "name",
         "protocol",
         "protocol_number",
         "source_ports",
@@ -287,7 +286,25 @@
         "inactivity_timeout",
         "source_attributes"
       ],
-      "sha256": "9245c9c595d35c098851d846b7d728c30740bb91d945058ae4c1f2b2b9457d04"
+      "sha256": "829f29963dae07fb4f1fe7a23a629e6a22c41a32e7a931903cd4bdda95ca50d2"
+    },
+    "JuniperApplicationTerm": {
+      "fields": [
+        "field_provenance",
+        "field_candidate_history",
+        "member_candidate_history",
+        "protocol",
+        "protocol_number",
+        "source_ports",
+        "destination_ports",
+        "icmp_type",
+        "icmp_code",
+        "application_protocol",
+        "inactivity_timeout",
+        "source_attributes",
+        "name"
+      ],
+      "sha256": "289cb3e9a854415fc63857b1da7759f3206d08ea6172a653255f8b9329110ce3"
     },
     "JuniperApplication": {
       "fields": [
@@ -296,11 +313,12 @@
         "member_candidate_history",
         "name",
         "description",
+        "top_level",
         "terms",
         "source_attributes",
         "provenance"
       ],
-      "sha256": "4050ad3918c0c3d9e46c3beac7dfc4890e8927da725af1b7189ca4ab4a4f3a55"
+      "sha256": "4e4531e146f7ea22967f77d558918e633abcd9abef3d437c3867927e8e9bfc87"
     },
     "JuniperApplicationSet": {
       "fields": [
@@ -342,12 +360,10 @@
         "permit_options",
         "unknown_match_conditions",
         "unknown_then_options",
-        "sequence",
         "source_attributes",
         "parsed_match_fields",
         "from_zone",
         "to_zone",
-        "policy_key",
         "permit_option_paths",
         "vpn_action",
         "vpn_reference",
@@ -355,7 +371,7 @@
         "security_profile_references",
         "provenance"
       ],
-      "sha256": "0f3b56ef2dc73e546a57f959bb8546ed189812d76b641d9f6b0a2acc06eb7503"
+      "sha256": "b02b913906131c71ec6e6f1a970e05b37dd8deeeada4469d569a3b9a8ed6c991"
     },
     "JuniperIDPRule": {
       "fields": [
@@ -555,10 +571,9 @@
         "action",
         "description",
         "disabled",
-        "sequence",
         "source_attributes"
       ],
-      "sha256": "81d444abe532728185a1007736938056b8976bab473972a1f0d94c0a00388ac9"
+      "sha256": "bf1781db5e8e80fec9d691b7d68529ae06456d6ca80130e2042cdb4b4161c11b"
     },
     "JuniperNATRuleSet": {
       "fields": [

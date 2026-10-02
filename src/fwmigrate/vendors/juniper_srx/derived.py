@@ -9,6 +9,7 @@ from .relationships import build_juniper_dependencies
 from .transforms import (
     build_apbr_graph,
     build_compatibility_views,
+    build_effective_object_views,
     build_inheritance_view,
     build_nat_usage,
     build_policy_relationships,
@@ -43,6 +44,7 @@ class JuniperDerivedViews:
     vpn_graph: tuple[dict[str, Any], ...] = ()
     secure_connect_graph: tuple[dict[str, Any], ...] = ()
     apbr_graph: tuple[dict[str, Any], ...] = ()
+    effective_objects: tuple[dict[str, Any], ...] = ()
 
 
 def build_juniper_derived_views(config: Any, source_commands=()) -> JuniperDerivedViews:
@@ -74,7 +76,8 @@ def build_juniper_derived_views(config: Any, source_commands=()) -> JuniperDeriv
         activation_directives=activation, inheritance_view=inheritance_view, nat_usage=tuple(nat_usage),
         nat_pool_usage=tuple(nat_pool_usage),
         policy_relationships=tuple(policy_views), vpn_graph=tuple(vpn_graph),
-        secure_connect_graph=tuple(secure_connect), apbr_graph=tuple(apbr_graph))
+        secure_connect_graph=tuple(secure_connect), apbr_graph=tuple(apbr_graph),
+        effective_objects=build_effective_object_views(config, source_commands))
 
 
 __all__ = ["JuniperDerivedViews", "build_juniper_derived_views"]

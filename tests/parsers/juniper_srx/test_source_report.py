@@ -98,3 +98,27 @@ def test_source_report_and_excel_keep_junos_contexts_and_redact_secrets():
     workbook = load_workbook(output, read_only=True)
     text = "\n".join(str(cell.value) for sheet in workbook.worksheets for row in sheet.iter_rows() for cell in row)
     assert "super-secret" not in text
+
+
+
+def test_hierarchical_commands_keep_original_source_line_numbers():
+    parser = JuniperSRXParser("""system {
+    host-name edge;
+}
+interfaces {
+    ge-0/0/0 {
+        description WAN;
+    }
+}
+""")
+    parser.extract_source()
+
+    hostname = next(command for command in parser.commands if "host-name" in command.tokens)
+    description = next(command for command in parser.commands if "description" in command.tokens)
+
+    assert hostname.line_number == 2
+    assert description.line_number == 6
+    assert hostname.normalized_line_number == 1
+    assert description.normalized_line_number == 2
+    assert hostname.source_order == 1
+    assert description.source_order == 2

@@ -55,7 +55,7 @@ def is_fmc_bundle(content: str) -> bool:
     return isinstance(payload, dict) and (
         payload.get("format") == FMC_BUNDLE_FORMAT
         or (
-            any(key in payload for key in ("access_policies", "nat_policies", "objects"))
+            any(key in payload for key in ("access_policies", "nat_policies", "objects", "devices"))
             and payload.get("source") in {"fmc-rest-api", "cisco-fmc-rest-api"}
         )
     )
@@ -73,8 +73,8 @@ class CiscoFMCBundleParser:
         self.payload = payload
         domain = payload.get("domain") if isinstance(payload.get("domain"), dict) else {}
         self.domain_id = domain.get("id") or payload.get("domainUUID")
-        self.domain_name = domain.get("name") or "Global"
-        self.context = f"fmc:{self.domain_name}"
+        self.domain_name = domain.get("name")
+        self.context = f"fmc:{self.domain_name}" if self.domain_name else None
 
     def _object_collections(self) -> dict[str, list[dict]]:
         objects = self.payload.get("objects") if isinstance(self.payload.get("objects"), dict) else {}
@@ -107,14 +107,10 @@ class CiscoFMCBundleParser:
             ) for part in _items(collection.get("parts"))],
         )
 
-        def name(item: dict, index: int) -> str:
+        def name(item: dict, index: int) -> str | None:
+            del index
             configured_name = item.get("name")
-            if configured_name is not None:
-                return str(configured_name)
-            source_id = item.get("id")
-            if source_id is not None:
-                return str(source_id)
-            return f"<unnamed:{index}>"
+            return str(configured_name) if configured_name is not None else None
 
         def reference(value: Any) -> CiscoFTDReference:
             if isinstance(value, dict):
@@ -152,14 +148,16 @@ class CiscoFMCBundleParser:
             return refs(value)
 
         def record(item: dict, index: int, cls, **values):
-            source_name_explicit = item.get("name") is not None
+            source_name_explicit = "name" in item
             attributes = {
                 "provenance": "FMC REST",
                 "domain_id": self.domain_id,
                 "source_name_explicit": source_name_explicit,
             }
             if not source_name_explicit:
-                attributes["source_name_fallback"] = "source_id" if item.get("id") is not None else "collection_index"
+                attributes["internal_record_key"] = (
+                    f"id:{item['id']}" if item.get("id") is not None else f"collection-index:{index}"
+                )
             attributes.update(values.pop("source_attributes", {}))
             raw_extra = values.pop("raw_extra", sanitize_source_attributes(item))
             return cls(
@@ -533,7 +531,7 @@ class CiscoFMCBundleParser:
             explicit_fields=[field for field, key in (("policy", "policy"), ("targets", "targets")) if key in item])
             for index, item in enumerate(objects.get("policy_assignments", []), 1)]
         for policy_index, policy in enumerate(_items(self.payload.get("access_policies")), 1):
-            policy_name = str(policy.get("name") or policy.get("id") or policy_index)
+            policy_name = str(policy["name"]) if policy.get("name") is not None else None
             acp_rules = []
             for rule_index, item in enumerate(_items(policy.get("rules")), 1):
                 metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
@@ -1190,7 +1188,7 @@ class CiscoFMCBundleParser:
                 for index, item in enumerate(_items(items), 1))
         for device in _items(self.payload.get("devices")):
             device_id = str(device.get("id") or "")
-            device_name = str(device.get("name") or device_id)
+            device_name = str(device["name"]) if device.get("name") is not None else None
             resources = device.get("resources") if isinstance(device.get("resources"), dict) else {}
             interfaces.extend(record(item, index, CiscoFTDInterfaceSource,
                 interface_type=item.get("interfaceType", item.get("type")), address=item.get("address"), device_id=device_id,
@@ -1210,7 +1208,7 @@ class CiscoFMCBundleParser:
                     collection_family=family) for index, item in enumerate(_items(family_items), 1))
             for vr in _items(resources.get("virtual_routers")):
                 vr_id = str(vr.get("id") or "")
-                vr_name = str(vr.get("name") or vr_id)
+                vr_name = str(vr["name"]) if vr.get("name") is not None else None
                 vr_resources = vr.get("resources") if isinstance(vr.get("resources"), dict) else {}
                 virtual_routers.append(record(vr, 1, CiscoFTDVirtualRouter,
                     interfaces=refs_field(vr, "interfaces", "interfaceNames"), device_id=device_id,

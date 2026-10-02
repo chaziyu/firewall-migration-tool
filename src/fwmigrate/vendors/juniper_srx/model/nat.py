@@ -54,7 +54,6 @@ class JuniperNATRule(JuniperEffectiveModel):
     action: Dict[str, Any] = Field(default_factory=dict)
     description: Optional[str] = None
     disabled: Optional[bool] = None
-    sequence: Optional[int] = None
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 

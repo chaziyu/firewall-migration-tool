@@ -101,21 +101,28 @@ def build_checkpoint_derived_views(
     interface_views = transform_interfaces(config, interface_topology)
     vpn_views = transform_vpn(vpn_topology, references)
     nat_completeness = _derived_completeness(collection, {
-        "show-nat-rulebase", "show-hosts", "show-networks", "show-address-ranges",
+        "show-nat-rulebase",
+        "show-hosts", "show-networks", "show-address-ranges",
         "show-groups", "show-groups-with-exclusion",
+        "show-services-tcp", "show-services-udp", "show-services-sctp",
+        "show-services-icmp", "show-services-icmp6", "show-services-other",
+        "show-services-citrix-tcp", "show-services-dce-rpc", "show-services-rpc",
+        "show-services-gtp", "show-services-compound-tcp", "show-service-groups",
+        "show-gateways-and-servers", "show-simple-gateways", "show-simple-clusters",
     })
     policy_completeness = _derived_completeness(collection, {
         "show-packages", "show-access-layers", "show-access-rulebase",
     })
     interface_completeness = _derived_completeness(collection, {
         "show-gateways-and-servers", "show-simple-gateways", "show-simple-clusters",
-        "show-security-zones", "gaia/show-configuration",
+        "show-interoperable-devices", "show-security-zones", "gaia/show-configuration",
     })
     vpn_completeness = _derived_completeness(collection, {
         "show-vpn-communities-star", "show-vpn-communities-meshed",
-        "show-vpn-communities-remote-access", "show-simple-gateways",
+        "show-vpn-communities-remote-access",
+        "show-gateways-and-servers", "show-simple-gateways",
         "show-simple-clusters", "show-interoperable-devices",
-        "gaia/show-configuration",
+        "gaia/show-configuration", "gaia/show-vpn-tunnels",
     })
     return CheckPointDerivedViews(
         references=references,

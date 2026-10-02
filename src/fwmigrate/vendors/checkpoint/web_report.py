@@ -46,7 +46,7 @@ def build_checkpoint_preview(result: CheckPointSourceResult) -> dict[str, Any]:
                   "resolved_zone": v.resolved_zone_name, "zone_assignment_source": v.zone_assignment_source,
                   "management_source_present": v.management_source_present, "gaia_source_present": v.gaia_source_present,
                   "issues": [_project(i) for i in v.issues]} for v in derived.interface_views.views]
-    vpn = [{"community": v.community_name, "community_type": v.community_type,
+    vpn = [{"vpn_community": v.community_name, "community_type": v.community_type,
             "gateways": _refs(v.member_gateways), "clusters": _refs(v.member_clusters),
             "interoperable_devices": _refs(v.member_interoperable_devices), "centers": _refs(v.center_members),
             "satellites": _refs(v.satellite_members), "vpn_domains": _refs(v.vpn_domains),

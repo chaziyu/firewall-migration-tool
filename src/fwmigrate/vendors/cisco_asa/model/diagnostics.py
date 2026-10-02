@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class CiscoDiagnostic(BaseModel):
     line_number: int
     section: str
+    source_context: Optional[str] = None
     object_name: Optional[str] = None
     raw_line: str
     severity: str = "error"

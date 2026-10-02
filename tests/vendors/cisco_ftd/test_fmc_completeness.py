@@ -43,7 +43,17 @@ def test_collection_completeness_is_exported_separately_from_capability_coverage
     result = extract_cisco_ftd_source(json.dumps(payload))
     preview = build_ftd_preview(result)
     assert preview["capability_coverage"]["network_address_overrides"]["status"] == "SUPPORTED"
-    assert preview["collection_completeness"]["network_address_overrides"] == "failed"
+    assert preview["collection_completeness"] == {
+        "provided": True,
+        "status": "PARTIAL",
+        "parts": [{
+            "name": "network_address_overrides",
+            "status": "FAILED",
+            "complete": False,
+            "count": 0,
+        }],
+    }
+    assert preview["source_plane_completeness"]["network_address_overrides"] == "failed"
 
     output = BytesIO()
     export_ftd_excel(result, output)
@@ -56,5 +66,32 @@ def test_collection_completeness_is_exported_separately_from_capability_coverage
         "Status": "FAILED",
         "Complete": False,
         "Count": 0,
-        "Derived Status": "failed",
     }
+    semantic_headers = [cell.value for cell in workbook["Semantic Completeness"][1]]
+    semantic_rows = [dict(zip(semantic_headers, row)) for row in
+                     workbook["Semantic Completeness"].iter_rows(min_row=2, values_only=True)]
+    assert {"Source Family": "network_address_overrides", "Derived Status": "failed"} in semantic_rows
+
+
+def test_missing_collection_metadata_is_reported_as_unknown_not_zero():
+    result = extract_cisco_ftd_source(json.dumps({
+        "source": "fmc-rest-api",
+        "objects": {"networkaddresses": [{"id": "h1", "name": "Host", "type": "Host", "value": "192.0.2.1"}]},
+    }))
+    preview = build_ftd_preview(result)
+    assert preview["collection_completeness"] == {
+        "provided": False,
+        "status": "NOT_PROVIDED",
+        "parts": [],
+    }
+
+    output = BytesIO()
+    export_ftd_excel(result, output)
+    output.seek(0)
+    workbook = load_workbook(output, read_only=True)
+    summary = dict(workbook["Summary"].iter_rows(min_row=2, values_only=True))
+    assert summary["Collection Status"] == "NOT_PROVIDED"
+    assert summary["Collection Parts"] == "Not provided"
+    assert summary["Incomplete Collection Parts"] == "Not provided"
+    completeness = list(workbook["Collection Completeness"].iter_rows(min_row=2, values_only=True))
+    assert completeness == [("Collection metadata", "NOT_PROVIDED", None, None)]

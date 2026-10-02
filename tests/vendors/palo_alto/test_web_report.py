@@ -95,3 +95,19 @@ def test_preview_preserves_interface_address_snat_semantics():
     assert row["translated_addresses"] == []
     assert row["source_translation_interface"] == "ethernet1/1"
     assert row["source_translation_ip"] == "192.0.2.10/32"
+
+
+def test_preview_reports_source_inventory_truncation_explicitly():
+    entries = "".join(
+        f"<entry name='a-{index}'><ip-netmask>192.0.2.{index % 254 + 1}/32</ip-netmask></entry>"
+        for index in range(205)
+    )
+    source = f"<config><shared><address>{entries}</address></shared></config>"
+    reporter = PaloAltoSourceReporter()
+    preview = reporter.build_preview(reporter.analyze_source(source))
+
+    assert preview["summary"]["records"] == 205
+    assert preview["records_total"] == 205
+    assert preview["records_returned"] == 200
+    assert preview["records_truncated"] is True
+    assert len(preview["records"]) == 200

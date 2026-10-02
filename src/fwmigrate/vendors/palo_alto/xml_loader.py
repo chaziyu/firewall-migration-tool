@@ -36,10 +36,21 @@ def load_pan_source(content: str) -> PANSourceDocument:
             f"Unsupported XML format: expected root element '<config>', found '<{root.tag}>'."
         )
 
-    host_elem = root.find(".//system/hostname")
-    if host_elem is None:
-        host_elem = root.find(".//deviceconfig/system/hostname")
-    hostname = host_elem.text.strip() if host_elem is not None and host_elem.text else None
+    device_entries = root.findall("./devices/entry")
+    hostname = None
+    if len(device_entries) == 1:
+        host_elem = device_entries[0].find("./deviceconfig/system/hostname")
+        if host_elem is not None and host_elem.text and host_elem.text.strip():
+            hostname = host_elem.text.strip()
+    elif not device_entries:
+        hostname_candidates = [
+            element
+            for xpath in ("./deviceconfig/system/hostname", "./system/hostname")
+            for element in root.findall(xpath)
+            if element.text and element.text.strip()
+        ]
+        if len(hostname_candidates) == 1:
+            hostname = hostname_candidates[0].text.strip()
     return PANSourceDocument(
         root=root,
         raw_content=content,

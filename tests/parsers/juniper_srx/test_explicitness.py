@@ -94,3 +94,16 @@ set apply-groups G
     assert not result.config.get_context().policies
     assert any(item["origin"] == "inherited-group" and item["target_path"][-1] == "count"
                for item in result.derived.inheritance_view["effective_statements"])
+
+
+
+def test_derived_order_and_identity_are_not_source_model_fields():
+    result = extract_juniper_source("""set security policies from-zone trust to-zone untrust policy P then permit
+set security nat source rule-set RS rule R then source-nat interface
+""")
+    policy = result.config.get_context().policies[0]
+    rule = result.config.get_context().nat.source_rule_sets["RS"].rules[0]
+
+    assert "sequence" not in type(policy).model_fields
+    assert "policy_key" not in type(policy).model_fields
+    assert "sequence" not in type(rule).model_fields

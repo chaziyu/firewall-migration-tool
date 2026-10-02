@@ -12,6 +12,7 @@ from fwmigrate.vendors.juniper_srx.extraction import (
 from fwmigrate.vendors.juniper_srx.model import (
     JuniperApplication,
     JuniperApplicationSet,
+    JuniperApplicationSettings,
     JuniperApplicationTerm,
     JuniperContextConfig,
     JuniperProvenanceKind,
@@ -173,9 +174,9 @@ def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig
                 return True
             return _parse_term_settings(cmd, toks[6:], term, app)
         else:
-            # Default term
-            term = _get_or_create_term(app, "__default__")
-            return _parse_term_settings(cmd, toks[4:], term, app)
+            # Junos permits application properties directly on the application.
+            # Preserve that source structure rather than fabricating a term.
+            return _parse_term_settings(cmd, toks[4:], app.top_level, app)
 
     return False
 
@@ -192,7 +193,7 @@ def _get_or_create_term(app: JuniperApplication, term_name: str) -> JuniperAppli
 def _parse_term_settings(
     cmd: JunosCommand,
     toks: list[str],
-    term: JuniperApplicationTerm,
+    term: JuniperApplicationSettings,
     app: JuniperApplication,
 ) -> bool:
     if not toks:

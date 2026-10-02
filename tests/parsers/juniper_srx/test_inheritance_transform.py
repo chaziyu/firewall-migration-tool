@@ -152,6 +152,12 @@ def test_effective_inherited_address_resolves_without_mutating_source():
     derived = build_juniper_derived_views(config, parser.commands)
     dependency = next(item for item in derived.dependencies if item.reference == "INHERITED")
     assert dependency.result == "RESOLVED"
+    effective = next(
+        item for item in derived.effective_objects
+        if item["object_type"] == "address" and item["name"] == "INHERITED"
+    )
+    assert effective["source_presence"] == "INHERITED_ONLY"
+    assert effective["attributes"]["prefix"] == "192.0.2.5/32"
     assert "global" not in config.get_context().address_books
     assert config == before
 
@@ -481,3 +487,19 @@ deactivate security policies global policy P scheduler-name
     sheet = load_workbook(BytesIO(output.getvalue()), read_only=True)["Policy Reference Relationships"]
     rows = list(sheet.values)
     assert next(row for row in rows[1:] if row[3] == "scheduler")[9] == "INACTIVE_SOURCE"
+
+
+
+def test_group_wildcard_expansion_is_bounded(monkeypatch):
+    import fwmigrate.vendors.juniper_srx.group_resolver as group_resolver
+
+    monkeypatch.setattr(group_resolver, "MAX_GROUP_EXPANSIONS", 2)
+    view = _view("""set groups G interfaces <*> description inherited
+set interfaces ge-0/0/0 unit 0
+set interfaces ge-0/0/1 unit 0
+set interfaces ge-0/0/2 unit 0
+set apply-groups G
+""")
+
+    assert not [item for item in view["effective_statements"] if item["origin"] == "inherited-group"]
+    assert "GROUP_EXPANSION_LIMIT_EXCEEDED" in {item["status"] for item in view["issues"]}

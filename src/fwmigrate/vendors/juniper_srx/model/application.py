@@ -9,8 +9,7 @@ from fwmigrate.vendors.juniper_srx.tokenizer import JunosCommand
 from .common import JuniperEffectiveModel, JuniperSourceProvenance
 
 
-class JuniperApplicationTerm(JuniperEffectiveModel):
-    name: Optional[str] = None
+class JuniperApplicationSettings(JuniperEffectiveModel):
     protocol: Optional[str] = None
     protocol_number: Optional[int] = None
     source_ports: List[str] = Field(default_factory=list)
@@ -22,9 +21,14 @@ class JuniperApplicationTerm(JuniperEffectiveModel):
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class JuniperApplicationTerm(JuniperApplicationSettings):
+    name: Optional[str] = None
+
+
 class JuniperApplication(JuniperEffectiveModel):
     name: str
     description: Optional[str] = None
+    top_level: JuniperApplicationSettings = Field(default_factory=JuniperApplicationSettings)
     terms: List[JuniperApplicationTerm] = Field(default_factory=list)
     source_attributes: Dict[str, Any] = Field(default_factory=dict)
     provenance: JuniperSourceProvenance = Field(default_factory=JuniperSourceProvenance)

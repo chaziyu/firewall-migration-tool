@@ -85,3 +85,33 @@ def test_snmpv3_credentials_are_redacted_in_reports_and_snapshots():
                     [list(sheet.iter_rows(values_only=True)) for sheet in workbook]):
         assert_secret_absent(surface, *secrets)
     assert "auth sha [REDACTED] priv aes 128 [REDACTED]" in imported.source_text
+
+def test_ntp_authentication_key_secret_is_redacted_everywhere():
+    import json
+    from openpyxl import load_workbook
+    from fwmigrate.collection.contracts import CollectedSource
+    from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot
+    from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
+
+    secret = "NTP_AUTH_KEY_SENTINEL"
+    source = f"ntp authentication-key 7 md5 {secret}\nntp trusted-key 7\n"
+    result = extract_cisco_asa_source(source)
+    snapshot = make_snapshot(CollectedSource("cisco_asa", source, "asa.cfg", "ssh"))
+    imported = parse_snapshot(json.dumps(snapshot).encode())
+
+    output = BytesIO()
+    export_asa_excel(result, output)
+    workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
+    for surface in (
+        result.config.model_dump(mode="python"),
+        result.inventory_items,
+        result.unsupported_items,
+        build_asa_preview(result),
+        snapshot,
+        imported.source_text,
+        [list(sheet.iter_rows(values_only=True)) for sheet in workbook],
+    ):
+        assert_secret_absent(surface, secret)
+
+    assert "ntp authentication-key 7 md5 [REDACTED]" in imported.source_text
+
