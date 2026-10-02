@@ -1451,7 +1451,7 @@ def create_app(test_config=None):
                 'deployment_session_id': session.session_id if result.status != 'SUCCESS' else None,
             }), (200 if result.status == 'SUCCESS' else 502)
         except ValueError as exc:
-            logging.exception("Invalid request during candidate commit")
-            return jsonify({'success': False, 'error': 'Invalid request'}), 400
+            _LOGGER.info("Invalid candidate commit request: %s", exc)
+            return jsonify({'success': False, 'error': str(exc)}), 400
 
     return app
