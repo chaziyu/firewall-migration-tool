@@ -185,6 +185,10 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             tuple(sorted(dependencies[key])), tuple(evidence.get(key, ())), tuple(blocked),
             key in approved and values.get(key) == by_key[key].value)
     index = build_plan_dependency_index(plan, provisional)
+    parents_by_item = {}
+    for parent, children in index.dependents_by_item.items():
+        for child in children:
+            parents_by_item.setdefault(child, []).append("item:" + parent)
     dispositions, blockers = assess_target_plan(plan, classifications, target_findings, provisional, index)
     validation = validate_plan(plan)
     configuration = []
@@ -212,7 +216,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             required.extend(row.key for row in decisions.decisions if row.source_vdom == (item.source_vdom or "root")
                             and row.source_name == name and row.source_kind in {"interface", "zone"})
         required = list(dict.fromkeys(required))
-        item_dependencies = ["item:" + parent for parent, children in index.dependents_by_item.items() if key in children]
+        item_dependencies = parents_by_item.get(key, [])
         reasons = list(item.warnings) if item.status.value != "SUPPORTED" else []
         reasons.extend(blockers.get(key, ()))
         if any(rows[parent].status != "READY" for parent in required if parent in rows):

@@ -40,7 +40,7 @@ export type PlanArtifact = {
   plan_status: string
   commands: string[]
   command_count: number
-  artifact: { commands: string[]; command_count: number; command_sha256: string; signature: string; [key: string]: unknown }
+  artifact: { commands: string[]; command_count: number; command_sha256: string; signature: string; report: PlanArtifact['report'] & { review: { recommendations: PlanArtifact['recommendations']; support_guidance: PlanArtifact['support_guidance'] } }; decision_document: DecisionDocument; [key: string]: unknown }
   counts: Record<string, number>
   render_summary: Record<string, number>
   blocking_reasons: Array<Record<string, unknown>>
@@ -51,14 +51,19 @@ export type PlanArtifact = {
 }
 
 export const buildPlan = (source: SourceEvidence, document: unknown, targetSource?: SourceEvidence | null, targetDevice?: string) =>
-  postJson<PlanArtifact>('/api/migrate', {
+  postJson<Omit<PlanArtifact, 'commands' | 'report' | 'decision_document' | 'recommendations' | 'support_guidance'>>('/api/migrate', {
+    compact_response: true,
     source,
     source_vendor: 'fortigate',
     target_vendor: 'palo_alto',
     decision_document: document,
     ...(targetSource ? { target_source: targetSource } : {}),
     ...(targetDevice ? { target_device: targetDevice } : {}),
-  })
+  }).then((result): PlanArtifact => ({ ...result, commands: result.artifact.commands,
+    report: result.artifact.report, decision_document: result.artifact.decision_document,
+    recommendations: result.artifact.report.review.recommendations,
+    support_guidance: result.artifact.report.review.support_guidance,
+  }))
 
 export const downloadBundle = (artifact: PlanArtifact, source: SourceEvidence) => postBlob('/api/migration/bundle', { artifact: artifact.artifact, source })
 export const downloadCommands = (artifact: PlanArtifact) => Promise.resolve(new Blob([artifact.artifact.commands.join('\n')], { type: 'text/plain' }))

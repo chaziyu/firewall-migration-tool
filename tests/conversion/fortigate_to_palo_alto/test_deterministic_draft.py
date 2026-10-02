@@ -87,3 +87,30 @@ def test_whole_draft_contested_ports_and_multi_vdom_identity():
     assert all(row.status == 'CONFLICT' for row in ports)
     with pytest.raises(ValueError):
         approve_draft(decisions, result, [row.decision_key for row in ports])
+
+
+def test_dependency_index_preserves_backward_edges_cycles_order_and_vdom_isolation():
+    from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationPlan
+    from fwmigrate.conversion.fortigate_to_palo_alto.plan_dependencies import build_plan_dependency_index, item_key
+
+    def item(kind, name, target, vdom='root', **fields):
+        return SimpleNamespace(source_object_type=kind, source_kind=kind, source_name=name,
+            source_vdom=vdom, source_policy_id=None, target_vsys='vsys1' if vdom == 'root' else 'vsys2',
+            target_name=target, **fields)
+
+    child = item('interface', 'vlan10', 'ethernet1/1.10', parent='ethernet1/1')
+    branch = item('interface', 'port1', 'ethernet1/1', vdom='branch')
+    parent = item('interface', 'port1', 'ethernet1/1', parent='ethernet1/1.20')
+    grandchild = item('interface', 'vlan20', 'ethernet1/1.20', parent='ethernet1/1.10')
+    zone = item('zone', 'trust', 'trust', interfaces=('ethernet1/1.20',))
+    rule = item('security_rule', 'allow', 'allow', sources=(), destinations=(), services=(),
+                from_zones=('trust',), to_zones=(), schedule=None)
+    plan = PANMigrationPlan(interfaces=(child, branch, parent, grandchild), zones=(zone,), security_rules=(rule,))
+    decision = SimpleNamespace(key='root-port', source_vdom='root', source_kind='interface',
+                               source_name='port1', target_field='target_interface', value='ethernet1/1')
+    index = build_plan_dependency_index(plan, SimpleNamespace(decisions=(decision,)))
+    expected = tuple(item_key(row) for row in (parent, child, grandchild, zone, rule))
+    assert index.item_keys_by_decision[decision.key] == expected
+    assert index.decision_keys_by_item[item_key(branch)] == ()
+    assert all(index.decision_keys_by_item[key] == (decision.key,) for key in expected)
+    assert index.dependents_by_item[item_key(grandchild)] == (item_key(parent), item_key(zone))

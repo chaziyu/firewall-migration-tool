@@ -46,3 +46,30 @@ test('API transport stays relative in web mode and uses authenticated loopback i
 
   await apiFetch('/api/vendors')
 })
+
+
+test('compact plan client derives aliases from one signed artifact and preserves downloads', async (context) => {
+  const { readFile } = await import('node:fs/promises')
+  const ts = await import('typescript')
+  const source = await readFile(new URL('../src/features/migration/migrationApi.ts', import.meta.url), 'utf8')
+  const clientUrl = new URL('../src/api/client.ts', import.meta.url).href
+  const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
+    .replace('../../api/client', clientUrl)
+  const { buildPlan, downloadCommands } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`)
+  const artifact = { commands: ['set address test ip-netmask 192.0.2.1/32'], command_count: 1,
+    command_sha256: 'digest', signature: 'signed', decision_document: { decisions: [] },
+    report: { items: [], review: { recommendations: [{ code: 'review' }], support_guidance: [] } } }
+  context.mock.method(globalThis, 'fetch', async (url, init) => {
+    assert.equal(url, '/api/migrate')
+    assert.equal(JSON.parse(init.body).compact_response, true)
+    return { ok: true, status: 200, json: async () => ({ artifact, artifact_id: 'id', plan_status: 'READY',
+      command_count: 1, counts: {}, render_summary: {}, blocking_reasons: [] }) }
+  })
+  const result = await buildPlan({ vendor: 'fortigate', source_text: 'source' }, { decisions: [] })
+  assert.equal(result.commands, artifact.commands)
+  assert.equal(result.report, artifact.report)
+  assert.equal(result.decision_document, artifact.decision_document)
+  assert.equal(result.recommendations, artifact.report.review.recommendations)
+  assert.equal(result.support_guidance, artifact.report.review.support_guidance)
+  assert.equal(await (await downloadCommands(result)).text(), artifact.commands.join('\n'))
+})

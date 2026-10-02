@@ -1157,7 +1157,7 @@ def create_app(test_config=None):
             }
             if render_counts.get('CONFIGURE'):
                 render_summary['configure'] = render_counts['CONFIGURE']
-            return jsonify({
+            response = {
                 'success': True,
                 'artifact_id': artifact_id,
                 'plan_status': plan_status,
@@ -1189,7 +1189,14 @@ def create_app(test_config=None):
                 'decision_document': decision_document,
                 'report': rendered.report,
                 'validation': {'issue_summary': rendered.report['issue_summary']},
-            })
+            }
+            if payload.get('compact_response') is True:
+                # The signed artifact contains the complete evidence; keep only the React summaries beside it.
+                response = {key: response[key] for key in (
+                    'success', 'artifact_id', 'plan_status', 'command_count', 'command_sha256',
+                    'artifact', 'counts', 'render_summary', 'blocking_reasons',
+                )}
+            return jsonify(response)
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 

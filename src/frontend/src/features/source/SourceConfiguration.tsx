@@ -221,7 +221,7 @@ export function SourceConfiguration({ view, onViewChange }: {
           onContextChange={(nextSource, nextDevice) => { setTargetSource(nextSource); setTargetDevice(nextDevice) }} />
         </section>
         <div hidden={view === 'migration' && migrationView !== 'plan'}>
-        {decisionDocument && <MigrationWorkflow key={`${previewId}:${JSON.stringify(targetSource)}:${targetDevice}:${JSON.stringify(decisionDocument)}`}
+        {decisionDocument && <MigrationWorkflow key={previewId}
           preview={preview} decisionDocument={decisionDocument}
           targetSource={targetSource} targetDevice={targetDevice} activeSection={view === 'live' ? 'live' : 'plan'}
           onReviewDecision={(key) => { setRequestedDecision({ key, request: Date.now() }); setMigrationView('mappings'); onViewChange('migration'); requestAnimationFrame(() => document.getElementById('migration-review-title')?.scrollIntoView({ block: 'start' })) }}
