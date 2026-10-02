@@ -238,6 +238,25 @@ def test_groq_proposal_is_candidate_bound_and_server_approved(monkeypatch):
         }]}), prepared)
 
 
+def test_external_ai_requires_explicit_customer_data_permission(monkeypatch):
+    monkeypatch.setenv("FWMIGRATE_AI_ENABLED", "1")
+    monkeypatch.delenv("FWMIGRATE_AI_LOCAL_URL", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.delenv("FWMIGRATE_AI_ALLOW_EXTERNAL", raising=False)
+
+    with pytest.raises(ai_advisor.AdvisorUnavailable, match="External AI is disabled"):
+        ai_advisor.validate_static_configuration()
+
+    state = _state()
+    key = state["decisions"].decisions[0].key
+    prepared = ai_advisor.build_proposal_context(state, [key], provider="groq")
+    with pytest.raises(ai_advisor.AdvisorUnavailable, match="External AI is disabled"):
+        ai_advisor._request_groq(prepared)
+
+    monkeypatch.setenv("FWMIGRATE_AI_ALLOW_EXTERNAL", "1")
+    assert ai_advisor.advisor_status()["external_ai_allowed"] is True
+
+
 def test_local_qwen_uses_bounded_json_schema_request(monkeypatch):
     state = _state()
     key = state["decisions"].decisions[0].key
@@ -512,6 +531,7 @@ def test_qwen_abstention_escalates_only_that_decision_to_groq(monkeypatch):
         )
 
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("FWMIGRATE_AI_ALLOW_EXTERNAL", "1")
     monkeypatch.setattr(ai_advisor, "_request_local", local)
     monkeypatch.setattr(ai_advisor, "_request_groq", groq)
 
@@ -595,6 +615,7 @@ def test_complex_candidate_set_escalates_without_local_call(monkeypatch):
     } for index in range(1, 5)]
     prepared = ai_advisor.build_proposal_context(state, [key], provider="qwen_local")
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("FWMIGRATE_AI_ALLOW_EXTERNAL", "1")
     monkeypatch.setattr(ai_advisor, "_request_local", lambda _: pytest.fail("complex choice sent to local model"))
     monkeypatch.setattr(ai_advisor, "_request_groq", lambda remote: ai_advisor.validate_model_output(
         json.dumps({"proposals": _proposal_rows(remote)}), remote))
