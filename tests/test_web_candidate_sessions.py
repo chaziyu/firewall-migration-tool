@@ -217,3 +217,33 @@ def test_candidate_write_to_different_target_preserves_validated_session(monkeyp
     assert client.post("/api/deploy", json={**CREDS, "host": "192.0.2.51", "artifact": artifact}).status_code == 200
     assert client.post("/api/commit", json={**CREDS, "artifact": artifact,
         "deployment_session_id": session}).status_code == 200
+
+
+def test_expected_session_error_has_stable_public_code_and_never_connects(monkeypatch):
+    def forbidden_deployer(options):
+        pytest.fail("Invalid session must not connect to the target")
+
+    monkeypatch.setattr(web, "PANSSHDeployer", forbidden_deployer)
+    client = web.create_app({"TESTING": True}).test_client()
+    response = client.post("/api/commit", json=CREDS)
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "session_required"
+    assert response.get_json()["error"] == "A validated candidate deployment session is required"
+
+
+def test_unexpected_commit_value_error_does_not_expose_device_details(monkeypatch, caplog):
+    class UnexpectedFailure(_SuccessfulDeployer):
+        def commit(self):
+            raise ValueError("synthetic-private-password-device-detail")
+
+    monkeypatch.setattr(web, "PANSSHDeployer", UnexpectedFailure)
+    client = web.create_app({"TESTING": True}).test_client()
+    artifact = _ready_artifact(client)
+    session = client.post("/api/deploy", json={**CREDS, "artifact": artifact}).get_json()["deployment_session_id"]
+    response = client.post("/api/commit", json={
+        **CREDS, "artifact": artifact, "deployment_session_id": session,
+    })
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Invalid candidate commit request"
+    assert "synthetic-private-password-device-detail" not in response.get_data(as_text=True)
+    assert "synthetic-private-password-device-detail" not in caplog.text
