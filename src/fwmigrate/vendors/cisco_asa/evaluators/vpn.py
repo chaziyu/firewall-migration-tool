@@ -8,7 +8,6 @@ import shlex
 from typing import List
 
 from fwmigrate.vendors.cisco_asa.model.identity import CiscoCommandPrivilege
-
 from fwmigrate.vendors.cisco_asa.model.vpn import CiscoTrustpointRecord, CiscoCryptoMap, CiscoGroupPolicy, CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecProfile, CiscoIPsecTransformSet, CiscoTunnelGroup, CiscoVPNAddressAssignment, CiscoVPNAddressPool, CiscoWebVPNConfig
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 from . import _mark_explicit
