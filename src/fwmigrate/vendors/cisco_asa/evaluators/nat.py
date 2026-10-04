@@ -240,4 +240,3 @@ class NATEvaluator:
         if rule.extraction_status == "PARSE_ERROR":
             self._record_diagnostic(line_number, line, "; ".join(rule.review_reasons), "nat", owning_object)
         self.config.nat_rules.append(self._with_source_context(rule, line_number))
-        if rule.access_list:
