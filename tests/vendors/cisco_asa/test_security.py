@@ -115,3 +115,17 @@ def test_ntp_authentication_key_secret_is_redacted_everywhere():
 
     assert "ntp authentication-key 7 md5 [REDACTED]" in imported.source_text
 
+
+def test_ntp_authentication_key_sanitizer_handles_large_untrusted_whitespace():
+    from fwmigrate.extraction.sanitize import sanitize_raw_text
+
+    secret = "NTP_AUTH_KEY_SENTINEL"
+    source = "ntp authentication-key 7 md5" + (" " * 20_000) + secret
+    sanitized = sanitize_raw_text(source)
+
+    assert secret not in sanitized
+    assert sanitized == "ntp authentication-key 7 md5 [REDACTED]"
+
+    near_miss = "ntp authentication-key 7 md5" + (" " * 20_000)
+    assert sanitize_raw_text(near_miss) == near_miss
+
