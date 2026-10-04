@@ -1,16 +1,8 @@
 import os
-import sys
-import io
 import json
 import hashlib
 import click
 import yaml
-
-# Safe stdout/stderr fallback in windowed (GUI) mode
-if sys.stdout is None:
-    sys.stdout = io.StringIO()
-if sys.stderr is None:
-    sys.stderr = io.StringIO()
 
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.source_reporting import source_reporters
@@ -168,14 +160,11 @@ def commit(host, port, username, password):
               help='Interface to bind. Remote live collection remains disabled unless explicitly enabled.')
 def serve(port, host):
     """Start the migration web interface."""
-    try:
-        from fwmigrate.web import create_app
-        app = create_app()
-        click.echo(f"Starting web server on http://{host}:{port}")
-        app.run(host=host, port=port, debug=False)
-    except ImportError:
-        click.echo("Flask is required to run the web server. Install with: pip install flask", err=True)
-        sys.exit(1)
+    from fwmigrate.web import create_app
+
+    app = create_app()
+    click.echo(f"Starting web server on http://{host}:{port}")
+    app.run(host=host, port=port, debug=False)
 
 if __name__ == '__main__':
     cli()

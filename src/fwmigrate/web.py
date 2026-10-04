@@ -181,10 +181,7 @@ def create_app(test_config=None):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         frontend_dist = os.path.join(os.path.dirname(base_dir), 'frontend', 'dist')
 
-    app = Flask(
-        __name__,
-        static_folder=os.path.join(base_dir, 'static'),
-    )
+    app = Flask(__name__, static_folder=None)
     app.request_class = _MemoryOnlyUploadRequest
 
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
