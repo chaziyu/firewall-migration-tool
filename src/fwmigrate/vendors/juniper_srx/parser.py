@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional
-
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.vendors.juniper_srx.command_evaluator import JuniperCommandEvaluator
 from fwmigrate.vendors.juniper_srx.hierarchy_parser import (
@@ -22,9 +20,8 @@ from fwmigrate.vendors.juniper_srx.tokenizer import (
 class JuniperSRXParser:
     """Parse Junos source structure and delegate vendor semantics to the evaluator."""
 
-    def __init__(self, content: str, zone_mapping: Optional[Dict[str, str]] = None) -> None:
+    def __init__(self, content: str) -> None:
         self.content = content
-        self.zone_mapping = zone_mapping or {}
         self.tokenizer = JuniperSetTokenizer()
         self.evaluator = JuniperCommandEvaluator()
         self.config = JuniperSRXConfig()
