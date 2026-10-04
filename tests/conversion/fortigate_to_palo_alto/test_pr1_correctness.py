@@ -5,9 +5,9 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PlannedNATRule, PlannedSchedule, PlannedSecurityRule, PlannedService,
     PlannedServiceGroup, PlannedZone,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.nat import plan_nat
+from fwmigrate.conversion.fortigate_to_palo_alto.planning.nat import plan_nat
 from fwmigrate.conversion.fortigate_to_palo_alto.options import PANMigrationOptions
-from fwmigrate.conversion.fortigate_to_palo_alto.routing import plan_routes
+from fwmigrate.conversion.fortigate_to_palo_alto.planning.routing import plan_routes
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.model.address import FGAddress, FGAddressGroup

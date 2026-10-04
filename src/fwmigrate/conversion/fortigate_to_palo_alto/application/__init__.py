@@ -31,24 +31,24 @@ from ..decision_propagation import (
     rule_affected_decision_keys,
 )
 from ..plan_dependencies import build_plan_dependency_index, item_key
-from ..support_guidance import build_support_guidance
-from ..target_evidence import (
+from ..recommendations.support_guidance import build_support_guidance
+from ..target.target_evidence import (
     reconcile_target_evidence,
     target_evidence_changed,
     target_evidence_identity,
 )
-from ..target_intent import apply_target_intent, export_target_intent
-from ..target_object_reuse import classify_target_object_reuse
-from ..target_plan_validation import assess_target_plan, validate_target_plan
-from ..target_suggestions import target_device_metadata, target_devices
+from ..target.target_intent import apply_target_intent, export_target_intent
+from ..target.target_object_reuse import classify_target_object_reuse
+from ..target.target_plan_validation import assess_target_plan, validate_target_plan
+from ..target.target_suggestions import target_device_metadata, target_devices
 from ..validation import validate_plan
-from ..target_suggestions import suggest_from_target
-from ..target_suggestions import discover_target_candidates
-from ..target_validation import validate_against_target
+from ..target.target_suggestions import suggest_from_target
+from ..target.target_suggestions import discover_target_candidates
+from ..target.target_validation import validate_against_target
 from ..requirements import build_mapping_requirements
-from ..review_context import build_review_context
-from ..review_evidence import build_review_evidence
-from ..review_workflow import build_review_workflow
+from ..review.review_context import build_review_context
+from ..review.review_evidence import build_review_evidence
+from ..review.review_workflow import build_review_workflow
 from ..auto_decisions import classify_auto_decisions
 from .. import build_recommendations
 

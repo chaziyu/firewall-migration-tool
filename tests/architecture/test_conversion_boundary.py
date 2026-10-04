@@ -49,12 +49,18 @@ def test_planning_boundary_does_not_depend_on_target_config_or_shared_ir():
         assert not forbidden & (names | attributes), path
 
 
-def test_pair_package_keeps_legacy_imports_after_internal_grouping():
-    from fwmigrate.conversion.fortigate_to_palo_alto import addresses, renderer, target_candidates
-    from fwmigrate.conversion.fortigate_to_palo_alto.planning import addresses as planned_addresses
-    from fwmigrate.conversion.fortigate_to_palo_alto.rendering import renderer as rendering
-    from fwmigrate.conversion.fortigate_to_palo_alto.target import target_candidates as target
+def test_pair_package_uses_grouped_modules_without_top_level_compatibility_shims():
+    pair_root = Path(__file__).parents[2] / "src" / "fwmigrate" / "conversion" / "fortigate_to_palo_alto"
+    retired_shims = {
+        "addresses.py", "admin_suggestions.py", "cli_paths.py", "dhcp.py",
+        "external_resource_suggestions.py", "identity_suggestions.py", "interfaces.py",
+        "nat.py", "policies.py", "recommendation_engine.py", "renderer.py",
+        "review_context.py", "review_evidence.py", "review_workflow.py", "routing.py",
+        "schedules.py", "sdwan_suggestions.py", "security_suggestions.py", "services.py",
+        "ssl_vpn_suggestions.py", "support_guidance.py", "target_candidates.py",
+        "target_evidence.py", "target_intent.py", "target_object_reuse.py",
+        "target_plan_validation.py", "target_suggestions.py", "target_validation.py",
+        "topology.py", "vpn_suggestions.py",
+    }
 
-    assert addresses.plan_addresses is planned_addresses.plan_addresses
-    assert renderer.PANSetRenderer is rendering.PANSetRenderer
-    assert target_candidates.build_target_candidates is target.build_target_candidates
+    assert not {path.name for path in pair_root.iterdir() if path.is_file()} & retired_shims

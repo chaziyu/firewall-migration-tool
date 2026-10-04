@@ -4,7 +4,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PlannedDHCPServer,
     PlannedInterface,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 
 
 def test_dhcp_commands_render_after_interface_ownership_in_device_scope():

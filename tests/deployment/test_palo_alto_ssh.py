@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import RenderedMigration
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import RenderedMigration
 
 
 def rendered(*commands, plan_status="READY"):

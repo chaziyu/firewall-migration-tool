@@ -3,14 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from fwmigrate.conversion.fortigate_to_palo_alto.dhcp import plan_dhcp
+from fwmigrate.conversion.fortigate_to_palo_alto.planning.dhcp import plan_dhcp
 from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PANMigrationPlan,
     PANMigrationStatus,
     PlannedDHCPServer,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.options import PANMigrationOptions
-from fwmigrate.conversion.fortigate_to_palo_alto.target_object_reuse import (
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_object_reuse import (
     _dhcp,
     classify_target_object_reuse,
 )

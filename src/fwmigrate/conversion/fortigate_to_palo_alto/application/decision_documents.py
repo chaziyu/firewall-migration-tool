@@ -1,7 +1,7 @@
 from dataclasses import asdict
 
 from .. import PANMigrationDecisionSet, apply_explicit_options
-from ..target_evidence import bind_legacy_target_evidence
+from ..target.target_evidence import bind_legacy_target_evidence
 
 _DECISION_FORMAT_VERSION = 4
 
