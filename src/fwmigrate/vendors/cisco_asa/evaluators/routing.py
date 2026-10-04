@@ -163,7 +163,6 @@ class RoutingEvaluator:
         else:
             existing.rules.append(rule)
             existing.raw_lines.extend(route_map.raw_lines)
-        for acl_name in rule.match_acls:
         return i
 
     def _parse_routing_source_only(self, line, index, children):
