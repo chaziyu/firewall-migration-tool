@@ -61,7 +61,6 @@ def load_pan_source(content: str) -> PANSourceDocument:
             hostname = hostname_candidates[0].text.strip()
     return PANSourceDocument(
         root=root,
-        raw_content=content,
         hostname=hostname,
         source_version=root.get("version"),
     )
