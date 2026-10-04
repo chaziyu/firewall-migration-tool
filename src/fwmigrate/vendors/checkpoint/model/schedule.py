@@ -13,7 +13,4 @@ class CPTime(CheckPointSourceObject):
 class CPTimeGroup(CheckPointSourceObject):
     members: list[CheckPointObjectReference | str] | None = None
 
-
-CPSchedule = CPTime
-
-__all__ = ["CPTime", "CPTimeGroup", "CPSchedule"]
+__all__ = ["CPTime", "CPTimeGroup"]
