@@ -42,8 +42,7 @@ jobs:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
     uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc" # v2.6.0
     with:
-      # The base commit does not yet contain the new constraints file, so keep
-      # differential scanning recursive for this transition and future manifest changes.
+      # Keep differential scanning recursive so manifest changes remain covered.
       scan-args: |-
         -r
         ./

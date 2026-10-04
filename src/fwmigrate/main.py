@@ -169,7 +169,7 @@ def commit(host, port, username, password):
 def serve(port, host):
     """Start the migration web interface."""
     try:
-        from fwmigrate.web_live import create_app
+        from fwmigrate.web import create_app
         app = create_app()
         click.echo(f"Starting web server on http://{host}:{port}")
         app.run(host=host, port=port, debug=False)
@@ -177,17 +177,5 @@ def serve(port, host):
         click.echo("Flask is required to run the web server. Install with: pip install flask", err=True)
         sys.exit(1)
 
-@cli.command()
-@click.option('--port', default=5000, help='Port to run the desktop app on')
-def app(port):
-    """Launch as a native desktop application."""
-    from fwmigrate.web_live import run_desktop
-    run_desktop(port=port)
-
 if __name__ == '__main__':
-    # If double-clicked in Windows Explorer (no arguments provided)
-    if len(sys.argv) == 1:
-        from fwmigrate.web_live import run_desktop
-        run_desktop()
-    else:
-        cli()
+    cli()
