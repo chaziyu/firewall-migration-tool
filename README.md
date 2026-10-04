@@ -45,9 +45,10 @@ Migration planning:
 VendorConfig
 → DerivedViews
 → Pair-specific Requirements
-→ Engineer Decisions / Mappings
+→ Target Evidence / Engineer Decisions
+→ Deterministic Design Review
 → Pair-specific MigrationPlan
-→ Validation
+→ Target-aware Validation / Disposition
 → Deterministic Target Renderer
 ```
 
@@ -264,11 +265,7 @@ src/frontend/src-tauri/target/release/bundle/nsis/
 src/frontend/src-tauri/target/release/bundle/msi/
 ```
 
-The existing pywebview/PyInstaller package remains available during the Tauri migration:
-
-```powershell
-pyinstaller "Firewall Migration Tool.spec"
-```
+The supported desktop runtime is the Tauri shell plus the local `desktop_server.py` PyInstaller sidecar. The retired pywebview shell is no longer part of the repository.
 
 ## Usage
 
@@ -408,9 +405,11 @@ Migration planning is directional and pair-specific:
 FortiGate source
 → FGConfig / DerivedViews
 → Mapping Requirements
-→ Engineer Decisions
+→ Target Evidence / Engineer Decisions
+→ Deterministic Design Session
 → PANMigrationPlan
-→ Plan Validation
+→ Target Validation / Reuse Classification
+→ Dependency-aware CREATE / CONFIGURE / REUSE / BLOCK disposition
 → PAN-OS Set Renderer
 ```
 
@@ -744,8 +743,16 @@ src/fwmigrate/
 │   └── Reviewed target artifact deployment
 │
 ├── web.py
-├── web_live.py
-│   └── Web application orchestration
+│   └── Flask composition root and migration orchestration
+│
+├── web_api/
+│   └── API route modules
+│
+├── web_support/
+│   └── Web transport, reporting, frontend, and artifact helpers
+│
+├── desktop_server.py
+│   └── Loopback-only Tauri sidecar entry point
 │
 └── main.py
     └── CLI entry point
@@ -836,8 +843,11 @@ Migration path:
 FortiGate
 → FGConfig / DerivedViews
 → requirements
-→ decisions
+→ target evidence / decisions
+→ deterministic design session
 → MigrationPlan
+→ target validation / object reuse
+→ dependency-aware render disposition
 → validation
 → RenderedMigration
 ```
@@ -868,7 +878,9 @@ decision scope
 mapping confirmation
 source-digest mismatch
 partial migration
-render blockers
+target object reuse
+CREATE / CONFIGURE / REUSE / BLOCK disposition
+dependency-propagated render blockers
 command count / SHA-256 consistency
 preview / download / bundle consistency
 deployment artifact verification
