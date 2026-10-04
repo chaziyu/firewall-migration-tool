@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Iterable, Mapping
+from typing import Mapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -1445,49 +1445,6 @@ register_section(
         ),
     )
 )
-
-
-# ----------------------------------------------------------------------
-# Diagnostics
-# ----------------------------------------------------------------------
-
-def get_section_capability(
-    source_path: str,
-    encountered_fields: Iterable[str] = (),
-) -> dict[str, object]:
-    """
-    Describe which raw source fields are currently declared.
-
-    Intended for diagnostics and tests rather than normal extraction.
-    """
-
-    spec = get_section_spec(source_path)
-    encountered = set(encountered_fields)
-
-    if spec is None:
-        return {
-            "source_path": source_path,
-            "registered": False,
-            "known_fields": [],
-            "unknown_fields": sorted(encountered),
-        }
-
-    known = (
-        spec.list_fields
-        | spec.integer_fields
-        | spec.integer_list_fields
-        | spec.scalar_fields
-    )
-
-    return {
-        "source_path": source_path,
-        "registered": True,
-        "known_fields": sorted(known),
-        "unknown_fields": sorted(
-            encountered - known
-        ),
-    }
-
 
 
 # ----------------------------------------------------------------------
