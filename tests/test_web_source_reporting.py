@@ -217,11 +217,19 @@ def test_fortigate_preview_preserves_ipv6_policy_addresses():
 
 def test_all_registered_sources_advertise_view_report():
     client = create_app({"TESTING": True}).test_client()
-    sources = client.get("/api/vendors").get_json()["sources"]
+    payload = client.get("/api/vendors").get_json()
+    sources = payload["sources"]
+    assert "targets" not in payload
     assert {item["vendor_id"] for item in sources} >= {
         "fortigate", "palo_alto", "cisco_asa", "cisco_ftd", "checkpoint", "juniper_srx",
     }
     assert all(item["web_report"] is True for item in sources)
+
+
+def test_removed_source_diagnostics_endpoint_is_not_exposed():
+    client = create_app({"TESTING": True}).test_client()
+
+    assert client.post("/api/diagnostics").status_code == 404
 
 
 @pytest.mark.parametrize("transport", ("upload", "preview"))

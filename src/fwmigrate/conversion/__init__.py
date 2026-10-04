@@ -1,6 +1,7 @@
-"""Reserved boundary for future pair-specific migration planners.
+"""Directional pair-specific migration planning boundary.
 
-Source reporting does not import this package. No target configuration is built.
+Source reporting does not import this package. Migration plans remain pair-specific
+and do not construct a shared target configuration model.
 """
 
 from .contracts import (

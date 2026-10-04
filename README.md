@@ -265,8 +265,6 @@ src/frontend/src-tauri/target/release/bundle/nsis/
 src/frontend/src-tauri/target/release/bundle/msi/
 ```
 
-The supported desktop runtime is the Tauri shell plus the local `desktop_server.py` PyInstaller sidecar. The retired pywebview shell is no longer part of the repository.
-
 ## Usage
 
 ### List Registered Source Vendors
