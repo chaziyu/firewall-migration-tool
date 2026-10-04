@@ -6,7 +6,7 @@ from .globalprotect import PANGlobalProtectClientlessVPN, PANGlobalProtectGatewa
 from .identity import PANGroupMapping, PANLocalUser, PANLocalUserGroup
 from .interface import PANInterface, PANInterfaceImport, PANInterfaceIPv6Address, PANInterfaceUnit
 from .nat import PANDestinationTranslation, PANDNSRewrite, PANDynamicDestinationTranslation, PANDynamicIPAndPortTranslation, PANDynamicIPTranslation, PANNATRule, PANStaticIPTranslation
-from .policy import PANDefaultSecurityRule, PANPolicy, PANProfileSetting, PANSecurityRule
+from .policy import PANDefaultSecurityRule, PANProfileSetting, PANSecurityRule
 from .routing import PANBGPConfig, PANBGPPeer, PANBGPPeerGroup, PANLogicalRouter, PANOSPFConfig, PANOSPFArea, PANOSPFInterface, PANOSPFv3Config, PANRIPConfig, PANRedistributionProfile, PANRoutePathMonitor, PANRoutePathMonitorTarget, PANStaticRoute, PANVirtualRouter, PANVRF
 from .schedule import PANSchedule, PANScheduleRecurring
 from .sdwan import PANSDWANErrorCorrectionProfile, PANSDWANInterfaceProfile, PANSDWANPathQualityProfile, PANSDWANRule, PANSDWANSaaSQualityProfile, PANSDWANTrafficDistributionLink, PANSDWANTrafficDistributionProfile
@@ -19,7 +19,7 @@ from .zone import PANZone
 
 __all__ = [
     "PANAddress", "PANAddressGroup", "PANInterface", "PANInterfaceImport", "PANInterfaceIPv6Address", "PANInterfaceUnit", "PANDestinationTranslation", "PANDNSRewrite", "PANDynamicDestinationTranslation", "PANDynamicIPAndPortTranslation", "PANDynamicIPTranslation", "PANNATRule", "PANStaticIPTranslation",
-    "PANDefaultSecurityRule", "PANOSConfig", "PANPolicy", "PANProfileSetting", "PANSecurityRule", "PANService", "PANServiceGroup",
+    "PANDefaultSecurityRule", "PANOSConfig", "PANProfileSetting", "PANSecurityRule", "PANService", "PANServiceGroup",
     "PANSchedule", "PANScheduleRecurring", "PANBGPConfig", "PANBGPPeer", "PANBGPPeerGroup", "PANLogicalRouter", "PANOSPFConfig", "PANOSPFArea", "PANOSPFInterface", "PANOSPFv3Config", "PANRIPConfig", "PANRedistributionProfile", "PANStaticRoute", "PANVirtualRouter", "PANVRF", "PANServiceOverride", "PANServiceProtocol",
     "PANAdministrator", "PANAdminRole", "PANAdminRolePermission", "PANNamedSourceModel", "PANNestedSourceModel", "PANDHCPIPPool", "PANDHCPOption", "PANDHCPReservation", "PANDHCPServer", "PANGlobalProtectClientlessVPN", "PANGlobalProtectGateway", "PANGlobalProtectGatewayClientAuth", "PANGlobalProtectPortal", "PANGlobalProtectPortalClientConfig", "PANGlobalProtectPortalGateway", "PANGlobalProtectRemoteUserTunnel", "PANGroupMapping", "PANLocalUser", "PANLocalUserGroup", "PANRoutePathMonitor", "PANRoutePathMonitorTarget", "PANSDWANErrorCorrectionProfile", "PANSDWANInterfaceProfile", "PANSDWANPathQualityProfile", "PANSDWANRule", "PANSDWANSaaSQualityProfile", "PANSDWANTrafficDistributionLink", "PANSDWANTrafficDistributionProfile", "PANBlockIPAction", "PANSecurityProfileGroup", "PANVulnerabilityException", "PANVulnerabilityProfile", "PANVulnerabilityRule", "PANTag", "PANIKECryptoProfile", "PANIKEGateway", "PANIPsecCryptoProfile", "PANIPsecProxyID", "PANIPsecTunnel", "PANZone",
 ]

@@ -9,7 +9,6 @@ class PANSourceDocument:
     """Parsed PAN-OS XML input retained for source extraction."""
 
     root: ET.Element
-    raw_content: str
     hostname: Optional[str] = None
     source_version: Optional[str] = None
 
