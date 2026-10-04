@@ -5,7 +5,6 @@ import unittest
 from types import SimpleNamespace
 
 from openpyxl import load_workbook
-from fwmigrate.vendors.fortigate.config import ExtractionConfig
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export import export_excel
 from fwmigrate.vendors.fortigate.export.excel_schema import SHEET_HEADERS
@@ -23,7 +22,7 @@ from fwmigrate.vendors.fortigate.validation.validator import validate_config
 
 class CoverageAccountingTest(unittest.TestCase):
     def _report(self, source: str, profile: ExcelExportProfile = ExcelExportProfile.FULL):
-        extracted = extract_fortigate_config(parse_fortigate_config(source), config=ExtractionConfig())
+        extracted = extract_fortigate_config(parse_fortigate_config(source))
         derived = build_derived_views(extracted.config)
         output = io.BytesIO()
         export_excel(

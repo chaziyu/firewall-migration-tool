@@ -12,7 +12,6 @@ from fwmigrate.source_reporting import (
     SourceReportMetrics,
 )
 
-from .config import ExtractionConfig
 from .derived import DerivedViews, build_derived_views
 from .extraction.extractor import extract_fortigate_config
 from .extraction.result import ExtractionResult
@@ -37,7 +36,6 @@ class FortiGateSourceReporter:
     supported_extensions = (".conf", ".cfg", ".txt")
 
     def analyze_source(self, source: str, **options: Any) -> FortiGateSourceResult:
-        extraction_config = options.get("config") or ExtractionConfig()
         metrics = options.get("metrics")
         if metrics is not None and not isinstance(metrics, SourceReportMetrics):
             raise TypeError("metrics must be SourceReportMetrics")
@@ -62,7 +60,7 @@ class FortiGateSourceReporter:
             metrics.set_metadata("top_level_section_count", top_level_sections)
         extracted = timed(
             "fortigate_extraction",
-            lambda: extract_fortigate_config(tree, config=extraction_config, metrics=metrics),
+            lambda: extract_fortigate_config(tree, metrics=metrics),
         )
         derived = timed("fortigate_derived_views", lambda: build_derived_views(extracted.config))
         validation = timed(

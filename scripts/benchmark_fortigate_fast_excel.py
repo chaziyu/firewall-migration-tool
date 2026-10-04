@@ -13,7 +13,6 @@ from fwmigrate.source_reporting import (
     ExcelExportProfile,
     SourceReportMetrics,
 )
-from fwmigrate.vendors.fortigate.config import ExtractionConfig
 from fwmigrate.vendors.fortigate.export.excel import export_excel
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
@@ -103,7 +102,6 @@ def main() -> None:
     started = time.perf_counter()
     analysis = FortiGateSourceReporter().analyze_source(
         source,
-        config=ExtractionConfig(),
         metrics=analysis_metrics,
     )
     analysis_seconds = time.perf_counter() - started

@@ -3,7 +3,6 @@ import io
 import unittest
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
-from fwmigrate.vendors.fortigate.config import ExtractionConfig
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export import export_excel
 from fwmigrate.vendors.fortigate.export.excel_schema import SHEET_HEADERS, SHEET_ORDER
@@ -97,7 +96,6 @@ class ExcelReportTest(unittest.TestCase):
     def _workbook(self, config_text: str = ""):
         extracted = extract_fortigate_config(
             parse_fortigate_config(config_text),
-            config=ExtractionConfig(),
         )
         derived = build_derived_views(extracted.config)
         validation = validate_config(extracted.config, derived=derived)

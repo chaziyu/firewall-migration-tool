@@ -1,4 +1,3 @@
-from fwmigrate.vendors.fortigate.config import ExtractionConfig
 from fwmigrate.vendors.fortigate.extraction.coverage import typed_source_paths
 from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
@@ -19,7 +18,7 @@ def test_static6_keeps_its_native_source_fields():
     next
 end
 """
-    extracted = extract_fortigate_config(parse_fortigate_config(source), config=ExtractionConfig())
+    extracted = extract_fortigate_config(parse_fortigate_config(source))
     route = extracted.config.static_routes[0]
 
     assert route.address_family == "ipv6"
