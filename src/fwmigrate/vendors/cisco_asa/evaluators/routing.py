@@ -164,7 +164,6 @@ class RoutingEvaluator:
             existing.rules.append(rule)
             existing.raw_lines.extend(route_map.raw_lines)
         for acl_name in rule.match_acls:
-            self._record_acl_consumer(acl_name, "route-map", line_number, line)
         return i
 
     def _parse_routing_source_only(self, line, index, children):
