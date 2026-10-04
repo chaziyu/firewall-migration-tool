@@ -64,10 +64,9 @@ test('workspace keeps customer evidence in memory only and clears legacy Indexed
 test('TTL expires in-memory state and context changes invalidate rendered artifacts', async () => {
   await clearWorkspace()
   await saveWorkspace({ preview: { vendor: 'fortigate' } })
-  await saveWorkspace({ artifact: { artifact_id: 'old' }, designSession: { proposals: [] } })
+  await saveWorkspace({ artifact: { artifact_id: 'old' } })
   await saveWorkspace({ targetDevice: 'different-target' })
   assert.equal(workspace().artifact, null)
-  assert.equal(workspace().designSession, null)
 
   await saveWorkspace({ artifact: { artifact_id: 'old' } })
   await saveWorkspace({ decisionDocument: { decisions: [{ key: 'changed' }] } })
@@ -90,7 +89,6 @@ test('role and decision changes invalidate deterministic state without persisten
 
   await saveWorkspace({
     preview: { vendor: 'fortigate' },
-    designSession: { design_session_id: 'ai-only' },
     deterministicDraft: { digest: 'draft' },
     artifact: { artifact_id: 'approved' },
     decisionDocument: { design_approval: {} },

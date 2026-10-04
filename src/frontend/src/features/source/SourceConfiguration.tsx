@@ -93,7 +93,7 @@ export function SourceConfiguration({ view, onViewChange }: {
 
   function clearAnalysis() {
     analysisRequest.current++
-    void saveWorkspace({ designSession: null, deterministicDraft: null, artifact: null }).catch((cause) => setError(String(cause)))
+    void saveWorkspace({ deterministicDraft: null, artifact: null }).catch((cause) => setError(String(cause)))
     setLoading(false)
     setMigrationVisited(false)
     setMigrationView('mappings')
