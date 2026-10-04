@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv4Network
 
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
-from .services import PAN_BUILTIN_SERVICES
+from .planning.services import PAN_BUILTIN_SERVICES
 
 
 ItemKey = tuple[str | None, str | None, str | None]

@@ -3,7 +3,7 @@ import pytest
 from fwmigrate.conversion.fortigate_to_palo_alto.decisions import (
     PANDecisionReviewState, PANMigrationDecision, PANMigrationDecisionSet,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.target_intent import (
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_intent import (
     apply_target_intent, export_target_intent, parse_target_intent,
 )
 from fwmigrate.vendors.fortigate.model.interface import FGInterface

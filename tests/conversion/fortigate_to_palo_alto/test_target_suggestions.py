@@ -4,7 +4,7 @@ import pytest
 from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANDecisionReviewState, PANMigrationDecision, PANMigrationDecisionSet,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import (
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_suggestions import (
     discover_target_candidates, suggest_from_target, target_device_metadata, target_devices,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.interface_candidates import candidate_evidence
@@ -13,7 +13,7 @@ from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.model.zone import FGZone
 from fwmigrate.vendors.palo_alto.relationships.topology import PANInterfaceTopologyEntry
 from fwmigrate.vendors.palo_alto.source_model import PANScope, pan_scope_identity
-from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import _compatible
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_suggestions import _compatible
 
 
 def test_reservations_release_and_competing_strong_suggestions_stay_pending():
@@ -254,7 +254,7 @@ def test_target_device_can_be_selected_from_explicit_scope_and_virtual_router():
 
 
 def test_scope_and_zone_candidates_keep_target_scope_and_confirmed_vsys():
-    from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import discover_target_candidates
+    from fwmigrate.conversion.fortigate_to_palo_alto.target.target_suggestions import discover_target_candidates
 
     scopes = [PANScope(kind="vsys", name=f"{name}-scope", device_name="dev", vsys=name)
               for name in ("vsys1", "vsys2")]

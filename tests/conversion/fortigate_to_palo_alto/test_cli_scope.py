@@ -1,7 +1,7 @@
 from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PANMigrationPlan, PANMigrationStatus, PlannedAddress, PlannedSecurityRule, PlannedStaticRoute,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 
 
 def test_vsys_switching_keeps_duplicate_names_scoped_and_routes_at_device_scope():

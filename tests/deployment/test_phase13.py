@@ -1,6 +1,6 @@
 from fwmigrate.deployment.models import PANDeploymentOptions
 from fwmigrate.deployment.palo_alto_ssh import PANSSHDeployer
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import RenderedMigration
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import RenderedMigration
 
 
 class _Connection:

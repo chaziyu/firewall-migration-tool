@@ -4,7 +4,7 @@ import pytest
 
 from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANMigrationDecisionSet
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationPlan, PANMigrationStatus, PlannedSecurityRule
-from fwmigrate.conversion.fortigate_to_palo_alto.support_guidance import build_support_guidance
+from fwmigrate.conversion.fortigate_to_palo_alto.recommendations.support_guidance import build_support_guidance
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 
 

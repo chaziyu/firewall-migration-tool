@@ -73,7 +73,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
 from fwmigrate.conversion.fortigate_to_palo_alto.application.review import (
     confirm_interface_mappings, InterfaceMappingConfirmationError,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.artifact_status import classify_artifact_status
 from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession, PANSSHDeployer
 from fwmigrate.collection import CollectionStatus, source_collectors

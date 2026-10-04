@@ -8,13 +8,13 @@ from ..auto_decisions import classify_auto_decisions
 from ..automation import AutomationPolicy
 from ..design.resolver import resolve_design_session_until_stable
 from ..requirements import build_mapping_requirements
-from ..review_context import build_review_context
-from ..review_evidence import build_review_evidence
-from ..review_workflow import build_review_workflow
+from ..review.review_context import build_review_context
+from ..review.review_evidence import build_review_evidence
+from ..review.review_workflow import build_review_workflow
 from ..review.review_suggestions import apply_review_suggestions
-from ..target_evidence import reconcile_target_evidence, target_evidence_changed
-from ..target_suggestions import discover_target_candidates, suggest_from_target
-from ..target_validation import validate_against_target
+from ..target.target_evidence import reconcile_target_evidence, target_evidence_changed
+from ..target.target_suggestions import discover_target_candidates, suggest_from_target
+from ..target.target_validation import validate_against_target
 from dataclasses import replace
 
 from ..decisions import PANMigrationDecisionSet

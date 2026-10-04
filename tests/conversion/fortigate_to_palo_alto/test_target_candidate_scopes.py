@@ -1,4 +1,4 @@
-from fwmigrate.conversion.fortigate_to_palo_alto.target_candidates import (
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_candidates import (
     PANTargetCandidateMatchClass, build_target_candidates, classify_candidate,
 )
 from fwmigrate.vendors.palo_alto.model.dhcp import PANDHCPServer

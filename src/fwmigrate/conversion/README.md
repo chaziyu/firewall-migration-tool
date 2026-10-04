@@ -36,4 +36,6 @@ rendering/         PAN-OS set-command paths and rendering
 application/       workflow-facing application services
 ```
 
+Import implementation modules from these grouped packages directly. Do not add top-level compatibility shim modules that duplicate `planning/`, `rendering/`, `review/`, `target/`, or `recommendations/`.
+
 Do not add generic source/target models, shared cross-vendor mapping tables, a `TargetVendorConfig` abstraction, or a vendor-neutral migration IR. Unimplemented migration pairs must fail closed.
