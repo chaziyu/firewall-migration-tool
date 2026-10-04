@@ -89,10 +89,6 @@ def record_list_candidate(history: MutableMapping[str, list], field: str, value:
     return candidate
 
 
-def record_object_candidate(provenance, history, field, value, cmd, context=None):
-    return record_scalar_candidate(provenance, history, field, value, cmd, context)
-
-
 def record_member_candidate(history: MutableMapping[str, list], field: str, value: Any,
                             cmd, context=None) -> JuniperEffectiveCandidate:
     key = _semantic_key(value)
@@ -108,10 +104,6 @@ def _semantic_key(value: Any) -> str:
     if isinstance(value, dict):
         return repr(sorted(value.items()))
     return str(value).casefold()
-
-
-def mark_existing_candidate_shadowed(candidate: JuniperEffectiveCandidate, reason=None) -> None:
-    mark_candidate_shadowed(candidate, reason)
 
 
 def mark_candidate_shadowed(candidate: JuniperEffectiveCandidate, reason=None) -> None:
@@ -154,14 +146,6 @@ def record_non_effective_candidate(context, target_path: Sequence[str], field: s
                                    item.field_key, repr(item.value)))
 
 
-def get_non_effective_candidate_history(context, target_path: Sequence[str], field: str) -> list:
-    return list(context.non_effective_candidate_history.get(
-        non_effective_history_key(target_path, field), []
-    ))
-
-
 def is_effective_candidate(candidate) -> bool:
     return candidate is None or (candidate.status == JuniperResolutionStatus.EFFECTIVE and candidate.effective)
 
-
-candidate_is_effective = is_effective_candidate
