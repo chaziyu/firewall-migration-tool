@@ -6,9 +6,9 @@ import ipaddress
 import re
 import shlex
 from typing import List
-from fwmigrate.vendors.cisco_asa.model.base import CiscoSourceRecord
+
 from fwmigrate.vendors.cisco_asa.model.identity import CiscoCommandPrivilege
-from fwmigrate.vendors.cisco_asa.model.routing import CiscoSLAMonitor, CiscoTrack
+
 from fwmigrate.vendors.cisco_asa.model.vpn import CiscoTrustpointRecord, CiscoCryptoMap, CiscoGroupPolicy, CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecProfile, CiscoIPsecTransformSet, CiscoTunnelGroup, CiscoVPNAddressAssignment, CiscoVPNAddressPool, CiscoWebVPNConfig
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 from . import _mark_explicit
@@ -437,7 +437,6 @@ class VPNEvaluator:
                     elif key == "split-tunnel-network-list":
                         record.split_tunnel_acl = values[-1]
                         _mark_explicit(record, "split_tunnel_acl")
-                        self._record_acl_consumer(record.split_tunnel_acl, "vpn-split-tunnel", index + 1, child)
                     elif key == "vpn-tunnel-protocol": self._append_unique(record.vpn_protocols, values); _mark_explicit(record, "vpn_protocols")
                     elif key == "vpn-idle-timeout": record.idle_timeout = " ".join(values); _mark_explicit(record, "idle_timeout")
                     elif key == "vpn-session-timeout": record.session_timeout = " ".join(values); _mark_explicit(record, "session_timeout")
@@ -446,7 +445,6 @@ class VPNEvaluator:
                     elif key == "vpn-filter":
                         record.vpn_filter_acl = values[-1]
                         _mark_explicit(record, "vpn_filter_acl")
-                        self._record_acl_consumer(record.vpn_filter_acl, "vpn-filter", index + 1, child)
                     elif key == "vpn-simultaneous-logins" and values and values[-1].isdigit():
                         record.vpn_simultaneous_logins = int(values[-1])
                         _mark_explicit(record, "vpn_simultaneous_logins")
