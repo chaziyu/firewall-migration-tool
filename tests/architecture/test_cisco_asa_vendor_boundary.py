@@ -6,6 +6,7 @@ FORBIDDEN = (
     "phase10_17", "model_phase10_17", "phase10_17_safety",
     "apply_phase_10_17_patches", "apply_phase_10_17_safety",
     "get_asa_parser_class", "_PATCHED", "_ORIGINALS", "_postprocess_", "_wrap_",
+    "mask_to_cidr", "_pbr_acl_match_evidence", "_nat_port_range", "_record_acl_consumer",
 )
 
 
