@@ -5,15 +5,10 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text
-
 from .model.dhcp import CiscoDHCPGlobalSettings, CiscoDHCPOption, CiscoDHCPReservation
-
 from .model.management import CiscoConnectionControl, CiscoManagementAccessRule
 from .model.mpf import CiscoClassMap, CiscoClassMapMatch, CiscoInspectAction, CiscoInspectionPolicySection, CiscoIPSAction, CiscoMPFConnectionAction, CiscoMPFPoliceAction, CiscoPolicyMap, CiscoPolicyMapClass, CiscoServicePolicy, CiscoTCPMap, CiscoTCPMapSetting
-
 from .model.vpn import CiscoTrustpointRecord
-
-
 
 
 # Current ASA inspection engines plus long-standing engines that still appear in
