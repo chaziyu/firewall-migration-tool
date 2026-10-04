@@ -1,26 +1,39 @@
-# Future migration-planning boundary
+# Pair-specific migration architecture
 
-This package reserves the directional migration-planning boundary. It is not
-used by source extraction or reporting.
+This package contains directional migration planning. It is separate from source extraction and reporting and must not introduce a vendor-neutral firewall IR.
+
+Current implemented pair:
 
 ```text
-VendorSourceConfig
-→ VendorDerivedViews
-→ pair-specific migration planner
-→ pair-specific MigrationPlan
-→ plan validation
-→ target command renderer
+FortiGate → Palo Alto PAN-OS
 ```
 
-`MigrationPlan` is not a complete target configuration. It contains only
-supported generated items plus partial, manual-review, and unsupported findings.
+Current flow:
 
-Future pairs may include:
+```text
+FortiGate VendorConfig / DerivedViews
+→ Pair-specific Requirements
+→ Target Evidence / Engineer Decisions
+→ Deterministic Design Review
+→ PANMigrationPlan
+→ Target Validation / Object Reuse
+→ Dependency-aware CREATE / CONFIGURE / REUSE / BLOCK disposition
+→ Validation
+→ RenderedMigration
+```
 
-- `cisco_asa_to_fortigate`
-- `juniper_srx_to_fortigate`
-- `cisco_ftd_to_fortigate`
-- `checkpoint_to_fortigate`
+A `MigrationPlan` is not a target `VendorConfig` and is not a complete PAN-OS configuration. It contains pair-specific planned items, source provenance, review status, and findings required to produce a reviewed migration artifact.
 
-Migration fixtures remain available for future pair-specific work. Do not add
-generic source/target models, shared mapping tables, or an IR replacement here.
+Package responsibilities:
+
+```text
+planning/          deterministic source-to-plan mappings
+design/            deterministic reviewed design session
+review/            engineer-facing review context and evidence
+target/            target evidence, reuse, validation, and disposition
+recommendations/   pair-specific guidance only
+rendering/         PAN-OS set-command paths and rendering
+application/       workflow-facing application services
+```
+
+Do not add generic source/target models, shared cross-vendor mapping tables, a `TargetVendorConfig` abstraction, or a vendor-neutral migration IR. Unimplemented migration pairs must fail closed.

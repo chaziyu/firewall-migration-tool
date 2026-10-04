@@ -35,4 +35,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 
 # Keep one worker for transient per-target candidate locks and validated-session metadata.
 # Supply FWMIGRATE_WORKSPACE_SIGNING_KEY through the runtime environment.
-CMD ["gunicorn", "--bind=0.0.0.0:5000", "--workers=1", "--threads=4", "--timeout=120", "fwmigrate.web_live:create_app()"]
+CMD ["gunicorn", "--bind=0.0.0.0:5000", "--workers=1", "--threads=4", "--timeout=120", "fwmigrate.web:create_app()"]

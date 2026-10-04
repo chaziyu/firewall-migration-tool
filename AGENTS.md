@@ -31,9 +31,11 @@ Migration:
 VendorConfig
 → DerivedViews
 → Pair-specific Requirements
-→ Engineer Decisions
+→ Target Evidence / Engineer Decisions
+→ Deterministic Design Review
 → MigrationPlan
-→ Validation
+→ Target Validation / Reuse Classification
+→ Dependency-aware Render Disposition
 → Renderer
 ```
 
@@ -230,8 +232,6 @@ shared source/target firewall model
 generic migration schema
 generic cross-vendor mappings
 TargetVendorConfig abstraction
-Terraform
-SQLite / .fgreport
 ```
 
 Unimplemented pairs must fail closed.
@@ -274,7 +274,16 @@ Decision identity must preserve source scope such as VDOM.
 
 ## Rendering and deployment
 
-Render only supported, validation-approved items.
+Rendering is target-aware and must preserve the reviewed plan plus its validated disposition.
+
+```text
+CREATE      render creation commands
+CONFIGURE   render only explicitly approved additive target changes
+REUSE       satisfy the item without rendering creation commands
+BLOCK       render nothing for the item
+```
+
+`CONFIGURE` requires explicit engineer approval. `REUSE` is not equivalent to creation. Blocked dependencies must propagate through the plan before rendering.
 
 Command preview, download, bundle, and deployment must use the same `RenderedMigration`.
 
@@ -381,8 +390,12 @@ Migration:
 ```text
 FortiGate
 → FGConfig / DerivedViews
-→ decisions
+→ requirements
+→ target evidence / decisions
+→ deterministic design review
 → MigrationPlan
+→ target validation / reuse classification
+→ dependency-aware render disposition
 → validation
 → RenderedMigration
 ```

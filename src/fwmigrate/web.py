@@ -13,11 +13,10 @@ import zipfile
 import yaml
 from pathlib import Path
 from dataclasses import asdict, replace
-from copy import deepcopy
 from dataclasses import dataclass
 from functools import wraps
 from pydantic import ValidationError
-from flask import Flask, Request as FlaskRequest, request, send_file, send_from_directory, jsonify
+from flask import Flask, Request as FlaskRequest, request, send_file, jsonify
 
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
@@ -80,9 +79,8 @@ from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession, PAN
 from fwmigrate.collection import CollectionStatus, source_collectors
 from fwmigrate.collection.builtin import register_builtin_collectors
 from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot, MAX_BYTES
-from fwmigrate.desktop import DesktopAPI, run_desktop
 from fwmigrate.web_support.frontend import register_frontend_routes
-from fwmigrate.web_support.reporting import _decode_configuration, _parse_bool
+from fwmigrate.web_support.reporting import _parse_bool
 from fwmigrate.web_api.source import register_source_routes
 from fwmigrate.web_support.request_source import analyze_request_source, _clone_preview, _require_complete_collection
 from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope, verify_artifact
@@ -90,25 +88,10 @@ from fwmigrate.conversion.fortigate_to_palo_alto.design.deterministic import (
     build_deterministic_draft, approve_draft, draft_context,
 )
 
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None
-if load_dotenv is not None:
-    load_dotenv(Path(__file__).resolve().parents[2] / ".env.local", override=False)
-
 register_builtin_source_reporters()
 register_builtin_migration_planners()
 
-from fwmigrate.source_reporting import (
-    ExcelExportUnavailableError,
-    ExcelExportProfile,
-    SourceReportMetrics,
-    ExcelExportMetrics,
-    XLSX_MIMETYPE,
-    source_reporters,
-)
-from fwmigrate.source_reporting.web_report import normalize_web_report
+from fwmigrate.source_reporting import source_reporters
 _LOGGER = logging.getLogger(__name__)
 _DEPLOYMENT_SESSION_TTL_SECONDS = 30 * 60
 

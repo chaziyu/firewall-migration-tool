@@ -1,5 +1,7 @@
 # Deployment readiness remediation
 
+> Historical review snapshot from 2026-10-02. This file records the remediation state at the referenced commits and is not the authoritative description of the current repository architecture.
+
 The 2026-10-02 review used commit `10b884f0`. This follow-up applies the
 confirmed CI repairs on top of `fdbb3163` (which already includes customer-data
 hardening). Passing CI does not establish production deployment readiness.
