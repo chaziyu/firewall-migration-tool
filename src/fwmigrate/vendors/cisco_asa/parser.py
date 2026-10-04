@@ -2,29 +2,22 @@ from __future__ import annotations
 
 import ipaddress
 import re
-
 from datetime import date
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fwmigrate.vendors.cisco_asa.acl_parser import parse_acl_binding, parse_acl_line
 from fwmigrate.vendors.cisco_asa.model.acl import CiscoACLRemark
 from fwmigrate.vendors.cisco_asa.model.address import CiscoNetworkGroup, CiscoNetworkGroupMember, CiscoNetworkObject
-
 from fwmigrate.vendors.cisco_asa.model.context import CiscoMultiContextSystem
 from fwmigrate.vendors.cisco_asa.model.dhcp import CiscoDHCPRelay, CiscoDHCPRelayServer, CiscoDHCPServer
 from fwmigrate.vendors.cisco_asa.model.diagnostics import CiscoDiagnostic
 from fwmigrate.vendors.cisco_asa.model.failover import CiscoFailoverConfig, CiscoFailoverGroup, CiscoFailoverInterfaceIP, CiscoFailoverMACAddress, CiscoFailoverSetting
 from fwmigrate.vendors.cisco_asa.model.groups import CiscoNamedGroup, CiscoNamedGroupMember
-
-
 from fwmigrate.vendors.cisco_asa.model.management import CiscoConnectionControl, CiscoDNSServerGroup, CiscoDNSSettings, CiscoHTTPServerConfig, CiscoSystemSettings
 from fwmigrate.vendors.cisco_asa.model.mpf import CiscoClassMap, CiscoMPFConnectionAction, CiscoMPFPoliceAction, CiscoPolicyMap, CiscoPolicyMapClass, CiscoServicePolicy, CiscoTCPMap
-
-
 from fwmigrate.vendors.cisco_asa.model.schedule import CiscoTimeRange, CiscoTimeRangeClause
 from fwmigrate.vendors.cisco_asa.model.service import CiscoNetworkServiceObject, CiscoServiceGroup, CiscoServiceGroupMember, CiscoServiceObject
 from fwmigrate.vendors.cisco_asa.model.source import CiscoASAConfig
-
 from fwmigrate.vendors.cisco_asa.model.zone import CiscoTrafficZone
 from fwmigrate.vendors.cisco_asa.net_utils import normalize_ipv4_network
 from fwmigrate.vendors.cisco_asa.service_parser import parse_service_clause
@@ -1018,10 +1011,10 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                 (r"^capture\s+\S+\s+.*\baccess-list\s+(\S+)", "capture"),
                 (r"^aaa\s+.*\bmatch\s+(\S+)", "aaa"),
             )
-            consumer_match = next(((re.match(pattern, line, re.IGNORECASE), kind) for pattern, kind in consumer_patterns if re.match(pattern, line, re.IGNORECASE)), None)
-            if consumer_match:
-                match_obj, kind = consumer_match
-                self._record_unsupported(line_number, line, f"{kind} ACL consumer is preserved as extract-only")
+            consumer_kind = next((kind for pattern, kind in consumer_patterns
+                                  if re.match(pattern, line, re.IGNORECASE)), None)
+            if consumer_kind:
+                self._record_unsupported(line_number, line, f"{consumer_kind} ACL consumer is preserved as extract-only")
                 i += 1
                 continue
             if line.lower().startswith("nat "):
