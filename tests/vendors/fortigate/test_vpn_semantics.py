@@ -1,4 +1,3 @@
-from fwmigrate.vendors.fortigate.config import ExtractionConfig
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export import export_excel
 from fwmigrate.vendors.fortigate.extraction.coverage import typed_source_paths
