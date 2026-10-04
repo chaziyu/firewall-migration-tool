@@ -1,10 +1,10 @@
-"""Lookup structure reserved for future pair-specific migration planners."""
+"""Registry for implemented directional pair-specific migration planners."""
 
 from .contracts import PairMigrationPlanner
 
 
 class MigrationPlannerRegistry:
-    """Register and look up directional migration planners when pairs exist."""
+    """Register and look up directional migration planners."""
 
     def __init__(self) -> None:
         self._planners: dict[tuple[str, str], PairMigrationPlanner] = {}
