@@ -130,12 +130,6 @@ def normalize_hierarchy_with_provenance(content: str) -> tuple[str, tuple[int, .
     return "\n".join(command for command, _ in output), tuple(line for _, line in output)
 
 
-def normalize_hierarchy(content: str) -> str:
-    """Return equivalent root-level ``set``/``deactivate`` lines."""
-    normalized, _ = normalize_hierarchy_with_provenance(content)
-    return normalized
-
-
 def looks_hierarchical(content: str) -> bool:
     """Detect brace/semicolon Junos syntax without parsing feature semantics."""
     return any(char in content for char in "{};") and not any(
