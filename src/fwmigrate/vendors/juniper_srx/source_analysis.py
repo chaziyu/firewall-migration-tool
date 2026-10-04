@@ -44,8 +44,8 @@ class JuniperSourceResult:
     review_required: tuple[JuniperReviewItem, ...] = ()
 
 
-def extract_juniper_source(content: str, zone_mapping: dict[str, str] | None = None) -> JuniperSourceResult:
-    parser = JuniperSRXParser(content, zone_mapping=zone_mapping)
+def extract_juniper_source(content: str) -> JuniperSourceResult:
+    parser = JuniperSRXParser(content)
     config = _sanitize(deepcopy(parser.extract_source()))
     sections, inventory, unsupported = _account(parser.commands)
     derived = build_juniper_derived_views(config, source_commands=parser.commands)
