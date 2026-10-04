@@ -18,6 +18,7 @@ def test_react_build_is_served(tmp_path: Path):
     assert client.get("/favicon.svg").data == b"<svg></svg>"
     assert client.get("/favicon.ico").status_code == 200
     assert client.get("/legacy").status_code == 404
+    assert client.get("/static/app.js").status_code == 404
 
 
 def test_frontend_dist_environment_override(tmp_path: Path, monkeypatch):
