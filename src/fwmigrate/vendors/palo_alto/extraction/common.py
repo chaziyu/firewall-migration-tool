@@ -64,43 +64,10 @@ def source_fields(
     return extra, explicit
 
 
-def source_scalar(element: ET.Element | None, tag: str) -> str | None:
-    return value(element, tag)
-
-
-def source_members(element: ET.Element | None, tag: str) -> list[str] | None:
-    return values(element, tag)
-
-
-def source_entry_names(element: ET.Element | None, tag: str) -> list[str] | None:
-    child = element.find(tag) if element is not None else None
-    if child is None:
-        return None
-    return [
-        (item.get("name") or item.text or "").strip()
-        for item in child
-        if item.tag == "entry"
-    ]
-
-
-def source_model_metadata(element: ET.Element, spec: PANPathSpec) -> tuple[dict[str, Any], set[str]]:
-    return source_fields(element, spec)
-
-
 def text_or_none(element: ET.Element | None) -> str | None:
     if element is None:
         return None
     return (element.text or "").strip()
-
-
-def member_texts(element: ET.Element | None) -> list[str] | None:
-    if element is None:
-        return None
-    return [(child.text or child.get("name") or "").strip() for child in element if child.tag == "member"]
-
-
-def child_present(element: ET.Element, tag: str) -> bool:
-    return element.find(tag) is not None
 
 
 def secret_leaf_exists(element: ET.Element | None, *paths: str) -> bool | None:
@@ -111,10 +78,6 @@ def secret_leaf_exists(element: ET.Element | None, *paths: str) -> bool | None:
         if element.find(path) is not None:
             return True
     return False
-
-
-def entry_name(element: ET.Element) -> str | None:
-    return element.get("name")
 
 
 def structured_xml_capture(element: ET.Element) -> object:
