@@ -1,7 +1,7 @@
 """Canonical Check Point source models."""
 
 from .address import (
-    CPAddress, CPAddressGroup, CPAddressRange, CPDNSDomain, CPDynamicAddress,
+    CPAddress, CPAddressRange, CPDNSDomain, CPDynamicAddress,
     CPGroup, CPGroupWithExclusion, CPHost, CPNetwork, CPUpdatableObject, CPWildcardAddress,
 )
 from .administration import CPAdministrator, CPPermissionProfile
@@ -13,7 +13,7 @@ from .gaia import (
 )
 from .identity import CPAccessRole, CPUser, CPUserGroup
 from .policy import (
-    CPAccessLayer, CPAccessRule, CPAccessSection, CPAutoNATRule, CPManualNATRule,
+    CPAccessLayer, CPAccessRule, CPAccessSection, CPManualNATRule,
     CPNATRule, CPNATSection, CPPolicyPackage,
 )
 from .schedule import CPTime, CPTimeGroup
@@ -25,8 +25,8 @@ from ..models import CheckPointCollectionDiagnostic
 from .source import CheckPointConfig
 
 __all__ = [
-    "CPAccessLayer", "CPAccessRule", "CPAddress", "CPAddressGroup", "CPAutoNATRule",
-    "CPManualNATRule", "CPAccessLayer", "CPAccessRule", "CPAccessSection", "CPAccessRole",
+    "CPAccessLayer", "CPAccessRule", "CPAccessSection", "CPAccessRole", "CPAddress",
+    "CPManualNATRule",
     "CPAdministrator", "CPAddressRange", "CPCluster", "CPHTTPSInspectionRule",
     "CPDNSDomain", "CPDynamicAddress", "CPGaiaDHCPPool", "CPGaiaDHCPServer",
     "CPGaiaDHCPSubnet", "CPGaiaInterface", "CPGaiaRBAUserAssignment", "CPGaiaRBARole",
