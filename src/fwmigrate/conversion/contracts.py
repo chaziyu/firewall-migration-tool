@@ -1,7 +1,7 @@
-"""Structural contracts for future directional migration planners.
+"""Structural contracts for directional pair-specific migration planners.
 
-These protocols deliberately do not define a shared firewall model or any
-vendor mapping. Concrete pairs own those decisions when planning resumes.
+These protocols deliberately do not define a shared firewall model or vendor
+mapping. Each implemented pair owns its planning semantics and target decisions.
 """
 
 from typing import Any, Protocol

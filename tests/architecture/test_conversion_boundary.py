@@ -13,7 +13,7 @@ class _Planner:
     target_vendor = "fortigate"
 
 
-def test_future_planner_registry_is_directional_and_empty_by_default():
+def test_planner_registry_is_directional_and_empty_by_default():
     registry = MigrationPlannerRegistry()
     planner = _Planner()
 

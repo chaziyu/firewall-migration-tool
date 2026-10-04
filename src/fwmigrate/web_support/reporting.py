@@ -5,8 +5,6 @@ from __future__ import annotations
 import re
 from time import perf_counter
 
-from fwmigrate.source_reporting import source_reporters
-
 
 class ConfigurationDecodeError(ValueError):
     """Raised when an uploaded configuration cannot be decoded losslessly."""
@@ -20,16 +18,6 @@ def _decode_configuration(raw: bytes) -> str:
             "Configuration file is not valid UTF-8 near byte offset "
             f"{exc.start}. Extraction was stopped to avoid silent configuration loss."
         ) from exc
-
-
-def _extract_source_result(source_vendor: str, content: str):
-    reporter = source_reporters.get(source_vendor)
-    return reporter.analyze_source(content)
-
-
-def _extract_source_config(source_vendor: str, content: str):
-    """Compatibility name for source-report analysis extraction."""
-    return _extract_source_result(source_vendor, content)
 
 
 def _parse_bool(value, default=False):

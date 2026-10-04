@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import logging
-import os
 from dataclasses import asdict
 from time import perf_counter
 
@@ -24,23 +23,12 @@ from fwmigrate.source_reporting.web_report import normalize_web_report
 from fwmigrate.web_support.request_source import analyze_request_source
 from fwmigrate.web_support.reporting import (
     ConfigurationDecodeError,
-    _decode_configuration,
-    _extract_source_config,
     _parse_bool,
     _safe_vendor_filename,
     _timed,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _conversion_unavailable():
-    return jsonify({
-        "error": (
-            "Migration planning is temporarily unavailable while the "
-            "pair-specific planning architecture is being implemented."
-        ),
-    }), 503
 
 
 def register_source_routes(app) -> None:
@@ -71,7 +59,6 @@ def register_source_routes(app) -> None:
         return jsonify({
             'success': True,
             'sources': sources,
-            'targets': [],
         })
 
     @app.route('/api/preview', methods=['POST'])
@@ -84,7 +71,6 @@ def register_source_routes(app) -> None:
 
             metrics = SourceReportMetrics() if _parse_bool(request.form.get('collect_metrics')) else None
             started = perf_counter()
-            file = request.files['file']
             reporter = source_reporters.get(source_vendor)
             source_vendor = reporter.vendor_id
             entry = analyze_request_source({}, source_vendor)
@@ -249,9 +235,4 @@ def register_source_routes(app) -> None:
             return jsonify({'success': False, 'error': 'Invalid source configuration'}), 400
         except Exception as e:
             return jsonify({'error': 'Source Excel export failed'}), 500
-
-    @app.route('/api/diagnostics', methods=['POST'])
-    def run_diagnostics():
-        """Plan diagnostics are unavailable without a migration planner."""
-        return _conversion_unavailable()
 

@@ -236,6 +236,19 @@ TargetVendorConfig abstraction
 
 Unimplemented pairs must fail closed.
 
+Use the canonical pair-specific package boundaries:
+
+```text
+planning/
+rendering/
+review/
+target/
+recommendations/
+application/
+```
+
+Do not recreate top-level compatibility shim modules that duplicate those packages.
+
 ## Migration decisions
 
 Target-specific information that cannot be derived safely requires an explicit decision.
