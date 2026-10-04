@@ -7,11 +7,9 @@ from typing import Any
 from ...source_reporting.options import ExcelExportProfile
 
 from .source_analysis import JuniperSourceResult, extract_juniper_source as _analyze_juniper_source
-from .source_accounting import get_command_section_path
 
-
-def extract_juniper_source(content: str, zone_mapping: dict[str, str] | None = None) -> JuniperSourceResult:
-    return _analyze_juniper_source(content, zone_mapping)
+def extract_juniper_source(content: str) -> JuniperSourceResult:
+    return _analyze_juniper_source(content)
 
 
 class JuniperSRXSourceReporter:
@@ -20,7 +18,7 @@ class JuniperSRXSourceReporter:
     supported_extensions = (".set", ".txt", ".conf")
 
     def analyze_source(self, source: str, **options: Any) -> JuniperSourceResult:
-        return extract_juniper_source(source, zone_mapping=options.get("zone_mapping"))
+        return extract_juniper_source(source)
 
     def build_preview(self, analysis: JuniperSourceResult, **options: Any) -> dict[str, Any]:
         from .web_report import build_juniper_preview
