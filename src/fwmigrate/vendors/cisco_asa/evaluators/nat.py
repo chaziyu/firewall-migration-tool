@@ -31,7 +31,6 @@ class NATEvaluator:
                 raw_extra={"unparsed_tokens": [sanitize_raw_text(token) for token in extras]} if extras else {},
             )
             self.config.nat_rules.append(self._with_source_context(rule, line_number))
-            self._record_acl_consumer(acl_name, "nat-exemption", line_number, line)
             return
         match = re.match(r"^nat(?:\s+\(([^,]*),([^)]*)\))?\s+(.+)$", line, re.IGNORECASE)
         if not match:
@@ -242,4 +241,3 @@ class NATEvaluator:
             self._record_diagnostic(line_number, line, "; ".join(rule.review_reasons), "nat", owning_object)
         self.config.nat_rules.append(self._with_source_context(rule, line_number))
         if rule.access_list:
-            self._record_acl_consumer(rule.access_list, "nat-exemption", line_number, line)
