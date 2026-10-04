@@ -52,27 +52,12 @@ class CPManualNATRule(_CPOrderedPolicyRule):
     install_on: list[CheckPointObjectReference | str] | None = Field(default=None, alias="install-on")
 
 
-class CPAutoNATRule(_CPOrderedPolicyRule):
-    """Compatibility model for returned generated Automatic NAT evidence.
-
-    Live/source extraction does not place this type in CheckPointConfig.
-    """
-
-    original_source: list[CheckPointObjectReference | str] | None = None
-    original_destination: list[CheckPointObjectReference | str] | None = None
-    original_service: list[CheckPointObjectReference | str] | None = None
-    translated_source: list[CheckPointObjectReference | str] | None = None
-    translated_destination: list[CheckPointObjectReference | str] | None = None
-    translated_service: list[CheckPointObjectReference | str] | None = None
-    automatic: bool | None = None
-
-
 class CPNATRule(CPManualNATRule):
     method: str | None = None
     translation_metadata: dict | None = None
 
 
 __all__ = [
-    "CPAccessLayer", "CPAccessRule", "CPAutoNATRule", "CPManualNATRule", "CPNATRule",
+    "CPAccessLayer", "CPAccessRule", "CPManualNATRule", "CPNATRule",
     "CPNATSection", "CPPolicyPackage", "CPAccessSection",
 ]

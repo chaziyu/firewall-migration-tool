@@ -115,15 +115,8 @@ class CPVTI(CheckPointSourceObject):
     address: str | None = None
     state: str | None = None
 
-
-# Existing names remain import-compatible for the current Gaia reporting code.
-GaiaSourceObject = CheckPointSourceObject
-GaiaInterface = CPGaiaInterface
-GaiaRoute = CPGaiaStaticRoute
-GaiaConfiguration = CheckPointSourceObject
-
 __all__ = [
     "CPGaiaDHCPPool", "CPGaiaDHCPServer", "CPGaiaDHCPSubnet", "CPGaiaInterface", "CPGaiaRouteNextHop",
     "CPGaiaRBAUserAssignment", "CPGaiaRBARole", "CPGaiaStaticRoute", "CPGaiaUser",
-    "CPVTI", "GaiaConfiguration", "GaiaInterface", "GaiaRoute", "GaiaSourceObject",
+    "CPVTI",
 ]
