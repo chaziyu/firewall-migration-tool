@@ -3,7 +3,7 @@ from __future__ import annotations
 from .graph import build_decision_graph
 from .session import create_design_session
 from ..automation import run_automation_until_stable
-from ..target_validation import validate_against_target
+from ..target.target_validation import validate_against_target
 
 
 def resolve_design_session_until_stable(

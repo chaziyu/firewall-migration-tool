@@ -12,8 +12,8 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANMigrationOptions,
     run_migration_pipeline,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer, RenderedMigration
-from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import target_devices
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer, RenderedMigration
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_suggestions import target_devices
 from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
 
 register_builtin_source_reporters()

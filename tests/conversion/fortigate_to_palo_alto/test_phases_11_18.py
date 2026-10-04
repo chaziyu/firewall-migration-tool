@@ -6,7 +6,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PANMigrationStatus,
     PlannedAddress,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.vendors.fortigate.model.policy import FGPolicy
 from fwmigrate.vendors.fortigate.model.source import FGConfig
@@ -46,7 +46,7 @@ def test_source_nat_item_with_transform_issue_is_not_renderable():
     ),))
     options = PANMigrationOptions(interfaces={"root": {"wan": {"target_zone": "untrust"}}})
 
-    from fwmigrate.conversion.fortigate_to_palo_alto.nat import plan_nat
+    from fwmigrate.conversion.fortigate_to_palo_alto.planning.nat import plan_nat
     item = plan_nat(source, derived, options)[0]
 
     assert item.status is PANMigrationStatus.MANUAL_REVIEW
@@ -63,7 +63,7 @@ def test_source_nat_to_interface_uses_confirmed_target_interface_mapping():
         "target_interface": "ethernet1/2", "target_zone": "untrust",
     }}})
 
-    from fwmigrate.conversion.fortigate_to_palo_alto.nat import plan_nat
+    from fwmigrate.conversion.fortigate_to_palo_alto.planning.nat import plan_nat
     item = plan_nat(source, derived, options)[0]
     unmapped = plan_nat(source, derived, PANMigrationOptions())[0]
 

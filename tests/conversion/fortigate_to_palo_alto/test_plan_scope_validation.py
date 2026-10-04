@@ -7,7 +7,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 def test_duplicate_device_interfaces_across_vsys_block_both_and_dependents():
     from dataclasses import replace
     from fwmigrate.conversion.fortigate_to_palo_alto.models import PlannedInterface, PlannedZone
-    from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+    from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 
     interfaces = tuple(PlannedInterface(source_object_type="interface", source_vdom=vdom,
         source_name="port1", target_name="ethernet1/3", target_vsys=vsys,

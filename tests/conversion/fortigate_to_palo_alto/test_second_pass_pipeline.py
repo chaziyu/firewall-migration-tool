@@ -1,6 +1,6 @@
 from fwmigrate.conversion.fortigate_to_palo_alto import FortiGateToPaloAltoPlanner, PANMigrationOptions
 from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANMigrationDecision, PANMigrationDecisionSet
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 from fwmigrate.vendors.fortigate.model.address import FGAddress
@@ -10,7 +10,7 @@ from fwmigrate.vendors.fortigate.model.route_static import FGStaticRoute
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.model.zone import FGZone
 from fwmigrate.vendors.fortigate.derived import build_derived_views
-from fwmigrate.conversion.fortigate_to_palo_alto.routing import _normalize_subnet
+from fwmigrate.conversion.fortigate_to_palo_alto.planning.routing import _normalize_subnet
 
 
 BASE = """config system interface

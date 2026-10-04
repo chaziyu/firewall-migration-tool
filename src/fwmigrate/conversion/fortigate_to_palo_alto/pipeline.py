@@ -24,16 +24,16 @@ from .decisions import (
 from .options import PANMigrationOptions
 from .plan_dependencies import PANPlanDependencyIndex, build_plan_dependency_index
 from .planner import FortiGateToPaloAltoPlanner
-from .recommendation_engine import build_recommendations
-from .renderer import PANSetRenderer, RenderedMigration
+from .recommendations.recommendation_engine import build_recommendations
+from .rendering.renderer import PANSetRenderer, RenderedMigration
 from .requirements import build_mapping_requirements
-from .support_guidance import build_support_guidance
-from .target_evidence import reconcile_target_evidence
-from .target_intent import apply_target_intent
-from .target_object_reuse import classify_target_object_reuse
-from .target_plan_validation import assess_target_plan, validate_target_plan
-from .target_suggestions import suggest_from_target
-from .target_validation import validate_against_target
+from .recommendations.support_guidance import build_support_guidance
+from .target.target_evidence import reconcile_target_evidence
+from .target.target_intent import apply_target_intent
+from .target.target_object_reuse import classify_target_object_reuse
+from .target.target_plan_validation import assess_target_plan, validate_target_plan
+from .target.target_suggestions import suggest_from_target
+from .target.target_validation import validate_against_target
 from .validation import MigrationValidationResult, validate_plan
 
 

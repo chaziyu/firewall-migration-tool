@@ -3,15 +3,15 @@
 from typing import Any
 
 from ..contracts import VendorDerivedViews, VendorSourceConfig
-from .addresses import plan_addresses
-from .dhcp import plan_dhcp
-from .nat import plan_nat
-from .interfaces import plan_interfaces
-from .policies import plan_policies
-from .routing import plan_routes
-from .schedules import plan_schedules
-from .services import plan_services
-from .topology import plan_topology
+from .planning.addresses import plan_addresses
+from .planning.dhcp import plan_dhcp
+from .planning.nat import plan_nat
+from .planning.interfaces import plan_interfaces
+from .planning.policies import plan_policies
+from .planning.routing import plan_routes
+from .planning.schedules import plan_schedules
+from .planning.services import plan_services
+from .planning.topology import plan_topology
 from .requirements import build_mapping_requirements
 from .models import PANMigrationPlan
 from .options import PANMigrationOptions

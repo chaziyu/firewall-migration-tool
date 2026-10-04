@@ -5,7 +5,7 @@ import time
 
 from .models import (PANCommitResult, PANDeploymentCommandResult, PANDeploymentOptions,
                      PANDeploymentResult, PANValidationResult)
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import RenderedMigration
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import RenderedMigration
 
 
 _ERROR = re.compile(

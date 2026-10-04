@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from fwmigrate.web import create_app
 from fwmigrate.conversion.fortigate_to_palo_alto import PANDecisionReviewState, PANMigrationDecision, PANMigrationDecisionSet
-from fwmigrate.conversion.fortigate_to_palo_alto.target_validation import validate_against_target
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_validation import validate_against_target
 from fwmigrate.vendors.palo_alto.relationships.topology import PANInterfaceTopologyEntry
 from fwmigrate.vendors.palo_alto.source_model import PANScope, pan_scope_identity
 

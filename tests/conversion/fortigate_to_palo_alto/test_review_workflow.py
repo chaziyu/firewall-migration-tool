@@ -1,14 +1,14 @@
 from fwmigrate.conversion.fortigate_to_palo_alto.decisions import (
     PANDecisionMode, PANDecisionReviewState, PANMigrationDecision, PANMigrationDecisionSet,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.review_workflow import build_review_workflow
+from fwmigrate.conversion.fortigate_to_palo_alto.review.review_workflow import build_review_workflow
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 
 
 def test_conflicting_groups_show_all_owners_and_reserved_candidates_are_not_actionable():
     from fwmigrate.conversion.fortigate_to_palo_alto.application.review import decision_evidence
-    from fwmigrate.conversion.fortigate_to_palo_alto.target_validation import validate_against_target
+    from fwmigrate.conversion.fortigate_to_palo_alto.target.target_validation import validate_against_target
 
     config = FGConfig()
     decisions = PANMigrationDecisionSet(tuple(PANMigrationDecision(vdom, "interface", "port1", "target_interface",
