@@ -34,7 +34,6 @@ EXPECTED_RESPONSE_SHAPES = {
     command: spec.expected_response_shape
     for command, spec in R81_COMMAND_REGISTRY.items()
 }
-EXPECTED_RESPONSE_SHAPES["show-global-assignments"] = "objects"
 
 
 def _validate_response_shape(response: CheckPointResponse) -> None:

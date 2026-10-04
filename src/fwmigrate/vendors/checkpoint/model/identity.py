@@ -31,7 +31,4 @@ class CPAccessRole(CheckPointSourceObject):
     directory: CheckPointObjectReference | str | None = None
 
 
-CPIdentityObject = CPUser
-
-
-__all__ = ["CPAccessRole", "CPIdentityObject", "CPUser", "CPUserGroup"]
+__all__ = ["CPAccessRole", "CPUser", "CPUserGroup"]

@@ -56,11 +56,8 @@ class CPGroupWithExclusion(CheckPointSourceObject):
     include: CheckPointObjectReference | str | None = None
     except_: CheckPointObjectReference | str | None = Field(default=None, alias="except")
 
-
-CPAddressGroup = CPGroup
-
 __all__ = [
-    "CPAddress", "CPAddressGroup", "CPAddressRange", "CPDNSDomain", "CPDynamicAddress",
+    "CPAddress", "CPAddressRange", "CPDNSDomain", "CPDynamicAddress",
     "CPGroup", "CPGroupWithExclusion", "CPHost", "CPNetwork", "CPUpdatableObject",
     "CPWildcardAddress",
 ]
