@@ -55,7 +55,3 @@ def extract_default_security_rule(element: ET.Element, path: tuple[str, ...], co
         resolved = direct if direct is not None else nested
     return PANDefaultSecurityRule(**_common(element, path, context, source_order), action=value(element, "action"), disabled=value(element, "disabled"), log_start=value(element, "log-start"), log_end=value(element, "log-end"), log_setting=value(element, "log-setting"), description=value(element, "description"), tags=values(element, "tag"), group_tag=value(element, "group-tag"), profile_setting=_profile(element), disable_server_response_inspection=resolved, icmp_unreachable=value(element, "icmp-unreachable"), raw_extra=extra, explicit_fields=explicit)
 
-
-def extract_policy(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> object | None:
-    """Compatibility dispatcher for callers of the original extractor name."""
-    return extract_security_rule(element, path, context, source_order, spec) or extract_default_security_rule(element, path, context, source_order, spec)
