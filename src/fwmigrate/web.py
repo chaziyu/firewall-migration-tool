@@ -15,7 +15,6 @@ from pathlib import Path
 from dataclasses import asdict, replace
 from copy import deepcopy
 from dataclasses import dataclass
-from time import perf_counter
 from functools import wraps
 from pydantic import ValidationError
 from flask import Flask, Request as FlaskRequest, request, send_file, send_from_directory, jsonify
@@ -23,10 +22,6 @@ from flask import Flask, Request as FlaskRequest, request, send_file, send_from_
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
 from fwmigrate.conversion import migration_planners
-from fwmigrate.conversion.fortigate_to_palo_alto.design.proposed import PANProposedDesignSession
-from fwmigrate.conversion.fortigate_to_palo_alto.ai.orchestrator import (
-    build_ai_proposed_design, state_with_proposed_design,
-)
 from fwmigrate.conversion.fortigate_to_palo_alto import run_migration_pipeline
 from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     PANAutomationMode,
@@ -76,7 +71,6 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     build_support_guidance,
     validate_plan,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto import ai_advisor
 from fwmigrate.conversion.fortigate_to_palo_alto.application.review import (
     confirm_interface_mappings, InterfaceMappingConfirmationError,
 )
@@ -288,14 +282,6 @@ def create_app(test_config=None):
     def healthz():
         return jsonify({'status': 'ok'})
 
-    try:
-        ai_config = ai_advisor.validate_static_configuration()
-        _LOGGER.info('AI advisor %s provider=%s model=%s',
-                     'configured' if ai_config['enabled'] else 'disabled',
-                     ai_config['provider'], ai_config['model'])
-    except ai_advisor.AdvisorError as exc:
-        _LOGGER.warning('AI advisor configuration error category=%s', exc.code)
-
     signing_key = app.config.get('WORKSPACE_SIGNING_KEY') or os.environ.get('FWMIGRATE_WORKSPACE_SIGNING_KEY')
     if signing_key:
         signing_key = signing_key.encode() if isinstance(signing_key, str) else signing_key
@@ -474,60 +460,6 @@ def create_app(test_config=None):
     def _invalid_model(_error):
         return jsonify({'success': False, 'error': 'Invalid configuration fields'}), 400
 
-    def _design_audit_actions(session, actions):
-        return tuple(
-            {**row, 'engineer_action': actions[row['decision_key']][0],
-             'final_value': actions[row['decision_key']][1]}
-            if row.get('decision_key') in actions and row.get('engineer_action') is None else row
-            for row in session.audit
-        )
-
-    def _lookup_ai_design_session(session_id):
-        payload = request.get_json(silent=True) or {}
-        value = payload.get('design_session')
-        if value is None:
-            return None
-        verify_envelope(value, signing_key)
-        if value.get('design_session_id') != session_id:
-            raise ValueError('AI design session identity does not match')
-        entry, state = _ai_design_state(payload)
-        from fwmigrate.conversion.fortigate_to_palo_alto.design.proposed import PANProposedDesign
-        from fwmigrate.conversion.fortigate_to_palo_alto.ai.models import PANAIProposal
-        design = PANProposedDesign(value['source_digest'], value['target_digest'], value['target_device'],
-                                  state['decisions'], tuple(PANAIProposal.from_dict(item) for item in value['proposals']))
-        return PANProposedDesignSession(session_id, value['created_at'], design,
-            stable=value['stable'], iterations=value['iterations'], audit=tuple(value['audit']),
-            failure_category=value.get('failure_category'), failures=tuple(value.get('failures', ())),
-            ai_eligible_decision_keys=tuple(value.get('ai_eligible_decision_keys', ())),
-            dependency_graph=state['design_session'].dependency_graph)
-
-    def _ai_design_state(payload):
-        entry = _migration_source(payload)
-        state = _build_migration_review_state(entry, payload, True)
-        if not state.get('target_digest') or not state.get('target_device'):
-            raise ValueError('Upload PAN-OS target XML and select a target device before AI design review')
-        return entry, state
-
-    def _check_ai_design_identity(session, state):
-        if (session.design.source_digest, session.design.target_digest, session.design.target_device) != (
-            state['source_digest'], state['target_digest'], state['target_device']
-        ):
-            raise ValueError('This design session is stale; refresh the source and target evidence')
-
-    def _ai_design_response(session, state, **extra):
-        result = {
-            'success': True,
-            'design_session': sign_envelope({**session.to_dict(state['design_session'].dependency_graph),
-                'ai_eligible_decision_keys': list(session.ai_eligible_decision_keys)}, signing_key),
-            'decisions': state['decisions'].to_dict(),
-            'decision_document': build_decision_document(
-                state['source_digest'], state['decisions'],
-                state['target_context'].metadata if state['target_context'] else None,
-            ),
-        }
-        result.update(extra)
-        return result
-
     register_frontend_routes(app)
     register_source_routes(app)
 
@@ -593,227 +525,6 @@ def create_app(test_config=None):
             return jsonify({'success': False, 'error': str(exc), 'errors': exc.errors}), 400
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
-
-    def _ai_failure(exc, *, provider, model, batch_size, duration_ms, batch_id=None):
-        error = exc if isinstance(exc, ai_advisor.AdvisorError) else ai_advisor.AdvisorError()
-        cause = exc.__cause__ if isinstance(exc, ai_advisor.AdvisorError) and exc.__cause__ else exc
-        diagnostic = ai_advisor.failure_record(error, provider=provider, model=model)
-        if not isinstance(exc, ai_advisor.AdvisorError):
-            _LOGGER.exception('Unexpected AI advisor failure provider=%s model=%s', provider, model)
-        _LOGGER.warning(
-            'AI request failed provider=%s model=%s category=%s reason=%s status=%s request_id=%s provider_code=%s provider_type=%s batch_size=%s candidate_count=%s request_bytes=%s duration_ms=%s exception=%s',
-            provider, model, error.code, diagnostic.get('safe_reason'), error.status, error.request_id,
-            diagnostic.get('provider_code'), diagnostic.get('provider_type'),
-            diagnostic.get('batch_size', batch_size), diagnostic.get('candidate_count'),
-            diagnostic.get('request_bytes'), duration_ms, cause.__class__.__name__,
-        )
-        status = 503 if error.code in {'AI_DISABLED', 'AI_UNAVAILABLE', 'AI_AUTH_FAILED', 'AI_RATE_LIMITED'} else 502
-        return jsonify({'success': False, 'code': error.code, 'error': error.message,
-                        'failure': diagnostic}), status
-
-    @app.route('/api/migration/ai/status', methods=['GET'])
-    def migration_ai_status():
-        try:
-            return jsonify(ai_advisor.advisor_status())
-        except ai_advisor.AdvisorError as exc:
-            return _ai_failure(exc, provider='configuration', model='', batch_size=0, duration_ms=0)
-
-    @app.route('/api/migration/ai/test', methods=['POST'])
-    def migration_ai_test():
-        if not ai_advisor.advisor_enabled():
-            return jsonify({'success': False, 'code': 'AI_DISABLED', 'error': 'AI advisor is disabled.'}), 503
-        started = perf_counter()
-        provider, model = ai_advisor.advisor_provider(), ai_advisor.advisor_model()
-        try:
-            return jsonify(ai_advisor.test_advisor())
-        except Exception as exc:
-            return _ai_failure(exc, provider=provider, model=model, batch_size=1,
-                               duration_ms=round((perf_counter() - started) * 1000))
-
-    @app.route('/api/migration/ai/design', methods=['POST'])
-    def build_migration_ai_design():
-        payload = request.get_json(silent=True)
-        if not ai_advisor.advisor_enabled():
-            return jsonify({'success': False, 'code': 'AI_DISABLED', 'error': 'AI advisor is disabled.'}), 503
-        try:
-            if not isinstance(payload, dict):
-                raise ValueError('A JSON object is required')
-            entry, state = _ai_design_state(payload)
-            session_id = payload.get('design_session_id')
-            stored_previous = _lookup_ai_design_session(session_id) if session_id else None
-            if session_id and stored_previous is None:
-                return jsonify({'success': False, 'error': 'This AI design session expired; start a new review.'}), 409
-            previous = stored_previous
-            if stored_previous:
-                _check_ai_design_identity(stored_previous, state)
-                if payload.get('retry_exceptions'):
-                    retained = tuple(item for item in stored_previous.design.proposals
-                                     if item.validation_status == 'VALID'
-                                     and item.action.value == 'USE_EXISTING')
-                    previous = replace(stored_previous, design=stored_previous.design.with_state(proposals=retained))
-            session = build_ai_proposed_design(state, previous)
-            for failure in session.failures:
-                _LOGGER.warning('AI design failed category=%s request_id=%s reason=%s',
-                    failure.get('failure_category'), failure.get('request_id'), failure.get('safe_reason'))
-            return jsonify(_ai_design_response(session, state))
-        except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
-        except Exception as exc:
-            return _ai_failure(exc, provider=ai_advisor.advisor_provider(), model=ai_advisor.advisor_model(),
-                               batch_size=0, duration_ms=0)
-
-    @app.route('/api/migration/ai/design/<session_id>/approve', methods=['POST'])
-    def approve_migration_ai_design(session_id):
-        payload = request.get_json(silent=True)
-        try:
-            if not isinstance(payload, dict):
-                raise ValueError('A JSON object is required')
-            session = _lookup_ai_design_session(session_id)
-            if session is None:
-                raise ValueError('This AI design session expired; start a new review.')
-            entry, state = _ai_design_state(payload)
-            _check_ai_design_identity(session, state)
-            design = session.design.with_state(decisions=state['decisions'])
-            proposals = design.proposals
-            if payload.get('approve_all') is True:
-                selected = [item for item in proposals if item.action.value == 'USE_EXISTING'
-                            and item.validation_status == 'VALID']
-            elif payload.get('family'):
-                family = str(payload['family']).strip().casefold()
-                fields = {
-                    'interfaces': {'target_interface'}, 'zones': {'target_zone'},
-                    'ownership': {'vsys'}, 'virtual routers': {'virtual_router'},
-                }
-                selected_fields = fields.get(family, {family})
-                source_vdom = payload.get('source_vdom')
-                decisions_by_key = {item.key: item for item in state['decisions'].decisions}
-                selected = [item for item in proposals
-                            if item.action.value == 'USE_EXISTING' and item.validation_status == 'VALID'
-                            and decisions_by_key[item.decision_key].target_field in selected_fields
-                            and (source_vdom is None
-                                 or decisions_by_key[item.decision_key].source_vdom == source_vdom)]
-            else:
-                keys = payload.get('decision_keys')
-                if (not isinstance(keys, list) or not keys
-                        or any(not isinstance(key, str) or not key for key in keys)
-                        or len(set(keys)) != len(keys)):
-                    raise ValueError('decision_keys, family, or approve_all is required')
-                requested = set(keys)
-                selected = [item for item in proposals if item.decision_key in requested]
-                if len(selected) != len(requested):
-                    raise ValueError('One or more selected proposals are no longer in this design')
-            if not selected:
-                raise ValueError('No valid AI proposals were selected')
-            state = state_with_proposed_design(state, design)
-            whole = ai_advisor.validate_proposal_set(state, [item.to_dict() for item in proposals])
-            whole_by_key = {item['decision_key']: item for item in whole}
-            if any(whole_by_key[item.decision_key]['validation_status'] != 'VALID' for item in selected):
-                raise ValueError('One or more selected proposals are stale or conflict with the current design')
-            confirmed, validated = ai_advisor.approve_proposals_as_engineer(
-                state, [item.to_dict() for item in selected], proposed_design=design
-            )
-            selected_keys = {item['decision_key'] for item in validated}
-            remaining = tuple(item for item in design.proposals if item.decision_key not in selected_keys)
-            audit_actions = {key: ('APPROVED', whole_by_key[key]['proposed_value']) for key in selected_keys}
-            updated = replace(
-                session, design=design.with_state(decisions=confirmed, proposals=remaining),
-                audit=_design_audit_actions(session, audit_actions),
-            )
-            state = dict(state, decisions=confirmed)
-            return jsonify(_ai_design_response(updated, state, approved_count=len(validated)))
-        except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 409
-
-    @app.route('/api/migration/ai/design/<session_id>/modify', methods=['POST'])
-    def modify_migration_ai_design(session_id):
-        payload = request.get_json(silent=True)
-        try:
-            if not isinstance(payload, dict) or not isinstance(payload.get('changes'), list) or not payload['changes']:
-                raise ValueError('changes must be a non-empty array')
-            session = _lookup_ai_design_session(session_id)
-            if session is None:
-                raise ValueError('This AI design session expired; start a new review.')
-            entry, state = _ai_design_state(payload)
-            _check_ai_design_identity(session, state)
-            identity = target_evidence_identity(state['target_context'].metadata)
-            if identity is None or identity[1] is None:
-                raise ValueError('Target evidence and a selected PAN-OS device are required')
-            by_key = {item.key: item for item in state['decisions'].decisions}
-            ai_decision_keys = {item.decision_key for item in session.design.proposals}
-            changes = {}
-            for item in payload['changes']:
-                if not isinstance(item, dict) or not isinstance(item.get('decision_key'), str):
-                    raise ValueError('Each change requires a decision_key and value')
-                key, value = item['decision_key'], item.get('value')
-                if key not in by_key or 'value' not in item or (value is not None and (not isinstance(value, str) or not value.strip())):
-                    raise ValueError('Each change must select a current decision and a value or null')
-                if key in changes:
-                    raise ValueError('changes cannot repeat a decision_key')
-                changes[key] = value.strip() if isinstance(value, str) else None
-            for key, value in changes.items():
-                decision = by_key[key]
-                if value is None:
-                    by_key[key] = replace(
-                        decision, value=None,
-                        mode=PANDecisionMode.REQUIRED if decision.mode is PANDecisionMode.AUTO else decision.mode,
-                        review_state=PANDecisionReviewState.PENDING,
-                        evidence_source=None, evidence_type=None, evidence_value=None, target_object=None,
-                        evidence_target_digest=None, evidence_target_device=None,
-                    )
-                else:
-                    by_key[key] = replace(
-                        decision, value=value, review_state=PANDecisionReviewState.CONFIRMED,
-                        evidence_source='ENGINEER',
-                        evidence_type=('ENGINEER_MODIFIED_AI_PROPOSAL' if key in ai_decision_keys else 'MANUAL'),
-                        evidence_value=value, target_object=value,
-                        evidence_target_digest=identity[0], evidence_target_device=identity[1],
-                    )
-            decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
-            document = build_decision_document(entry.source_digest, decisions, state['target_context'].metadata)
-            updated_payload = dict(payload, decision_document=document)
-            state = _build_migration_review_state(entry, updated_payload)
-            audit_actions = {
-                key: ('MODIFIED' if value is not None else 'UNRESOLVED', value)
-                for key, value in changes.items()
-            }
-            build_session = replace(session, audit=_design_audit_actions(session, audit_actions))
-            rebuilt = build_ai_proposed_design(state, build_session)
-            return jsonify(_ai_design_response(rebuilt, state, decisions=state['decisions'].to_dict(),
-                                              decision_document=document))
-        except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 409
-
-    @app.route('/api/migration/ai/design/<session_id>/reject', methods=['POST'])
-    def reject_migration_ai_design_proposals(session_id):
-        payload = request.get_json(silent=True)
-        try:
-            if not isinstance(payload, dict):
-                raise ValueError('A JSON object is required')
-            keys = payload.get('decision_keys')
-            if (not isinstance(keys, list) or not keys
-                    or any(not isinstance(key, str) or not key for key in keys)
-                    or len(set(keys)) != len(keys)):
-                raise ValueError('decision_keys must contain unique proposal keys')
-            session = _lookup_ai_design_session(session_id)
-            if session is None:
-                raise ValueError('This AI design session expired; start a new review.')
-            entry, state = _ai_design_state(payload)
-            _check_ai_design_identity(session, state)
-            by_key = {item.decision_key: item for item in session.design.proposals}
-            if any(key not in by_key for key in keys):
-                raise ValueError('One or more selected proposals are no longer in this design')
-            proposals = tuple(
-                replace(item, validation_status='REJECTED',
-                        validation_findings=('Rejected by engineer',)) if item.decision_key in keys else item
-                for item in session.design.proposals
-            )
-            updated = replace(
-                session, design=session.design.with_state(proposals=proposals),
-                audit=_design_audit_actions(session, {key: ('REJECTED', None) for key in keys}),
-            )
-            return jsonify(_ai_design_response(updated, state))
-        except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 409
 
     @app.route('/api/migration/decisions/approve', methods=['POST'])
     def approve_migration_decisions():

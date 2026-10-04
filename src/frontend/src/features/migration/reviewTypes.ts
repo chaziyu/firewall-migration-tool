@@ -29,15 +29,6 @@ export type Candidate = {
   assigned_to?: Array<{ source_vdom: string; source_name: string }>
 }
 
-export type Proposal = {
-  decision_key: string
-  action: string
-  proposed_value: string | null
-  target_scope?: string
-  rationale?: string
-  evidence_refs?: string[]
-  validation_status: string
-}
 
 export type ReviewGroup = {
   queue: string

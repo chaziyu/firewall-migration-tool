@@ -25,16 +25,6 @@ export type ReviewData = {
   decision_candidates: Record<string, Array<{ value: string; target_scope?: string; class?: string; strong_evidence?: string[]; supporting_evidence?: string[] }>>
   target_evidence: { device?: string; config_digest?: string } | null
 }
-export type AIProposal = {
-  decision_key: string
-  action: 'USE_EXISTING' | 'NO_SAFE_PROPOSAL'
-  proposed_value: string | null
-  target_scope: string | null
-  rationale: string
-  evidence_refs: string[]
-  validation_status: string
-}
-export type AIDesignSession = { design_session_id: string; proposals: AIProposal[] }
 export type PlanArtifact = {
   artifact_id: string
   plan_status: string

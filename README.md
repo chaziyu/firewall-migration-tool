@@ -218,20 +218,12 @@ The Python constraints file is used only by artifact-producing Python 3.12 paths
 For a reproducible production-style install:
 
 ```bash
-python -m pip install --constraint requirements/constraints-python312.txt -e ".[ai,collection,deployment]"
+python -m pip install --constraint requirements/constraints-python312.txt -e ".[collection,deployment]"
 python -m pip check
 ```
 
 Review and regenerate the constraints file when dependencies are intentionally updated; do not silently edit individual pins merely to suppress a vulnerability scanner.
 
-For the optional Groq migration advisor:
-
-```powershell
-python -m pip install -e ".[ai]"
-if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
-```
-
-Set `GROQ_API_KEY`, `FWMIGRATE_AI_ENABLED=1`, and `FWMIGRATE_AI_ALLOW_EXTERNAL=1` in `.env.local` only when external processing of customer-derived migration context is explicitly approved. Without `FWMIGRATE_AI_ALLOW_EXTERNAL=1`, Groq requests fail closed. A configured `FWMIGRATE_AI_LOCAL_URL` continues to use the local/company endpoint without enabling external AI. Groq uses the 20B model for simple decisions and 120B for ownership, dependency, high-candidate, coupled, and repair work. Request batches, byte size, AI-context candidate count, completion tokens, reasoning effort, reasoning format, retry delay, and the complex-candidate threshold are bounded in `.env.example`. Candidate reduction is deterministic and affects only the AI request: the full target candidate inventory is preserved for review. If a candidate cutoff would split equally supported candidates, the decision remains manual instead of being truncated arbitrarily. Rate-limit retries honor a provider `Retry-After` value when it is within the configured retry-delay ceiling. Set `FWMIGRATE_AI_LOCAL_URL` to use local Qwen first, with Groq available for capability escalation and fallback. The advisor resolves deterministic decisions before requesting advice and proposes only existing, unambiguous target candidates. An engineer must approve proposals before they affect the plan. The review page's synthetic **Test advisor** checks both the provider contract and a production-shaped request; `/api/migration/ai/status` returns configuration metadata without credentials. Set `FWMIGRATE_AI_LOCAL_RESPONSE_MODE=JSON_ONLY` if the local server rejects strict JSON schema requests. `FWMIGRATE_AI_GROQ_MODEL`, `FWMIGRATE_AI_MODEL`, and `FWMIGRATE_GROQ_MODEL` remain supported as fallback settings. `FWMIGRATE_AI_GUARD_MODEL` is reserved for free-text evidence; the current advisor context excludes descriptions and comments. Exported sanitized AI audit JSONL can be evaluated with `python tools/evaluate_ai_advisor.py <audit.jsonl>`; the report includes agreement, abstention, safety, engineer-outcome, request-efficiency, provider/model, target-field, and candidate-count metrics.
 
 ### Desktop Application
 
@@ -249,7 +241,7 @@ React
 Windows build prerequisites are Rust, Node.js, Python, PyInstaller, and the normal Tauri Windows system dependencies. The desktop build uses the reviewed Python 3.12 constraints file:
 
 ```powershell
-python -m pip install --constraint requirements/constraints-python312.txt -e ".[ai,collection,deployment]" "pyinstaller>=6.0"
+python -m pip install --constraint requirements/constraints-python312.txt -e ".[collection,deployment]" "pyinstaller>=6.0"
 python -m pip check
 
 cd src/frontend
@@ -325,15 +317,15 @@ docker run --detach --name fwmigrate --publish 5000:5000 --env-file /etc/fwmigra
 
 On Windows, double-click [`Start Docker.bat`](./Start%20Docker.bat) to build the image, choose a local web password, start it on port `5000`, wait for its health check, and open the web application. Sign in as `fwmigrate` with that password. If that container is already running, the launcher reuses it; stop and remove it before rerunning to rebuild from current files.
 
-The environment file supplies server settings and secrets at runtime. Hosted Docker/web deployments require HTTP Basic authentication. Set `FWMIGRATE_WEB_PASSWORD` to a strong runtime secret; `FWMIGRATE_WEB_USERNAME` defaults to `fwmigrate`. The unauthenticated `/healthz` endpoint is reserved for container health checks. Remote live collection and remote deployment are disabled by default even when the web application is reachable. Set `FWMIGRATE_ALLOW_REMOTE_COLLECTION=1` and/or `FWMIGRATE_ALLOW_REMOTE_DEPLOYMENT=1` only on an authenticated deployment with the required network perimeter. Hosted use must terminate HTTPS before Flask because HTTP Basic authentication and customer configuration traffic must not traverse an unencrypted network. The local Windows Docker launcher enables both network actions explicitly while publishing port 5000 on loopback only. For a company AI endpoint, set `FWMIGRATE_AI_ENABLED=1` and `FWMIGRATE_AI_LOCAL_URL` to its reachable HTTPS URL; `localhost` inside the container refers to the container itself. Do not bake secrets into the image.
+The environment file supplies server settings and secrets at runtime. Hosted Docker/web deployments require HTTP Basic authentication. Set `FWMIGRATE_WEB_PASSWORD` to a strong runtime secret; `FWMIGRATE_WEB_USERNAME` defaults to `fwmigrate`. The unauthenticated `/healthz` endpoint is reserved for container health checks. Remote live collection and remote deployment are disabled by default even when the web application is reachable. Set `FWMIGRATE_ALLOW_REMOTE_COLLECTION=1` and/or `FWMIGRATE_ALLOW_REMOTE_DEPLOYMENT=1` only on an authenticated deployment with the required network perimeter. Hosted use must terminate HTTPS before Flask because HTTP Basic authentication and customer configuration traffic must not traverse an unencrypted network. The local Windows Docker launcher enables both network actions explicitly while publishing port 5000 on loopback only. Do not bake secrets into the image.
 
-The container listens on port `5000` and runs as the non-root `fwmigrate` user. SSH collection and deployment use strict host-key checking, so mount the company's trusted `known_hosts` file at `/home/fwmigrate/.ssh/known_hosts`. Allow outbound access from the container to firewall management interfaces, FMC/Check Point APIs as used, and the company AI endpoint.
+The container listens on port `5000` and runs as the non-root `fwmigrate` user. SSH collection and deployment use strict host-key checking, so mount the company's trusted `known_hosts` file at `/home/fwmigrate/.ssh/known_hosts`. Allow outbound access from the container only to the firewall management interfaces and management APIs required for approved collection or deployment.
 
-Workflow state is memory-only in the browser. Sanitized vendor-native evidence, previews, decisions, advisory AI state, and signed rendered artifacts are not persisted to IndexedDB. Startup clears legacy workspace data written by older releases. Connection usernames and passwords also stay in React memory. **New workspace** clears the current in-memory workflow and resets the UI.
+Workflow state is memory-only in the browser. Sanitized vendor-native evidence, previews, decisions, and signed rendered artifacts are not persisted to IndexedDB. Startup clears legacy workspace data written by older releases. Connection usernames and passwords also stay in React memory. **New workspace** clears the current in-memory workflow and resets the UI.
 
-Set `FWMIGRATE_WORKSPACE_SIGNING_KEY` to a stable random secret of at least 32 bytes in the runtime environment file. Use the same key for every server handling the workspace. This keeps browser-held artifacts and AI designs valid across restarts. Without this setting, a temporary key is generated and existing signed artifacts must be rebuilt after restart. Key rotation also requires rebuilding signed artifacts. Never bake the key into the image or expose it to the browser.
+Set `FWMIGRATE_WORKSPACE_SIGNING_KEY` to a stable random secret of at least 32 bytes in the runtime environment file. Use the same key for every server handling the workspace. This keeps browser-held signed artifacts valid across restarts. Without this setting, a temporary key is generated and existing signed artifacts must be rebuilt after restart. Key rotation also requires rebuilding signed artifacts. Never bake the key into the image or expose it to the browser.
 
-Source preview, Excel, migration review, planning, and AI approval reconstruct analysis from request-carried source evidence. Bounded multipart uploads use memory-only request streams before sanitization so raw customer uploads are not intentionally spooled to application temporary files. The backend retains no preview, source, rendered artifact, or AI workflow cache. API clients must send `source` (sanitized native evidence or collection snapshot), optional `target_source`, decisions, and target device; opaque preview IDs are no longer accepted. `/api/migrate` returns a signed `artifact` envelope. Export and deployment requests carry that envelope. Bundle export also carries the matching source. AI actions carry the signed `design_session`; audit export is local to the current browser workspace.
+Source preview, Excel, migration review, and planning reconstruct analysis from request-carried source evidence. Bounded multipart uploads use memory-only request streams before sanitization so raw customer uploads are not intentionally spooled to application temporary files. The backend retains no preview, source, or rendered artifact cache. API clients must send `source` (sanitized native evidence or collection snapshot), optional `target_source`, decisions, and target device; opaque preview IDs are no longer accepted. `/api/migrate` returns a signed `artifact` envelope. Export and deployment requests carry that envelope. Bundle export also carries the matching source.
 
 Gunicorn still uses one worker for candidate deployment coordination. Only transient target host/port, artifact identity/count/hash, validation job/time, and session nonce remain server-side. Same-target operations serialize; different targets can run concurrently. A restart invalidates candidate sessions and requires another prepare/validate step. Commit remains explicit. Multiple deployment workers or replicas require shared candidate coordination before they are supported.
 
