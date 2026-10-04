@@ -39,12 +39,6 @@ from .evaluators.contexts import ContextsEvaluator
 from .evaluators.interfaces import InterfaceEvaluator, _parse_interface_header
 
 
-
-
-
-
-
-
 class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, NATEvaluator, IdentityEvaluator, VPNEvaluator, ContextsEvaluator):
     """Deterministic offline parser for Cisco ASA running configuration."""
 
@@ -615,8 +609,8 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                     failover.source_attributes.setdefault("raw_commands", []).append(sanitize_raw_text(line))
                 i += 1
                 continue
-            if lower in {"failover", "no failover"} or lower.startswith(("dhcpd ", "dhcprelay ", "dns ", "timezone ",
-                                 "failover ", "no failover", "context ", "admin-context ", "admin-context",
+            if lower.startswith(("dhcpd ", "dhcprelay ", "dns ", "timezone ",
+                                 "context ", "admin-context ", "admin-context",
                                  "allocate-interface ", "allocate-interface", "config-url ", "config-url", "resource-class ", "resource-class", "threat-detection ", "conn ", "conn-",
                                  "embryonic-conn-", "per-client-",
                                  "timeout ")):
@@ -647,8 +641,6 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                         self.config.dns_server_groups.append(record)
                     record.raw_lines.append(line)
                     record.source_attributes.setdefault("raw_commands", []).append(line)
-                elif lower in {"failover", "no failover"} or lower.startswith("failover "):
-                    self.config.failover_settings.append(CiscoFailoverSetting(name="failover", setting=line.split(maxsplit=1)[0], raw_lines=[line], source_attributes=attrs))
                 elif lower.startswith("context ") or lower == "admin-context" or lower in {"allocate-interface", "config-url", "resource-class"} or lower.startswith(("allocate-interface ", "config-url ", "admin-context ", "resource-class ")):
                     self._parse_context_command(line, line_number)
                 else:
