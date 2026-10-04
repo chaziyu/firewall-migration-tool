@@ -1,7 +1,7 @@
 from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PANMigrationPlan, PANMigrationStatus, PlannedNATRule,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 
 
 def test_snat_pool_interface_address_and_dnat_commands():

@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import json
 
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import RenderedMigration
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import RenderedMigration
 
 
 def sign_envelope(value, key):

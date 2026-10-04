@@ -6,8 +6,8 @@ from enum import StrEnum
 from .auto_decisions import classify_auto_decisions
 from .decision_propagation import dependent_decision_keys
 from .decisions import PANDecisionReviewState, PANMigrationDecisionSet
-from .target_evidence import target_evidence_identity
-from .target_validation import validate_against_target
+from .target.target_evidence import target_evidence_identity
+from .target.target_validation import validate_against_target
 
 
 class AutomationPolicy(StrEnum):

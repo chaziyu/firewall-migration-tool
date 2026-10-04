@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .models import PANMigrationDesignSession
 from ..decisions import PANDecisionMode, PANDecisionReviewState
-from ..target_evidence import target_evidence_identity
+from ..target.target_evidence import target_evidence_identity
 
 
 def create_design_session(

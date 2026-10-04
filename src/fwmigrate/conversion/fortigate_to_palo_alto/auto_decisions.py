@@ -4,8 +4,8 @@ from enum import Enum
 
 from .decisions import PANDecisionReviewState, PANMigrationDecisionSet
 from .interface_candidates import candidate_evidence
-from .target_suggestions import _compatible, _device
-from .target_candidates import target_vsys_value
+from .target.target_suggestions import _compatible, _device
+from .target.target_candidates import target_vsys_value
 from ...vendors.palo_alto.source_model import pan_scope_identity
 
 
@@ -143,7 +143,7 @@ def classify_auto_decisions(config, derived, decisions: PANMigrationDecisionSet,
                 "uses_target_evidence": bool(target is not None),
             }
 
-    from .target_validation import interface_assignment_index
+    from .target.target_validation import interface_assignment_index
 
     reservations = interface_assignment_index(decisions)
     claims = {}

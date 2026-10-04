@@ -1,4 +1,4 @@
-from fwmigrate.conversion.fortigate_to_palo_alto.review_evidence import build_review_evidence
+from fwmigrate.conversion.fortigate_to_palo_alto.review.review_evidence import build_review_evidence
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.policy import FGPolicy

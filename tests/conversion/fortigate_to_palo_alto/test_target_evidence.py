@@ -3,7 +3,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.decisions import (
     PANMigrationDecision,
     PANMigrationDecisionSet,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.target_evidence import (
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_evidence import (
     bind_legacy_target_evidence,
     reconcile_target_evidence,
     target_evidence_changed,

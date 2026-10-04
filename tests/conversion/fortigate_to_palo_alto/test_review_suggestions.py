@@ -11,7 +11,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.decisions import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.pipeline import run_migration_pipeline
 from fwmigrate.conversion.fortigate_to_palo_alto.review.review_suggestions import apply_review_suggestions
-from fwmigrate.conversion.fortigate_to_palo_alto.target_suggestions import discover_target_candidates
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_suggestions import discover_target_candidates
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.model.policy import FGPolicy

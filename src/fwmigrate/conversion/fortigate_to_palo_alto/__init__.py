@@ -27,16 +27,16 @@ from .decisions import (
     make_decision_key,
 )
 from .planner import FortiGateToPaloAltoPlanner
-from .target_validation import PANTargetFinding, validate_against_target
-from .support_guidance import PANSupportGuidance, build_support_guidance
+from .target.target_validation import PANTargetFinding, validate_against_target
+from .recommendations.support_guidance import PANSupportGuidance, build_support_guidance
 from .recommendations import (
     PANMigrationRecommendation,
     PANRecommendationConfidence,
     PANRecommendationMethod,
     PANRecommendationReadiness,
 )
-from .target_candidates import PANTargetCandidate, PANTargetCandidateMatchClass
-from .recommendation_engine import build_recommendations
+from .target.target_candidates import PANTargetCandidate, PANTargetCandidateMatchClass
+from .recommendations.recommendation_engine import build_recommendations
 from .pipeline import (
     PANAutomationMode,
     PANMigrationPipelineResult,

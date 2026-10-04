@@ -1,7 +1,7 @@
 from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PANMigrationPlan, PANMigrationStatus, PlannedService,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 
 
 def test_tcp_destination_tcp_source_and_udp_service_commands():

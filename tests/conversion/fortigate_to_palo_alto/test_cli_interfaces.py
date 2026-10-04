@@ -3,7 +3,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PANMigrationStatus,
     PlannedInterface,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 
 
 def test_physical_interface_renders_device_import_and_router_membership_in_order():

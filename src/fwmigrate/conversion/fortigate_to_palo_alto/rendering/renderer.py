@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from fwmigrate.conversion.fortigate_to_palo_alto import cli_paths
+from . import cli_paths
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationPlan, PANMigrationStatus
 from fwmigrate.conversion.fortigate_to_palo_alto.target.target_plan_validation import PANRenderDisposition, item_key
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import MigrationValidationResult, validate_plan

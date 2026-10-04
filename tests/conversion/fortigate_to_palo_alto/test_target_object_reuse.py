@@ -8,15 +8,15 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PlannedInterface, PlannedNATRule, PlannedStaticRoute, PlannedSchedule,
     PlannedZone, PlannedSecurityRule, PlannedService,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.plan_dependencies import build_plan_dependency_index, item_key
-from fwmigrate.conversion.fortigate_to_palo_alto.target_object_reuse import (
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_object_reuse import (
     classify_target_object_reuse, _address, _members, _schedule, _service,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.target_plan_validation import (
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_plan_validation import (
     PANRenderDisposition, assess_target_plan, validate_target_plan,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.target_validation import PANTargetFinding
+from fwmigrate.conversion.fortigate_to_palo_alto.target.target_validation import PANTargetFinding
 from fwmigrate.vendors.palo_alto.model.address import PANAddress, PANAddressGroup
 from fwmigrate.vendors.palo_alto.model.schedule import PANSchedule, PANScheduleRecurring
 from fwmigrate.vendors.palo_alto.model.service import PANService, PANServiceProtocol, PANServiceOverride

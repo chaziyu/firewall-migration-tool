@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 
 from fwmigrate.conversion.fortigate_to_palo_alto import FortiGateToPaloAltoPlanner, PANMigrationOptions
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 

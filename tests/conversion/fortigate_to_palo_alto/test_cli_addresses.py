@@ -1,7 +1,7 @@
 from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PANMigrationPlan, PANMigrationStatus, PlannedAddress, PlannedAddressGroup,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.renderer import PANSetRenderer
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 
 
 def test_address_and_static_address_group_commands():

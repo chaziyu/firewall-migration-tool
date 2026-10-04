@@ -1,4 +1,4 @@
-from fwmigrate.conversion.fortigate_to_palo_alto.interfaces import plan_interfaces
+from fwmigrate.conversion.fortigate_to_palo_alto.planning.interfaces import plan_interfaces
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus
 from fwmigrate.conversion.fortigate_to_palo_alto.options import PANMigrationOptions
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
