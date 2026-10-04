@@ -5,12 +5,12 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text
-from .model.context import CiscoASAContext, CiscoAllocatedInterface, CiscoMultiContextSystem
-from .model.dhcp import CiscoDHCPGlobalSettings, CiscoDHCPOption, CiscoDHCPRelay, CiscoDHCPRelayServer, CiscoDHCPReservation
-from .model.failover import CiscoFailoverGroup
-from .model.management import CiscoConnectionControl, CiscoDNSServerGroup, CiscoHTTPServerConfig, CiscoManagementAccessRule, CiscoManagementSetting, CiscoNTPServer
+
+from .model.dhcp import CiscoDHCPGlobalSettings, CiscoDHCPOption, CiscoDHCPReservation
+
+from .model.management import CiscoConnectionControl, CiscoManagementAccessRule
 from .model.mpf import CiscoClassMap, CiscoClassMapMatch, CiscoInspectAction, CiscoInspectionPolicySection, CiscoIPSAction, CiscoMPFConnectionAction, CiscoMPFPoliceAction, CiscoPolicyMap, CiscoPolicyMapClass, CiscoServicePolicy, CiscoTCPMap, CiscoTCPMapSetting
-from .model.source import CiscoASAConfig
+
 from .model.vpn import CiscoTrustpointRecord
 
 
