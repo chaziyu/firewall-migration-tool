@@ -28,3 +28,19 @@ def test_generic_source_model_buckets_are_removed():
     assert "\n    object_groups:" not in model
     assert "class CiscoFTDObject" not in model
     assert "class CiscoFTDService" not in model
+
+def test_removed_ftd_stale_compatibility_residue_does_not_return():
+    parser = (ROOT / "cli" / "parser.py").read_text(encoding="utf-8")
+    cli_exports = (ROOT / "cli" / "__init__.py").read_text(encoding="utf-8")
+    source_analysis = (ROOT / "source_analysis.py").read_text(encoding="utf-8")
+    source_report = (ROOT / "source_report.py").read_text(encoding="utf-8")
+    fmc_adapter = (ROOT / "fmc" / "fmc_adapter.py").read_text(encoding="utf-8")
+
+    assert "FTD_TEXT_GENERATION_BLOCK_REASON" not in parser
+    assert "FTD_TEXT_GENERATION_BLOCK_REASON" not in cli_exports
+    assert "_ipv4_interface" not in parser
+    assert "zone_mapping" not in parser
+    assert "zone_mapping" not in source_analysis
+    assert "zone_mapping" not in source_report
+    assert "def records(key, cls):" not in fmc_adapter
+

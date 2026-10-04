@@ -40,14 +40,14 @@ class FTDSourceResult:
     validation: FTDValidationResult
 
 
-def _text_source(text: str, zone_mapping: dict[str, str] | None) -> CiscoFTDConfig:
-    config = CiscoFTDParser(text, zone_mapping=zone_mapping).parse_raw()
+def _text_source(text: str) -> CiscoFTDConfig:
+    config = CiscoFTDParser(text).parse_raw()
     config.input_source_type = config.source_plane = "ftd-text-evidence"
     config.source_metadata = {"authoritative": "device CLI/text evidence"}
     return config
 
 
-def extract_cisco_ftd_source(text: str, zone_mapping: dict[str, str] | None = None) -> FTDSourceResult:
+def extract_cisco_ftd_source(text: str) -> FTDSourceResult:
     from .fdm.fdm_adapter import CiscoFDMBundleParser, is_fdm_bundle
     from .fmc.fmc_adapter import CiscoFMCBundleParser, is_fmc_bundle
 
@@ -67,7 +67,7 @@ def extract_cisco_ftd_source(text: str, zone_mapping: dict[str, str] | None = No
                                          object_count_source=source_count(config), object_count_parsed=source_count(config),
                                          object_count_extracted=source_count(config))]
     else:
-        config = _text_source(text, zone_mapping)
+        config = _text_source(text)
         sections = account_cli_sections(text, config)
     config = _sanitize(deepcopy(config))
     project_collection_completeness(config, sections)
