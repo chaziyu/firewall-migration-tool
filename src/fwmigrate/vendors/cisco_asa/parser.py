@@ -2,31 +2,31 @@ from __future__ import annotations
 
 import ipaddress
 import re
-import shlex
+
 from datetime import date
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from fwmigrate.vendors.cisco_asa.acl_parser import KNOWN_PROTOCOLS, parse_acl_binding, parse_acl_line, parse_endpoint
-from fwmigrate.vendors.cisco_asa.model.acl import CiscoAccessRule, CiscoACLRemark
+from fwmigrate.vendors.cisco_asa.acl_parser import parse_acl_binding, parse_acl_line
+from fwmigrate.vendors.cisco_asa.model.acl import CiscoACLRemark
 from fwmigrate.vendors.cisco_asa.model.address import CiscoNetworkGroup, CiscoNetworkGroupMember, CiscoNetworkObject
-from fwmigrate.vendors.cisco_asa.model.base import CiscoSourceRecord
-from fwmigrate.vendors.cisco_asa.model.context import CiscoASAContext, CiscoAllocatedInterface, CiscoMultiContextSystem
-from fwmigrate.vendors.cisco_asa.model.dhcp import CiscoDHCPOption, CiscoDHCPRelay, CiscoDHCPRelayServer, CiscoDHCPServer
+
+from fwmigrate.vendors.cisco_asa.model.context import CiscoMultiContextSystem
+from fwmigrate.vendors.cisco_asa.model.dhcp import CiscoDHCPRelay, CiscoDHCPRelayServer, CiscoDHCPServer
 from fwmigrate.vendors.cisco_asa.model.diagnostics import CiscoDiagnostic
 from fwmigrate.vendors.cisco_asa.model.failover import CiscoFailoverConfig, CiscoFailoverGroup, CiscoFailoverInterfaceIP, CiscoFailoverMACAddress, CiscoFailoverSetting
 from fwmigrate.vendors.cisco_asa.model.groups import CiscoNamedGroup, CiscoNamedGroupMember
-from fwmigrate.vendors.cisco_asa.model.identity import CiscoAAAAccountingRule, CiscoAAAAuthenticationRule, CiscoAAAAuthorizationRule, CiscoAAARecord, CiscoAAAServerGroup, CiscoAAAServerHost, CiscoCommandPrivilege, CiscoLocalUser
-from fwmigrate.vendors.cisco_asa.model.interface import CiscoIPv6Address, CiscoInterface
-from fwmigrate.vendors.cisco_asa.model.management import CiscoConnectionControl, CiscoDNSServerGroup, CiscoDNSSettings, CiscoEnableCredential, CiscoHTTPServerConfig, CiscoICMPManagementRule, CiscoLoggingSetting, CiscoManagementAccessRule, CiscoManagementSetting, CiscoNTPServer, CiscoSNMPSetting, CiscoSystemSettings
-from fwmigrate.vendors.cisco_asa.model.mpf import CiscoClassMap, CiscoClassMapMatch, CiscoInspectAction, CiscoInspectionPolicySection, CiscoMPFConnectionAction, CiscoMPFPoliceAction, CiscoPolicyMap, CiscoPolicyMapClass, CiscoServicePolicy, CiscoTCPMap, CiscoTCPMapSetting
-from fwmigrate.vendors.cisco_asa.model.nat import CiscoNATRule
-from fwmigrate.vendors.cisco_asa.model.routing import CiscoPolicyRoutePathMonitor, CiscoRouteMap, CiscoRouteMapRule, CiscoSLAMonitor, CiscoStaticRoute, CiscoTrack
+
+
+from fwmigrate.vendors.cisco_asa.model.management import CiscoConnectionControl, CiscoDNSServerGroup, CiscoDNSSettings, CiscoHTTPServerConfig, CiscoSystemSettings
+from fwmigrate.vendors.cisco_asa.model.mpf import CiscoClassMap, CiscoMPFConnectionAction, CiscoMPFPoliceAction, CiscoPolicyMap, CiscoPolicyMapClass, CiscoServicePolicy, CiscoTCPMap
+
+
 from fwmigrate.vendors.cisco_asa.model.schedule import CiscoTimeRange, CiscoTimeRangeClause
-from fwmigrate.vendors.cisco_asa.model.service import CiscoNetworkServiceObject, CiscoPortSpec, CiscoServiceGroup, CiscoServiceGroupMember, CiscoServiceObject, CiscoServicePort
+from fwmigrate.vendors.cisco_asa.model.service import CiscoNetworkServiceObject, CiscoServiceGroup, CiscoServiceGroupMember, CiscoServiceObject
 from fwmigrate.vendors.cisco_asa.model.source import CiscoASAConfig
-from fwmigrate.vendors.cisco_asa.model.vpn import CiscoCryptoMap, CiscoGroupPolicy, CiscoIKEPolicy, CiscoIKEv2Proposal, CiscoIPsecProfile, CiscoIPsecTransformSet, CiscoTunnelGroup, CiscoTrustpointRecord, CiscoVPNAddressAssignment, CiscoVPNAddressPool, CiscoWebVPNConfig
+
 from fwmigrate.vendors.cisco_asa.model.zone import CiscoTrafficZone
-from fwmigrate.vendors.cisco_asa.net_utils import normalize_ipv4_network, parse_ipv4_netmask
+from fwmigrate.vendors.cisco_asa.net_utils import normalize_ipv4_network
 from fwmigrate.vendors.cisco_asa.service_parser import parse_service_clause
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 from .evaluators import _mark_explicit
@@ -39,41 +39,10 @@ from .evaluators.contexts import ContextsEvaluator
 from .evaluators.interfaces import InterfaceEvaluator, _parse_interface_header
 
 
-def mask_to_cidr(mask: str) -> Optional[int]:
-    """Backward-compatible strict mask helper. Invalid masks return ``None``."""
-    return parse_ipv4_netmask(mask)
 
 
-def _pbr_acl_match_evidence(acl_names: List[str], rules: Iterable[CiscoAccessRule]) -> List[Dict[str, Any]]:
-    evidence = []
-    for acl_name in acl_names:
-        for rule in rules:
-            if rule.acl_name != acl_name:
-                continue
-            endpoint = lambda item: item.raw if item else None
-            evidence.append({
-                "acl": acl_name,
-                "action": rule.action,
-                "protocol": rule.protocol,
-                "source": endpoint(rule.source_endpoint),
-                "destination": endpoint(rule.destination_endpoint),
-                "source_port": rule.source_port.raw if rule.source_port else None,
-                "destination_port": rule.destination_port.raw if rule.destination_port else None,
-            })
-    return evidence
 
 
-def _nat_port_range(value: Optional[str]) -> List[Dict[str, int]]:
-    if not value:
-        return []
-    try:
-        if "-" in value:
-            start, end = (int(part) for part in value.split("-", 1))
-        else:
-            start = end = int(value)
-        return [{"start": start, "end": end}]
-    except ValueError:
-        return []
 
 
 class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, NATEvaluator, IdentityEvaluator, VPNEvaluator, ContextsEvaluator):
@@ -145,11 +114,6 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
         if extraction_effect == "PARSE_ERROR":
             self.config.parse_errors.append(diagnostic.model_dump())
 
-    def _record_acl_consumer(self, acl_name: str, consumer_type: str, line_number: int, line: str) -> None:
-        # ACL consumers are relationship state. Source-native records already
-        # retain the ACL reference, so downstream relationship builders own
-        # resolution and consumer indexing.
-        return None
 
 
 
@@ -651,9 +615,7 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                     failover.source_attributes.setdefault("raw_commands", []).append(sanitize_raw_text(line))
                 i += 1
                 continue
-            if lower in {"failover", "no failover"} or lower.startswith(("dhcpd ", "dhcprelay ", "dns ", "domain-name ",
-                                 "ntp ", "timezone ", "ssh ", "http ", "telnet ",
-                                 "snmp-server ", "logging ", "management-access ",
+            if lower in {"failover", "no failover"} or lower.startswith(("dhcpd ", "dhcprelay ", "dns ", "timezone ",
                                  "failover ", "no failover", "context ", "admin-context ", "admin-context",
                                  "allocate-interface ", "allocate-interface", "config-url ", "config-url", "resource-class ", "resource-class", "threat-detection ", "conn ", "conn-",
                                  "embryonic-conn-", "per-client-",
@@ -685,19 +647,10 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                         self.config.dns_server_groups.append(record)
                     record.raw_lines.append(line)
                     record.source_attributes.setdefault("raw_commands", []).append(line)
-                elif lower.startswith("domain-name "):
-                    dns_settings = self._ensure_dns_settings()
-                    system_settings = self._ensure_system_settings()
-                    dns_settings.domain_name = line.split(maxsplit=1)[1]
-                    system_settings.domain_name = dns_settings.domain_name
-                    dns_settings.raw_lines.append(line)
-                    dns_settings.source_attributes.setdefault("raw_commands", []).append(line)
                 elif lower in {"failover", "no failover"} or lower.startswith("failover "):
                     self.config.failover_settings.append(CiscoFailoverSetting(name="failover", setting=line.split(maxsplit=1)[0], raw_lines=[line], source_attributes=attrs))
                 elif lower.startswith("context ") or lower == "admin-context" or lower in {"allocate-interface", "config-url", "resource-class"} or lower.startswith(("allocate-interface ", "config-url ", "admin-context ", "resource-class ")):
                     self._parse_context_command(line, line_number)
-                elif lower.startswith(("ssh ", "http ", "telnet ", "snmp-server ", "logging ", "management-access ", "domain-name ", "ntp ", "timezone ")):
-                    self.config.management_settings.append(CiscoManagementSetting(name=line.split()[0], setting=line.split()[0], raw_lines=[line], source_attributes=attrs))
                 else:
                     self.config.connection_controls.append(CiscoConnectionControl(name=line.split()[0], setting=line.split()[0], values=line.split()[1:], raw_lines=[line], source_attributes=attrs))
                 i += 1
@@ -1063,7 +1016,6 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                 binding = parse_acl_binding(line, line_number)
                 if binding:
                     self.config.acl_bindings.append(self._with_source_context(binding, line_number))
-                    self._record_acl_consumer(binding.acl_name, "access-group", line_number, line)
                 else:
                     self._record_diagnostic(line_number, line, "Malformed access-group binding", "access-group")
                 i += 1
@@ -1077,7 +1029,6 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
             consumer_match = next(((re.match(pattern, line, re.IGNORECASE), kind) for pattern, kind in consumer_patterns if re.match(pattern, line, re.IGNORECASE)), None)
             if consumer_match:
                 match_obj, kind = consumer_match
-                self._record_acl_consumer(match_obj.group(1), kind, line_number, line)
                 self._record_unsupported(line_number, line, f"{kind} ACL consumer is preserved as extract-only")
                 i += 1
                 continue
