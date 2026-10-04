@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from time import perf_counter
 
-from ..config import ExtractionConfig
 from ..model.source import FGConfig
 from ..nodes import FortiGateConfigTree
 from fwmigrate.source_reporting.metrics import SourceReportMetrics
@@ -40,7 +39,6 @@ from .common import CommandEvaluationCache, use_evaluation_cache
 def extract_fortigate_config(
     tree: FortiGateConfigTree,
     *,
-    config: ExtractionConfig,
     metrics: SourceReportMetrics | None = None,
 ) -> ExtractionResult:
     """

@@ -19,7 +19,6 @@ from openpyxl.utils import get_column_letter
 from fwmigrate.source_reporting import ExcelExportProfile
 from fwmigrate.source_reporting.metrics import ExcelExportMetrics
 
-from ..config import ExtractionConfig
 from ..derived import DerivedViews, build_derived_views
 from ..extraction.result import ExtractionResult
 from ..extraction.source_inventory import SourceObjectRecord
@@ -119,15 +118,12 @@ def export_excel(
     extracted: ExtractionResult,
     validation: ValidationResult,
     output: BinaryIO | Path | str,
-    config: ExtractionConfig | None = None,
     derived: DerivedViews | None = None,
     profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
     source_name: str | None = None,
     metrics: ExcelExportMetrics | None = None,
 ) -> None:
     """Write the FortiGate configuration report."""
-
-    del config
 
     profile = ExcelExportProfile(profile)
     derived = derived or build_derived_views(extracted.config)

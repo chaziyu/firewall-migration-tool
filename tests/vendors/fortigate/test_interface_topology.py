@@ -1,6 +1,5 @@
 from __future__ import annotations
 import unittest
-from fwmigrate.vendors.fortigate.config import ExtractionConfig
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
@@ -52,7 +51,6 @@ class InterfaceTopologyTest(unittest.TestCase):
     next
 end
 '''),
-            config=ExtractionConfig(),
         )
 
         self.assertEqual(len(extracted.config.interfaces), 1)
@@ -106,7 +104,6 @@ end
     def test_real_path_populates_interface_aggregate_columns(self):
         extracted = extract_fortigate_config(
             parse_fortigate_config(_CONFIG),
-            config=ExtractionConfig(),
         )
         derived = build_derived_views(extracted.config)
         by_name = {item.name: item for item in derived.topology.interfaces}

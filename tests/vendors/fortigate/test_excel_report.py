@@ -9,7 +9,6 @@ import unittest
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
-from fwmigrate.vendors.fortigate.config import ExtractionConfig
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export import export_excel
 from fwmigrate.vendors.fortigate.export.excel import (
@@ -211,7 +210,6 @@ class ExcelReportTest(unittest.TestCase):
     ):
         extracted = extract_fortigate_config(
             parse_fortigate_config(config_text),
-            config=ExtractionConfig(),
         )
         derived = build_derived_views(extracted.config)
         validation = validate_config(extracted.config, derived=derived)
@@ -335,7 +333,7 @@ end
             self._workbook(profile=ExcelExportProfile.FAST)
 
     def test_export_profiles_do_not_mutate_analysis(self):
-        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG), config=ExtractionConfig())
+        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG))
         derived = build_derived_views(extracted.config)
         validation = validate_config(extracted.config, derived=derived)
         before = deepcopy((extracted.config, extracted.source_objects, derived, validation))
@@ -352,7 +350,7 @@ end
                 assert (extracted.config, extracted.source_objects, derived, validation) == before
 
     def test_fast_export_metrics_are_value_free_and_split_build_from_save(self):
-        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG), config=ExtractionConfig())
+        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG))
         derived = build_derived_views(extracted.config)
         validation = validate_config(extracted.config, derived=derived)
         without_metrics = io.BytesIO()
@@ -402,7 +400,7 @@ end
     def test_fast_sheet_timing_starts_before_first_row_is_materialized(self):
         from unittest.mock import patch
 
-        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG), config=ExtractionConfig())
+        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG))
         derived = build_derived_views(extracted.config)
         validation = validate_config(extracted.config, derived=derived)
         context = _ExcelContext(
@@ -451,7 +449,7 @@ end
         self.assertEqual(1000.0, by_name["Addresses"]["duration_ms"])
 
     def test_model_rows_precompute_sheet_mapping_once(self):
-        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG), config=ExtractionConfig())
+        extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG))
         derived = build_derived_views(extracted.config)
         validation = validate_config(extracted.config, derived=derived)
         context = _ExcelContext(
@@ -745,7 +743,7 @@ end
             'set pppoe-username "source-user"',
             'set pppoe-username "source-user"\n        set pppoe-password "raw-interface-secret"',
         )
-        extracted = extract_fortigate_config(parse_fortigate_config(source), config=ExtractionConfig())
+        extracted = extract_fortigate_config(parse_fortigate_config(source))
         derived = build_derived_views(extracted.config)
         validation = validate_config(extracted.config, derived=derived)
         context = _ExcelContext(
@@ -969,7 +967,6 @@ end
 '''
         extracted = extract_fortigate_config(
             parse_fortigate_config(source),
-            config=ExtractionConfig(),
         )
         item = extracted.config.ipsec_phase1[0]
         self.assertEqual("2", item.ike_version)
@@ -1068,7 +1065,6 @@ end
 '''
         extracted = extract_fortigate_config(
             parse_fortigate_config(source),
-            config=ExtractionConfig(),
         )
         entry = extracted.config.ips_sensors[0].entries[0]
         self.assertEqual("2026-01-02 03:04:05", entry.last_modified)
@@ -1263,7 +1259,6 @@ end
         self.assertEqual("Yes", summary_values["IPv6 Explicit Configuration Present"])
         extracted = extract_fortigate_config(
             parse_fortigate_config(_SAMPLE_CONFIG),
-            config=ExtractionConfig(),
         )
         self.assertEqual(
             len(extracted.config.interfaces),
@@ -1408,7 +1403,6 @@ end
 
         extracted = extract_fortigate_config(
             parse_fortigate_config(_SAMPLE_CONFIG),
-            config=ExtractionConfig(),
         )
         self.assertEqual(
             sum(max(1, len(record.commands)) for record in extracted.source_objects),
