@@ -165,5 +165,15 @@ jobs:
         run: npm run build
       - name: Build Python sidecar
         run: python desktop/build_tauri_sidecar.py
+      - name: Check desktop version consistency
+        run: python scripts/check_desktop_release_version.py
+      - name: Test desktop frontend
+        working-directory: src/frontend
+        run: npm test
+      - name: Lint desktop frontend
+        working-directory: src/frontend
+        run: npm run lint
       - name: Check Tauri desktop shell
-        run: cargo check --manifest-path src/frontend/src-tauri/Cargo.toml
+        run: cargo check --locked --manifest-path src/frontend/src-tauri/Cargo.toml
+      - name: Test desktop update source guard
+        run: cargo test --locked --lib --manifest-path src/frontend/src-tauri/Cargo.toml

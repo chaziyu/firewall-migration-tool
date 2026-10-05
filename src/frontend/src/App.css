@@ -15,6 +15,9 @@
 .workflow-nav button:disabled { opacity: .5; }
 .nav-icon { width: 18px; height: 18px; flex: 0 0 auto; }
 .sidebar-foot { margin-top: auto; color: var(--sidebar-text); font-size: 12px; }
+.desktop-update { min-height: 0; overflow-y: auto; overflow-wrap: anywhere; }
+.desktop-update button { width: 100%; margin-bottom: 6px; }
+.update-notes { white-space: pre-wrap; max-height: 160px; overflow-y: auto; }
 .app-content { min-width: 0; }
 .page-header { max-width: 1510px; margin: 0 auto; padding: 37px 42px 28px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px; }
 .page-header h1 { margin: 0 0 6px; color: var(--text-heading); font: 700 clamp(26px, 2.5vw, 35px)/1.25 var(--font-display); letter-spacing: -1.4px; }

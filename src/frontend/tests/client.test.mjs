@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { apiFetch, apiUrl, postJson, RequestError } from '../src/api/client.ts'
+import { apiFetch, apiUrl, isDesktopRuntime, postJson, RequestError } from '../src/api/client.ts'
 
 for (const [path, result] of [
   ['/api/deploy', { failed_command_index: 2, failure_message: 'command 2 rejected', validation: { status: 'FAILED', response: 'Invalid zone trust' } }],
@@ -32,10 +32,12 @@ test('ordinary API errors and success keep their contract', async (context) => {
 
 test('API transport stays relative in web mode and uses authenticated loopback in desktop mode', async (context) => {
   delete globalThis.__FWMIGRATE_DESKTOP__
+  assert.equal(isDesktopRuntime(), false)
   assert.equal(apiUrl('/api/vendors'), '/api/vendors')
 
   context.after(() => { delete globalThis.__FWMIGRATE_DESKTOP__ })
   globalThis.__FWMIGRATE_DESKTOP__ = { apiBase: 'http://127.0.0.1:54321', token: 'desktop-secret' }
+  assert.equal(isDesktopRuntime(), true)
   assert.equal(apiUrl('/api/vendors'), 'http://127.0.0.1:54321/api/vendors')
 
   context.mock.method(globalThis, 'fetch', async (url, init) => {

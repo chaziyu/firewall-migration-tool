@@ -27,6 +27,10 @@ function desktopRuntime(): DesktopRuntime | null {
   return { apiBase: candidate.apiBase.replace(/\/$/, ''), token: candidate.token }
 }
 
+export function isDesktopRuntime(): boolean {
+  return desktopRuntime() !== null
+}
+
 export function apiUrl(path: string): string {
   const runtime = desktopRuntime()
   return runtime && path.startsWith('/') ? `${runtime.apiBase}${path}` : path
