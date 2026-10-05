@@ -757,9 +757,6 @@ class CiscoFMCBundleParser:
                 manual_rules_before_auto=before, auto_rules=auto_rules if "auto_rules" in policy else None,
                 manual_rules_after_auto=after, unclassified_manual_rules=unclassified))
 
-        def records(key, cls):
-            return [record(item, i, cls) for i, item in enumerate(_items(self.payload.get(key)), 1)]
-
         def object_records(key, cls):
             return [record(item, i, cls) for i, item in enumerate(objects.get(key, []), 1)]
 

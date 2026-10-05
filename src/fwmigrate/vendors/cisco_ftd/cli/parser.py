@@ -2,25 +2,18 @@ from __future__ import annotations
 
 import re
 import ipaddress
-from typing import Dict, Optional
-
 from ..model import (
     CiscoFTDConfig, CiscoFTDInterface, CiscoFTDIPv6Address,
     CiscoFTDManagementSetting, CiscoFTDStaticRoute,
 )
 
 
-FTD_TEXT_GENERATION_BLOCK_REASON = (
-    "FTD text input does not contain an authoritative managed NAT/policy representation"
-)
-
 
 class CiscoFTDParser:
     """Independent FTD management-source parser; never routes through ASA parsing."""
 
-    def __init__(self, content: str, zone_mapping: Optional[Dict[str, str]] = None):
+    def __init__(self, content: str):
         self.content = content
-        self.zone_mapping = zone_mapping or {}
         self.config = CiscoFTDConfig()
 
     def _parse_interface_block(self, lines: list[str], index: int) -> int:
@@ -208,11 +201,3 @@ class CiscoFTDParser:
             index += 1
         return self.config
 
-    @staticmethod
-    def _ipv4_interface(address: Optional[str], mask: Optional[str]) -> tuple[Optional[str], Optional[str]]:
-        if not address or not mask:
-            return None, None
-        try:
-            return str(ipaddress.IPv4Interface(f"{address}/{mask}")), None
-        except ValueError:
-            return None, f"Invalid management IPv4 address/netmask: {address} {mask}"

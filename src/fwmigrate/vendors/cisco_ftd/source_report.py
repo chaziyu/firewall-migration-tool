@@ -9,8 +9,8 @@ from ...source_reporting.options import ExcelExportProfile
 from .source_analysis import FTDSourceResult, extract_cisco_ftd_source as _analyze_ftd_source
 
 
-def extract_cisco_ftd_source(text: str, zone_mapping: dict[str, str] | None = None) -> FTDSourceResult:
-    return _analyze_ftd_source(text, zone_mapping)
+def extract_cisco_ftd_source(text: str) -> FTDSourceResult:
+    return _analyze_ftd_source(text)
 
 
 class CiscoFTDSourceReporter:
@@ -19,7 +19,7 @@ class CiscoFTDSourceReporter:
     supported_extensions = (".cfg", ".txt", ".conf", ".json")
 
     def analyze_source(self, source: str, **options: Any) -> FTDSourceResult:
-        return extract_cisco_ftd_source(source, zone_mapping=options.get("zone_mapping"))
+        return extract_cisco_ftd_source(source)
 
     def build_preview(self, analysis: FTDSourceResult, **options: Any) -> dict[str, Any]:
         from .web_report import build_ftd_preview
