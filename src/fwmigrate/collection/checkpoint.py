@@ -388,7 +388,7 @@ class CheckPointCollector:
                     "error": "Gaia command returned an error response.",
                 })
                 parts.append(CollectionPart(source_command, failure_status.value, False))
-                return False
+                return
             status = CPStatus.SUCCESS_WITH_DATA if safe_content.strip() else CPStatus.SUCCESS_EMPTY
             bundle.gaia_responses.append({
                 "command": source_command,
@@ -403,7 +403,7 @@ class CheckPointCollector:
             parts.append(CollectionPart(
                 source_command, status.value, True, 1 if safe_content.strip() else 0,
             ))
-            return True
+            return
         except Exception:
             bundle.gaia_responses.append({
                 "command": source_command,
@@ -416,7 +416,7 @@ class CheckPointCollector:
                 "error": "Gaia command collection failed.",
             })
             parts.append(CollectionPart(source_command, CPStatus.TRANSPORT_ERROR.value, False))
-            return False
+            return
 
 
 def _classify_gaia_output(content):
