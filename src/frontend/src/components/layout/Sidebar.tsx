@@ -1,4 +1,6 @@
 import type { WorkflowView } from '../../features/source/SourceConfiguration'
+import { isDesktopRuntime } from '../../api/client'
+import { UpdateControl } from '../../features/update/UpdateControl'
 
 const navigation: Array<{ id: WorkflowView; label: string }> = [
   { id: 'report', label: 'Configuration report' },
@@ -32,6 +34,7 @@ export function Sidebar({ view, onViewChange }: {
           onClick={() => onViewChange(item.id)}
         ><svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={navIcons[item.id]} /></svg><span>{item.label}</span></button>)}
       </nav>
+      {isDesktopRuntime() && <UpdateControl />}
     </aside>
   )
 }

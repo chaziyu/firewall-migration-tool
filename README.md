@@ -253,8 +253,7 @@ cd ../..
 python desktop/build_tauri_sidecar.py
 
 cd src/frontend
-cargo install tauri-cli --version "^2" --locked
-cargo tauri build
+npm run tauri -- build -- --locked
 ```
 
 Typical build outputs are under:
@@ -264,6 +263,56 @@ src/frontend/src-tauri/target/release/
 src/frontend/src-tauri/target/release/bundle/nsis/
 src/frontend/src-tauri/target/release/bundle/msi/
 ```
+
+### Desktop updates and releases
+
+Windows desktop users can use **Check for updates** in the sidebar. Updates show
+the version and release notes as text. **Download and install** is the explicit
+installation confirmation. Save work first: the passive Windows installer closes
+and restarts the application. Browser/Render builds have no updater controls.
+
+Only this repository's signed GitHub Releases are accepted. Invalid metadata,
+network errors and signature failures block installation. The endpoint is
+`https://github.com/chaziyu/firewall-migration-tool/releases/latest/download/latest.json`.
+An empty public key disables trusted installation until signing is configured.
+
+Generate the signing pair once **outside the repository**, from `src/frontend`:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.tauri" | Out-Null
+npm run tauri -- signer generate -w "$env:USERPROFILE\.tauri\fwmigrate.key"
+Get-Content "$env:USERPROFILE\.tauri\fwmigrate.key.pub"
+```
+
+In Command Prompt use `%USERPROFILE%` instead of `$env:USERPROFILE`.
+Copy only the `.pub` content to `plugins.updater.pubkey` in
+`src/frontend/src-tauri/tauri.conf.json`. Keep the private key and password in
+secure storage with a backup. Do not regenerate the key for subsequent releases:
+existing installations trust the original public key.
+
+Configure a protected GitHub environment named `desktop-release` with secrets
+`TAURI_SIGNING_PRIVATE_KEY` (private-key file contents) and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Restrict it to approved desktop tags and
+set required reviewers. Never put these secrets in ordinary CI or PR workflows.
+Updater signing is separate from Windows Authenticode publisher signing;
+Authenticode remains a separate production hardening task.
+
+Keep `pyproject.toml`, desktop `Cargo.toml` and `tauri.conf.json` versions equal.
+The frontend package version is not authoritative. Run
+`python scripts/check_desktop_release_version.py --tag desktop-v0.2.1`
+using the intended version, then push the matching `desktop-v<version>` tag.
+The release workflow builds both MSI and NSIS, signs updater artifacts and creates
+a **draft** release. NSIS is the canonical in-app updater; MSI remains available
+for manual enterprise deployment. Review installers, `.sig` files, `latest.json`
+and release notes, then manually publish. Drafts never reach the latest endpoint.
+Normal builds use no signing secrets; only the release configuration enables
+`createUpdaterArtifacts`.
+
+Before publishing, test a signed update from an older installed build, a tampered
+artifact, malformed metadata, missing signatures and a network failure. Confirm
+the restarted app runs the new version and the old sidecar exits. An older build
+without updater support needs one manual installation of the updater-enabled
+baseline. The implementation does not change the current release version.
 
 ## Usage
 

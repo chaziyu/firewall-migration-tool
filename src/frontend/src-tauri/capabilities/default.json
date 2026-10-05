@@ -3,5 +3,5 @@
   "identifier": "main-capability",
   "description": "Core permissions for the Firewall Migration Tool desktop window.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "updater:allow-download-and-install"]
 }
