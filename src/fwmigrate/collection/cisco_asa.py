@@ -101,7 +101,3 @@ class CiscoASACollector:
                                CollectionStatus.PARTIAL if incomplete else CollectionStatus.SUCCESS,
                                {"multi_context": multi_context}, tuple(parts), tuple(warnings))
 
-
-_collector = CiscoASACollector()
-test_connection = _collector.test_connection
-collect = _collector.collect
