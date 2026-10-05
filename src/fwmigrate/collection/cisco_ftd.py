@@ -71,8 +71,6 @@ class CiscoFTDCollector:
         "devicerecords": (("type",),),
         "accessrules": (("action",),),
         "intrusionrules": (("ruleId", "sid"),),
-        "staticroutes": (("selectedNetworks", "network", "destination"),
-                         ("gateway", "gatewayAddress", "interfaceName", "interface")),
         "ipv4staticroutes": (("selectedNetworks", "network", "destination"),
                              ("gateway", "gatewayAddress", "interfaceName", "interface")),
         "ipv6staticroutes": (("selectedNetworks", "network", "destination"),
@@ -168,7 +166,7 @@ class CiscoFTDCollector:
         if endpoint == "accesspolicies" and "/accessrules/" not in path and "/defaultactions/" not in path:
             return cls._detail_fields["accesspolicies"]
         return next((fields for name, fields in cls._detail_fields.items()
-                     if endpoint == name or endpoint.startswith(name + "/")), ())
+                     if endpoint == name), ())
 
     @classmethod
     def _needs_detail(cls, path, item):
