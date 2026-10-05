@@ -1,8 +1,7 @@
 """Vendor-native cisco_ftd nat models."""
 
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Any, List, Optional
 from .base import CiscoFTDReference, CiscoFTDSourceRecord
 
 
