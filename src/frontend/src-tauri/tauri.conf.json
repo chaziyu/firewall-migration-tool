@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Firewall Migration Tool",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "identifier": "com.firewallmigrationtool.desktop",
   "build": {
     "beforeBuildCommand": "npm run build",

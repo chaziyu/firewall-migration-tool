@@ -3,6 +3,11 @@ name: Desktop release
 on:
   push:
     tags: ["desktop-v*"]
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -12,7 +17,53 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    if: >-
+      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Validate version and create missing release tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(python scripts/check_desktop_release_version.py)
+          tag="desktop-v$version"
+          python scripts/check_desktop_release_version.py --tag "$tag"
+          if [ "$EVENT_NAME" != workflow_run ]; then
+            test "$PUSH_TAG" = "$tag"
+          elif git show-ref --verify --quiet "refs/tags/$tag"; then
+            echo "Version already tagged; skipping release."
+            exit 0
+          else
+            git tag "$tag"
+            git push origin "refs/tags/$tag"
+            gh workflow run desktop-release.yml --ref "$tag"
+            exit 0
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   release:
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
     runs-on: windows-latest
     timeout-minutes: 60
     environment: desktop-release
@@ -20,13 +71,15 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
       - name: Validate version, tag and public key
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: python scripts/check_desktop_release_version.py --tag "$env:RELEASE_TAG"
       - uses: actions/setup-node@v6
         with:
@@ -67,8 +120,8 @@ jobs:
           projectPath: src/frontend
           tauriScript: npm run tauri
           args: --config src-tauri/tauri.release.conf.json -- --locked
-          tagName: ${{ github.ref_name }}
-          releaseName: Desktop ${{ github.ref_name }}
+          tagName: ${{ needs.prepare.outputs.tag }}
+          releaseName: Desktop ${{ needs.prepare.outputs.tag }}
           releaseBody: Save your work before installing an update.
           releaseDraft: false
           prerelease: false
