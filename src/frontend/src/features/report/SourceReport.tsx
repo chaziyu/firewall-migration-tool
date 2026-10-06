@@ -184,11 +184,12 @@ function SourceRowsTable({ rows, columns, selected, hasSource, topology, loadMor
   </div>
 }
 
-export function SourceReport({ data, excelProfile, onExcelProfileChange, exporting, onExport }: {
+export function SourceReport({ data, excelProfile, onExcelProfileChange, exporting, exportStatus, onExport }: {
   data: SourcePreviewData
   excelProfile: 'fast' | 'full'
   onExcelProfileChange: (value: 'fast' | 'full') => void
   exporting: boolean
+  exportStatus: string
   onExport: () => void
 }) {
   const sectionsData = asRecord(data.sections)
@@ -279,6 +280,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
         </div>
       </div>
       {data.collection != null && <div className="report-count-note"><p>Collection: {String(asRecord(data.collection).status ?? 'Unknown')} · Method: {String(asRecord(data.collection).method ?? 'Not reported')}</p>{Array.isArray(asRecord(data.collection).warnings) && <ul>{(asRecord(data.collection).warnings as unknown[]).map((warning, index) => <li key={index}>{String(safeValue(warning))}</li>)}</ul>}</div>}
+      <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>
       <label className="report-section-select">Report section<select value={activeSection} onChange={(event) => changeSection(event.target.value)}>{reportTabs.map((name) => <option key={name}>{name}</option>)}</select></label>
       <nav className="report-tabs" role="tablist" aria-label="Report sections" onKeyDown={tabKeyboard}>
       {reportTabs.map((sectionLabel) => (

@@ -32,7 +32,7 @@ export function FileUpload({ file, onChange, accept, title = 'Drop your configur
 
   return (
     <div className="file-upload">
-      <label className="dropzone" htmlFor={inputId} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+      <button type="button" className="dropzone" disabled={disabled} onClick={() => input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
         event.preventDefault()
         selectFile(event.dataTransfer.files[0])
       }}>
@@ -40,11 +40,12 @@ export function FileUpload({ file, onChange, accept, title = 'Drop your configur
         <strong>{title}</strong>
         <span>or <span className="browse-link">browse files</span> on your computer</span>
         <small>{helpText ?? `Supports configuration files${accept ? ` (${accept.split(',').join(', ')})` : ''}`}</small>
-      </label>
+      </button>
       <input
         ref={input}
         id={inputId}
         type="file"
+        aria-label={title}
         accept={accept}
         disabled={disabled}
         className="visually-hidden"

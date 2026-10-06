@@ -35,6 +35,7 @@ export function SourceConfiguration({ view, onViewChange }: {
   const [targetDevice, setTargetDevice] = useState('')
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportStatus, setExportStatus] = useState('')
   const [excelProfile, setExcelProfile] = useState<'fast' | 'full'>('fast')
   const [ingestMode, setIngestMode] = useState<'config' | 'snapshot'>('config')
   const [error, setError] = useState<string | null>(null)
@@ -92,6 +93,7 @@ export function SourceConfiguration({ view, onViewChange }: {
   }
 
   function clearAnalysis() {
+    setExportStatus('')
     analysisRequest.current++
     void saveWorkspace({ deterministicDraft: null, artifact: null }).catch((cause) => setError(String(cause)))
     setLoading(false)
@@ -131,7 +133,9 @@ export function SourceConfiguration({ view, onViewChange }: {
 
   async function exportWorkbook() {
     if (!previewId) return
+    const request = analysisRequest.current
     setExporting(true)
+    setExportStatus('')
     setError(null)
     try {
       const blob = await downloadSourceWorkbook(vendor, preview!.source_evidence!, excelProfile)
@@ -141,6 +145,7 @@ export function SourceConfiguration({ view, onViewChange }: {
       link.download = `${vendor}-source-report.xlsx`
       link.click()
       URL.revokeObjectURL(url)
+      if (request === analysisRequest.current) setExportStatus(`Excel workbook ready. Download started: ${link.download}.`)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Workbook export failed')
     } finally {
@@ -196,10 +201,12 @@ export function SourceConfiguration({ view, onViewChange }: {
         excelProfile={excelProfile}
         onExcelProfileChange={(value) => setExcelProfile(value)}
         exporting={exporting}
+        exportStatus={exportStatus}
         onExport={() => void exportWorkbook()} />}
     </div>
 
     <div className="workflow-panel" hidden={view !== 'collect'}>
+      <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>
       {preview && <div className="report-actions"><p className="report-source-context">{selectedVendor?.display_name ?? vendor} · Live collection</p><label className="excel-profile">Excel profile<select value={excelProfile} onChange={(event) => setExcelProfile(event.target.value as 'fast' | 'full')}><option value="fast">FAST</option><option value="full">FULL</option></select></label><Button disabled={exporting || !previewId} onClick={() => void exportWorkbook()}>{exporting ? 'Preparing workbook…' : 'Export to Excel'}</Button></div>}
     </div>
 

@@ -57,7 +57,7 @@ jobs:
         run: python desktop/build_tauri_sidecar.py
       - name: Test desktop update source guard
         run: cargo test --locked --lib --manifest-path src/frontend/src-tauri/Cargo.toml
-      - name: Build signed installers and upload draft release
+      - name: Build signed installers and publish release
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,8 +69,8 @@ jobs:
           args: --config src-tauri/tauri.release.conf.json -- --locked
           tagName: ${{ github.ref_name }}
           releaseName: Desktop ${{ github.ref_name }}
-          releaseBody: Review installers, signatures and latest.json before publishing. Save your work before installing an update.
-          releaseDraft: true
+          releaseBody: Save your work before installing an update.
+          releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
           uploadUpdaterSignatures: true
