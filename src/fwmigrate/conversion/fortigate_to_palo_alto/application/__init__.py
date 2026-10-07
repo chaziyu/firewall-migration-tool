@@ -8,10 +8,12 @@ from .decision_documents import (
 )
 from .deployment_feedback import deployment_validation_feedback
 from .review import (
-    build_review_state,
-    evidence_summary,
+    InterfaceMappingConfirmationError,
     auto_review_results,
+    build_review_state,
+    confirm_interface_mappings,
     decision_evidence,
+    evidence_summary,
 )
 from .. import (
     PANAutomationMode,
@@ -24,6 +26,8 @@ from .. import (
     make_decision_key,
 )
 from ..automation import AutomationPolicy, run_automation_until_stable
+from ..design.deterministic import approve_draft, build_deterministic_draft, draft_context
+from ..pipeline import run_migration_pipeline
 from ..decision_propagation import (
     MigrationRuleType,
     apply_repeated_zone_action,
@@ -73,4 +77,6 @@ __all__ = [
     "discover_target_candidates", "suggest_from_target", "validate_against_target",
     "build_mapping_requirements", "build_review_context", "build_review_evidence",
     "build_review_workflow", "classify_auto_decisions", "build_recommendations",
+    "run_migration_pipeline", "build_deterministic_draft", "approve_draft",
+    "draft_context", "confirm_interface_mappings", "InterfaceMappingConfirmationError",
 ]
