@@ -21,7 +21,6 @@ from flask import Flask, Request as FlaskRequest, request, send_file, jsonify
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
 from fwmigrate.conversion import migration_planners
-from fwmigrate.conversion.fortigate_to_palo_alto import run_migration_pipeline
 from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     PANAutomationMode,
     PANDecisionMode,
@@ -69,12 +68,13 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     validate_target_plan,
     build_support_guidance,
     validate_plan,
+    run_migration_pipeline,
+    build_deterministic_draft,
+    approve_draft,
+    draft_context,
+    confirm_interface_mappings,
+    InterfaceMappingConfirmationError,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.application.review import (
-    confirm_interface_mappings, InterfaceMappingConfirmationError,
-)
-from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
-from fwmigrate.conversion.fortigate_to_palo_alto.artifact_status import classify_artifact_status
 from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession, PANSSHDeployer
 from fwmigrate.collection import CollectionStatus, source_collectors
 from fwmigrate.collection.builtin import register_builtin_collectors
@@ -84,9 +84,6 @@ from fwmigrate.web_support.reporting import _parse_bool
 from fwmigrate.web_api.source import register_source_routes
 from fwmigrate.web_support.request_source import analyze_request_source, _clone_preview, _require_complete_collection
 from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope, verify_artifact
-from fwmigrate.conversion.fortigate_to_palo_alto.design.deterministic import (
-    build_deterministic_draft, approve_draft, draft_context,
-)
 
 register_builtin_source_reporters()
 register_builtin_migration_planners()
