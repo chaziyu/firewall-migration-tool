@@ -2,33 +2,35 @@ import ast
 from pathlib import Path
 
 
-WEB_PATH = Path(__file__).parents[2] / "src" / "fwmigrate" / "web.py"
-PAIR_PACKAGE = "fwmigrate.conversion.fortigate_to_palo_alto."
-FORBIDDEN_MODULES = {
-    "auto_decisions",
-    "decision_propagation",
-    "requirements",
-    "target_candidates",
-    "target_validation",
-    "review_context",
-    "review_evidence",
-    "review_workflow",
-    "target_object_reuse",
-}
+ROOT = Path(__file__).parents[2]
+WEB_PATHS = (
+    ROOT / "src" / "fwmigrate" / "web.py",
+    *(ROOT / "src" / "fwmigrate" / "web_api").glob("*.py"),
+)
+PAIR_PACKAGE = "fwmigrate.conversion.fortigate_to_palo_alto"
+APPLICATION_FACADE = f"{PAIR_PACKAGE}.application"
+
+
+def _imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    imports = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module)
+        elif isinstance(node, ast.Import):
+            imports.update(alias.name for alias in node.names)
+    return imports
 
 
 def test_web_uses_pair_application_facade_for_migration_semantics():
-    tree = ast.parse(WEB_PATH.read_text(encoding="utf-8"))
-    imports = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            imports.append(node.module)
-        elif isinstance(node, ast.Import):
-            imports.extend(alias.name for alias in node.names)
-    direct_pair_modules = {
-        name.removeprefix(PAIR_PACKAGE).split(".", 1)[0]
-        for name in imports
-        if name and name.startswith(PAIR_PACKAGE)
-        and name != f"{PAIR_PACKAGE}application"
-    }
-    assert not (direct_pair_modules & FORBIDDEN_MODULES)
+    violations = {}
+    for path in WEB_PATHS:
+        pair_imports = {
+            name for name in _imports(path)
+            if name == PAIR_PACKAGE or name.startswith(f"{PAIR_PACKAGE}.")
+        }
+        forbidden = pair_imports - {APPLICATION_FACADE}
+        if forbidden:
+            violations[str(path.relative_to(ROOT))] = sorted(forbidden)
+
+    assert not violations, violations
