@@ -32,7 +32,7 @@ VendorConfig
 → DerivedViews
 → Pair-specific Requirements
 → Target Evidence / Engineer Decisions
-→ Deterministic Design Review
+→ Deterministic Design Session
 → MigrationPlan
 → Target Validation / Reuse Classification
 → Dependency-aware Render Disposition
@@ -156,6 +156,10 @@ migration planner contracts
 web orchestration
 ```
 
+The React frontend is a presentation and workflow client. Do not move vendor parsing, source semantics, migration planning, validation semantics, or target rendering into frontend code.
+
+The Tauri desktop shell owns native lifecycle, loopback-sidecar startup, and desktop transport controls. It must not duplicate Python domain logic.
+
 Vendor semantic models remain vendor-owned.
 
 Do not create shared semantic models for:
@@ -240,10 +244,11 @@ Use the canonical pair-specific package boundaries:
 
 ```text
 planning/
-rendering/
+design/
 review/
 target/
 recommendations/
+rendering/
 application/
 ```
 
@@ -427,9 +432,23 @@ Protect regressions in scope, ordering, references, topology, unsupported data, 
 Run applicable:
 
 ```text
+Python:
 python -m compileall -q src tests
 python -m pytest -q
+
+Frontend:
+cd src/frontend
+npm test
+npm run lint
+npm run build
+
+Desktop:
+cargo check --locked --manifest-path src/frontend/src-tauri/Cargo.toml
+cargo test --locked --lib --manifest-path src/frontend/src-tauri/Cargo.toml
+python scripts/check_desktop_release_version.py
 ```
+
+For Docker, release dependency, or packaging changes, run the corresponding build/smoke path or rely on CI when the local environment cannot reproduce it.
 
 Do not claim tests or CI passed unless they actually ran.
 
