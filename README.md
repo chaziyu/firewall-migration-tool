@@ -46,9 +46,10 @@ VendorConfig
 → DerivedViews
 → Pair-specific Requirements
 → Target Evidence / Engineer Decisions
-→ Deterministic Design Review
+→ Deterministic Design Session
 → Pair-specific MigrationPlan
-→ Target-aware Validation / Disposition
+→ Target Validation / Reuse Classification
+→ Dependency-aware CREATE / CONFIGURE / REUSE / BLOCK disposition
 → Deterministic Target Renderer
 ```
 
@@ -770,40 +771,32 @@ Configuration files, generated reports, and migration artifacts should still be 
 Key areas:
 
 ```text
-src/fwmigrate/
-├── collection/
-│   └── Vendor-native live source acquisition
+src/
+├── fwmigrate/
+│   ├── collection/       Vendor-native live source acquisition
+│   ├── extraction/       Shared extraction evidence and accounting utilities
+│   ├── source_reporting/ Source-report orchestration and presentation contracts
+│   ├── vendors/          Vendor-owned extraction and reporting implementations
+│   ├── conversion/       Pair-specific migration planning and rendering
+│   ├── deployment/       Reviewed target artifact deployment
+│   ├── web.py            Flask composition root and migration orchestration
+│   ├── web_api/          API route modules
+│   ├── web_support/      Web transport, reporting, frontend, and artifact helpers
+│   ├── desktop_server.py Loopback-only Tauri sidecar entry point
+│   └── main.py           CLI entry point
 │
-├── extraction/
-│   └── Shared extraction evidence and accounting utilities
-│
-├── source_reporting/
-│   └── Source-report orchestration and presentation contracts
-│
-├── vendors/
-│   └── Vendor-owned extraction and reporting implementations
-│
-├── conversion/
-│   └── Pair-specific migration planning and rendering
-│
-├── deployment/
-│   └── Reviewed target artifact deployment
-│
-├── web.py
-│   └── Flask composition root and migration orchestration
-│
-├── web_api/
-│   └── API route modules
-│
-├── web_support/
-│   └── Web transport, reporting, frontend, and artifact helpers
-│
-├── desktop_server.py
-│   └── Loopback-only Tauri sidecar entry point
-│
-└── main.py
-    └── CLI entry point
+└── frontend/
+    ├── src/               React presentation and workflow client
+    └── src-tauri/         Tauri desktop shell and local sidecar lifecycle
+
+desktop/                   Desktop sidecar build support
+requirements/              Reproducible Python build constraints
+scripts/                   Release and repository checks
 ```
+
+The React frontend is a presentation and workflow client. It must not become a vendor-semantics or migration-planning layer.
+
+The Tauri desktop shell owns the native window, local sidecar lifecycle, and desktop transport controls. Vendor semantics remain in the Python application packages.
 
 Vendor-specific logic belongs inside the corresponding vendor package.
 
@@ -859,11 +852,33 @@ Compile source and tests:
 python -m compileall -q src tests
 ```
 
-Run the test suite:
+Run the Python test suite:
 
 ```bash
 python -m pytest -q
 ```
+
+For frontend changes:
+
+```bash
+cd src/frontend
+npm ci
+npm test
+npm run lint
+npm run build
+```
+
+For desktop-shell changes:
+
+```bash
+cargo check --locked --manifest-path src/frontend/src-tauri/Cargo.toml
+cargo test --locked --lib --manifest-path src/frontend/src-tauri/Cargo.toml
+python scripts/check_desktop_release_version.py
+```
+
+For deployment/release dependency changes, also validate the constrained Python 3.12 dependency set used by Docker and desktop builds.
+
+Run only the checks relevant to the affected area locally, while CI remains the authoritative full repository matrix.
 
 Source-reporting path:
 
