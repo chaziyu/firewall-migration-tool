@@ -193,8 +193,9 @@ def register_deployment_routes(
                 'deployment_session_id': deployment_session_id,
                 'candidate_validated': succeeded,
             }), (200 if succeeded else 502)
-        except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+        except (ValueError, KeyError, TypeError):
+            _LOGGER.exception('Deployment request rejected due to invalid payload or state')
+            return jsonify({'success': False, 'error': 'Invalid deployment request'}), 400
 
     @app.route('/api/validate-candidate', methods=['POST'])
     @_candidate_operation
