@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "firewall-migration-tool"
 version = "0.2.1"
-description = "Multi-vendor firewall configuration extraction and reporting"
+description = "Vendor-native firewall reporting and pair-specific migration planning"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

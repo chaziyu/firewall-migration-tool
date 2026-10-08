@@ -76,11 +76,13 @@ def register_deployment_routes(
             try:
                 if request.path == '/api/deploy':
                     rendered = _request_artifact(payload)
+                    if rendered is None:
+                        raise ValueError('A current validated rendered migration is required')
                     if not rendered.commands:
-                        raise ValueError('The migration artifact contains no renderable commands')
+                        return jsonify({'success': False, 'error': 'The migration artifact contains no renderable commands'}), 400
                 options = _deployment_options(payload)
             except ValueError:
-                _LOGGER.warning('Invalid deployment request payload.', exc_info=True)
+                _LOGGER.warning('Invalid deployment request payload.')
                 return jsonify({'success': False, 'error': 'Invalid deployment request.'}), 400
             key = (options.host.casefold(), options.port)
             with coordination_lock:
