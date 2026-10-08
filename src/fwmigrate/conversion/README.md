@@ -14,7 +14,7 @@ Current flow:
 FortiGate VendorConfig / DerivedViews
 → Pair-specific Requirements
 → Target Evidence / Engineer Decisions
-→ Deterministic Design Review
+→ Deterministic Design Session
 → PANMigrationPlan
 → Target Validation / Object Reuse
 → Dependency-aware CREATE / CONFIGURE / REUSE / BLOCK disposition
