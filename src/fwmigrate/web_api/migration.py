@@ -516,7 +516,8 @@ def register_migration_routes(
                 document['draft_required'] = True
             return jsonify({'success': True, 'document': document})
         except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            _LOGGER.warning("Failed to export migration decisions due to invalid input.", exc_info=True)
+            return jsonify({'success': False, 'error': 'Invalid decision document payload'}), 400
 
     @app.route('/api/migration/decisions/import', methods=['POST'])
     def import_migration_decisions():
