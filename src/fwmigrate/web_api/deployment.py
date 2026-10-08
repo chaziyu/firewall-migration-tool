@@ -80,7 +80,7 @@ def register_deployment_routes(
                         raise ValueError('The migration artifact contains no renderable commands')
                 options = _deployment_options(payload)
             except ValueError:
-                _LOGGER.warning('Deployment request validation failed', exc_info=True)
+                _LOGGER.warning('Invalid deployment request payload.', exc_info=True)
                 return jsonify({'success': False, 'error': 'Invalid deployment request.'}), 400
             key = (options.host.casefold(), options.port)
             with coordination_lock:
@@ -193,10 +193,9 @@ def register_deployment_routes(
                 'deployment_session_id': deployment_session_id,
                 'candidate_validated': succeeded,
             }), (200 if succeeded else 502)
-        except (ValueError, KeyError, TypeError) as exc:
-            _LOGGER.warning('Deployment request rejected: %s', exc, exc_info=True)
-            error_message = str(exc) if isinstance(exc, _CandidateSessionError) else 'Invalid deployment request'
-            return jsonify({'success': False, 'error': error_message}), 400
+        except (ValueError, KeyError, TypeError):
+            _LOGGER.exception('Deployment request rejected due to invalid payload or state')
+            return jsonify({'success': False, 'error': 'Invalid deployment request'}), 400
 
     @app.route('/api/validate-candidate', methods=['POST'])
     @_candidate_operation
@@ -220,6 +219,8 @@ def register_deployment_routes(
                 'error': None if result.status == 'SUCCESS' else result.response or 'Candidate validation failed',
                 'result': asdict(result),
                 'deployment_session_id': session.session_id if result.status == 'SUCCESS' else None,
+                'validation_feedback': validation_feedback,
+            }), (200 if result.status == 'SUCCESS' else 502)
         except _CandidateSessionError as exc:
             return jsonify({
                 'success': False,
@@ -227,10 +228,8 @@ def register_deployment_routes(
                 'error_code': exc.code,
             }), 400
         except ValueError:
-            _LOGGER.info("Invalid candidate validation request")
+            _LOGGER.info('Invalid candidate validation request')
             return jsonify({'success': False, 'error': 'Invalid candidate validation request'}), 400
-        except ValueError as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
 
     @app.route('/api/commit', methods=['POST'])
     @_candidate_operation
