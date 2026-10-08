@@ -1,0 +1,14 @@
+# Temporary exceptions for Rust dependencies that are present only in the
+# Linux GTK3/WebKit dependency graph. Current desktop release artifacts are
+# Windows-only (MSI/NSIS). Re-evaluate when Tauri/Wry ships the GTK migration
+# or before the expiry date below.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+ignoreUntil = 2027-01-31
+reason = "glib 0.18.5 is transitive through the current Tauri/Wry Linux GTK3 stack; current release artifacts are Windows-only and upstream has not yet released the GTK migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+ignoreUntil = 2027-01-31
+reason = "proc-macro-error is an unmaintained informational advisory transitive through the current Linux GTK3 macros; no patched version exists and current release artifacts are Windows-only."
