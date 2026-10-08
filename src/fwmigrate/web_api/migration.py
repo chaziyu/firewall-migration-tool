@@ -477,7 +477,8 @@ def register_migration_routes(
                 'decision_document': build_decision_document(entry.source_digest, previous,
                     target_context.metadata if target_context else document.get('target_evidence'))})
         except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            _LOGGER.warning('Invalid migration rule request', exc_info=True)
+            return jsonify({'success': False, 'error': 'Invalid migration rule request'}), 400
         except Exception:
             _LOGGER.exception('Migration re-evaluation failed')
             return jsonify({'success': False, 'error': 'Migration re-evaluation failed'}), 500
