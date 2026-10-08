@@ -492,8 +492,11 @@ def register_migration_routes(
                 raise ValueError('Mapping YAML must contain an object')
             PANMigrationOptions(**mapping)
             return jsonify({'success': True, 'mapping': mapping})
-        except Exception as exc:
+        except (ValueError, TypeError, yaml.YAMLError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
+        except Exception:
+            _LOGGER.exception('Migration mapping import failed')
+            return jsonify({'success': False, 'error': 'Migration mapping import failed'}), 500
 
     @app.route('/api/migration/decisions/export', methods=['POST'])
     def export_migration_decisions():
