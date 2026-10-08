@@ -492,8 +492,9 @@ def register_migration_routes(
                 raise ValueError('Mapping YAML must contain an object')
             PANMigrationOptions(**mapping)
             return jsonify({'success': True, 'mapping': mapping})
-        except Exception as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+        except Exception:
+            _LOGGER.exception('Failed to import migration mapping')
+            return jsonify({'success': False, 'error': 'Invalid mapping payload'}), 400
 
     @app.route('/api/migration/decisions/export', methods=['POST'])
     def export_migration_decisions():
