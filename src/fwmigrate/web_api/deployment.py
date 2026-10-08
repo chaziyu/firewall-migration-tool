@@ -222,7 +222,8 @@ def register_deployment_routes(
                 'validation_feedback': validation_feedback,
             }), (200 if result.status == 'SUCCESS' else 502)
         except ValueError as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            _LOGGER.info("Invalid candidate validation request", exc_info=True)
+            return jsonify({'success': False, 'error': 'Invalid candidate validation request'}), 400
 
     @app.route('/api/commit', methods=['POST'])
     @_candidate_operation
