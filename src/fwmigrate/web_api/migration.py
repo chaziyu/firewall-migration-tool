@@ -226,8 +226,9 @@ def register_migration_routes(
             document['draft_required'] = True
             return jsonify({'success': True, 'approved_count': len(selected), 'decision_document': document,
                             'decisions': confirmed.to_dict()})
-        except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 409
+        except (ValueError, KeyError, TypeError):
+            _LOGGER.warning('Failed to approve migration design request', exc_info=True)
+            return jsonify({'success': False, 'error': 'Unable to approve migration design request'}), 409
 
 
     def _migration_review_response(entry, state):
