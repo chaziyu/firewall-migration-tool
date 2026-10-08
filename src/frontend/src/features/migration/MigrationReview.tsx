@@ -57,17 +57,23 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const [autoVerified, setAutoVerified] = useState(false)
   const [autoDerived, setAutoDerived] = useState(false)
   const {
-    requestVersion,
-    actionVersion,
     postJson,
     run,
     busy,
-    setActionBusy: setBusy,
     setReviewLoading,
     error,
     setError,
     status,
     setStatus,
+    beginReviewRequest,
+    finishReviewRequest,
+    invalidateReviewRequests,
+    reviewRequestIsCurrent,
+    currentReviewVersion,
+    beginStandaloneAction,
+    finishStandaloneAction,
+    actionIsCurrent,
+    invalidateActions,
   } = useMigrationReviewActivity({ source, targetSource, targetDevice })
 
   function setDrafts(value: SetStateAction<Record<string, string>>) {
@@ -92,9 +98,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   async function loadReview(document?: DecisionDocument, targetId = targetSource, device = targetDevice,
                             role = referenceRole, overrides = deterministicDraft?.context.overrides) {
     if (!previewId) return
-    const request = ++requestVersion.current
-    setReviewLoading(true)
-    setError('')
+    const request = beginReviewRequest()
     try {
       onDecisionDocument?.(null)
       setDeterministicDraft(null)
@@ -107,13 +111,13 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
         ...(targetId ? { target_source: targetId } : {}),
         ...(device ? { target_device: device } : {}),
       })
-      if (request !== requestVersion.current) return
+      if (!reviewRequestIsCurrent(request)) return
       setReview(result)
       setDeterministicDraft(result.draft)
       await saveWorkspace({ targetSource: targetId, targetDevice: result.target_device || device || '',
         referenceRole: role, decisionDocument: result.decision_document as unknown as MigrationDecisionDocument,
         deterministicDraft: result.draft })
-      if (request !== requestVersion.current) return
+      if (!reviewRequestIsCurrent(request)) return
       const currentGroupKey = selectedGroupKey || review?.review_groups.find((group) => group.queue === activeQueue)?.decision_keys[0]
       const selected = result.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
       const previousSelected = review?.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
@@ -132,11 +136,11 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       setBulkPreview([])
       setSelectedKeys([])
     } catch (cause) {
-      if (request !== requestVersion.current) return
+      if (!reviewRequestIsCurrent(request)) return
       setError(cause instanceof Error ? cause.message : 'Could not load migration review')
       throw cause
     } finally {
-      if (request === requestVersion.current) setReviewLoading(false)
+      finishReviewRequest(request)
     }
   }
 
@@ -148,10 +152,10 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     return () => {
       // Invalidate in-flight requests; this ref is a version counter, not a DOM node.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      requestVersion.current++
+      invalidateReviewRequests()
       // This is also a request version counter, not a DOM node.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      actionVersion.current++
+      invalidateActions()
     }
     // Reload only when the source preview changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -166,11 +170,12 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       return
     }
     // Synchronize a plan blocker navigation request with the server-owned queue.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveQueue(group.queue)
     setSearch('')
     setVdomFilter('all')
     setSelectedGroupKey(group.decision_keys[0])
-  }, [requestedDecision, review])
+  }, [requestedDecision, review, setStatus])
 
   useEffect(() => {
     if (!requestedDecision) return
@@ -192,44 +197,41 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   async function approveDesign(groups: string[]) {
     if (!deterministicDraft) return
-    const version = requestVersion.current
+    const version = currentReviewVersion()
     const result = await postJson<{ decision_document: DecisionDocument }>('/api/migration/design/approve', {
       decision_document: currentDocument(), draft: deterministicDraft, draft_digest: deterministicDraft.digest,
       reference_role: referenceRole, draft_overrides: deterministicDraft.context.overrides, selected_groups: groups,
     })
-    if (version !== requestVersion.current) return
+    if (!reviewRequestIsCurrent(version)) return
     await loadReview(result.decision_document)
   }
 
   async function uploadTarget(file: File | undefined) {
     if (!file) return
-    const version = ++actionVersion.current
-    requestVersion.current++
+    const version = beginStandaloneAction('Reading PAN-OS target XML…')
+    invalidateReviewRequests()
     setReviewLoading(false)
-    setError('')
-    setStatus('Reading PAN-OS target XML…')
-    setBusy(true)
     try {
       onDecisionDocument?.(null)
       const form = new FormData()
       form.append('source_vendor', 'palo_alto')
       form.append('file', file)
       const result = await postForm<SourcePreviewData>('/api/preview', form)
-      if (version !== actionVersion.current) return
+      if (!actionIsCurrent(version)) return
       if (!result.source_evidence) throw new Error('PAN-OS preview did not return source evidence')
       const nextTargetId = result.source_evidence
       setTargetSource(nextTargetId)
       await loadReview(review ? currentDocument() : undefined, nextTargetId, '')
-      if (version !== actionVersion.current) return
+      if (!actionIsCurrent(version)) return
       setTargetFilename(file.name)
       setReplaceTarget(false)
       setStatus('Target evidence loaded. Review each suggested mapping before confirming it.')
     } catch (cause) {
-      if (version !== actionVersion.current) return
+      if (!actionIsCurrent(version)) return
       setError(cause instanceof Error ? cause.message : 'Could not read target PAN-OS XML')
       setStatus('')
     } finally {
-      if (version === actionVersion.current) setBusy(false)
+      finishStandaloneAction(version)
     }
   }
 
