@@ -410,7 +410,7 @@ FortiGate
 → FGConfig / DerivedViews
 → requirements
 → target evidence / decisions
-→ deterministic design review
+→ deterministic design session
 → MigrationPlan
 → target validation / reuse classification
 → dependency-aware render disposition

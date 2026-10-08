@@ -58,6 +58,9 @@ from fwmigrate.web_support.request_source import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_SAFE_COLLECTION_ERROR = 'Migration requires a complete live collection; this source is PARTIAL or FAILED.'
+_SAFE_TARGET_SOURCE_ERROR = 'Vendor-native source evidence is required'
+_SAFE_DECISION_SOURCE_ERROR = 'Migration decisions belong to a different source configuration'
 
 
 @dataclass(frozen=True)
@@ -264,8 +267,14 @@ def register_migration_routes(
             state = _build_migration_review_state(entry, payload)
             return _migration_review_response(entry, state)
         except (ValueError, KeyError, TypeError) as exc:
-            _LOGGER.warning('Invalid migration requirements request', exc_info=True)
-            return jsonify({'success': False, 'error': 'Invalid migration requirements request'}), 400
+            _LOGGER.warning('Invalid migration requirements request')
+            message = 'Invalid migration requirements request'
+            if isinstance(exc, ValueError):
+                if str(exc) == _SAFE_COLLECTION_ERROR:
+                    message = _SAFE_COLLECTION_ERROR
+                elif str(exc) == _SAFE_TARGET_SOURCE_ERROR:
+                    message = _SAFE_TARGET_SOURCE_ERROR
+            return jsonify({'success': False, 'error': message}), 400
         except Exception:
             _LOGGER.exception('Migration requirements failed')
             return jsonify({'success': False, 'error': 'Migration requirements failed'}), 500
@@ -541,8 +550,11 @@ def register_migration_routes(
             return jsonify({'success': True, 'decision_document': document,
                             'decisions': decision_set.to_dict(), 'mapping': options_mapping(decision_set.to_options())})
         except (ValueError, KeyError, TypeError) as exc:
-            _LOGGER.exception('Failed to import migration decisions')
-            return jsonify({'success': False, 'error': 'Invalid decision document'}), 400
+            _LOGGER.warning('Invalid migration decisions import request')
+            message = ('Migration decisions belong to a different source configuration'
+                       if isinstance(exc, ValueError) and str(exc) == _SAFE_DECISION_SOURCE_ERROR
+                       else 'Invalid decision document')
+            return jsonify({'success': False, 'error': message}), 400
 
     @app.route('/api/migrate', methods=['POST'])
     def migrate():
@@ -749,9 +761,12 @@ def register_migration_routes(
                     'artifact', 'counts', 'render_summary', 'blocking_reasons',
                 )}
             return jsonify(response)
-        except (ValueError, KeyError, TypeError):
-            _LOGGER.exception('Migration request validation failed')
-            return jsonify({'success': False, 'error': 'Invalid migration request'}), 400
+        except (ValueError, KeyError, TypeError) as exc:
+            _LOGGER.warning('Migration request validation failed')
+            message = (_SAFE_COLLECTION_ERROR
+                       if isinstance(exc, ValueError) and str(exc) == _SAFE_COLLECTION_ERROR
+                       else 'Invalid migration request')
+            return jsonify({'success': False, 'error': message}), 400
 
     @app.route('/api/migration/bundle', methods=['POST'])
     def migration_bundle():
