@@ -134,15 +134,13 @@ def create_app(test_config=None):
         _LOGGER.warning('Temporary workspace signing key: signed artifacts expire on server restart')
     deployment_coordinator = DeploymentCoordinator()
 
+    @app.errorhandler(ValueError)
     def _invalid_request(error):
         return jsonify({'success': False, 'error': str(error)}), 400
 
     @app.errorhandler(ValidationError)
     def _invalid_model(_error):
         return jsonify({'success': False, 'error': 'Invalid configuration fields'}), 400
-
-    register_frontend_routes(app)
-    register_source_routes(app)
 
     register_frontend_routes(app)
     register_source_routes(app)
