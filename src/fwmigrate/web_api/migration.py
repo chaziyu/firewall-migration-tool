@@ -474,8 +474,9 @@ def register_migration_routes(
             return jsonify({'success': True, 're_evaluated_count': len(apply_to),
                 'auto_decisions': {key: results.get(key, {'status': 'MANUAL'}) for key in apply_to},
                 'decision_document': build_decision_document(entry.source_digest, previous,
-                    target_context.metadata if target_context else document.get('target_evidence'))})
-        except (ValueError, KeyError, TypeError) as exc:
+        except (ValueError, KeyError, TypeError):
+            _LOGGER.warning('Invalid migration rule request', exc_info=True)
+            return jsonify({'success': False, 'error': 'Invalid migration rule request'}), 400
             return jsonify({'success': False, 'error': str(exc)}), 400
         except Exception:
             _LOGGER.exception('Migration re-evaluation failed')
