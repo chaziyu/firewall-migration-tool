@@ -538,7 +538,8 @@ def register_migration_routes(
             return jsonify({'success': True, 'decision_document': document,
                             'decisions': decision_set.to_dict(), 'mapping': options_mapping(decision_set.to_options())})
         except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            _LOGGER.exception('Failed to import migration decisions')
+            return jsonify({'success': False, 'error': 'Invalid decision document'}), 400
 
     @app.route('/api/migrate', methods=['POST'])
     def migrate():
