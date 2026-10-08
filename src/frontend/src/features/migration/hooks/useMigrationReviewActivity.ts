@@ -54,17 +54,66 @@ export function useMigrationReviewActivity({
     }
   }
 
+  function beginReviewRequest() {
+    const version = ++requestVersion.current
+    setReviewLoading(true)
+    setError('')
+    return version
+  }
+
+  function finishReviewRequest(version: number) {
+    if (version === requestVersion.current) setReviewLoading(false)
+  }
+
+  function invalidateReviewRequests() {
+    requestVersion.current++
+  }
+
+  function reviewRequestIsCurrent(version: number) {
+    return version === requestVersion.current
+  }
+
+  function currentReviewVersion() {
+    return requestVersion.current
+  }
+
+  function beginStandaloneAction(statusText: string) {
+    const version = ++actionVersion.current
+    setActionBusy(true)
+    setError('')
+    setStatus(statusText)
+    return version
+  }
+
+  function finishStandaloneAction(version: number) {
+    if (version === actionVersion.current) setActionBusy(false)
+  }
+
+  function actionIsCurrent(version: number) {
+    return version === actionVersion.current
+  }
+
+  function invalidateActions() {
+    actionVersion.current++
+  }
+
   return {
-    requestVersion,
-    actionVersion,
     postJson,
     run,
     busy: actionBusy || reviewLoading,
-    setActionBusy,
     setReviewLoading,
     error,
     setError,
     status,
     setStatus,
+    beginReviewRequest,
+    finishReviewRequest,
+    invalidateReviewRequests,
+    reviewRequestIsCurrent,
+    currentReviewVersion,
+    beginStandaloneAction,
+    finishStandaloneAction,
+    actionIsCurrent,
+    invalidateActions,
   }
 }
