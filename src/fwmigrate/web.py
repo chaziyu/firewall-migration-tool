@@ -2,6 +2,7 @@ import os
 import sys
 import io
 import secrets
+import uuid
 import logging
 
 from pydantic import ValidationError
@@ -9,7 +10,10 @@ from flask import Flask, Request as FlaskRequest, jsonify, request
 
 from fwmigrate.collection.builtin import register_builtin_collectors
 from fwmigrate.collection.snapshot import MAX_BYTES
+from fwmigrate.conversion import migration_planners
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
+from fwmigrate.conversion.fortigate_to_palo_alto.application import classify_target_object_reuse
+from fwmigrate.deployment import PANSSHDeployer
 from fwmigrate.source_reporting import source_reporters
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.web_api.deployment import DeploymentCoordinator, register_deployment_routes
@@ -146,7 +150,18 @@ def create_app(test_config=None):
 
     register_frontend_routes(app)
     register_source_routes(app)
-    register_migration_routes(app, signing_key)
-    register_deployment_routes(app, signing_key, deployment_coordinator)
+    register_migration_routes(
+        app,
+        signing_key,
+        migration_planner_registry=migration_planners,
+        object_reuse_classifier=classify_target_object_reuse,
+        uuid_factory=uuid.uuid4,
+    )
+    register_deployment_routes(
+        app,
+        signing_key,
+        deployment_coordinator,
+        deployer_factory=lambda options: PANSSHDeployer(options),
+    )
 
     return app
