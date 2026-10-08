@@ -6,14 +6,12 @@ import io
 import json
 import logging
 import re
-import uuid
 import zipfile
 from dataclasses import dataclass, replace
 
 import yaml
 from flask import jsonify, request, send_file
 
-from fwmigrate.conversion import migration_planners
 from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     AutomationPolicy,
     InterfaceMappingConfirmationError,
@@ -31,8 +29,8 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     build_decision_set,
     build_deterministic_draft,
     build_mapping_requirements,
+    build_review_state,
     classify_auto_decisions,
-    classify_target_object_reuse,
     confirm_interface_mappings,
     confirm_mapping_decisions,
     decision_evidence as build_decision_evidence,
@@ -108,7 +106,14 @@ def _build_migration_review_state(entry, payload, apply_deterministic=False):
     return {'analysis': analysis, 'target_context': target_context, **state}
 
 
-def register_migration_routes(app, signing_key) -> None:
+def register_migration_routes(
+    app,
+    signing_key,
+    *,
+    migration_planner_registry,
+    object_reuse_classifier,
+    uuid_factory,
+) -> None:
     def _migration_source(payload):
         entry = analyze_request_source(payload, 'fortigate')
         _require_complete_collection(entry)
@@ -595,8 +600,8 @@ def register_migration_routes(app, signing_key) -> None:
                 target_evidence=target_context.metadata if target_context else None,
                 automation_mode=automation_mode,
                 source_digest=entry.source_digest,
-                planner=migration_planners.get(source_vendor, target_vendor),
-                target_object_reuse_classifier=classify_target_object_reuse,
+                planner=migration_planner_registry.get(source_vendor, target_vendor),
+                target_object_reuse_classifier=object_reuse_classifier,
                 approved_item_keys=set(design_approval['configuration']) if design_approval else None,
             )
             target_evidence_changed = target_evidence_changed or bool(result.invalidated_target_decisions)
@@ -632,7 +637,7 @@ def register_migration_routes(app, signing_key) -> None:
             if design_approval and not rendered.report['destination_verified']:
                 plan_status = 'PARTIAL'
                 rendered = replace(rendered, report={**rendered.report, 'plan_status': plan_status})
-            artifact_id = uuid.uuid4().hex
+            artifact_id = uuid_factory().hex
             artifact = sign_envelope({
                 'artifact_id': artifact_id, 'commands': list(rendered.commands),
                 'command_count': len(rendered.commands), 'command_sha256': rendered.report['command_sha256'],
