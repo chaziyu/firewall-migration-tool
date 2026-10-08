@@ -10,6 +10,7 @@ from flask import Flask, Request as FlaskRequest, jsonify, request
 from fwmigrate.collection.builtin import register_builtin_collectors
 from fwmigrate.collection.snapshot import MAX_BYTES
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
+from fwmigrate.source_reporting import source_reporters
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.web_api.deployment import DeploymentCoordinator, register_deployment_routes
 from fwmigrate.web_api.migration import register_migration_routes
