@@ -24,7 +24,7 @@ jobs:
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Check approved service credentials
         run: test -n "$SNYK_TOKEN"
       - uses: actions/setup-python@v7
