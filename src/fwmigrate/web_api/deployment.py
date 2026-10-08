@@ -80,7 +80,8 @@ def register_deployment_routes(
                         raise ValueError('The migration artifact contains no renderable commands')
                 options = _deployment_options(payload)
             except ValueError as exc:
-                return jsonify({'success': False, 'error': str(exc)}), 400
+                _LOGGER.warning('Deployment request validation failed', exc_info=True)
+                return jsonify({'success': False, 'error': 'Invalid deployment request.'}), 400
             key = (options.host.casefold(), options.port)
             with coordination_lock:
                 lock, users = target_locks.get(key, (threading.RLock(), 0))
