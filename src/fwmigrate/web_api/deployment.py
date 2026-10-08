@@ -79,8 +79,8 @@ def register_deployment_routes(
                     if not rendered.commands:
                         raise ValueError('The migration artifact contains no renderable commands')
                 options = _deployment_options(payload)
-            except ValueError as exc:
-                _LOGGER.warning('Invalid deployment request payload', exc_info=True)
+            except ValueError:
+                _LOGGER.warning('Invalid deployment request payload.', exc_info=True)
                 return jsonify({'success': False, 'error': 'Invalid deployment request.'}), 400
             key = (options.host.casefold(), options.port)
             with coordination_lock:
@@ -193,8 +193,8 @@ def register_deployment_routes(
                 'deployment_session_id': deployment_session_id,
                 'candidate_validated': succeeded,
             }), (200 if succeeded else 502)
-        except (ValueError, KeyError, TypeError) as exc:
-            _LOGGER.warning('Invalid deploy request payload', exc_info=True)
+        except (ValueError, KeyError, TypeError):
+            _LOGGER.exception('Deployment request rejected due to invalid payload or state')
             return jsonify({'success': False, 'error': 'Invalid deployment request'}), 400
 
     @app.route('/api/validate-candidate', methods=['POST'])
@@ -221,8 +221,14 @@ def register_deployment_routes(
                 'deployment_session_id': session.session_id if result.status == 'SUCCESS' else None,
                 'validation_feedback': validation_feedback,
             }), (200 if result.status == 'SUCCESS' else 502)
+        except _CandidateSessionError as exc:
+            return jsonify({
+                'success': False,
+                'error': _CandidateSessionError.MESSAGES[exc.code],
+                'error_code': exc.code,
+            }), 400
         except ValueError:
-            _LOGGER.info("Invalid candidate validation request", exc_info=True)
+            _LOGGER.info('Invalid candidate validation request')
             return jsonify({'success': False, 'error': 'Invalid candidate validation request'}), 400
 
     @app.route('/api/commit', methods=['POST'])

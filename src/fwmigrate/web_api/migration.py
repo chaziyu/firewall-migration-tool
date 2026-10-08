@@ -226,9 +226,9 @@ def register_migration_routes(
             document['draft_required'] = True
             return jsonify({'success': True, 'approved_count': len(selected), 'decision_document': document,
                             'decisions': confirmed.to_dict()})
-        except (ValueError, KeyError, TypeError):
-            _LOGGER.warning('Failed to approve migration design request', exc_info=True)
-            return jsonify({'success': False, 'error': 'Unable to approve migration design request'}), 409
+        except (ValueError, KeyError, TypeError) as exc:
+            _LOGGER.exception('Migration design approval failed: %s', exc)
+            return jsonify({'success': False, 'error': 'Invalid request or stale draft'}), 409
 
 
     def _migration_review_response(entry, state):
@@ -263,8 +263,8 @@ def register_migration_routes(
             entry = _migration_source(payload)
             state = _build_migration_review_state(entry, payload)
             return _migration_review_response(entry, state)
-        except (ValueError, KeyError, TypeError):
-            _LOGGER.exception('Invalid migration requirements request')
+        except (ValueError, KeyError, TypeError) as exc:
+            _LOGGER.warning('Invalid migration requirements request', exc_info=True)
             return jsonify({'success': False, 'error': 'Invalid migration requirements request'}), 400
         except Exception:
             _LOGGER.exception('Migration requirements failed')
@@ -476,8 +476,8 @@ def register_migration_routes(
                 'auto_decisions': {key: results.get(key, {'status': 'MANUAL'}) for key in apply_to},
                 'decision_document': build_decision_document(entry.source_digest, previous,
                     target_context.metadata if target_context else document.get('target_evidence'))})
-        except (ValueError, KeyError, TypeError) as exc:
-            _LOGGER.warning('Invalid migration rule request', exc_info=True)
+        except (ValueError, KeyError, TypeError):
+            _LOGGER.exception('Invalid migration rule request')
             return jsonify({'success': False, 'error': 'Invalid migration rule request'}), 400
         except Exception:
             _LOGGER.exception('Migration re-evaluation failed')
@@ -492,9 +492,12 @@ def register_migration_routes(
                 raise ValueError('Mapping YAML must contain an object')
             PANMigrationOptions(**mapping)
             return jsonify({'success': True, 'mapping': mapping})
+        except (ValueError, TypeError, yaml.YAMLError):
+            _LOGGER.warning('Invalid migration mapping payload')
+            return jsonify({'success': False, 'error': 'Invalid migration mapping payload'}), 400
         except Exception:
-            _LOGGER.exception('Failed to import migration mapping')
-            return jsonify({'success': False, 'error': 'Invalid mapping payload'}), 400
+            _LOGGER.exception('Migration mapping import failed')
+            return jsonify({'success': False, 'error': 'Migration mapping import failed'}), 500
 
     @app.route('/api/migration/decisions/export', methods=['POST'])
     def export_migration_decisions():
@@ -520,8 +523,8 @@ def register_migration_routes(
                 document['draft_required'] = True
             return jsonify({'success': True, 'document': document})
         except (ValueError, KeyError, TypeError) as exc:
-            _LOGGER.warning('Failed to export migration decisions due to invalid payload', exc_info=True)
-            return jsonify({'success': False, 'error': 'Invalid decision export payload.'}), 400
+            _LOGGER.warning("Failed to export migration decisions due to invalid input.", exc_info=True)
+            return jsonify({'success': False, 'error': 'Invalid decision document payload.'}), 400
 
     @app.route('/api/migration/decisions/import', methods=['POST'])
     def import_migration_decisions():
@@ -746,7 +749,7 @@ def register_migration_routes(
                     'artifact', 'counts', 'render_summary', 'blocking_reasons',
                 )}
             return jsonify(response)
-        except (ValueError, KeyError, TypeError) as exc:
+        except (ValueError, KeyError, TypeError):
             _LOGGER.exception('Migration request validation failed')
             return jsonify({'success': False, 'error': 'Invalid migration request'}), 400
 
