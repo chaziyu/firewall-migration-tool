@@ -34,6 +34,7 @@ class _MemoryOnlyUploadRequest(FlaskRequest):
     ):
         return io.BytesIO()
 
+
 def create_app(test_config=None):
     register_builtin_collectors()
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
