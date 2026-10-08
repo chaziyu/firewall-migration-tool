@@ -220,8 +220,15 @@ def register_deployment_routes(
                 'error': None if result.status == 'SUCCESS' else result.response or 'Candidate validation failed',
                 'result': asdict(result),
                 'deployment_session_id': session.session_id if result.status == 'SUCCESS' else None,
-                'validation_feedback': validation_feedback,
-            }), (200 if result.status == 'SUCCESS' else 502)
+        except _CandidateSessionError as exc:
+            return jsonify({
+                'success': False,
+                'error': _CandidateSessionError.MESSAGES[exc.code],
+                'error_code': exc.code,
+            }), 400
+        except ValueError:
+            _LOGGER.info("Invalid candidate validation request")
+            return jsonify({'success': False, 'error': 'Invalid candidate validation request'}), 400
         except ValueError as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
 
