@@ -16,7 +16,7 @@ from ..model import (
     CiscoFTDTimeRange, CiscoFTDRecurringTimeRangeEntry, CiscoFTDIntrusionPolicy, CiscoFTDIntrusionRuleGroup,
     CiscoFTDIntrusionRuleBehavior, CiscoFTDIntrusionRuleOverride,
     CiscoFTDFilePolicy, CiscoFTDFileRule, CiscoFTDDecryptionPolicy, CiscoFTDDecryptionRule,
-    CiscoFTDDNSPolicy, CiscoFTDDNSRule, CiscoFTDInterfaceSource,
+    CiscoFTDDNSPolicy, CiscoFTDDNSRule, CiscoFTDDeviceInterface, CiscoFTDInterfaceSource,
     CiscoFTDFMCUserRole, CiscoFTDFMCUser, CiscoFTDDHCPServer, CiscoFTDDHCPRelaySettings, CiscoFTDRealm,
     CiscoFTDNetworkAddressOverride, CiscoFTDAccessControlDefaultAction,
     CiscoFTDAccessPolicyInheritanceSettings, CiscoFTDPolicyAssignment,
