@@ -263,8 +263,9 @@ def register_migration_routes(
             entry = _migration_source(payload)
             state = _build_migration_review_state(entry, payload)
             return _migration_review_response(entry, state)
-        except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+        except (ValueError, KeyError, TypeError):
+            _LOGGER.warning('Invalid migration requirements request', exc_info=True)
+            return jsonify({'success': False, 'error': 'Invalid migration requirements request'}), 400
         except Exception:
             _LOGGER.exception('Migration requirements failed')
             return jsonify({'success': False, 'error': 'Migration requirements failed'}), 500
