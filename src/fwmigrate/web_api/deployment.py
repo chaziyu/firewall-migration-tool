@@ -12,7 +12,7 @@ from functools import wraps
 from flask import jsonify, request
 
 from fwmigrate.conversion.fortigate_to_palo_alto.application import deployment_validation_feedback
-from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession, PANSSHDeployer
+from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession
 from fwmigrate.web_support.artifact_signing import verify_artifact
 from fwmigrate.web_support.reporting import _parse_bool
 
@@ -47,7 +47,13 @@ class DeploymentCoordinator:
         self.lock = threading.RLock()
 
 
-def register_deployment_routes(app, signing_key, coordinator: DeploymentCoordinator) -> None:
+def register_deployment_routes(
+    app,
+    signing_key,
+    coordinator: DeploymentCoordinator,
+    *,
+    deployer_factory,
+) -> None:
     deployment_sessions = coordinator.sessions
     target_locks = coordinator.target_locks
     coordination_lock = coordinator.lock
@@ -157,7 +163,7 @@ def register_deployment_routes(app, signing_key, coordinator: DeploymentCoordina
             for session_id, session in tuple(deployment_sessions.items()):
                 if (session.host.casefold(), session.port) == (options.host.casefold(), options.port):
                     deployment_sessions.pop(session_id, None)
-            result = PANSSHDeployer(options).deploy(rendered)
+            result = deployer_factory(options).deploy(rendered)
             decision_document = payload['artifact']['decision_document']
             validation_feedback = deployment_validation_feedback(rendered, decision_document, result.validation)
             succeeded = (
@@ -195,7 +201,7 @@ def register_deployment_routes(app, signing_key, coordinator: DeploymentCoordina
         try:
             payload = request.get_json(silent=True) or {}
             session, rendered, options = _require_deployment_session(payload)
-            result = PANSSHDeployer(replace(options, validate=True)).validate()
+            result = deployer_factory(replace(options, validate=True)).validate()
             decision_document = payload['artifact']['decision_document']
             validation_feedback = deployment_validation_feedback(rendered, decision_document, result)
             if result.status == 'SUCCESS':
@@ -222,7 +228,7 @@ def register_deployment_routes(app, signing_key, coordinator: DeploymentCoordina
         try:
             payload = request.get_json(silent=True) or {}
             session, _rendered, options = _require_deployment_session(payload)
-            result = PANSSHDeployer(replace(options, validate=False)).commit()
+            result = deployer_factory(replace(options, validate=False)).commit()
             if result.status == 'SUCCESS':
                 deployment_sessions.pop(session.session_id, None)
             return jsonify({
