@@ -32,6 +32,8 @@ jobs:
           python -m pip install -e ".[dev]"
       - name: Compile source and tests
         run: python -m compileall -q src tests
+      - name: Lint Python
+        run: ruff check src tests
 
   test:
     runs-on: ubuntu-latest
@@ -39,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
