@@ -40,7 +40,7 @@ paramiko==5.0.0
 pefile==2024.8.26 ; sys_platform == "win32"
 pycparser==3.0
 pydantic==2.13.5
-pydantic-core==2.49.0
+pydantic-core==2.46.5
 pygments==2.21.0
 pyinstaller==6.22.3
 pyinstaller-hooks-contrib==2026.8
