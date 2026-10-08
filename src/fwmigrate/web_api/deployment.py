@@ -80,7 +80,8 @@ def register_deployment_routes(
                         raise ValueError('The migration artifact contains no renderable commands')
                 options = _deployment_options(payload)
             except ValueError as exc:
-                return jsonify({'success': False, 'error': str(exc)}), 400
+                _LOGGER.warning('Deployment request validation failed', exc_info=True)
+                return jsonify({'success': False, 'error': 'Invalid deployment request.'}), 400
             key = (options.host.casefold(), options.port)
             with coordination_lock:
                 lock, users = target_locks.get(key, (threading.RLock(), 0))
@@ -193,7 +194,8 @@ def register_deployment_routes(
                 'candidate_validated': succeeded,
             }), (200 if succeeded else 502)
         except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            _LOGGER.exception('Deploy request rejected due to invalid input or state: %s', exc)
+            return jsonify({'success': False, 'error': 'Invalid deployment request'}), 400
 
     @app.route('/api/validate-candidate', methods=['POST'])
     @_candidate_operation
@@ -219,8 +221,15 @@ def register_deployment_routes(
                 'deployment_session_id': session.session_id if result.status == 'SUCCESS' else None,
                 'validation_feedback': validation_feedback,
             }), (200 if result.status == 'SUCCESS' else 502)
-        except ValueError as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+        except _CandidateSessionError as exc:
+            return jsonify({
+                'success': False,
+                'error': _CandidateSessionError.MESSAGES[exc.code],
+                'error_code': exc.code,
+            }), 400
+        except ValueError:
+            _LOGGER.info("Invalid candidate validation request", exc_info=True)
+            return jsonify({'success': False, 'error': 'Invalid candidate validation request'}), 400
 
     @app.route('/api/commit', methods=['POST'])
     @_candidate_operation
