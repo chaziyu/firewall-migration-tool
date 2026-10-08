@@ -213,9 +213,15 @@ requirements/constraints-python312.txt
 
 src/frontend/package-lock.json
 → resolved frontend dependency graph
+
+src/frontend/src-tauri/Cargo.lock
+→ resolved Rust/Tauri dependency graph
+
+rust-toolchain.toml
+→ pinned Rust compiler toolchain for CI and desktop builds
 ```
 
-The Python constraints file is used only by artifact-producing Python 3.12 paths. The Python 3.11/3.12/3.13 compatibility test matrix continues to install from the declared ranges so supported-version compatibility is still exercised.
+The Python constraints file is used only by artifact-producing Python 3.12 paths. The Python 3.11/3.12/3.13/3.14 compatibility test matrix continues to install from the declared ranges so supported-version compatibility is still exercised.
 
 For a reproducible production-style install:
 
@@ -779,8 +785,8 @@ src/
 │   ├── vendors/          Vendor-owned extraction and reporting implementations
 │   ├── conversion/       Pair-specific migration planning and rendering
 │   ├── deployment/       Reviewed target artifact deployment
-│   ├── web.py            Flask composition root and migration orchestration
-│   ├── web_api/          API route modules
+│   ├── web.py            Flask composition, auth, security, and route registration
+│   ├── web_api/          Source, migration, and deployment HTTP route modules
 │   ├── web_support/      Web transport, reporting, frontend, and artifact helpers
 │   ├── desktop_server.py Loopback-only Tauri sidecar entry point
 │   └── main.py           CLI entry point
