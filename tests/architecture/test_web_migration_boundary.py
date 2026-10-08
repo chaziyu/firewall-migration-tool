@@ -39,8 +39,12 @@ def test_web_uses_pair_application_facade_for_migration_semantics():
 def test_web_composition_root_delegates_migration_and_deployment_routes():
     source = (ROOT / "src" / "fwmigrate" / "web.py").read_text(encoding="utf-8")
 
-    assert "register_migration_routes(app, signing_key)" in source
-    assert "register_deployment_routes(app, signing_key, deployment_coordinator)" in source
+    assert "register_migration_routes(" in source
+    assert "migration_planner_registry=migration_planners" in source
+    assert "object_reuse_classifier=classify_target_object_reuse" in source
+    assert "register_deployment_routes(" in source
+    assert "deployment_coordinator" in source
+    assert "deployer_factory=lambda options: PANSSHDeployer(options)" in source
     assert "@app.route('/api/migration/" not in source
     assert "@app.route('/api/deploy'" not in source
     assert "@app.route('/api/validate-candidate'" not in source
