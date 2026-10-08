@@ -748,8 +748,9 @@ def register_migration_routes(
                     'artifact', 'counts', 'render_summary', 'blocking_reasons',
                 )}
             return jsonify(response)
-        except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+        except (ValueError, KeyError, TypeError):
+            _LOGGER.exception('Migration request validation failed')
+            return jsonify({'success': False, 'error': 'Invalid migration request'}), 400
 
     @app.route('/api/migration/bundle', methods=['POST'])
     def migration_bundle():
