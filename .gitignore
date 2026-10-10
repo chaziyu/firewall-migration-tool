@@ -22,8 +22,6 @@ htmlcov/
 build/
 dist/
 pip-wheel-metadata/
-/src/fwmigrate/ai_runtime/windows-x64/*.exe
-/src/fwmigrate/ai_runtime/windows-x64/*.dll
 
 # Local secrets and customer data: never commit actual configurations
 .env

@@ -4,6 +4,7 @@ import { ErrorBanner } from './components/common/ErrorBanner'
 import './App.css'
 import { AppLayout } from './components/layout/AppLayout'
 import { SourceConfiguration, type WorkflowView } from './features/source/SourceConfiguration'
+import { waitForDesktopRuntime } from './api/client'
 
 const pages: Record<WorkflowView, { title: string; description: string }> = {
   report: { title: 'Configuration Report', description: 'Review reported source state, validation findings, and inventory.' },
@@ -17,6 +18,18 @@ export default function App() {
   const [workspace, setWorkspace] = useState(0)
   const [resetting, setResetting] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  const [backendReady, setBackendReady] = useState(false)
+  const [startupError, setStartupError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    waitForDesktopRuntime(controller.signal).then(() => {
+      if (!controller.signal.aborted) setBackendReady(true)
+    }).catch(() => {
+      if (!controller.signal.aborted) setStartupError('The desktop backend could not start. Close the app and try again.')
+    })
+    return () => controller.abort()
+  }, [])
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try { return localStorage.getItem('fwmigrate-theme') === 'dark' ? 'dark' : 'light' }
     catch { return 'light' }
@@ -55,7 +68,8 @@ export default function App() {
       onToggleTheme={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
     >
       {workspaceError && <ErrorBanner message={workspaceError} />}
-      {!resetting && <SourceConfiguration key={workspace} view={view} onViewChange={setView} />}
+      {startupError ? <ErrorBanner message={startupError} /> : !backendReady && <p role="status" aria-live="polite">Starting…</p>}
+      {backendReady && !resetting && <SourceConfiguration key={workspace} view={view} onViewChange={setView} />}
     </AppLayout>
   )
 }

@@ -1,5 +1,7 @@
 """Dispatch for vendor-native source reporters."""
 
+from collections.abc import Callable
+
 from fwmigrate.source_reporting.contracts import SourceReporter
 
 
@@ -25,8 +27,9 @@ class SourceReportRegistry:
 
     def __init__(self) -> None:
         self._reporters: dict[str, SourceReporter] = {}
+        self._loaders: dict[str, Callable[[], SourceReporter]] = {}
 
-    def register(self, reporter: SourceReporter) -> SourceReporter:
+    def register(self, reporter: SourceReporter, *, loader: Callable[[], SourceReporter] | None = None) -> SourceReporter:
         vendor_id = _vendor_id(reporter.vendor_id)
         extensions = tuple(_extension(value) for value in reporter.supported_extensions)
         if not extensions:
@@ -39,22 +42,26 @@ class SourceReportRegistry:
                 f"Source reporter '{vendor_id}' is already registered"
             )
         self._reporters[vendor_id] = reporter
+        if loader is not None:
+            self._loaders[vendor_id] = loader
         return reporter
 
     def get(self, vendor_id: str) -> SourceReporter:
         normalized = _vendor_id(vendor_id)
         try:
-            return self._reporters[normalized]
+            reporter = self._reporters[normalized]
         except KeyError as exc:
             raise KeyError(
                 f"Source reporter '{vendor_id}' is not registered. "
                 f"Available: {list(self._reporters)}"
             ) from exc
+        loader = self._loaders.get(normalized)
+        return loader() if loader is not None else reporter
 
     def for_extension(self, extension: str) -> tuple[SourceReporter, ...]:
         normalized = _extension(extension)
         return tuple(
-            reporter
+            self.get(reporter.vendor_id)
             for reporter in self._reporters.values()
             if normalized in {_extension(value) for value in reporter.supported_extensions}
         )

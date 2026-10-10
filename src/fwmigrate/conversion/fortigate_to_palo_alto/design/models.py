@@ -80,35 +80,6 @@ class PANDecisionGraph:
                 blocked.add(key)
         return tuple(output)
 
-    def ready_proposed_decision_keys(self, proposed_design, *, conflicted: tuple[str, ...] = ()) -> tuple[str, ...]:
-        """Return pending decisions unlocked by authoritative or valid proposed values."""
-        decisions = proposed_design.authoritative_decisions
-        by_key = {item.key: item for item in decisions.decisions}
-        proposals = proposed_design.proposals_by_decision_key
-        settled = set(proposals)
-        blocked = set(conflicted)
-        resolved = {
-            item.key for item in decisions.decisions
-            if item.mode is PANDecisionMode.AUTO
-            or item.review_state is PANDecisionReviewState.CONFIRMED
-        }
-        resolved.update(
-            key for key, item in proposals.items()
-            if item.validation_status == "VALID" and item.action.value == "USE_EXISTING"
-        )
-        output = []
-        for key in self.topological_order():
-            decision = by_key[key]
-            if (decision.mode is PANDecisionMode.UNSUPPORTED or key in blocked
-                    or key in resolved or key in settled):
-                continue
-            dependencies = next(item.depends_on for item in self.dependencies if item.decision_key == key)
-            if not (set(dependencies) & blocked) and set(dependencies) <= resolved:
-                output.append(key)
-            else:
-                blocked.add(key)
-        return tuple(output)
-
     def to_dict(self) -> dict:
         return {
             "dependencies": [

@@ -1,4 +1,3 @@
-use std::io;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -15,6 +14,32 @@ const READY_PREFIX: &str = "FWMIGRATE_DESKTOP_READY ";
 struct DesktopSidecar {
     child: Mutex<Option<CommandChild>>,
     shutting_down: Arc<AtomicBool>,
+    readiness: Mutex<Result<Option<u16>, String>>,
+    started_at: std::time::Instant,
+    token: String,
+}
+
+#[tauri::command]
+fn desktop_runtime_status(webview: tauri::Webview) -> Result<Option<serde_json::Value>, String> {
+    if webview.label() != "main" {
+        return Err("Desktop runtime is unavailable".into());
+    }
+    let state = webview.state::<DesktopSidecar>();
+    let mut readiness = state
+        .readiness
+        .lock()
+        .map_err(|_| "Desktop startup state unavailable")?;
+    if matches!(*readiness, Ok(None)) && state.started_at.elapsed().as_secs() >= 60 {
+        *readiness = Err("Desktop backend startup timed out".into());
+        stop_sidecar(webview.app_handle());
+    }
+    match readiness.as_ref() {
+        Ok(Some(port)) => Ok(Some(serde_json::json!({
+            "apiBase": format!("http://127.0.0.1:{port}"), "token": state.token,
+        }))),
+        Ok(None) => Ok(None),
+        Err(error) => Err(error.clone()),
+    }
 }
 
 fn stop_sidecar(handle: &tauri::AppHandle) {
@@ -25,6 +50,20 @@ fn stop_sidecar(handle: &tauri::AppHandle) {
                 let _ = child.kill();
             }
         }
+    }
+}
+
+fn fail_sidecar(handle: &tauri::AppHandle) {
+    let state = handle.state::<DesktopSidecar>();
+    let was_ready = {
+        let mut readiness = state.readiness.lock().unwrap();
+        let was_ready = matches!(*readiness, Ok(Some(_)));
+        *readiness = Err("Desktop backend could not start or disconnected".into());
+        was_ready
+    };
+    stop_sidecar(handle);
+    if was_ready {
+        handle.exit(1);
     }
 }
 
@@ -94,6 +133,21 @@ mod tests {
     use super::valid_update_source;
 
     #[test]
+    fn readiness_accepts_only_nonzero_port_markers() {
+        assert_eq!(
+            super::parse_ready_port(b"FWMIGRATE_DESKTOP_READY 12345\n"),
+            Some(12345)
+        );
+        for line in [
+            b"FWMIGRATE_DESKTOP_READY 0".as_slice(),
+            b"FWMIGRATE_DESKTOP_READY 65536",
+            b"other 12345",
+        ] {
+            assert_eq!(super::parse_ready_port(line), None);
+        }
+    }
+
+    #[test]
     fn updater_accepts_only_matching_signed_github_release_assets() {
         let source = "https://github.com/chaziyu/firewall-migration-tool/releases/download/desktop-v0.2.1/tool-setup.exe";
         let url = tauri::Url::parse(source).unwrap();
@@ -126,94 +180,90 @@ fn parse_ready_port(line: &[u8]) -> Option<u16> {
     text.trim()
         .strip_prefix(READY_PREFIX)
         .and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port != 0)
 }
 
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![check_desktop_update])
+        .invoke_handler(tauri::generate_handler![
+            check_desktop_update,
+            desktop_runtime_status
+        ])
         .setup(|app| {
             let token = desktop_token();
-            let command = app
-                .shell()
-                .sidecar("fwmigrate-backend")?
-                .args(["--port", "0", "--token", token.as_str()]);
-            let (mut rx, child) = command.spawn()?;
-
-            let port = tauri::async_runtime::block_on(async {
-                loop {
-                    match rx.recv().await {
-                        Some(CommandEvent::Stdout(line)) => {
-                            if let Some(port) = parse_ready_port(&line) {
-                                break Ok(port);
-                            }
-                        }
-                        Some(CommandEvent::Stderr(line)) => {
-                            eprintln!("desktop sidecar: {}", String::from_utf8_lossy(&line));
-                        }
-                        Some(CommandEvent::Error(error)) => {
-                            break Err(io::Error::other(format!(
-                                "desktop sidecar startup error: {error}"
-                            )));
-                        }
-                        Some(CommandEvent::Terminated(status)) => {
-                            break Err(io::Error::other(format!(
-                                "desktop sidecar exited before ready: {status:?}"
-                            )));
-                        }
-                        Some(_) => {}
-                        None => {
-                            break Err(io::Error::other(
-                                "desktop sidecar closed output before reporting readiness",
-                            ));
-                        }
-                    }
-                }
-            })?;
-
             let shutting_down = Arc::new(AtomicBool::new(false));
+            app.manage(DesktopSidecar {
+                child: Mutex::new(None),
+                shutting_down: Arc::clone(&shutting_down),
+                readiness: Mutex::new(Ok(None)),
+                started_at: std::time::Instant::now(),
+                token: token.clone(),
+            });
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                .title("Firewall Migration Tool")
+                .inner_size(1360.0, 880.0)
+                .min_inner_size(960.0, 640.0)
+                .initialization_script(
+                    "window.__FWMIGRATE_DESKTOP__ = Object.freeze({ starting: true });",
+                )
+                .build()?;
+            let spawned = app
+                .shell()
+                .sidecar("fwmigrate-backend")
+                .and_then(|command| {
+                    command
+                        .args(["--port", "0", "--token", token.as_str()])
+                        .spawn()
+                });
+            let (mut rx, child) = match spawned {
+                Ok(child) => child,
+                Err(_) => {
+                    *app.state::<DesktopSidecar>().readiness.lock().unwrap() =
+                        Err("Desktop backend could not start".into());
+                    return Ok(());
+                }
+            };
+            *app.state::<DesktopSidecar>().child.lock().unwrap() = Some(child);
             let monitor_shutdown = Arc::clone(&shutting_down);
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(event) = rx.recv().await {
                     match event {
+                        CommandEvent::Stdout(line) => {
+                            if let Some(port) = parse_ready_port(&line) {
+                                let state = handle.state::<DesktopSidecar>();
+                                let mut readiness = state.readiness.lock().unwrap();
+                                if matches!(*readiness, Ok(None)) {
+                                    *readiness = Ok(Some(port));
+                                }
+                            }
+                        }
                         CommandEvent::Stderr(line) => {
                             eprintln!("desktop sidecar: {}", String::from_utf8_lossy(&line));
                         }
                         CommandEvent::Error(error) => {
                             eprintln!("desktop sidecar error: {error}");
                             if !monitor_shutdown.load(Ordering::Relaxed) {
-                                handle.exit(1);
+                                fail_sidecar(&handle);
                             }
                             break;
                         }
                         CommandEvent::Terminated(status) => {
                             eprintln!("desktop sidecar terminated: {status:?}");
                             if !monitor_shutdown.load(Ordering::Relaxed) {
-                                handle.exit(1);
+                                fail_sidecar(&handle);
                             }
                             break;
                         }
                         _ => {}
                     }
                 }
+                if !monitor_shutdown.load(Ordering::Relaxed) {
+                    fail_sidecar(&handle);
+                }
             });
-
-            app.manage(DesktopSidecar {
-                child: Mutex::new(Some(child)),
-                shutting_down,
-            });
-
-            let init_script = format!(
-                r#"window.__FWMIGRATE_DESKTOP__ = Object.freeze({{ apiBase: "http://127.0.0.1:{port}", token: "{token}" }});"#
-            );
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("Firewall Migration Tool")
-                .inner_size(1360.0, 880.0)
-                .min_inner_size(960.0, 640.0)
-                .initialization_script(init_script)
-                .build()?;
 
             Ok(())
         })

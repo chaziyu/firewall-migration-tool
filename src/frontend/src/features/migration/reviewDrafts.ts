@@ -58,7 +58,7 @@ export function candidateLabel(candidate: Candidate) {
   return candidate.supporting_evidence?.some((fact) => !['INTERFACE_FAMILY_MATCH', 'physical interface family'].includes(fact)) ? 'Possible match' : 'Available interface'
 }
 
-export function reconcileReviewDrafts(current: Record<string, string>, previous: Decision[], next: Decision[], contextChanged: boolean, candidates: Record<string, Candidate[]> = {}) {
+export function reconcileReviewDrafts(current: Record<string, string>, previous: Decision[], next: Decision[], contextChanged: boolean, candidates: Record<string, Candidate[]> = {}, proposals: Record<string, string | null> = {}, previousProposals: Record<string, string | null> = {}) {
   const previousByKey = new Map(previous.map((item) => [item.key, item]))
   return Object.fromEntries(next.map((item) => {
     const old = previousByKey.get(item.key)
@@ -67,7 +67,8 @@ export function reconcileReviewDrafts(current: Record<string, string>, previous:
     const options = candidates[item.key] ?? []
     const candidate = item.source_kind === 'interface' && item.target_field === 'target_interface'
       && options.length === 1 && options[0].available !== false && !options[0].contested ? options[0].value : ''
-    return [item.key, !contextChanged && unchanged && current[item.key] !== undefined ? current[item.key] : item.value ?? item.suggested_value ?? candidate]
+    const proposalChanged = proposals[item.key] !== previousProposals[item.key]
+    return [item.key, !contextChanged && !proposalChanged && unchanged && current[item.key] !== undefined ? current[item.key] : proposals[item.key] ?? item.value ?? item.suggested_value ?? candidate]
   }))
 }
 

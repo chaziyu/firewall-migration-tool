@@ -56,5 +56,5 @@ export async function installUpdate(update: Update, onStatus: (status: UpdateSta
     onStatus(event.event === 'Finished' ? { kind: 'installing' } : {
       kind: 'downloading', percent: total && total > 0 ? Math.min(100, Math.floor(downloaded / total * 100)) : undefined,
     })
-  }, { timeout: 30_000, restartAfterInstall: true })
+  }, { timeout: 300_000, restartAfterInstall: true })
 }

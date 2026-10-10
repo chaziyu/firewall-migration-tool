@@ -204,3 +204,84 @@ def test_template_address_match_does_not_allocate_a_physical_port():
     data, _ = prepare(client, payload)
     physical = next(row for row in data['draft']['decisions'] if row['source_name'] == 'port1' and row['target_field'] == 'target_interface')
     assert physical['proposed_value'] is None
+
+
+def test_manual_interface_edit_revokes_operations_without_losing_allocations():
+    client, payload = setup()
+    data, payload = allocate(client, payload)
+    response = approve(client, payload, data)
+    payload['decision_document'] = response.get_json()['decision_document']
+    data, payload = prepare(client, payload)
+    interface = next(row for row in data['decisions']['decisions']
+                     if row['source_name'] == 'port1' and row['target_field'] == 'target_interface')
+    response = client.post('/api/migration/interfaces/confirm', json={**payload,
+        'selections': [{'decision_key': interface['key'], 'value': interface['value']}],
+        'reviewed_target_evidence': data['target_evidence']})
+    assert response.status_code == 200, response.get_json()
+    document = response.get_json()['decision_document']
+    assert document['draft_required']
+    assert 'design_approval' not in document
+    assert not any(row['approved_operation'] or row['approval_context'] for row in document['decisions'])
+    assert client.post('/api/migrate', json={**payload, 'decision_document': document}).status_code == 400
+    refreshed, payload = prepare(client, {**payload, 'decision_document': document})
+    assert next(row['value'] for row in refreshed['decisions']['decisions'] if row['key'] == interface['key']) == interface['value']
+    approved = approve(client, payload, refreshed)
+    assert approved.status_code == 200, approved.get_json()
+    assert client.post('/api/migrate', json={**payload,
+        'decision_document': approved.get_json()['decision_document']}).get_json()['plan_status'] == 'READY'
+
+
+def test_template_manual_allocation_survives_refresh_without_destination_provenance():
+    client, payload = setup(role='TEMPLATE')
+    data, payload = allocate(client, payload)
+    interface = next(row for row in data['decisions']['decisions']
+                     if row['source_name'] == 'port1' and row['target_field'] == 'target_interface')
+    selection = {'decision_key': interface['key'], 'value': 'ethernet1/1'}
+    response = client.post('/api/migration/interfaces/confirm', json={**payload,
+        'selections': [selection], 'reviewed_target_evidence': data['target_evidence']})
+    assert response.status_code == 200, response.get_json()
+    document = response.get_json()['decision_document']
+    row = next(row for row in document['decisions'] if row['key'] == interface['key'])
+    assert row['evidence_type'] == 'MANUAL'
+    assert row['evidence_target_digest'] is None and row['evidence_target_device'] is None
+    refreshed, _ = prepare(client, {**payload, 'decision_document': document})
+    assert next(row['value'] for row in refreshed['decisions']['decisions'] if row['key'] == interface['key']) == 'ethernet1/1'
+    assert not refreshed['draft']['destination_verified']
+    stale = {**data['target_evidence'], 'config_digest': 'changed'}
+    assert client.post('/api/migration/interfaces/confirm', json={**payload,
+        'selections': [selection], 'reviewed_target_evidence': stale}).status_code == 400
+
+
+def test_proposal_edit_after_approval_requires_reapproval_and_keeps_new_value():
+    client, payload = setup()
+    data, payload = allocate(client, payload)
+    payload['decision_document'] = approve(client, payload, data).get_json()['decision_document']
+    zone = next(row['decision_key'] for row in data['draft']['decisions'] if row['target_field'] == 'target_zone')
+    data, payload = prepare(client, {**payload, 'draft_overrides': {**payload['draft_overrides'], zone: 'new-zone'}})
+    assert 'design_approval' not in data['decision_document']
+    assert next(row['proposed_value'] for row in data['draft']['decisions'] if row['decision_key'] == zone) == 'new-zone'
+    assert client.post('/api/migrate', json=payload).status_code == 400
+    response = approve(client, payload, data)
+    assert response.status_code == 200, response.get_json()
+    plan = client.post('/api/migrate', json={**payload, 'decision_document': response.get_json()['decision_document']})
+    assert plan.status_code == 200, plan.get_json()
+    assert any('zone new-zone' in command for command in plan.get_json()['commands'])
+
+
+@pytest.mark.parametrize('change', ['signature', 'unsigned', 'role'])
+def test_manual_confirmation_cannot_launder_invalid_design_approval(change):
+    client, payload = setup()
+    data, payload = allocate(client, payload)
+    payload['decision_document'] = approve(client, payload, data).get_json()['decision_document']
+    interface = next(row for row in payload['decision_document']['decisions']
+                     if row['source_name'] == 'port1' and row['target_field'] == 'target_interface')
+    if change == 'signature':
+        payload['decision_document']['design_approval']['signature'] = 'invalid'
+    elif change == 'unsigned':
+        payload['decision_document'].pop('design_approval')
+    else:
+        payload['reference_role'] = 'UNKNOWN'
+    response = client.post('/api/migration/interfaces/confirm', json={**payload,
+        'selections': [{'decision_key': interface['key'], 'value': interface['value']}],
+        'reviewed_target_evidence': data['target_evidence']})
+    assert response.status_code == 400, response.get_json()

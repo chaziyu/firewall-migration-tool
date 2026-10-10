@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from .resolver import JuniperReferenceResolver
+
 
 def build_juniper_interface_topology(context, scope: str) -> tuple[dict, ...]:
     interfaces = context.interfaces
+    resolver = JuniperReferenceResolver(context)
     members: dict[str, list[str]] = {}
     redundant_members: dict[str, list[str]] = {}
     for interface in interfaces.values():
@@ -37,6 +40,7 @@ def build_juniper_interface_topology(context, scope: str) -> tuple[dict, ...]:
     names = dict.fromkeys((*interfaces, *members, *redundant_members))
     for name in names:
         interface = interfaces.get(name)
+        cluster = resolver.resolve_reth_cluster(name)
         row = {
             "context": scope,
             "interface": name,
@@ -46,6 +50,7 @@ def build_juniper_interface_topology(context, scope: str) -> tuple[dict, ...]:
             "interface_type": kind(name),
             "aggregate_parent": interface.aggregate_parent if interface else None,
             "redundant_parent": interface.redundant_parent if interface else None,
+            "redundancy_group": cluster["redundancy_group"] or (interface.redundancy_group if interface else None),
             "aggregate_members": tuple(members.get(name, ())),
             "redundant_members": tuple(redundant_members.get(name, ())),
             "zone_memberships": tuple(zone_memberships.get(name, ())),

@@ -29,18 +29,6 @@ def extract_https_rulebase(response: CheckPointResponse):
     return _extract_structured(response, None, CPHTTPSInspectionRule, None, "https_inspection_rules")
 
 
-def extract_policy_records(response: CheckPointResponse):
-    extractors = {
-        "show-access-rulebase": extract_access_rulebase,
-        "show-nat-rulebase": extract_nat_rulebase,
-        "show-threat-rulebase": extract_threat_rulebase,
-        "show-threat-rule-exception-rulebase": extract_threat_rulebase,
-        "show-https-rulebase": extract_https_rulebase,
-        "show-https-inspection-rulebase": extract_https_rulebase,
-    }
-    return extractors.get(response.command.lower(), lambda _: [])(response)
-
-
 def _extract_structured(
     response: CheckPointResponse,
     section_model: Type[CheckPointSourceObject] | None,

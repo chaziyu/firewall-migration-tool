@@ -1,4 +1,5 @@
 import io
+import xml.etree.ElementTree as ET
 
 import pytest
 from openpyxl import load_workbook
@@ -6,6 +7,20 @@ from openpyxl import load_workbook
 from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter
 from fwmigrate.vendors.palo_alto.collection_source import PANOSCollectedSourceSanitizer
 from fwmigrate.vendors.palo_alto.xml_loader import load_pan_source
+
+
+def test_collected_xml_sanitization_is_stable_and_preserves_object_names():
+    source = '''<config><password>xml-secret</password><shared><address>
+      <entry name="token object" token="attribute-secret"><ip-netmask>192.0.2.1</ip-netmask>
+        <description>set password text-secret</description></entry>
+    </address></shared></config>'''
+    sanitizer = PANOSCollectedSourceSanitizer()
+    safe = sanitizer.sanitize(source)
+    assert sanitizer.sanitize(safe) == safe
+    entry = ET.fromstring(safe).find('./shared/address/entry')
+    assert entry.get('name') == 'token object'
+    assert entry.get('token') == '[REDACTED]'
+    assert all(secret not in safe for secret in ('xml-secret', 'attribute-secret', 'text-secret'))
 
 
 def test_known_secret_classes_never_reach_source_or_report_surfaces():

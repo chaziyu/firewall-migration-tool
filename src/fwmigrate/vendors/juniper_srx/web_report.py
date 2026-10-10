@@ -168,7 +168,7 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                         "reference": issue.reference, "expected_type": issue.expected_type,
                         "status": issue.code}
                        for issue in result.validation.issues]
-    sections = {"interfaces": interfaces, "interface_topology": interfaces,
+    sections = {"interfaces": interfaces, "interface_topology": result.derived.interface_topology,
                 "addresses": addresses, "address_groups": address_groups,
                 "services": services, "service_groups": service_groups,
                 "schedules": schedules, "policies": policies, "nat": nat,

@@ -6,7 +6,6 @@ from __future__ import annotations
 SHEET_ORDER: tuple[str, ...] = (
     "Summary",
     "Review Required",
-    "Validation",
 
     # Objects
     "Tags",
@@ -90,17 +89,6 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     "Summary": (),
 
     "Review Required": (
-        "Severity",
-        "Category",
-        "Object",
-        "Scope Type",
-        "Scope Name",
-        "Field",
-        "Issue / Review Reason",
-        "Source Sheet",
-    ),
-
-    "Validation": (
         "Severity",
         "Category",
         "Object",
@@ -1111,7 +1099,6 @@ SHEET_IMPLEMENTATION_STATUS: dict[str, str] = {
 SHEET_IMPLEMENTATION_STATUS.update({
     "Summary": "IMPLEMENTED",
     "Review Required": "IMPLEMENTED",
-    "Validation": "IMPLEMENTED",
     "Tags": "IMPLEMENTED",
     "Addresses": "IMPLEMENTED",
     "Address Groups": "IMPLEMENTED",

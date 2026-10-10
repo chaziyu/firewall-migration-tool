@@ -171,16 +171,6 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
 
 
     @staticmethod
-    def _raw_block(lines: List[str], start: int) -> List[tuple[int, str, str]]:
-        rows = []
-        index = start + 1
-        while index < len(lines) and lines[index][:1].isspace() and not lines[index].strip().startswith("!"):
-            raw = lines[index]
-            rows.append((index + 1, raw, raw.strip()))
-            index += 1
-        return rows
-
-    @staticmethod
     def _mpf_partial(record: Any, reason: str) -> None:
         record.extraction_status = "PARTIAL"
         record.requires_manual_review = True

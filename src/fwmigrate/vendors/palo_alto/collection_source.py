@@ -13,15 +13,19 @@ class PANOSCollectedSourceSanitizer:
             root = ET.fromstring(source_text)
         except ET.ParseError as exc:
             raise ValueError('Invalid PAN-OS XML source') from exc
-        changed = False
+        original_xml = ET.tostring(root, encoding='unicode')
         for element in root.iter():
             if is_sensitive_key(element.tag):
-                changed = changed or element.text != '[REDACTED]' or bool(list(element)) or bool(element.attrib)
                 element.clear()
                 element.text = '[REDACTED]'
             else:
                 for key in element.attrib:
                     if is_sensitive_key(key):
-                        changed = changed or element.get(key) != '[REDACTED]'
                         element.set(key, '[REDACTED]')
-        return ET.tostring(root, encoding='unicode') if changed else sanitize_raw_text(source_text)
+                if element.text:
+                    element.text = sanitize_raw_text(element.text)
+            if element.tail:
+                element.tail = sanitize_raw_text(element.tail)
+        # Redact XML values before serialization so CLI patterns cannot corrupt markup.
+        sanitized_xml = ET.tostring(root, encoding='unicode')
+        return source_text if sanitized_xml == original_xml else sanitized_xml

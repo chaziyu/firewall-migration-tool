@@ -33,7 +33,7 @@ def test_phase1_extracts_typed_references_and_secret_presence_only():
     PaloAltoSourceReporter().export_excel(result, output)
     workbook = load_workbook(BytesIO(output.getvalue()), data_only=True)
     assert workbook["Administrators"].cell(4, 6).value is True
-    assert not any("unresolved PAN-OS reference" in str(cell.value) for row in workbook["Validation"] for cell in row)
+    assert not any("unresolved PAN-OS reference" in str(cell.value) for row in workbook["Review Required"] for cell in row)
     coverage = workbook["Extraction Coverage"]
     assert any("ike_crypto_profile" in str(cell.value) for row in coverage for cell in row)
     assert any("ipsec_crypto_profile" in str(cell.value) for row in coverage for cell in row)

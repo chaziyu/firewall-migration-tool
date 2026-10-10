@@ -27,7 +27,7 @@ export function MigrationReviewQueues({
   run,
   applyRuleSuggestion,
   applyGroupAction,
-  confirmGroup,
+  updateGroup,
 }: {
   review: ReviewData
   selectedGroupKey: string
@@ -50,7 +50,7 @@ export function MigrationReviewQueues({
   run: RunAction
   applyRuleSuggestion: (suggestion: RuleSuggestion) => Promise<void>
   applyGroupAction: (action: NonNullable<ReviewGroup['actions']>[number]) => Promise<void>
-  confirmGroup: (group: ReviewGroup) => Promise<void>
+  updateGroup: (group: ReviewGroup) => Promise<void>
 }) {
   return (
     <>
@@ -91,7 +91,7 @@ export function MigrationReviewQueues({
               const candidates = group.candidates[decision.key] ?? review.decision_candidates[decision.key] ?? []
               return <div className="review-work-field" key={decision.key}>
                 <label>{decision.target_field.replaceAll('_', ' ')}<input id={`decision-${decision.key}`} disabled={busy} aria-label={`${decision.target_field} for ${group.source_name}`} value={value} onChange={(event) => setDrafts((current) => ({ ...current, [decision.key]: event.target.value }))} placeholder={decision.suggested_value ? `Suggested: ${decision.suggested_value}` : 'Enter mapping'} /></label>
-                <p className="review-work-suggestion">{decisionLabel(decision, candidates, group.conflicts?.some((finding) => finding.decision_key === decision.key))}{decision.suggested_value && decision.review_state !== 'CONFIRMED' ? `: ${decision.suggested_value} · requires confirmation` : ''}</p>
+                <p className="review-work-suggestion">{decisionLabel(decision, candidates, group.conflicts?.some((finding) => finding.decision_key === decision.key))}{decision.suggested_value && decision.review_state !== 'CONFIRMED' ? `: ${decision.suggested_value} · requires design approval` : ''}</p>
                 <p>{decision.reason}{decision.evidence_source ? ` · ${decision.evidence_source}` : ''}{decision.evidence_type ? ` · ${decision.evidence_type}` : ''}</p>
                 {candidates.length > 0 && <details className="review-work-candidates"><summary>{candidates.filter((item) => item.available !== false).length} available candidates</summary>{candidates.map((candidate) => <div className="review-work-candidate" key={`${candidate.target_scope}:${candidate.value}`}><span>{candidateLabel(candidate)}: {candidate.value}{candidate.target_scope ? ` · ${candidate.target_scope}` : ''}</span><button className="text-button" type="button" disabled={busy || candidate.available === false} onClick={() => setDrafts((current) => ({ ...current, [decision.key]: candidate.value }))}>Use</button><details><summary>Why?</summary><ul>{[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].map((fact) => <li key={fact}>{fact}</li>)}</ul></details></div>)}</details>}
               </div>
@@ -101,7 +101,7 @@ export function MigrationReviewQueues({
             </div>
             {group.decisions.filter((item) => item.mode === 'UNSUPPORTED').map((item) => <p key={item.key}>Unsupported: {item.target_field} · {item.reason}</p>)}
             {group.actions?.map((action) => <div key={`${action.type}:${action.source_key}`}><details><summary>Review member decision scope</summary><p>{group.source_vdom} · {action.source_key} → {action.value}</p><ul>{action.apply_to.map((key) => <li key={key}>{key}</li>)}</ul></details><button className="secondary-button" type="button" disabled={busy} onClick={() => void run(() => applyGroupAction(action))}>Apply {action.value} to {action.apply_to.length} member decisions</button></div>)}
-            {group.decisions.some((item) => item.mode !== 'UNSUPPORTED') && <button className="primary-button" type="button" disabled={busy || !group.decision_keys.some((key) => (drafts[key] ?? decisions.find((item) => item.key === key)?.value ?? decisions.find((item) => item.key === key)?.suggested_value ?? '').trim())} onClick={() => void run(() => confirmGroup(group))}>Confirm mapping</button>}
+            {group.decisions.some((item) => item.mode !== 'UNSUPPORTED') && <button className="primary-button" type="button" disabled={busy || !group.decision_keys.some((key) => (drafts[key] ?? decisions.find((item) => item.key === key)?.value ?? decisions.find((item) => item.key === key)?.suggested_value ?? '').trim())} onClick={() => void run(() => updateGroup(group))}>Update design draft</button>}
           </article>)}
           </div></div>
           </div>

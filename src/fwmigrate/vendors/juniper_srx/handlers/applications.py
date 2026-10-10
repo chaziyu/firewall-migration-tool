@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Union
-
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.vendors.juniper_srx.extraction import (
     sanitize_source_attributes,
@@ -20,72 +18,6 @@ from fwmigrate.vendors.juniper_srx.model import (
 )
 from fwmigrate.vendors.juniper_srx.tokenizer import JunosCommand, extract_value_list
 from fwmigrate.vendors.juniper_srx.provenance import record_scalar_candidate, record_list_candidate
-
-
-# Junos symbolic ICMP type lookup table
-JUNOS_ICMP_TYPE_MAP: dict[str, int] = {
-    "echo-reply": 0,
-    "unreachable": 3,
-    "destination-unreachable": 3,
-    "source-quench": 4,
-    "redirect": 5,
-    "alternate-host-address": 6,
-    "echo-request": 8,
-    "router-advertisement": 9,
-    "router-solicitation": 10,
-    "time-exceeded": 11,
-    "parameter-problem": 12,
-    "timestamp-request": 13,
-    "timestamp-reply": 14,
-    "info-request": 15,
-    "info-reply": 16,
-    "mask-request": 17,
-    "mask-reply": 18,
-    "traceroute": 30,
-}
-
-JUNOS_ICMP_CODE_MAP: dict[str, int] = {
-    "network-unreachable": 0,
-    "host-unreachable": 1,
-    "protocol-unreachable": 2,
-    "port-unreachable": 3,
-    "fragmentation-needed": 4,
-    "source-route-failed": 5,
-    "destination-network-unknown": 6,
-    "destination-host-unknown": 7,
-    "source-host-isolated": 8,
-    "network-prohibited": 9,
-    "host-prohibited": 10,
-    "network-unreachable-for-tos": 11,
-    "host-unreachable-for-tos": 12,
-    "communication-prohibited": 13,
-    "host-precedence-violation": 14,
-    "precedence-cutoff": 15,
-    "ttl-zero-during-transit": 0,
-    "ttl-zero-during-reassembly": 1,
-}
-
-
-def resolve_icmp_type(val: Union[str, int, None]) -> int | None:
-    if val is None:
-        return None
-    if isinstance(val, int):
-        return val
-    try:
-        return int(val)
-    except ValueError:
-        return JUNOS_ICMP_TYPE_MAP.get(str(val).lower())
-
-
-def resolve_icmp_code(val: Union[str, int, None]) -> int | None:
-    if val is None:
-        return None
-    if isinstance(val, int):
-        return val
-    try:
-        return int(val)
-    except ValueError:
-        return JUNOS_ICMP_CODE_MAP.get(str(val).lower())
 
 
 def handle_applications_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool:

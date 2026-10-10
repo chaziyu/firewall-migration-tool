@@ -572,7 +572,6 @@ def _source_appendix_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]
 
 ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], Iterable[dict[str, Any]]]] = {
     "Review Required": _validation_rows,
-    "Validation": _validation_rows,
     "Tags": lambda c: _simple_rows(c, c.config.tags, "tag", {"Color": "color", "Comments": "comments"}),
     "Addresses": _address_rows, "Address Groups": _address_group_rows, "Services": _service_rows,
     "Service Groups": lambda c: _simple_rows(c, c.config.service_groups, "service-group", {"Members": "members", "Tags": "tags", "Description": "description", "Disable Override": "disable_override"}),

@@ -288,17 +288,37 @@ def register_migration_routes(
             entry = _migration_source(payload)
             _require_complete_collection(entry)
             analysis = _clone_preview(entry)
+            document, approval = _reviewed_design_document(payload, entry, strict=True)
+            if approval:
+                # Manual allocation revokes operation approval, not the engineer's mapping values.
+                decisions = load_decision_document(document, entry.source_digest)
+                decisions = PANMigrationDecisionSet(tuple(replace(row, approved_operation=None,
+                    approval_context=None) for row in decisions.decisions))
+                document = build_decision_document(entry.source_digest, decisions, document.get('target_evidence'))
+            role = payload.get('reference_role', (approval or {}).get('context', {}).get('reference_role'))
             target_context = _target_evidence(payload)
+            role = draft_context(entry.source_digest, target_context.metadata if target_context else None, role)['reference_role']
+            destination = target_context if role != 'TEMPLATE' else None
+            if role == 'TEMPLATE':
+                reviewed_reference = target_context.metadata if target_context else None
+                if payload.get('reviewed_target_evidence') != reviewed_reference:
+                    raise InterfaceMappingConfirmationError('Target evidence changed; refresh and review the mappings again.')
+                decisions, _ = reconcile_target_evidence(load_decision_document(document, entry.source_digest), None)
+                document = {**document, **build_decision_document(entry.source_digest, decisions)}
+                document.pop('target_evidence', None)
             state = confirm_interface_mappings(
                 analysis.extracted.config, analysis.derived, entry.source_digest,
-                previous_document=payload.get('decision_document'), selections=payload.get('selections'),
-                reviewed_target_evidence=payload.get('reviewed_target_evidence'),
-                target=target_context.analysis if target_context else None,
-                target_device=target_context.selected_device if target_context else None,
-                target_metadata=target_context.metadata if target_context else None,
+                previous_document=document, selections=payload.get('selections'),
+                reviewed_target_evidence=None if role == 'TEMPLATE' else payload.get('reviewed_target_evidence'),
+                target=destination.analysis if destination else None,
+                target_device=destination.selected_device if destination else None,
+                target_metadata=destination.metadata if destination else None,
                 target_device_count=len(target_context.devices) if target_context else 0,
             )
-            return _migration_review_response(entry, {'target_context': target_context, **state})
+            response = _migration_review_response(entry, {'target_context': target_context, **state}).get_json()
+            if approval or (document or {}).get('draft_required'):
+                response['decision_document']['draft_required'] = True
+            return jsonify(response)
         except InterfaceMappingConfirmationError as exc:
             return jsonify({'success': False, 'error': str(exc), 'errors': exc.errors}), 400
         except (ValueError, KeyError, TypeError) as exc:

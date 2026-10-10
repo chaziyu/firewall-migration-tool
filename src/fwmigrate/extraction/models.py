@@ -108,28 +108,6 @@ class DependencyRecord(BaseModel):
     reason: Optional[str] = None
 
 
-class CoverageSummary(BaseModel):
-    """Deterministic support summary for one extraction coverage section."""
-
-    section: str
-    domain: Optional[str] = None
-    domain_uid: Optional[str] = None
-    domain_name: Optional[str] = None
-    scope: str = "domain"
-    operational: bool = False
-    status: ExtractionStatus
-    total: int = 0
-    extracted: int = 0
-    partial: int = 0
-    source_only: int = 0
-    unsupported: int = 0
-    parse_errors: int = 0
-    supported_empty: bool = False
-    collection_errors: List[str] = Field(default_factory=list)
-    review_reasons: List[str] = Field(default_factory=list)
-    source_commands: List[str] = Field(default_factory=list)
-
-
 class UnsupportedItem(BaseModel):
     source_path: str
     source_name: Optional[str] = None

@@ -1,6 +1,38 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { apiFetch, apiUrl, isDesktopRuntime, postJson, RequestError } from '../src/api/client.ts'
+import { apiFetch, apiUrl, isDesktopRuntime, postJson, RequestError, waitForDesktopRuntime } from '../src/api/client.ts'
+import { mockIPC, clearMocks } from '@tauri-apps/api/mocks'
+
+test('desktop startup waits for readiness without sending requests to the web origin', async (context) => {
+  globalThis.window = globalThis
+  globalThis.__FWMIGRATE_DESKTOP__ = { starting: true }
+  context.after(() => { clearMocks(); delete globalThis.window; delete globalThis.__FWMIGRATE_DESKTOP__ })
+  assert.equal(isDesktopRuntime(), true)
+  let fetched = false
+  context.mock.method(globalThis, 'fetch', async () => { fetched = true })
+  await assert.rejects(apiFetch('/api/vendors'), /still starting/)
+  assert.equal(fetched, false)
+  let calls = 0
+  mockIPC((command) => {
+    assert.equal(command, 'desktop_runtime_status')
+    return ++calls === 1 ? null : { apiBase: 'http://127.0.0.1:54321', token: 'per-launch' }
+  })
+  await waitForDesktopRuntime(new AbortController().signal)
+  assert.equal(calls, 2)
+  assert.equal(apiUrl('/api/vendors'), 'http://127.0.0.1:54321/api/vendors')
+})
+
+test('startup failure and cancellation never enable backend transport', async (context) => {
+  globalThis.window = globalThis
+  globalThis.__FWMIGRATE_DESKTOP__ = { starting: true }
+  context.after(() => { clearMocks(); delete globalThis.window; delete globalThis.__FWMIGRATE_DESKTOP__ })
+  mockIPC(() => { throw new Error('Desktop backend startup timed out') })
+  await assert.rejects(waitForDesktopRuntime(new AbortController().signal), /timed out/)
+  const controller = new AbortController()
+  mockIPC(() => { controller.abort(); return { apiBase: 'http://127.0.0.1:54321', token: 'cancelled' } })
+  await waitForDesktopRuntime(controller.signal)
+  await assert.rejects(apiFetch('/api/vendors'), /still starting/)
+})
 
 for (const [path, result] of [
   ['/api/deploy', { failed_command_index: 2, failure_message: 'command 2 rejected', validation: { status: 'FAILED', response: 'Invalid zone trust' } }],

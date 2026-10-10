@@ -2,6 +2,18 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { candidateLabel, confirmationEvidenceType, decisionLabel, interfaceMappingRows, reconcileReviewDrafts, draftDependencies, portExceptionGroups } from '../src/features/migration/reviewDrafts.ts'
 
+test('proposal edits refresh every editor while unrelated unsaved inputs survive', () => {
+  const decisions = [{ key: 'port', value: null, suggested_value: null, review_state: 'PENDING' },
+    { key: 'zone', value: null, suggested_value: 'trust', review_state: 'PENDING' }]
+  const original = structuredClone(decisions)
+  const previous = { port: 'ethernet1/1', zone: 'trust' }
+  const next = { port: 'ethernet1/2', zone: 'trust' }
+  assert.deepEqual(reconcileReviewDrafts({ port: 'ethernet1/1', zone: 'unsaved-zone' }, decisions,
+    decisions, false, {}, next, previous), { port: 'ethernet1/2', zone: 'unsaved-zone' })
+  assert.deepEqual(reconcileReviewDrafts({}, [], decisions, true, {}, next), next)
+  assert.deepEqual(decisions, original)
+})
+
 test('one unresolved parent groups dependent VLAN and route exceptions without blocking unrelated objects', () => {
   const rows = [
     { decision_key: 'scope', status: 'READY', dependencies: [], approved: true },

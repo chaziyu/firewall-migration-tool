@@ -28,7 +28,27 @@ function desktopRuntime(): DesktopRuntime | null {
 }
 
 export function isDesktopRuntime(): boolean {
-  return desktopRuntime() !== null
+  const candidate = (globalThis as typeof globalThis & { __FWMIGRATE_DESKTOP__?: unknown }).__FWMIGRATE_DESKTOP__
+  return desktopRuntime() !== null || (isRecord(candidate) && candidate.starting === true)
+}
+
+export async function waitForDesktopRuntime(signal: AbortSignal): Promise<void> {
+  if (!isDesktopRuntime() || desktopRuntime()) return
+  const { invoke } = await import('@tauri-apps/api/core')
+  while (!signal.aborted) {
+    const runtime = await invoke<DesktopRuntime | null>('desktop_runtime_status')
+    if (signal.aborted) return
+    if (runtime) {
+      if (!runtime.apiBase.startsWith('http://127.0.0.1:') || !runtime.token) throw new Error('Invalid desktop startup response.')
+      Object.defineProperty(globalThis, '__FWMIGRATE_DESKTOP__', { value: Object.freeze(runtime), configurable: true })
+      return
+    }
+    await new Promise<void>((resolve) => {
+      const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve() }
+      const timer = setTimeout(done, 100)
+      signal.addEventListener('abort', done, { once: true })
+    })
+  }
 }
 
 export function apiUrl(path: string): string {
@@ -38,6 +58,7 @@ export function apiUrl(path: string): string {
 
 export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const runtime = desktopRuntime()
+  if (isDesktopRuntime() && !runtime) return Promise.reject(new Error('Desktop backend is still starting.'))
   const headers = new Headers(init.headers)
   if (runtime) headers.set(DESKTOP_TOKEN_HEADER, runtime.token)
   return fetch(apiUrl(path), { ...init, headers })
